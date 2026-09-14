@@ -59,15 +59,15 @@ def test_connectivity_registries_are_copied_only_for_owning_roles() -> None:
     )
 
     control = snapshot_components(
-        Settings(_env_file=None, role=ProcessRole.control),
+        Settings(service={"role": ProcessRole.control}),
         components,
     )
     connectivity = snapshot_components(
-        Settings(_env_file=None, role=ProcessRole.connectivity),
+        Settings(service={"role": ProcessRole.connectivity}),
         components,
     )
     worker = snapshot_components(
-        Settings(_env_file=None, role=ProcessRole.worker),
+        Settings(service={"role": ProcessRole.worker}),
         components,
     )
     ingress_registry.register(
@@ -166,13 +166,22 @@ async def test_drain_fails_readiness_before_rejecting_new_connectivity_work(loca
         transport = httpx2.ASGITransport(app=app)
         async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
             readiness = await client.get("/readyz")
-            delivery = await client.post("/connectivity/v1/accounts/acct_test/events")
+            delivery = await client.post(
+                "/connectivity/v1/accounts/acct_test/events", headers={"X-Request-ID": "req-draining"}
+            )
             health = await client.get("/healthz")
 
-        assert readiness.status_code == 503
-        assert readiness.json() == {"detail": "service not ready"}
-        assert delivery.status_code == 503
-        assert delivery.json() == {"detail": "service draining"}
+        for response in [readiness, delivery]:
+            assert response.status_code == 503
+            assert response.json() == {
+                "error": {
+                    "code": "service_unavailable",
+                    "message": "The service is temporarily unavailable.",
+                    "details": {},
+                    "request_id": response.headers["X-Request-ID"],
+                }
+            }
+        assert delivery.headers["X-Request-ID"] == "req-draining"
         assert health.status_code == 200
 
     assert app.state.runtime.status.startup_complete is False
@@ -326,7 +335,7 @@ async def test_price_updater_lifetime_belongs_only_to_enabled_execution_roles(
 
 
 @pytest.mark.anyio
-async def test_shutdown_preserves_execution_environment_and_subagent_order(
+async def test_shutdown_stops_admission_before_waiting_in_composition_order(
     local_settings,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -340,11 +349,15 @@ async def test_shutdown_preserves_execution_environment_and_subagent_order(
 
     async def wait_execution(loop: WorkerExecutionLoop) -> None:
         assert app.state.runtime.status.draining
+        assert loop.is_draining()
+        assert trace == ["environment draining", "subagents draining"]
         await execution_wait(loop)
         trace.append("execution stopped")
 
     def drain_environment(loop: EnvironmentMaintenanceLoop) -> None:
-        assert trace == ["execution stopped"]
+        if loop.is_draining():
+            return
+        assert trace == []
         trace.append("environment draining")
         environment_drain(loop)
 
@@ -353,7 +366,9 @@ async def test_shutdown_preserves_execution_environment_and_subagent_order(
         trace.append("environment stopped")
 
     def drain_subagents(loop: SubagentMaintenance) -> None:
-        assert trace[-1] == "environment stopped"
+        if loop.is_draining():
+            return
+        assert trace == ["environment draining"]
         trace.append("subagents draining")
         subagent_drain(loop)
 
@@ -370,9 +385,9 @@ async def test_shutdown_preserves_execution_environment_and_subagent_order(
     async with app.router.lifespan_context(app):
         pass
     assert trace == [
-        "execution stopped",
         "environment draining",
-        "environment stopped",
         "subagents draining",
+        "execution stopped",
+        "environment stopped",
         "subagents stopped",
     ]

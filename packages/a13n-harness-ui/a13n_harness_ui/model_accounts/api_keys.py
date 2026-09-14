@@ -11,7 +11,7 @@ from typing import Literal
 
 from anyio import to_thread
 from filelock import FileLock, Timeout
-from pydantic import Field, SecretStr, ValidationError
+from pydantic import ConfigDict, Field, JsonValue, SecretStr, ValidationError
 
 from a13n_harness_ui.configuration.models import ResourceId, StrictModel
 from a13n_harness_ui.errors import HarnessUiError
@@ -27,6 +27,10 @@ class ApiKeyStatus(StrictModel):
 
 
 class _Document(StrictModel):
+    model_config = ConfigDict(extra="allow", hide_input_in_errors=True)
+    # Pydantic uses this narrower annotation to validate retained JSON extras.
+    __pydantic_extra__: dict[str, JsonValue] = Field(init=False)  # pyright: ignore[reportIncompatibleVariableOverride]
+
     version: Literal[1] = 1
     keys: dict[ResourceId, SecretStr] = Field(default_factory=dict, repr=False)
 
@@ -84,7 +88,9 @@ class ApiKeyStore:
                 keys.pop(reference, None)
             else:
                 keys[reference] = key
-            raw = json.dumps({"version": 1, "keys": {ref: val.get_secret_value() for ref, val in keys.items()}})
+            payload = document.model_dump(mode="json")
+            payload["keys"] = {ref: val.get_secret_value() for ref, val in keys.items()}
+            raw = json.dumps(payload, allow_nan=False)
             if len(raw.encode("utf-8")) > 2 * 1024 * 1024:
                 raise ValueError("oversize")
             fd, name = tempfile.mkstemp(prefix=".auth-", dir=self.path.parent)

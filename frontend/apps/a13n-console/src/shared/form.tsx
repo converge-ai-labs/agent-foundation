@@ -1,11 +1,20 @@
-import { useId, useState, type ReactNode } from "react";
-import { Button, Dialog } from "a13n-ui";
+import {
+  Button,
+  type ButtonProps,
+  FormField,
+  ModalFrame,
+  ReadOnlyField,
+  Textarea,
+} from "a13n-ui";
+
+import { useState, type ReactElement, type ReactNode } from "react";
+
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ErrorNotice } from "./feedback";
 import styles from "./shared.module.css";
 
-export function TextArea({
+export function TextAreaField({
   label,
   value,
   onChange,
@@ -14,6 +23,8 @@ export function TextArea({
   required,
   code = false,
   hideLabel = false,
+  readOnly = false,
+  error,
 }: {
   label: string;
   value: string;
@@ -23,41 +34,59 @@ export function TextArea({
   required?: boolean;
   code?: boolean;
   hideLabel?: boolean;
+  readOnly?: boolean;
+  error?: string;
 }) {
-  const id = useId();
+  if (readOnly)
+    return (
+      <ReadOnlyField label={label} description={hint} hideLabel={hideLabel}>
+        {code ? (
+          <pre className={styles.codeValue}>{value || "—"}</pre>
+        ) : (
+          value || "—"
+        )}
+      </ReadOnlyField>
+    );
   return (
-    <div className={styles.field}>
-      <label htmlFor={id} className={hideLabel ? "visually-hidden" : undefined}>
-        {label}
-      </label>
-      <textarea
-        id={id}
+    <FormField
+      label={label}
+      description={hint}
+      hideLabel={hideLabel}
+      error={error}
+    >
+      <Textarea
         className={code ? styles.code : ""}
         value={value}
         onChange={(event) => onChange(event.target.value)}
         rows={rows}
         required={required}
-        aria-describedby={hint ? `${id}-hint` : undefined}
       />
-      {hint && <small id={`${id}-hint`}>{hint}</small>}
-    </div>
+    </FormField>
   );
 }
 export function Confirm({
   title,
   description,
+  subject,
   action,
   onSuccess,
   trigger,
+  triggerElement,
   danger = false,
+  triggerVariant,
+  retry,
   children,
 }: {
   title: string;
   description: string;
+  subject: string;
   action: () => Promise<unknown>;
   onSuccess?: () => void;
-  trigger: ReactNode;
+  trigger?: ReactNode;
+  triggerElement?: ReactElement;
   danger?: boolean;
+  triggerVariant?: ButtonProps["variant"];
+  retry?: () => void;
   children?: ReactNode;
 }) {
   const { t } = useTranslation();
@@ -72,8 +101,7 @@ export function Confirm({
     },
   });
   return (
-    <Dialog
-      open={open}
+    <ModalFrame
       onOpenChange={(value) => {
         if (!mutation.isPending) {
           setOpen(value);
@@ -81,47 +109,98 @@ export function Confirm({
         }
       }}
       trigger={
-        <Button variant={danger ? "danger" : "secondary"} size="sm">
-          {trigger}
-        </Button>
+        triggerElement ?? (
+          <Button
+            variant={triggerVariant ?? (danger ? "destructive" : "outline")}
+            className={
+              triggerVariant === "ghost"
+                ? danger
+                  ? "font-normal text-destructive-foreground"
+                  : "font-normal text-muted-foreground"
+                : undefined
+            }
+            size="sm"
+            type="button"
+          >
+            {trigger}
+          </Button>
+        )
       }
+      size={"md"}
       title={title}
       description={description}
       closeLabel={t("Close")}
       footer={
-        <Button
-          loading={mutation.isPending}
-          variant={danger ? "danger" : "primary"}
-          onClick={() => mutation.mutate()}
-        >
-          {t("Confirm")}
-        </Button>
+        <>
+          <Button
+            variant="outline"
+            disabled={mutation.isPending}
+            onClick={() => setOpen(false)}
+            type="button"
+          >
+            {t("Cancel")}
+          </Button>
+          <Button
+            variant={danger ? "destructive" : "default"}
+            loading={mutation.isPending}
+            onClick={() => mutation.mutate()}
+            type="button"
+          >
+            {title}
+          </Button>
+        </>
       }
+      open={open}
     >
-      {children}
-      <ErrorNotice error={mutation.error} />
-    </Dialog>
+      <p className={styles.confirmSubject}>{subject}</p>
+      {(children || mutation.error) && (
+        <>
+          {children}
+          <ErrorNotice error={mutation.error} retry={retry} />
+        </>
+      )}
+    </ModalFrame>
   );
 }
 export function JsonView({ value }: { value: unknown }) {
-  return <pre className={styles.json}>{JSON.stringify(value, null, 2)}</pre>;
+  return (
+    <pre className={`${styles.json} a13n-scrollbar`}>
+      {JSON.stringify(value, null, 2)}
+    </pre>
+  );
 }
 export function FormActions({
   pending,
   label,
   onCancel,
+  disabled = false,
 }: {
   pending: boolean;
+  disabled?: boolean;
   label?: string;
   onCancel?: () => void;
 }) {
   const { t } = useTranslation();
   return (
-    <div className={styles.formActions}>
-      {onCancel && <Button onClick={onCancel}>{t("Cancel")}</Button>}
-      <Button type="submit" variant="primary" loading={pending}>
+    <footer data-a13n-form-actions className={styles.formActions}>
+      {onCancel && (
+        <Button
+          variant="outline"
+          disabled={pending}
+          onClick={onCancel}
+          type="button"
+        >
+          {t("Cancel")}
+        </Button>
+      )}
+      <Button
+        type="submit"
+        variant="default"
+        loading={pending}
+        disabled={disabled}
+      >
         {label ?? t("Save changes")}
       </Button>
-    </div>
+    </footer>
   );
 }

@@ -1,16 +1,17 @@
-import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
+import {} from "a13n-ui";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import { FormActions } from "../../shared/form";
-import { SchemaFields } from "../../shared/schema-fields";
-import { stringValues, validateSettings } from "../../shared/validation";
 import { useIdempotency } from "../../shared/idempotency";
-import { useAccountProviders } from "./data";
+import { SchemaFields } from "../../shared/schema-fields";
 import styles from "../../shared/shared.module.css";
+import { stringValues, validateSettings } from "../../shared/validation";
+import { useAccountProviders } from "./data";
 export function AccountCredentials({
   account,
   reload,
@@ -57,7 +58,7 @@ export function AccountCredentials({
     },
   });
   return definitions.isPending ? (
-    <Loading />
+    <Loading variant="form" rows={3} />
   ) : (
     <form
       className={styles.form}

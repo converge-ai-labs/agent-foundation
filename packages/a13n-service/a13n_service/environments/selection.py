@@ -12,6 +12,7 @@ from a13n_service.ids import new_object_id
 
 from .domain import EnvironmentSelection, NewEnvironmentSelection
 from .errors import invalid_environment
+from .identity import default_environment_name
 from .models import (
     EnvironmentProviderRecord,
     EnvironmentRecord,
@@ -76,8 +77,10 @@ def allocate_selection(
 ) -> EnvironmentRecord:
     if isinstance(selected, EnvironmentRecord):
         return selected
+    environment_id = new_object_id("env")
     environment = EnvironmentRecord(
-        id=new_object_id("env"),
+        id=environment_id,
+        name=default_environment_name(environment_id),
         organization_id=selected.organization_id,
         workspace_id=workspace_id,
         provider_id=selected.provider_id,

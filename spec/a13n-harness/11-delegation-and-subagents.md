@@ -39,6 +39,7 @@ class SubagentDefinition:
     context: DelegationContextPolicy = DelegationContextPolicy()
     identity: SubagentIdentityPolicy = SubagentIdentityPolicy()
     usage_limits: UsageLimits | None = None
+    run_capability_factory: Callable[[], Sequence[AbstractCapability[AgentContext]]] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +54,8 @@ class SubagentCollection(Mapping[str, BuiltSubagent]):
 ```
 
 Harness validates the finite recursive definition graph and builds children before their parent. Each child owns its complete Model, prompt, output contract, Capabilities, plugins, recovery policy, Environment requirements, and nested children. Every parent `AgentContext` receives the exact immutable immediate collection from its executable.
+
+`run_capability_factory` is an optional trusted, process-local factory for fresh inline-child Run attachment Capabilities. Harness invokes it once for each child invocation, including a resumed continuation, and validates its returned values through the ordinary `RunBindings` ownership and collision checks. The factory owns no entered resources; request-scoped collaborators must close their resources within their operation. It is never serialized into State, grants no additional authority, and does not inherit a parent's Web or other provider attachment. Hosts reconstruct the factory from their accepted child configuration. Async child execution binds its resources through its own Host Run.
 
 The collection contains no current Identity, credential, State, Environment adapter, entered facade, scheduler, task, execution mode, backend selector, or Host record. A child executable is reusable process-local build output and is never serialized as durable payload. A distributed Host persists its own reconstructable definition reference and rebuilds the exact trusted definition on the selected worker.
 

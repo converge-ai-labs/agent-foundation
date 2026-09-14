@@ -22,9 +22,10 @@ from pydantic_ai.usage import RunUsage
 from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.errors import HarnessUiError, RunCoordinationError
 from a13n_harness_ui.live import HarnessUiSummaryHub
+from a13n_harness_ui.observation import UiObservation, finish_operation, record_input, record_output
 from a13n_harness_ui.root_execution import RootRunExecutor, RootRunOutcome
-from a13n_harness_ui.root_input import detach_input
-from a13n_harness_ui.storage import ThreadConfigurationMutation
+from a13n_harness_ui.root_input import RootInputFiles, detach_input
+from a13n_harness_ui.storage import ObjectRef, ThreadConfigurationMutation
 from a13n_harness_ui.surfaces import (
     ContinuationSelectionView,
     EnvironmentOutcomeView,
@@ -63,6 +64,8 @@ class _RootOperation:
     done: Event
     scope: CancelScope | None = None
     stream: HarnessRunStream[Any] | None = None
+    input_files: RootInputFiles | None = None
+    composition: ObjectRef | None = None
     run_id: str | None = None
     started_at: datetime | None = None
     completed_at: datetime | None = None
@@ -80,9 +83,11 @@ class RootRunCoordinator:
         *,
         summary_hub: HarnessUiSummaryHub | None = None,
         terminal_retention: int = 256,
+        observation: UiObservation | None = None,
     ) -> None:
         if terminal_retention < 1:
             raise ValueError("terminal_retention must be positive")
+        self._observation = observation or UiObservation()
         self._executor = executor
         self._summary_hub = summary_hub
         self._lock = Lock()
@@ -118,20 +123,23 @@ class RootRunCoordinator:
     async def close(self, *, timeout_seconds: float) -> None:
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
-        owned_task_group = self._task_group
-        if owned_task_group is not None:
-            owned_task_group.cancel_scope.shield = True
-        async with self._lock:
-            self._accepting = False
-            active = tuple(
-                self._operations[receipt_id]
-                for receipt_id in self._active_by_thread.values()
-                if receipt_id in self._operations
-            )
-            context = self._task_group_context
-            task_group = self._task_group
-        for operation in active:
-            await self._request_cancel(operation)
+        context = self._task_group_context
+        task_group = self._task_group
+        if task_group is not None:
+            task_group.cancel_scope.shield = True
+        active: tuple[_RootOperation, ...] = ()
+        # The group's own failure cancellation is not blocked by its shield.
+        # Leave this inner scope before exiting the manually entered task group.
+        with CancelScope(shield=True):
+            async with self._lock:
+                self._accepting = False
+                active = tuple(
+                    self._operations[receipt_id]
+                    for receipt_id in self._active_by_thread.values()
+                    if receipt_id in self._operations
+                )
+            for operation in active:
+                await self._request_cancel(operation)
         if context is None or task_group is None:
             return
         with move_on_after(timeout_seconds, shield=True) as grace:
@@ -311,18 +319,21 @@ class RootRunCoordinator:
                 await done.wait()
         return await self.get(receipt_id)
 
-    async def steer(self, *, receipt_id: str, message: str) -> RootControlResult:
-        if not message.strip():
-            raise RunCoordinationError("A steering message must not be blank.", code="run_input_invalid")
+    async def steer(self, *, receipt_id: str, message: RunInputValue) -> RootControlResult:
+        message = detach_input(message)
         async with self._lock:
             operation = self._operations.get(receipt_id)
             if operation is None:
                 raise RunCoordinationError("Root receipt does not exist in this App.", code="root_receipt_missing")
             stream = operation.stream if operation.status is RootOperationStatus.running else None
+            input_files = operation.input_files
         if stream is None:
             return RootControlResult(receipt_id=receipt_id, accepted=False)
         try:
-            enqueue_id = await stream.steer(message)
+            prepared = (
+                await input_files.prepare(message, stream.context.environment) if input_files is not None else message
+            )
+            enqueue_id = await stream.steer(prepared)
         except Exception:
             return RootControlResult(receipt_id=receipt_id, accepted=False)
         return RootControlResult(receipt_id=receipt_id, accepted=True, enqueue_id=enqueue_id)
@@ -356,6 +367,32 @@ class RootRunCoordinator:
         mutation: ThreadConfigurationMutation | None,
         model_overrides: RunModelOverrides | None,
     ) -> None:
+        with self._observation.operation(
+            "root", thread_id=operation.receipt.thread_id, operation_id=operation.receipt.receipt_id
+        ) as span:
+            record_input(
+                prompt if response is None else response, kind="prompt" if response is None else "deferred_response"
+            )
+            await self._execute_operation(operation, prompt, response, mutation, model_overrides)
+            record_output(
+                operation.outcome.execution.output if operation.outcome is not None else None,
+                status=operation.status.value,
+            )
+            finish_operation(
+                span,
+                status=operation.status.value,
+                run_id=operation.run_id,
+                error_code=operation.failure.code if operation.failure is not None else None,
+            )
+
+    async def _execute_operation(
+        self,
+        operation: _RootOperation,
+        prompt: RunInputValue | None,
+        response: ThreadDeferredResponse | None,
+        mutation: ThreadConfigurationMutation | None,
+        model_overrides: RunModelOverrides | None,
+    ) -> None:
         scope = CancelScope()
         async with self._lock:
             operation.scope = scope
@@ -375,7 +412,10 @@ class RootRunCoordinator:
                         response=response,
                         mutation=mutation,
                         model_overrides=model_overrides,
-                        on_stream=lambda stream: self._running(operation.receipt.receipt_id, stream),
+                        on_composition=lambda reference: self._captured(operation.receipt.receipt_id, reference),
+                        on_stream=lambda stream, input_files=None: self._running(
+                            operation.receipt.receipt_id, stream, input_files
+                        ),
                     )
             if outcome is None:
                 cancelled = True
@@ -428,7 +468,20 @@ class RootRunCoordinator:
                 operation.done.set()
             await self._publish_change(operation)
 
-    async def _running(self, receipt_id: str, stream: HarnessRunStream[Any]) -> None:
+    async def composition_reference(self, receipt_id: str) -> ObjectRef | None:
+        async with self._lock:
+            operation = self._operations.get(receipt_id)
+            if operation is None:
+                raise RunCoordinationError("Root receipt does not exist in this App.", code="root_receipt_missing")
+            return operation.composition
+
+    async def _captured(self, receipt_id: str, reference: ObjectRef) -> None:
+        async with self._lock:
+            self._operations[receipt_id].composition = reference
+
+    async def _running(
+        self, receipt_id: str, stream: HarnessRunStream[Any], input_files: RootInputFiles | None = None
+    ) -> None:
         async with self._lock:
             operation = self._operations.get(receipt_id)
             if operation is None or operation.status is not RootOperationStatus.preparing:
@@ -437,6 +490,7 @@ class RootRunCoordinator:
                     code="thread_run_admission_invalid",
                 )
             operation.stream = stream
+            operation.input_files = input_files
             operation.run_id = stream.run_id
             operation.started_at = datetime.now(UTC)
             operation.status = RootOperationStatus.running

@@ -1,5 +1,7 @@
-import { Laptop, Moon, Sun } from "lucide-react";
-import { Select, SettingsRow, SettingsSection } from "a13n-ui";
+import { ChoiceField } from "a13n-ui";
+
+import { SettingsRow, SettingsSection } from "a13n-ui";
+
 import { useTranslation } from "react-i18next";
 import { useAppearance } from "../../layout/appearance";
 import styles from "./settings.module.css";
@@ -9,60 +11,35 @@ export function Preferences() {
     { theme, setTheme } = useAppearance();
   return (
     <div className={styles.preferences}>
-      <SettingsSection
-        variant="plain"
-        title={t("Appearance")}
-        description={t("Make Console feel at home.")}
-      >
-        <div
-          className={styles.themeOptions}
-          role="group"
-          aria-label={t("Color theme")}
-        >
-          {(["light", "dark", "system"] as const).map((value) => {
-            const Icon =
-              value === "light" ? Sun : value === "dark" ? Moon : Laptop;
-            return (
-              <button
-                type="button"
-                key={value}
-                aria-pressed={theme === value}
-                onClick={() => setTheme(value)}
-                className={styles.themeChoice}
-              >
-                <span className={styles.themePreview} data-preview={value}>
-                  <span />
-                  <span>
-                    <i />
-                    <i />
-                    <i />
-                  </span>
-                </span>
-                <span>
-                  <Icon size={14} />
-                  {t(
-                    value === "light"
-                      ? "Light"
-                      : value === "dark"
-                        ? "Dark"
-                        : "System",
-                  )}
-                </span>
-              </button>
-            );
-          })}
-        </div>
+      <SettingsSection title={t("Appearance")}>
+        <SettingsRow label={t("Color theme")}>
+          <ChoiceField
+            label={t("Color theme")}
+            hideLabel
+            value={theme}
+            onValueChange={(value) => {
+              if (value === "light" || value === "dark" || value === "system")
+                setTheme(value);
+            }}
+            options={[
+              { value: "light", label: t("Light") },
+              { value: "dark", label: t("Dark") },
+              { value: "system", label: t("System") },
+            ]}
+          />
+        </SettingsRow>
       </SettingsSection>
-      <SettingsSection variant="plain" title={t("Language and region")}>
+      <SettingsSection title={t("Language and region")}>
         <SettingsRow
           label={t("Display language")}
           description={t("Used for navigation, dates, and controls.")}
         >
-          <Select
-            label={t("Display language")}
+          <ChoiceField
             placeholder={t("Language")}
             value={i18n.resolvedLanguage ?? "en"}
             onValueChange={(value) => void i18n.changeLanguage(value)}
+            label={t("Display language")}
+            hideLabel
             options={[
               { value: "en", label: "English" },
               { value: "zh-CN", label: "简体中文" },

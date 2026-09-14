@@ -1,15 +1,35 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import {
+  Button,
+  DisclosureSection,
+  FormField,
+  ReadOnlyField,
+  Input,
+} from "a13n-ui";
+
+import { SearchPicker } from "a13n-ui";
+
 import { ApiError } from "@converge.ai/a13n";
-import { Input, Picker, Button } from "a13n-ui";
+import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { Link } from "react-router";
+import { EditorSection } from "./section";
+
+import {
+  ArrowLeftIcon,
+  CheckIcon,
+  CircleIcon,
+  StackIcon,
+} from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
+import { ErrorNotice, ErrorToast } from "../../shared/feedback";
+import { TextAreaField } from "../../shared/form";
+import { ResourceReference } from "../../shared/resource-reference";
 import { jsonObject } from "../../shared/validation";
-import { ErrorNotice } from "../../shared/feedback";
-import { TextArea } from "../../shared/form";
-import { advancedConfig, buildConfig, type AgentConfig } from "./configuration";
 import styles from "./agents.module.css";
-import { useAgentChoices } from "./choices";
+import { AgentSearchSelection } from "../search/selection";
+import { AgentAvatar } from "./avatar";
 import { AgentCapabilities } from "./capabilities";
-import { Check, Circle } from "lucide-react";
+import { useAgentChoices } from "./choices";
+import { advancedConfig, buildConfig, type AgentConfig } from "./configuration";
 
 export function AgentForm({
   initial: providedInitial,
@@ -23,6 +43,15 @@ export function AgentForm({
   reload,
   readonly = false,
   context,
+  primaryAction,
+  identityAction,
+  imageUrl,
+  agentId,
+  agentKey,
+  imagePicker,
+  environment,
+  metadata,
+  back,
 }: {
   initial: AgentConfig;
   version?: number;
@@ -40,6 +69,15 @@ export function AgentForm({
   reload?: () => void;
   readonly?: boolean;
   context?: ReactNode;
+  primaryAction?: ReactNode;
+  identityAction?: ReactNode;
+  imageUrl?: string | null;
+  agentId?: string;
+  agentKey?: string;
+  imagePicker?: (name: string) => ReactNode;
+  environment?: ReactNode;
+  metadata?: ReactNode;
+  back: string;
 }) {
   const [initial] = useState(providedInitial),
     [originalVersion] = useState(version);
@@ -53,14 +91,17 @@ export function AgentForm({
     ),
     [advanced, setAdvanced] = useState(advancedConfig(initial)),
     [expanded, setExpanded] = useState(false),
+    [modelExpanded, setModelExpanded] = useState(false),
     [validation, setValidation] = useState<Error>();
+  const [search, setSearch] = useState(initial.search ?? null);
   const [skills, setSkills] = useState(initial.skills ?? []),
-    [mcp, setMcp] = useState(initial.mcp_tools ?? []),
-    [connectors, setConnectors] = useState(initial.connector_tools ?? []);
+    [connections, setConnections] = useState(initial.connection_tools ?? []);
   const choices = useAgentChoices();
   useEffect(() => {
-    if (error instanceof ApiError && [400, 422].includes(error.status))
+    if (error instanceof ApiError && [400, 422].includes(error.status)) {
       setExpanded(true);
+      setModelExpanded(true);
+    }
   }, [error]);
   function save(event: FormEvent) {
     if (event.target !== event.currentTarget) return;
@@ -70,14 +111,14 @@ export function AgentForm({
         initial,
         {
           instructions,
+          search,
           model: {
             ...initial.model,
             model_key: model,
             settings: jsonObject(settings),
           },
           skills,
-          mcp_tools: mcp,
-          connector_tools: connectors,
+          connection_tools: connections,
         },
         advanced,
       );
@@ -90,157 +131,287 @@ export function AgentForm({
         error instanceof Error ? error : new Error(t("Invalid configuration")),
       );
       setExpanded(true);
+      setModelExpanded(true);
     }
   }
   const dirty =
     creating ||
+    JSON.stringify(search) !== JSON.stringify(initial.search ?? null) ||
     instructions !== (initial.instructions ?? "") ||
     model !== initial.model.model_key ||
     settings !== JSON.stringify(initial.model.settings ?? {}, null, 2) ||
     advanced !== advancedConfig(initial) ||
     JSON.stringify(skills) !== JSON.stringify(initial.skills ?? []) ||
-    JSON.stringify(mcp) !== JSON.stringify(initial.mcp_tools ?? []) ||
-    JSON.stringify(connectors) !==
-      JSON.stringify(initial.connector_tools ?? []);
+    JSON.stringify(connections) !==
+      JSON.stringify(initial.connection_tools ?? []);
   return (
-    <form onSubmit={save} className={styles.editor}>
-      <div className={styles.saveBar}>
-        <div className={styles.savePanel}>
-          <span className={styles.saveStatus} role="status">
-            {dirty ? <Circle size={12} /> : <Check size={14} />}{" "}
-            {t(dirty ? "Unsaved changes" : "All changes saved")}
-          </span>
-          {version !== undefined && (
+    <div className={styles.editorPage}>
+      <Link className={styles.back} to={back}>
+        <ArrowLeftIcon size={14} />
+        {t("Agents")}
+      </Link>
+      <form onSubmit={save} className={styles.editor}>
+        <header className={styles.identity}>
+          <div className={styles.identityHeading}>
+            <AgentAvatar
+              name={name}
+              id={agentId}
+              url={imageUrl}
+              className={`${styles.agentIcon} text-base`}
+            />
+            <h1>{creating ? t("Create agent") : initialName}</h1>
+            {agentId && (
+              <ResourceReference id={agentId} resourceKey={agentKey} />
+            )}
+            {identityAction && (
+              <fieldset
+                disabled={pending || dirty}
+                className="fieldset-reset"
+                title={
+                  dirty
+                    ? t("Save or discard changes before managing this agent.")
+                    : undefined
+                }
+              >
+                {identityAction}
+              </fieldset>
+            )}
+          </div>
+          {(creating || initialDescription) && (
             <p>
-              {t("Current version")} <strong>v{version}</strong>
+              {creating
+                ? t("Start with clear instructions and the right model.")
+                : initialDescription}
             </p>
           )}
-          {!readonly && (
-            <Button
-              type="submit"
-              variant="primary"
-              loading={pending}
-              disabled={
-                pending || !dirty || !model || (creating && !name.trim())
-              }
-            >
-              {t(creating ? "Create agent" : "Save changes")}
-            </Button>
-          )}
-          {reload && dirty && (
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              disabled={pending}
-              onClick={reload}
-            >
-              {t("Discard changes")}
-            </Button>
-          )}
-        </div>
-        <div className={styles.historyActions}>{context}</div>
-      </div>
-      <fieldset disabled={pending || readonly} className="fieldset-reset">
-        <div className={styles.main}>
-          {creating && (
-            <section className={styles.section}>
-              <Input
-                label={t("Agent name")}
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-                required
-                maxLength={128}
-              />
-              <Input
-                label={t("Description")}
-                value={description}
-                onChange={(event) => setDescription(event.target.value)}
-                maxLength={4096}
-              />
-            </section>
-          )}
-          <section className={styles.section}>
-            <h2>{t("Model")}</h2>
-            <Picker
-              label={t("Model")}
-              placeholder={t("Choose a model…")}
-              emptyMessage={t(
-                "No models available. Configure a provider and model first.",
+          <div className={styles.headerActions}>
+            <fieldset disabled={pending || dirty} className="fieldset-reset">
+              {primaryAction}
+            </fieldset>
+            {dirty && primaryAction && (
+              <small>{t("Save changes before trying this agent.")}</small>
+            )}
+          </div>
+          <div className={styles.headerDetails}>
+            <div className={styles.headerMeta}>
+              {version !== undefined && (
+                <span>
+                  {t("Current version")} <strong>v{version}</strong>
+                </span>
               )}
-              value={model}
-              onValueChange={setModel}
-              groups={[
-                {
-                  label: t("Available models"),
-                  options:
-                    choices.data?.models.map((item) => ({
-                      value: item.key,
-                      label: item.name,
-                      description: `${item.key} · ${item.upstream_model}`,
-                    })) ?? [],
-                },
-              ]}
-            />
-          </section>
-          <section className={styles.section}>
-            <h2>{t("Instructions")}</h2>
-            <p>
-              {t(
-                "Define the agent's role, approach, and the outcomes you expect.",
-              )}
-            </p>
-            <TextArea
-              label={t("System instructions")}
-              hideLabel
-              value={instructions}
-              onChange={setInstructions}
-              rows={14}
-            />
-          </section>
-          <AgentCapabilities
-            choices={choices}
-            skills={skills}
-            setSkills={setSkills}
-            mcp={mcp}
-            setMcp={setMcp}
-            connectors={connectors}
-            setConnectors={setConnectors}
-          />
-          <details
-            className={styles.advanced}
-            open={expanded}
-            onToggle={(event) => setExpanded(event.currentTarget.open)}
-          >
-            <summary>{t("Advanced configuration")}</summary>
-            <div>
-              <TextArea
-                label={t("Model settings")}
-                hint={t(
-                  "Settings override the selected model's defaults. Use a JSON object.",
-                )}
-                code
-                value={settings}
-                onChange={setSettings}
-                rows={4}
-              />
-              <TextArea
-                label={t("Configuration JSON")}
-                hint={t(
-                  "Input adapter, protocol, structured output, retries, subagents, and client tools.",
-                )}
-                code
-                value={advanced}
-                onChange={setAdvanced}
-                rows={18}
-              />
-              <ErrorNotice error={validation} />
+              {metadata}
             </div>
-          </details>
+            <div className={styles.historyActions}>
+              <fieldset
+                disabled={pending || dirty}
+                className="fieldset-reset"
+                title={
+                  dirty
+                    ? t("Save or discard changes before managing this agent.")
+                    : undefined
+                }
+              >
+                {context}
+              </fieldset>
+            </div>
+          </div>
+        </header>
+        <div className={styles.main}>
+          <fieldset disabled={pending} className="fieldset-reset">
+            <EditorSection
+              title={t(creating ? "General" : "Model")}
+              description={t(
+                creating
+                  ? "The essentials: identity and the model behind this agent."
+                  : "Choose the model that powers this agent.",
+              )}
+            >
+              {creating && (
+                <section className={styles.section}>
+                  {imagePicker?.(name)}
+                  <FormField className="min-w-0 w-full" label={t("Agent name")}>
+                    <Input
+                      required={true}
+                      value={name}
+                      onChange={(event) => setName(event.target.value)}
+                      maxLength={128}
+                    />
+                  </FormField>
+                  <FormField
+                    className="min-w-0 w-full"
+                    label={t("Description")}
+                  >
+                    <Input
+                      value={description}
+                      onChange={(event) => setDescription(event.target.value)}
+                      maxLength={4096}
+                    />
+                  </FormField>
+                </section>
+              )}
+              <div className={styles.modelProperty}>
+                {creating && (
+                  <span className={styles.fieldLabel}>{t("Model")}</span>
+                )}
+                {readonly ? (
+                  <ReadOnlyField label={t("Model")}>
+                    {choices.data?.models.find((item) => item.key === model)
+                      ?.name ?? model}
+                  </ReadOnlyField>
+                ) : (
+                  <SearchPicker
+                    label={t("Model")}
+                    placeholder={t("Choose a model…")}
+                    emptyMessage={t(
+                      "No models available. Configure a provider and model first.",
+                    )}
+                    value={model}
+                    groups={[
+                      {
+                        label: t("Available models"),
+                        options:
+                          choices.data?.models.map((item) => ({
+                            value: item.key,
+                            label: item.name,
+                            icon: <StackIcon size={14} />,
+                            description: [
+                              ...new Set([item.key, item.upstream_model]),
+                            ]
+                              .filter((value) => value !== item.name)
+                              .join(" · "),
+                          })) ?? [],
+                      },
+                    ]}
+                    onValueChange={setModel}
+                  />
+                )}
+              </div>
+              <DisclosureSection
+                title={t("Model settings")}
+                summary={t(settings.trim() === "{}" ? "Default" : "Custom")}
+                open={modelExpanded}
+                onOpenChange={setModelExpanded}
+              >
+                <TextAreaField
+                  readOnly={readonly}
+                  label={t("Model settings")}
+                  hideLabel
+                  hint={t(
+                    "Settings override the selected model's defaults. Use a JSON object.",
+                  )}
+                  code
+                  value={settings}
+                  onChange={setSettings}
+                  rows={4}
+                />
+              </DisclosureSection>
+            </EditorSection>
+          </fieldset>
+          {environment}
+          <fieldset
+            disabled={pending}
+            className={`fieldset-reset ${styles.configurationSections}`}
+          >
+            <EditorSection
+              title={t("Instructions")}
+              description={t(
+                "The role, boundaries, and approach for this agent.",
+              )}
+            >
+              <div className={styles.instructions}>
+                <TextAreaField
+                  readOnly={readonly}
+                  label={t("System instructions")}
+                  hideLabel
+                  value={instructions}
+                  onChange={setInstructions}
+                  rows={8}
+                />
+              </div>
+            </EditorSection>
+            <AgentCapabilities
+              readOnly={readonly}
+              choices={choices}
+              skills={skills}
+              setSkills={setSkills}
+              connections={connections}
+              setConnections={setConnections}
+            />
+            <EditorSection
+              title={t("Web search")}
+              description={t(
+                "Search the web and read pages with a connected account.",
+              )}
+            >
+              <AgentSearchSelection
+                readOnly={readonly}
+                value={search}
+                onChange={setSearch}
+              />
+            </EditorSection>
+            <EditorSection
+              title={t("Advanced configuration")}
+              description={t(
+                "Fine-tune how this agent runs and returns results.",
+              )}
+            >
+              <DisclosureSection
+                open={expanded}
+                onOpenChange={setExpanded}
+                title={t(readonly ? "Configuration" : "Edit configuration")}
+              >
+                <div>
+                  <TextAreaField
+                    readOnly={readonly}
+                    label={t("Configuration JSON")}
+                    hint={t(
+                      "Input adapter, protocol, structured output, retries, subagents, and client tools.",
+                    )}
+                    code
+                    value={advanced}
+                    onChange={setAdvanced}
+                    rows={18}
+                  />
+                  <ErrorNotice error={validation} />
+                </div>
+              </DisclosureSection>
+            </EditorSection>
+          </fieldset>
         </div>
-      </fieldset>
 
-      <ErrorNotice error={error ?? choices.error} retry={reload} />
-    </form>
+        <aside className={styles.saveBar} aria-label={t("Agent actions")}>
+          <div className={styles.savePanel}>
+            <span className={styles.saveStatus} role="status">
+              {dirty ? <CircleIcon size={12} /> : <CheckIcon size={14} />}{" "}
+              {t(dirty ? "Unsaved changes" : "All changes saved")}
+            </span>
+            {!readonly && dirty && (
+              <Button
+                type="submit"
+                variant="default"
+                disabled={
+                  pending || !dirty || !model || (creating && !name.trim())
+                }
+                loading={pending}
+              >
+                {t(creating ? "Create agent" : "Save changes")}
+              </Button>
+            )}
+            {reload && dirty && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                disabled={pending}
+                onClick={reload}
+              >
+                {t("Discard changes")}
+              </Button>
+            )}
+          </div>
+        </aside>
+        <ErrorToast error={error ?? choices.error} />
+      </form>
+    </div>
   );
 }

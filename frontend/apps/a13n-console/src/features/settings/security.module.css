@@ -1,0 +1,51 @@
+.sections {
+  display: grid;
+  gap: 40px;
+}
+.note {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px 0;
+  border-top: 1px solid var(--a13n-border-soft);
+  color: var(--a13n-secondary);
+}
+.note svg {
+  flex: none;
+  margin-top: 2px;
+}
+.note p {
+  font-size: 12px;
+  line-height: 18px;
+  margin: 0;
+}
+.fields > * + * {
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 0;
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.notice {
+  padding: 12px 0;
+}
+.notice > [role="alert"] {
+  margin: 0;
+  border: 0;
+  padding: 12px;
+  background: color-mix(in srgb, var(--a13n-danger) 5%, var(--a13n-elevated));
+}
+.success {
+  padding: 12px 0;
+  margin: 0;
+  font-size: 12px;
+  color: var(--a13n-success);
+}
+.passwordForm {
+  display: grid;
+  gap: 16px;
+}

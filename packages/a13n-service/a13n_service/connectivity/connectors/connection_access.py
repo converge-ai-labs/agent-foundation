@@ -1,4 +1,4 @@
-"""ConnectorConnection authorization and state invariants."""
+"""Connection authorization and state invariants."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from typing import Literal
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.application_errors import ErrorCategory
+from a13n_service.connectivity.connections.domain import Connection
 from a13n_service.connectivity.connectors.contracts import (
     ConnectionBinding,
     ConnectionInspection,
@@ -24,10 +25,9 @@ from a13n_service.iam.authorization import (
     WorkspaceAction,
 )
 
-from .domain import ConnectorConnection
 from .errors import ConnectorError
 from .management import authorize, map_management_value_error, require_connection
-from .models import ConnectorConnectionRecord, ConnectorSetupAttemptRecord
+from .models import ConnectorAuthorizationRecord, ConnectorConnectionRecord
 
 
 async def authorize_connection(
@@ -37,25 +37,22 @@ async def authorize_connection(
     *,
     mode: Literal["read", "manage"],
 ) -> None:
-    action = (
-        WorkspaceAction.connector_connection_read if mode == "read" else WorkspaceAction.connector_connection_manage
-    )
+    action = WorkspaceAction.connection_read if mode == "read" else WorkspaceAction.connection_manage
     await authorize(session, actor, connection.workspace_id, action)
 
 
-async def connection_resource(session: AsyncSession, connection_id: str) -> ConnectorConnection:
+async def connection_resource(session: AsyncSession, connection_id: str) -> Connection:
     record = await require_connection(session, connection_id)
     return record.to_resource()
 
 
 def verify_inspection(
-    attempt: ConnectorSetupAttemptRecord,
+    attempt: ConnectorAuthorizationRecord,
     connection: ConnectorConnectionRecord,
     inspection: ConnectionInspection,
 ) -> None:
     if (
         (attempt.external_ref is not None and inspection.external_ref != attempt.external_ref)
-        or (connection.external_ref is not None and inspection.external_ref != connection.external_ref)
         or inspection.connector_key != attempt.connector_key
         or inspection.connector_key != connection.connector_key
         or inspection.external_user_correlation != attempt.external_user_correlation
@@ -120,6 +117,23 @@ async def replay_connection_command(
 
 
 def external_error(error: ConnectorProviderError) -> ConnectorError:
+    if error.code == "shared_setup_outcome_unknown":
+        return ConnectorError(
+            "shared_setup_outcome_unknown",
+            "Authentication configuration creation is unresolved. Check the provider dashboard, then retry with an existing configuration.",
+            category=ErrorCategory.conflict,
+        )
+    if error.code in {
+        "auth_configuration_unavailable",
+        "auth_configuration_ambiguous",
+        "invalid_setup_options",
+        "connector_setup_unavailable",
+    }:
+        return ConnectorError(
+            "setup_configuration_changed",
+            "Refresh configurations and select an available authentication configuration before restarting authorization.",
+            category=ErrorCategory.conflict,
+        )
     if error.retryable or error.outcome_unknown:
         return ConnectorError(
             "connector_unavailable", "ConnectorProvider is unavailable.", category=ErrorCategory.unavailable

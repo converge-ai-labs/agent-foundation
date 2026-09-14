@@ -22,7 +22,7 @@ from a13n_harness.mcp import (
 )
 from a13n_harness.tools.metadata import HARNESS_TOOL_METADATA_KEY
 from a13n_harness.toolsets import FINAL_TOOL_OUTPUT_HARD_CHARS, tool_output_bytes, tool_output_text
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 from pydantic_ai import Agent as PydanticAgent
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import MCP, AbstractCapability
@@ -107,7 +107,7 @@ def test_native_mcp_capability_reconstructs_from_agent_spec_and_builds() -> None
 @pytest.mark.anyio
 @pytest.mark.parametrize("kind", ["text", "json"])
 async def test_local_mcp_oversized_results_use_unmanaged_truncation(kind: str) -> None:
-    server = FastMCP("oversized-results")
+    server = MCPServer("oversized-results")
 
     @server.tool()
     def oversized(kind: str) -> Any:

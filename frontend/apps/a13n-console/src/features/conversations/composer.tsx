@@ -1,13 +1,16 @@
-import { useState } from "react";
+import { Button, FormField, Input, ModalFrame, Textarea } from "a13n-ui";
+import { FileUpload } from "../../shared/file-upload";
+
 import { useMutation } from "@tanstack/react-query";
-import { Button, Input, Dialog } from "a13n-ui";
-import { Paperclip, ArrowUp, X } from "lucide-react";
+import { useLayoutEffect, useRef, useState } from "react";
+
+import { ArrowUpIcon, PaperclipIcon, XIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { TextArea } from "../../shared/form";
+import { TextAreaField } from "../../shared/form";
 import styles from "./conversations.module.css";
 
 export function Composer({
@@ -32,6 +35,13 @@ export function Composer({
       .map((block) => block.text)
       .join("\n\n") ?? "",
   );
+  const messageInput = useRef<HTMLTextAreaElement>(null);
+  useLayoutEffect(() => {
+    const input = messageInput.current;
+    if (!input) return;
+    input.style.height = "auto";
+    input.style.height = `${Math.min(input.scrollHeight, 240)}px`;
+  }, [text]);
   const [attachments, setAttachments] = useState<Schema["BinaryContent"][]>(
     initial?.content?.filter((block) => block.type === "binary") ?? [],
   );
@@ -40,6 +50,7 @@ export function Composer({
       ? ""
       : JSON.stringify(initial.structured_content, null, 2),
   );
+  const [attachmentsOpen, setAttachmentsOpen] = useState(false);
   const [url, setUrl] = useState(""),
     [key, setKey] = useState(crypto.randomUUID()),
     [uploadFile, setUploadFile] = useState<{ file: File; key: string }>();
@@ -47,9 +58,9 @@ export function Composer({
   const upload = useMutation({
     mutationFn: async (selection: { file: File; key: string }) =>
       client.http
-        .POST("/api/v1/workspaces/{workspace_id}/assets", {
+        .POST("/api/v1/workspaces/{workspace}/assets", {
           params: {
-            path: { workspace_id: workspace.id },
+            path: { workspace: workspace.id },
             query: {
               filename: selection.file.name,
               media_type: selection.file.type || "application/octet-stream",
@@ -120,7 +131,10 @@ export function Composer({
       }}
     >
       <fieldset disabled={disabled || busy} className={styles.composerFields}>
-        <textarea
+        <Textarea
+          ref={messageInput}
+          rows={1}
+          unstyled
           className={styles.messageInput}
           aria-label={t("Message")}
           placeholder={t("Message your agent…")}
@@ -128,8 +142,6 @@ export function Composer({
           onChange={(event) => {
             setText(event.target.value);
             changed();
-            event.target.style.height = "auto";
-            event.target.style.height = `${Math.min(event.target.scrollHeight, 240)}px`;
           }}
           onKeyDown={(event) => {
             if (
@@ -141,22 +153,22 @@ export function Composer({
               if (!busy && !disabled) event.currentTarget.form?.requestSubmit();
             }
           }}
-          rows={3}
         />
         {!!attachments.length && (
           <div className={styles.attachments}>
             {attachments.map((attachment, index) => (
               <span className={styles.attachment} key={index}>
-                <Paperclip size={13} />
+                <PaperclipIcon size={13} />
                 {attachment.filename ||
                   (attachment.source.type === "url"
                     ? attachment.source.url
                     : attachment.source.type === "asset"
                       ? attachment.source.asset_id
                       : attachment.source.path)}
-                <button
+                <Button
                   type="button"
                   aria-label={t("Remove attachment")}
+                  variant="ghost"
                   onClick={() => {
                     setAttachments((previous) =>
                       previous.filter((_, i) => i !== index),
@@ -164,65 +176,78 @@ export function Composer({
                     changed();
                   }}
                 >
-                  <X size={13} />
-                </button>
+                  <XIcon size={13} />
+                </Button>
               </span>
             ))}
           </div>
         )}
         <div className={styles.composerFooter}>
           <div className={styles.composerTools}>
-            <Dialog
-              description={t(
-                "Add files, a URL, or structured input to your message.",
-              )}
-              title={t("Attach content")}
-              closeLabel={t("Close")}
+            <ModalFrame
+              open={attachmentsOpen}
+              onOpenChange={setAttachmentsOpen}
+              footer={
+                <Button type="button" onClick={() => setAttachmentsOpen(false)}>
+                  {t("Done")}
+                </Button>
+              }
               trigger={
                 <Button
                   type="button"
                   variant="ghost"
-                  size="sm"
                   aria-label={t("Attach content")}
-                  icon={<Paperclip size={16} />}
-                />
+                  size="icon-sm"
+                >
+                  {<PaperclipIcon size={16} />}
+                </Button>
               }
+              size={"md"}
+              title={t("Attach content")}
+              description={t(
+                "Add files, a URL, or structured input to your message.",
+              )}
+              closeLabel={t("Close")}
             >
               <fieldset
                 disabled={disabled || busy}
                 className={`${styles.composerOptions} fieldset-reset`}
               >
                 {can("asset.create") && (
-                  <label>
-                    {t("Upload a file")}
-                    <input
-                      type="file"
-                      onChange={(event) => {
-                        const file = event.target.files?.[0];
-                        if (file) {
-                          const selection = { file, key: crypto.randomUUID() };
-                          setUploadFile(selection);
-                          upload.mutate(selection);
-                        }
-                        event.target.value = "";
-                      }}
-                    />
-                  </label>
+                  <FileUpload
+                    label={t("Upload a file")}
+                    file={uploadFile?.file}
+                    disabled={disabled || busy}
+                    onSelect={(file) => {
+                      if (!file) {
+                        setUploadFile(undefined);
+                        return;
+                      }
+                      const selection = { file, key: crypto.randomUUID() };
+                      setUploadFile(selection);
+                      upload.mutate(selection);
+                    }}
+                  />
                 )}
                 <div className={styles.inline}>
-                  <Input
-                    label={t("File URL")}
-                    value={url}
-                    onChange={(event) => setUrl(event.target.value)}
-                    placeholder="https://"
-                  />
+                  <FormField className="min-w-0 w-full" label={t("File URL")}>
+                    <Input
+                      value={url}
+                      onChange={(event) => setUrl(event.target.value)}
+                      placeholder="https://"
+                    />
+                  </FormField>
                   <Button
                     type="button"
+                    variant="outline"
                     disabled={!/^https?:\/\//i.test(url)}
                     onClick={() => {
                       setAttachments((previous) => [
                         ...previous,
-                        { type: "binary", source: { type: "url", url } },
+                        {
+                          type: "binary",
+                          source: { type: "url", url },
+                        },
                       ]);
                       setUrl("");
                       changed();
@@ -231,31 +256,30 @@ export function Composer({
                     {t("Attach URL")}
                   </Button>
                 </div>
-                <TextArea
+                <TextAreaField
                   label={t("Structured input (JSON)")}
                   value={structured}
                   onChange={(value) => {
                     setStructured(value);
                     changed();
                   }}
-                  rows={3}
                   code
                 />
               </fieldset>
-            </Dialog>
+            </ModalFrame>
             {children}
           </div>
           <div className={styles.composerSend}>
             <span className={styles.shortcut}>{t("⌘ / Ctrl ↵ to send")}</span>
             <Button
               type="submit"
-              variant="primary"
-              icon={<ArrowUp size={15} />}
-              loading={mutation.isPending}
+              variant="default"
               disabled={
                 !text.trim() && !attachments.length && !structured.trim()
               }
+              loading={mutation.isPending}
             >
+              <ArrowUpIcon size={15} />
               {label ?? t("Send")}
             </Button>
           </div>

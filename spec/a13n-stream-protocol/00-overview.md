@@ -71,8 +71,13 @@ class HarnessAguiObserver:
         item: HarnessStreamEvent[Any],
     ) -> tuple[Event, ...]: ...
 
-    def snapshot(self) -> tuple[Event, ...]: ...
+    @property
+    def event_count(self) -> int: ...
+
+    def snapshot(self, *, start: int = 0, stop: int | None = None) -> tuple[Event, ...]: ...
 ```
+
+`event_count` counts accumulated post-processor frames. `snapshot` returns detached frames in the half-open range `[start, stop)`; omission of `stop` uses the current count, and the no-argument call returns all frames. Invalid ranges fail explicitly. A Host can capture the count once and read that fixed prefix in bounded batches while later events accumulate. These positions are local to one observer, not Harness source sequence numbers or Host transport cursors. The Host still owns publication visibility and replay-to-live cutover.
 
 The first successfully observed item binds the observer to the source `thread_id` and `run_id`. Later items must carry the same correlation. A root Run and each exposed child Run therefore use separate observers even when their source items were delivered through one parent Harness stream.
 

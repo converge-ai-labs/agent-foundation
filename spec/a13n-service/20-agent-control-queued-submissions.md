@@ -167,7 +167,7 @@ Only the first class may produce `failed`. Absence observed through an unavailab
 
 For an already terminal Thread, the final short transaction:
 
-1. locks the Thread, current or selected head Run and every referenced async-result spawning Run in stable ID order, affected Environment records in stable Environment-ID order, inbox counter and pending entries in `delivery_sequence`, and selected queued submission;
+1. locks the Thread, current or selected head Run and every referenced async-result spawning Run in stable ID order, affected Environment records in stable Environment-ID order, pending inbox entries in `delivery_sequence`, and selected queued submission;
 2. resolves idempotent replay, then verifies `expected_thread_version`, `expected_queue_version`, command-actor authorization, the stored authority Principal's current status and complete Run authority, and that the entry remains queued in the same Thread;
 3. requires no current `accepted` or `running` Run and rejects a current or selected waiting state;
 4. repeats all ordinary Continue input, Agent, Revision, current-Revision, effective-config, Runtime, inline-Hook, parent-state, empty-state, and digest preconditions;
@@ -206,8 +206,8 @@ sequenceDiagram
     Worker->>DB: BEGIN short combined transaction
     activate DB
     Worker->>DB: TX1 lock Thread and verify version, current source, and selected head
-    Worker->>DB: TX2 lock source Run and current RunAttempt and verify running, fence, and lease
-    Worker->>DB: TX3 lock inbox counter, target inbox rows, and first queued row
+    Worker->>DB: TX2 lock source and relevant origin Runs in stable ID order, then current RunAttempt; verify authority
+    Worker->>DB: TX3 lock Workspace/Environments when required, target inbox rows, and first queued row
     Worker->>DB: TX4 verify no pending delivery, queue order/version, stored Principal, selections, objects, and policy
     alt consumption remains eligible
         Worker->>DB: TX5 seal source Run completed and select exact sealed state/output
@@ -240,7 +240,7 @@ sequenceDiagram
     end
 ```
 
-Before the final transaction, Service has only detached relational facts and non-authoritative prepared objects. The transaction locks the Thread first, then the source Run and current RunAttempt, then the inbox counter and target entries in `delivery_sequence`, then the first queued row. It repeats every condition needed by both source completion and successor acceptance only after those canonical locks are held, including proof that no eligible pending ordinary steer or async result remains bound to the source. Its successful writes are:
+Before the final transaction, Service has only detached relational facts and non-authoritative prepared objects. The transaction follows the [canonical control lock order](19-agent-control-active-execution.md#completion-and-control-races): Thread; the source Run and all relevant async-result spawning Runs in stable ID order; current RunAttempt; consuming Workspace and affected Environments when required; target inbox entries in `delivery_sequence`; then the first queued row. The locked Thread also owns all inbox accounting in that transaction. It repeats every condition needed by both source completion and successor acceptance only after those canonical locks are held, including proof that no eligible pending ordinary steer or async result remains bound to the source. Its successful writes are:
 
 1. select the exact completed candidate as the source Run's `sealed_state`, copy its output, set `status="completed"`, clear its current-attempt selection, and set completion timestamps;
 2. terminalize the exact current RunAttempt as `succeeded`, disable its lease, and charge known usage;

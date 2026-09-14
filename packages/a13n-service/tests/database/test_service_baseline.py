@@ -15,15 +15,17 @@ from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, inspect
 
 _NAME_KEY_TABLES = {
-    "agents",
     "application_accounts",
     "connector_connections",
     "connector_providers",
     "mcp_connections",
     "model_providers",
     "service_accounts",
-    "workspaces",
 }
+
+_BOUNDED_COLUMNS = {table: ("normalized_name", 384) for table in _NAME_KEY_TABLES}
+_BOUNDED_COLUMNS.update({table: ("key", 64) for table in ("organizations", "workspaces", "agents")})
+_BOUNDED_COLUMNS["assets"] = ("filename", 256)
 
 
 @pytest.mark.parametrize("backend", ["sqlite", "postgresql"])
@@ -51,9 +53,9 @@ def test_domain_baselines_upgrade_and_downgrade_at_every_boundary(
                 columns = {column["name"] for column in inspector.get_columns(table)}
                 assert not any("catalog" in column or column.startswith("mcp_tool_snapshot_") for column in columns)
             for table in tables:
-                if table in _NAME_KEY_TABLES or table == "assets":
+                if table in _BOUNDED_COLUMNS:
                     columns = {column["name"]: column for column in inspector.get_columns(table)}
-                    name, width = ("filename", 256) if table == "assets" else ("normalized_name", 384)
+                    name, width = _BOUNDED_COLUMNS[table]
                     assert columns[name]["type"].length == width, (revision.revision, table, name)
                 for foreign_key in inspector.get_foreign_keys(table):
                     assert foreign_key["referred_table"] in tables, (revision.revision, table, foreign_key)
@@ -98,8 +100,8 @@ def test_service_baseline_matches_postgresql_metadata(pg_url: str) -> None:
                 "model_providers",
                 "connector_providers",
                 "application_accounts",
-                "mcp_connections",
-                "mcp_oauth_sessions",
+                "connections",
+                "connection_authorizations",
             ):
                 columns = {item["name"] for item in inspector.get_columns(name)}
                 assert {"ciphertext", "nonce", "encryption_key_id", "credential_generation"} <= columns

@@ -1,0 +1,18 @@
+services:
+  harness-ui:
+    image: ${A13N_HARNESS_UI_IMAGE:-ghcr.io/converge-ai-labs/a13n-harness-ui:dev}
+    ports:
+      - "127.0.0.1:${A13N_HARNESS_UI_PORT:-8765}:8765"
+    # Forward only when set; an absent key generates a fresh key at startup.
+    environment:
+      - A13N_HARNESS_UI_API_KEY
+    volumes:
+      - config:/home/app/.a13n-harness-ui
+      - data:/data
+      - work:/work
+    stop_grace_period: 30s
+
+volumes:
+  config:
+  data:
+  work:

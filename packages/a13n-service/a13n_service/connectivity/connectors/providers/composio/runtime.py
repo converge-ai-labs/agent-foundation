@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from datetime import datetime
 
 from anyio import Semaphore, create_task_group
@@ -14,6 +13,7 @@ from ...contracts import (
     AdapterConnectionStatus,
     AdapterStatusReason,
     BeforeDispatch,
+    BeforeSharedSetup,
     ConnectionBinding,
     ConnectionInspection,
     ConnectorProviderError,
@@ -22,6 +22,7 @@ from ...contracts import (
     ConnectorToolPage,
     DiscoveredConnector,
     ProviderAccess,
+    SetupCompletionMethod,
     SetupContext,
     SetupStarted,
 )
@@ -34,34 +35,29 @@ from ...validation import (
     required_string,
     same_origin_url,
 )
-from ..discovery import DirectoryBudget, directory_items, setup_schema, validate_discovered_setup
-from .configuration import ComposioConfiguration, ComposioSetup
-
-_TOOLKIT_VERSION = re.compile(r"^[0-9]{8}_[0-9]{2}$")
+from .catalog import TOOLKIT_VERSION, ComposioCatalog
+from .configuration import COMPOSIO_ENDPOINT
+from .output_schema import corrected_output_schema
 
 
 class ComposioProvider:
     compatibility_profile = "composio_v3_1"
     setup_replay_safe = False
 
-    def __init__(
-        self, http: ConnectorHttpClient, configuration: ComposioConfiguration, credentials: ApiKeyCredentials
-    ) -> None:
+    def __init__(self, http: ConnectorHttpClient, credentials: ApiKeyCredentials) -> None:
         self._http = http
-        self._configuration = configuration
         self._credentials = credentials
+        self._catalog = ComposioCatalog(http, credentials.api_key)
 
     async def aclose(self) -> None:
         # The process owns the shared HTTP client.
         pass
 
     def connect(self, binding: ConnectionBinding) -> ComposioConnection:
-        if binding.connector_key not in self._configuration.enabled_toolkits:
-            raise ConnectorProviderError("connector_not_enabled")
-        return ComposioConnection(self._http, self._configuration, self._credentials, binding)
+        return ComposioConnection(self._http, self._credentials, binding)
 
     def tool_catalog(self, connector_key: str) -> ComposioToolCatalog:
-        return ComposioToolCatalog(self._http, self._configuration, self._credentials, connector_key)
+        return ComposioToolCatalog(self._http, self._credentials, connector_key)
 
     async def inspect_setup(self, *, setup_ref: str, context: SetupContext) -> ConnectionInspection:
         return await self.connect(
@@ -75,60 +71,17 @@ class ComposioProvider:
     async def test(self) -> tuple[ProviderAccess, ...]:
         await self._http.request(
             "GET",
-            endpoint=self._configuration.endpoint,
+            endpoint=COMPOSIO_ENDPOINT,
             path="/api/v3.1/connected_accounts?limit=1",
             api_key=self._credentials.api_key,
         )
         return ("account_read",)
 
     async def discover_connectors(self) -> tuple[DiscoveredConnector, ...]:
-        budget = DirectoryBudget()
-        toolkits = await directory_items(
-            self._http,
-            endpoint=self._configuration.endpoint,
-            api_key=self._credentials.api_key,
-            path="/api/v3.1/toolkits",
-            budget=budget,
-        )
-        auth_configs = await directory_items(
-            self._http,
-            endpoint=self._configuration.endpoint,
-            api_key=self._credentials.api_key,
-            path="/api/v3.1/auth_configs",
-            budget=budget,
-            page_size=50,
-        )
-        configured: dict[str, list[str]] = {}
-        for item in auth_configs:
-            # v3.1 hosted OAuth is supported. Other schemes must never solicit credentials in Service.
-            if item.get("status") != "ENABLED" or item.get("auth_scheme") != "OAUTH2":
-                continue
-            key = required_string(required_object(item.get("toolkit")), "slug", max_length=128)
-            configured.setdefault(key, []).append(required_string(item, "id", max_length=256))
-        result: list[DiscoveredConnector] = []
-        seen: set[str] = set()
-        for item in toolkits:
-            key = required_string(item, "slug", max_length=128)
-            if key in seen:
-                raise ConnectorProviderError("invalid_provider_response")
-            seen.add(key)
-            if key not in self._configuration.enabled_toolkits:
-                continue
-            meta = required_object(item.get("meta"))
-            version = required_string(meta, "version", max_length=128)
-            if _TOOLKIT_VERSION.fullmatch(version) is None:
-                raise ConnectorProviderError("incompatible_toolkit_version")
-            ids = configured.get(key, [])
-            result.append(
-                DiscoveredConnector(
-                    key=key,
-                    name=required_string(item, "name", max_length=128),
-                    description=optional_string(meta.get("description"), max_length=16_384),
-                    setup_schema=setup_schema(ids, toolkit_version=version) if ids else {"not": {}},
-                    authentication_methods=("OAUTH2",) if ids else (),
-                )
-            )
-        return tuple(result)
+        return await self._catalog.directory()
+
+    async def discover_connector(self, connector_key: str) -> DiscoveredConnector:
+        return await self._catalog.connector(connector_key)
 
     async def start_setup(
         self,
@@ -136,20 +89,26 @@ class ComposioProvider:
         setup: JsonObject,
         context: SetupContext,
         resume_ref: str | None = None,
+        before_shared_setup: BeforeSharedSetup | None = None,
+        credentials: JsonObject | None = None,
     ) -> SetupStarted:
         if resume_ref is not None:
-            return SetupStarted(setup_ref=resume_ref, external_ref=resume_ref, supports_verified_callback=True)
-        configured = ComposioSetup.model_validate(setup)
-        await validate_discovered_setup(self.discover_connectors, context.connector_key, setup)
+            raise ConnectorProviderError("setup_replay_unavailable")
+        if credentials is not None:
+            return await self._create_with_credentials(
+                setup=setup, credentials=credentials, context=context, before_shared_setup=before_shared_setup
+            )
         if context.callback_url is None:
             raise ConnectorProviderError("callback_unavailable")
+        auth_config = await self._catalog.prepare_setup(context.connector_key, setup, before_shared_setup)
         value = await self._http.request(
             "POST",
-            endpoint=self._configuration.endpoint,
+            endpoint=COMPOSIO_ENDPOINT,
             path="/api/v3.1/connected_accounts/link",
             api_key=self._credentials.api_key,
             json_body={
-                "auth_config_id": configured.auth_config_id,
+                "auth_config_id": auth_config.id,
+                **({"connection_data": setup["connection_data"]} if setup.get("connection_data") else {}),
                 "callback_url": context.callback_url,
                 "user_id": context.external_user_correlation,
             },
@@ -162,10 +121,48 @@ class ComposioProvider:
                 external_ref=required_string(response, "connected_account_id"),
                 expires_at=_link_expiry(response),
                 redirect_url=_authorization_url(response.get("redirect_url")),
-                supports_verified_callback=True,
+                completion_method=SetupCompletionMethod.oauth_verifier
+                if auth_config.scheme == "OAUTH2"
+                else SetupCompletionMethod.browser_confirmation,
             )
         except ValueError as error:
             raise ConnectorProviderError("invalid_provider_response", outcome_unknown=True) from error
+
+    async def _create_with_credentials(
+        self,
+        *,
+        setup: JsonObject,
+        credentials: JsonObject,
+        context: SetupContext,
+        before_shared_setup: BeforeSharedSetup | None,
+    ) -> SetupStarted:
+        auth_config = await self._catalog.prepare_credentials(
+            context.connector_key, setup, credentials, before_shared_setup
+        )
+        data = setup.get("connection_data", {})
+        if not isinstance(data, dict):
+            raise ConnectorProviderError("invalid_setup_options")
+        value = await self._http.request(
+            "POST",
+            endpoint=COMPOSIO_ENDPOINT,
+            path="/api/v3.1/connected_accounts",
+            api_key=self._credentials.api_key,
+            json_body={
+                "auth_config": {"id": auth_config.id},
+                "connection": {
+                    "user_id": context.external_user_correlation,
+                    "state": {"authScheme": auth_config.scheme, "val": {**data, **credentials, "status": "ACTIVE"}},
+                },
+            },
+            write=True,
+        )
+        try:
+            identifier = required_string(required_object(value), "id")
+        except ValueError as error:
+            raise ConnectorProviderError("invalid_provider_response", outcome_unknown=True) from error
+        return SetupStarted(
+            setup_ref=identifier, external_ref=identifier, completion_method=SetupCompletionMethod.polling
+        )
 
     async def complete_setup(
         self,
@@ -176,7 +173,7 @@ class ComposioProvider:
     ) -> ConnectionInspection:
         value = await self._http.request(
             "POST",
-            endpoint=self._configuration.endpoint,
+            endpoint=COMPOSIO_ENDPOINT,
             path="/api/v3.1/connected_accounts/complete_auth",
             api_key=self._credentials.api_key,
             json_body={
@@ -217,14 +214,10 @@ class ComposioToolCatalog:
     def __init__(
         self,
         http: ConnectorHttpClient,
-        configuration: ComposioConfiguration,
         credentials: ApiKeyCredentials,
         connector_key: str,
     ) -> None:
-        if connector_key not in configuration.enabled_toolkits:
-            raise ConnectorProviderError("connector_not_enabled")
         self._http = http
-        self._configuration = configuration
         self._credentials = credentials
         self._connector_key = connector_key
         self._catalog_version: str | None = None
@@ -234,7 +227,7 @@ class ComposioToolCatalog:
             toolkit = required_object(
                 await self._http.request(
                     "GET",
-                    endpoint=self._configuration.endpoint,
+                    endpoint=COMPOSIO_ENDPOINT,
                     path=f"/api/v3.1/toolkits/{path_segment(self._connector_key)}",
                     api_key=self._credentials.api_key,
                 )
@@ -242,7 +235,7 @@ class ComposioToolCatalog:
             if required_string(toolkit, "slug", max_length=128) != self._connector_key:
                 raise ConnectorProviderError("provider_mismatch")
             version = required_string(required_object(toolkit.get("meta")), "version", max_length=128)
-            if _TOOLKIT_VERSION.fullmatch(version) is None:
+            if TOOLKIT_VERSION.fullmatch(version) is None:
                 raise ConnectorProviderError("incompatible_toolkit_version")
             self._catalog_version = version
         version = self._catalog_version
@@ -256,7 +249,7 @@ class ComposioToolCatalog:
         value = required_object(
             await self._http.request(
                 "GET",
-                endpoint=self._configuration.endpoint,
+                endpoint=COMPOSIO_ENDPOINT,
                 path="/api/v3.1/tools",
                 api_key=self._credentials.api_key,
                 params=params,
@@ -265,26 +258,35 @@ class ComposioToolCatalog:
         items = value.get("items")
         if not isinstance(items, list) or len(items) > 100:
             raise ConnectorProviderError("invalid_provider_response")
-        keys = [required_string(required_object(item), "slug", max_length=128) for item in items]
+        entries = [required_object(item) for item in items]
+        keys = [required_string(item, "slug", max_length=128) for item in entries]
         if len(keys) != len(set(keys)):
             raise ConnectorProviderError("invalid_provider_response")
         tools: dict[str, ConnectorTool] = {}
-        limit = Semaphore(8)
+        limit = Semaphore(32)
 
-        async def load(key: str) -> None:
-            async with limit:
-                tools[key] = await detail_for(key)
+        async def load(key: str, entry: JsonObject) -> None:
+            # Current directory pages already carry complete, versioned schemas.
+            # Sparse directory entries still need the individual detail endpoint.
+            if {"toolkit", "version", "input_parameters", "output_parameters"} <= entry.keys():
+                tools[key] = parse_detail(key, entry)
+            else:
+                async with limit:
+                    tools[key] = await detail_for(key)
 
         async def detail_for(key: str) -> ConnectorTool:
             detail = required_object(
                 await self._http.request(
                     "GET",
-                    endpoint=self._configuration.endpoint,
+                    endpoint=COMPOSIO_ENDPOINT,
                     path=f"/api/v3.1/tools/{path_segment(key)}",
                     api_key=self._credentials.api_key,
                     params={"version": version},
                 )
             )
+            return parse_detail(key, detail)
+
+        def parse_detail(key: str, detail: JsonObject) -> ConnectorTool:
             if (
                 required_string(detail, "slug", max_length=128) != key
                 or required_string(required_object(detail.get("toolkit")), "slug", max_length=128)
@@ -296,8 +298,8 @@ class ComposioToolCatalog:
 
         try:
             async with create_task_group() as group:
-                for key in keys:
-                    group.start_soon(load, key)
+                for key, entry in zip(keys, entries, strict=True):
+                    group.start_soon(load, key, entry)
         except* (ConnectorProviderError, ValueError) as failures:
             raise failures.exceptions[0] from None
         return ConnectorToolPage(
@@ -311,15 +313,13 @@ class ComposioConnection:
     def __init__(
         self,
         http: ConnectorHttpClient,
-        configuration: ComposioConfiguration,
         credentials: ApiKeyCredentials,
         binding: ConnectionBinding,
     ) -> None:
         self._http = http
-        self._configuration = configuration
         self._credentials = credentials
         self._binding = binding
-        self._catalog = ComposioToolCatalog(http, configuration, credentials, binding.connector_key)
+        self._catalog = ComposioToolCatalog(http, credentials, binding.connector_key)
 
     async def aclose(self) -> None:
         # Closing a local binding neither closes a borrowed client nor revokes the account.
@@ -330,7 +330,7 @@ class ComposioConnection:
             value = required_object(
                 await self._http.request(
                     "GET",
-                    endpoint=self._configuration.endpoint,
+                    endpoint=COMPOSIO_ENDPOINT,
                     path=f"/api/v3.1/connected_accounts/{path_segment(self._binding.external_ref)}",
                     api_key=self._credentials.api_key,
                 )
@@ -349,7 +349,7 @@ class ComposioConnection:
     ) -> None:
         await self._http.request(
             "POST",
-            endpoint=self._configuration.endpoint,
+            endpoint=COMPOSIO_ENDPOINT,
             path=f"/api/v3.1/connected_accounts/{path_segment(self._binding.external_ref)}/revoke",
             api_key=self._credentials.api_key,
             json_body={},
@@ -369,18 +369,19 @@ class ComposioConnection:
         request_id: str,
         before_dispatch: BeforeDispatch,
     ) -> ConnectorToolOutcome:
-        if _TOOLKIT_VERSION.fullmatch(provider_version) is None:
+        if TOOLKIT_VERSION.fullmatch(provider_version) is None:
             raise ConnectorProviderError("incompatible_toolkit_version")
         await before_dispatch()
         try:
             value = await self._http.request(
                 "POST",
-                endpoint=self._configuration.endpoint,
+                endpoint=COMPOSIO_ENDPOINT,
                 path=f"/api/v3.1/tools/execute/{path_segment(tool_key)}",
                 api_key=self._credentials.api_key,
                 json_body={
                     "arguments": arguments,
                     "connected_account_id": self._binding.external_ref,
+                    "user_id": self._binding.external_user_correlation,
                     "version": provider_version,
                 },
                 write=True,
@@ -390,10 +391,23 @@ class ComposioConnection:
             if error.outcome_unknown:
                 return ConnectorToolOutcome(kind="outcome_unknown", request_id=request_id)
             raise
-        response = required_object(value)
-        if response.get("successful") is not True:
-            raise ConnectorProviderError("tool_rejected")
-        return ConnectorToolOutcome(kind="succeeded", result=response.get("data"), request_id=request_id)
+        if not isinstance(value, dict) or type(value.get("successful")) is not bool:
+            return ConnectorToolOutcome(kind="outcome_unknown", request_id=request_id)
+        response = value
+        if response["successful"] is False:
+            data = response.get("data")
+            status = data.get("status_code") if isinstance(data, dict) else None
+            # Execution can return HTTP 200 with an authoritative upstream refusal.
+            # Never expose the accompanying free-form error or request details.
+            http_status = status if type(status) is int and status in {401, 403, 404, 429} else None
+            raise ConnectorProviderError(
+                "rate_limited" if http_status == 429 else "tool_rejected", http_status=http_status
+            )
+        # Upstream emits null for no error, but declares error as an optional string.
+        if response.get("error") is None:
+            response.pop("error", None)
+        # Composio output_parameters describes the entire execution response.
+        return ConnectorToolOutcome(kind="succeeded", result=response, request_id=request_id)
 
 
 def _inspection(
@@ -443,13 +457,17 @@ def _status(value: str) -> tuple[AdapterConnectionStatus, AdapterStatusReason | 
 
 
 def _tool(value: JsonObject) -> ConnectorTool:
+    key = required_string(value, "slug", max_length=128)
+    version = required_string(value, "version", max_length=128)
     return ConnectorTool(
-        provider_version=required_string(value, "version", max_length=128),
-        key=required_string(value, "slug", max_length=128),
+        provider_version=version,
+        key=key,
         description=optional_string(value.get("description"), max_length=16_384) or "",
         input_schema=required_object(value.get("input_parameters")),
         output_schema=(
-            required_object(value.get("output_parameters")) if value.get("output_parameters") is not None else None
+            corrected_output_schema(required_object(value["output_parameters"]), tool_key=key, version=version)
+            if value.get("output_parameters") is not None
+            else None
         ),
         annotations={},
     )

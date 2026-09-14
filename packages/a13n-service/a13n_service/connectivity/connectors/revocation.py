@@ -34,7 +34,7 @@ from .management import (
     require_connection,
     require_connector_provider,
 )
-from .models import ConnectorSetupAttemptRecord
+from .models import ConnectorAuthorizationRecord
 from .registry import ConnectorProviderRegistry
 
 
@@ -88,9 +88,9 @@ class ConnectorRevocationService:
                 else:
                     # A temporary account remains attempt evidence until verified completion.
                     attempt = await session.scalar(
-                        select(ConnectorSetupAttemptRecord).where(
-                            ConnectorSetupAttemptRecord.connector_connection_id == connection.id,
-                            ConnectorSetupAttemptRecord.generation == connection.setup_generation,
+                        select(ConnectorAuthorizationRecord).where(
+                            ConnectorAuthorizationRecord.connection_id == connection.id,
+                            ConnectorAuthorizationRecord.generation == connection.setup_generation,
                         )
                     )
                     if attempt is not None and attempt.external_ref is not None:
@@ -125,11 +125,11 @@ class ConnectorRevocationService:
             if delete:
                 connection.deleted_at = now
             attempts = await session.scalars(
-                select(ConnectorSetupAttemptRecord).where(
-                    ConnectorSetupAttemptRecord.connector_connection_id == connection_id,
+                select(ConnectorAuthorizationRecord).where(
+                    ConnectorAuthorizationRecord.connection_id == connection_id,
                     (
-                        ConnectorSetupAttemptRecord.status.in_(("pending", "starting", "attached", "reserved"))
-                        | (ConnectorSetupAttemptRecord.last_error_code == "setup_outcome_unknown")
+                        ConnectorAuthorizationRecord.status.in_(("pending", "starting", "attached", "reserved"))
+                        | (ConnectorAuthorizationRecord.last_error_code == "setup_outcome_unknown")
                     ),
                 )
             )

@@ -319,7 +319,10 @@ class Transcript:
         if not self.dirty and self.width == width:
             return
         self.width = width
-        console = Console(file=StringIO(), width=width, force_terminal=True, color_system="truecolor")
+        # Rich produces styled segments for prompt_toolkit, not terminal output.
+        console = Console(
+            file=StringIO(), width=width, force_terminal=False, force_jupyter=False, color_system="truecolor"
+        )
         # Rich may reserve a column in legacy Windows mode. Budget previews
         # against the width it actually renders, not the requested terminal width.
         width = console.width
@@ -334,12 +337,17 @@ class Transcript:
             )
             if kind == "notice":
                 colors = activity_colors(self.theme)
-                label = Text("System", style=f"bold {colors['running']}")
+                attention = not markdown and source.startswith(("Error [", "Error:", "Warning:"))
+                accent = colors["waiting"] if attention else colors["running"]
+                label = Text("System", style=f"bold {accent}")
                 if markdown:
                     value = Group(label, value)
                 else:
-                    label.append(" · ", style=colors["muted"])
-                    label.append(source.rstrip("\n"), style=f"not bold {colors['muted']}")
+                    heading_color = accent if attention else colors["muted"]
+                    label.append(" · ", style=f"not bold {heading_color}")
+                    heading, separator, detail = source.rstrip("\n").partition("\n")
+                    label.append(heading, style=f"not bold {heading_color}")
+                    label.append(separator + detail, style=f"not bold {colors['muted']}")
                     value = label
             elif kind == "notes" and folded:
                 colors = activity_colors(self.theme)

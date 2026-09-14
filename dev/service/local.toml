@@ -1,0 +1,95 @@
+# LOCAL DEVELOPMENT ONLY. Safe to commit: all identities and credentials below
+# are public, fictional test values. NEVER put real secrets in this file.
+# Real credentials must be injected separately; never write them back here.
+# Paths are relative to this TOML file, independent of the invocation directory.
+
+[service]
+role = "all"
+host = "127.0.0.1"
+port = 8000
+# Exported as deployment.environment.name; trace backends show Env: local.
+# This is independent of the Run's execution Environment/provider.
+deployment_environment_name = "local"
+
+[worker]
+concurrency = 8
+
+# Publish one read-only local Provider for every Workspace in this OSS instance.
+[environments.local_providers."a13n.direct-local"]
+
+[database]
+backend = "postgresql"
+url = "postgresql+psycopg://a13n_service_dev:local-only-password@127.0.0.1:15432/a13n_service_dev"
+pool_size = 60
+max_overflow = 20
+
+[redis]
+backend = "redis"
+url = "redis://127.0.0.1:16379/0"
+# Run publication, seed polling, and background tasks share this pool.
+max_connections = 256
+
+[objects]
+backend = "local"
+local_root = "../../var/service/objects"
+
+[filesystem]
+root = "../../var/service/files"
+
+[iam]
+public_origin = "http://127.0.0.1:5173"
+initial_admin_email = "admin@example.com"
+
+[secrets]
+# Public 32-byte TEST key. It provides no access to any real environment.
+master_key_base64 = "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY="
+encryption_key_id = "local-public-test-key"
+
+[connectivity]
+# The local profile permits private and proxy-routed destinations for development.
+private_endpoint_cidrs = ["0.0.0.0/0", "::/0"]
+public_origin = "http://127.0.0.1:5173"
+authorization_callback_urls = ["http://127.0.0.1:5173/connections/callback"]
+http_origins = ["http://127.0.0.1:5173", "http://127.0.0.1:18080"]
+setup_correlation_secret = "local-public-test-correlation-key-not-a-real-secret"
+
+[models]
+# The local profile permits private and proxy-routed model endpoints for development.
+private_endpoint_cidrs = ["0.0.0.0/0", "::/0"]
+
+[pricing]
+auto_update = false
+
+[observability]
+tracing = true
+# Local debugging captures input/output content in the local Langfuse volumes.
+trace_content = "standard"
+
+# Logfire alternative for development (explicit opt-in; no Logfire SDK required):
+# Keep tracing = true above; consider trace_content = "none" for remote export.
+# In [observability.query] below, replace provider = "langfuse" with provider = "none".
+# Service has no built-in Logfire trace-query adapter; inspect traces in Logfire.
+# Exporter credentials remain Host environment, not committed TOML values:
+#   export A13N_DEV_TRACE_BACKEND=logfire
+#   export LOGFIRE_TOKEN='YOUR_LOGFIRE_WRITE_TOKEN'
+#   export LOGFIRE_BASE_URL=https://logfire-us.pydantic.dev
+#   make service-dev
+# For the EU region use https://logfire-eu.pydantic.dev.
+# The dev launcher builds a fresh HTTP/protobuf OTLP profile from these values,
+# rather than retaining ambient OTEL_* endpoints or Langfuse Basic headers.
+# To return to local Langfuse, unset A13N_DEV_TRACE_BACKEND and restore provider below.
+
+[observability.query]
+# dev.service uses this same local project for OTLP export and trace queries.
+# The adjacent port (3001) serves Langfuse media. Neither backend reads .env.
+provider = "langfuse"
+langfuse_base_url = "http://127.0.0.1:3000"
+langfuse_public_key = "lf_pk_agent_foundation_local"
+langfuse_secret_key = "lf_sk_agent_foundation_local"
+
+[migration]
+auto_migrate = false
+
+[logging]
+level = "INFO"
+format = "pretty"

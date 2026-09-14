@@ -108,7 +108,7 @@ class RunControlPort(Protocol):
 
     async def before_model_node(self, boundary: HarnessHookBoundary) -> None: ...
 
-    async def before_nested_model_request(self) -> None: ...
+    async def before_nested_model_request(self, *, agent_id: str | None = None) -> None: ...
 
     async def bind_model_attempt(self, binding: HarnessContextBinding) -> None: ...
 
@@ -130,6 +130,32 @@ class RunControlPort(Protocol):
         result: NodeResult[AgentContext],
         complete_messages: Sequence[ModelMessage],
     ) -> None: ...
+
+
+@dataclass(init=False)
+class InlineRunControlCapability(AbstractCapability[AgentContext]):
+    """Charge and authorize inline model requests without checkpointing child history."""
+
+    id = "a13n.service.inline_control"
+
+    def __init__(self, control: RunControlPort, *, agent_id: str) -> None:
+        self._control = control
+        self._agent_id = agent_id
+
+    def get_ordering(self) -> CapabilityOrdering:
+        return CapabilityOrdering(position="outermost", wrapped_by=tuple(_native_anonymous_capabilities()))
+
+    def for_agent(self, agent: AbstractAgent[AgentContext, object]) -> AbstractCapability[AgentContext]:
+        leaves: list[AbstractCapability[AgentContext]] = []
+        agent.root_capability.apply(leaves.append)
+        validate_control_order(leaves, control_type=InlineRunControlCapability)
+        return self
+
+    async def before_model_request(
+        self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
+    ) -> ModelRequestContext:
+        await self._control.before_nested_model_request(agent_id=self._agent_id)
+        return request_context
 
 
 @dataclass(init=False)
@@ -259,11 +285,15 @@ def compose_run_control[OutputT](
     )
 
 
-def validate_control_order(capabilities: Sequence[AbstractCapability[AgentContext]]) -> None:
+def validate_control_order(
+    capabilities: Sequence[AbstractCapability[AgentContext]],
+    *,
+    control_type: type[RunControlCapability] | type[InlineRunControlCapability] = RunControlCapability,
+) -> None:
     """Reject a control replacement or a feature wrapper outside Service hooks."""
 
-    controls = [cap for cap in capabilities if cap.id == RUN_CONTROL_CAPABILITY_ID]
-    if len(controls) != 1 or type(controls[0]) is not RunControlCapability:
+    controls = [cap for cap in capabilities if cap.id == control_type.id]
+    if len(controls) != 1 or type(controls[0]) is not control_type:
         raise DefinitionError(
             "Service control Capability identity is invalid.", code="service_control_identity_mismatch"
         )

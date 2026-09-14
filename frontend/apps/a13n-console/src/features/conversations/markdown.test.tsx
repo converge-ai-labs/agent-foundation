@@ -1,10 +1,10 @@
-import { expect, it } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { MessageMarkdown } from "./markdown";
+import { expect, it } from "vitest";
+import { MarkdownContent } from "../../shared/markdown";
 
 it("renders untrusted model Markdown without executable HTML or automatic remote image loads", () => {
   const markup = renderToStaticMarkup(
-    <MessageMarkdown
+    <MarkdownContent
       text={
         "<script>alert(1)</script>\n\n[bad](javascript:alert%281%29)\n\n![report](https://example.com/tracker.png)\n\n**Result**"
       }

@@ -1,25 +1,33 @@
+import {
+  useResourceEditorState,
+  useResourceRows,
+} from "../../shared/resource-modal";
+import { ResourceEditorButton } from "../../shared/resource-editor-button";
+import { ResourceIdentity } from "../../shared/collection";
+import { ScopeBadge } from "../../shared/scope-badge";
+import { useQuery } from "@tanstack/react-query";
+import { ModalFrame } from "a13n-ui";
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Badge, Button, Dialog, Input, SelectField, Switch } from "a13n-ui";
-import { Plus, PlugZap } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useAccess } from "../../layout/workspace";
 import { data, type Schema } from "../../shared/api";
+import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
 import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
-import { FormActions } from "../../shared/form";
-import { Pagination, Table, useCursor } from "../../shared/collection";
-import { SchemaFields } from "../../shared/schema-fields";
-import { validateSettings } from "../../shared/validation";
-import { modelApi, type ModelScope } from "./api";
-import { ModelEditor } from "./model-editor";
+import { PageActions } from "../../shared/page-actions";
 import styles from "../../shared/shared.module.css";
+import { modelApi, type ModelScope } from "./api";
+import { requiresProviderCredential } from "./provider-credentials";
+import { ProviderForm } from "./provider-form";
+import { ProviderIcon } from "../../shared/provider-icon";
 
 export function Providers({ scope }: { scope: ModelScope }) {
   const client = useClient(),
     { t } = useTranslation(),
     { can, organization, organizationAdmin } = useAccess(),
     page = useCursor();
+  const rows = useResourceRows<Schema["ModelProvider"]>();
+  const { selected } = rows;
   const api = modelApi(client, scope);
   const query = useQuery({
     queryKey: ["model-providers", scope.kind, scope.id, page.cursor],
@@ -34,45 +42,68 @@ export function Providers({ scope }: { scope: ModelScope }) {
     scope.kind === "organization" ? organizationAdmin : can("models.manage");
   return (
     <div className={styles.stack}>
-      <div className={styles.toolbar}>
-        <p className={styles.muted}>
-          {t("Connect the accounts and endpoints that power your models.")}
-        </p>
-        {manage && <ProviderEditor scope={scope} />}
-      </div>
+      <PageActions>{manage && <ProviderEditor scope={scope} />}</PageActions>
+      {selected && (
+        <ProviderEditor
+          key={selected.id}
+          scope={
+            selected.workspace_id
+              ? { kind: "workspace", id: selected.workspace_id }
+              : { kind: "organization", id: organization.id }
+          }
+          providerId={selected.id}
+          {...rows.control}
+        />
+      )}
       {query.isPending ? (
-        <Loading />
+        <Loading variant="table" columns={4} />
       ) : query.error ? (
         <ErrorNotice error={query.error} />
       ) : query.data?.items.length ? (
         <>
-          <Table
+          <ResourceTable
             items={query.data.items}
+            canActivateRow={(item) =>
+              item.workspace_id ? manage : organizationAdmin
+            }
+            onRowActivate={rows.activate}
             columns={[
               {
                 label: t("Provider"),
+                tone: "primary",
                 render: (item) => (
-                  <>
-                    <PlugZap size={14} /> {item.name}
-                    <small>{item.type}</small>
-                  </>
+                  <div className="flex min-w-0 items-center gap-3">
+                    <ProviderIcon key={item.type} type={item.type} />
+                    <ResourceIdentity
+                      name={item.name}
+                      description={item.type}
+                      resourceId={item.id}
+                    />
+                  </div>
                 ),
               },
               {
                 label: t("Scope"),
+                tone: "muted",
                 render: (item) => (
-                  <Badge>
-                    {t(item.workspace_id ? "Workspace" : "Organization")}
-                  </Badge>
+                  <ScopeBadge workspaceId={item.workspace_id} />
                 ),
               },
               {
                 label: t("Credentials"),
                 render: (item) =>
                   t(
-                    item.credential_configured
-                      ? "Configured"
-                      : "Not configured",
+                    !requiresProviderCredential(
+                      item.type,
+                      item.configuration,
+                      definitions.data?.items.find(
+                        (definition) => definition.type === item.type,
+                      ),
+                    )
+                      ? "No credentials required"
+                      : item.credential_configured
+                        ? "Configured"
+                        : "Not configured",
                   ),
               },
               {
@@ -80,27 +111,6 @@ export function Providers({ scope }: { scope: ModelScope }) {
                 render: (item) => (
                   <StateBadge state={item.enabled ? "enabled" : "disabled"} />
                 ),
-              },
-              {
-                label: t("Actions"),
-                render: (item) => {
-                  const owner: ModelScope = item.workspace_id
-                    ? { kind: "workspace", id: item.workspace_id }
-                    : { kind: "organization", id: organization.id };
-                  return (
-                    (item.workspace_id ? manage : organizationAdmin) && (
-                      <div className={styles.actions}>
-                        <ProviderEditor scope={owner} providerId={item.id} />
-                        <ProviderTest scope={owner} providerId={item.id} />
-                        {definitions.data?.items.find(
-                          (definition) => definition.type === item.type,
-                        )?.supports_model_discovery && (
-                          <Discovery scope={scope} provider={item} />
-                        )}
-                      </div>
-                    )
-                  );
-                },
               },
             ]}
           />
@@ -117,17 +127,29 @@ export function Providers({ scope }: { scope: ModelScope }) {
     </div>
   );
 }
-function ProviderEditor({
+
+export function ProviderEditor({
   scope,
   providerId,
+  controlledOpen,
+  onClose,
+  finalFocus,
 }: {
   scope: ModelScope;
   providerId?: string;
+  controlledOpen?: boolean;
+  onClose?: () => void;
+  finalFocus?: React.RefObject<HTMLElement | null>;
 }) {
   const client = useClient(),
     { t } = useTranslation(),
-    [open, setOpen] = useState(false),
     [generation, setGeneration] = useState(0);
+  const { open, setOpen, modalProps } = useResourceEditorState({
+    controlledOpen,
+    onClose,
+    finalFocus,
+  });
+
   const api = modelApi(client, scope);
   const definitions = useQuery({
     queryKey: ["model-provider-types"],
@@ -140,27 +162,27 @@ function ProviderEditor({
     queryFn: ({ signal }) => api.provider(providerId!, signal),
   });
   return (
-    <Dialog
-      title={t(providerId ? "Edit provider" : "Add provider")}
-      description={t(
-        "Credentials are stored securely and never returned by the service.",
-      )}
-      closeLabel={t("Close")}
-      open={open}
-      onOpenChange={setOpen}
+    <ModalFrame
+      {...modalProps}
       trigger={
-        <Button
-          size="sm"
-          variant={providerId ? "secondary" : "primary"}
-          icon={!providerId && <Plus size={14} />}
-        >
-          {t(providerId ? "Edit" : "Add provider")}
-        </Button>
+        controlledOpen === undefined ? (
+          <ResourceEditorButton
+            editing={!!providerId}
+            createLabel="Add provider"
+            editLabel="Edit"
+          />
+        ) : undefined
       }
+      size="lg"
+      title={t(providerId ? "Edit provider" : "Add provider")}
+      description={
+        providerId ? undefined : t("Connect a model service to add its models.")
+      }
+      closeLabel={t("Close")}
     >
       {open &&
         (definitions.isPending || (providerId && resource.isPending) ? (
-          <Loading />
+          <Loading variant="form" rows={4} />
         ) : (!definitions.data && definitions.error) ||
           (!resource.data && resource.error) ? (
           <ErrorNotice error={definitions.error ?? resource.error} />
@@ -179,251 +201,6 @@ function ProviderEditor({
             />
           )
         ))}
-    </Dialog>
-  );
-}
-function ProviderForm({
-  scope,
-  resource,
-  definitions,
-  close,
-  reload,
-}: {
-  reload: () => Promise<void>;
-  scope: ModelScope;
-  resource?: { value: Schema["ModelProvider"]; etag?: string };
-  definitions: Schema["ModelProviderDefinition"][];
-  close: () => void;
-}) {
-  const [original] = useState(resource),
-    { t } = useTranslation(),
-    client = useClient(),
-    cache = useQueryClient(),
-    api = modelApi(client, scope);
-  const [type, setType] = useState(
-      original?.value.type ?? definitions[0]?.type ?? "",
-    ),
-    [name, setName] = useState(original?.value.name ?? ""),
-    [configuration, setConfiguration] = useState<Record<string, unknown>>(
-      original?.value.configuration ?? {},
-    ),
-    [credential, setCredential] = useState(""),
-    [removeCredential, setRemoveCredential] = useState(false),
-    [enabled, setEnabled] = useState(original?.value.enabled ?? true);
-  const definition = definitions.find((item) => item.type === type);
-  const save = useMutation({
-    gcTime: 0,
-    mutationFn: async () => {
-      if (!definition) throw new Error(t("Choose a provider type."));
-      validateSettings(definition.configuration_schema, configuration);
-      const body = {
-        name,
-        configuration,
-        enabled,
-        ...(removeCredential
-          ? { credential: null }
-          : credential
-            ? { credential }
-            : {}),
-      };
-      if (!original) return api.createProvider({ ...body, type });
-      if (!original.etag)
-        throw new Error(
-          t("Version information is unavailable. Reload this page."),
-        );
-      return api.updateProvider(original.value.id, original.etag, body);
-    },
-    onSuccess: () => {
-      setCredential("");
-      void cache.invalidateQueries();
-      close();
-    },
-  });
-  return (
-    <form
-      className={styles.form}
-      onSubmit={(event) => {
-        event.preventDefault();
-        save.mutate();
-      }}
-    >
-      <Input
-        label={t("Name")}
-        value={name}
-        onChange={(event) => setName(event.target.value)}
-        required
-        maxLength={128}
-      />
-      <SelectField
-        label={t("Provider type")}
-        placeholder={t("Choose a provider…")}
-        value={type}
-        disabled={!!original}
-        onValueChange={(value) => {
-          setType(value);
-          setConfiguration({});
-          setCredential("");
-        }}
-        options={definitions.map((item) => ({
-          value: item.type,
-          label: item.display_name,
-        }))}
-      />
-      {definition && (
-        <SchemaFields
-          key={type}
-          schema={definition.configuration_schema}
-          value={configuration}
-          onChange={setConfiguration}
-        />
-      )}
-      <Input
-        label={t("Credential")}
-        type="password"
-        autoComplete="off"
-        value={credential}
-        onChange={(event) => {
-          setCredential(event.target.value);
-          setRemoveCredential(false);
-        }}
-        hint={t(
-          original?.value.credential_configured
-            ? "Leave empty to keep the current credential."
-            : "Enter the credential required by this provider.",
-        )}
-      />
-      {original?.value.credential_configured && (
-        <Switch
-          label={t("Remove stored credential")}
-          checked={removeCredential}
-          onCheckedChange={setRemoveCredential}
-        />
-      )}
-      <Switch
-        label={t("Enabled")}
-        checked={enabled}
-        onCheckedChange={setEnabled}
-      />
-      <ErrorNotice
-        error={save.error}
-        retry={original ? () => void reload() : undefined}
-      />
-      <FormActions pending={save.isPending} />
-    </form>
-  );
-}
-function ProviderTest({
-  scope,
-  providerId,
-}: {
-  scope: ModelScope;
-  providerId: string;
-}) {
-  const api = modelApi(useClient(), scope),
-    { t } = useTranslation();
-  const test = useMutation({ mutationFn: () => api.testProvider(providerId) });
-  return (
-    <Dialog
-      title={t("Test provider")}
-      description={t(
-        "This contacts the provider and may consume quota or incur cost.",
-      )}
-      closeLabel={t("Close")}
-      trigger={<Button size="sm">{t("Test")}</Button>}
-    >
-      <Button onClick={() => test.mutate()} loading={test.isPending}>
-        {t("Run connection test")}
-      </Button>
-      <ErrorNotice error={test.error} />
-      {test.data && (
-        <p role="status">
-          <StateBadge state={test.data.success ? "succeeded" : "failed"} />{" "}
-          {test.data.message} · {test.data.elapsed_ms} ms
-        </p>
-      )}
-    </Dialog>
-  );
-}
-function Discovery({
-  scope,
-  provider,
-}: {
-  scope: ModelScope;
-  provider: Schema["ModelProvider"];
-}) {
-  const api = modelApi(useClient(), scope),
-    { t } = useTranslation(),
-    [search, setSearch] = useState(""),
-    [page, setPage] = useState(0);
-  const discover = useMutation({ mutationFn: () => api.discover(provider.id) });
-  const candidates =
-    discover.data?.items.filter((item) =>
-      `${item.upstream_model} ${item.display_name}`
-        .toLowerCase()
-        .includes(search.toLowerCase()),
-    ) ?? [];
-  return (
-    <Dialog
-      title={t("Discover models")}
-      description={t(
-        "Candidates are suggestions. Add a model to make it available to agents.",
-      )}
-      closeLabel={t("Close")}
-      trigger={<Button size="sm">{t("Discover")}</Button>}
-    >
-      <div className={styles.stack}>
-        <Button
-          loading={discover.isPending}
-          onClick={() => {
-            setPage(0);
-            discover.mutate();
-          }}
-        >
-          {t("Refresh catalog")}
-        </Button>
-        <ErrorNotice error={discover.error} />
-        {discover.data && (
-          <>
-            <Input
-              label={t("Search models")}
-              value={search}
-              onChange={(event) => {
-                setSearch(event.target.value);
-                setPage(0);
-              }}
-            />
-            {candidates.slice(page * 10, page * 10 + 10).map((candidate) => (
-              <div key={candidate.upstream_model} className={styles.toolbar}>
-                <span>
-                  {candidate.display_name ?? candidate.upstream_model}
-                  <small className={styles.muted}>
-                    {candidate.upstream_model}
-                  </small>
-                </span>
-                <ModelEditor
-                  scope={scope}
-                  candidate={candidate}
-                  providerId={provider.id}
-                />
-              </div>
-            ))}
-            {!candidates.length && (
-              <p>{t("No models found. You can still add a model manually.")}</p>
-            )}
-            <div className={styles.pagination}>
-              <Button disabled={!page} onClick={() => setPage(page - 1)}>
-                {t("Previous")}
-              </Button>
-              <Button
-                disabled={(page + 1) * 10 >= candidates.length}
-                onClick={() => setPage(page + 1)}
-              >
-                {t("Next")}
-              </Button>
-            </div>
-          </>
-        )}
-      </div>
-    </Dialog>
+    </ModalFrame>
   );
 }

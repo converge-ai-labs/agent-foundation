@@ -4,6 +4,8 @@
 
 Each a13n Service product distribution ships one executable package and one container image. That build artifact fixes exactly one trusted distribution descriptor and starts it as a `control`, `worker`, or `connectivity` role, or as the all-in-one `all` composition. Configuration, schema preparation, resource construction, component startup, readiness, draining, and shutdown follow one process lifecycle regardless of whether the executable is invoked directly or through a container entrypoint.
 
+The executable's `--version` output and HTTP OpenAPI application version identify the installed `a13n-service` distribution. An optional deployment/Worker build identity does not replace that package version. The default build identity is the installed version. Release image labels and tags agree with the package version, allowing the repository's canonical-to-PEP-440 RC normalization.
+
 Runtime owns process behavior, not domain behavior. It loads the distribution fixed by the artifact, validates one effective configuration, starts only the components assigned to the selected role, and fails closed when the deployment cannot preserve their required semantics.
 
 ## Boundaries
@@ -31,6 +33,8 @@ The executable selects a TOML file only through an explicit `--config PATH`. It 
 4. explicit `--role` and `--host` executable overrides.
 
 When no configuration path is supplied, no TOML file is loaded. The process does not search the working directory, user home, or image filesystem for `.env`, `a13n-service.toml`, or another implicit file. It does not merge several files or implement include, inheritance, or named profile semantics.
+
+Relative storage paths, including default values and environment overrides, resolve against the selected TOML file's directory. Without a selected file they resolve against the invocation directory. Serving, migration, and development state operations use the same configuration resolver.
 
 TOML groups settings by stable operational concern:
 
@@ -64,6 +68,16 @@ a2a_enabled = true
 handoff_preference_window = "30s"
 
 [connectivity]
+public_origin = "https://agents.example.com"
+authorization_callback_urls = ["https://console.example.com/connections/callback"]
+
+[[connectivity.mcp_servers]]
+key = "internal-tools"
+name = "Internal tools"
+description = "Company-hosted remote tools"
+endpoint_url = "https://tools.example.com/mcp"
+auth_mode = "oauth"
+documentation_url = "https://docs.example.com/tools"
 
 [plugins]
 keys = []
@@ -113,7 +127,7 @@ Real Redis is a required distributed data-flow and coordination dependency. Requ
 
 `control`, `worker`, and `connectivity` are independently deployable roles. `all` is their exact process composition. One Worker process runs `WorkerExecutionLoop`, its claimed `RunAttemptExecutor` tasks, and a separately capacity-bounded `EnvironmentMaintenanceLoop`. The execution loop owns bounded relational scan, local-capacity admission, claim, and takeover. Each successful claim starts one executor async task that owns lease renewal, control watching, installed-plugin and Agent reconstruction, and Harness execution. Environment maintenance uses the deployment-selected Provider catalog independently of Run presence and never consumes an Agent execution slot. No OS thread or plugin child process is created per Attempt or target.
 
-The `connectivity` role owns provider event webhooks, long connections, polling, and durable external-event admission processing. Control owns Account, AccountTarget, ConnectorProvider, ConnectorConnection, and MCPConnection management, including connection setup, advisory discovery, revocation, reconciliation, and MCP OAuth callbacks. The executing Worker loads trusted native-action and ConnectorProvider runtime adapters, constructs per-Attempt in-process a13n MCP tool groups, and directly connects selected Remote MCP servers through Harness clients. These roles share Service application operations and durable stores; none uses a private cross-pod Service API for this work. [External Connectivity](40-connectivity/README.md) owns the complete boundary.
+The `connectivity` role owns provider event webhooks, long connections, polling, and durable external-event admission processing. Control owns Account, AccountTarget, ConnectorProvider, Connection management, including connection setup, advisory discovery, revocation, reconciliation, the Remote MCP setup catalog, and authenticated MCP OAuth completion. The executing Worker loads trusted native-action and ConnectorProvider runtime adapters, constructs per-Attempt in-process a13n MCP tool groups, and directly connects selected Remote MCP servers through Harness clients. These roles share Service application operations and durable stores; none uses a private cross-pod Service API for this work. [External Connectivity](40-connectivity/README.md) owns the complete boundary.
 
 | Capability                                                                            | `control` | `worker` | `connectivity` |    `all` |
 | ------------------------------------------------------------------------------------- | --------: | -------: | -------------: | -------: |

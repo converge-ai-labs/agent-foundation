@@ -150,7 +150,27 @@ Each synthesized failed result says:
 
 This transformation closes the public conversation shape. It does not claim that the external operation failed, did not execute, rolled back, or is safe to repeat.
 
-No interrupted-history normalization occurs for ordinary complete history or for a provider-suspended response. Provider-suspended continuation remains native Pydantic behavior.
+Interrupted-history normalization does not alter provider-suspended responses. Provider-suspended continuation remains native Pydantic behavior. On import, unanswered ordinary calls instead follow the pending-call policy below; results already closed during export remain closed.
+
+## Restored Pending Tool Calls
+
+`ExecutableAgent.run()` and `stream()` accept `tool_recovery: ToolRecoveryMode = "declared"`, where `ToolRecoveryMode` is `Literal["declared", "never", "always"]`. This per-run continuation option is separate from `HarnessState` and model-attempt retry policy.
+
+| Mode         | Decision for each unanswered restored ordinary call                        |
+| ------------ | -------------------------------------------------------------------------- |
+| `"declared"` | Execute only when the current tool declares recovery retry safety.         |
+| `"never"`    | Close the call with an unknown-effect failed `ToolReturnPart`.             |
+| `"always"`   | Execute when the current tool is available, regardless of its declaration. |
+
+The policy applies to the latest response and its trailing partial tool results, including an interrupted frontier. Existing `ToolReturnPart` and `RetryPromptPart` results are preserved. Already synthesized unknown results are not reopened. Missing or currently unavailable tools receive unknown-effect failed results. The supplied state is not mutated, original call IDs remain stable, and fresh model-generated calls execute normally. New input may accompany recovery; retained calls are processed before the next model request.
+
+In `"declared"` mode, only boolean `True` at `a13n.harness.recovery_retry_safe` in the freshly prepared `ToolDefinition.metadata` permits replay. Absent, false, or non-boolean declarations close the call before argument validation. `RECOVERY_RETRY_SAFE_METADATA_KEY` names the metadata key. `recovery_retryable()` declares individual functions or native tools, including tools supplied dynamically by Capabilities and Plugins. The Host need not enumerate those tools.
+
+The declaration asserts that repetition is acceptable despite an unknown earlier outcome. It is not inferred from effects, idempotency, names, or provider annotations, and adds no dispatch retry loop. Recovery uses native Pydantic AI deferred continuation and `ToolApproved` as programmatic replay permission, retaining recorded results within the original batch. Argument validation runs through native execution. Current static approval requirements and external deferral remain effective. Managed invocation policy and resource resolution evaluate fresh authority; recovery permission does not supply resource-bound approval evidence or bypass a current denial or approval requirement.
+
+A validated `deferred_resume` retains its exact pending calls for native result and approval processing, independently of `tool_recovery`. Provider-suspended responses retain their native continuation semantics. Recovery does not reinterpret either path.
+
+A checkpoint without a result proves neither execution nor non-execution. This policy does not prevent a later model decision from requesting the operation again and does not establish exactly-once effects.
 
 ## System Prompt Reconciliation
 

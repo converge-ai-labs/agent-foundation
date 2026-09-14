@@ -1,20 +1,27 @@
+import { Button } from "a13n-ui";
+import { useQuery } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 import { Link } from "react-router";
-import { useQuery } from "@tanstack/react-query";
-import { Button } from "a13n-ui";
+
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
+import {
+  ErrorNotice,
+  Loading,
+  StateBadge,
+  Timestamp,
+} from "../../shared/feedback";
+import { useAgent } from "../agents/queries";
 import { conversationQueries, runPath } from "./api";
-import { InputContent, PresentedItems } from "./items";
-import { mergeRetainedItems } from "./projection";
-import { MessageMarkdown } from "./markdown";
 import styles from "./conversations.module.css";
+import { InputContent, PresentedItems } from "./items";
+import { MarkdownContent } from "../../shared/markdown";
+import { mergeRetainedItems } from "./projection";
 
 export function HistoryTranscript({ runId }: { runId: string }) {
   const client = useClient(),
-    { workspace } = useWorkspace(),
+    { workspace, basePath } = useWorkspace(),
     { t } = useTranslation(),
     [limit, setLimit] = useState(10);
   const lineage = useQuery(
@@ -27,7 +34,12 @@ export function HistoryTranscript({ runId }: { runId: string }) {
     <>
       <ErrorNotice error={lineage.error} retry={() => void lineage.refetch()} />
       {ancestors.length > limit && (
-        <Button size="sm" onClick={() => setLimit((value) => value + 10)}>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={() => setLimit((value) => value + 10)}
+          type="button"
+        >
           {t("Load earlier messages")}
         </Button>
       )}
@@ -42,10 +54,11 @@ export function HistoryTranscript({ runId }: { runId: string }) {
 }
 function HistoricalRun({ runId }: { runId: string }) {
   const client = useClient(),
-    { workspace } = useWorkspace(),
+    { workspace, basePath } = useWorkspace(),
     { t } = useTranslation(),
     queries = conversationQueries(client, workspace.id);
   const runQuery = useQuery({ ...queries.run(runId), staleTime: 60_000 });
+  const agent = useAgent(runQuery.data?.agent_id);
   const retained = useQuery({ ...queries.items(runId), staleTime: 60_000 });
   const items = useMemo(
     () => [
@@ -57,7 +70,8 @@ function HistoricalRun({ runId }: { runId: string }) {
     void runQuery.refetch();
     void retained.refetch();
   };
-  if (runQuery.isPending || retained.isPending) return <Loading />;
+  if (runQuery.isPending || retained.isPending)
+    return <Loading variant="list" rows={2} />;
   if (!runQuery.data || !retained.data)
     return (
       <ErrorNotice error={runQuery.error ?? retained.error} retry={reload} />
@@ -67,26 +81,36 @@ function HistoricalRun({ runId }: { runId: string }) {
     <section className={styles.historyRun}>
       <Link
         className={styles.historyLink}
-        to={runPath(workspace.id, { ...run, run_id: run.id })}
+        to={runPath(basePath, { ...run, run_id: run.id })}
       >
         {t("View run")} · <Timestamp value={run.created_at} />
+        <StateBadge state={run.status} />
       </Link>
       <article className={styles.inputMessage}>
-        <strong>{t("You")}</strong>
+        <strong>
+          {t(run.input_kind === "feedback" ? "Feedback" : "Input")}
+        </strong>
         <InputContent input={run.input} fallback={run.input_text} />
       </article>
-      <PresentedItems items={items} runState={run.status} />
-      {!items.some(
-        (item) =>
-          item.kind === "text_message" &&
-          item.role === "assistant" &&
-          item.text,
-      ) &&
-        run.output_text && <MessageMarkdown text={run.output_text} />}
+      <PresentedItems
+        items={items}
+        runState={run.status}
+        agentName={agent.data?.name}
+        agentId={run.agent_id}
+        agentImageUrl={agent.data?.image_url}
+      >
+        {!items.some(
+          (item) =>
+            item.kind === "text_message" &&
+            item.role === "assistant" &&
+            item.text,
+        ) &&
+          run.output_text && <MarkdownContent text={run.output_text} />}
+      </PresentedItems>
       {!retained.data.available && (
         <p className={styles.notice}>
           {t("Detailed items are currently unavailable for this run.")}
-          <Button size="sm" onClick={reload}>
+          <Button size="sm" variant="outline" type="button" onClick={reload}>
             {t("Reload")}
           </Button>
         </p>

@@ -63,7 +63,9 @@ class LocalEnvdShellProfile(BaseModel):
 
 
 class LocalEnvdProviderConfiguration(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    model_config = ConfigDict(
+        frozen=True, extra="forbid", json_schema_extra={"x-primary-fields": ["workspace", "execution_network"]}
+    )
 
     workspace: LocalEnvdWorkspaceConfiguration
     execution_network: LocalEnvdNetworkMode = LocalEnvdNetworkMode.HOST

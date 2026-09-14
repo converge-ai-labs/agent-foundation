@@ -711,14 +711,14 @@ async def test_completion_time_handoff_seals_source_and_consumes_queue_atomicall
         }
     )
 
-    receipt = await CompletionQueueHandoffService(
+    commit_handoff = await CompletionQueueHandoffService(
         interaction_sessions,
         states,
         RunPayloadStore(interaction_object_store),
         inline_hooks,
         clock=lambda: NOW + timedelta(seconds=4),
         lifecycle=test_lifecycle_writer(),
-    ).complete_and_consume(
+    ).prepare_consumption(
         authority=authority,
         source_state=stored,
         successor_run=successor,
@@ -730,6 +730,8 @@ async def test_completion_time_handoff_seals_source_and_consumes_queue_atomicall
         expected_queue_version=1,
         expected_head_run_id=None,
     )
+
+    receipt = await commit_handoff()
 
     assert receipt.outcome == "run_accepted"
     assert receipt.queued_submission.state is QueuedSubmissionState.consumed
@@ -829,14 +831,18 @@ async def test_completion_time_handoff_can_fail_a_permanently_invalid_queue_head
         message="The selected Agent Revision was deleted.",
     )
 
-    receipt = await CompletionQueueHandoffService(
+    async def revalidate(_database):
+        return True
+
+    commit_handoff = await CompletionQueueHandoffService(
         interaction_sessions,
         states,
         RunPayloadStore(interaction_object_store),
         _inline_hooks(),
         clock=lambda: NOW + timedelta(seconds=4),
         lifecycle=test_lifecycle_writer(),
-    ).complete_and_fail_permanently(
+    ).prepare_failure(
+        revalidate=revalidate,
         authority=authority,
         source_state=stored,
         queued_submission_id=first.queued_submission.queued_submission_id,
@@ -846,6 +852,8 @@ async def test_completion_time_handoff_can_fail_a_permanently_invalid_queue_head
         expected_queue_version=2,
         expected_head_run_id=None,
     )
+
+    receipt = await commit_handoff()
 
     assert receipt.outcome == "submission_failed"
     assert receipt.successor is None
@@ -947,14 +955,14 @@ async def test_completion_time_handoff_rolls_back_when_pending_delivery_blocks_c
     )
 
     with pytest.raises(ThreadInboxConflict, match="must process pending input"):
-        await CompletionQueueHandoffService(
+        commit_handoff = await CompletionQueueHandoffService(
             interaction_sessions,
             states,
             RunPayloadStore(interaction_object_store),
             _inline_hooks(),
             clock=lambda: NOW + timedelta(seconds=4),
             lifecycle=test_lifecycle_writer(),
-        ).complete_and_consume(
+        ).prepare_consumption(
             authority=authority,
             source_state=stored,
             successor_run=successor,
@@ -966,6 +974,7 @@ async def test_completion_time_handoff_rolls_back_when_pending_delivery_blocks_c
             expected_queue_version=1,
             expected_head_run_id=None,
         )
+        await commit_handoff()
 
     async with short_session(interaction_sessions) as database:
         source_row = await database.get(RunRecord, source.id)

@@ -45,6 +45,7 @@ from .media import (
     MediaResource,
     MediaRunCapability,
 )
+from .native_image_generation import NativeImageGenerationCapability, NativeImageSaver
 from .shell_review import (
     AgentShellCommandReviewer,
     ShellCommandReviewer,
@@ -95,6 +96,7 @@ from .subagents import (
     SubagentWaitRequest,
     SubagentWaitResult,
 )
+from .tool_proxy import ToolProxyCapability, ToolProxyConfig, ToolProxyGroup, ToolProxyPlan, ToolProxySelection
 from .web import (
     WEB_SCRAPE_BACKEND_ENV,
     WEB_SCRAPE_BACKEND_PRIORITY_ENV,
@@ -203,6 +205,8 @@ __all__ = [
     "MediaRunCapability",
     "Mem0Capability",
     "Mem0Scope",
+    "NativeImageGenerationCapability",
+    "NativeImageSaver",
     "ProviderTaskCursor",
     "ResolvedDelegationContext",
     "RuntimeContextCapability",
@@ -246,6 +250,11 @@ __all__ = [
     "TaskStateCell",
     "TaskStateError",
     "TaskStateRunCapability",
+    "ToolProxyCapability",
+    "ToolProxyConfig",
+    "ToolProxyGroup",
+    "ToolProxyPlan",
+    "ToolProxySelection",
     "UserInteractionCapability",
     "UserQuestion",
     "UserQuestionAnswers",

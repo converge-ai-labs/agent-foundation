@@ -1,8 +1,7 @@
-// @vitest-environment jsdom
-import { afterEach, expect, it, vi } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { afterEach, expect, it, vi } from "vitest";
 import type { Schema } from "../../shared/api";
 import { PendingFeedback } from "./pending";
 
@@ -14,7 +13,11 @@ vi.mock("../../auth/context", () => ({
   useClient: () => ({ http: { POST: post } }),
 }));
 vi.mock("../../layout/workspace", () => ({
-  useWorkspace: () => ({ workspace: { id: "workspace" }, can: () => true }),
+  useWorkspace: () => ({
+    basePath: "/workspace/design",
+    workspace: { id: "workspace" },
+    can: () => true,
+  }),
 }));
 vi.mock("react-router", () => ({ useNavigate: () => navigate }));
 vi.mock("react-i18next", () => ({

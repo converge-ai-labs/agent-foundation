@@ -48,7 +48,7 @@ async def open_database(path: Path, settings: StorageSettings) -> AsyncGenerator
     migrator = DatabaseMigrator(path, busy_timeout_seconds=settings.busy_timeout_seconds)
     try:
         await to_thread.run_sync(migrator.upgrade)
-    except (CommandError, MigrationGraphError, OSError, SQLAlchemyError) as exc:
+    except (CommandError, DatabaseSchemaError, MigrationGraphError, OSError, SQLAlchemyError) as exc:
         raise StoreIntegrityError(
             "Harness UI metadata migration failed.",
             code="database_migration_failed",

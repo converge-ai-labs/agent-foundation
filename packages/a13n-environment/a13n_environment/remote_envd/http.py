@@ -76,6 +76,10 @@ class HttpEnvdEnvironmentProvider(RemoteEnvdProvider):
     credential_model = HttpEnvdCredential
 
     @property
+    def display_name(self) -> str:
+        return "HTTP Envd"
+
+    @property
     def key(self) -> str:
         return HTTP_PROVIDER_KEY
 

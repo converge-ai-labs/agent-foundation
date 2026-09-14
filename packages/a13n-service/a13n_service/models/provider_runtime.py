@@ -16,6 +16,7 @@ from a13n_service.iam.resource_scope import visible_workspace
 from a13n_service.secrets.crypto import SecretProtectionError, SecretProtector
 from a13n_service.storage import short_session
 
+from .credentials import ProviderSecrets
 from .domain import ModelExecutionSnapshot
 from .models import ModelProviderRecord, ModelRecord
 from .provider_adapters.types import RuntimeProvider
@@ -29,6 +30,8 @@ class _StoredProvider:
     configuration: dict[str, object]
     enabled: bool
     credential: CredentialSnapshot | None
+    credential_configured: bool
+    header_names: tuple[str, ...]
 
 
 class EndpointValidator(Protocol):
@@ -106,11 +109,20 @@ class LiveProviderResolver:
             validated = self._registry.validate_provider(
                 provider.type,
                 provider.configuration,
-                credential_configured=provider.credential is not None,
+                credential_configured=provider.credential_configured,
+                header_names=provider.header_names,
             )
             if validated.endpoint is not None:
                 await self._endpoint_policy.validate(validated.endpoint, resolve_dns=True)
-            credential = provider.credential.decrypt(self._protector) if provider.credential is not None else None
+            for field in self._registry.integration(provider.type).additional_endpoint_fields:
+                endpoint = validated.configuration.get(field)
+                if isinstance(endpoint, str):
+                    await self._endpoint_policy.validate(endpoint, resolve_dns=True)
+            secrets = (
+                ProviderSecrets.model_validate_json(provider.credential.decrypt(self._protector))
+                if provider.credential is not None
+                else ProviderSecrets()
+            )
         except (ValueError, EndpointPolicyError, SecretProtectionError) as error:
             raise ModelResolutionError(
                 "The current Model Provider configuration is unavailable.",
@@ -121,7 +133,8 @@ class LiveProviderResolver:
             type=provider.type,
             configuration=validated.configuration,
             endpoint=validated.endpoint,
-            credential=credential,
+            credential=secrets.credential,
+            extra_headers=secrets.extra_headers,
         )
 
 
@@ -132,4 +145,6 @@ def _stored_provider(provider: ModelProviderRecord) -> _StoredProvider:
         configuration=dict(provider.configuration),
         enabled=provider.enabled,
         credential=provider.credential_snapshot() if provider.ciphertext is not None else None,
+        credential_configured=provider.credential_configured,
+        header_names=tuple(provider.header_names),
     )

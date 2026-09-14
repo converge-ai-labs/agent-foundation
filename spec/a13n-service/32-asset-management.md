@@ -144,7 +144,7 @@ All routes are below `/api/v1`, are exposed only by `control` and `all`, and fol
 ### Upload
 
 ```http
-POST /api/v1/workspaces/{workspace_id}/assets?filename=report.pdf&media_type=application%2Fpdf
+POST /api/v1/workspaces/{workspace}/assets?filename=report.pdf&media_type=application%2Fpdf
 Content-Type: application/octet-stream
 Idempotency-Key: opaque-caller-key
 ```
@@ -156,7 +156,7 @@ Every distinct accepted request creates a fresh Asset ID. Uploading identical by
 ### Read and Delete
 
 ```http
-GET /api/v1/workspaces/{workspace_id}/assets?limit=50&cursor=opaque
+GET /api/v1/workspaces/{workspace}/assets?limit=50&cursor=opaque
 GET /api/v1/assets/{asset_id}
 GET /api/v1/assets/{asset_id}/content
 DELETE /api/v1/assets/{asset_id}
@@ -243,7 +243,7 @@ The domain contributes `asset.read`, `asset.create`, `asset.use`, and `asset.del
 - Builder and Admin add deletion.
 - Agent-originated `publish_asset` requires the exact Revision-selected Capability and current Run grant rather than ambient model use of a public caller route.
 
-Every operation reauthorizes the Workspace and active Asset. Asset IDs, digests, ETags, Run references, protocol Artifact IDs, and content URLs grant no authority.
+Every operation authorizes the Workspace and active Asset. Worker operations evaluate product permissions against the [Attempt IAM snapshot](33-identity-and-access-management.md#attempt-iam-snapshot), while checking current Asset lifecycle, ownership, and Attempt authority. Public requests authorize current IAM. Asset IDs, digests, ETags, Run references, protocol Artifact IDs, and content URLs grant no authority.
 
 Successful and denied upload or Agent publication uses the stable security action `asset.create`; deletion uses `asset.delete`. Audit records the actor, Workspace, Asset ID when known, `source_kind`, outcome, and safe Run correlation when applicable. It never records filename, media type, content digest, object key, Environment path, tool arguments, or bytes.
 

@@ -6,6 +6,7 @@ from datetime import datetime
 from sqlalchemy import exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from a13n_service.agents.models import AgentRecord
 from a13n_service.assets.models import AssetRecord
 from a13n_service.gateway.models import AguiRunBindingRecord
 from a13n_service.iam.models import OrganizationRecord, UserRecord, WorkspaceRecord
@@ -51,6 +52,22 @@ async def retained_owner(database: AsyncSession, key: str, *, now: datetime) -> 
                         WorkspaceRecord.organization_id == organization_id,
                         WorkspaceRecord.deleted_at.is_(None),
                         WorkspaceRecord.image_id == image_id,
+                    )
+                )
+            )
+        )
+    if match := re.fullmatch(
+        r"organizations/([^/]+)/workspaces/([^/]+)/agents/([^/]+)/avatar/([^/]+)/content\.webp", key
+    ):
+        organization_id, workspace_id, agent_id, image_id = match.groups()
+        return bool(
+            await database.scalar(
+                select(
+                    exists().where(
+                        AgentRecord.organization_id == organization_id,
+                        AgentRecord.workspace_id == workspace_id,
+                        AgentRecord.id == agent_id,
+                        AgentRecord.image_id == image_id,
                     )
                 )
             )

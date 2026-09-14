@@ -27,6 +27,8 @@ class WorkspaceAction(StrEnum):
     asset_create = "asset.create"
     asset_use = "asset.use"
     asset_delete = "asset.delete"
+    search_provider_read = "search_provider.read"
+    search_provider_manage = "search_provider.manage"
     models_read = "models.read"
     models_manage = "models.manage"
     secrets_read = "secrets.read"
@@ -79,10 +81,8 @@ class WorkspaceAction(StrEnum):
     account_target_manage = "account_target.manage"
     connector_provider_read = "connector_provider.read"
     connector_provider_manage = "connector_provider.manage"
-    connector_connection_read = "connector_connection.read"
-    connector_connection_manage = "connector_connection.manage"
-    mcp_connection_read = "mcp_connection.read"
-    mcp_connection_manage = "mcp_connection.manage"
+    connection_read = "connection.read"
+    connection_manage = "connection.manage"
     invitation_manage = "invitation.manage"
     role_binding_manage = "role_binding.manage"
     service_account_manage = "service_account.manage"
@@ -95,6 +95,7 @@ _READ_ACTIONS = frozenset(
         WorkspaceAction.asset_read,
         WorkspaceAction.agent_read,
         WorkspaceAction.models_read,
+        WorkspaceAction.search_provider_read,
         WorkspaceAction.secrets_read,
         WorkspaceAction.skill_read,
         WorkspaceAction.environment_provider_read,
@@ -113,8 +114,7 @@ _READ_ACTIONS = frozenset(
         WorkspaceAction.application_account_read,
         WorkspaceAction.account_target_read,
         WorkspaceAction.connector_provider_read,
-        WorkspaceAction.connector_connection_read,
-        WorkspaceAction.mcp_connection_read,
+        WorkspaceAction.connection_read,
     }
 )
 
@@ -146,13 +146,12 @@ _CONNECTIVITY_ADMIN_ACTIONS = frozenset(
     {
         WorkspaceAction.application_account_manage,
         WorkspaceAction.connector_provider_manage,
-        WorkspaceAction.connector_connection_manage,
-        WorkspaceAction.mcp_connection_manage,
     }
 )
 
 _BUILDER_ACTIONS = _RUNNER_ACTIONS | frozenset(
     {
+        WorkspaceAction.connection_manage,
         WorkspaceAction.agent_create,
         WorkspaceAction.agent_update,
         WorkspaceAction.agent_revision_create,
@@ -161,6 +160,7 @@ _BUILDER_ACTIONS = _RUNNER_ACTIONS | frozenset(
         WorkspaceAction.agent_duplicate,
         WorkspaceAction.asset_delete,
         WorkspaceAction.models_manage,
+        WorkspaceAction.search_provider_manage,
         WorkspaceAction.secrets_manage,
         WorkspaceAction.secrets_bind,
         WorkspaceAction.skill_create,
@@ -259,6 +259,76 @@ class AuthorizedAgentCollection:
     visible_agent_ids: frozenset[str] | None
 
 
+@dataclass(frozen=True, slots=True, repr=False)
+class PrincipalPermissions:
+    """Detached product actions and exact Agent scopes from one IAM read."""
+
+    principal: PrincipalRef
+    organization_id: str
+    workspace_id: str
+    workspace_actions: frozenset[WorkspaceAction]
+    agent_actions: tuple[tuple[str, frozenset[WorkspaceAction]], ...]
+
+    def for_agent(self, agent_id: str) -> frozenset[WorkspaceAction]:
+        return self.workspace_actions | next(
+            (actions for selected, actions in self.agent_actions if selected == agent_id), frozenset()
+        )
+
+
+async def read_principal_permissions(
+    session: AsyncSession,
+    *,
+    principal: PrincipalRef,
+    organization_id: str,
+    workspace_id: str,
+) -> PrincipalPermissions:
+    """Evaluate current IAM once, including direct grants for this Workspace's Agents."""
+    context = await _load_principal_authorization(
+        session, principal=principal, workspace_id=workspace_id, include_agent_bindings=True
+    )
+    if context.workspace.organization_id != organization_id:
+        raise AuthorizationError("workspace_not_found", concealed=True)
+    return PrincipalPermissions(
+        principal=principal,
+        organization_id=organization_id,
+        workspace_id=workspace_id,
+        workspace_actions=_workspace_permissions(context.bindings),
+        agent_actions=tuple(
+            (agent_id, _agent_permissions(context.bindings, agent_id=agent_id))
+            for agent_id in sorted(
+                {binding.resource_id for binding in context.bindings if binding.resource_type == "agent"}
+            )
+        ),
+    )
+
+
+def _require_snapshot_scope(
+    snapshot: PrincipalPermissions,
+    *,
+    principal: PrincipalRef,
+    workspace_id: str,
+    organization_id: str | None = None,
+) -> None:
+    if (
+        snapshot.principal != principal
+        or snapshot.workspace_id != workspace_id
+        or (organization_id is not None and snapshot.organization_id != organization_id)
+    ):
+        raise AuthorizationError("permission_snapshot_scope_mismatch", concealed=True)
+    # Workspace existence and ownership were checked by the snapshot refresh.
+
+
+async def _authorize_actor_snapshot(
+    session: AsyncSession, *, actor: AuthenticatedActor, workspace_id: str, snapshot: PrincipalPermissions
+) -> AuthorizedWorkspace:
+    # Only an explicitly constructed execution actor may use an Attempt snapshot.
+    # Browser/API credentials and their stream continuations always read current IAM.
+    if actor.auth_method != "internal" or actor.credential_source != "host" or actor.workspace_id != workspace_id:
+        raise AuthorizationError("permission_snapshot_scope_mismatch", concealed=True)
+    _require_snapshot_scope(snapshot, principal=actor.principal, workspace_id=workspace_id)
+    return AuthorizedWorkspace(organization_id=snapshot.organization_id, workspace_id=workspace_id, actor=actor)
+
+
 @dataclass(frozen=True, slots=True)
 class _WorkspaceAuthorizationContext:
     authorized: AuthorizedWorkspace
@@ -277,9 +347,15 @@ async def authorize_workspace(
     actor: AuthenticatedActor,
     workspace_id: str,
     action: WorkspaceAction,
+    snapshot: PrincipalPermissions | None = None,
 ) -> AuthorizedWorkspace:
     """Authorize one operation from current Principal, credential boundary, and grants."""
 
+    if snapshot is not None:
+        authorized = await _authorize_actor_snapshot(session, actor=actor, workspace_id=workspace_id, snapshot=snapshot)
+        if action not in snapshot.workspace_actions:
+            raise AuthorizationError("permission_denied", concealed=True)
+        return authorized
     context = await _load_workspace_authorization(session, actor=actor, workspace_id=workspace_id)
     if action not in _workspace_permissions(context.bindings):
         raise AuthorizationError("permission_denied", concealed=True)
@@ -320,9 +396,15 @@ async def authorize_agent(
     workspace_id: str,
     agent_id: str,
     action: WorkspaceAction,
+    snapshot: PrincipalPermissions | None = None,
 ) -> AuthorizedWorkspace:
     """Authorize one stable Agent through Workspace or direct Agent roles."""
 
+    if snapshot is not None:
+        authorized = await _authorize_actor_snapshot(session, actor=actor, workspace_id=workspace_id, snapshot=snapshot)
+        if action not in snapshot.for_agent(agent_id):
+            raise AuthorizationError("permission_denied", concealed=True)
+        return authorized
     context = await _load_workspace_authorization(
         session,
         actor=actor,
@@ -341,8 +423,16 @@ async def authorize_persisted_workspace_principal_action(
     organization_id: str,
     workspace_id: str,
     action: WorkspaceAction,
+    snapshot: PrincipalPermissions | None = None,
 ) -> None:
     """Authorize deferred Workspace commands from their original Principal."""
+    if snapshot is not None:
+        _require_snapshot_scope(
+            snapshot, principal=principal, workspace_id=workspace_id, organization_id=organization_id
+        )
+        if action not in snapshot.workspace_actions:
+            raise AuthorizationError("permission_denied", concealed=True)
+        return
     context = await _load_principal_authorization(session, principal=principal, workspace_id=workspace_id)
     if context.workspace.organization_id != organization_id:
         raise AuthorizationError("workspace_not_found", concealed=True)
@@ -358,12 +448,20 @@ async def authorize_persisted_agent_principal_actions(
     workspace_id: str,
     agent_id: str,
     actions: frozenset[WorkspaceAction],
+    snapshot: PrincipalPermissions | None = None,
 ) -> None:
     """Reauthorize durable Principal actions without inventing a request credential."""
 
     if not actions:
         raise ValueError("persisted Principal authorization requires at least one action")
 
+    if snapshot is not None:
+        _require_snapshot_scope(
+            snapshot, principal=principal, workspace_id=workspace_id, organization_id=organization_id
+        )
+        if not actions.issubset(snapshot.for_agent(agent_id)):
+            raise AuthorizationError("permission_denied", concealed=True)
+        return
     context = await _load_principal_authorization(
         session,
         principal=principal,

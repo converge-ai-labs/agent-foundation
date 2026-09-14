@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from a13n_harness import (
     AgentContext,
@@ -13,10 +13,11 @@ from a13n_harness import (
     AgentSpec,
     ExecutableAgent,
     HarnessBuilder,
+    HarnessInstrumentation,
     ModelRecoveryPolicy,
     SubagentDefinition,
 )
-from a13n_harness.capabilities import SubagentCapability, SubagentOperator
+from a13n_harness.capabilities import SubagentCapability, SubagentOperator, ToolProxyPlan, ToolProxySelection
 from a13n_harness.errors import HarnessError, PluginError
 from a13n_harness.model_context import (
     AbstractModelContextCapability,
@@ -91,23 +92,25 @@ class _GlobalGuidanceCapability(AbstractModelContextCapability):
 class _ToolAllowlistCapability(AbstractCapability[AgentContext]):
     id: str | None = "a13n.ui.tool-allowlist"
 
-    def __init__(self, names: frozenset[str]) -> None:
+    def __init__(self, names: frozenset[str], *, optional_controls: frozenset[str] = frozenset()) -> None:
         self.names = names
+        self.optional_controls = optional_controls
 
     def get_ordering(self) -> CapabilityOrdering:
         return CapabilityOrdering(position="innermost")
 
     def get_wrapper_toolset(self, toolset: AbstractToolset[AgentContext]) -> AbstractToolset[AgentContext]:
-        return _ToolAllowlistToolset(toolset, self.names)
+        return _ToolAllowlistToolset(toolset, self.names, self.optional_controls)
 
 
 @dataclass
 class _ToolAllowlistToolset(WrapperToolset[AgentContext]):
     names: frozenset[str]
+    optional_controls: frozenset[str] = frozenset()
 
     async def get_tools(self, ctx: RunContext[AgentContext]) -> dict[str, ToolsetTool[AgentContext]]:
         tools = await self.wrapped.get_tools(ctx)
-        missing = self.names - tools.keys()
+        missing = self.names - tools.keys() - self.optional_controls
         if missing:
             raise CompositionError(
                 "The selected tool allowlist contains an unavailable tool.",
@@ -162,7 +165,9 @@ class AgentReconstructor:
         user_skills_root: Path | None = None,
         api_keys: ApiKeyStore | None = None,
         configuration_root: Path | None = None,
+        instrumentation: HarnessInstrumentation | Literal["environment"] | None = "environment",
     ) -> None:
+        self._instrumentation: HarnessInstrumentation | Literal["environment"] | None = instrumentation
         self._api_keys = api_keys
         self._configuration_root = configuration_root
         self._catalog = catalog or HarnessUiExtensionCatalog()
@@ -212,7 +217,7 @@ class AgentReconstructor:
                     and environment_profile.adapter_key == FULL_CONTROL_PROFILE.adapter_key
                 ),
             )
-            executable = HarnessBuilder(configured_plugins_enabled=False).build(
+            executable = HarnessBuilder(configured_plugins_enabled=False, instrumentation=self._instrumentation).build(
                 definition, pricing_catalog=pricing_catalog
             )
         except CompositionError:
@@ -269,8 +274,24 @@ class AgentReconstructor:
         capabilities: list[AbstractCapability[Any]] = [item.capability for item in selected]
         if node.global_guidance is not None:
             capabilities.append(_GlobalGuidanceCapability(node.global_guidance))
-        capabilities.extend(
-            HarnessUiMCP(item, configuration_root=self._configuration_root) for item in node.mcp_servers
+        mcp_sources = {
+            item.server_id: HarnessUiMCP(item, configuration_root=self._configuration_root) for item in node.mcp_servers
+        }
+        capabilities.extend(mcp_sources.values())
+        tool_proxy = (
+            ToolProxyPlan(
+                groups={
+                    name: ToolProxySelection(
+                        description=group.description,
+                        capabilities=tuple(mcp_sources[source] for source in group.mcp_servers),
+                        plugins=group.harness_plugins,
+                    )
+                    for name, group in node.tool_proxy.groups.items()
+                },
+                config=node.tool_proxy.config,
+            )
+            if node.tool_proxy is not None
+            else None
         )
         if node.children:
             if not isinstance(subagent_operator, SubagentOperator):
@@ -280,7 +301,14 @@ class AgentReconstructor:
                 )
             capabilities.append(SubagentCapability(async_enabled=True, operator=subagent_operator))
         if node.tools is not None:
-            capabilities.append(_ToolAllowlistCapability(names=frozenset(node.tools)))
+            # Controls are derived presentation, not authority for every member.
+            # Filter the actual canonical target directory before generating them.
+            controls = (
+                frozenset({tool_proxy.config.search_name, tool_proxy.config.call_name})
+                if tool_proxy is not None
+                else frozenset()
+            )
+            capabilities.append(_ToolAllowlistCapability(names=frozenset(node.tools), optional_controls=controls))
         elif native_default_tools:
             capabilities.append(_NativeDefaultToolsCapability())
         if root:
@@ -328,6 +356,7 @@ class AgentReconstructor:
             definition_id=f"a13n-harness-ui:{node.source_kind}:{node.source_id}",
             capabilities=tuple(capabilities),
             plugins=plugins,
+            tool_proxy=tool_proxy,
             subagents=children,
             model_recovery=ModelRecoveryPolicy(enabled=True),
         )

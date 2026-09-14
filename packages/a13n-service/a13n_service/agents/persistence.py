@@ -14,7 +14,6 @@ from a13n_service.digests import digest_request
 from a13n_service.durable_operations.idempotency import (
     IdempotencyIdentity,
     InvalidIdempotencyKey,
-    digest_visible_ascii_key,
 )
 from a13n_service.durable_operations.requests import ReplayReceipt, evidence_record
 from a13n_service.durable_operations.requests import load_replay as load_request_replay
@@ -35,7 +34,6 @@ from .domain import (
     AgentRevisionCreateResult,
     AgentSource,
     BuiltinAgentRegistration,
-    JsonObject,
     ResolvedRevisionContent,
 )
 from .errors import (
@@ -146,7 +144,6 @@ def new_builtin_agent(
         workspace_id=workspace_id,
         source=AgentSource.builtin.value,
         name=registration.name,
-        normalized_name=agent_name_key(registration.name),
         description=registration.description,
         version=1,
         current_revision_id=revision_id,
@@ -192,8 +189,7 @@ def new_revision(
         config_digest=digest_request(config),
         resolved_model=resolved.resolved_model.model_dump(mode="json"),
         resolved_skills=[item.model_dump(mode="json") for item in resolved.resolved_skills],
-        connector_tools=[item.model_dump(mode="json") for item in resolved.connector_tools],
-        mcp_tools=[item.model_dump(mode="json") for item in resolved.mcp_tools],
+        connection_tools=[item.model_dump(mode="json") for item in resolved.connection_tools],
         resolved_subagents=[item.model_dump(mode="json") for item in resolved.resolved_subagents],
         content_digest=content_digest,
         source_revision_id=source_revision_id,
@@ -223,8 +219,7 @@ def copy_revision(
         config_digest=source.config_digest,
         resolved_model=source.resolved_model,
         resolved_skills=source.resolved_skills,
-        connector_tools=source.connector_tools,
-        mcp_tools=source.mcp_tools,
+        connection_tools=source.connection_tools,
         resolved_subagents=source.resolved_subagents,
         content_digest=source.content_digest,
         source_revision_id=source_revision_id,
@@ -408,20 +403,11 @@ def add_command_evidence_and_audit(
     )
 
 
-def request_identity(idempotency_key: str, request) -> IdempotencyIdentity:
+def request_identity(idempotency_key: str, request: object) -> IdempotencyIdentity:
     try:
-        key_digest = digest_visible_ascii_key(idempotency_key)
+        return IdempotencyIdentity.from_request(idempotency_key, request)
     except InvalidIdempotencyKey as error:
         raise invalid_idempotency_key() from error
-    return IdempotencyIdentity(key_digest, digest_request(request))
-
-
-def payload_identity(idempotency_key: str, payload: JsonObject) -> IdempotencyIdentity:
-    try:
-        key_digest = digest_visible_ascii_key(idempotency_key)
-    except InvalidIdempotencyKey as error:
-        raise invalid_idempotency_key() from error
-    return IdempotencyIdentity(key_digest, digest_request(payload))
 
 
 async def load_replay(
@@ -471,7 +457,3 @@ def new_agent_audit(
         occurred_at=now,
         details=None,
     )
-
-
-def agent_name_key(value: str) -> str:
-    return value.casefold()

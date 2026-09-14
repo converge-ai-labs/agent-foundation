@@ -30,6 +30,7 @@ from .domain import (
 )
 from .errors import (
     AgentError,
+    agent_not_found,
     agent_revision_not_found,
     map_authorization_error,
 )
@@ -46,6 +47,19 @@ class AgentQueries:
         sessions: async_sessionmaker[AsyncSession],
     ) -> None:
         self._sessions = sessions
+
+    async def resolve_reference(self, *, workspace_id: str, reference: str) -> str:
+        column = AgentRecord.id if "_" in reference else AgentRecord.key
+        async with transaction(self._sessions) as session:
+            result = await session.scalar(
+                select(AgentRecord.id).where(
+                    AgentRecord.workspace_id == workspace_id,
+                    column == reference,
+                )
+            )
+            if result is None:
+                raise agent_not_found()
+            return result
 
     async def get(self, *, actor: AuthenticatedActor, agent_id: str) -> Agent:
         async with transaction(self._sessions) as session:

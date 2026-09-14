@@ -1,11 +1,16 @@
-import { useState } from "react";
+import { Button, ChoiceField, FormField, Input, ModalFrame } from "a13n-ui";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Dialog, Input } from "a13n-ui";
-import { Copy, KeyRound, Plus } from "lucide-react";
+import { useState } from "react";
+import { CopyButton, CopyableId } from "../../shared/copy";
+import { PageActions } from "../../shared/page-actions";
+
+import { KeyIcon, PlusIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data } from "../../shared/api";
+import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
 import {
   Empty,
   ErrorNotice,
@@ -14,8 +19,12 @@ import {
   Timestamp,
 } from "../../shared/feedback";
 import { Confirm, FormActions } from "../../shared/form";
-import { Pagination, Table, useCursor } from "../../shared/collection";
 import styles from "../../shared/shared.module.css";
+import {
+  expirationOptions,
+  expirationTimestamp,
+  type Expiration,
+} from "./expiration";
 
 export function ApiKeys({
   accountId,
@@ -41,48 +50,44 @@ export function ApiKeys({
           .then(data);
       if (memberKeys)
         return client.http
-          .GET("/api/v1/workspaces/{workspace_id}/api-keys", {
+          .GET("/api/v1/workspaces/{workspace}/api-keys", {
             signal,
-            params: { path: { workspace_id: workspace.id }, query },
+            params: { path: { workspace: workspace.id }, query },
           })
           .then(data);
       return client.http
-        .GET("/api/v1/workspaces/{workspace_id}/personal-api-keys", {
+        .GET("/api/v1/workspaces/{workspace}/personal-api-keys", {
           signal,
-          params: { path: { workspace_id: workspace.id }, query },
+          params: { path: { workspace: workspace.id }, query },
         })
         .then(data);
     },
   });
   return (
     <div className={styles.stack}>
-      <div className={styles.toolbar}>
-        <p className={styles.muted}>
-          {t(
-            memberKeys
-              ? "Inspect and revoke member keys. Bearer values cannot be recovered."
-              : "These keys only grant access within this workspace.",
-          )}
-        </p>
+      <PageActions>
         {!memberKeys && (!accountId || can("api_key.manage")) && (
           <CreateKey accountId={accountId} />
         )}
-      </div>
+      </PageActions>
       {query.isPending ? (
-        <Loading />
+        <Loading variant="table" columns={memberKeys ? 6 : 5} rows={5} />
       ) : query.error ? (
         <ErrorNotice error={query.error} retry={() => void query.refetch()} />
       ) : query.data?.items.length ? (
         <>
-          <Table
+          <ResourceTable
             items={query.data.items}
             columns={[
               {
                 label: t("Name"),
+                tone: "primary",
                 render: (item) => (
                   <>
-                    <KeyRound size={13} /> {item.name}
-                    <small>{item.id}</small>
+                    <KeyIcon size={13} /> {item.name}
+                    <small>
+                      <CopyableId value={item.id} />
+                    </small>
                   </>
                 ),
               },
@@ -90,18 +95,21 @@ export function ApiKeys({
                 ? [
                     {
                       label: t("Owner"),
+                      tone: "muted" as const,
                       render: (
                         item: NonNullable<typeof query.data>["items"][number],
-                      ) => <code>{item.principal_id}</code>,
+                      ) => <CopyableId value={item.principal_id} />,
                     },
                   ]
                 : []),
               {
                 label: t("Created"),
+                tone: "muted",
                 render: (item) => <Timestamp value={item.created_at} />,
               },
               {
                 label: t("Expires"),
+                tone: "muted",
                 render: (item) =>
                   item.expires_at ? (
                     <Timestamp value={item.expires_at} />
@@ -126,9 +134,12 @@ export function ApiKeys({
               },
               {
                 label: t("Actions"),
+                align: "right",
                 render: (item) =>
                   !item.revoked_at && (
                     <Confirm
+                      subject={item.name}
+                      triggerVariant="ghost"
                       title={t("Revoke API key")}
                       description={t(
                         "Applications using this key will lose access immediately.",
@@ -165,13 +176,13 @@ function CreateKey({ accountId }: { accountId?: string }) {
     cache = useQueryClient();
   const [open, setOpen] = useState(false),
     [name, setName] = useState(""),
-    [expires, setExpires] = useState("");
+    [expires, setExpires] = useState<Expiration>("never");
   const create = useMutation({
     gcTime: 0,
     mutationFn: async () => {
       const body = {
         name,
-        expires_at: expires ? new Date(expires).toISOString() : null,
+        expires_at: expirationTimestamp(expires),
       };
       return accountId
         ? client.http
@@ -181,8 +192,8 @@ function CreateKey({ accountId }: { accountId?: string }) {
             })
             .then(data)
         : client.http
-            .POST("/api/v1/workspaces/{workspace_id}/personal-api-keys", {
-              params: { path: { workspace_id: workspace.id } },
+            .POST("/api/v1/workspaces/{workspace}/personal-api-keys", {
+              params: { path: { workspace: workspace.id } },
               body,
             })
             .then(data);
@@ -192,26 +203,28 @@ function CreateKey({ accountId }: { accountId?: string }) {
     },
   });
   return (
-    <Dialog
+    <ModalFrame
+      onOpenChange={(value) => {
+        if (!create.isPending) {
+          setOpen(value);
+          create.reset();
+          setName("");
+          setExpires("never");
+        }
+      }}
+      trigger={
+        <Button variant="default" type="button">
+          {<PlusIcon size={14} />}
+          {t("Create key")}
+        </Button>
+      }
+      size={"md"}
       title={t("Create API key")}
       description={t(
         "The key belongs to this workspace and is shown only once.",
       )}
       closeLabel={t("Close")}
       open={open}
-      onOpenChange={(value) => {
-        if (!create.isPending) {
-          setOpen(value);
-          create.reset();
-          setName("");
-          setExpires("");
-        }
-      }}
-      trigger={
-        <Button icon={<Plus size={14} />} variant="primary">
-          {t("Create key")}
-        </Button>
-      }
     >
       {create.data ? (
         <SecretReveal value={create.data.bearer} />
@@ -223,46 +236,51 @@ function CreateKey({ accountId }: { accountId?: string }) {
             create.mutate();
           }}
         >
-          <Input
-            label={t("Name")}
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-            required
-            maxLength={128}
-            autoFocus
-          />
-          <Input
-            label={t("Expiration date")}
-            type="datetime-local"
+          <FormField className="min-w-0 w-full" label={t("Name")}>
+            <Input
+              required={true}
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              maxLength={128}
+              autoFocus
+            />
+          </FormField>
+          <ChoiceField
+            placeholder={t("Select expiration")}
             value={expires}
-            onChange={(event) => setExpires(event.target.value)}
-            hint={t("Leave empty for no expiration.")}
+            className="min-w-0"
+            onValueChange={(value) => {
+              const option = expirationOptions.find(
+                (option) => option.value === value,
+              );
+              if (option) setExpires(option.value);
+            }}
+            label={t("Expires after")}
+            options={expirationOptions.map((option) => ({
+              ...option,
+              label: t(option.label),
+            }))}
           />
           <ErrorNotice error={create.error} />
-          <FormActions pending={create.isPending} label={t("Create key")} />
+          <FormActions
+            onCancel={() => setOpen(false)}
+            pending={create.isPending}
+            label={t("Create key")}
+          />
         </form>
       )}
-    </Dialog>
+    </ModalFrame>
   );
 }
 export function SecretReveal({ value }: { value: string }) {
   const { t } = useTranslation();
-  const copy = useMutation({
-    mutationFn: () => navigator.clipboard.writeText(value),
-  });
   return (
     <div className={styles.stack}>
       <p>{t("Copy this value now. It will not be displayed again.")}</p>
-      <Input
-        label={t("One-time value")}
-        value={value}
-        readOnly
-        autoComplete="off"
-      />
-      <Button icon={<Copy size={14} />} onClick={() => copy.mutate()}>
-        {t(copy.isSuccess ? "Copied" : "Copy")}
-      </Button>
-      <ErrorNotice error={copy.error} />
+      <FormField className="min-w-0 w-full" label={t("One-time value")}>
+        <Input value={value} readOnly autoComplete="off" />
+      </FormField>
+      <CopyButton value={value} />
     </div>
   );
 }

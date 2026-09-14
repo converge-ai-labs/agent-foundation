@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from datetime import datetime
 from enum import StrEnum
 from typing import Annotated, Literal
 
@@ -84,6 +85,19 @@ class ThreadRunSubmissionRequest(StrictModel):
     config_override: AgentRunOverride | None = None
     hook_subscription: InlineHookSubscriptionInput | None = None
     waiting_resolution: WaitingResolutionDefaults | None = None
+
+    @model_validator(mode="after")
+    def preserve_waiting_execution(self):
+        execution_fields = {
+            "agent_id",
+            "agent_revision_id",
+            "expected_current_revision_id",
+            "environment",
+            "config_override",
+        }
+        if self.waiting_resolution is not None and self.model_fields_set & execution_fields:
+            raise ValueError("Waiting Continue cannot supply execution overrides.")
+        return self
 
     @model_serializer(mode="wrap")
     def preserve_environment_selection(self, handler: SerializerFunctionWrapHandler):
@@ -419,14 +433,6 @@ def _validate_inbox_binding(entry: ThreadInboxEntry) -> None:
         raise ValueError("pending inbox binding is invalid")
 
 
-class ThreadInboxCounter(StrictModel):
-    organization_id: ObjectId
-    thread_id: ThreadId
-    next_delivery_sequence: int = Field(ge=1)
-    pending_count: int = Field(ge=0)
-    pending_bytes: int = Field(ge=0)
-
-
 class SteerReceipt(StrictModel):
     schema_version: Literal["1"] = "1"
     session_id: ObjectId
@@ -637,7 +643,6 @@ __all__ = [
     "SteerReceipt",
     "SteerStatus",
     "SubmittedPendingResolution",
-    "ThreadInboxCounter",
     "ThreadInboxEntry",
     "ThreadInboxKind",
     "ThreadInboxStatus",
@@ -655,3 +660,10 @@ __all__ = [
     "normalize_feedback",
     "normalize_waiting_continue",
 ]
+
+
+class InterruptReceipt(StrictModel):
+    schema_version: Literal["1"] = "1"
+    run_id: str
+    status: Literal["cancelled"] = "cancelled"
+    interrupted_at: datetime

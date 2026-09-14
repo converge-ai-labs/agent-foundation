@@ -1,28 +1,35 @@
 # Harness UI WebUI
 
-## Current Browser Contract
+## Overview
 
-The bundled WebUI renders only a **Hello World** heading. It is a static React page, not an Agent conversation or management application. It has no conversation composer, Thread navigation, setup, Settings, diagnostics, or execution controls.
+WebUI is the project-centric collaborative browser surface of Harness UI. Trusted participants connect to one foreground server, see one another's current page presence, and share conversations, prompt drafts, saved-output comments, configuration, and explicitly enabled native Host access. It is not a multi-tenant service or a second Agent execution engine.
 
-Loading the page makes no application API requests, opens no SSE subscriptions, and starts no Agent operation. The page does not consume the startup URL's API-key fragment, authenticate, retain access keys, or store application state in browser storage. It does not implement client-side application routes. Server-recognized navigation paths can serve the same placeholder without providing the former browser features.
+## Document Catalog
 
-## Server and Application Boundary
+| Document                                                               | Owning contract                                                                                                                         |
+| ---------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| [00-overview.md](00-overview.md)                                       | Browser product boundary, navigation, Project configuration experience, and application integration                                     |
+| [01-collaborative-conversations.md](01-collaborative-conversations.md) | Page/focus presence, editor presence, shared prompt CRDT, submission, and independent delivery boundaries                               |
+| [02-host-computer-sharing.md](02-host-computer-sharing.md)             | Native Host files, Git-aware views, PTY, access gating, and human development workflows                                                 |
+| [03-distribution.md](03-distribution.md)                               | Bundled browser assets and the ready-to-use Docker development image                                                                    |
+| [04-workbench-interaction.md](04-workbench-interaction.md)             | Default user journey, participant awareness, composer/comment controls, configuration UX, code/diff workflows, and terminal interaction |
+| [05-output-comments.md](05-output-comments.md)                         | Published comments on saved assistant text, immutable anchors, author attribution, publication/reconciliation, and execution separation |
 
-The [HTTP adapter contract](../05-runtime-subagents-and-surfaces.md#http-adapter-contract) remains independent of the placeholder. `a13n-harness-ui webui` starts one foreground HTTP/SSE server owning one WebUI-mode `HarnessUiApp`; the page does not own that App or its lifetime. Browser disconnect does not stop the server or cancel App execution.
+## Reading Paths
 
-[HTTP startup and access](../05-runtime-subagents-and-surfaces.md#http-startup-and-access) owns listener binding, terminal key output, API authentication, Host/Origin checks, and static-asset security. The existing finite API, authenticated OpenAPI document, summary stream, focused stream, cursor/reset behavior, and App mutation semantics remain server contracts. The absence of a browser application neither removes these APIs nor relaxes their access requirements.
+Read `00` for the product and `04` for the end-to-end user experience. Read `01` for page awareness and pair prompting, `05` and [local comment storage](../03-local-storage-and-recovery.md#output-comment-storage) for persistent discussion, `02` for native server access, and `03` for packaging and container deployment boundaries.
 
-## Build and Distribution
+[App and surfaces](../05-runtime-subagents-and-surfaces.md) owns listener startup, API-key selection, HTTP/SSE delivery, and execution authority. [Configuration](../01-configuration-and-resource-catalog.md), [Projects and Threads](../04-projects-threads-and-environments.md), and [storage](../03-local-storage-and-recovery.md) own the shared domain contracts consumed by the browser.
 
-`frontend/apps/a13n-harness-ui` remains private frontend build input with npm package name `a13n-harness-ui-webui`. TypeScript, React, and Vite produce the local static asset tree. The shared `frontend/pnpm-lock.yaml` owns dependency versions. There is no independently published npm artifact, browser-owned backend, Node.js runtime, or remote asset dependency.
+## Authority Rules
 
-The compiled assets and their hash manifest remain bundled in the `a13n-harness-ui` wheel and sdist under the [repository packaging boundary](../../repository-model.md#repository-surfaces). Repository and release asset preparation requires Node.js; installed runtime and wheel rebuilds from the sdist do not.
-
-The frontend retains an OpenAPI snapshot derived from the Python adapter for contract drift checks. That snapshot is not imported into the page. There is no generated browser API client or runtime validator bundle.
-
-## Verifiable Invariants
-
-1. The page renders a level-one Hello World heading without contacting the App API.
-2. Rendering the page cannot admit, steer, cancel, or resume an Agent operation, or mutate configuration.
-3. Browser rendering tests cover the placeholder; backend tests continue to own HTTP, authentication, OpenAPI, SSE, and App behavior.
-4. Production asset preparation and wheel/sdist inclusion remain required even though the page has no application features.
+01. One `HarnessUiApp` owns execution and mutations; browser state is not another Thread or configuration authority.
+02. A shared prompt draft is editable input, not a continuation checkpoint or durably accepted Run.
+03. Participants share work and report current page presence; they do not synchronize navigation/scroll or establish verified account identities.
+04. Host Files, Git views, and Host Terminal operate on the server machine, independently of the Agent's selected Environment.
+05. Access to native computer-sharing operations requires explicit startup enablement; API authentication bypass alone does not enable them.
+06. File-backed resources remain editable without the browser. Configuration UI does not create a parallel resource store.
+07. Browser disconnect neither cancels an Agent Run nor destroys a native terminal. Server process loss has different recovery consequences from browser disconnect.
+08. Browser assets remain part of the Harness UI distribution rather than an independently released application.
+09. Published comments survive App restart in the existing local store; page presence and shared drafts do not.
+10. Comments target saved AI output and do not modify it, enter model context automatically, or make the transcript a CRDT document.

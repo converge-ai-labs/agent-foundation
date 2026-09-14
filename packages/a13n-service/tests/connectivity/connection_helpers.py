@@ -1,0 +1,19 @@
+"""Common resource management used by protocol-focused tests."""
+
+from a13n_service.connectivity.connections.checks import ConnectionChecks
+from a13n_service.connectivity.connections.service import ConnectionService
+from a13n_service.connectivity.connectors.connections import ConnectorConnectionService
+from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
+from a13n_service.connectivity.mcp.service import MCPConnectionService
+from a13n_service.endpoint_policy import EndpointPolicy
+
+
+def management(protocol: ConnectorConnectionService | MCPConnectionService) -> ConnectionService:
+    policy = protocol._endpoint_policy if isinstance(protocol, MCPConnectionService) else EndpointPolicy()
+    return ConnectionService(protocol._sessions, policy, clock=protocol._clock)
+
+
+def mcp_checks(protocol: MCPConnectionService) -> ConnectionChecks:
+    return ConnectionChecks(
+        protocol._sessions, ConnectorProviderRegistry(), protocol._protector, protocol, clock=protocol._clock
+    )

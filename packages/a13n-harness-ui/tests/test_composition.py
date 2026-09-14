@@ -20,7 +20,7 @@ from a13n_harness_ui.composition import (
     ThreadCompositionSelection,
 )
 from a13n_harness_ui.configuration import load_harness_ui_configuration
-from a13n_harness_ui.environment_paths import EnvironmentPathLayout
+from a13n_harness_ui.environment_paths import BUILTIN_SKILLS_PATH, EnvironmentPathLayout
 from a13n_harness_ui.environment_profiles import SANDBOX_PROFILE_ID
 from a13n_harness_ui.environment_runtime import EnvironmentSnapshotReconstructor
 from a13n_harness_ui.errors import CompositionError
@@ -242,16 +242,153 @@ async def test_resolves_release_owned_sandbox_profile_without_configuration_reso
     assert reconstructed.adapter.preserves_host_paths
 
 
-async def test_generation_validation_rejects_selected_unknown_capability(tmp_path: Path) -> None:
+async def test_generation_validation_skips_selected_unknown_capability(tmp_path: Path) -> None:
     path = _write_source(tmp_path)
     agent = tmp_path / "agents/assistant.yaml"
     agent.write_text(agent.read_text().replace("dynamic_environment", "vendor.missing"))
     source = await load_harness_ui_configuration(path)
 
-    with pytest.raises(CompositionError) as invalid:
-        AgentCompositionResolver(_catalog()).validate_generation(source)
+    resolver = AgentCompositionResolver(_catalog())
+    warnings: list[str] = []
+    resolver.validate_generation(source, warnings=warnings)
+    assert len(warnings) == 1
+    assert "agent-assistant" in warnings[0]
+    assert "vendor.missing" in warnings[0]
+    assert "capability_catalog_invalid" in warnings[0]
+    assert source.agents["agent-assistant"].capabilities[0].capability == "vendor.missing"
+    composition = resolver.resolve_run(source, _selection())
+    assert all(item.capability != "vendor.missing" for item in composition.root.capabilities)
+    assert all(item.key != "vendor.missing" for item in composition.dependencies)
+    AgentReconstructor(_catalog()).reconstruct(composition, subagent_operator=_UnusedOperator())
 
-    assert invalid.value.code == "capability_catalog_invalid"
+
+async def test_invalid_capabilities_are_skipped_per_entry_without_default_fallback(tmp_path: Path) -> None:
+    from a13n_harness_ui.configuration.models import CapabilitySelection
+
+    source = await load_harness_ui_configuration(_write_source(tmp_path))
+    agent = source.agents["agent-assistant"]
+    selections = (
+        CapabilitySelection(capability="NativeTool", configuration={"kind": "web_search"}),
+        CapabilitySelection(capability="NativeTool", configuration={"kind": "missing"}),
+        CapabilitySelection(capability="NativeTool", configuration={"kind": "code_execution"}),
+        CapabilitySelection(capability="working_state", configuration={"unexpected": "private-value"}),
+        CapabilitySelection(capability="codeact", configuration={"unexpected": True}),
+    )
+    source = source.model_copy(
+        update={
+            "agents": {
+                **source.agents,
+                agent.id: agent.model_copy(update={"capabilities": selections}),
+                "agent-reviewer": source.agents["agent-reviewer"].model_copy(
+                    update={
+                        "capabilities": (CapabilitySelection(capability="vendor.missing"),),
+                    }
+                ),
+            }
+        }
+    )
+    resolver = AgentCompositionResolver(_catalog())
+    warnings: list[str] = []
+    resolver.validate_generation(source, warnings=warnings)
+    assert len(warnings) == 4
+    assert any("agent-reviewer" in warning for warning in warnings)
+    assert all("private-value" not in warning for warning in warnings)
+    composition = resolver.resolve_run(source, _selection())
+    keys = [item.capability for item in composition.root.capabilities]
+    assert keys.count("NativeTool") == 2
+    assert "working_state" not in keys
+    assert "codeact" not in keys
+    assert composition.root.children[0].definition.capabilities == composition.root.capabilities
+    assert "vendor.missing" not in {item.key for item in composition.dependencies}
+    AgentReconstructor(_catalog()).reconstruct(composition, subagent_operator=_UnusedOperator())
+
+
+async def test_capability_warnings_do_not_change_generation_identity_or_source(tmp_path: Path) -> None:
+    from dataclasses import dataclass
+
+    from pydantic_ai.capabilities import AbstractCapability
+
+    @dataclass
+    class OptionalCapability(AbstractCapability):
+        pass
+
+    path = _write_source(tmp_path)
+    agent = tmp_path / "agents/assistant.yaml"
+    agent.write_text(
+        agent.read_text()
+        .replace("dynamic_environment", "OptionalCapability")
+        .replace("{files_enabled: true, shell_enabled: false}", "{}")
+    )
+    original = agent.read_bytes()
+    source = await load_harness_ui_configuration(path)
+    async with open_local_store(StorageSettings(data_root=tmp_path / "data")) as store:
+        service = CompositionAcceptanceService(store, AgentCompositionResolver(_catalog()))
+        await service.accept(source, expected_current_digest=None)
+        assert len(service.capability_warnings) == 1
+        assert await service.current() == source
+        # A later process can install the implementation without changing source identity.
+        catalog = HarnessUiExtensionCatalog(
+            host_capabilities={"OptionalCapability": OptionalCapability}, host_plugin_factories=(_MemoryFactory(),)
+        )
+        restarted = CompositionAcceptanceService(store, AgentCompositionResolver(catalog))
+        await restarted.accept(source, expected_current_digest=source.source_digest)
+        assert restarted.capability_warnings == ()
+        assert await restarted.current() == source
+    assert agent.read_bytes() == original
+
+
+async def test_unexpected_capability_constructor_failure_is_not_skipped(tmp_path: Path) -> None:
+    from dataclasses import dataclass
+
+    from a13n_harness_ui.configuration.models import CapabilitySelection
+    from pydantic_ai.capabilities import AbstractCapability
+
+    @dataclass
+    class BrokenCapability(AbstractCapability):
+        def __post_init__(self) -> None:
+            raise RuntimeError("unexpected construction failure")
+
+    source = await load_harness_ui_configuration(_write_source(tmp_path))
+    agent = source.agents["agent-assistant"]
+    source = source.model_copy(
+        update={
+            "agents": {
+                **source.agents,
+                agent.id: agent.model_copy(
+                    update={
+                        "capabilities": (CapabilitySelection(capability="BrokenCapability"),),
+                    }
+                ),
+            }
+        }
+    )
+    catalog = HarnessUiExtensionCatalog(
+        host_capabilities={"BrokenCapability": BrokenCapability}, host_plugin_factories=(_MemoryFactory(),)
+    )
+    with pytest.raises(RuntimeError, match="unexpected construction failure"):
+        AgentCompositionResolver(catalog).validate_generation(source)
+
+
+async def test_captured_capability_reconstruction_remains_strict(tmp_path: Path) -> None:
+    from a13n_harness_ui.composition.models import ResolvedCapabilityRecipe
+
+    source = await load_harness_ui_configuration(_write_source(tmp_path))
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    captured = composition.model_copy(
+        update={
+            "root": composition.root.model_copy(
+                update={
+                    "capabilities": (
+                        *composition.root.capabilities,
+                        ResolvedCapabilityRecipe(capability="vendor.missing", configuration={}),
+                    ),
+                }
+            )
+        }
+    )
+    with pytest.raises(CompositionError) as error:
+        AgentReconstructor(_catalog()).reconstruct(captured, subagent_operator=_UnusedOperator())
+    assert error.value.code == "capability_catalog_invalid"
 
 
 @pytest.mark.parametrize(
@@ -499,6 +636,7 @@ async def test_reconstruction_propagates_all_project_mounts_to_skills(tmp_path: 
         if isinstance(capability, SkillsCapability)
     )
     assert skills.manager.roots == (
+        BUILTIN_SKILLS_PATH,
         user_skills.as_posix(),
         f"{workspace_3.as_posix()}/.agents/skills",
         f"{workspace_2.as_posix()}/.agents/skills",
@@ -547,6 +685,7 @@ def test_skills_capability_builds_deterministic_multi_mount_sources() -> None:
 
     assert isinstance(selected.capability, SkillsCapability)
     assert selected.capability.manager.roots == (
+        BUILTIN_SKILLS_PATH,
         "/environment/user-skills",
         "/environment/content-plugin-1",
         "/environment/content-plugin-2",
@@ -570,6 +709,7 @@ def test_skills_capability_accepts_windows_native_mount_paths() -> None:
 
     assert isinstance(selected.capability, SkillsCapability)
     assert selected.capability.manager.roots == (
+        BUILTIN_SKILLS_PATH,
         "C:/Users/example/.agents/skills",
         "//server/share/shared/.agents/skills",
         "D:/work/project/.agents/skills",
@@ -695,7 +835,7 @@ harness_plugins: null""",
     assert recipe.model in reconstructed.model_resolver._recipes.values()
 
 
-async def test_shell_review_rejects_missing_model_resource(tmp_path: Path) -> None:
+async def test_shell_review_skips_missing_model_resource(tmp_path: Path) -> None:
     path = _write_source(tmp_path)
     agent = tmp_path / "agents" / "assistant.yaml"
     agent.write_text(
@@ -707,9 +847,14 @@ harness_plugins: null""",
         )
     )
     source = await load_harness_ui_configuration(path)
-    with pytest.raises(CompositionError) as error:
-        AgentCompositionResolver(_catalog()).validate_generation(source)
-    assert error.value.code == "capability_model_missing"
+    resolver = AgentCompositionResolver(_catalog())
+    warnings: list[str] = []
+    resolver.validate_generation(source, warnings=warnings)
+    assert len(warnings) == 1
+    assert "ShellReviewCapability" in warnings[0]
+    assert "capability_model_missing" in warnings[0]
+    composition = resolver.resolve_run(source, _selection())
+    assert all(item.capability != "ShellReviewCapability" for item in composition.root.capabilities)
 
 
 async def test_webui_collaboration_is_absent_from_reconstructed_children(tmp_path: Path) -> None:
@@ -806,7 +951,7 @@ async def test_generic_service_tier_override_only_changes_root_and_inherited_chi
     model.write_text(
         model.read_text()
         .replace("route: openai:gpt-5", f"route: {route}")
-        .replace("settings: {temperature: 0}", f"settings: {{{tier_key}: {configured}}}")
+        .replace("settings: {temperature: 0}", f"settings: {{{tier_key}: {configured}, max_tokens: 32768}}")
     )
     source = await load_harness_ui_configuration(path)
     resolver = AgentCompositionResolver(_catalog())
@@ -822,9 +967,10 @@ async def test_generic_service_tier_override_only_changes_root_and_inherited_chi
         if tier_key != "service_tier":
             assert tier_key not in composition.root.model.settings
     assert composition.root.model.settings["thinking"] == "low"
+    assert composition.root.model.settings["max_tokens"] == 32768
     assert composition.root.children[0].definition.model == composition.root.model
     assert composition.root.children[1].definition.model == original.root.children[1].definition.model
-    assert source.models["model-primary"].settings == {tier_key: configured}
+    assert source.models["model-primary"].settings == {tier_key: configured, "max_tokens": 32768}
     assert resolver.resolve_run(source, _selection()).root == original.root
 
 
@@ -884,3 +1030,44 @@ async def test_full_control_shell_inherits_host_path_and_custom_variables(tmp_pa
         assert "inherited-test-value" not in environment.descriptor.model_dump_json()
     finally:
         await environment.close()
+
+
+async def test_proxy_groups_capture_enabled_sources_and_markdown_inheritance(tmp_path: Path) -> None:
+    path = _write_source(tmp_path)
+    agent_path = tmp_path / "agents/assistant.yaml"
+    agent_path.write_text(
+        agent_path.read_text()
+        + """
+tool_proxy:
+  groups:
+    knowledge:
+      description: Search documents and memory.
+      mcp_servers: [mcp-docs]
+      harness_plugins: [plugin-memory]
+  config: {max_results: 5}
+"""
+    )
+    source = await load_harness_ui_configuration(path)
+    resolver = AgentCompositionResolver(_catalog())
+    selection = replace(_selection(), mcp_server_ids=())
+    composition = resolver.resolve_run(source, selection)
+    proxy = composition.root.tool_proxy
+    assert proxy is not None
+    assert proxy.config.max_results == 5
+    assert proxy.groups["knowledge"].mcp_servers == ()
+    assert proxy.groups["knowledge"].harness_plugins == ("plugin-memory",)
+    assert composition.root.children[0].definition.tool_proxy == proxy
+    assert composition.root.children[1].definition.tool_proxy is None
+    assert type(composition).model_validate_json(composition.model_dump_json()) == composition
+    AgentReconstructor(_catalog()).reconstruct(composition, subagent_operator=_UnusedOperator())
+    assert source.agents["agent-assistant"].tool_proxy.groups["knowledge"].mcp_servers == ("mcp-docs",)
+
+
+async def test_legacy_composition_missing_proxy_roundtrips_without_changing_payload(tmp_path: Path) -> None:
+    source = await load_harness_ui_configuration(_write_source(tmp_path))
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, _selection())
+    payload = composition.model_dump_json()
+    assert '"tool_proxy"' not in payload
+    restored = type(composition).model_validate_json(payload)
+    assert restored.root.tool_proxy is None
+    assert restored.model_dump_json() == payload

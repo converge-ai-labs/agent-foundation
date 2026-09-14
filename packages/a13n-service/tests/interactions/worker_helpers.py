@@ -6,6 +6,8 @@ from unittest.mock import AsyncMock, Mock
 from a13n_environment import EnvironmentProviderCatalog
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 from a13n_service.models.provider_runtime import LiveProviderResolver
+from a13n_service.process.agents import build_agent_resources
+from a13n_service.process.components import Components
 from a13n_service.process.resources import ExecutionResources
 from a13n_service.process.runtime import SharedRuntime
 from a13n_service.process.worker import build_worker_runtime
@@ -15,6 +17,30 @@ from anyio import CapacityLimiter
 from fakeredis.aioredis import FakeRedis
 
 from tests.lifecycle_support import test_lifecycle_writer
+
+
+async def prepare_permissions(sessions, run, context, *, agent_ids=frozenset()):
+    from a13n_service.interactions.models import RunRecord
+    from a13n_service.storage import short_session
+
+    from .conftest import WORKSPACE_ID
+
+    # Acceptance fixtures can return the input Run before Environment selection.
+    # Production preparation receives the final persisted Run from the claim.
+    async with short_session(sessions) as session:
+        run = (await session.get(RunRecord, run.id)).to_resource()
+    await context.authorization.initialize(
+        sessions,
+        principal=run.authority_principal,
+        organization_id=run.organization_id,
+        workspace_id=WORKSPACE_ID,
+        root_agent_id=run.agent_id,
+        agent_ids=agent_ids,
+        run_id=context.run_id,
+        run_attempt_id=context.run_attempt_id,
+        environment_id=run.environment_id,
+    )
+    return context
 
 
 async def accepted_running_attempt(sessions, objects):
@@ -34,6 +60,7 @@ async def accepted_running_attempt(sessions, objects):
     assert isinstance(claim, ClaimedAttempt)
     execution = AttemptExecutionService(sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer())
     context = _authority(claim)
+    await prepare_permissions(sessions, run, context)
     preparation = await execution.commit_preparation_success(context)
     await execution.enter_harness(context, preparation=preparation, harness_run_id="integration-test")
     return run, context
@@ -41,7 +68,18 @@ async def accepted_running_attempt(sessions, objects):
 
 @asynccontextmanager
 async def worker_runtime(
-    sessions, objects, path, monkeypatch, *, settings, model_factory, connectors=None, plugin_catalog=None
+    sessions,
+    objects,
+    path,
+    monkeypatch,
+    *,
+    settings,
+    model_factory,
+    connectors=None,
+    plugin_catalog=None,
+    invocations=None,
+    observability=None,
+    environment_catalog=None,
 ):
     resources = Mock(spec=ExecutionResources)
     resources.native_model_factory = model_factory
@@ -61,10 +99,14 @@ async def worker_runtime(
             settings,
             shared,
             resources,
-            EnvironmentProviderCatalog(),
+            environment_catalog if environment_catalog is not None else EnvironmentProviderCatalog(),
             stack,
             connectors,
+            invocations=invocations
+            if invocations is not None
+            else build_agent_resources(Components(), shared, resources.model_provider_registry).invocations,
             plugin_catalog=plugin_catalog if plugin_catalog is not None else HarnessPluginFactoryCatalog(()),
+            observability=observability,
         )
         assert runtime.execution_loop is not None
         assert any(component.run == runtime.execution_loop.run for component in background)

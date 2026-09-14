@@ -5,8 +5,9 @@ from a13n_service.environments.domain import NewEnvironmentSelection
 from a13n_service.environments.models import EnvironmentRecord
 from a13n_service.gateway.notifications import NotificationService, NotificationSubscription
 from a13n_service.gateway.queries import NativeInteractionQueries
-from a13n_service.interactions.commands import ForkRunCommand, InteractionCommandError
+from a13n_service.interactions.command_values import ForkRunCommand
 from a13n_service.interactions.control_domain import ThreadRunSubmissionRequest
+from a13n_service.interactions.errors import InteractionCommandError
 from a13n_service.interactions.models import RunRecord, ThreadRecord
 from a13n_service.interactions.queue import QueuedSubmissionStore
 from a13n_service.interactions.submissions import QueuedSubmissionService
@@ -37,8 +38,12 @@ async def test_start_environment_choice_replays_without_duplicate_allocation(
         request = request.model_copy(
             update={"environment": None if selection == "none" else NewEnvironmentSelection(template_id=template.id)}
         )
-    accepted = await commands.start(actor=_actor(), workspace_id=WORKSPACE_ID, idempotency_key="start", request=request)
-    repeated = await commands.start(actor=_actor(), workspace_id=WORKSPACE_ID, idempotency_key="start", request=request)
+    accepted = await commands.runs.start(
+        actor=_actor(), workspace_id=WORKSPACE_ID, idempotency_key="start", request=request
+    )
+    repeated = await commands.runs.start(
+        actor=_actor(), workspace_id=WORKSPACE_ID, idempotency_key="start", request=request
+    )
     assert repeated == accepted
     async with short_session(lifecycle_interaction_sessions) as database:
         run = await database.get(RunRecord, accepted.run_id)
@@ -53,7 +58,7 @@ async def test_start_environment_choice_replays_without_duplicate_allocation(
             assert environment.status == "unprepared"
     altered = request.model_copy(update={"environment": None}) if selection == "default" else _request()
     with pytest.raises(InteractionCommandError):
-        await commands.start(actor=_actor(), workspace_id=WORKSPACE_ID, idempotency_key="start", request=altered)
+        await commands.runs.start(actor=_actor(), workspace_id=WORKSPACE_ID, idempotency_key="start", request=altered)
 
 
 async def test_empty_thread_is_readable_and_accepts_first_input_with_explicit_null_environment(
@@ -67,6 +72,9 @@ async def test_empty_thread_is_readable_and_accepts_first_input_with_explicit_nu
         body=CreateThreadRequest(agent_id=AGENT_ID, environment=None),
         idempotency_key="empty-thread",
     )
+    async with short_session(service.sessions) as database:
+        persisted = await database.get(ThreadRecord, thread.id)
+        assert (persisted.next_delivery_sequence, persisted.pending_count, persisted.pending_bytes) == (1, 0, 0)
     objects = await LocalObjectStore.create(tmp_path / "gateway-objects")
     commands = _commands(lifecycle_interaction_sessions, objects, _Preparation(), _Freezing([_frozen()]))
     queries = NativeInteractionQueries(lifecycle_interaction_sessions, RunReplayStore(objects))
@@ -112,13 +120,15 @@ async def test_explicit_null_successor_and_fork_preserve_environment_selection(
     await recipe(lifecycle_interaction_sessions, tmp_path, "on_use")
     objects = await LocalObjectStore.create(tmp_path / "gateway-objects")
     commands = _commands(lifecycle_interaction_sessions, objects, _Preparation(), _Freezing([_frozen()]))
-    source = await commands.start(
+    source = await commands.runs.start(
         actor=_actor(), workspace_id=WORKSPACE_ID, idempotency_key="source", request=_request()
     )
     await _complete_run(lifecycle_interaction_sessions, objects, run_id=source.run_id)
     request = ForkRunCommand(input=_request().input, environment=None)
-    fork = await commands.fork(actor=_actor(), run_id=source.run_id, idempotency_key="fork", request=request)
-    assert await commands.fork(actor=_actor(), run_id=source.run_id, idempotency_key="fork", request=request) == fork
+    fork = await commands.runs.fork(actor=_actor(), run_id=source.run_id, idempotency_key="fork", request=request)
+    assert (
+        await commands.runs.fork(actor=_actor(), run_id=source.run_id, idempotency_key="fork", request=request) == fork
+    )
     async with short_session(lifecycle_interaction_sessions) as database:
         assert (await database.get(RunRecord, source.run_id)).environment_id is not None
         assert (await database.get(RunRecord, fork.run_id)).environment_id is None

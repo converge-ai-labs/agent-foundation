@@ -4,6 +4,7 @@ import json
 from collections.abc import AsyncIterator, Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
+from unittest.mock import Mock
 
 import pytest
 from a13n_environment import EnvironmentState
@@ -23,9 +24,11 @@ from a13n_harness import (
 )
 from a13n_harness.capabilities import CompactionCapability, CompactionPolicy
 from a13n_harness.capabilities.context import _COMPACTION_PROMPT
+from a13n_service.iam.attempts import AttemptAuthorization
 from a13n_service.interactions.attempts import (
     AttemptContext,
     AttemptExecutionService,
+    AttemptLease,
     AttemptMutationReceipt,
     AttemptPreparationAccepted,
 )
@@ -205,10 +208,12 @@ def _context(thread_id: str) -> AttemptContext:
         worker_id="worker-1",
         worker_build_id="build-1",
         lease_duration=timedelta(seconds=30),
+        lease=AttemptLease(NOW + timedelta(seconds=30)),
         renewal_interval=timedelta(seconds=10),
         renewal_timeout=timedelta(seconds=5),
         reconciliation_timeout=timedelta(seconds=5),
         cleanup_timeout=timedelta(seconds=5),
+        authorization=Mock(spec=AttemptAuthorization),
     )
 
 
@@ -1221,10 +1226,13 @@ async def test_slow_checkpoint_keeps_lease_live_and_fences_dispatch(
     from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
     from a13n_service.storage import short_session
 
+    from tests.hooks.support import seed_hook_actor_access
     from tests.lifecycle_support import test_lifecycle_writer
 
     from .test_attempt_execution import _accept_root, _authority, _worker
+    from .worker_helpers import prepare_permissions
 
+    await seed_hook_actor_access(interaction_sessions)
     states, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
     claim = await AttemptScheduler(interaction_sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer()).claim(
         run.id, _worker()
@@ -1239,7 +1247,7 @@ async def test_slow_checkpoint_keeps_lease_live_and_fences_dispatch(
         raise AssertionError("No input was accepted in this test")
 
     control = RunAttemptControl(
-        context=_authority(claim),
+        context=await prepare_permissions(interaction_sessions, run, _authority(claim)),
         execution=execution,
         states=states,
         state=stored,
@@ -1276,6 +1284,8 @@ async def test_slow_checkpoint_keeps_lease_live_and_fences_dispatch(
             async with short_session(interaction_sessions) as database:
                 attempt = await database.get(RunAttemptRecord, claim.attempt.id)
                 assert attempt is not None and attempt.version == before + 1
+                assert context.lease.expires_at == attempt.to_resource().lease_expires_at
+                context.lease.require_current(claim.attempt.lease_expires_at)
             if lose_authority:
                 await control.authority_lost()
             release.set()

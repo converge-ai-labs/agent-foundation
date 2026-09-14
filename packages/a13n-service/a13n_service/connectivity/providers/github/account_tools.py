@@ -106,7 +106,7 @@ def actions(
 
     return {
         name: NativeAction(
-            Tool(name=name, description=name.replace(".", " "), inputSchema=model.model_json_schema()),
+            Tool(name=name, description=name.replace(".", " "), input_schema=model.model_json_schema()),
             partial(invoke, name, model),
         )
         for name, model in _ARGUMENTS.items()

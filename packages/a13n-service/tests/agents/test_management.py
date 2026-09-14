@@ -13,7 +13,7 @@ from a13n_service.agents.domain import (
     UpdateAgentRequest,
 )
 from a13n_service.agents.errors import AgentError
-from a13n_service.agents.persistence import load_replay, payload_identity
+from a13n_service.agents.persistence import load_replay, request_identity
 from a13n_service.digests import digest_request
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.etags import resource_etag
@@ -42,8 +42,8 @@ async def test_create_is_atomic_idempotent_and_starts_at_v1(agent_management: Ag
     assert created.agent.current_revision_id == created.revision.id
     assert created.revision.config == request.config
     assert created.revision.config_digest == digest_request(request.config)
-    assert created.revision.connector_tools == ()
-    assert created.revision.mcp_tools == ()
+    assert created.revision.connection_tools == ()
+    assert created.revision.connection_tools == ()
 
 
 @pytest.mark.anyio
@@ -80,14 +80,14 @@ async def test_expired_agent_evidence_allows_reusing_the_key(
     ("config_field", "selection", "reason"),
     [
         (
-            "connector_tools",
-            ({"connector_connection_id": "cconn_1234567890abcdef"},),
-            "connector_connection_unavailable",
+            "connection_tools",
+            ({"connection_id": "cconn_1234567890abcdef"},),
+            "connection_unavailable",
         ),
         (
-            "mcp_tools",
-            ({"mcp_connection_id": "mcpc_1234567890abcdef"},),
-            "mcp_connection_unavailable",
+            "connection_tools",
+            ({"connection_id": "mcpc_1234567890abcdef"},),
+            "connection_unavailable",
         ),
     ],
 )
@@ -329,6 +329,6 @@ async def test_agent_replay_rejects_organization_boundary(agent_sessions: async_
                 actor=organization_actor,
                 operation="agent.create",
                 scope_id=WORKSPACE_ID,
-                identity=payload_identity("workspace-only", {}),
+                identity=request_identity("workspace-only", {}),
                 now=NOW,
             )

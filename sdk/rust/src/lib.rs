@@ -1,7 +1,18 @@
-//! Rust SDK package for a13n Service.
-//!
-//! This crate currently reserves a stable package name while the service API is
-//! being designed. Client APIs will be added after the service contract is
-//! stable enough to support compatibility guarantees.
-
+//! Typed Native HTTP bindings and an async Search Provider convenience client.
 #![forbid(unsafe_code)]
+mod client;
+/// Low-level Native bindings. Request fields retain concrete types.
+/// ```compile_fail
+/// use a13n::generated::models::UpdateAgentRequest;
+/// let _ = UpdateAgentRequest { name: Some(Some(42)), ..Default::default() };
+/// ```
+/// ```compile_fail
+/// use a13n::generated::models::UserMessage;
+/// let _ = UserMessage { content: 42, ..Default::default() };
+/// ```
+pub mod generated;
+mod search;
+mod workspace;
+pub use client::{ApiError, CallError, Client, Error};
+pub use search::*;
+pub use workspace::WorkspaceClient;

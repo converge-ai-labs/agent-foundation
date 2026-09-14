@@ -13,7 +13,7 @@ from a13n_service.connectivity.connectors.contracts import ConnectorToolOutcome
 from a13n_service.connectivity.connectors.models import ConnectorProviderRecord
 from a13n_service.connectivity.mcp.models import MCPConnectionRecord
 from a13n_service.connectivity.mcp.transport import RemoteTransport
-from a13n_service.connectivity.selection_domain import ConnectorConnectionRunSelection, MCPConnectionToolSelection
+from a13n_service.connectivity.selection_domain import ConnectionRunSelection, ConnectionToolSelection
 from a13n_service.digests import digest_request
 from a13n_service.iam.models import RoleBindingRecord
 from a13n_service.interactions.control_models import ThreadInboxRecord
@@ -58,12 +58,16 @@ def rehash(config: EffectiveAgentConfig) -> EffectiveAgentConfig:
 
 
 def frozen_graph(mode, request_limit=None):
-    connector = ConnectorConnectionRunSelection(
-        connector_connection_id=CONNECTOR_CONNECTION_ID,
+    connector = ConnectionRunSelection(
+        kind="connector",
+        authorization_generation=1,
+        connection_id=CONNECTOR_CONNECTION_ID,
         connector_provider_id=CONNECTOR_ID,
         tools=("issues.create",),
     )
-    mcp = MCPConnectionToolSelection(mcp_connection_id=MCP_CONNECTION_ID, tools=("search",))
+    mcp = ConnectionRunSelection(
+        kind="mcp", authorization_generation=1, connection_id=MCP_CONNECTION_ID, tools=("search",)
+    )
     base = effective_agent_config()
     child = rehash(
         base.model_copy(
@@ -80,8 +84,10 @@ def frozen_graph(mode, request_limit=None):
                         "settings": {"temperature": 0.7},
                     }
                 ),
-                "connector_tools": (connector,),
-                "mcp_tools": (mcp,),
+                "connection_tools": tuple(
+                    ConnectionToolSelection(connection_id=item.connection_id, tools=item.tools)
+                    for item in (connector, mcp)
+                ),
             }
         )
     )
@@ -103,8 +109,7 @@ def frozen_graph(mode, request_limit=None):
                         agent_id=CHILD_AGENT_ID,
                         revision_content_digest="3" * 64,
                         effective_config=child,
-                        connector_connection_selections=(connector,),
-                        mcp_connection_selections=(mcp,),
+                        connection_selections=(connector, mcp),
                     )
                 },
             }
@@ -207,11 +212,9 @@ async def test_worker_child_uses_own_model_and_tools_and_delivers_result(
     factory = Mock(spec=NativeModelFactory)
     factory.build.side_effect = build
     settings = Settings(
-        _env_file=None,
-        build_version="test",
-        worker_concurrency=1,
-        worker_poll_interval_seconds=0.02,
-        subagent_reconcile_poll_interval_seconds=0.02,
+        service={"build_version": "test"},
+        worker={"concurrency": 1, "poll_interval_seconds": 0.02},
+        subagents={"reconcile_poll_interval_seconds": 0.02},
     )
     async with worker_runtime(
         interaction_sessions,
@@ -278,7 +281,7 @@ async def test_worker_child_uses_own_model_and_tools_and_delivers_result(
         # Validate each scope before admission, then reconstruct it once for
         # execution. Individual tool requests must not reparse retained context.
         assert parse_contexts.call_count == (4 if mode == "inline" else 6)
-        assert set(observed_models) == {MODEL_ID, CHILD_MODEL_ID}
+        assert set(observed_models) == {MODEL_ID, CHILD_MODEL_ID}, repr(parent_requests)
         assert len(child_requests) == (2 if request_limit is None else 1)
         connector_calls.assert_awaited_once()
         assert server.calls == [(None, "search")]
@@ -300,3 +303,100 @@ async def test_worker_child_uses_own_model_and_tools_and_delivers_result(
             assert child_state.envelope.effective_agent_config.resolved_model.execution.model_id == CHILD_MODEL_ID
 
             assert child_state.envelope.usage_limits.request_limit == (1000 if request_limit is None else 1)
+
+
+@pytest.mark.parametrize("refresh", ["healthy", "revoked", "unavailable"])
+async def test_inline_and_root_share_ten_loop_iam_refresh(
+    interaction_sessions, interaction_object_store, tmp_path, monkeypatch, caplog, refresh
+):
+    from a13n_service.iam import attempts as iam_attempts
+    from a13n_service.iam.models import UserRecord
+    from a13n_service.interactions.models import RunAttemptRecord
+    from sqlalchemy.exc import OperationalError
+
+    caplog.set_level("INFO")
+    await _grant_and_seed_child(interaction_sessions)
+    config = frozen_graph("inline")
+    child = config.child_configs[CHILD_REVISION_ID]
+    config = rehash(
+        config.model_copy(
+            update={
+                "child_configs": {
+                    CHILD_REVISION_ID: child.model_copy(
+                        update={
+                            "effective_config": rehash(
+                                child.effective_config.model_copy(update={"connection_tools": ()})
+                            ),
+                            "connection_selections": (),
+                        }
+                    )
+                }
+            }
+        )
+    )
+    monkeypatch.setattr(acceptance, "effective_agent_config", lambda: config)
+    _, parent, _ = await acceptance._accept_root(interaction_sessions, interaction_object_store)
+    requests = []
+    reads = AsyncMock(wraps=iam_attempts.read_principal_permissions)
+    monkeypatch.setattr(iam_attempts, "read_principal_permissions", reads)
+
+    async def model(messages, info, *, child):
+        requests.append("child" if child else "root")
+        if len(requests) == 10:
+            if refresh == "revoked":
+                async with transaction(interaction_sessions) as session:
+                    (await session.get(UserRecord, USER_ID)).status = "disabled"
+            elif refresh == "unavailable":
+                reads.side_effect = OperationalError("SELECT", {}, OSError("database unavailable"))
+        if child or len(requests) == 11:
+            yield "done"
+        else:
+            yield {
+                0: DeltaToolCall(
+                    name="delegate",
+                    json_args=json.dumps({"subagent": "researcher", "prompt": "Reply once."}),
+                    tool_call_id=f"child-{len(requests)}",
+                )
+            }
+
+    async def build(snapshot, _provider):
+        async def stream(messages, info):
+            async for item in model(messages, info, child=snapshot.model_id == CHILD_MODEL_ID):
+                yield item
+
+        return FunctionModel(stream_function=stream)
+
+    factory = Mock(spec=NativeModelFactory)
+    factory.build.side_effect = build
+    settings = Settings(service={"build_version": "test"}, worker={"concurrency": 1, "poll_interval_seconds": 0.02})
+    async with worker_runtime(
+        interaction_sessions, interaction_object_store, tmp_path, monkeypatch, settings=settings, model_factory=factory
+    ) as (runtime, _):
+        loop = runtime.execution_loop
+        with fail_after(20):
+            async with create_task_group() as tasks:
+                tasks.start_soon(loop.run)
+                while True:
+                    async with short_session(interaction_sessions) as session:
+                        attempt = await session.scalar(
+                            select(RunAttemptRecord).where(RunAttemptRecord.run_id == parent.id)
+                        )
+                        if attempt is not None and attempt.status in {"succeeded", "failed"}:
+                            row = await session.get(RunRecord, parent.id)
+                            break
+                    await sleep(0.02)
+                await loop.drain()
+                await loop.wait_stopped()
+                tasks.cancel_scope.cancel()
+    assert requests == ["root", "child"] * 5 + (["root"] if refresh == "healthy" else [])
+    assert reads.await_count == 2
+    assert attempt.status == ("succeeded" if refresh == "healthy" else "failed")
+    if refresh == "healthy":
+        assert row.status == "completed"
+        assert [
+            record.model_requests for record in caplog.records if record.message == "run_attempt_permissions_refreshed"
+        ] == [0, 10]
+    else:
+        assert attempt.failure_json["code"] == (
+            "attempt_authorization_denied" if refresh == "revoked" else "attempt_dependency_unavailable"
+        )

@@ -45,6 +45,8 @@ Projects under `examples/` may carry their own manifests and lock files when rea
 
 `a13n-harness-ui` is the independently versioned Python library/distribution supplying the `a13n-harness-ui` executable. Bare invocation starts the native full-terminal CLI; `a13n-harness-ui webui` starts the foreground browser server over the same reusable `HarnessUiApp` boundary. Its wheel and sdist contain both adapters, the compiled browser asset tree and hash manifest, and the project license. `frontend/apps/a13n-harness-ui` is private frontend build input, not an independent npm package. Repository/release asset preparation requires Node.js; installed runtime and wheel rebuilds from the sdist do not.
 
+The [Harness UI development image](a13n-harness-ui/webui/03-distribution.md#docker-development-image) is a container delivery of the same workbench, including its bundled browser. Its build and deployment definitions belong under `deploy/`. It creates neither an independent frontend release line nor an Agent Environment Provider; existing Harness UI version and cross-group dependency ownership remain unchanged.
+
 Maintained component source directories and public distributions use the same canonical `a13n-` name, such as `packages/a13n-environment` and `a13n-environment`. Python imports normalize hyphens to underscores, such as `a13n_environment`; the same rule applies to Harness, Harness UI, Stream Protocol, Envd client, Service, and logging. The standalone Service SDKs use `a13n` as the Python distribution and import and the Rust crate and library identifier. The TypeScript SDK uses `@converge.ai/a13n` as its public npm package and import specifier. The Go module URL remains `github.com/converge-ai-labs/agent-foundation/sdk/go`, while its public package name is `a13n`.
 
 ## Frontend Workspace
@@ -110,11 +112,11 @@ Each consuming package owns its cross-release-group Python requirements in its `
 
 The current cross-group requirements are:
 
-| Consumer            | Dependency                            | Published requirement                     |
-| ------------------- | ------------------------------------- | ----------------------------------------- |
-| Harness UI          | Environment, Harness, Stream Protocol | `>=0.0.5,<0.1.0`, identical for all three |
-| Harness UI, Harness | `a13n-logging`                        | `>=0.1.0,<0.2.0`                          |
-| Environment         | `a13n-envd-client`                    | `>=0.0.6,<0.1.0`                          |
+| Consumer            | Dependency                            | Published requirement                      |
+| ------------------- | ------------------------------------- | ------------------------------------------ |
+| Harness UI          | Environment, Harness, Stream Protocol | `>=0.0.11,<0.1.0`, identical for all three |
+| Harness UI, Harness | `a13n-logging`                        | `>=0.1.0,<0.2.0`                           |
+| Environment         | `a13n-envd-client`                    | `>=0.0.6,<0.1.0`                           |
 
 Independent release lines do not force consumer releases or lower-bound bumps for every dependency patch. Raise the minimum when the consumer needs newer APIs or behavior; a breaking compatibility change crosses the declared line and requires an explicit consumer update. These bounded requirements are reviewed compatibility policy, not a general semantic-versioning guarantee for all `0.x` releases. Python prerelease resolution follows standard package-manager rules.
 
@@ -124,7 +126,9 @@ Every release channel accepts a canonical stable `X.Y.Z` identity or RC `X.Y.Z-r
 
 An RC runs the owning release workflow, publishes its normal immutable artifacts to the owning registries, and creates a GitHub prerelease. It never advances a stable mutable selector: a13n Service and a13n-envd RCs do not modify the corresponding container `latest` tag, and a TypeScript SDK RC publishes under the npm `rc` dist-tag rather than `latest`. A stable release creates a normal GitHub Release and advances only the mutable `latest` selectors defined by its owning channel. The a13n Service CLI channel has no mutable selector for stable or RC releases. Standalone a13n-envd installers resolve only stable `release/a13n-envd-v*` releases by default; an RC requires an explicit canonical version.
 
-Generated notes for a stable release compare with the preceding stable tag and therefore exclude RC tags as comparison bases. Generated notes for an RC compare with the immediately preceding canonical release identity in that component channel, so the first RC follows the previous stable release and later RCs follow the preceding RC.
+Release notes are generated automatically when a component tag is published; no separate notes file or preparation step is required. Entries are selected from first-parent Git history by changed paths belonging to that component, including its shipped assets and component documentation, rather than repository-wide pull-request activity. PR labels at generation time determine categories and exclusions; historical unlabelled PRs and direct commits fall back to Conventional Commit titles and explicit breaking-change markers. PR labels are automatically inferred from titles and breaking-change markers on opening and readiness, preserving existing type labels without introducing a merge gate. Draft PRs skip code CI; readiness and subsequent code updates trigger the applicable checks independently of label presence. Optional reviewed notes may supplement the generated entries. The Full Changelog link remains a repository-wide comparison, not a component-filtered view.
+
+Comparison bases are canonical tags in the same component channel that are ancestors of the release tag. A stable release compares with the preceding stable tag, excluding RC tags as comparison bases. An RC compares with an earlier RC for the same target version when available, otherwise with the preceding stable tag. The first release without a comparison base uses initial-release notes rather than repository-wide history.
 
 ## Repository Automation
 

@@ -1,0 +1,8 @@
+.wordmark {
+  font-family: var(--a13n-font-brand);
+  font-weight: 700;
+  font-style: normal;
+  letter-spacing: -0.065em;
+  line-height: 1;
+  white-space: nowrap;
+}

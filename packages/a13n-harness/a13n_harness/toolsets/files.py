@@ -22,6 +22,7 @@ from a13n_harness.environment.files import (
     FileMetadata,
     FileOperator,
     FileQueryRequest,
+    FileTextResult,
     FileTextSearchRequest,
 )
 from a13n_harness.environment.models import EnvironmentAction, EnvironmentError, EnvironmentPath
@@ -40,7 +41,7 @@ from a13n_harness.tools.metadata import (
 from a13n_harness.usage import ProviderUsage
 
 from ._instructions import InstructionFunctionToolset, tool_instruction
-from ._results import ToolError, ToolFailure
+from ._results import ToolError, ToolFailure, environment_failure, tool_failure
 from ._scoped_files import ScopedFileAccess
 from .events import FileEditAppliedEvent
 from .file_media import (
@@ -72,9 +73,11 @@ from .output import (
     FINAL_TOOL_OUTPUT_HARD_CHARS,
     acknowledge_tool_output,
     continuation_disclosure,
+    create_tool_output_disclosure,
     disclose_mapping_field,
     disclose_sequence_field,
     disclose_text_fields,
+    fit_text_fields_to_limit,
     tool_output_size,
 )
 
@@ -433,14 +436,12 @@ class FileToolset:
         """Read bounded text or attach a common media file natively."""
         extension = posixpath.splitext(file_path)[1].casefold()
         if extension == ".pdf":
-            return {
-                "ok": False,
-                "error": {
-                    "code": "document_conversion_required",
-                    "retry_hint": "request_change",
-                    "details": {"tool": "pdf_convert"},
-                },
-            }
+            return tool_failure(
+                "document_conversion_required",
+                "Convert the PDF before reading its text or page layout.",
+                retry_hint="request_change",
+                details={"tool": "pdf_convert"},
+            )
         media_type = _MEDIA_TYPES.get(extension)
         if media_type is not None:
             try:
@@ -520,16 +521,14 @@ class FileToolset:
         if line_offset in {None, 0}:
             effective_line_limit = max(effective_line_limit, profile.initial_line_limit)
         effective_max_line_length = max(max_line_length, profile.max_line_length)
-        # Request bounds are ceilings, not a promise to fill a page. Narrow the
-        # line count instead of rejecting valid combinations (including skill
-        # overrides), allowing four UTF-8 bytes per character and an LF.
-        effective_line_limit = min(
-            effective_line_limit,
-            max(1, profile.page_bytes // (4 * effective_max_line_length + 1)),
-        )
 
         async def disclose(value: Mapping[str, JsonValue]) -> Mapping[str, JsonValue]:
-            if profile.preserve_complete_lines or bool(value.get("has_more")) or bool(value.get("truncated_lines")):
+            if (
+                profile.preserve_complete_lines
+                or bool(value.get("has_more"))
+                or bool(value.get("truncated_lines"))
+                or tool_output_size(value) > profile.semantic_output_chars
+            ):
                 return await _disclose_line_preserving_file_page(
                     ctx.deps,
                     value,
@@ -546,11 +545,13 @@ class FileToolset:
 
         return await self._execute(
             file_path,
-            lambda files: files.read_text(
+            lambda files: self._read_text_page(
+                files,
                 file_path,
                 line_offset=line_offset or 0,
                 line_limit=effective_line_limit,
                 max_line_length=effective_max_line_length,
+                page_bytes=profile.page_bytes,
             ),
             lambda result: {
                 "file_path": result.path,
@@ -561,6 +562,53 @@ class FileToolset:
                 "truncated_lines": list(result.truncated_lines),
             },
             disclose=disclose,
+        )
+
+    async def _read_text_page(
+        self,
+        files: FileOperator,
+        path: str,
+        *,
+        line_offset: int,
+        line_limit: int,
+        max_line_length: int,
+        page_bytes: int,
+    ) -> FileTextResult:
+        # Bound each provider call without turning worst-case line width into
+        # the total row limit. Short lines can fill the requested page.
+        lines: list[str] = []
+        truncated_lines: list[int] = []
+        remaining_bytes = page_bytes
+        has_more = True
+        result_path = path
+        while len(lines) < line_limit and remaining_bytes > 0 and has_more:
+            self._guard_unscoped_step()
+            batch = await files.read_text(
+                path,
+                line_offset=line_offset + len(lines),
+                line_limit=min(line_limit - len(lines), max(1, remaining_bytes // (4 * max_line_length + 1))),
+                max_line_length=max_line_length,
+            )
+            result_path = batch.path
+            has_more = batch.has_more
+            if batch.lines_read == 0:
+                break
+            for line in _lf_lines(batch.text) or [""]:
+                size = len(line.encode("utf-8"))
+                if size > remaining_bytes:
+                    has_more = True
+                    remaining_bytes = 0
+                    break
+                lines.append(line)
+                remaining_bytes -= size
+            truncated_lines.extend(number for number in batch.truncated_lines if number <= line_offset + len(lines))
+        return FileTextResult(
+            path=result_path,
+            text="".join(lines),
+            line_offset=line_offset,
+            lines_read=len(lines),
+            has_more=has_more,
+            truncated_lines=tuple(truncated_lines),
         )
 
     async def write(
@@ -892,8 +940,13 @@ class FileToolset:
         self,
         ctx: RunContext[AgentContext],
         pattern: Annotated[str, Field(description="Text to search for; regex by default, literal when regex=false")],
-        root: Annotated[str, Field(default=".", description="Logical root to search from")] = ".",
-        include: Annotated[str, Field(default="**/*", description="Glob selecting files to include")] = "**/*",
+        root: Annotated[
+            str,
+            Field(default=".", description="Logical file or directory to search; directories are searched recursively"),
+        ] = ".",
+        include: Annotated[
+            str, Field(default="**/*", description="Glob selecting relative paths, or the basename of an explicit file")
+        ] = "**/*",
         include_ignored: Annotated[
             bool,
             Field(default=False, description="If true, do not interpret repository ignore files"),
@@ -1183,7 +1236,11 @@ async def _emit_filesystem_changed(
 
 
 def _media_understanding_error(code: str) -> ToolFailure:
-    return {"ok": False, "error": {"code": code, "retry_hint": "dependency_change"}}
+    return tool_failure(
+        code,
+        "Media understanding could not complete. Check the configured media model and provider.",
+        retry_hint="dependency_change",
+    )
 
 
 def _restart_unspilled_page(
@@ -1352,6 +1409,14 @@ async def _disclose_line_preserving_file_page(
         preview["content"] = candidate_content
         preview["lines_read"] = shown + 1
         preview["next_line_offset"] = line_offset + shown + 1
+        preview["truncated_lines"] = cast(
+            JsonValue,
+            [
+                item
+                for item in cast(list[JsonValue], result.get("truncated_lines", []))
+                if isinstance(item, int) and line_offset < item <= line_offset + shown + 1
+            ],
+        )
         if tool_output_size(preview) > limit:
             preview["content"] = selected_content
             preview["lines_read"] = shown
@@ -1361,13 +1426,32 @@ async def _disclose_line_preserving_file_page(
         shown += 1
 
     if shown == 0:
-        return await disclose_text_fields(
+        # A single source line exceeds the semantic budget. Spill the fuller
+        # page, but advance only past the one line actually shown, not all
+        # provider rows. Do not insert synthetic lines into source content.
+        disclosure = await create_tool_output_disclosure(
             context,
             result,
-            text_fields=("content",),
             content_complete=not bool(result.get("has_more")) and not shortened,
             noun="file page",
-            limit=limit,
+        )
+        disclosure["hint"] += (
+            " Only a prefix of the source line in truncated_lines is shown because of the model output limit."
+            " has_more describes later lines; use next_line_offset to continue those lines."
+        )
+        preview.update(
+            content=lines[0],
+            lines_read=1,
+            has_more=bool(result.get("has_more")) or lines_read > 1,
+            truncated_lines=[line_offset + 1],
+            disclosure=cast(JsonValue, disclosure),
+        )
+        if preview["has_more"]:
+            preview["next_line_offset"] = line_offset + 1
+        else:
+            preview.pop("next_line_offset", None)
+        return acknowledge_tool_output(
+            fit_text_fields_to_limit(preview, text_fields=("content",), limit=limit, suffix="")
         )
     preview["truncated_lines"] = cast(
         JsonValue,
@@ -1395,33 +1479,14 @@ def _environment_tool_error(exc: EnvironmentError) -> ToolError:
 
 
 def _environment_error_result(exc: EnvironmentError) -> ToolFailure:
-    safe_details: dict[str, JsonValue] = {}
-    timeout = exc.details.get("timeout_seconds")
-    if isinstance(timeout, int | float) and not isinstance(timeout, bool):
-        safe_details["timeout_seconds"] = timeout
-    missing = exc.details.get("missing")
-    if isinstance(missing, list) and all(isinstance(item, str) for item in missing):
-        safe_details["missing"] = cast(JsonValue, list(missing))
-    for key in ("edit_index", "occurrences"):
-        value = exc.details.get(key)
-        if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
-            safe_details[key] = value
-    for key in ("field", "reason", "hint"):
-        value = exc.details.get(key)
-        if isinstance(value, str):
-            safe_details[key] = value
     if exc.code == "environment_not_found":
-        safe_details.setdefault("reason", "path_not_found")
-        safe_details.setdefault(
-            "hint",
-            "File or directory was not found in the selected mount. Verify the path and use ls or glob on an "
-            "existing parent to locate it; do not assume a guessed repository path is correct. "
-            "This is not an outside-mount routing error.",
+        exc = EnvironmentError(
+            str(exc),
+            code=exc.code,
+            retry_hint=exc.retry_hint,
+            details={"reason": "path_not_found", **exc.details},
         )
-    error = ToolError(code=exc.code, details=safe_details)
-    if exc.retry_hint is not None:
-        error["retry_hint"] = exc.retry_hint
-    return {"ok": False, "error": error}
+    return environment_failure(exc)
 
 
 def _apply_text_edits(

@@ -17,6 +17,7 @@ from a13n_service.iam import (
 from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.models.service import ModelError
 from a13n_service.models.settings import effective_settings
+from a13n_service.search.resources import require_provider as require_search_provider
 
 from ..connectivity_resolution import freeze_invocation_connectivity
 from ..domain import (
@@ -106,6 +107,23 @@ class AgentInvocationFreezer:
                 execution = await self._model_selector.freeze_in_transaction(session, prepared=prepared.model)
             except ModelError as error:
                 raise map_model_error(error) from error
+            if prepared.merged.search is not None:
+                await require_search_provider(
+                    session,
+                    organization_id=prepared.organization_id,
+                    workspace_id=prepared.workspace_id,
+                    provider_id=prepared.merged.search.provider_id,
+                    eligible=True,
+                )
+                original_search = revision_record.config.get("search")
+                original_provider = original_search.get("provider_id") if isinstance(original_search, dict) else None
+                if original_provider != prepared.merged.search.provider_id:
+                    await authorize_workspace(
+                        session,
+                        actor=prepared.actor,
+                        workspace_id=prepared.workspace_id,
+                        action=WorkspaceAction.search_provider_read,
+                    )
             skills = await freeze_skills(session, prepared)
             connectivity = await freeze_invocation_connectivity(
                 self._connectivity_resolver,
@@ -124,8 +142,7 @@ class AgentInvocationFreezer:
                 agent_id=child.agent_id,
                 revision_content_digest=child.revision_content_digest,
                 effective_config=frozen_child.effective_config,
-                connector_connection_selections=frozen_child.connector_connection_selections,
-                mcp_connection_selections=frozen_child.mcp_connection_selections,
+                connection_selections=frozen_child.connection_selections,
             )
         config_payload = {
             "subagent_mode": prepared.merged.subagent_mode,
@@ -140,8 +157,7 @@ class AgentInvocationFreezer:
             ),
             "plugins": prepared.merged.plugins,
             "skills": skills,
-            "connector_tools": prepared.merged.connector_tools,
-            "mcp_tools": prepared.merged.mcp_tools,
+            "connection_tools": prepared.merged.connection_tools,
             "resolved_subagents": resolved_subagents,
             "instructions": prepared.merged.instructions,
             "input_adapter": prepared.merged.input_adapter,
@@ -150,6 +166,7 @@ class AgentInvocationFreezer:
             "retries": prepared.merged.retries,
             "secret_requirements": prepared.merged.secret_requirements,
             "asset_publication": prepared.merged.asset_publication,
+            "search": prepared.merged.search,
             "protocol": prepared.merged.protocol,
         }
         effective_without_digest = EffectiveAgentConfig(
@@ -170,6 +187,5 @@ class AgentInvocationFreezer:
             agent_revision_id=prepared.agent_revision_id,
             selector_kind=prepared.selector_kind,
             effective_config=effective,
-            connector_connection_selections=connectivity.connector_connection_selections,
-            mcp_connection_selections=connectivity.mcp_connection_selections,
+            connection_selections=connectivity.connection_selections,
         )

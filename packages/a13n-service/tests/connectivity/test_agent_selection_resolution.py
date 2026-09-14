@@ -57,8 +57,10 @@ async def test_agent_revision_and_invocation_use_connectivity_resolver(
                 "characteristics": {"context_window": 128000},
             },
             "input_adapter": {"adapter_key": "native"},
-            "connector_tools": [{"connector_connection_id": CONNECTOR_CONNECTION_ID, "tools": ["find_order"]}],
-            "mcp_tools": [{"mcp_connection_id": MCP_CONNECTION_ID, "defer_loading": True}],
+            "connection_tools": [
+                *[{"connection_id": CONNECTOR_CONNECTION_ID, "tools": ["find_order"]}],
+                *[{"connection_id": MCP_CONNECTION_ID, "defer_loading": True}],
+            ],
             "protocol": {"public_name": "Selection test"},
         }
     )
@@ -83,9 +85,9 @@ async def test_agent_revision_and_invocation_use_connectivity_resolver(
     async with transaction(connectivity_sessions) as session:
         frozen = await invocation_resolver.freezing.freeze_in_transaction(session, prepared=prepared)
 
-    assert created.revision.connector_tools[0].connector_connection_id == CONNECTOR_CONNECTION_ID
-    assert frozen.connector_connection_selections[0].tools == ("find_order",)
-    assert frozen.mcp_connection_selections[0].tools is None
+    assert created.revision.connection_tools[0].connection_id == CONNECTOR_CONNECTION_ID
+    assert frozen.connection_selections[0].tools == ("find_order",)
+    assert frozen.connection_selections[1].tools is None
 
 
 async def _seed_model(sessions: async_sessionmaker[AsyncSession]) -> None:

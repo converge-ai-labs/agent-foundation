@@ -11,6 +11,7 @@ from pydantic import JsonValue
 
 from a13n_harness_ui import __version__
 
+from .comments import OutputCommentRepository
 from .database import Database, open_database
 from .layout import StorageLayout
 from .objects import ImmutableObjectStore, ObjectEnvelope, ObjectKind, ObjectRef
@@ -18,6 +19,7 @@ from .repositories import (
     ChildExecutionRepository,
     ConfigurationRepository,
     EnvironmentStateRepository,
+    ProjectModelPreferenceRepository,
     ThreadRepository,
 )
 from .usage import ThreadUsageRepository
@@ -42,8 +44,10 @@ class LocalStore:
         self.database = database
         self.objects = objects
         self.configurations = ConfigurationRepository(database.sessions)
+        self.project_models = ProjectModelPreferenceRepository(database.sessions)
         self.threads = ThreadRepository(database.sessions)
         self.usage = ThreadUsageRepository(database.sessions)
+        self.comments = OutputCommentRepository(database.sessions)
         self.child_executions = ChildExecutionRepository(database.sessions)
         self.environment_states = EnvironmentStateRepository(database.sessions)
 

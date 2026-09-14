@@ -2,16 +2,10 @@
 
 from .domain import (
     MCPAuthMode,
-    MCPConnection,
-    MCPConnectionStatus,
-    MCPConnectionStatusReason,
     MCPTool,
 )
 
 __all__ = [
     "MCPAuthMode",
-    "MCPConnection",
-    "MCPConnectionStatus",
-    "MCPConnectionStatusReason",
     "MCPTool",
 ]

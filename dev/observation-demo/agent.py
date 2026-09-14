@@ -370,7 +370,7 @@ def _compaction_state() -> HarnessState:
 def _instrumentation(tracer_provider: TracerProvider) -> HarnessInstrumentation:
     return HarnessInstrumentation(
         tracer_provider=tracer_provider,
-        trace_content=HarnessTraceContent.STANDARD,
+        trace_content=HarnessTraceContent(os.environ.get("A13N_HARNESS_TRACE_CONTENT", "standard")),
     )
 
 
@@ -528,9 +528,9 @@ def _configure_internal_agent_observation(tracer_provider: TracerProvider) -> No
         InstrumentationSettings(
             tracer_provider=tracer_provider,
             meter_provider=NoOpMeterProvider(),
-            include_content=True,
-            include_binary_content=False,
-            include_model_request_parameters=False,
+            include_content=os.environ.get("A13N_HARNESS_TRACE_CONTENT", "standard") != "none",
+            include_binary_content=os.environ.get("A13N_HARNESS_TRACE_CONTENT", "standard") == "full",
+            include_model_request_parameters=os.environ.get("A13N_HARNESS_TRACE_CONTENT", "standard") == "full",
             version=5,
         )
     )
@@ -647,7 +647,11 @@ async def main() -> None:
         print(f"output={observed.result.output_or_raise()}")
         print(f"context_events={','.join(observed.context_events)}")
         print(f"usage_records={len(observed.result.usage_records)}")
-        print(f"trace_url={base_url}/project/{_PROJECT_ID}/traces/{observed.trace_id}")
+        endpoint = os.environ.get(
+            "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "")
+        )
+        if "/api/public/otel" in endpoint:
+            print(f"trace_url={base_url}/project/{_PROJECT_ID}/traces/{observed.trace_id}")
         print()
 
     if not provider.force_flush(timeout_millis=10_000):

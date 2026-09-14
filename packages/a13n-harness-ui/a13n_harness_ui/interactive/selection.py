@@ -26,6 +26,7 @@ class Selection:
     choices: tuple[Choice, ...]
     cursor: int = -1
     multiple: bool = False
+    empty_answer: str | None = None
     view_start: int | None = None
     checked: set[int] = field(default_factory=set)
 
@@ -46,6 +47,8 @@ class Selection:
             self.checked.add(self.cursor)
 
     def answer(self) -> str:
+        if self.multiple and not self.checked and self.empty_answer is not None:
+            return self.empty_answer
         if self.multiple and self.checked:
             return ",".join(str(index + 1) for index in sorted(self.checked))
         if self.cursor < 0:

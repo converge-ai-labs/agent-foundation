@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -26,6 +27,7 @@ if TYPE_CHECKING:
     from a13n_service.models.service import ModelService
     from a13n_service.observability import ObservabilityRuntime
     from a13n_service.run_stream import RedisRunStream, RunReplayStore
+    from a13n_service.search.service import SearchProviderService
     from a13n_service.secrets import SecretProtector
     from a13n_service.settings import Settings
     from a13n_service.skills.catalog import SkillCatalogService
@@ -35,6 +37,8 @@ if TYPE_CHECKING:
     from a13n_service.storage import StorageResources
     from a13n_service.subagents.maintenance import SubagentMaintenance
     from a13n_service.trace_query.service import TraceQueryService
+
+logger = logging.getLogger("a13n_service.process.runtime")
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +68,7 @@ class ControlRuntime:
     lifecycle_events: LifecycleEventService
     gateway: GatewayRuntime
     subagent_maintenance: SubagentMaintenance
+    search_providers: SearchProviderService | None = None
     identity: IdentityRuntime | None = None
 
 
@@ -101,6 +106,22 @@ class ProcessRuntime:
     control: ControlRuntime | None
     worker: WorkerRuntime | None
     connectivity: ConnectivityRuntime | None
+
+    def begin_drain(self) -> None:
+        """Reject new work before the HTTP server waits for connections to close."""
+        first_request = not self.status.draining
+        self.status.draining = True
+        if self.worker is not None:
+            if self.worker.execution_loop is not None:
+                self.worker.execution_loop.begin_drain()
+            self.worker.environment_maintenance.drain()
+        if self.control is not None:
+            self.control.subagent_maintenance.drain()
+        if first_request:
+            logger.info(
+                "service_drain_started",
+                extra={"event": "service_drain_started", "role": self.settings.service.role.value},
+            )
 
 
 __all__ = [

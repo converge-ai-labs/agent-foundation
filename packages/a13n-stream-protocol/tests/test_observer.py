@@ -1050,3 +1050,23 @@ async def test_cache_only_input_is_a_noop_that_preserves_observer_correlation() 
     await restored.resume(history())
     assert restored.snapshot() == ()
     assert restored.observe(_event(1, ModelInputEvent(content=["visible input"])))
+
+
+def test_snapshot_ranges_are_detached_and_keep_a_fixed_boundary() -> None:
+    observer = HarnessAguiObserver()
+    observer.observe(_event(1, PartStartEvent(index=0, part=TextPart(content="begin"))))
+    stop = observer.event_count
+    original = observer.snapshot()
+    observer.observe(_event(2, PartDeltaEvent(index=0, delta=TextPartDelta(content_delta="later"))))
+    assert observer.event_count > stop
+    assert observer.snapshot(start=0, stop=stop) == original
+    assert observer.snapshot(start=stop, stop=stop) == ()
+    assert observer.snapshot(start=stop) == observer.snapshot()[stop:]
+    for start, end in ((-1, stop), (1, 0), (0, observer.event_count + 1)):
+        with pytest.raises(ValueError, match="snapshot range"):
+            observer.snapshot(start=start, stop=end)
+    content = next(event for event in original if isinstance(event, TextMessageContentEvent))
+    content.delta = "mutated"
+    assert all(
+        event.delta != "mutated" for event in observer.snapshot(stop=stop) if isinstance(event, TextMessageContentEvent)
+    )

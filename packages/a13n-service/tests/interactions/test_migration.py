@@ -11,7 +11,6 @@ INTERACTION_TABLES = {
     "threads",
     "runs",
     "run_attempts",
-    "thread_inbox_counters",
     "thread_inbox",
     "thread_queued_submissions",
     "child_run_relationships",
@@ -27,17 +26,19 @@ def _assert_schema(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
             assert INTERACTION_TABLES.isdisjoint(tables)
             return
         assert INTERACTION_TABLES <= tables
+        assert "thread_inbox_counters" not in tables
         for table in INTERACTION_TABLES:
             columns = {column["name"] for column in inspector.get_columns(table)}
             assert columns == set(service_metadata().tables[table].columns.keys()), table
         run_columns = {column["name"] for column in inspector.get_columns("runs")}
         assert {
-            "connector_connection_selections_json",
+            "connection_selections_json",
             "current_run_attempt_id",
             "execution_policy_version",
             "sealed_state_digest_sha256",
         } <= run_columns
-        assert "connection_selections_json" not in run_columns
+        assert "connector_selections_json" not in run_columns
+        assert "mcp_selections_json" not in run_columns
         run_indexes = {index["name"] for index in inspector.get_indexes("runs")}
         assert {
             "ix_runs_worker_scan",
@@ -85,7 +86,13 @@ def _assert_schema(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
         run_foreign_keys = {constraint["name"] for constraint in inspector.get_foreign_keys("runs")}
         assert {"fk_runs_current_attempt_same_run", "fk_runs_sealed_attempt_same_run"} <= run_foreign_keys
         thread_columns = {column["name"] for column in inspector.get_columns("threads")}
-        assert "queue_version" in thread_columns
+        assert {"queue_version", "next_delivery_sequence", "pending_count", "pending_bytes"} <= thread_columns
+        thread_checks = {constraint["name"] for constraint in inspector.get_check_constraints("threads")}
+        assert {
+            "ck_threads_next_delivery_sequence_positive",
+            "ck_threads_pending_count_non_negative",
+            "ck_threads_pending_bytes_non_negative",
+        } <= thread_checks
         inbox_indexes = {index["name"] for index in inspector.get_indexes("thread_inbox")}
         assert {
             "ix_thread_inbox_fifo",

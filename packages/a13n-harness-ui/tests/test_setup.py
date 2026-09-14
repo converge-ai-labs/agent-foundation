@@ -613,6 +613,46 @@ async def test_not_now_finishes_setup_without_model_or_credentials(
 
 
 @pytest.mark.anyio
+async def test_new_user_enters_setup_without_a_root_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.interactive.onboarding import SetupCancelled, run_setup
+    from a13n_harness_ui.settings_loader import load_harness_ui_settings
+
+    monkeypatch.delenv("A13N_HARNESS_UI_DATA_ROOT", raising=False)
+    monkeypatch.delenv("GROK_AUTH_PATH", raising=False)
+    monkeypatch.setenv("GROK_HOME", str(tmp_path / ".grok"))
+    source = await load_harness_ui_settings()
+    assert not source.exists
+    assert not source.explicit
+    assert source.configuration is None
+    assert source.candidate_error is None
+    settings = source.settings.model_copy(update={"pricing_auto_update": False})
+    questions = []
+    messages = []
+
+    async def cancel_at_first_question(question, prompt):
+        questions.append(question)
+        raise SetupCancelled()
+
+    async with open_harness_ui_app(
+        settings, configuration_path=source.path, configuration_error=source.candidate_error
+    ) as app:
+        status = await app.setup_status()
+        assert status.needed
+        assert status.diagnostic is None
+        assert not await run_setup(app, tmp_path, ask_user=cancel_at_first_question, emit=messages.append)
+        assert len(questions) == 1
+        assert not any("Configuration needs repair" in message for message in messages)
+        assert not source.path.exists()
+        selection = _selection(tmp_path, providers=(), default_agent="agent-default")
+        assert (await app.apply_setup(selection)).completed
+        assert not (await app.setup_status()).needed
+    assert source.path.is_file()
+
+
+@pytest.mark.anyio
 async def test_api_key_setup_publishes_only_reference_and_additional_instructions(tmp_path: Path) -> None:
     selection = _selection(
         tmp_path,

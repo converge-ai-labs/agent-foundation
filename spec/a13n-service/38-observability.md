@@ -101,24 +101,28 @@ The OpenTelemetry Resource carries process facts rather than repeating them on e
 
 The Service-owned processor projects only validated values from this closed correlation registry onto approved RunAttempt spans:
 
-| Attribute                          | Placement and meaning                                        |
-| ---------------------------------- | ------------------------------------------------------------ |
-| `a13n.organization.id`             | Owning Organization correlation                              |
-| `a13n.workspace.id`                | Owning Workspace correlation                                 |
-| `a13n.observation.session.id`      | Service product Session                                      |
-| `session.id`                       | Service Thread used as the cross-trace observability session |
-| `a13n.thread.id`                   | Service Thread                                               |
-| `a13n.service.run.id`              | Accepted Service Run                                         |
-| `a13n.run_attempt.id`              | Current worker generation                                    |
-| `a13n.run_attempt.number`          | Positive generation number within the Run                    |
-| `a13n.run_attempt.replaces.id`     | Immediately replaced Attempt, when present                   |
-| `a13n.run_attempt.recovery.reason` | `lease_expired`, `retry_after_failure`, or `planned_handoff` |
-| `a13n.agent.agent.id`              | Selected Agent identity                                      |
-| `a13n.agent.agent.revision.id`     | Exact selected immutable AgentRevision                       |
-| `a13n.model.id`                    | Exact selected Service Model identity                        |
-| `a13n.model.provider.type`         | Bounded selected provider type                               |
+| Attribute                          | Placement and meaning                                                         |
+| ---------------------------------- | ----------------------------------------------------------------------------- |
+| `a13n.organization.id`             | Owning Organization correlation                                               |
+| `a13n.workspace.id`                | Owning Workspace correlation                                                  |
+| `a13n.observation.session.id`      | Service product Session                                                       |
+| `session.id`                       | Service Thread used as the cross-trace observability session                  |
+| `a13n.thread.id`                   | Service Thread                                                                |
+| `a13n.service.run.id`              | Accepted Service Run                                                          |
+| `a13n.run_attempt.id`              | Current worker generation                                                     |
+| `a13n.run_attempt.number`          | Positive generation number within the Run                                     |
+| `a13n.run_attempt.replaces.id`     | Immediately replaced Attempt, when present                                    |
+| `a13n.run_attempt.recovery.reason` | `lease_expired`, `retry_after_failure`, `planned_handoff`, or `pending_input` |
+| `a13n.agent.agent.id`              | Selected Agent identity                                                       |
+| `a13n.agent.agent.revision.id`     | Exact selected immutable AgentRevision                                        |
+| `a13n.model.id`                    | Exact selected Service Model identity                                         |
+| `a13n.model.provider.type`         | Bounded selected provider type                                                |
 
 The root additionally owns `a13n.run_attempt.outcome` with `succeeded`, `yielded`, `failed`, or `cancelled` after a matching authoritative Attempt decision, plus an optional bounded `a13n.run_attempt.failure.code`. An unfinished span or missing outcome does not invent a durable status. Harness retains `a13n.run.id` for its process-local Harness Run; Service never overwrites or reinterprets that field as its durable Run identity. Harness and Pydantic AI retain their other existing attributes and remain the sole owners of Harness Run, model, tool, streaming, native usage, and native exception fields.
+
+First-party search annotates its existing tool-execution span with `a13n.search.provider.id` and `a13n.search.provider.type`, using the exact selected Search Provider identity and bounded catalog type from [Search Provider Management](41-search-provider-management.md). These attributes describe only that invocation, not every node in the Run; they are absent from unrelated spans. They add no duplicate tool or provider span and contain no account name, endpoint, credential, or query. Outcome, duration, and available usage retain their existing tool and provider observation owners.
+
+Connector and Native tool boundaries explicitly report their owned `outcome_unknown` envelope through Harness tool observation. The existing native tool span records `a13n.tool.result.status=outcome_unknown`, not confirmed success or failure. Service does not infer this classification from arbitrary MCP results or from a successful Connector payload. This projection changes neither the returned envelope nor dispatch, retry, receipt, or durable RunAttempt semantics. Search and outcome enrichment are best-effort and scoped to the exact active Harness-selected tool span, including isolation from disabled inline children.
 
 Correlation values are never authorization evidence. The processor does not flatten arbitrary identity claims, request metadata, Agent metadata, headers, provider state, or `RunBindings.metadata`. A value that fails the owning ID or bounded scalar contract is omitted and diagnosed by safe category rather than truncated into a different identity.
 
@@ -128,9 +132,11 @@ Correlation values are never authorization evidence. The processor does not flat
 
 The newly scheduled `RunAttemptExecutor` starts `a13n.service.run_attempt` immediately after the durable claim or takeover transaction commits the new `leased` RunAttempt. It starts a new trace with no parent even when an inbound or dispatch context remains available. The root stays current through preparation, Harness entry and cleanup, state publication, and the final Attempt/Run decision. It ends after that decision commits or after the local executor proves it can no longer publish authoritatively.
 
+A local executor cancellation ends its root without adding ERROR solely for cancellation and without inventing a durable `cancelled` Attempt outcome. A previously observed authoritative failure retains its outcome and ERROR status. Other escaping execution failures mark the root ERROR without substituting for an authoritative Attempt decision.
+
 If the process terminates abruptly, the root may remain incomplete in a backend. A replacement Worker does not finish, rewrite, or synthesize the old span. Its newly claimed Attempt starts another trace. The authoritative old Attempt becomes `failed` only through the existing takeover transaction.
 
-The first Attempt has no recovery reason. A replacement caused by expired lease uses `lease_expired`; a replacement after a known retryable Attempt failure uses `retry_after_failure`; and a successor to a gracefully yielded Attempt uses `planned_handoff`. Telemetry never substitutes `worker_lost`, because lease expiry cannot distinguish a crash from partition, suspension, or an unresponsive process.
+The first Attempt has no recovery reason. A replacement caused by expired lease uses `lease_expired`; a replacement after a known retryable Attempt failure uses `retry_after_failure`; a successor to a gracefully yielded Attempt uses `planned_handoff`; and continuation for accepted pending input uses `pending_input`. These values project the stored start reason; they are not inferred from trace timing. Telemetry never substitutes `worker_lost`, because lease expiry cannot distinguish a crash from partition, suspension, or an unresponsive process.
 
 ### Service phase spans
 
@@ -142,7 +148,29 @@ Service owns exactly these stable direct children of the root when the correspon
 | `a13n.service.environment.prepare` | Verifies fixed logical Environment selection, resolves Provider-owned credentials, coordinates use and creates/resumes/rebuilds or connects the target; runs before Harness for on_run or on first actual operation for on_use; records safe generation changes and failures               |
 | `a13n.service.persist`             | Publishes the Harness outcome's complete state and result objects and performs the short fenced Attempt/Run decision; ends after commit or classified failure                                                                                                                              |
 
-These spans provide phase duration, outcome, and bounded failure class. They do not duplicate database, object-store, HTTP, provider, or Environment spans and do not keep a database session or transaction open across their full duration. An operation that never starts creates no placeholder span.
+These spans provide phase duration and local execution outcome through `a13n.service.phase.outcome` (`succeeded`, `failed`, or `cancelled`). An escaping failure adds `error.type` (the exception class name, limited to 256 characters) and OTel ERROR status, never the exception message or stack. Cancellation is not an ERROR. A successful phase means the operation returned normally, not that the Run succeeded: publishing a failed Attempt is a successful persistence operation. The root owns the authoritative Attempt outcome and its stored safe failure code.
+
+Reconstruction covers dependency preflight through a ready invocation, including Environment adapter binding, and ends before Harness entry. Eager Environment preparation can overlap reconstruction; phase durations are not additive. Lazy preparation and target recovery create an Environment span only when actual preparation starts. That span records `a13n.environment.id` and, on success, `a13n.environment.generation`. A saved outcome can be persisted without Harness entry; if accepted pending input requires execution instead, reconstruction resumes as another span. Persistence spans cover final publication, recovery of saved outcomes, and failure decisions, not routine checkpoints, heartbeats, or inbox polling.
+
+Phase-local metadata uses the following closed additions. Every field has a filterable `langfuse.observation.metadata.*` alias with the `a13n.` prefix removed and remaining dots replaced by underscores; it is not inherited by descendants.
+
+| Field                                                                              | Meaning                                                                                                                                                                                                                                                 |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `a13n.run_attempt.disposition`                                                     | Returned fenced `waiting`, `completed`, `retrying`, `continuing`, `failed` or `cancelled` decision, distinct from Attempt outcome                                                                                                                       |
+| `a13n.environment.generation_before`                                               | Backing generation before actual preparation                                                                                                                                                                                                            |
+| `a13n.service.phase.operation`                                                     | `preflight`, `continue`, `recover_outcome`, `failure_decision`, `finalize` or `continuation_decision`                                                                                                                                                   |
+| `a13n.service.phase.disposition`                                                   | Reconstruction `ready_for_harness`, `saved_outcome_available` or `preparation_rejected`; persistence uses the returned fenced disposition, `mutation_applied` for a nonterminal mutation receipt, or `continuing` when recovery requires more execution |
+| `a13n.service.phase.candidate_kind`                                                | Recovered `completed` or `waiting` candidate, never its business output                                                                                                                                                                                 |
+| `a13n.service.phase.failure_code`                                                  | Safe preparation rejection code                                                                                                                                                                                                                         |
+| `a13n.service.phase.capability_count` / `deferred_resume`                          | Ready invocation's definition Capability count and deferred-resume selection                                                                                                                                                                            |
+| `a13n.service.phase.harness_status`                                                | Actual Harness result entering finalization, distinct from the persistence receipt                                                                                                                                                                      |
+| `a13n.service.phase.wait_reason` / `pending_call_count`                            | Recovered waiting candidate's existing reason and pending call count, not call presentations or payloads                                                                                                                                                |
+| `a13n.service.phase.run_version` / `attempt_version`                               | Versions from the returned persistence receipt                                                                                                                                                                                                          |
+| `a13n.service.phase.generation_before` / `generation_after` / `generation_changed` | Environment preparation result                                                                                                                                                                                                                          |
+
+Under `standard` and `full`, a phase with a local result also projects a small JSON `output.value`/`output.mime_type` summary of those phase facts, excluding correlation fields. `none` retains structural metadata but omits phase output. This output is a phase decision summary, not final Run output, and cannot bypass the root's confirmed-committer gate. Failure before a result retains reached metadata and exception classification without inventing a successful result. Phase outcome and root Attempt outcome also receive filterable metadata aliases. All producer-selected summary values are fixed booleans, counts, versions, dispositions or safe codes, never arbitrary configuration/state objects.
+
+These spans do not duplicate database, object-store, HTTP, provider, or Environment spans and do not keep a database session or transaction open across their full duration. An operation that never starts creates no placeholder span. Phase observation failures do not replace the execution result.
 
 The existing `harness.run` span starts under the current root and retains the complete lifecycle defined by Harness. Native Pydantic AI spans remain its descendants. Service does not wrap or duplicate Agent attempts, model requests, tool execution, streaming, cancellation, usage, or inline children. Harness completion and Service persistence can therefore have different outcomes: `harness.run` can complete while `a13n.service.persist` and the RunAttempt root fail.
 
@@ -174,18 +202,34 @@ All three values preserve the same span topology, correlation, timing, outcome, 
 
 The mapping carries the exact upstream limitations defined by Harness. Pydantic AI can still emit Agent descriptions, tool definitions and schema defaults, Agent/run metadata, exception messages, and stack traces at `none`. `standard` and `full` can contain raw business content. `full` is the highest-exposure diagnostic choice and can export multimodal bytes and complete request parameters. Service provides no recursive sanitizer, payload classification, or guarantee that upstream content is secret-free.
 
-The root observation exposes the complete RunAttempt's user-facing boundary without copying the complete execution transcript:
+The root projects accepted input and confirmed final Run output without copying the complete execution transcript:
 
-| Root attribute     | Value                                                                                                      |
-| ------------------ | ---------------------------------------------------------------------------------------------------------- |
-| `input.value`      | Accepted user input serialized as ordinary text or JSON when content is `standard` or `full`               |
-| `input.mime_type`  | `text/plain` or `application/json` when `input.value` is present                                           |
-| `output.value`     | Final user-visible Attempt output serialized as ordinary text or JSON when content is `standard` or `full` |
-| `output.mime_type` | `text/plain` or `application/json` when `output.value` is present                                          |
+| Root attribute     | Value                                                                                                     |
+| ------------------ | --------------------------------------------------------------------------------------------------------- |
+| `input.value`      | Accepted user input serialized as ordinary text or JSON when content is `standard` or `full`              |
+| `input.mime_type`  | `text/plain` or `application/json` when `input.value` is present                                          |
+| `output.value`     | Final user-visible Run output committed by this Attempt, as ordinary text or JSON at `standard` or `full` |
+| `output.mime_type` | `text/plain` or `application/json` when `output.value` is present                                         |
 
-At `none` all four fields are absent. An Attempt that fails, is cancelled, or loses authority before committing user-visible output leaves `output.value` absent; it never synthesizes an error string as output. These fields do not copy intermediate model messages, tool arguments or results, complete conversation history, Harness state, binary bytes, file contents, or usage records. `full` expands upstream Pydantic capture but does not make the Service root another dump of those descendants.
+At `none` all four fields are absent. At `standard` and `full`, inline accepted input is available from root creation; external input is projected after ordinary execution materializes its accepted payload. This is the accepted Run input, including feedback or continuation envelopes, not the adapted model prompt or reconstructed history. Text, JSON structures, and explicit JSON null retain their values.
 
-Except for this explicit root input/output boundary, Service-owned Resource, span, event, and link fields use only the closed registries in this contract. They never contain credentials, Secret values, Authorization, cookies, environment variables, raw headers or bodies, raw exception objects, native paths, arbitrary metadata, provider response bodies, or copied prompt/model/tool content. This producer constraint does not make allowed root or upstream Pydantic content safe. A deployment requiring stronger controls places a tested processor or Collector policy before data crosses its trust boundary.
+Output is projected only after a durable read confirms both a completed Run and a succeeded Attempt, with that Attempt recorded as the sealed state's committer. A succeeded Attempt that leaves the Run waiting or continuing has no final output. A failed, cancelled, yielded, or superseded Attempt never copies another Attempt's result or synthesizes an error string as output. Inline output comes from the committed Run. External output reuses the payload materialized by the ordinary pre-commit integrity verification, including saved-outcome recovery, only when its immutable object digest matches the committed reference. Verification or publication alone does not expose root output. If no matching local payload is available at final projection, the body is omitted rather than fetched solely for tracing. Read the durable Run output for the authoritative result.
+
+The root records `a13n.run_attempt.input.capture` and, after its durable outcome is observed, `a13n.run_attempt.output.capture` with these closed values:
+
+| Value              | Meaning                                                                        |
+| ------------------ | ------------------------------------------------------------------------------ |
+| `captured`         | The corresponding value and MIME type are projected                            |
+| `content_disabled` | Deployment content policy is `none`                                            |
+| `external_payload` | The payload is external and no matching materialized body is available locally |
+| `unavailable`      | No input value is available at this observation boundary (input only)          |
+| `not_committed`    | This Attempt has no confirmed final Run output (output only)                   |
+
+These indicators contain no payload, and an external input indicator changes to `captured` when ordinary preparation reads the payload. Missing telemetry or a projection failure remains non-authoritative. Service performs no additional object-store reads for these fields, and retains at most one external output candidate in the local recording Attempt until outcome projection or root end; `none` and non-recording roots retain none.
+
+These fields do not copy system prompts, intermediate model messages, tool arguments or results, complete conversation history, Harness state, binary bytes, file contents, or usage records. `full` expands upstream Pydantic capture but does not make the Service root another dump of those descendants.
+
+Except for this explicit root input/output boundary and the registered phase-result summaries, Service-owned Resource, span, event, and link fields use only the closed registries in this contract. They never contain credentials, Secret values, Authorization, cookies, environment variables, raw headers or bodies, raw exception objects, native paths, arbitrary metadata, provider response bodies, or copied prompt/model/tool content. This producer constraint does not make allowed root or upstream Pydantic content safe. A deployment requiring stronger controls places a tested processor or Collector policy before data crosses its trust boundary.
 
 Service adds no trace-specific byte truncation. Oversized upstream spans can be rejected by an exporter or backend and are then lost as telemetry without changing Agent or Run behavior.
 

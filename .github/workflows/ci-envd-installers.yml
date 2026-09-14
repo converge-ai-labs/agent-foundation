@@ -27,6 +27,7 @@ concurrency:
 jobs:
   posix:
     name: POSIX installer (${{ matrix.os }})
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     strategy:
       fail-fast: false
       matrix:
@@ -49,6 +50,7 @@ jobs:
 
   windows:
     name: Windows installer
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v6

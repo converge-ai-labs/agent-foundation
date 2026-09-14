@@ -1,10 +1,10 @@
-# Connector Providers, Connectors, and Connector Connections
+# Connector Providers, Connectors, and Connections
 
 ## Design Position
 
-Connector Providers provide general outbound SaaS capabilities. Service can configure several accounts or endpoints of the same Provider type, discover the Connectors each one offers, and establish independently authorized Connector Connections. Composio, OpenConnector, and other registered adapters remain optional Connectivity components rather than Service core dependencies.
+Connector Providers provide general outbound SaaS capabilities. Service can configure several accounts or endpoints of the same Provider type, discover the Connectors each one offers, and establish independently authorized Connections. Composio and other registered adapters remain optional Connectivity components rather than Service core dependencies.
 
-The external integration service owns third-party account authorization, OAuth callback processing, access and refresh tokens, token rotation, and provider API invocation. Service owns its configured Connector Provider, safe discovered Connector values, Connector Connection projection, assignment and authorization, exact Run selection, and Agent-facing a13n MCP boundary.
+The external integration service owns third-party account authorization, OAuth callback processing, access and refresh tokens, token rotation, and provider API invocation. Service owns its configured Connector Provider, safe discovered Connector values, Connection projection, assignment and authorization, exact Run selection, and Agent-facing a13n MCP boundary.
 
 ## Connector Provider definitions
 
@@ -52,7 +52,7 @@ Ownership, type, and behavior-defining configuration are immutable. A null `work
 
 ## Connector discovery
 
-A Connector is a transient Provider-scoped catalog value describing one integration offered by a configured Connector Provider:
+A Connector is an advisory Provider-scoped directory value describing one integration offered by a configured Connector Provider:
 
 ```python
 class Connector:
@@ -60,6 +60,8 @@ class Connector:
     key: str
     name: str
     description: str | None
+    logo_url: str | None
+    unavailable_reason: str | None
     setup_schema: JsonObject
     authentication_methods: tuple[str, ...]
 ```
@@ -70,140 +72,125 @@ Installed implementation discovery, Connector discovery, [tool preview before ac
 
 The selected implementation validates and safely projects upstream catalog metadata. `setup_schema` describes only non-secret setup options, such as a supported authentication configuration selector. It never solicits third-party passwords, API keys, cookies, or OAuth tokens. Authentication-method keys retain Provider-specific semantics, and a method is advertised as usable only when the external service offers the required hosted authorization or credential form. Generic JSON Schema form rendering does not replace the authorization ceremony.
 
-Discovery uses bounded pagination, entry counts, schema size, and total bytes under the [discovery safety bounds](04-agent-facing-tools.md#discovery-and-result-bounds). Cache entries are scoped to the exact Provider and credential generation and are advisory only. Setup revalidates current Provider eligibility, selected Connector, and setup options. A discovery failure reports a bounded error without modifying saved connections or treating an incomplete result as a complete catalog.
+Discovery uses bounded pagination, entry counts, schema size, and total bytes under the [discovery safety bounds](04-agent-facing-tools.md#discovery-and-result-bounds). Service persists one complete directory snapshot per exact Provider and credential generation. Search and cursor pagination read that snapshot; cursors bind the Provider, normalized search and snapshot time. An explicit refresh publishes only after every upstream page and metadata check succeeds. Failure leaves the prior snapshot available for ordinary reads. Credential replacement invalidates the snapshot atomically, and a refresh started under an older credential cannot republish it. Snapshot publication does not change the Provider's administrative version. Directory entries have no standalone CRUD resource or enable/disable list, and refreshing them never creates Connections. Tool schemas are not part of this cache. Setup revalidates current Provider eligibility, selected Connector, and setup options. A discovery failure reports a bounded error without modifying saved connections or treating an incomplete result as a complete catalog.
 
-Organization ConnectorProviders are automatically usable from all descendant Workspaces. Each ConnectorConnection still belongs to its consuming Workspace and references a Provider in that Workspace or its parent Organization. External authorization correlation binds the consuming Workspace and exact Provider; using a shared Provider never merges external accounts across Workspaces.
+Organization ConnectorProviders are automatically usable from all descendant Workspaces. Each Connection still belongs to its consuming Workspace and references a Provider in that Workspace or its parent Organization. External authorization correlation binds the consuming Workspace and exact Provider; using a shared Provider never merges external accounts across Workspaces.
 
-## ConnectorConnection
+## Connection
+
+A Connection is the stable Workspace resource for one configured external tool source. It owns a discriminated `source`, current authorization, lifecycle, and safe observations. A Connector source fixes a `provider_id` and `connector_key`; an MCP source fixes an endpoint, authentication mode, and static header names. [Remote MCP](06-remote-mcp-connections.md) owns its protocol-specific behavior. Source identity is immutable. Display name, authorization, and administrative state can change while the Connection ID remains stable.
+
+The following schema is conceptual, not a wire or ORM model:
 
 ```python
-type ConnectorConnectionStatusReason = Literal[
-    "reauthorization_required",
-    "incompatible",
-]
-
-
-class ConnectorConnection:
-    id: ConnectorConnectionId
+class Connection:
+    id: ConnectionId
     organization_id: OrganizationId
     workspace_id: WorkspaceId
-    connector_provider_id: ConnectorProviderId
     name: str
-    connector_key: str
-    external_ref: str | None
-    safe_metadata: BoundedJsonObject
-    status: Literal[
-        "pending",
-        "ready",
-        "action_required",
-        "disabled",
-    ]
-    status_reason: ConnectorConnectionStatusReason | None
+    source: ConnectorSource | MCPSource
+    status: Literal["pending", "ready", "action_required", "disabled"]
+    status_reason: Literal["reauthorization_required", "incompatible"] | None
     version: int
+    authorization_generation: int
+    credential_configured: bool
+    safe_metadata: JsonObject
+    last_check: ConnectionCheck | None
     created_by: PrincipalRef
     created_at: datetime
     updated_at: datetime
+
+class ConnectorSource:
+    kind: Literal["connector"]
+    provider_id: ConnectorProviderId
+    connector_key: str
+
+class MCPSource:
+    kind: Literal["mcp"]
+    endpoint_url: str
+    auth_mode: Literal["none", "bearer", "oauth", "static_headers"]
+    static_header_names: tuple[str, ...]
 ```
 
-`connector_key` identifies the Connector selected from the exact `connector_provider_id`. Service can retain a safe display label, but it does not claim that two Connector Providers with similarly named Connectors expose the same actions or semantics.
+Creation validates the immutable source and stores a pending Connection. It never initiates account authorization, invokes a tool, or claims that a remote account is usable. An MCP endpoint without authentication becomes usable through an explicit check. `ready` means that the latest authorization or check established eligibility; it is not a continuous health guarantee. `action_required` carries a status reason. `disabled` denies discovery, new authorization, Run acceptance, and dispatch. Enabling permits explicit verification again; it does not establish fresh remote authorization.
 
-`external_ref` is absent until setup obtains a verified external connection reference. Once assigned, it is immutable; `ready` requires it. It is protected metadata: public management reads can expose the Service ConnectorConnection ID and safe account projection but never disclose this reference to the model. It is not a bearer credential and grants no authority by possession.
+`version` is the compare-and-swap version for management changes. `authorization_generation` is a separate compatibility boundary for accepted Runs. Each successful authorization advances it, including reauthorization to the same upstream account. Normal OAuth token refresh advances the encrypted credential generation without advancing the authorization generation. Neither display-name changes nor ordinary credential refresh invalidate accepted Run selections.
 
-Every ConnectorConnection belongs to its Workspace. Organization, Connector Provider, Connector key, and verified external reference are immutable. There is no personal owner field or Principal-owned visibility branch. A different external identity requires a different connection.
+A new authorization can bind a different upstream account under the same Connection ID. Service verifies the returned account against that exact authorization attempt before replacing the binding. An opaque external account reference and provider correlation remain private. They are never ordinary model arguments or caller-selected execution context.
 
-Selection and dispatch require current Workspace, Agent, execution Principal, ConnectorProvider, and ConnectorConnection eligibility. Workspace Admin manages connections; authorized Workspace Runs, including inbound Service Account Runs, can use their accepted selections. External sender identity grants no authority.
+## Application authority and ownership
 
-ConnectorConnection status is Service's safe eligibility projection, not a continuous claim that an external account or token is healthy. `pending` means setup has not produced a usable external ConnectorConnection, `ready` permits authorized selection and dispatch, `action_required` blocks use until a user repairs authorization or compatibility, and `disabled` is a reversible local decision. `status_reason` is non-null exactly for `action_required` and is one finite safe code; it never contains provider payloads or credentials. Transient ConnectorProvider or provider failures do not change status. Reconciliation or explicit reconnect can move `pending` or `action_required` to `ready` only while the immutable ConnectorConnection identity remains the same; otherwise setup creates another ConnectorConnection. Service never repairs a ConnectorConnection by choosing a different external account.
+A Connection belongs to a Workspace, not to an application end user. An upper application owns its own User-to-Connection mapping and signs management requests with a Service Account API key authorized for that Workspace. Service neither requires an a13n Console user for authorization nor creates an a13n user to represent the application's customer. The initiating principal remains the authority for completion and protected authorization reads.
 
-## Credential Custody and Setup
+`connection.read` grants safe Connection reads and selection; `connection.manage` grants lifecycle and authorization management. Builder and Administrator roles can manage Connections, subject to credential boundaries and current Workspace eligibility. Provider configuration remains under its separate administrative authority. Agent and AccountTarget configuration reference Connection IDs; Connections do not carry a competing mutable assignment list.
 
-Connector Connection setup begins by committing the pending Service resource and its bounded setup attempt before external I/O. The attempt fixes the configured Provider ID, Connector key, Workspace, initiating Principal, and validated non-secret setup options. The external integration service owns the authorization ceremony. Service later attaches a verified external reference and safe account metadata and marks the connection ready only on authoritative completion. A timeout retains the same setup identity for inspection or reconciliation rather than blindly creating another account. Interactive setup uses only an external-service-hosted authorization or credential form; no third-party password, API key, cookie, access token, or refresh token passes through a Service request.
+## Credential custody and setup
 
-Callback and polling completion both reauthorize the initiating User's current management permission before external work and before publishing completion. They share the same checks: a non-deleted pending connection, current setup generation, eligible attempt in the current setup lifecycle, unexpired setup, active Provider, and active Workspace. Setup I/O receives immutable values, never ORM records. Completion cannot revive a disabled connection. Administrative enablement requires a complete verified binding on the Connection; reconnect explicitly starts a new generation.
+Externally managed Connector credentials remain with the external integration service. Direct API-key, bearer, or basic-auth setup accepts separate write-only credential fields, delivers them only to the chosen adapter, and never places plaintext material in configuration, command receipts, logs, or Connection reads. The [built-in adapter contract](08-built-in-connector-adapters.md) defines supported credential schemes. Remote MCP credentials are encrypted on the Connection under the [shared credential protection contract](../27-secret-management.md#protection-boundary).
 
-Only `ready` requires a verified binding. An expired or failed setup can be `action_required` before an account is assigned. Starting a new setup generation invalidates previous readiness; disable/enable cannot bypass the new ceremony. A verified Connection owns its external reference and Workspace correlation together. Runtime discovery, execution, and re-enablement never read setup history to recover account identity. Setup attempts retain temporary provider request references, callback evidence, generation, expiry, and processing state; terminal attempts can be cleaned independently after their replay and audit retention needs end. A provider may assign its account reference only when authorization completes; its temporary authorization request ID is never used as a runtime account ID.
+Connection creation, authorization, checking, and tool invocation are independent operations. Tool invocation occurs only inside an authorized Agent Run. The Connection API supplies no standalone tool-execution endpoint.
 
-The control role loads the explicitly registered ConnectorProvider client adapter for setup, safe discovery, revocation, and reconciliation. The executing Worker loads the same registered adapter contract for in-process MCP tool discovery and Agent-facing dispatch. Both operate the same durable ConnectorProvider and ConnectorConnection facts; they do not call one another through a private Service API or introduce a durable operation queue merely to cross process roles.
+## Authorization
 
-Service does not receive, encrypt, proxy, log, or copy the external account's access token, refresh token, cookie, password, or provider API key. OAuth callback state and token refresh remain private to the external integration service. A redirect or setup handle grants no Service authority by possession. An implementation that supports verified callback completion uses the exact browser-User and single-use setup-attempt boundary in [Built-in Connector Provider Adapters](08-built-in-connector-adapters.md#common-setup-and-correlation); a polling implementation inspects the same immutable external reference. Neither path accepts account identity from an unverified browser parameter.
+`POST /connections/{id}/authorizations` creates one queryable short-lived authorization operation under an idempotency key and exact Connection version. Its method is `browser`, `credentials`, or `client_credentials`, subject to source support. Direct credentials and machine OAuth require no browser. Authorization replay returns the existing operation and does not repeat an upstream side effect.
 
-Revocation and deletion first make the local connection disabled and fence in-flight setup generations. Deletion also tombstones the resource. Outside that transaction Service makes one bounded best-effort revoke call using a minimal immutable snapshot. Missing remote prerequisites, failure, or an unknown response never block local invalidation or restore eligibility. The command returns a persisted cleanup receipt with local status and `not_required`, `succeeded`, `failed`, or `unknown` remote status. Idempotent replay returns that receipt without another remote effect. There is no revoke operation resource, retry job, or background cleanup; shared Provider credentials remain intact.
+The public status is `preparing`, `awaiting_user`, `awaiting_completion`, `processing`, `completed`, `failed`, `expired`, or `cancelled`. `next_action` can request opening a URL, checking the Connection, or restarting authorization. Completion means the authorization operation reached its confirmed outcome; it does not imply current Connection readiness. For example, a committed credential can have a completed authorization and a `check_connection` action when bounded MCP discovery could not establish readiness. Safe errors distinguish known failure from `outcome_unknown` after a potentially effective upstream request. An unknown outcome does not advertise a restart action; inspect the retained operation before deciding whether to authorize again.
 
-## Provider and connection responsibilities
+A newer attempt supersedes older attempts through the Connection's authorization-attempt generation. Completion validates operation ownership, current authority, generation, Connection version, and protocol evidence before changing the binding. Late replies and background reconciliation never attach a superseded account. Cancellation and expiry erase usable handoff material and prevent local completion; they do not claim to undo an already effective upstream action. Unknown operations are not blindly retried.
 
-The domain distinguishes side-effecting setup from pure runtime construction:
+### Browser handoff
 
-| Operation                                                 | Owner and effect                                                                                                                                                      |
-| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Validate Provider configuration                           | Selected Provider implementation; deterministic parsing with no external I/O                                                                                          |
-| Discover Connectors                                       | Configured Provider runtime; safe Provider-scoped catalog observation                                                                                                 |
-| Preview tool definitions before account authorization     | Provider credential and selected Connector; read-only advisory catalog under the [tool discovery contract](08-built-in-connector-adapters.md#tool-discovery-contract) |
-| Begin or complete connection setup                        | Provider runtime; explicit external authorization/setup effects under one Service setup attempt                                                                       |
-| Build a connection runtime                                | Provider implementation; binds one existing verified reference and fresh collaborators without creating or authorizing an external account                            |
-| Inspect, discover tools, execute, or revoke               | Runtime interface bound to that exact connection; explicit external I/O                                                                                               |
-| Commit status, enforce ownership, select tools, and audit | Service application authority, not the adapter or database entity                                                                                                     |
+The application backend creates browser authorization with its own unpredictable `state`, an exact registered `return_url`, and the SHA-256 challenge of an unpredictable completion verifier. The return URL uses HTTPS, except that local development can use plain HTTP only with the exact host `localhost`, `127.0.0.1`, or `[::1]`; alternate spellings, subdomains, and other loopback addresses are rejected. The configured Service `public_origin` follows the same transport rule. The backend retains the verifier. The returned launch URL is a narrowly scoped bearer capability, not a general Service API credential.
 
-Runtime connection construction is not account setup and does not prove that the external connection is usable. Closing a runtime connection releases local clients only and never revokes an account. Revocation is explicit. The database resource remains a serializable fact; a connection-bound runtime interface introduces no additional durable resource or universal connection framework. Every operation revalidates its current authority rather than inheriting trust from a previously constructed client.
+Service hosts the minimal browser handoff. The browser binds the launch capability to a per-tab nonce and follows the provider URL. OAuth or hosted-form returns pass through the same browser binding. The application receives its original state, authorization ID, and a short-lived receipt at its registered return URL. It validates its state and completes authorization through its authenticated backend using the receipt and verifier. Browser possession alone grants no Connection-management or completion authority. Cross-tab substitution, altered return URLs, another initiating principal, and a wrong verifier fail closed. The application customer never needs to log in to Console.
 
-## Assignment and Effective Selection
+The launch token is carried in a fragment and removed from browser navigation state before external navigation. Browser pages and callback responses use no-store and no-referrer policies. Return URLs cannot contain credentials or fragments. Receipts, provider URLs, callback codes, and verifier material are never model-visible inputs, audit details, or ordinary Connection metadata.
 
-A ConnectorConnection does not carry mutable lists of Agent or AccountTarget IDs. The owning Agent or AccountTarget capability configuration references the Service ConnectorConnection ID; ConnectorConnection reads can expose authorized reverse-assignment projections. This keeps capability configuration authoritative and avoids a second assignment resource that could disagree with it.
+## Connection checks
 
-Agent-wide configuration selects default Connector tools. An exact Account target can replace the `connector_tools` category through the canonical narrow Run override. Effective use intersects current execution Principal, Workspace, Agent, connection and Provider eligibility with the accepted source and tool scope. Closing reception does not revoke an accepted Run selection.
+`POST /connections/{id}/check` performs one bounded remote observation under the exact management version. `last_check` records its time, scope (`provider_account` or `mcp_discovery`), result (`passed`, `action_required`, or `unavailable`), and safe error code. A provider-account check verifies the exact bound account; an MCP check verifies initialization and tool discovery. Neither implies that every future tool call will succeed.
 
-The model cannot supply or override a ConnectorProvider ID, external ConnectorConnection reference, or Service ConnectorConnection ID in ordinary tool arguments. When two authorized ConnectorConnections expose similar actions, a safe connection display name can be visible so the Agent can distinguish them without seeing either external reference.
+Checks cannot restore an old binding while authorization is active. Publishing an observation rechecks current management authority, Connection version and authorization generation, and the exact Provider's active credential generation. Transport failure is an unavailable observation, not proof of revocation. Checks never change an accepted Run's tool selection or authorize a substitute source.
 
-The exact ConnectorConnection facts retained by a Run use this conceptual shape:
+## Assignment and effective selection
 
-```python
-class ConnectorConnectionRunSelection:
-    connector_connection_id: ConnectorConnectionId
-    connector_provider_id: ConnectorProviderId
-    tools: tuple[str, ...] | None
-    defer_loading: bool
-```
+[Agent configuration](../28-agent-management.md#agentconfig) and narrow AccountTarget overrides use one `connection_tools` list. Each entry names `connection_id`, the source-native `tools` selection, and `defer_loading`. Omitted or null tools means all currently available authorized tools; an empty list means none. Duplicate Connection IDs are invalid, including across source kinds.
 
-This accepted selection is the authorization authority for the exact ConnectorProvider, ConnectorConnection, tool scope, and deferred-loading policy. `tools` retains the all-tools or explicit-name semantics of [Agent selection](../28-agent-management.md#agentconfig); it is not expanded into a frozen discovered list. The Provider ID is resolved from the connection, never independently overridden. Their identities fix external binding semantics; mutable management CAS versions are not Run compatibility inputs. [Run Persistence](../12-run-persistence.md) owns durable placement. [Runtime discovery](04-agent-facing-tools.md#discovery-and-recovery) supplies current definitions without a retained catalog digest.
+Run acceptance resolves each Connection and freezes its kind, Connection ID, authorization generation, tool scope, and deferred-loading policy. Connector selections additionally retain the resolved Provider ID. [Run persistence](../12-run-persistence.md) owns the single `connection_selections` snapshot. These are accepted authorization facts, not a catalog of discovered tool definitions.
 
-## a13n MCP Boundary
+Every dispatch checks current authority and the accepted authorization generation. Reauthorization keeps the Connection ID usable for new Runs while old Runs fail explicitly before using the replacement authorization. Recovery, child Runs, and retries preserve the accepted generation and never silently upgrade it. Runtime discovery can refresh tool definitions within the accepted source and scope, but cannot choose another Connection or Provider.
 
-All Connector tools enter the Agent through the Service-owned a13n MCP surface:
-
-```mermaid
-sequenceDiagram
-    participant Agent
-    participant MCP as In-process a13n MCP
-    participant Adapter as Connector Provider adapter
-    participant Service as External integration service
-    participant Provider as SaaS provider
-
-    Agent->>MCP: call visible a13n MCP tool
-    MCP->>MCP: check current Attempt and bound tool/connection authority
-    MCP->>Adapter: bound tool identity and provider-native arguments
-    Adapter->>Service: authenticated request for the bound connection
-    Service->>Provider: provider-specific action
-    Provider-->>Service: provider-specific result
-    Service-->>Adapter: external result or failure
-    Adapter-->>MCP: typed result or safe failure
-    MCP-->>Agent: bounded MCP result
-```
-
-Service preserves each ConnectorProvider's provider coverage, action names, argument schemas, result schemas, and feature limits. It applies collision-safe model-visible naming, authorization, bounded results, audit, and safe errors but does not translate every ConnectorProvider into one common action vocabulary.
-
-Each local MCP handler binds the [current Attempt context](04-agent-facing-tools.md#runtime-composition-and-authority) and one selected ConnectorConnection inside the executing Worker. It checks current authority before external dispatch without a network MCP service or invocation credential. Authentication and hidden routing context are not model arguments. Caller-supplied IDs, headers, and external references never grant tool authority.
-
-Run acceptance fixes ConnectorConnection choices, tool scopes, and deferred-loading policy. A replacement RunAttempt discovers current tools under the same choices and fails explicitly when a required tool or authority is unavailable. It never discovers a substitute account during recovery.
+Connector tools use one in-process a13n MCP capability per selected Connection. Remote MCP connections use independent remote clients. The [Agent-facing tools contract](04-agent-facing-tools.md) owns discovery, namespaces, bounded results, and Attempt-level dispatch authority.
 
 ## Management API
+
+```http
+POST   /api/v1/workspaces/{workspace}/connections
+GET    /api/v1/workspaces/{workspace}/connections
+GET    /api/v1/connections/{connection_id}
+PATCH  /api/v1/connections/{connection_id}
+POST   /api/v1/connections/{connection_id}/enable
+POST   /api/v1/connections/{connection_id}/disable
+POST   /api/v1/connections/{connection_id}/check
+DELETE /api/v1/connections/{connection_id}
+POST   /api/v1/connections/{connection_id}/authorizations
+GET    /api/v1/connection-authorizations/{authorization_id}
+POST   /api/v1/connection-authorizations/{authorization_id}/cancel
+POST   /api/v1/connection-authorizations/{authorization_id}/complete
+POST   /api/v1/connection-authorizations/{authorization_id}/launch
+POST   /api/v1/connection-authorizations/{authorization_id}/receive
+```
+
+Launch and receive are capability-scoped browser operations. Other operations use ordinary Service authentication and current resource authority. Protocol-specific MCP client configuration lives under `/connections/{id}/mcp/`; explicit Connector revocation lives under `/connections/{id}/connector/revoke`. Deletion immediately closes local use and returns a bounded cleanup receipt, preserving unknown remote-cleanup outcomes rather than claiming guaranteed upstream deletion.
 
 The Provider-type catalog is deployment-scoped and read-only. Configured Provider and Connector discovery routes use the exact resource identity:
 
 ```http
 GET   /api/v1/connector-provider-types
-GET   /api/v1/organizations/{organization_id}/connector-providers
-POST  /api/v1/organizations/{organization_id}/connector-providers
-GET   /api/v1/workspaces/{workspace_id}/connector-providers
-POST  /api/v1/workspaces/{workspace_id}/connector-providers
+GET   /api/v1/organizations/{organization}/connector-providers
+POST  /api/v1/organizations/{organization}/connector-providers
+GET   /api/v1/workspaces/{workspace}/connector-providers
+POST  /api/v1/workspaces/{workspace}/connector-providers
 GET   /api/v1/connector-providers/{connector_provider_id}
 PATCH /api/v1/connector-providers/{connector_provider_id}
 POST  /api/v1/connector-providers/{connector_provider_id}/test
@@ -211,33 +198,18 @@ POST  /api/v1/connector-providers/{connector_provider_id}/discover-connectors
 GET   /api/v1/connector-providers/{connector_provider_id}/connectors/{connector_key}/tools
 ```
 
-Provider creation accepts `type`, `configuration`, and separate write-only service credentials validated by `credential_schema` when the selected implementation requires them. Unknown types and configuration fields fail validation. Type, endpoint, and behavior-defining configuration changes require another Provider; mutable updates retain the existing exact management-version precondition. Credential replacement uses the owning management operation and atomically replaces the Provider-owned encrypted bundle. Testing and discovery are explicit bounded operations outside database transactions and never create Connector Connections. A successful test reports `verified_access` (`catalog_read` or `account_read`) for the operations actually checked; it does not imply untested credential permissions. Idempotent replay returns that same diagnostic.
+Provider creation accepts `type`, `configuration`, and separate write-only service credentials validated by `credential_schema` when the selected implementation requires them. Unknown types and configuration fields fail validation. Type, endpoint, and behavior-defining configuration changes require another Provider; mutable updates retain the existing exact management-version precondition. A Provider PATCH may combine name, status, and write-only credentials under one expected version. All supplied changes commit atomically and advance the management version once. Credential replacement also remains available through the owning management operation and atomically replaces the Provider-owned encrypted bundle. Testing and discovery are explicit bounded operations outside database transactions and never create Connector Connections. A successful test reports `verified_access` (`catalog_read` or `account_read`) for the operations actually checked; it does not imply untested credential permissions. Idempotent replay returns that same diagnostic.
 
 Type-definition and Connector discovery reads require the safe-read authority defined by [IAM](../33-identity-and-access-management.md#stable-action-registry); Provider management and testing require `connector_provider.manage`. Discovery additionally checks the exact Provider's Workspace visibility, current active status, and service credential eligibility. A response contains safe metadata only and never a credential value, external account reference, or import target.
 
-Connector Connection collections remain `/workspaces/{workspace_id}/connector-connections` and details remain `/connector-connections/{connector_connection_id}`. Setup selects `connector_provider_id`, `connector_key`, Workspace, and validated non-secret setup options; none is inferred from a display name or Provider type. Connector catalog entries have no independent create, update, or delete API.
-
-## Failure and Compatibility
-
-| Condition                                                           | Outcome                                                                                                       |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| ConnectorProvider unavailable before setup or dispatch              | Operation fails safely; no fallback ConnectorProvider is chosen                                               |
-| ConnectorProvider response is lost after possible external dispatch | Tool outcome is unknown unless the ConnectorProvider supplies stable receipt or reconciliation evidence       |
-| ConnectorConnection requires renewed authorization                  | ConnectorConnection becomes `action_required` with `reauthorization_required`; new calls fail before dispatch |
-| Connector tool disappears or its schema is incompatible             | Current discovery reflects the source; unavailable selected tools or invalid arguments fail explicitly        |
-| ConnectorConnection or ConnectorProvider is disabled                | New discovery, Run acceptance, and dispatch through it are denied                                             |
-| ConnectorProvider reports revocation                                | ConnectorConnection becomes `action_required`; reconnect must preserve its immutable identity                 |
-
-Connector Provider adapters and provider tool contracts version independently from Service management CAS versions. Adding another ConnectorProvider or provider tool is additive. Treating one ConnectorProvider's action as semantically interchangeable with another, changing a retained external reference's meaning, or exposing third-party credentials through Service is incompatible.
-
 ## Invariants
 
-1. No ConnectorProvider implementation is a required Service dependency.
-2. Connector Providers protect their own access credentials and never hold an externally managed third-party account credential.
-3. Every Connector Connection fixes one exact Connector Provider and Connector key; setup assigns at most one verified opaque external reference, and the model never receives that reference.
-4. Capability configuration, not a duplicate ConnectorConnection-owned assignment list, is authoritative for Agent and AccountTarget use.
-5. All Connector tools reach the Agent through the a13n MCP authorization and result-safety boundary.
-6. Service standardizes safe Connector discovery, MCP exposure, and authorization, not cross-Provider equivalence of Connectors or action schemas.
-7. Recovery never substitutes another ConnectorConnection or ConnectorProvider for an accepted Run.
-8. Connector discovery never creates a connection, authorizes an account, or changes an accepted Run selection.
-9. Provider type selects implementation code; only the configured Provider ID selects the account and configuration.
+1. There is one Connection resource and one public authorization operation model for Connector and MCP sources.
+2. Applications own their end-user mapping; Service Accounts can manage and complete authorization without Console login.
+3. Creating a Connection never authorizes an account or invokes a tool.
+4. Source identity is immutable; confirmed reauthorization can change the upstream account and advances authorization generation.
+5. No old Run, retry, or child execution silently adopts a replacement authorization.
+6. Normal token refresh does not invalidate an accepted authorization generation.
+7. Browser completion requires the original principal, browser binding, receipt, and backend-held verifier.
+8. Provider and credential material remain private; safe observations never grant execution authority.
+9. Connections supply tools only through Agent Runs; Service owns no parallel tool-execution API.

@@ -1,6 +1,6 @@
-import Ajv from "ajv/dist/2020";
-import addFormats from "ajv-formats";
 import { components } from "@converge.ai/a13n/openapi.json";
+import addFormats from "ajv-formats";
+import Ajv from "ajv/dist/2020";
 import type { Schema } from "./api";
 
 const ajv = new Ajv({ strict: false, allErrors: true });

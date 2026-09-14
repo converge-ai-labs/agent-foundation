@@ -188,10 +188,14 @@ class SkillPublicationReceipt(BaseModel):
     outcome: Literal["published", "already_current"]
 
 
+class SkillListItem(Skill):
+    source_kind: Literal["zip", "github"]
+
+
 class SkillCollection(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    items: tuple[Skill, ...]
+    items: tuple[SkillListItem, ...]
     next_cursor: str | None
 
 
@@ -208,6 +212,7 @@ class SkillAgentReference(BaseModel):
     agent_id: ObjectId
     agent_revision_id: ObjectId
     agent_name: str = Field(min_length=1, max_length=128)
+    agent_key: str
 
 
 class SkillAgentReferenceCollection(BaseModel):

@@ -54,6 +54,7 @@ async def _run(request: CliRequest) -> int:
             configuration_path=source.path,
             configuration_error=source.candidate_error,
             host_mode="webui" if request.command == "webui" else "local",
+            share_computer=request.command == "webui" and request.share_computer,
             codex_login=(
                 None
                 if request.command == "webui"
@@ -181,6 +182,7 @@ async def _run_management(
             projection = {
                 "valid": status.candidate_error_code is None,
                 "content_plugin_diagnostics": status.content_plugin_diagnostics,
+                "capability_warnings": status.capability_warnings,
                 "accepted_generation_digest": status.accepted_generation_digest,
                 "error": (
                     None
@@ -220,7 +222,15 @@ async def _run_management(
             return 0
         if request.action == "show":
             configuration = await _require_configuration(app)
-            _print_projection(configuration.model_dump(mode="json"), request.output_format)
+            from a13n_harness_ui.configuration.views import agent_tool_proxy_view
+
+            payload = configuration.model_dump(mode="json")
+            payload["tool_proxy_previews"] = [
+                agent_tool_proxy_view(configuration, agent).model_dump(mode="json")
+                for agent in configuration.agents.values()
+                if agent.tool_proxy is not None
+            ]
+            _print_projection(payload, request.output_format)
             return 0
     if request.command == "import":
         if request.product is None or request.scope is None:

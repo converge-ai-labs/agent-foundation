@@ -2,11 +2,11 @@
 
 ## Design Position
 
-`HarnessUiApp` is the only Harness UI application boundary. It runs configuration, catalog, Project, Thread, Harness, Model, Capability, Plugin, MCP, Environment, subagent, and observation behavior in one process. The full-terminal CLI and explicitly enabled embedding tools are thin adapters over its typed commands and queries.
+`HarnessUiApp` is the only Harness UI application boundary. It runs configuration, catalog, Project, Thread, Harness, Model, Capability, Plugin, MCP, Environment, subagent, and observation behavior in one process. The full-terminal CLI, collaborative WebUI, and explicitly enabled embedding tools are thin adapters over its typed commands and queries.
 
 Harness UI implements the Harness `SubagentOperator` contract as `HarnessUiSubagentOperator`. It persists each async child as an ordinary child Thread, runs each delegate or resume as an independent segment, saves exact checkpoints, and returns bounded saved execution views.
 
-Harness UI is not a Python package installer or upgrade supervisor. Already imported extension and Capability code remains fixed for the App lifetime. Shell references and observations are Run-local. Provider state owns native command recovery; Harness UI adds no separate process manager or wake path.
+Harness UI is not a Python package installer or upgrade supervisor. Already imported extension and Capability code remains fixed for the App lifetime. Agent Shell references and observations are Run-local. Provider state owns Agent command recovery; Harness UI adds no separate Agent process manager or wake path. Independently enabled [Host terminals](webui/02-host-computer-sharing.md#host-terminal) are human-facing App resources, not recovered Agent Shell references.
 
 ## Application Ownership
 
@@ -17,7 +17,7 @@ flowchart TB
     ThreadCapability[Root Thread capability]
 
     subgraph App[HarnessUiApp]
-        Files[Configuration files and CAS]
+        Files[Validated configuration files]
         Catalogs[Capabilities and extensions]
         Projects[Projects]
         Threads[Thread commands and queries]
@@ -44,12 +44,15 @@ flowchart TB
 
 The App owns:
 
-- stable multi-file and installed Content Plugin loading, accepted-generation selection, diagnostics, and expected-digest mutations;
+- stable multi-file and installed Content Plugin loading, accepted-generation selection, diagnostics, and validated source mutations;
 - Capability and three-plane runtime extension catalog projection;
 - Project, configured-resource, and Environment-profile queries, including the two release-owned execution modes;
 - Thread creation, metadata and configuration mutation, Project-filtered keyset queries, and transcript projection;
 - process-local root admission, receipt correlation, execution, deferred response, waiting, cancellation, and steering;
 - immutable Run composition and continuation publication;
+- in-memory shared browser drafts, page/focus and editor presence, with frontend Send using existing root admission;
+- publication, bounded queries, and referenced saved-output reads for durable human comments;
+- explicitly enabled native Host files, Git projections, and human PTY lifetimes;
 - Project-root Environment binding and state lifecycle;
 - async child admission, execution, checkpointing, query, wait, steering, cancellation, and linked resume;
 - detached presentation, root-lineage live delivery, summary invalidation, and bounded graceful shutdown.
@@ -65,7 +68,7 @@ One App lifetime:
 3. loads or restores the last accepted file-and-Content-Plugin generation and reports current source diagnostics;
 4. initializes Capability and extension catalogs plus release-owned Model, MCP, and Environment adapter integrations;
 5. starts bounded configuration change observation;
-6. attaches the CLI or embedding adapter;
+6. attaches the CLI, WebUI, or embedding adapter;
 7. serves commands until shutdown;
 8. stops new admissions, requests cancellation after a bounded graceful-drain interval, joins owned tasks, and then closes collaborators.
 
@@ -75,13 +78,53 @@ When `process.pricing_auto_update` is enabled, the App owns Pydantic AI's backgr
 
 A source change triggers a stable complete-tree candidate load. Invalid intermediate saves do not replace the accepted generation. Module import starts no task, process, listener, or database connection.
 
+## Observation
+
+`open_harness_ui_app()` resolves one observation selection for the App lifetime. Its optional `instrumentation` argument accepts the existing `HarnessInstrumentation`, explicit `None` to disable UI/Harness observation, or the default `"environment"` selection. Root, resumed-root, and async-child reconstruction use that same captured selection. Harness and Pydantic AI retain their [single instrumentation ownership](../a13n-harness/19-observation-model.md); the App creates no duplicate model/tool spans or telemetry-derived continuation authority.
+
+Environment selection retains the Harness `A13N_HARNESS_TRACE_LEVEL`, `A13N_HARNESS_TRACE_CONTENT`, and `A13N_HARNESS_METRICS` policy. Signals default to off. When tracing selects an unconfigured global proxy and `OTEL_TRACES_EXPORTER=otlp`, the App creates a private SDK tracer provider with an OTLP HTTP/protobuf exporter; `OTEL_SDK_DISABLED=true` prevents automatic setup. The App neither installs a process-global provider nor reconfigures an existing one. Automatic tracing supports `OTEL_TRACES_EXPORTER=none` or `otlp`; its protocol is `http/protobuf`. Standard OTel resource, sampling, batching and HTTP exporter environment settings remain SDK-owned. The default service name is `a13n-harness-ui`, overridable through standard resource configuration. Metrics require an externally configured or supplied meter provider; trace setup does not implicitly add metrics export.
+
+The App closes only its own provider, after owned operations and collaborators finish. Export is best effort, and shutdown draining runs off the event loop under the App shutdown waiting budget. Export/shutdown failure does not replace operation results or checkpoint selection. An exceeded waiting budget does not promise that a blocking exporter thread stopped. Explicit or preconfigured providers remain the embedding Host's flush/shutdown responsibility, including a Logfire SDK Host.
+
+One `harness_ui.root` span covers processing an admitted root receipt, including preparation before Harness entry, Harness stream consumption, continuation saving, and terminal receipt publication. Its correlation fields include the Thread, receipt and available Run IDs. It records the final application operation status, so a successful Harness result with failed continuation selection is not reported as a successful application operation. Rejections before receipt admission do not create that operation span.
+
+One `harness_ui.subagent` span covers an accepted async execution segment from task entry through checkpoint/result publication and task cleanup. It starts a new trace linked to the valid inherited dispatch context; child preparation before task admission remains in the caller's context. Normal cancellation remains cancellation, not failure. A later root operation or child resume starts another bounded operation; a Thread is not a lifetime-long trace. Disabling UI tracing does not attach or replace another instrumentor's current context.
+
+The App uses the shared Harness automatic enrichment for both App-owned and externally supplied providers. Each operation supplies neutral observation name, session and UI/kind labels. The session is the operation's actual Thread, never an encoded role or a root-family session. Bounded `root_thread_id`, `parent_thread_id`, `subagent_role`, `execution_id`, `segment_index`, and `resumed_from_execution_id` metadata comes from the existing Thread/composition/execution facts when available. These fields reach Harness and native Agent/model/tool descendants as neutral attributes and filterable Langfuse aliases; native content and usage fields remain unchanged. Root-family queries use `root_thread_id` across separate sessions. A resumed child keeps its Thread/session but starts a new execution segment and trace. Durable execution lineage does not imply a recoverable previous trace link: only valid inherited dispatch context supplies an OTel Link.
+
+The shared trace-local propagation never copies a parent's type, terminal status, cost or payload onto descendants, and a new logical Run replaces its own identity. Operation roots follow the shared Harness bounded input/output policy: `none` omits bodies, while `standard` and `full` permit the current submitted prompt or deferred response and final result, at most 8 KiB per direction, with capture/truncation diagnostics. Native media is descriptive only. Output can remain visible after a saving failure; operation status, not output presence, describes application success. Credentials, raw exceptions, complete history and checkpoint bodies are never copied into diagnostic roots. Model/tool content retains its upstream information boundary.
+
+Root execution adds only two coarse Host phases: `harness_ui.prepare` for configuration/state loading, reconstruction and Environment plan preparation; and `harness_ui.finalize` for Environment finalization and continuation selection. They are siblings of `harness.run`; no additional execute wrapper duplicates native execution. Fixed step labels locate failures, continuation status reports saving, and caught finalization errors mark the phase as failed. No stage is fabricated if execution never enters it. Child preparation before task admission remains outside the child trace.
+
+Preparation additionally records prompt/deferred input kind and whether configuration mutation was requested. Its local result reports continuation loading, deferred resume, Capability count and Environment readiness. Finalization reports the actual continuation-selection status, Environment finalization, cleanup-error count and returned Harness status. These bounded structural fields and phase status have filterable metadata aliases; `standard` and `full` expose the phase-local result as bounded output under the shared Harness policy, while `none` omits output bodies. They never copy configuration bodies, checkpoint state or the root answer into phase output. Preparation failure retains reached metadata without inventing successful preparation; caught save/cleanup failure retains the real finalization result and failed status.
+
+Each operation root summarizes available skills and observed reads only from its own Thread's consumed skill events, using the shared 16-name bounds and read-count semantics. Actual reads retain native tool observations; no duplicate skill-load span or cross-Thread usage claim is created.
+
+Externally configured providers retain their own export and lifecycle policy; automatic enrichment does not install processors on them. The legacy optional `HarnessUiSpanProcessor` remains available for limited local-parent propagation on independently instrumented SDK spans, but UI/Harness spans do not require it. A Logfire exporter consumes the same hierarchy, not another Agent instrumentor or a transport through Langfuse. UI spans do not require a Langfuse client, trace-query backend, or backend URL detection.
+
+Each recording UI operation also receives one root-only configuration summary after Agent reconstruction. It projects the captured composition generation, Thread configuration version, package prompt revision, Agent/model IDs, a fixed allowlist of numeric/boolean model settings and recognized reasoning/service-tier values, effective Capability IDs, selected plugin/MCP IDs, tool allowlist mode, immediate roster names, Environment profile/provider/adapter keys, and Run Extension IDs. A child segment records its own composition, including resumed selections. Request-local model fields still describe later runtime resolution.
+
+This summary uses `a13n.ui.configuration` and the root observation's `configuration` metadata alias. It is not part of descendant correlation propagation or continuation authority. Lists contain at most 16 entries with total and omitted counts; the serialized summary is at most 8 KiB, retaining counts instead of long lists when needed. Instructions, global guidance, credential values or references, headers, arbitrary request bodies, endpoint URLs, native paths, and raw plugin/MCP/Environment configuration are excluded. Summary construction is skipped when the operation is disabled or non-recording, and failure never changes execution. `trace_content=none` still permits these bounded structural diagnostics, not content capture.
+
 ## Root Run Coordination
 
 Trusted Agent reconstruction enables the existing [Harness model-attempt recovery](../a13n-harness/06-execution-context-and-lifecycle.md#model-attempt-recovery) for every root and child definition. The total budget is five attempts, including the first, with the default cancellation-aware full-jitter backoff. A recovery continues from normalized in-memory history inside the same logical Run; it does not resubmit the user operation, restart the Thread, or directly replay tools. Normal cancellation, tool failures, usage limits, deferred boundaries, and other Harness recovery exclusions remain unchanged. Exhaustion ends the operation with `model_recovery_exhausted`; Harness UI does not add another automatic retry loop.
 
+### Long-text Input Files
+
+The App applies the captured `input.long_text_threshold_chars` policy to authored root text from all submission surfaces and human root steering. Each eligible plain string or visible native `TextContent` block becomes one retained UTF-8 `text/plain` attachment, preserving exactly the text accepted by the App. Other text and media keep their ordering. Hidden context, existing attachment descriptions, tool results, child notifications, and previously selected history are not automatically converted.
+
+Conversion requires an enabled built-in `view` tool under the captured Agent Capability and tool selections, plus a readable `thread-files` mount in the entered Environment. If file reading is disabled or unavailable by policy, the original text remains inline with an explicit skipped-conversion notice; conversion never enables tools or broadens Environment permissions. Failure to prepare the selected mount or save the file fails initial execution, or rejects that steering operation, rather than publishing a reference to missing content.
+
+Files are retained before their references enter native input or the steering queue. Generated text files share the submitted-attachment count and byte limits. Model input contains only a file reference, character count, and instructions to read the file before answering, with no original-text preview or summary. The reference uses the current Environment's aggregate file path. The `harness_ui` metadata retains attachment identity, relative mount path, character count, and a `long_text` marker; existing source metadata remains intact. Full original text is not copied into metadata. Transcripts expose the reference and attachment handle, and surfaces retrieve original content through App attachment reads rather than expanding it back into model history. Conversation list excerpts use the attachment name for file-only input.
+
+The [Thread file lifecycle](03-local-storage-and-recovery.md#thread-files-and-automatic-scratch-cleanup) applies unchanged across subsequent Runs, restarts, and scratch pruning. Retaining a file is not durable execution acceptance. A failed or cancelled operation can leave an unreferenced retained file. Steering preparation stays bound to its exact receipt and stream and cannot retarget a later Run. Reading the file can add tool-result content to model history; this feature does not compact those results or guarantee a smaller context for tasks requiring the entire text.
+
 ### Process-local Operations
 
 Root prompt admission accepts native Harness `RunInputValue`: text or a sequence of Pydantic AI `UserContent`, including `BinaryContent`. This is a process-local input contract, not a serialized transport schema or permission to return native message objects in projections. The App normalizes and detaches mutable input before asynchronous admission. Image-only input is valid; empty or whitespace-only input is not. Native Harness messages and selected continuation checkpoints retain submitted content through the existing lifecycle. Provider capability failures are explicit; adapters do not silently discard content or substitute Models. The [CLI contract](07-interactive-cli.md#multimodal-drafts) owns terminal acquisition and recovery presentation. The App additionally accepts `ComposerInput` (expanded authored text, detached byte uploads, and optional input source ID), or native input with previously staged Thread-scoped attachment IDs. App stage/read operations return detached attachment metadata and bounded bytes rather than transport- or terminal-specific file objects. These are reusable process-local contracts; HTTP owns its serialized DTOs. All surfaces share the limits of eight attachments per input, 10 MiB per attachment, and 20 MiB in aggregate. Images undergo shared format/size validation and become native `BinaryContent`; ordinary files become descriptive `TextContent` with a relative `thread-files` mount reference. Attachment identity, original name, media type, size, and relative path travel in the `harness_ui` content metadata namespace and remain available in transcript projections. The App validates Thread existence and scopes every handle to that Thread.
+
+Explicit saved-comment capture uses the same retained-input owner: a complete published comment and original assistant output become bounded UTF-8 text with comment provenance in the existing attachment metadata. This is not a native Host file operation and does not require computer sharing. [Output comments](webui/05-output-comments.md#relationship-to-agent-execution) owns its selection and presentation contract. Captured feedback remains inline model text, not authored long-text externalization. Root steering validates every selected capture as supported text before reusing the ordinary retained-input preparation; content metadata survives steering, but binary or arbitrary uploaded attachments remain unsupported there.
 
 One App admits at most one root operation for a Thread. Another root submission while that operation is preparing or running is rejected rather than queued. Admission returns a detached receipt immediately; the receipt ID is unpredictable, unique within the App lifetime, and is the exact correlation used by active queries, waits, steering, and cancellation.
 
@@ -205,20 +248,9 @@ class EnvironmentProfileSummary:
 
 The release-owned descriptions state their material authority difference: Full Control commands have ambient Host-user filesystem and network access, while Sandbox commands require Local Envd filesystem/process containment and denied networking. `canonical_host_paths` describes aggregate path presentation only and never implies Full Control. Surfaces select and persist `profile_id`; display names and mode labels do not become Thread identity.
 
-Configuration-source queries expose one bounded detached view for the root YAML or an approved immediate resource source:
+Configuration-source queries expose an accepted-generation view for the root YAML or an approved immediate resource source. The conceptual projection includes `relative_path`, `resource_kind`, `resource_ids`, `source_digest`, `generation_digest`, `writable`, `content_available`, and nullable `content`. It does not expose the current invalid on-disk candidate or promise candidate diagnostics; MCP bodies are unavailable (`content_available: false`, `content: null`). A repair caller supplies complete replacement content through the validated mutation operation.
 
-```python
-class ConfigurationSourceView:
-    relative_path: str
-    resource_kind: str | None
-    resource_id: str | None
-    content: str
-    source_digest: str
-    accepted_generation_digest: str | None
-    diagnostics: tuple[FailureView, ...]
-```
-
-This conceptual App projection can expose an invalid candidate's exact text and safe diagnostics so a surface can repair it. `relative_path` is an App-approved configuration-tree identity, not a caller-selected filesystem path. The view grants no directory traversal, arbitrary file read, immutable-object access, or write authority. Create, update, and delete use the validated last-write-wins contract owned by [Configuration and Resource Catalog](01-configuration-and-resource-catalog.md#file-mutation-and-last-write-wins).
+`relative_path` is an App-approved configuration-tree identity, not a caller-selected filesystem path. The view grants no directory traversal, arbitrary file read, immutable-object access, or write authority. Create, update, and delete use the validated last-write-wins contract owned by [Configuration and Resource Catalog](01-configuration-and-resource-catalog.md#file-mutation-and-last-write-wins).
 
 Thread and transcript pages use opaque keyset cursors bound to the query shape and deterministic sort key. Root-Thread summary pages additionally bind the Project, archived, and search selectors. Thread ordering is descending `(updated_at, thread_id)`. Transcript entries always appear in ascending immutable message position within a page; a focused initial query returns the latest bounded page and a backward cursor pages older entries for prepend. A transcript cursor binds the Thread, selected continuation, direction, and boundary, so a changed continuation fails or resets rather than combining histories. A newer insertion does not shift unaffected entries across an existing page boundary. Updating a Thread can move it across that boundary, so summary invalidation prompts a fresh first-page query. Invalid, mismatched, or expired cursors fail explicitly. Project recency is aggregated over all associated non-archived Threads in storage rather than a bounded Thread page.
 
@@ -233,6 +265,12 @@ A review projection is either embedded in a deferred request or queried through 
 Thread title and archive state share a metadata head independent from sticky configuration. A metadata mutation supplies its exact expected metadata version and changes title, archive state, or both atomically. Archiving an active root Thread is rejected. Unarchiving is valid, and a title can be explicitly cleared. Child metadata is managed only through parent-scoped child operations.
 
 Failures are presentation-safe structured values with bounded code, message, details, and retry hint. Root operation outcomes contain scalar or JSON output, status, usage projection, continuation selection, Environment-state publication summaries, and cleanup failures; they never contain a native `HarnessRunResult`, `HarnessState`, deferred request object, or `Exception`.
+
+### Configuration Sources and Defaults
+
+The App exposes accepted configuration source metadata and individual source views, creation configuration preview, exact root-Thread configuration mutation, and Project-default preview/apply. Source views identify their accepted generation and do not claim to be the current files on disk. MCP source bodies are unavailable rather than an editable redacted replacement; literal credentials and compatible account stores are not exposed through these queries. Only approved immediate source paths support replacement or deletion, using the configuration owner's last-write-wins contract. A mutation response reports the completed source action and subsequently accepted generation separately from the submitted source digest; it does not promise those bytes remain current after another editor writes.
+
+Thread creation previews use the same per-axis resolution as creation and pre-Thread Skill queries. They allocate no persistent Thread. Explicit root-Thread patches support Project selection and clearing as well as Agent, Environment profile, Plugin, Run Extension, and MCP selections; omitted axes retain exact saved values. Child configuration remains parent-scoped. Project-default apply uses the version and default-combination digest described by [Projects and Threads](04-projects-threads-and-environments.md#project-creation-configuration), not a source-file write condition.
 
 ## Host-only Thread Collaboration Capability
 
@@ -258,7 +296,7 @@ The capability calls the same in-memory `HarnessUiApp` services as other adapter
 
 ## Live Presentation
 
-Live input uses the [Stream Protocol input mapping](../a13n-stream-protocol/00-overview.md#standard-event-conversion), not a second terminal echo of submitted text. Transcript parts retain the same `ContentMetadata` projection from native `TextContent`. CLI history and live rendering hide parts marked `display: false`; absence of the flag remains visible for compatibility. HTTP transcript and event projections retain this metadata, but the bundled Hello World page renders no transcript. Filtering affects presentation only, never the continuation or persisted message history. Event type strings use AG-UI wire values such as `TEXT_MESSAGE_CONTENT`, not Python Enum representations.
+Live input uses the [Stream Protocol input mapping](../a13n-stream-protocol/00-overview.md#standard-event-conversion), not a second terminal echo of submitted text. Transcript parts retain the same `ContentMetadata` projection from native `TextContent`. CLI history and live rendering hide parts marked `display: false`; absence of the flag remains visible for compatibility. HTTP transcript and event projections retain this metadata, and browser rendering respects the same display flag without changing saved history. Filtering affects presentation only, never the continuation or persisted message history. Event type strings use AG-UI wire values such as `TEXT_MESSAGE_CONTENT`, not Python Enum representations.
 
 Each App lifetime has an opaque detailed-live epoch and one global monotonic event sequence. Each root or child Harness Run has one observer. A detailed live event identifies the root Thread, immediate parent Thread when present, producing Thread, Run kind, Run ID, and child execution ID when present. A subscription focused on one root receives that root's entire descendant lineage; child events are not hidden merely because their producing Thread ID differs from the root.
 
@@ -268,18 +306,31 @@ The detailed live hub performs bounded best-effort fan-out and retains only a sm
 
 A focused watch establishes a subscribe-before-query boundary:
 
-1. install the exact root-lineage subscriber and record its epoch and `cutover_sequence`;
-2. query detached Thread, child, task, and root-operation projections, with retained queries bound to the selected continuation;
-3. attach `recent_events`, the newest available root-lineage ring tail at or below cutover, bounded to 128 KiB of encoded events; and
-4. return the snapshot and subscription, whose subsequent delivery contains only matching events strictly after cutover.
+1. read the selected history identity, then install the exact root-lineage subscriber and atomically capture its epoch, `cutover_sequence`, and the root observer's published prefix;
+2. query detached Thread, child, task, and root-operation projections, with retained queries bound to that continuation; require a fresh watch if the history identity changed across cutover, including when no observer existed at subscription;
+3. when present, describe `root_stream` by its exact Run, base continuation, and finite observer event count; if its base no longer matches the selected history, require a fresh watch rather than mixing histories;
+4. attach `recent_events`, the newest available root-lineage ring tail at or below cutover, bounded to 128 KiB of encoded events and intended only as incomplete diagnostic context; and
+5. return the snapshot, bounded root observer replay batches, and subscription, whose subsequent delivery contains only matching events strictly after cutover.
 
-The snapshot is not a transaction across execution, SQLite, and the live hub. Its detached activity projections can be newer than cutover; they are separate facts, not a complete materialized event fold. `recent_events` is explicitly provisional and incomplete when the ring or byte budget evicts earlier events. It cannot reconstruct all active output or serve as durable history. Consumers render retained history independently, deduplicate event identity, and refetch authoritative Thread/receipt projections for controls rather than deriving acceptance from a replayed lifecycle event. A concurrent continuation change fails or resets a retained query instead of combining histories from unrelated continuations.
+The snapshot is not a transaction across execution, SQLite, and the live hub. Its detached activity projections can be newer than cutover; they are separate facts, not a complete materialized event fold. Root replay uses the existing Stream Protocol observer, not another event accumulator or database. Observer indexes are Run-local positions, distinct from the hub's global sequence. Only events already published at cutover belong to the replay; observation that precedes publication is delivered later through the subscription. Replay uses the same bounded payload projection and explicit omission markers as live delivery.
+
+`recent_events` is not an alternative source to append beside root replay and saved history. Child inspection remains a bounded compact projection of closed activities through parent-scoped queries; reconnect does not expose unfinished child activities or bypass child publication boundaries. Consumers render retained history independently, apply the root replay once, and refetch authoritative Thread/receipt projections for controls rather than deriving acceptance from a replayed lifecycle event. When the selected continuation advances, replace the provisional root display with saved history instead of appending both. A concurrent continuation change fails or resets a retained query instead of combining histories from unrelated continuations.
+
+The hub references only the existing observer for the latest root Run per Thread. Successful continuation selection releases that reference; an already-open replay may retain its finite prefix until delivery closes. Unsaved terminal output has bounded process-local inspection retention. App restart restores selected history, not observers, subscriptions, or old root control. There is no new durable replay storage.
 
 Subscription installation and retained replay are atomic within the owning hub, so events after cutover remain buffered even while snapshot queries run. Ring loss or a subscriber gap requests reset; it never invents historical output. Closing or cancelling delivery releases the registered subscriber even under task cancellation, without cancelling the producing Run.
 
-A separate lightweight App-wide stream emits bounded invalidation hints for configuration, catalog, Project, Thread metadata/configuration/continuation, root operation, and child execution changes. Each hint identifies only the affected summary scope needed for refetch. It carries no transcript or checkpoint payload and is not durable truth. A surface that misses hints refetches its summaries.
+A separate lightweight App-wide stream emits bounded invalidation hints for configuration, catalog, Project, Thread metadata/configuration/continuation, root operation, child execution, and committed output-comment changes. Each hint identifies only the affected summary scope needed for refetch. It carries no transcript or checkpoint payload and is not durable truth. A surface that misses hints refetches its summaries.
 
 Retained transcript comes from selected continuations and child compact checkpoints. Current-process activity is merged only for presentation and never written back as continuation truth outside its owning checkpoint path.
+
+### Collaboration and Comment Delivery
+
+[Collaborative conversations](webui/01-collaborative-conversations.md) owns App-wide page participation, same-page membership, and Thread-scoped composer synchronization. Presence and drafts are separate transient values; a Thread-focused SSE reset does not recreate their browser state. Interactive delivery validates instance access before registering presence or joining a draft. A page target grants no new resource or execution authority.
+
+[Output comments](webui/05-output-comments.md) use ordinary App publication and bounded query operations with a separate durable completion boundary. Saved text projections expose typed opaque comment targets, not generic object-store references. Publication resolves only supported saved assistant text in the supplied Thread scope; a published comment provides bounded access to its original target without selecting that source for execution. Neither browser nor HTTP adapter reads SQLite or immutable files directly.
+
+A comment invalidation is emitted only after commit and carries the affected Thread/comment scope, not an AG-UI assistant message or full discussion history. Reconnect refetches durable comments independently of detailed Run replay and draft synchronization. Live presence snapshots describe participation, not durable comment coverage. No cross-channel arrival order authorizes clearing an input, navigating another participant, or treating a comment as root input.
 
 ## CLI
 
@@ -289,34 +340,44 @@ The commands, detached projections, live subscriptions, source-digest mutations,
 
 ## WebUI
 
-The WebUI server exposes one HTTP/SSE adapter over detached App commands and queries and serves the bundled Hello World page. The page does not call the API or provide Agent interaction. The foreground server process owns one WebUI-mode `HarnessUiApp` and all process-local execution, even while no browser is connected. The server calls the App directly in memory; it does not forward work to a separate daemon or use process-to-process communication. The adapter owns only process-bound listener access, HTTP serialization and status mapping, static-asset delivery, and stream delivery. It does not expose an alternate configuration, authorization, or Thread model.
+The WebUI server exposes authenticated App commands, queries, HTTP/SSE observation, and interactive collaboration/terminal connections, and serves the bundled project-centric workbench. The foreground server process owns one WebUI-mode `HarnessUiApp` and all process-local execution, even while no browser is connected. The server calls the App directly in memory; it does not forward work to a separate daemon or use process-to-process communication. The adapter owns only process-bound listener access, HTTP serialization and status mapping, static-asset delivery, and stream delivery. It does not expose an alternate configuration, authorization, or Thread model.
 
 ### HTTP Startup and Access
 
 `a13n-harness-ui webui` binds to the IPv4 loopback address `127.0.0.1` by default. Bare `a13n-harness-ui` selects the interactive CLI and never starts an HTTP listener. `--host <ip>` explicitly selects another IPv4 or IPv6 bind address for `webui`; choosing a non-loopback address does not implicitly weaken authentication.
 
-Unless the user supplies `--api-key <key>`, the executable generates a new unpredictable high-entropy API key for that App process. Before accepting requests, dedicated terminal startup output shows the ordinary browser URL, the generated key, and a convenience URL carrying the generated key only in a percent-encoded `#api_key=...` fragment. URL fragments never enter an HTTP request. A supplied key must be non-empty, is not echoed, and receives no terminal URL containing it. Generated and supplied keys remain process-local: they do not enter the accepted configuration tree, SQLite, immutable objects, application diagnostics, ordinary logs, browser HTML, or static assets. Restarting without an explicit key therefore rotates the key.
+Key selection uses explicit `--apikey <key>`, then `A13N_HARNESS_UI_API_KEY`, then a newly generated unpredictable high-entropy key for that App process. An explicitly supplied value must be non-empty. Before accepting requests, dedicated startup stdout shows the ordinary browser URL and, only for a generated key, the key and a convenience URL carrying it in a percent-encoded `#api_key=...` fragment. URL fragments never enter an HTTP request. Supplied keys are not echoed and receive no startup URL containing them. Server-resolved keys do not enter the accepted configuration tree, SQLite, immutable objects, application diagnostics, ordinary logs, browser HTML, or static assets. Restarting without an explicit key rotates it. The browser's explicit same-origin key retention is owned by [browser authentication](webui/00-overview.md#authentication-in-the-browser), not server configuration persistence.
 
-The generated default avoids a reusable secret in command history and process arguments. A user who selects direct `--api-key <key>` input accepts that the invoking shell or operating system can expose command arguments; terminal output warns about that boundary without echoing the value.
+The generated default avoids a reusable secret in command history and process arguments. A user who selects direct `--apikey <key>` input accepts that the invoking shell or operating system can expose command arguments; terminal output warns about that boundary without echoing the value.
 
-Every `/api` request, including an SSE stream connection, authenticates with `Authorization: Bearer <api-key>` before invoking an App command or query. HTML and immutable static assets can be fetched without the key, but they expose neither application data nor the key, and no HTTP endpoint returns it. A missing or incorrect key receives an authentication failure without revealing whether another key was close or valid.
+Every finite HTTP `/api` request and SSE connection authenticates with `Authorization: Bearer <api-key>` before invoking an App command or query. Interactive WebSocket connections also authenticate before exposing application content, subscribing to a shared draft, or creating/attaching a PTY; possession of an unverified connection alone grants no operation authority. The long-lived instance key is not carried in a request URL. HTML and immutable static assets can be fetched without the key, but they expose neither application data nor the key, and no HTTP endpoint returns it. A missing or incorrect key receives an authentication failure without revealing whether another key was close or valid.
 
-`--dangerously-bypass-permission` explicitly disables API-key authentication for the complete listener lifetime and emits a prominent terminal warning before serving. It is valid for loopback and non-loopback binds, so the user—not an inferred network policy—owns this dangerous override. Supplying it together with `--api-key` is a startup error.
+`--dangerous-skip-permissions` explicitly disables API-key authentication for the complete listener lifetime and emits a prominent startup warning. It is valid for loopback and non-loopback binds, so the user owns this override. Combining it with a key supplied by CLI or environment is a startup error. It bypasses Web access authentication only: it neither enables native computer sharing nor changes Agent approvals or Environment permissions.
 
-Bind address, API key, and the dangerous bypass are executable-bound Web-surface inputs rather than desired-resource configuration. All authenticated application behavior still uses the same `HarnessUiApp` configuration, commands, queries, receipts, and live hubs as the CLI; the HTTP adapter cannot introduce surface-only business settings.
+`--api-key` and `--dangerously-bypass-permission` are compatibility spellings of the corresponding canonical options, not independent settings or alternate access schemes. Conflicting repeated option values are rejected.
 
-The adapter validates the explicit Host authority and, when present, the exact same-origin Origin before App access. JSON request bodies are bounded to 1 MiB; the raw attachment upload route has a separate 10 MiB limit. Strict validation errors omit input values. Static assets use a self-only Content Security Policy without `unsafe-eval`. The adapter is a same-origin boundary. It does not enable credentialed cross-origin browser access or permissive CORS. A non-loopback bind remains a single-user plain-HTTP listener rather than a remote multi-user security boundary; the terminal identifies that exposure, and any trusted-network or TLS termination requirement belongs outside Harness UI.
+The WebUI command defaults to [native computer sharing](webui/02-host-computer-sharing.md), independently of authentication and Agent permissions. `--no-share-computer` makes the native backend operations unavailable; `--share-computer` explicitly selects the default. The authenticated status projection reports this enablement so the browser distinguishes disabled sharing from an unavailable operation.
+
+Bind address, API-key selection, the dangerous bypass, and native computer-sharing enablement are executable-bound Web-surface inputs rather than desired-resource configuration. All authenticated application behavior still uses the same `HarnessUiApp` configuration, commands, queries, receipts, and live hubs as the CLI; the HTTP adapter cannot introduce surface-only business settings.
+
+The adapter validates the explicit Host authority and, when present, the exact same-origin Origin before App access. JSON request bodies are bounded to 1 MiB; raw Thread attachment and native Host file uploads have a separate 10 MiB limit. Strict validation errors omit input values. Static assets use a self-only Content Security Policy without `unsafe-eval`. The adapter is a same-origin boundary. It does not enable credentialed cross-origin browser access or permissive CORS. All admitted collaborators share the same instance authority. A non-loopback bind is a trusted-team plain-HTTP listener, not tenant or account isolation; startup identifies the exposure, and trusted-network or TLS termination requirements belong outside Harness UI. Host and same-origin checks also apply to interactive connections, including when key authentication is explicitly bypassed.
 
 ### HTTP Adapter Contract
 
-Finite `/api` routes map strict request documents to one `HarnessUiApp` command or query and return strict detached JSON projections. A common bounded error envelope preserves safe App error code and message; detailed conflict recovery refetches the owning versioned projection. HTTP status mapping does not reinterpret App lifecycle or retry semantics. No route exposes a database session, storage-object path, arbitrary filesystem operation, native Harness value, Python exception, or credential.
+Finite `/api` routes map strict request documents to one `HarnessUiApp` command or query and return strict detached JSON projections. A common bounded error envelope preserves safe App error code and message; detailed conflict recovery refetches the owning versioned projection. HTTP status mapping does not reinterpret App lifecycle or retry semantics. No route exposes a database session, internal storage-object reference as authority, native Harness value, Python exception, or resolved credential. Native filesystem access exists only through the explicitly enabled Host operations; conversation and configuration routes do not acquire arbitrary file authority by sharing the listener.
 
-The adapter publishes a versioned OpenAPI document derived from its strict request and projection models. Its authenticated status projection identifies the API schema, App status, listener bind address, and whether listener access uses an API key or the explicit dangerous bypass. Repository generation retains an OpenAPI snapshot for contract drift checks; the bundled page has no API client and performs no schema negotiation.
+The adapter publishes a versioned OpenAPI document derived from its strict request and projection models. Its authenticated status projection identifies the API schema, App status, listener bind address, and whether listener access uses an API key or the explicit dangerous bypass. Repository generation retains an OpenAPI snapshot for contract drift checks. The browser consumes the public API and treats incompatible or unavailable operations as explicit failures rather than inventing server behavior.
+
+Configuration inspection distinguishes sticky next-Run Thread selections from an exact captured composition. While a root operation is active, its own composition publication supplies the captured reference; before that publication the capture is explicitly unavailable, never substituted with the previous selected continuation. An exact receipt can inspect its capture while retained by this App. Without an active root operation, selected-continuation inspection uses that continuation's stored composition. Neither path reconstructs historical configuration from current desired resources.
+
+These detached projections allowlist identity, model/capability/source selections, Environment identity, tool selections, and captured Tool Proxy grouping. They omit credentials, transport settings, arbitrary configuration payloads, instructions, and internal object access. Immediate child summaries are bounded to 100 with an omitted count; they are not a recursive executable recipe. Static Agent Tool Proxy inspection uses Agent defaults, whereas next-Run Thread inspection uses its exact selected source IDs. Neither static view contacts MCP servers or claims tool readiness.
+
+The implementation catalog is distinct from configured resource selectors. Account inspection exposes only the existing credential-free account projection; logout removes the selected compatible account entry and is not cancellation of a pending login. Thread usage, last reported context footprint, and notes retain their existing owners and explicit omission/continuation semantics.
 
 The adapter exposes two authenticated SSE forms:
 
 1. one App-wide summary stream carries only the summary hub's epoch, sequence, and invalidation hints;
-2. one focused root-Thread stream either opens a fresh App focused watch or resumes retained delivery for an existing watch cursor. A fresh watch emits its detached snapshot as the first frame and then only later detailed events from that subscription. A valid resumable cursor emits only events after that cursor; an unavailable cursor emits an explicit reset.
+2. one focused root-Thread stream either opens a fresh App focused watch or resumes retained delivery for an existing watch cursor. A fresh watch emits its detached snapshot, any finite root-stream replay batches and ready boundary, then only later detailed events from that subscription. A valid resumable cursor emits only events after that cursor; an unavailable cursor emits an explicit reset.
 
 Focused frames use the following conceptual JSON union; the adapter's OpenAPI document owns the serialized schema:
 
@@ -324,6 +385,17 @@ Focused frames use the following conceptual JSON union; the adapter's OpenAPI do
 class FocusSnapshotFrame:
     kind: Literal["snapshot"]
     snapshot: ThreadFocusSnapshot
+    resume_cursor: str | None
+
+
+class FocusReplayFrame:
+    kind: Literal["root_stream"]
+    run_id: str
+    events: tuple[RootStreamEvent, ...]  # At most 16 bounded events, with observer indexes.
+
+
+class FocusReadyFrame:
+    kind: Literal["ready"]
     resume_cursor: str
 
 
@@ -338,15 +410,15 @@ class FocusResetFrame:
     reason: str
 ```
 
-A fresh focused stream never reads a snapshot before installing its subscription. Every normal frame carries an opaque `resume_cursor`, encoding stream kind, exact root lineage when applicable, epoch, and sequence. A client reconnect passes it in the bounded `after` query parameter without decoding the cursor. Summary `open` and `invalidation` frames carry the same cursor concept; reset frames carry a reason and no reusable cursor. An invalid encoding, wrong kind, wrong lineage, future sequence, or expired epoch receives explicit reset semantics. That cursor is bound to the focused stream kind and exact root lineage and cannot be reused for another root. A valid resume does not emit a replacement snapshot; the hub establishes retained replay and following live delivery as one cursor continuation, so no matching event can fall between them. It replays retained matching events after the cursor and then follows the same lineage. An epoch change, expired cursor, or subscriber gap returns reset semantics rather than invented replay. Because the global sequence is sparse after root-lineage filtering, a numerical jump alone is valid and never causes reset. HTTP disconnect closes only that subscription and never cancels the producing root or child execution. A browser API client must use a transport that can supply the required Authorization header, such as authenticated `fetch` streaming rather than native `EventSource`. The bundled page opens no stream.
+A fresh focused stream captures only the history identity before subscribing; it queries the snapshot after installing its subscription. When the snapshot includes `root_stream`, its resume cursor is null: apply the indexed replay batches to that Run's provisional display, and retain a cursor only after the `ready` frame. If bootstrap is interrupted before ready, discard the incomplete bootstrap and open a fresh watch. Without root replay the initial snapshot already carries the cutover cursor. Normal live event frames carry an opaque `resume_cursor`, encoding stream kind, exact root lineage when applicable, epoch, and sequence. A client reconnect passes it in the bounded `after` query parameter without decoding the cursor. Summary `open` and `invalidation` frames carry the same cursor concept; reset frames carry a reason and no reusable cursor. An invalid encoding, wrong kind, wrong lineage, future sequence, or expired epoch receives explicit reset semantics. That cursor is bound to the focused stream kind and exact root lineage and cannot be reused for another root. A valid resume does not emit a replacement snapshot; the hub establishes retained replay and following live delivery as one cursor continuation, so no matching event can fall between them. It replays retained matching events after the cursor and then follows the same lineage. An epoch change, expired cursor, or subscriber gap returns reset semantics rather than invented replay. Because the global sequence is sparse after root-lineage filtering, a numerical jump alone is valid and never causes reset. HTTP disconnect closes only that subscription and never cancels the producing root or child execution. A browser API client must use a transport that can supply the required Authorization header, such as authenticated `fetch` streaming rather than native `EventSource`. The browser consumes these streams for conversation and summary presentation; draft synchronization does not replace their execution-observation semantics.
 
-Every authenticated JSON, OpenAPI, and SSE response uses `Cache-Control: no-store`; stream responses also disable intermediary buffering where the deployment path supports it. Recognized browser navigation paths continue to serve `index.html` with mandatory revalidation on direct load, refresh, and package replacement; they render the same Hello World page rather than feature-specific views. Content-hashed JavaScript, CSS, font, icon, editor, and worker assets use long-lived immutable caching. Asset misses, unknown `/api` routes, and unknown health routes remain explicit HTTP failures and never fall back to browser HTML.
+Every authenticated JSON, OpenAPI, and SSE response uses `Cache-Control: no-store`; stream responses also disable intermediary buffering where the deployment path supports it. Recognized browser navigation paths continue to serve `index.html` with mandatory revalidation on direct load, refresh, and package replacement; the browser resolves the corresponding workbench view without starting an Agent operation merely because a route was loaded. Content-hashed JavaScript, CSS, font, icon, editor, and worker assets use long-lived immutable caching. Asset misses, unknown `/api` routes, and unknown health routes remain explicit HTTP failures and never fall back to browser HTML.
 
-The [WebUI contract](webui/README.md) owns the Hello World page and its packaging boundary. No browser conversation, setup, Settings, navigation, diagnostics, or execution controls are implemented.
+The [WebUI contracts](webui/README.md) own browser navigation, configuration presentation, shared prompting, native human interaction, and bundled distribution. They do not add a second root execution lifecycle.
 
-Source views expose current digests as read/provenance facts. Configuration-file saves and setup apply require no expected source or generation digest and use the [last-write-wins file boundary](01-configuration-and-resource-catalog.md#file-mutation-and-last-write-wins), including when a manual or API edit intervenes. HTTP clients receive no native filesystem capability or arbitrary Host path API; Project paths enter only through validated resource mutations.
+Source views expose current digests as read/provenance facts. Configuration-file saves and setup apply require no expected source or generation digest and use the [last-write-wins file boundary](01-configuration-and-resource-catalog.md#file-mutation-and-last-write-wins), including when a manual or API edit intervenes. Project definition paths enter through validated resource mutations. Separately enabled Host Files operates on native paths under the [computer-sharing boundary](webui/02-host-computer-sharing.md); direct source edits still require a later valid generation before changing runtime configuration.
 
-Thread attachment transport uses authenticated `POST /api/threads/{thread_id}/attachments?name=...` with a bounded raw byte body, and `GET /api/threads/{thread_id}/attachments/{attachment_id}` for a non-inline, no-store download. The stage response supplies the handle and metadata. The submit JSON accepts `prompt` and up to eight `attachment_ids`, including attachment-only submission. Failed validation is explicit and never silently drops an attachment. The transport does not expose Host paths or duplicate storage, image validation, input conversion, or pruning policy. These APIs do not imply a bundled browser composer.
+Thread attachment transport uses authenticated `POST /api/threads/{thread_id}/attachments?name=...` with a bounded raw byte body, and `GET /api/threads/{thread_id}/attachments/{attachment_id}` for a non-inline, no-store download. The stage response supplies the handle and metadata. The submit JSON accepts `prompt` and up to eight `attachment_ids`, including attachment-only submission. Failed validation is explicit and never silently drops an attachment. The attachment transport does not accept native paths as an input source or duplicate storage, image validation, input conversion, or pruning policy. The shared browser composer reuses this attachment boundary rather than inventing browser-owned attachment authority. Native file and Git diff capture stage reviewed bytes with the [computer-sharing provenance](webui/02-host-computer-sharing.md#captured-diff-context) through this same owner. Git repository discovery, status and selected diffs are App-owned read-only observations, not Agent Environment operations or another repository state store.
 
 ## Failure and Shutdown Semantics
 

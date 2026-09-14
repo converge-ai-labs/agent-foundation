@@ -5,7 +5,8 @@ import json
 import pytest
 from a13n_environment import build_environment_provider_catalog
 from a13n_environment.e2b.configuration import E2BCredential
-from a13n_service.environments.domain import CreateProviderRequest, ReplaceCredentialRequest
+from a13n_service.environments.domain import CreateProviderRequest, ReplaceCredentialRequest, UpdateProviderRequest
+from a13n_service.environments.errors import EnvironmentManagementError
 from a13n_service.environments.models import EnvironmentProviderRecord
 from a13n_service.etags import resource_etag
 from a13n_service.storage import short_session
@@ -46,3 +47,28 @@ async def test_e2b_secret_survives_creation_and_rotation(environment_service, en
                 if_match=resource_etag(provider.id, provider.updated_at),
                 request=ReplaceCredentialRequest(credential={"api_key": key}),
             )
+
+
+async def test_provider_update_rolls_back_invalid_credentials(environment_service):
+    original = await environment_service.create_provider(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        request=CreateProviderRequest(type="a13n.e2b", name="Original", credential={"api_key": "initial"}),
+    )
+    etag = resource_etag(original.id, original.updated_at)
+    with pytest.raises(EnvironmentManagementError):
+        await environment_service.update_provider(
+            actor=actor(),
+            provider_id=original.id,
+            if_match=etag,
+            request=UpdateProviderRequest(name="Renamed", enabled=False, credential={"unknown": "invalid"}),
+        )
+    assert await environment_service.get_provider(actor=actor(), resource_id=original.id) == original
+    updated = await environment_service.update_provider(
+        actor=actor(),
+        provider_id=original.id,
+        if_match=etag,
+        request=UpdateProviderRequest(name="Renamed", enabled=False, credential={"api_key": "rotated"}),
+    )
+    assert updated.name == "Renamed" and not updated.enabled and updated.credential_configured
+    assert updated.updated_at != original.updated_at

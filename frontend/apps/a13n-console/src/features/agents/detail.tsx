@@ -1,86 +1,57 @@
-import { useState } from "react";
-import { useNavigate, useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Input, SelectField, Dialog } from "a13n-ui";
-import { Play, Copy, History, Settings } from "lucide-react";
+import { Button, ModalFrame } from "a13n-ui";
+import {
+  ClockCounterClockwiseIcon,
+  PencilSimpleIcon,
+  PlayIcon,
+} from "@phosphor-icons/react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate, useParams } from "react-router";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import {
-  allPages,
   commandHeaders,
   data,
   representation,
   workspaceHeaders,
   type Schema,
 } from "../../shared/api";
-import { ErrorNotice, Loading, Page, Timestamp } from "../../shared/feedback";
-import { Confirm, FormActions, JsonView } from "../../shared/form";
+import {
+  ErrorNotice,
+  Loading,
+  StateBadge,
+  Timestamp,
+} from "../../shared/feedback";
+import { isResourceKey } from "../../shared/paths";
 import { useIdempotency } from "../../shared/idempotency";
-import { Pagination, Table, useCursor } from "../../shared/collection";
-import { AgentForm } from "./form";
-import { initialConfig, type AgentConfig } from "./configuration";
 import styles from "../../shared/shared.module.css";
+import agentStyles from "./agents.module.css";
+import { type AgentConfig } from "./configuration";
+import { AgentForm } from "./form";
+import { AgentEnvironment } from "./environment";
+import { AgentActions, AgentDetails } from "./settings";
+import { AgentVersions } from "./versions";
 
-export function CreateAgent() {
-  const { t } = useTranslation(),
-    client = useClient(),
-    { workspace } = useWorkspace(),
-    cache = useQueryClient(),
-    navigate = useNavigate(),
-    idempotency = useIdempotency();
-  const create = useMutation({
-    mutationFn: (body: Schema["CreateAgentRequest"]) =>
-      client.http
-        .POST("/api/v1/workspaces/{workspace_id}/agents", {
-          params: {
-            path: { workspace_id: workspace.id },
-            header: commandHeaders(workspace.id, idempotency.forBody(body)),
-          },
-          body,
-        })
-        .then(data),
-    onSuccess: (result) => {
-      idempotency.reset();
-      void cache.invalidateQueries({ queryKey: ["agents", workspace.id] });
-      navigate(`/workspaces/${workspace.id}/agents/${result.agent.id}`, {
-        replace: true,
-      });
-    },
-  });
-  return (
-    <Page
-      title={t("Create agent")}
-      description={t("Start with clear instructions and the right model.")}
-      back={`/workspaces/${workspace.id}/agents`}
-    >
-      <AgentForm
-        initial={initialConfig("")}
-        creating
-        pending={create.isPending}
-        error={create.error}
-        submit={(config, name, description) =>
-          create.mutate({ config, name, description: description || null })
-        }
-      />
-    </Page>
-  );
-}
+export { CreateAgent } from "./create";
+
 export function AgentDetail() {
-  const { agentId = "" } = useParams(),
+  const { agentKey = "" } = useParams(),
     client = useClient(),
     { t } = useTranslation(),
-    { workspace, can } = useWorkspace(),
+    { workspace, can, basePath } = useWorkspace(),
     navigate = useNavigate(),
     cache = useQueryClient(),
     idempotency = useIdempotency();
   const [generation, setGeneration] = useState(0);
+  const [detailsOpen, setDetailsOpen] = useState(false);
   const query = useQuery({
-    queryKey: ["agent", workspace.id, agentId],
+    queryKey: ["agent", workspace.id, agentKey],
+    enabled: isResourceKey(agentKey),
     queryFn: async ({ signal }) => {
       const resource = representation(
-        await client.http.GET("/api/v1/agents/{agent_id}", {
-          params: { path: { agent_id: agentId } },
+        await client.http.GET("/api/v1/workspaces/{workspace}/agents/{agent}", {
+          params: { path: { workspace: workspace.id, agent: agentKey } },
           headers: workspaceHeaders(workspace.id),
           signal,
         }),
@@ -103,9 +74,9 @@ export function AgentDetail() {
       expected_version: number;
     }) => {
       return client.http
-        .POST("/api/v1/agents/{agent_id}/revisions", {
+        .POST("/api/v1/workspaces/{workspace}/agents/{agent}/revisions", {
           params: {
-            path: { agent_id: agentId },
+            path: { workspace: workspace.id, agent: agentKey },
             header: commandHeaders(workspace.id, idempotency.forBody(body)),
           },
           body,
@@ -115,15 +86,17 @@ export function AgentDetail() {
     onSuccess: async () => {
       idempotency.reset();
       await cache.invalidateQueries({
-        queryKey: ["agent", workspace.id, agentId],
+        queryKey: ["agent", workspace.id, agentKey],
       });
       void cache.invalidateQueries({
-        queryKey: ["agent-revisions", workspace.id, agentId],
+        queryKey: ["agent-revisions", workspace.id, agentKey],
       });
       setGeneration((value) => value + 1);
     },
   });
-  if (query.isPending) return <Loading />;
+  if (!isResourceKey(agentKey))
+    return <ErrorNotice error={new Error(t("Agent not found"))} />;
+  if (query.isPending) return <Loading variant="detail" page />;
   if (!query.data)
     return (
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
@@ -135,347 +108,124 @@ export function AgentDetail() {
     setGeneration((value) => value + 1);
   };
   return (
-    <Page
-      title={agent.name}
-      description={
-        agent.description ?? t("Configure, version, and run this agent.")
+    <AgentForm
+      key={`${agent.id}:${agent.key}:${generation}`}
+      back={`${basePath}/agents`}
+      name={agent.name}
+      agentId={agent.id}
+      agentKey={agent.key}
+      imageUrl={agent.image_url}
+      description={agent.description ?? ""}
+      environment={
+        <AgentEnvironment
+          resource={query.data}
+          disabled={save.isPending}
+          onSaved={async () => {
+            await query.refetch();
+          }}
+        />
       }
-      back={`/workspaces/${workspace.id}/agents`}
-      actions={
+      identityAction={
+        can("agent.update") && (
+          <ModalFrame
+            open={detailsOpen}
+            onOpenChange={setDetailsOpen}
+            trigger={
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                aria-label={t("Edit agent details")}
+                title={t("Edit agent details")}
+              >
+                <PencilSimpleIcon size={14} />
+              </Button>
+            }
+            title={t("Edit agent details")}
+            description={t("Update how this agent appears in your workspace.")}
+            closeLabel={t("Close")}
+          >
+            <AgentDetails
+              key={`${agent.id}:${agent.key}:${generation}`}
+              resource={query.data}
+              close={() => setDetailsOpen(false)}
+              onImageSaved={async () => {
+                await query.refetch();
+              }}
+              reload={() => void reload()}
+            />
+          </ModalFrame>
+        )
+      }
+      primaryAction={
         can("agent.invoke") && (
           <Button
-            variant="primary"
-            icon={<Play size={14} />}
+            variant="default"
             disabled={!agent.enabled || !!agent.archived_at}
             onClick={() =>
-              navigate(
-                `/workspaces/${workspace.id}/sessions/new?agent=${agent.id}`,
-              )
+              navigate(`${basePath}/sessions/new?agent=${agent.id}`)
             }
+            type="button"
           >
+            {<PlayIcon size={14} />}
             {t("Try agent")}
           </Button>
         )
       }
-    >
-      <AgentForm
-        key={`${agent.id}:${generation}`}
-        context={
-          <div className={styles.stack}>
-            <Dialog
-              title={t("Version history")}
-              description={t("Review and restore saved configurations.")}
-              closeLabel={t("Close")}
-              trigger={
-                <Button variant="ghost" icon={<History size={14} />}>
-                  {t("Version history")}
-                </Button>
+      metadata={
+        <dl className={agentStyles.metadata}>
+          <dt>{t("Status")}</dt>
+          <dd>
+            <StateBadge
+              state={
+                agent.archived_at
+                  ? "archived"
+                  : agent.enabled
+                    ? "enabled"
+                    : "disabled"
               }
-            >
-              <AgentVersions agent={agent} />
-            </Dialog>
-            <Dialog
-              title={t("Agent settings")}
-              description={t("Manage this agent’s identity and availability.")}
-              closeLabel={t("Close")}
-              trigger={
-                <Button variant="ghost" icon={<Settings size={14} />}>
-                  {t("Agent settings")}
-                </Button>
-              }
-            >
-              <AgentSettings
-                key={`${agent.id}:${generation}`}
-                resource={query.data}
-                reload={() => void reload()}
-              />
-            </Dialog>
-          </div>
-        }
-        initial={query.data.revision.config}
-        version={agent.version}
-        pending={save.isPending}
-        error={save.error}
-        readonly={!can("agent.revision.create")}
-        submit={(config, _name, _description, version) => {
-          if (version !== undefined)
-            save.mutate({ config, expected_version: version });
-        }}
-        reload={() => void reload()}
-      />
-    </Page>
-  );
-}
-function AgentSettings({
-  resource,
-  reload,
-}: {
-  resource: { value: Schema["Agent"]; etag?: string };
-  reload: () => void;
-}) {
-  const [snapshot] = useState(resource);
-  const { value: agent, etag } = snapshot,
-    client = useClient(),
-    { t } = useTranslation(),
-    { workspace, can } = useWorkspace(),
-    cache = useQueryClient(),
-    navigate = useNavigate(),
-    idempotency = useIdempotency();
-  const [name, setName] = useState(agent.name),
-    [description, setDescription] = useState(agent.description ?? ""),
-    [environment, setEnvironment] = useState(
-      agent.default_environment_template_id ?? "none",
-    );
-  const templates = useQuery({
-    queryKey: ["environment-template-choices", workspace.id],
-    queryFn: ({ signal }) =>
-      allPages((cursor) =>
-        client.http
-          .GET("/api/v1/workspaces/{workspace_id}/environment-templates", {
-            params: {
-              path: { workspace_id: workspace.id },
-              query: { cursor, limit: 100 },
-            },
-            signal,
-          })
-          .then(data),
-      ),
-  });
-  const save = useMutation({
-    mutationFn: async () => {
-      if (!etag)
-        throw new Error(
-          t("Version information is unavailable. Reload this page."),
-        );
-      await client.http.PATCH("/api/v1/agents/{agent_id}", {
-        params: { path: { agent_id: agent.id }, header: { "If-Match": etag } },
-        headers: workspaceHeaders(workspace.id),
-        body: {
-          name,
-          description: description || null,
-          default_environment_template_id:
-            environment === "none" ? null : environment,
-        },
-      });
-    },
-    onSuccess: reload,
-  });
-  const action = async (
-    action: "enable" | "disable" | "archive" | "unarchive",
-  ) => {
-    if (!etag)
-      throw new Error(
-        t("Version information is unavailable. Reload this page."),
-      );
-    await client.http.POST("/api/v1/agents/{agent_id}/{action}", {
-      params: {
-        path: { agent_id: agent.id, action },
-        header: {
-          ...commandHeaders(
-            workspace.id,
-            idempotency.forBody({ action, etag }),
-          ),
-          "If-Match": etag,
-        },
-      },
-    });
-    idempotency.reset();
-    reload();
-  };
-  return (
-    <div className={styles.stack}>
-      <form
-        className={styles.form}
-        onSubmit={(event) => {
-          event.preventDefault();
-          save.mutate();
-        }}
-      >
-        <fieldset className="fieldset-reset" disabled={!can("agent.update")}>
-          <div className={styles.stack}>
-            <Input
-              label={t("Name")}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              required
             />
-            <Input
-              label={t("Description")}
-              value={description}
-              onChange={(event) => setDescription(event.target.value)}
-            />
-            <SelectField
-              label={t("Default environment")}
-              placeholder={t("Select environment")}
-              value={environment}
-              onValueChange={setEnvironment}
-              options={[
-                { value: "none", label: t("No default environment") },
-                ...(templates.data?.map((item) => ({
-                  value: item.id,
-                  label: item.name,
-                })) ?? []),
-              ]}
-            />
-          </div>
-          <FormActions pending={save.isPending} />
-        </fieldset>
-        <ErrorNotice error={save.error} retry={reload} />
-      </form>
-      {(can("agent.lifecycle") || can("agent.duplicate")) && (
-        <div className={styles.actions}>
-          {can("agent.lifecycle") && (
-            <>
-              <Confirm
-                title={t(agent.enabled ? "Disable agent" : "Enable agent")}
-                description={t("This changes whether new runs can start.")}
-                trigger={t(agent.enabled ? "Disable" : "Enable")}
-                action={() => action(agent.enabled ? "disable" : "enable")}
-              />
-              <Confirm
-                title={t(
-                  agent.archived_at ? "Unarchive agent" : "Archive agent",
-                )}
-                description={t(
-                  "Archived agents leave the default list. Their history remains available.",
-                )}
-                trigger={t(agent.archived_at ? "Unarchive" : "Archive")}
-                danger={!agent.archived_at}
-                action={() =>
-                  action(agent.archived_at ? "unarchive" : "archive")
-                }
-              />
-            </>
-          )}
-          {can("agent.duplicate") && (
-            <Confirm
-              title={t("Duplicate agent")}
-              description={t("Create an independent agent from this version.")}
-              trigger={
-                <>
-                  <Copy size={13} />
-                  {t("Duplicate")}
-                </>
-              }
-              action={async () => {
-                const body = {
-                  expected_version: agent.version,
-                  name: `${agent.name} (${t("copy")})`,
-                };
-                const result = data(
-                  await client.http.POST(
-                    "/api/v1/agents/{agent_id}/duplicate",
-                    {
-                      params: {
-                        path: { agent_id: agent.id },
-                        header: commandHeaders(
-                          workspace.id,
-                          idempotency.forBody(body),
-                        ),
-                      },
-                      body,
-                    },
-                  ),
-                );
-                idempotency.reset();
-                void cache.invalidateQueries();
-                navigate(`/workspaces/${workspace.id}/agents/${result.id}`);
-              }}
+          </dd>
+          <dt>{t("Updated")}</dt>
+          <dd>
+            <Timestamp value={agent.updated_at} relative />
+          </dd>
+        </dl>
+      }
+      context={
+        <div className={styles.stack}>
+          <ModalFrame
+            trigger={
+              <Button variant="ghost" type="button">
+                {<ClockCounterClockwiseIcon size={14} />}
+                {t("Version history")}
+              </Button>
+            }
+            size="lg"
+            title={t("Version history")}
+            description={t("Review and restore saved configurations.")}
+            closeLabel={t("Close")}
+          >
+            <AgentVersions agent={agent} />
+          </ModalFrame>
+          {(can("agent.lifecycle") || can("agent.duplicate")) && (
+            <AgentActions
+              key={`${agent.id}:${agent.key}:${generation}`}
+              resource={query.data}
+              reload={() => void reload()}
             />
           )}
         </div>
-      )}
-    </div>
-  );
-}
-function AgentVersions({ agent }: { agent: Schema["Agent"] }) {
-  const client = useClient(),
-    { t } = useTranslation(),
-    { workspace, can } = useWorkspace(),
-    cache = useQueryClient(),
-    page = useCursor(),
-    idempotency = useIdempotency();
-  const [selected, setSelected] = useState<Schema["AgentRevision"]>();
-  const query = useQuery({
-    queryKey: ["agent-revisions", workspace.id, agent.id, page.cursor],
-    queryFn: ({ signal }) =>
-      client.http
-        .GET("/api/v1/agents/{agent_id}/revisions", {
-          params: {
-            path: { agent_id: agent.id },
-            query: { cursor: page.cursor, limit: 20 },
-          },
-          headers: workspaceHeaders(workspace.id),
-          signal,
-        })
-        .then(data),
-  });
-  if (query.isPending) return <Loading />;
-  if (!query.data) return <ErrorNotice error={query.error} />;
-  return (
-    <div className={styles.stack}>
-      <p className={styles.muted}>
-        {t("Versions are immutable. Restoring one creates a new version.")}
-      </p>
-      <Table
-        items={query.data.items}
-        columns={[
-          {
-            label: t("Version"),
-            render: (item) => (
-              <Button variant="ghost" onClick={() => setSelected(item)}>
-                v{item.version}
-              </Button>
-            ),
-          },
-          { label: t("Model"), render: (item) => item.config.model.model_key },
-          {
-            label: t("Created"),
-            render: (item) => <Timestamp value={item.created_at} />,
-          },
-          {
-            label: t("Actions"),
-            render: (item) =>
-              can("agent.revision.create") &&
-              item.id !== agent.current_revision_id && (
-                <Confirm
-                  title={t("Restore version")}
-                  description={t(
-                    "This creates a new current version using the selected configuration.",
-                  )}
-                  trigger={t("Restore")}
-                  action={async () => {
-                    const body = { expected_version: agent.version };
-                    await client.http.POST(
-                      "/api/v1/agents/{agent_id}/revisions/{revision_id}/restore",
-                      {
-                        params: {
-                          path: { agent_id: agent.id, revision_id: item.id },
-                          header: commandHeaders(
-                            workspace.id,
-                            idempotency.forBody({ ...body, revision: item.id }),
-                          ),
-                        },
-                        body,
-                      },
-                    );
-                    idempotency.reset();
-                    await cache.invalidateQueries();
-                  }}
-                />
-              ),
-          },
-        ]}
-      />
-      <Pagination page={page} next={query.data.next_cursor} />
-      {selected && (
-        <section>
-          <h3>
-            {t("Version")} {selected.version}
-          </h3>
-          <JsonView value={selected.config} />
-        </section>
-      )}
-    </div>
+      }
+      initial={query.data.revision.config}
+      version={agent.version}
+      pending={save.isPending}
+      error={save.error}
+      readonly={!can("agent.revision.create")}
+      submit={(config, _name, _description, version) => {
+        if (version !== undefined)
+          save.mutate({ config, expected_version: version });
+      }}
+      reload={() => void reload()}
+    />
   );
 }

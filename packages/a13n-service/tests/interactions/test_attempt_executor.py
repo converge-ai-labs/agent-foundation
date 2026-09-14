@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import timedelta
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from a13n_harness import (
@@ -19,11 +19,13 @@ from a13n_harness import (
     SafeFailure,
 )
 from a13n_harness.errors import RunError
+from a13n_service.iam.attempts import AttemptAuthorization
 from a13n_service.interactions.attempt_executor import ControlWatcher, LeaseMonitor, RunAttemptExecutor
 from a13n_service.interactions.attempts import (
     AttemptAuthorityError,
     AttemptContext,
     AttemptExecutionService,
+    AttemptLease,
     AttemptMutationReceipt,
     AttemptPreparationAccepted,
     AttemptPreparationRejected,
@@ -303,10 +305,12 @@ def _context(thread_id: str, *, renewal_interval: timedelta = timedelta(millisec
         worker_id="worker-1",
         worker_build_id="build-1",
         lease_duration=timedelta(seconds=30),
+        lease=AttemptLease(NOW + timedelta(seconds=30)),
         renewal_interval=renewal_interval,
         renewal_timeout=timedelta(seconds=5),
         reconciliation_timeout=timedelta(seconds=5),
         cleanup_timeout=timedelta(seconds=5),
+        authorization=Mock(spec=AttemptAuthorization),
     )
 
 
@@ -340,11 +344,23 @@ def _terminal_receipt(context: AttemptContext) -> AttemptOutcome:
     )
 
 
-@pytest.mark.parametrize("reject_preparation", [False, True])
+@pytest.mark.parametrize(
+    ("reject_preparation", "preflight_code"),
+    [
+        (False, None),
+        (True, None),
+        (False, "environment_required"),
+        (False, "search_provider_unavailable"),
+        (False, "web_operation_unavailable"),
+        (False, "untrusted_provider_code"),
+    ],
+)
 async def test_executor_supervises_two_children_before_cleanup_and_capacity_release(
     interaction_object_store: ObjectStore,
     reject_preparation: bool,
+    preflight_code: str | None,
     monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
     trace: list[str] = []
     envelope = initial_state()
@@ -394,6 +410,15 @@ async def test_executor_supervises_two_children_before_cleanup_and_capacity_rele
             await control.reconcile()
             read.assert_not_awaited()
 
+    committer = _Committer(trace)
+    failure_commit = AsyncMock(return_value=_terminal_receipt(context))
+    if preflight_code is not None:
+        monkeypatch.setattr(
+            ClosingPreparer,
+            "validate_dependencies",
+            AsyncMock(side_effect=RunError("private diagnostic", code=preflight_code)),
+        )
+        monkeypatch.setattr(committer, "commit_failure", failure_commit)
     executor = RunAttemptExecutor(
         activate_publication=AsyncMock(side_effect=lambda context: trace.append("publication:activate")),
         context=context,
@@ -402,11 +427,26 @@ async def test_executor_supervises_two_children_before_cleanup_and_capacity_rele
         preparer=ClosingPreparer(context, invocation, wakeups, execution.heartbeat_seen, trace),
         wakeups=wakeups,
         adapter=_Adapter,
-        committer=_Committer(trace),
+        committer=committer,
         capacity_slot=capacity,
     )
 
     receipt = await executor.run()
+    if preflight_code is not None:
+        failure_commit.assert_awaited_once()
+        failure = failure_commit.call_args.args[1]
+        expected = preflight_code if preflight_code != "untrusted_provider_code" else "attempt_execution_failed"
+        assert failure.code == expected
+        assert failure.message == "The RunAttempt could not complete execution."
+        record = next(record for record in caplog.records if record.msg == "run_attempt_execution_failed")
+        assert record.run_id == RUN_ID and record.attempt_number == context.attempt_number
+        assert record.exception_chain[0]["type"] == "a13n_harness.errors.RunError"
+        assert record.exception_chain[0]["frames"] and record.exc_info is None
+        assert "private diagnostic" not in str(record.exception_chain)
+        assert "attempt:enter" not in trace
+        assert not projector.events
+        assert capacity.releases == 1
+        return
     await control.reconcile()
     await control.renew_lease()
 
@@ -456,12 +496,14 @@ async def test_lease_monitor_fences_control_and_cancels_scope_on_authority_loss(
 
     assert driver.cancellations == 1
     assert cancellations == ["scope"]
+    with pytest.raises(AttemptAuthorityError):
+        context.lease.require_current(NOW)
     with pytest.raises(RunError) as error:
         await control.reconcile()
     assert error.value.code == "service_control_fenced"
 
 
-async def test_control_watcher_acknowledges_only_after_each_durable_reconciliation(
+async def test_control_watcher_acknowledges_before_durable_reconciliation(
     interaction_object_store: ObjectStore,
 ) -> None:
     trace: list[str] = []
@@ -484,9 +526,49 @@ async def test_control_watcher_acknowledges_only_after_each_durable_reconciliati
     assert trace == [
         "attempt:validate",
         "wakeup:receive",
-        "attempt:validate",
         "wakeup:ack",
+        "attempt:validate",
     ]
+
+
+async def test_watcher_restart_reconciles_after_post_ack_failure_without_redelivery(
+    interaction_object_store: ObjectStore,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    trace: list[str] = []
+    envelope = initial_state()
+    states, stored = await _stored_state(interaction_object_store, envelope)
+    control = RunAttemptControl(
+        context=_context(envelope.thread_id),
+        execution=_Execution(trace),
+        states=states,
+        state=stored,
+        inbox=_Inbox(trace),
+    )
+    reconcile = control.reconcile
+    calls = 0
+
+    async def reconcile_with_failure():
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise ConnectionError("PostgreSQL temporarily unavailable")
+        await reconcile()
+
+    monkeypatch.setattr(control, "reconcile", reconcile_with_failure)
+    wakeups = _Wakeups(trace)
+    with pytest.raises(ConnectionError):
+        await ControlWatcher(control.current_context, control, wakeups).run()
+    assert wakeups.acknowledged.is_set()
+    assert trace == ["attempt:validate", "wakeup:receive", "wakeup:ack"]
+
+    # The acknowledged signal is gone. Startup reconciliation runs before receive.
+    async with create_task_group() as tasks:
+        await tasks.start(ControlWatcher(control.current_context, control, wakeups).run)
+        tasks.cancel_scope.cancel()
+    assert calls == 3
+    assert trace.count("attempt:validate") == 2
+    assert trace.count("wakeup:ack") == 1
 
 
 async def test_active_reconciliation_uses_driver_steer_without_consuming_receipt(

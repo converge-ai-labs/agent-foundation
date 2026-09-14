@@ -1,0 +1,390 @@
+.workarea {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+  min-width: 0;
+}
+.workToolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 16px;
+  min-height: 44px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--a13n-border);
+}
+.workToolbar [aria-pressed="true"] {
+  background: var(--a13n-surface);
+}
+.layout {
+  display: flex;
+  min-height: 0;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+}
+.center {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.page,
+.editorPage {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: 16px 24px;
+  overflow: auto;
+}
+.editorPage {
+  display: flex;
+  flex-direction: column;
+}
+.page[hidden] {
+  display: none;
+}
+.documentPage {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+  max-width: 1120px;
+  margin-inline: auto;
+  padding: 24px;
+}
+.pane {
+  order: -1;
+  flex: 0 0 280px;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--a13n-border);
+  padding: 12px;
+  background: var(--a13n-surface);
+  overflow: auto;
+}
+.terminalDock {
+  display: contents;
+}
+.paneHeader,
+.fileHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.paneHeader strong {
+  font-size: 15px;
+  font-weight: 500;
+}
+.paneHeader small {
+  display: block;
+}
+.pane small,
+.fileHeader span {
+  color: var(--a13n-secondary);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.pane strong {
+  font-weight: 500;
+}
+.pane h3 {
+  font-size: 13px;
+  font-weight: 500;
+  margin: 0;
+}
+.pane .authority {
+  font-size: 11px;
+  line-height: 1.5;
+  margin: 8px 0 12px;
+}
+.paneBody {
+  overflow: auto;
+  min-height: 0;
+  padding: 0 0 12px;
+  flex: 1;
+}
+.location {
+  display: grid;
+  gap: 12px;
+  padding-bottom: 12px;
+}
+.address {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+}
+.address > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+.breadcrumbs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  max-height: 64px;
+  overflow: auto;
+}
+.breadcrumbs button {
+  color: var(--a13n-secondary);
+  font-size: 11px;
+  border: 0;
+  background: none;
+  padding: 3px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.breadcrumbs button:not(:last-child)::after {
+  content: "/";
+  padding-left: 6px;
+  color: var(--a13n-border);
+}
+.breadcrumbs button:hover {
+  color: var(--a13n-text);
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--a13n-secondary);
+}
+.fileList {
+  min-height: 48px;
+}
+.fileRow {
+  display: flex;
+  align-items: center;
+  border-radius: 5px;
+}
+.fileLink,
+.changeRow {
+  border: 0;
+  background: transparent;
+  color: var(--a13n-text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  font-size: 12px;
+  min-width: 0;
+  width: 100%;
+  text-align: left;
+  border-radius: 5px;
+}
+.fileLink span,
+.changeRow span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.fileLink svg {
+  flex-shrink: 0;
+}
+.fileLink small,
+.changeRow small {
+  flex-shrink: 0;
+}
+.fileRow:hover,
+.changeRow:hover,
+.selected {
+  background: var(--a13n-surface);
+}
+.entryActions {
+  flex-shrink: 0;
+  position: relative;
+  font-size: 12px;
+}
+.entryActions summary {
+  cursor: pointer;
+  list-style: none;
+  padding: 5px;
+}
+.entryActions[open] > div {
+  position: absolute;
+  z-index: 5;
+  width: 170px;
+  right: 0;
+  padding: 8px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 6px;
+  background: var(--a13n-canvas);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+.file {
+  flex: 1;
+  min-height: min-content;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 0;
+  min-width: 0;
+}
+.fileHeader {
+  font-size: 13px;
+}
+.fileHeader strong {
+  overflow-wrap: anywhere;
+}
+.path {
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  color: var(--a13n-secondary);
+}
+.path small {
+  display: block;
+}
+.editor {
+  flex: 1 1 0;
+  min-height: 160px;
+  min-width: 0;
+  overflow: hidden;
+}
+.file > :not(.editor) {
+  flex-shrink: 0;
+}
+.notice {
+  padding: 12px;
+  background: var(--a13n-surface);
+  border-radius: 6px;
+  display: grid;
+  gap: 12px;
+  font-size: 12px;
+}
+.notice details,
+.metadata,
+.repo details {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.notice summary,
+.metadata summary,
+.repo summary {
+  cursor: pointer;
+  color: var(--a13n-secondary);
+  padding: 4px 0;
+}
+.capture {
+  display: grid;
+  gap: 12px;
+}
+.range {
+  display: flex;
+  gap: 12px;
+}
+.range > * {
+  flex: 1;
+  min-width: 0;
+}
+.empty {
+  padding: 18px 4px;
+  display: grid;
+  gap: 12px;
+}
+.buffers {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+  background: var(--a13n-surface);
+  padding: 6px;
+  border-radius: 6px;
+}
+.buffers > small {
+  flex-basis: 100%;
+  padding: 4px;
+}
+.repo {
+  display: grid;
+  gap: 8px;
+}
+.changeGroup {
+  display: grid;
+  gap: 4px;
+}
+.changeGroup h3 {
+  display: flex;
+  justify-content: space-between;
+  color: var(--a13n-secondary);
+  margin-bottom: 4px;
+}
+.changeGroup h3 span {
+  font-size: 11px;
+}
+@media (max-width: 1199px) {
+  .withPane .center {
+    display: none;
+  }
+  .pane {
+    flex: 1;
+    border-right: 0;
+  }
+}
+@media (max-width: 760px) {
+  .page,
+  .editorPage,
+  .documentPage {
+    padding: 16px;
+  }
+  .workToolbar {
+    padding-inline: 8px;
+  }
+}
+
+.location > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--a13n-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 8px 0;
+}
+.locationFields {
+  display: grid;
+  gap: 12px;
+  padding: 6px 0 10px;
+}
+
+.fileTabs {
+  display: flex;
+  gap: 2px;
+  overflow: auto;
+  flex-shrink: 0;
+  padding: 4px 16px;
+  border-bottom: 1px solid var(--a13n-border);
+}
+.fileTabs > span {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+@media (max-width: 700px) {
+  .withTerminal .layout {
+    display: none;
+  }
+  .withTerminal .fileTabs {
+    display: none;
+  }
+}

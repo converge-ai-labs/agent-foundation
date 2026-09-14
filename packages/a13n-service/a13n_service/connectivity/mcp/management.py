@@ -1,4 +1,4 @@
-"""MCPConnection persistence, IAM, audit, and Secret helpers."""
+"""Connection persistence, IAM, audit, and Secret helpers."""
 
 from __future__ import annotations
 
@@ -11,11 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.durable_operations.idempotency import IdempotencyConflict, InvalidIdempotencyKey
 from a13n_service.iam import AuthenticatedActor
-from a13n_service.iam.audit import security_audit_record
 from a13n_service.iam.authorization import AuthorizationError, WorkspaceAction, authorize_workspace
-from a13n_service.iam.models import SecurityAuditRecord
-from a13n_service.ids import new_object_id
 
+from ..connections.access import audit as audit
 from .errors import MCPConnectionError
 from .models import MCPConnectionRecord
 
@@ -39,7 +37,7 @@ async def authorize_connection(
     *,
     mode: Literal["read", "manage"],
 ) -> None:
-    action = WorkspaceAction.mcp_connection_read if mode == "read" else WorkspaceAction.mcp_connection_manage
+    action = WorkspaceAction.connection_read if mode == "read" else WorkspaceAction.connection_manage
     await authorize_workspace_action(session, actor, connection.workspace_id, action)
 
 
@@ -61,27 +59,6 @@ async def require_connection(
     return record
 
 
-def audit(
-    actor: AuthenticatedActor,
-    connection: MCPConnectionRecord,
-    *,
-    action: str,
-    now: datetime,
-) -> SecurityAuditRecord:
-    return security_audit_record(
-        audit_id=new_object_id("aud"),
-        actor=actor,
-        organization_id=connection.organization_id,
-        workspace_id=connection.workspace_id,
-        action=action,
-        resource_type="mcp_connection",
-        resource_id=connection.id,
-        outcome="success",
-        occurred_at=now,
-        details=None,
-    )
-
-
 def map_management_error(error: IdempotencyConflict | InvalidIdempotencyKey) -> MCPConnectionError:
     if isinstance(error, IdempotencyConflict):
         return MCPConnectionError(
@@ -95,7 +72,7 @@ def map_management_error(error: IdempotencyConflict | InvalidIdempotencyKey) -> 
 def require_version(current: int, expected: int) -> None:
     if current != expected:
         raise MCPConnectionError(
-            "version_conflict", "MCPConnection changed concurrently.", category=ErrorCategory.conflict
+            "version_conflict", "Connection changed concurrently.", category=ErrorCategory.conflict
         )
 
 

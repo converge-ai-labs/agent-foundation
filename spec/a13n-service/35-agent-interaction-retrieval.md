@@ -33,22 +33,23 @@ class InteractionReadPolicy:
 Without the policy, the Capability and its tools are absent. The fields set upper bounds:
 
 - `current_session` allows only the accepted Run's trusted `session_id`;
-- `authorized_sessions` also allows Sessions permitted by current principal and product policy;
+- `authorized_sessions` also allows Sessions permitted by the Attempt IAM snapshot and product policy;
 - `run_summaries` excludes Items; `visible_items` allows authorized user-visible Items;
 - run and service limits can reduce numeric limits but cannot increase them.
 
 The definition stores no organization or user identity, credential, token, or Session allowlist.
 
-At run start, Service creates a process-local grant from:
+At Attempt preparation, Service creates a process-local grant from:
 
 ```text
 definition policy
   ∩ trusted Run restrictions
-  ∩ current organization, principal, product, visibility, archive, and retention policy
+  ∩ Attempt IAM snapshot
+  ∩ current resource ownership, product, visibility, archive, and retention policy
   ∩ service limits and run deadline
 ```
 
-The reader checks current authorization again on every call and page. The grant and cursors are not access tokens. The grant is never persisted or exposed to the model.
+The reader checks each requested scope against the latest published [Attempt IAM snapshot](33-identity-and-access-management.md#attempt-iam-snapshot) and current resource eligibility on every call and page, without reloading Principal status or RoleBindings itself. Periodic Attempt refresh applies to subsequent reads and pages; a bound reader or cursor cannot retain an older permission set. The grant and cursors are not access tokens. The grant is never persisted or exposed to the model.
 
 ## Composition and Invocation
 
@@ -144,18 +145,18 @@ All tools use the same asynchronous `InteractionHistoryReader`. Its methods foll
 2. Derive Session listings from authorized Run rows, but read Thread listings from authorized durable Thread rows and join only their explicit Run references. Search only bounded Run `input_text` and `output_text`, with Unicode-friendly matching. Do not infer a Thread resource, head, current Run, or state edge from timestamps.
 3. Do not read the current unsealed Run. Other unsealed Runs can appear only as status summaries. Return Items only from a complete verified `RunReplaySnapshot`; report unavailable replay instead of reconstructing it.
 4. Exclude hidden reasoning, raw provider frames, credentials, Secrets, Run or Capability state, deferred or effect data, audit data, and internal events. Bound every page and nested value; replace oversized Item content with a marked preview.
-5. Bind opaque cursors to the effective scope, filters, order, and policy version, and reauthorize each page. A cursor never preserves access after revocation.
+5. Bind opaque cursors to the effective scope, filters, order, and policy version, and authorize each page against the Attempt IAM snapshot and live resource rules. A cursor cannot bypass changed resource eligibility or transfer a previous Attempt's IAM permissions.
 6. Open a fresh short relational session for each operation and close it before object I/O. For Items, first authorize the Run and select its replay locator, then verify the object's size, digest, content type, metadata, and schema. Keep no database session, transaction, object stream, credential, or mutable unit of work between calls.
 
 ## Failure Semantics
 
-| Failure                                                    | Outcome                                                                                         |
-| ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| The plugin, grant, reader, or required storage cannot bind | The run fails before model work; there is no HTTP fallback or silent tool omission.             |
-| A target is absent or unauthorized                         | Return the same bounded not-found-or-forbidden failure without revealing its existence.         |
-| Authorization is revoked or unavailable                    | The current call fails closed; dependency failures may be retryable.                            |
-| A cursor is invalid or belongs to another scope/query      | Return an invalid-cursor failure; do not restart at the first page.                             |
-| Replay is missing, incomplete, corrupt, or unsupported     | Return Run detail with Items marked unavailable; never return complete-looking partial history. |
+| Failure                                                          | Outcome                                                                                         |
+| ---------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| The plugin, grant, reader, or required storage cannot bind       | The run fails before model work; there is no HTTP fallback or silent tool omission.             |
+| A target is absent or unauthorized                               | Return the same bounded not-found-or-forbidden failure without revealing its existence.         |
+| Requested scope is denied or resource eligibility is unavailable | The current call fails closed; dependency failures may be retryable.                            |
+| A cursor is invalid or belongs to another scope/query            | Return an invalid-cursor failure; do not restart at the first page.                             |
+| Replay is missing, incomplete, corrupt, or unsupported           | Return Run detail with Items marked unavailable; never return complete-looking partial history. |
 
 Generic argument validation, cancellation, deadlines, redaction, and result-size failures follow the Harness tool execution contract. Failures expose bounded safe codes, not storage details, policy rules, principal attributes, raw exceptions, or cross-organization existence signals.
 

@@ -1,16 +1,20 @@
-import { useState } from "react";
+import { ResourceEditorButton } from "../../shared/resource-editor-button";
+import { Button, ChoiceField, FormField, Input, ModalFrame } from "a13n-ui";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Dialog, Input, SelectField } from "a13n-ui";
-import { Plus, ArrowLeft } from "lucide-react";
+import { useState } from "react";
+import { PageActions } from "../../shared/page-actions";
+
+import { ArrowLeftIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { data, type Schema } from "../../shared/api";
+import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
 import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
 import { Confirm, FormActions } from "../../shared/form";
-import { Pagination, Table, useCursor } from "../../shared/collection";
-import { ApiKeys } from "./keys";
 import styles from "../../shared/shared.module.css";
+import { ApiKeys } from "./keys";
 
 export function ServiceAccounts() {
   const client = useClient(),
@@ -23,10 +27,10 @@ export function ServiceAccounts() {
     queryKey: ["service-accounts", workspace.id, page.cursor],
     queryFn: ({ signal }) =>
       client.http
-        .GET("/api/v1/workspaces/{workspace_id}/service-accounts", {
+        .GET("/api/v1/workspaces/{workspace}/service-accounts", {
           signal,
           params: {
-            path: { workspace_id: workspace.id },
+            path: { workspace: workspace.id },
             query: { cursor: page.cursor, limit: 30 },
           },
         })
@@ -37,9 +41,10 @@ export function ServiceAccounts() {
       <div className={styles.stack}>
         <Button
           variant="ghost"
-          icon={<ArrowLeft size={14} />}
           onClick={() => setSelected(undefined)}
+          type="button"
         >
+          {<ArrowLeftIcon size={14} />}
           {t("Service accounts")}
         </Button>
         <h2>{selected.name}</h2>
@@ -48,25 +53,27 @@ export function ServiceAccounts() {
     );
   return (
     <div className={styles.stack}>
-      <div className={styles.toolbar}>
-        <p className={styles.muted}>
-          {t("Workspace identities for automated applications.")}
-        </p>
+      <PageActions>
         <AccountEditor />
-      </div>
+      </PageActions>
       {query.isPending ? (
-        <Loading />
+        <Loading variant="table" columns={4} rows={5} />
       ) : query.error ? (
         <ErrorNotice error={query.error} />
       ) : query.data?.items.length ? (
         <>
-          <Table
+          <ResourceTable
             items={query.data.items}
             columns={[
               {
                 label: t("Name"),
+                tone: "primary",
                 render: (item) => (
-                  <Button variant="ghost" onClick={() => setSelected(item)}>
+                  <Button
+                    variant="ghost"
+                    onClick={() => setSelected(item)}
+                    type="button"
+                  >
                     {item.name}
                   </Button>
                 ),
@@ -82,10 +89,13 @@ export function ServiceAccounts() {
               },
               {
                 label: t("Actions"),
+                align: "right",
                 render: (item) => (
                   <div className={styles.actions}>
                     <AccountEditor account={item} />
                     <Confirm
+                      subject={item.name}
+                      triggerVariant="ghost"
                       title={t("Delete service account")}
                       description={t(
                         "This revokes its keys and removes workspace access.",
@@ -166,13 +176,10 @@ function AccountEditor({ account }: { account?: Schema["ServiceAccount"] }) {
             params: { path: { account_id: basis.id } },
             body: { expected_version: basis.version, name, role, status },
           })
-        : client.http.POST(
-            "/api/v1/workspaces/{workspace_id}/service-accounts",
-            {
-              params: { path: { workspace_id: workspace.id } },
-              body: { name, role },
-            },
-          ),
+        : client.http.POST("/api/v1/workspaces/{workspace}/service-accounts", {
+            params: { path: { workspace: workspace.id } },
+            body: { name, role },
+          }),
     onSuccess: () => {
       void cache.invalidateQueries({
         queryKey: ["service-accounts", workspace.id],
@@ -181,11 +188,7 @@ function AccountEditor({ account }: { account?: Schema["ServiceAccount"] }) {
     },
   });
   return (
-    <Dialog
-      title={t(account ? "Edit service account" : "Create service account")}
-      description={t("Select the minimum role this application needs.")}
-      closeLabel={t("Close")}
-      open={open}
+    <ModalFrame
       onOpenChange={(value) => {
         if (!mutation.isPending) {
           if (value) load(account);
@@ -194,14 +197,17 @@ function AccountEditor({ account }: { account?: Schema["ServiceAccount"] }) {
         }
       }}
       trigger={
-        <Button
-          size="sm"
-          variant={account ? "secondary" : "primary"}
-          icon={!account && <Plus size={14} />}
-        >
-          {t(account ? "Edit" : "Create account")}
-        </Button>
+        <ResourceEditorButton
+          editing={!!account}
+          createLabel="Create account"
+          editLabel="Edit"
+        />
       }
+      size={"md"}
+      title={t(account ? "Edit service account" : "Create service account")}
+      description={t("Select the minimum role this application needs.")}
+      closeLabel={t("Close")}
+      open={open}
     >
       <form
         className={styles.form}
@@ -210,33 +216,36 @@ function AccountEditor({ account }: { account?: Schema["ServiceAccount"] }) {
           mutation.mutate();
         }}
       >
-        <Input
-          label={t("Name")}
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          required
-        />
-        <SelectField
+        <FormField className="min-w-0 w-full" label={t("Name")}>
+          <Input
+            required={true}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </FormField>
+        <ChoiceField
           placeholder={t("Select…")}
-          label={t("Role")}
           value={role}
+          className="min-w-0"
           onValueChange={(value) => {
             if (value === "viewer" || value === "runner" || value === "builder")
               setRole(value);
           }}
+          label={t("Role")}
           options={["viewer", "runner", "builder"].map((value) => ({
             value,
             label: t(`role.${value}`, { defaultValue: value }),
           }))}
         />
         {account && (
-          <SelectField
+          <ChoiceField
             placeholder={t("Select…")}
-            label={t("Status")}
             value={status}
+            className="min-w-0"
             onValueChange={(value) => {
               if (value === "active" || value === "disabled") setStatus(value);
             }}
+            label={t("Status")}
             options={[
               { value: "active", label: t("Active") },
               { value: "disabled", label: t("Disabled") },
@@ -247,8 +256,12 @@ function AccountEditor({ account }: { account?: Schema["ServiceAccount"] }) {
           error={mutation.error ?? reload.error}
           retry={account ? () => reload.mutate() : undefined}
         />
-        <FormActions pending={mutation.isPending} />
+        <FormActions
+          pending={mutation.isPending}
+          onCancel={() => setOpen(false)}
+          label={t(account ? "Save changes" : "Create service account")}
+        />
       </form>
-    </Dialog>
+    </ModalFrame>
   );
 }

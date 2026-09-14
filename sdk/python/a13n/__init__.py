@@ -7,4 +7,38 @@ try:
 except PackageNotFoundError:  # pragma: no cover - source-tree imports without installation
     __version__ = "0.0.0"
 
-__all__ = ["__version__"]
+__all__ = [
+    "AgentConfig",
+    "AgentRunOverride",
+    "ApiError",
+    "Client",
+    "CreateSearchProviderRequest",
+    "Page",
+    "ProtocolError",
+    "Representation",
+    "SearchProvider",
+    "SearchProviderDefinition",
+    "SearchProviderReference",
+    "SearchProviderTestResult",
+    "SearchScope",
+    "SearchSelection",
+    "TransportError",
+    "UpdateSearchProviderRequest",
+    "WorkspaceClient",
+    "__version__",
+]
+
+from .client import ApiError, Client, ProtocolError, SearchScope, TransportError, WorkspaceClient
+from .models import (
+    AgentConfig,
+    AgentRunOverride,
+    CreateSearchProviderRequest,
+    Page,
+    Representation,
+    SearchProvider,
+    SearchProviderDefinition,
+    SearchProviderReference,
+    SearchProviderTestResult,
+    SearchSelection,
+    UpdateSearchProviderRequest,
+)

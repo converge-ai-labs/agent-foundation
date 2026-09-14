@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, JsonValue, ValidationError
+from pydantic import BaseModel
 
 from .._local_identity import local_backing_identity
 from ..errors import (
@@ -36,7 +36,6 @@ from .processes import LocalPortOperator, LocalProcessManager, LocalShell
 from .retention import LocalRetentionStore
 
 _PROVIDER_KEY = "a13n.direct-local"
-_CONFIGURATION_VERSION = "1"
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,28 +73,16 @@ class DirectLocalEnvironmentProvider(EnvironmentProvider):
     provider_configuration_model = HostLocalProviderConfiguration
 
     @property
+    def display_name(self) -> str:
+        return "Direct Local"
+
+    @property
     def key(self) -> str:
         return _PROVIDER_KEY
 
     @property
-    def configuration_versions(self) -> frozenset[str]:
-        return frozenset({_CONFIGURATION_VERSION})
-
-    def validate_configuration(self, *, schema_version: str, value: JsonValue) -> BaseModel:
-        if schema_version != _CONFIGURATION_VERSION:
-            raise _provider_error(
-                "Direct Local configuration version is unsupported.",
-                code="provider_schema_unsupported",
-                category=EnvironmentProviderErrorCategory.UNSUPPORTED,
-            )
-        try:
-            return DirectLocalProviderConfiguration.model_validate(value)
-        except ValidationError as error:
-            raise _provider_error(
-                "Direct Local configuration is invalid.",
-                code="provider_spec_invalid",
-                category=EnvironmentProviderErrorCategory.INVALID,
-            ) from error
+    def configuration_models(self) -> dict[str, type[BaseModel]]:
+        return {"1": DirectLocalProviderConfiguration}
 
     def describe_configuration(self, configuration: BaseModel) -> EnvironmentDescriptor:
         if not isinstance(configuration, DirectLocalProviderConfiguration):
@@ -136,6 +123,7 @@ class DirectLocalEnvironment(Environment):
         self._descriptor = _descriptor(configuration, "unprepared")
         self._availability = EnvironmentAvailability(status="preparing")
         self._operations = EnvironmentOperations()
+        self._files: LocalFileOperator | None = None
         self._processes: LocalProcessManager | None = None
         self._retention: LocalRetentionStore | None = None
         self._retention_root: Path | None = None
@@ -189,6 +177,7 @@ class DirectLocalEnvironment(Environment):
             mount_id=mount_id,
             generation=generation,
         )
+        self._files = files
         process_enabled = bool(self._configuration.allowed_executables or self._configuration.shell_profiles)
         processes: LocalProcessManager | None = None
         retention: LocalRetentionStore | None = None
@@ -258,6 +247,8 @@ class DirectLocalEnvironment(Environment):
 
     async def _close(self) -> None:
         self._availability = EnvironmentAvailability(status="unavailable")
+        if self._files is not None:
+            self._files.close()
         try:
             if self._processes is not None:
                 await self._processes.close()

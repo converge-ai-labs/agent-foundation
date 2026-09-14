@@ -1,17 +1,23 @@
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import pytest
 from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.errors import ThreadError
+from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from a13n_harness_ui.surfaces import (
     NewThreadDefaults,
+    RootOperationStatus,
     SkillReference,
     ThreadConfigurationMutationInput,
     ThreadConfigurationPatch,
 )
+from anyio import Event, fail_after
+from pydantic_ai.messages import ModelMessage
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 pytestmark = pytest.mark.anyio
 
@@ -162,8 +168,9 @@ async def test_thread_activity_filters_projects_and_exposes_bounded_catalogs(tmp
     assert patched.configuration.environment_profile_id == "environment-sandbox"
 
 
-async def test_skill_reference_validation_rejects_stale_catalog(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("change", ["selected", "unrelated", "source"])
+async def test_skill_references_refresh_on_submission_and_keep_active_catalog(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, change: str
 ) -> None:
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     workspace = tmp_path / "workspace"
@@ -182,15 +189,95 @@ async def test_skill_reference_validation_rejects_stale_catalog(
         configuration_path=configuration,
     ) as app:
         catalog = await app.skill_catalog()
-        item = catalog.items[0]
+        item = next(item for item in catalog.items if item.name == "review")
         reference = SkillReference(
             catalog_id=catalog.catalog_id,
             item_id=item.item_id,
             name=item.name,
         )
         assert await app.validate_skill_references((reference,)) == ("review",)
-        document.write_text("---\nname: review\ndescription: Review the new code carefully.\n---\n")
-        with pytest.raises(ThreadError) as stale:
-            await app._terminal_projections.validate_skill_references((reference,))
+        if change == "selected":
+            document.write_text("---\nname: review\ndescription: Review the new code carefully.\n---\n")
+        elif change == "unrelated":
+            other = skill.parent / "other"
+            other.mkdir()
+            (other / "SKILL.md").write_text("---\nname: other\ndescription: Another skill.\n---\n")
+        else:
+            # The same name now resolves to the lower-precedence user source.
+            user_skill = tmp_path / "home" / ".agents" / "skills" / "review"
+            user_skill.mkdir(parents=True)
+            document = document.rename(user_skill / "SKILL.md")
+        latest = await app.skill_catalog()
+        assert latest.catalog_id != catalog.catalog_id
+        latest_item = next(item for item in latest.items if item.name == "review")
+        assert (latest_item.item_id == item.item_id) is (change == "unrelated")
+        assert await app.validate_skill_references((reference,)) == ("review",)
 
-    assert stale.value.code == "skill_reference_stale"
+        started, finish = Event(), Event()
+
+        async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+            started.set()
+            await finish.wait()
+            yield "review complete"
+
+        async def resolve(self, context, model_id):
+            return FunctionModel(stream_function=model)
+
+        monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+        thread = await app.create_thread()
+        receipt = await app.submit_thread(
+            thread_id=thread.thread_id, prompt="$review check this", skill_references=(reference,)
+        )
+        with fail_after(10):
+            await started.wait()
+        active = await app.skill_catalog(thread_id=thread.thread_id)
+        assert active.context_kind == "active"
+        assert active.catalog_id == latest.catalog_id
+        assert active.items == latest.items
+
+        # Editing live files must not replace the catalog pinned at admission.
+        document.write_text("---\nname: review\ndescription: Changed while running.\n---\n")
+        assert (await app.skill_catalog(thread_id=thread.thread_id)) == active
+        steering = await app.steer_root_operation(
+            receipt_id=receipt.receipt_id, message="$review focus", skill_references=(reference,)
+        )
+        assert steering.accepted
+        finish.set()
+        with fail_after(10):
+            operation = await app.wait_root_operation(receipt.receipt_id)
+        assert operation.status is RootOperationStatus.completed
+        assert (await app.skill_catalog(thread_id=thread.thread_id)).catalog_id != active.catalog_id
+
+        document.unlink()
+        with pytest.raises(ThreadError) as unavailable:
+            await app.submit_thread(
+                thread_id=thread.thread_id, prompt="$review check again", skill_references=(reference,)
+            )
+        assert unavailable.value.code == "skill_reference_unavailable"
+        assert await app.active_root_operation(thread.thread_id) is None
+
+
+@pytest.mark.parametrize("invalid", ["identity", "name", "duplicate", "mixed_duplicate", "ambiguous"])
+async def test_skill_reference_validation_rejects_invalid_references(tmp_path: Path, invalid: str) -> None:
+    configuration = _write_configuration(tmp_path, projects=(("project-main", "Main", tmp_path),), skills=True)
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=configuration) as app:
+        catalog = await app.skill_catalog()
+        item = next(item for item in catalog.items if item.name == "harness-ui-configuration")
+        reference = SkillReference(catalog_id=catalog.catalog_id, item_id=item.item_id, name=item.name)
+        references = (reference,)
+        if invalid == "identity":
+            references = (reference.model_copy(update={"item_id": "0" * 64}),)
+        elif invalid == "name":
+            references = (reference.model_copy(update={"name": "missing", "catalog_id": "0" * 64}),)
+        elif invalid == "duplicate":
+            references = (reference, reference)
+        elif invalid == "mixed_duplicate":
+            references = (reference, reference.model_copy(update={"catalog_id": "0" * 64, "item_id": "0" * 64}))
+        else:
+            catalog = catalog.model_copy(update={"items": (*catalog.items, item)})
+            references = (reference.model_copy(update={"catalog_id": "0" * 64}),)
+        with pytest.raises(ThreadError) as error:
+            app._terminal_projections.validate_references_against(catalog, references)
+        assert error.value.code == (
+            "skill_reference_invalid" if "duplicate" in invalid else "skill_reference_unavailable"
+        )

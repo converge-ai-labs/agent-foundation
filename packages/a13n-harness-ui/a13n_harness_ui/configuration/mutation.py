@@ -17,7 +17,7 @@ from pydantic import BaseModel, ConfigDict
 
 from a13n_harness_ui.errors import ConfigurationError
 
-from .loader import _read_bounded_stable, load_harness_ui_configuration
+from .loader import _MAX_TOTAL_BYTES, _read_bounded_stable, _scan_tree, load_harness_ui_configuration
 from .models import LoadedHarnessUiConfiguration
 
 _MAX_SOURCE_BYTES = 1024 * 1024
@@ -61,9 +61,7 @@ async def mutate_configuration_source(
         False,
     )
     content = _encode_content(request.content, target)
-    baseline = await load_harness_ui_configuration(selected, content_plugin_root=content_plugin_root)
     candidate = await _validate_candidate(
-        baseline,
         selected,
         normalized,
         content,
@@ -72,12 +70,27 @@ async def mutate_configuration_source(
     if validate_candidate is not None:
         validate_candidate(candidate)
 
-    action: Literal["created", "updated"] = (
-        "updated" if any(source.relative_path == normalized for source in baseline.sources) else "created"
-    )
+    action: Literal["created", "updated"] = "updated" if await to_thread.run_sync(target.exists) else "created"
     await to_thread.run_sync(_publish_content, target, content)
     loaded = await load_harness_ui_configuration(selected, content_plugin_root=content_plugin_root)
     return ConfigurationMutationResult(action, normalized, hashlib.sha256(content).hexdigest(), loaded)
+
+
+async def validate_configuration_source(
+    configuration_path: Path,
+    relative_path: str,
+    request: ResourceMutationRequest,
+    *,
+    validate_candidate: CandidateValidator | None = None,
+    content_plugin_root: Path | None = None,
+) -> LoadedHarnessUiConfiguration:
+    """Validate replacement against the complete current tree without publishing it."""
+    selected, normalized, target = await to_thread.run_sync(_select_target, configuration_path, relative_path, False)
+    content = _encode_content(request.content, target)
+    candidate = await _validate_candidate(selected, normalized, content, content_plugin_root=content_plugin_root)
+    if validate_candidate is not None:
+        validate_candidate(candidate)
+    return candidate
 
 
 async def delete_configuration_source(
@@ -95,9 +108,7 @@ async def delete_configuration_source(
         relative_path,
         True,
     )
-    baseline = await load_harness_ui_configuration(selected, content_plugin_root=content_plugin_root)
     candidate = await _validate_candidate(
-        baseline,
         selected,
         normalized,
         None,
@@ -173,14 +184,13 @@ def _encode_content(content: str, path: Path) -> bytes:
 
 
 async def _validate_candidate(
-    baseline: LoadedHarnessUiConfiguration,
     configuration_path: Path,
     relative_path: str,
     replacement: bytes | None,
     *,
     content_plugin_root: Path | None,
 ) -> LoadedHarnessUiConfiguration:
-    staging = await to_thread.run_sync(_stage_candidate, baseline, configuration_path, relative_path, replacement)
+    staging = await to_thread.run_sync(_stage_candidate, configuration_path, relative_path, replacement)
     try:
         return await load_harness_ui_configuration(
             staging / configuration_path.name,
@@ -191,27 +201,40 @@ async def _validate_candidate(
 
 
 def _stage_candidate(
-    baseline: LoadedHarnessUiConfiguration,
     configuration_path: Path,
     relative_path: str,
     replacement: bytes | None,
 ) -> Path:
     staging = Path(tempfile.mkdtemp(prefix=".a13n-harness-ui-candidate-", dir=configuration_path.parent))
     try:
-        for source in baseline.sources:
-            if source.relative_path.startswith(("content-plugins/", "built-in-subagents/")):
-                continue
-            if source.relative_path == relative_path:
+        # Validate the resulting tree, not the broken source being replaced or removed.
+        # The loader's scan/read limits and membership checks still apply.
+        sources = _scan_tree(configuration_path)
+        total_bytes = 0
+        for relative, source_path, expected in sources:
+            if relative == relative_path:
                 if replacement is None:
                     continue
                 content = replacement
             else:
-                source_path = configuration_path.parent.joinpath(*PurePosixPath(source.relative_path).parts)
-                content, _fingerprint = _read_bounded_stable(source_path, _MAX_SOURCE_BYTES)
-            destination = staging.joinpath(*PurePosixPath(source.relative_path).parts)
+                content, fingerprint = _read_bounded_stable(source_path, _MAX_SOURCE_BYTES)
+                if fingerprint != expected:
+                    raise _error(
+                        "settings_source_unstable", "Configuration changed during validation; retry.", source_path
+                    )
+            total_bytes += len(content)
+            if total_bytes > _MAX_TOTAL_BYTES:
+                raise _error(
+                    "configuration_source_limit", "Configuration candidate exceeds its size limit.", configuration_path
+                )
+            destination = staging.joinpath(*PurePosixPath(relative).parts)
             destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             destination.write_bytes(content)
-        if replacement is not None and all(source.relative_path != relative_path for source in baseline.sources):
+        if sources != _scan_tree(configuration_path):
+            raise _error(
+                "settings_source_unstable", "Configuration changed during validation; retry.", configuration_path
+            )
+        if replacement is not None and all(relative != relative_path for relative, _, _ in sources):
             destination = staging.joinpath(*PurePosixPath(relative_path).parts)
             destination.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
             destination.write_bytes(replacement)

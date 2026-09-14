@@ -25,7 +25,7 @@ Requirements:
 - [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
 - Make
 - Node.js 24 with npm (standalone TypeScript SDK) and pnpm (frontend workspace)
-- Go
+- Go 1.25 or newer
 - A stable Rust toolchain with `rustfmt` and Clippy
 - Docker when generating PostgreSQL migrations, running container-backed integration tests, or validating images
 
@@ -38,6 +38,8 @@ make install
 ```
 
 The frontend pnpm workspace lives under `frontend/`: applications in `frontend/apps/` and shared UI source in `frontend/packages/`. `frontend/package.json` pins pnpm; install that version before running `make install`. The standalone TypeScript SDK retains its independent npm project and lockfile.
+
+Local Service development uses the explicit, public test configuration in `dev/service/local.toml`. `make dev` prepares local PostgreSQL, Redis and Langfuse, applies migrations, and launches Service and Console; no `.env` or manual trace credentials are required. See [the local Service guide](dev/service/README.md) for startup, storage ownership, reset baselines, and fictional login credentials. Service does not automatically load `.env`; environment variables remain available as explicit deployment overrides. `dev/harness/.env.example` and `dev/harness-ui/.env.example` provide separate Langfuse-first development profiles with commented Logfire alternatives. `make harness-dev`, `make cli`, `make webui`, and `make harness-ui-smoke` automatically copy a missing `.env` from its sibling `.env.example`, leaving existing private files unchanged even when templates are newer. Use `make env-init` to prepare both files without starting an application. `HARNESS_ENV` and `HARNESS_UI_ENV` select alternate files; a missing alternate file requires its own sibling `<path>.example` rather than silently falling back to the repository defaults. See the [Harness](dev/harness/README.md) and [Harness UI](dev/harness-ui/README.md) development guides. `.env.harness.example` remains optional reference material for other embedded Harness workflows. Existing examples and live-test targets load private environment files only at their explicit launcher boundaries.
 
 The repository selects Python 3.13 through `.python-version`. Python packages are uv workspace members under `packages/`; Rust crates under `crates/` are validated by the same top-level merge gate.
 
@@ -58,40 +60,55 @@ Keep transport handling, application orchestration, domain behavior, and infrast
 
 Use the Makefile as the stable development interface:
 
-| Command                       | Purpose                                                           |
-| ----------------------------- | ----------------------------------------------------------------- |
-| `make help`                   | List available commands                                           |
-| `make install`                | Synchronize locked workspace, application, and SDK dependencies   |
-| `make setup`                  | Start local PostgreSQL and Redis                                  |
-| `make dev`                    | Upgrade the schema and run a13n Service and Console               |
-| `make dev-down`               | Stop local infrastructure and remove its data volumes             |
-| `make langfuse-up`            | Start the isolated local Langfuse trace backend                   |
-| `make langfuse-down`          | Stop local Langfuse while preserving its data                     |
-| `make langfuse-reset`         | Stop local Langfuse and remove its data volumes                   |
-| `make format`                 | Apply repository formatting hooks                                 |
-| `make lint`                   | Run non-mutating repository lint checks                           |
-| `make deps-check`             | Check each Python package's dependency declarations with deptry   |
-| `make typecheck`              | Type-check Python package sources with Pyright                    |
-| `make docs-serve`             | Start the local MkDocs development server                         |
-| `make docs-build`             | Build the documentation site in strict mode                       |
-| `make test`                   | Run Python workspace tests                                        |
-| `make examples-check`         | Lint and type-check the independent examples                      |
-| `make examples-check-all`     | Build and run the complete independent examples gate              |
-| `make eip-check`              | Verify generated EIP artifacts and shared Python/Rust wire models |
-| `make rust-check`             | Format-check and lint the root Rust workspace                     |
-| `make sdk-check`              | Lint and type-check the standalone SDKs                           |
-| `make a13n-service-cli-check` | Format-check and lint the standalone a13n Service CLI             |
-| `make frontend-sync`          | Install the locked frontend workspace dependencies                |
-| `make frontend-check-all`     | Check and build all frontend applications                         |
-| `make build`                  | Build all workspace packages, applications, and standalone SDKs   |
-| `make images`                 | Build the a13n-service and sandbox images                         |
-| `make image-check`            | Build and smoke-check both container images                       |
-| `make check`                  | Apply formatting, then run fast checks with four parallel workers |
-| `make check-all`              | Run the complete component gates, including tests and builds      |
+| Command                       | Purpose                                                            |
+| ----------------------------- | ------------------------------------------------------------------ |
+| `make help`                   | List available commands                                            |
+| `make install`                | Synchronize locked workspace, application, and SDK dependencies    |
+| `make setup`                  | Prepare local PostgreSQL, Redis, Langfuse and Service schema       |
+| `make dev`                    | Upgrade the schema and run a13n Service and Console                |
+| `make service-dev`            | Run only local Service and the scripted development model          |
+| `make dev-reset STATE=empty`  | Rebuild owned Service storage with no business data                |
+| `make dev-reset STATE=seeded` | Rebuild owned Service storage with fictional resources and history |
+| `make dev-state-check`        | Validate state tools with disposable local infrastructure          |
+| `make dev-down`               | Stop local Service and Langfuse infrastructure; preserve data      |
+| `make env-init`               | Initialize missing Harness development `.env` files                |
+| `make cli`                    | Run Harness UI with Git-ignored config/data in `var/harness-ui/`   |
+| `make webui`                  | Build browser assets and start WebUI with a generated login link   |
+| `make harness-dev`            | Run SDK observation scenarios with `dev/harness/.env`              |
+| `make harness-ui-smoke`       | Run a scripted real-App observation smoke test                     |
+| `make langfuse-up`            | Start the isolated local Langfuse trace backend                    |
+| `make langfuse-down`          | Stop local Langfuse while preserving its data                      |
+| `make langfuse-reset`         | Stop local Langfuse and remove its data volumes                    |
+| `make format`                 | Apply repository formatting hooks                                  |
+| `make lint`                   | Run non-mutating repository lint checks                            |
+| `make deps-check`             | Check each Python package's dependency declarations with deptry    |
+| `make typecheck`              | Type-check Python package sources with Pyright                     |
+| `make docs-serve`             | Start the local MkDocs development server                          |
+| `make docs-build`             | Build the documentation site in strict mode                        |
+| `make test`                   | Run Python workspace tests                                         |
+| `make examples-check`         | Lint and type-check the independent examples                       |
+| `make examples-check-all`     | Build and run the complete independent examples gate               |
+| `make eip-check`              | Verify generated EIP artifacts and shared Python/Rust wire models  |
+| `make rust-check`             | Format-check and lint the root Rust workspace                      |
+| `make sdk-generate`           | Regenerate all Native SDK bindings from Service OpenAPI            |
+| `make sdk-generated-check`    | Check shared OpenAPI and generated bindings without modifying them |
+| `make sdk-check`              | Lint and type-check the standalone SDKs                            |
+| `make a13n-service-cli-check` | Format-check and lint the standalone a13n Service CLI              |
+| `make frontend-sync`          | Install the locked frontend workspace dependencies                 |
+| `make frontend-check`         | Check frontend formatting, types, and generated contracts          |
+| `make frontend-test`          | Run frontend unit and interaction tests                            |
+| `make frontend-check-all`     | Check, test, and build all frontend applications                   |
+| `make build`                  | Build all workspace packages, applications, and standalone SDKs    |
+| `make images`                 | Build the a13n-service and sandbox images                          |
+| `make image-check`            | Build and smoke-check both container images                        |
+| `make check`                  | Apply formatting, then run fast checks with four parallel workers  |
+| `make check-all`              | Run the complete component gates, including tests and builds       |
 
 This section owns validation policy; agent guides and skills refer here rather than adding separate gates. Select checks from changes since the last successful validation and their dependency impact. Without prior results, cover the complete intended change. For merge or rebase updates, include incoming changes and interactions between both branches, not just textual conflicts.
 
-Start with the fastest relevant Make targets and add meaningful tests for behavior changes. Use `make check` for repository-wide fast validation. Run `make check-all` before handoff when the affected scope is broad, such as changes spanning multiple component boundaries or shared build tooling, or cannot be bounded confidently. Complete applicable [migration checks](#database-changes), [image checks](DEVELOPMENT.md#container-image), and `make docs-build` for changes to `docs/`, navigation, or site configuration. Instruction-only changes need formatting, link checks, and structural validation of changed skills; they do not require unrelated application suites.
+The SDK pre-commit hook regenerates on potential Service contract changes and leaves changed files unstaged for review. Package test files do not trigger SDK generation. Commit `sdk/openapi.json` and generated outputs together. `make sdk-generated-check` regenerates in temporary directories and fails on stale or removed output; CI runs it independently of the language checks. See [Native SDK generation](sdk/codegen/README.md) for pinned tools and owned outputs.
+
+Start with the fastest relevant Make targets and add meaningful tests for behavior changes. Run the affected component suites and include their consumers when a shared contract changes. A change spanning several components requires their relevant checks, not unrelated repository suites. Use `make check` for repository-wide static validation; it does not run tests or application builds. Use `make check-all` to reproduce the complete repository gate, or when validation/build changes affect all components. Ordinary implementation and commit/PR handoff do not require a local full-repository run; CI retains the complete applicable component gates. Complete applicable [migration checks](#database-changes), [image checks](DEVELOPMENT.md#container-image), and `make docs-build` for changes to `docs/`, navigation, or site configuration. Instruction-only changes need formatting, link checks, and structural validation of changed skills; they do not require unrelated application suites.
 
 Reuse successful results whose relevant source, dependency, configuration, and environment inputs remain unchanged. A commit or PR update alone does not invalidate them. After a fix, rerun affected checks; expand only for new changes, failures, or unresolved risk. Do not repeat covered checks merely to run both `make check` and `make check-all`. Report exact commands and outcomes, including failures and unavailable checks; a partial gate is not a passing full gate. Required CI checks remain unchanged.
 
@@ -103,13 +120,39 @@ Testcontainers is pinned to 4.13.1 because 4.15.0 can read Ryuk port mappings be
 
 a13n Service CI runs service tests on a dedicated larger runner, with logging tests, type checks, and builds on a standard runner. The `a13n Service Python` check requires both jobs to pass. See [the workflow](.github/workflows/ci-a13n-service.yml) for worker counts, timing output, and timeout settings. Local `make test` uses seven workers for a13n Service, matching CI, and two workers for other Python suites. Tests are grouped by file unless explicitly marked with `xdist_group`; each worker owns its containers. SQLite fixtures give each test an independent copy of a schema template. Process tests use a template built through real migrations; migration tests still run upgrades and downgrades directly.
 
-Harness UI CI runs the full Linux suite with two file-grouped workers on pull requests and `main`, retaining frontend checks and distribution verification. Pull requests run a focused Windows native integration suite; the full Windows UI suite runs weekly and through `workflow_dispatch`, not on every merge. Manual runs also retain the Linux gate. The [workflow](.github/workflows/ci-a13n-harness-ui.yml) owns the native test selection and schedule. Windows smoke coverage does not replace full platform coverage: less common storage, plugin, and interaction regressions may only be detected by the full Windows run.
+UI Tests runs the Linux suite with seven file-grouped workers on an eight-core runner on pull requests and `main`; local UI tests retain the two-worker default. Independent PTY scenarios use separate `xdist_group` marks because each owns its process and temporary home. Python tests, Console/shared frontend checks, and WebUI distribution verification run in parallel; the `UI (Linux)` check requires all three jobs to pass. Distribution tooling tests run with packaging, outside the application test path. There is no dedicated browser integration workflow or Python WebUI startup/HTTP test suite. The browser application remains build input for distribution verification; that job also runs its TypeScript, generated-contract and Vitest/jsdom checks, including isolated App HTTP/WebSocket/SSE protocol tests. These tests do not depend on a real browser, Playwright, or paid models. Pull requests run a focused Windows native integration suite; the full Windows UI suite runs weekly and through `workflow_dispatch`, not on every merge. Manual runs also retain the Linux gate. The [workflow](.github/workflows/ci-a13n-harness-ui.yml) owns the native test selection and schedule. Windows smoke coverage does not replace full platform coverage: less common storage, plugin, and interaction regressions may only be detected by the full Windows run.
+
+a13n-envd CI runs protocol verification and the native daemon platform matrix in parallel after path classification. The `a13n-envd checks` job requires every selected protocol, client, and daemon check to succeed; unselected checks may be skipped.
+
+Live Service/Harness and Environment journeys run manually. Use `make live-test-ci suite=<name>` to run a reviewed selection, `make live-test-ci-environment-build` to prepare native Environment inputs, and `make live-test-check` to validate fixture support without live infrastructure. The [live-test guide](dev/live_tests/README.md#manual-correctness-suites) owns suite contents, opt-ins, exclusions and expected capability skips.
 
 Select directories, files, or pytest node IDs with `PYTHON_TEST_DIRS`. Paths in the same package run in one pytest process; packages run separately in first-selected order, stopping on failure. Without a selection, all workspace suites run. Use `PYTHON_TEST_WORKERS` to override concurrency, including `0` for a small serial reproduction:
 
 ```bash
 make test PYTHON_TEST_DIRS='packages/a13n-service/tests/storage/test_sql.py packages/a13n-service/tests/storage/test_s3_object_store.py' PYTHON_TEST_WORKERS=2
 ```
+
+For frontend work, `check` performs static checks, `test` runs tests, and `build` produces assets. Run the complete frontend gate once when all three are needed; builds do not repeat type checking. Use the existing package filter and test-file arguments for focused validation:
+
+```bash
+pnpm --dir frontend --filter a13n-console run check
+pnpm --dir frontend --filter a13n-console test src/features/skills/import.test.tsx
+```
+
+## PR Labels
+
+The [PR Labels workflow](.github/workflows/pr-labels.yml) adds changelog labels when a PR is opened or marked ready for review. It does not run on each push or label edit. Draft PRs skip code CI; marking a PR ready starts the applicable path-filtered checks, and later code pushes rerun them. Labels do not gate CI. Open work in progress as a draft to avoid spending CI time before review. Write the usual Conventional Commit title; no manual label step or extra merge gate is required:
+
+| Title type                                          | Label           |
+| --------------------------------------------------- | --------------- |
+| `feat`, `perf`                                      | `enhancement`   |
+| `fix`, `revert`                                     | `bug`           |
+| `docs`                                              | `documentation` |
+| `chore`, `refactor`, `test`, `ci`, `build`, `style` | `chore`         |
+
+A `!` in the title or a `BREAKING CHANGE:` / `BREAKING-CHANGE:` footer adds `breaking-change`. Describe the impact and migration in the PR body. Existing type labels are preserved, and unknown title types produce only a notice. Later title edits do not relabel the PR; adjust labels directly when needed. Use `enhancement` or `bug` for user-visible changes rather than leaving them as `chore`. Labels are classification hints, not a guarantee that compatibility has been reviewed.
+
+Release notes group relevant PRs using these labels. `chore` and the optional `skip-changelog` label omit routine entries, unless `breaking-change` is also present. Mixed-category PRs use the first matching category in this order: breaking changes, features, bug fixes, documentation. Historical PRs without category labels and direct commits fall back to their Conventional Commit titles; no backfill is required. The automatic workflow edits only PR metadata and never checks out or executes PR code.
 
 ## Releases
 
@@ -131,7 +174,7 @@ Harness releases use `release/a13n-harness-v<version>`. The workflow assigns exa
 
 Cross-group dependencies use the consuming manifest's `[tool.a13n.release-dependencies]` mapping, following the [dependency compatibility lines](spec/repository-model.md#dependency-compatibility-lines). Review these bounds when consuming newer APIs or crossing a breaking compatibility line; do not bump them for every dependency patch. Keep the three UI Harness-group requirements identical. Release preparation preserves exact same-version dependencies within the Harness group.
 
-Harness UI releases use `release/a13n-harness-ui-v<version>`. The UI version advances independently. The workflow injects its bounded dependency requirements, builds the private WebUI into the sdist and wheel alongside the Python CLI and reusable App, publishes through `agent-ui-pypi`, and attaches the two artifacts to one GitHub Release. It does not install the application or acquire a native runtime during publication. The private frontend has no independent npm publication.
+Harness UI releases use `release/a13n-harness-ui-v<version>`. The UI version advances independently. The workflow injects its bounded dependency requirements, builds the private WebUI into the sdist and wheel alongside the Python CLI and reusable App, publishes through `agent-ui-pypi`, and attaches the two artifacts to one GitHub Release. After Python publication, the workflow builds the GHCR image from that same UI wheel with its declared internal dependency bounds and locked third-party constraints. It does not rebuild browser assets, acquire a native runtime, or run application smoke tests in the image job. The GitHub Release follows both package and image publication. The private frontend has no independent npm publication.
 
 Local EIP derives its canonical native version from installed `a13n-envd-client` metadata, not a packaged version file or a latest-release lookup. Automatic acquisition requires public access to the co-versioned daemon's archives; a private repository does not provide anonymous download access. This runtime prerequisite does not gate publication. Source client version `0.0.0`, missing metadata, or invalid metadata blocks only managed acquisition; source development can use an explicit validated executable override. Full Control does not require managed acquisition.
 
@@ -145,9 +188,9 @@ SDK languages version and release independently from the standalone `sdk/` direc
 
 a13n Service CLI releases use `release/a13n-service-cli-v<version>`. The workflow injects the version into the independent `sdk/rust/a13n-service-cli` manifest and lock file, then builds Linux x86_64 and ARM64, macOS x86_64 and ARM64, and Windows x86_64 and ARM64 archives. Each archive contains the `a13n-service-cli` executable and `LICENSE`; the GitHub Release also includes `SHA256SUMS`. This channel publishes no crate, uses no registry credentials or GitHub Environment, and defines no mutable `latest` selector for stable or RC releases.
 
-An RC publishes the same registry and downloadable artifact set as its corresponding stable channel and creates a GitHub prerelease. A stable release creates a normal GitHub Release. A release may add reviewed, human-written notes at `.github/release-notes/<component>/<version>.md`; see [the release-notes guide](.github/release-notes/README.md). The file is optional. Its content is prepended to generated notes for later releases and replaces the default initial sentence for the first release in a channel. The first RC for a target compares with the preceding release, later RCs compare with the preceding RC, and the final stable release compares with the preceding stable release so its notes cover the complete stable change set. Pull requests are categorized by the labels configured in `.github/release.yml`; use `breaking-change`, `enhancement`, `bug`, or `documentation`, and use `chore` or `skip-changelog` to omit a pull request. Direct commits remain visible through the generated Full Changelog comparison link but are not listed as categorized pull requests.
+An RC publishes the same registry and downloadable artifact set as its corresponding stable channel and creates a GitHub prerelease. A stable release creates a normal GitHub Release. Pushing the component tag also generates its changelog automatically from Git history: only commits affecting that component's paths are included, with one entry per first-parent merge or direct commit. [PR labels](#pr-labels) determine categories and exclusions, with a Conventional Commit fallback for historical unlabelled PRs and direct commits. Comparison bases come from the same channel and must be ancestors of the release tag: an RC uses an earlier RC for the same target, otherwise the preceding stable release; a stable release uses the preceding stable release. The Full Changelog link is explicitly a repository-wide comparison. Optional reviewed notes at `.github/release-notes/<component>/<version>.md` add highlights or upgrade instructions, without introducing a required release step. See [the release-notes guide](.github/release-notes/README.md) for scope details and read-only preview.
 
-A push to `main` that changes a development image input builds and smoke-checks both images before publishing the mutable `dev` tag and an immutable `sha-*` tag. An RC image publishes only its exact `X.Y.Z-rc.N` tag and never modifies `latest`. A stable image publishes its exact `X.Y.Z` tag and advances `latest`. Development image jobs also never modify `latest`. Replace each placeholder registry secret in its scoped GitHub Environment before the corresponding release.
+A push to `main` that changes a development image input builds and publishes only the affected images through [Development Images](.github/workflows/images.yml). Harness UI, Service, and sandbox use a single mutable `dev` tag, without per-build `sha-*` tags. Manual development-image publication is restricted to `main`. The OCI revision label retains the source commit; use an image digest when an exact deployment reference is needed. Development publication does not repeat image smoke tests. Harness UI image startup/restart checks run locally on demand. Overwriting `dev` does not guarantee removal of older GHCR package versions; no automatic registry deletion or retention job is configured. An RC image publishes only its exact `X.Y.Z-rc.N` tag and never modifies `latest`. A stable image publishes its exact `X.Y.Z` tag and advances `latest`. Development image jobs also never modify `latest`. Release image builds check `BUILD_VERSION` against the installed Python distribution or compiled daemon version, not only OCI labels. Service and Harness UI read their actual installed Python metadata at runtime; Service's optional deployment/Worker build label does not replace its OpenAPI or CLI package version. The sandbox daemon embeds Cargo's package version. Replace each placeholder registry secret in its scoped GitHub Environment before the corresponding release.
 
 ## Database Changes
 
@@ -167,6 +210,7 @@ Run migration graph, clean-upgrade, schema-parity, and relevant PostgreSQL lock/
 
 ## Documentation Changes
 
+- Keep each continuous Markdown paragraph on one source line; preserve semantic line breaks, separate list items, tables, and code blocks. The shared `.mdformat.toml` rule applies through the existing formatting hooks and `make lint`.
 - Keep user-facing documentation in `docs/`.
 - Every source file under `docs/` must be Markdown.
 - Update `mkdocs.yml` when adding, removing, or moving a page.

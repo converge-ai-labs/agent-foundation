@@ -34,6 +34,10 @@ class WebSocketEnvdEnvironmentProvider(RemoteEnvdProvider):
         self._connections = connections
 
     @property
+    def display_name(self) -> str:
+        return "WebSocket Envd"
+
+    @property
     def key(self) -> str:
         return WEBSOCKET_PROVIDER_KEY
 

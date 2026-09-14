@@ -291,6 +291,91 @@ async def test_inline_child_inherits_only_explicit_toolset_instruction_override(
     assert ('<tool-instruction name="summarize">' in child_instructions[0]) is expected_child_toolset_guidance
 
 
+async def test_inline_children_receive_fresh_search_bindings_without_parent_inheritance() -> None:
+    from a13n_harness.capabilities.web import (
+        WebCapability,
+        WebConfiguration,
+        WebRunCapability,
+        WebScrapeConfiguration,
+        WebSearchConfiguration,
+        WebSearchResponse,
+    )
+
+    created = []
+    dispatched = []
+
+    class Search:
+        async def search(self, request):
+            dispatched.append(self)
+            return WebSearchResponse(results=())
+
+        async def authorize(self, url, *, purpose):
+            raise AssertionError("Only search is enabled")
+
+        async def request(self, request, *, policy):
+            raise AssertionError("Only search is enabled")
+
+    def fresh():
+        provider = Search()
+        attachment = WebRunCapability(client=provider, policy=provider, search_provider=provider)
+        created.append(attachment)
+        return (attachment,)
+
+    configuration = WebConfiguration(
+        search=WebSearchConfiguration(mode="host"),
+        scrape=WebScrapeConfiguration(mode="off"),
+    )
+
+    async def child_stream(messages, info):
+        assert {tool.name for tool in info.function_tools} == {"search", "fetch", "download"}
+        if not _returns_after_latest_user(messages):
+            yield {0: DeltaToolCall(name="search", json_args='{"query":"public query"}', tool_call_id="child-search")}
+        else:
+            yield "child-done"
+
+    child = AgentDefinition(
+        definition_id="search-child-v1",
+        agent=HarnessAgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=child_stream),
+        capabilities=(WebCapability(configuration),),
+    )
+
+    async def parent_stream(messages, info):
+        if not _returns_after_latest_user(messages):
+            yield {
+                index: DeltaToolCall(
+                    name="delegate",
+                    json_args='{"subagent":"researcher","prompt":"search"}',
+                    tool_call_id=f"delegate-{index}",
+                )
+                for index in range(2)
+            }
+        else:
+            yield "parent-done"
+
+    parent = AgentDefinition(
+        agent=HarnessAgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=parent_stream),
+        capabilities=(_inline_subagents(), WebCapability(configuration)),
+        subagents=(
+            SubagentDefinition(
+                name="researcher", description="Find evidence", agent=child, run_capability_factory=fresh
+            ),
+        ),
+    )
+    parent_binding = fresh()
+    result = (
+        await HarnessBuilder()
+        .build(parent)
+        .run("delegate", bindings=_bindings_factory(extra_capabilities=parent_binding))
+    )
+    assert result.output_or_raise() == "parent-done"
+    assert len(created) == 3 and len({id(item) for item in created}) == 3
+    assert dispatched == [created[1].search_provider, created[2].search_provider]
+
+
 async def test_inline_child_deferred_fallback_is_a_tool_failure_not_parent_suspension(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

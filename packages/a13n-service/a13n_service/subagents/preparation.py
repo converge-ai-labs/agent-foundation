@@ -14,8 +14,7 @@ from a13n_service.agents.domain import (
     ResolvedSubagentEdge,
 )
 from a13n_service.connectivity.selection_domain import (
-    ConnectorConnectionRunSelection,
-    MCPConnectionToolSelection,
+    ConnectionRunSelection,
 )
 from a13n_service.digests import digest_request
 from a13n_service.interactions.domain import (
@@ -86,8 +85,7 @@ def prepare_child_run(
     child_agent_id: str,
     child_agent_revision_id: str,
     child_effective_config: EffectiveAgentConfig,
-    connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...],
-    mcp_connection_selections: tuple[MCPConnectionToolSelection, ...],
+    connection_selections: tuple[ConnectionRunSelection, ...],
     child_thread_id: str,
     child_run_id: str,
     relationship_id: str,
@@ -174,12 +172,7 @@ def prepare_child_run(
         child_agent_id=child_agent_id,
         child_agent_revision_id=child_agent_revision_id,
         child_effective_config=child_effective_config,
-        connector_connection_selections=tuple(
-            item.model_dump(mode="json", by_alias=True) for item in connector_connection_selections
-        ),
-        mcp_connection_selections=tuple(
-            item.model_dump(mode="json", by_alias=True) for item in mcp_connection_selections
-        ),
+        connection_selections=tuple(item.model_dump(mode="json", by_alias=True) for item in connection_selections),
         execution_budget=execution_budget,
         request_fingerprint=request_fingerprint,
         input_payload=input_payload,
@@ -289,8 +282,7 @@ def prepare_child_resume(
         child_agent_id=child_agent_id,
         child_agent_revision_id=child_agent_revision_id,
         child_effective_config=child_effective_config,
-        connector_connection_selections=source_run.connector_connection_selections,
-        mcp_connection_selections=source_run.mcp_connection_selections,
+        connection_selections=source_run.connection_selections,
         execution_budget=parent_run.execution_budget,
         request_fingerprint=request_fingerprint,
         input_payload=input_payload,
@@ -355,8 +347,7 @@ def _child_run(
     child_agent_id: str,
     child_agent_revision_id: str,
     child_effective_config: EffectiveAgentConfig,
-    connector_connection_selections: tuple[JsonObject, ...],
-    mcp_connection_selections: tuple[JsonObject, ...],
+    connection_selections: tuple[JsonObject, ...],
     execution_budget: ExecutionBudget,
     request_fingerprint: str,
     input_payload: JsonValue,
@@ -381,8 +372,7 @@ def _child_run(
         agent_revision_id=child_agent_revision_id,
         effective_agent_config_digest=child_effective_config.content_digest,
         model_execution_observation=child_effective_config.resolved_model.execution.observation(),
-        connector_connection_selections=connector_connection_selections,
-        mcp_connection_selections=mcp_connection_selections,
+        connection_selections=connection_selections,
         priority=parent_run.priority,
         queue_name=parent_run.queue_name,
         execution_budget=execution_budget,

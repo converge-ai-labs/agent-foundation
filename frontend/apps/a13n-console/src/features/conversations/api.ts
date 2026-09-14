@@ -1,4 +1,4 @@
-import type { Client } from "@converge.ai/a13n";
+import type { Client, paths } from "@converge.ai/a13n";
 import { ApiError } from "@converge.ai/a13n";
 import { queryOptions, type QueryClient } from "@tanstack/react-query";
 import {
@@ -7,6 +7,13 @@ import {
   workspaceHeaders,
   type Schema,
 } from "../../shared/api";
+
+export type SessionFilters = Omit<
+  NonNullable<
+    paths["/api/v1/workspaces/{workspace}/sessions"]["get"]["parameters"]["query"]
+  >,
+  "limit" | "cursor"
+>;
 
 export function conversationKeys(workspaceId: string) {
   const root = ["conversations", workspaceId] as const;
@@ -32,15 +39,15 @@ export function conversationQueries(client: Client, workspaceId: string) {
   const headers = workspaceHeaders(workspaceId),
     keys = conversationKeys(workspaceId);
   return {
-    sessions: (cursor?: string) =>
+    sessions: (cursor?: string, filters: SessionFilters = {}) =>
       queryOptions({
-        queryKey: [...keys.sessions(), cursor],
+        queryKey: [...keys.sessions(), filters, cursor],
         queryFn: ({ signal }) =>
           client.http
-            .GET("/api/v1/workspaces/{workspace_id}/sessions", {
+            .GET("/api/v1/workspaces/{workspace}/sessions", {
               params: {
-                path: { workspace_id: workspaceId },
-                query: { cursor, limit: 20 },
+                path: { workspace: workspaceId },
+                query: { ...filters, cursor, limit: 20 },
               },
               signal,
             })
@@ -243,8 +250,8 @@ export function invalidateConversation(
 export const isActiveRun = (status?: string) =>
   status === "accepted" || status === "running";
 export function runPath(
-  workspaceId: string,
+  basePath: string,
   receipt: { session_id: string; thread_id: string; run_id: string },
 ) {
-  return `/workspaces/${workspaceId}/sessions/${receipt.session_id}/threads/${receipt.thread_id}/runs/${receipt.run_id}`;
+  return `${basePath}/sessions/${receipt.session_id}/threads/${receipt.thread_id}/runs/${receipt.run_id}`;
 }

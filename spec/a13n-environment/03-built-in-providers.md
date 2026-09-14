@@ -64,7 +64,7 @@ class DirectLocalProviderConfiguration(BaseModel):
     inherit_environment: bool = False
     allowed_environment_keys: frozenset[str] | None = frozenset()
     allowed_ports: frozenset[int] = frozenset()
-    max_value_bytes: int = 16 * 1024 * 1024
+    max_value_bytes: int = 64 * 1024 * 1024
     max_concurrent_processes: int = 128
     max_wall_time_seconds: float = 24 * 60 * 60
     terminate_grace_seconds: float = 5.0
@@ -101,6 +101,8 @@ Direct Local is stateless for re-entry and `dump_state()` returns `None`. The se
 Prepared Direct Local descriptors expose bounded `backing_identity` evidence for Host policy and backing observation across fresh operation Sessions. The evidence binds the Provider, Host filesystem namespace, resolved root file identity, and configured operation policy. An ordinary workspace content edit preserves it; replacing the root or changing the policy invalidates it. Discovery, validation, construction, and entry do not inspect the filesystem or advertise verified backing identity. If the filesystem cannot supply usable identity evidence, the field remains absent; this does not make Harness approvals connection-local. This evidence is neither a content digest nor a filesystem lock, and makes no guarantee against file-ID reuse or hostile concurrent namespace changes.
 
 Direct Local makes no sandbox, account isolation, network isolation, or race-free filesystem-broker claim. Its confinement is a provider operation policy over one Host-selected root. A hostile same-account process can race native filesystem changes.
+
+File writes stage complete candidates before publication. `move(replace=False)` uses one native no-replace rename on Linux, macOS, and Windows: a concurrent destination publication is a conflict and preserves the losing source. Platforms without that primitive return `environment_unsupported`; moves across filesystems are not supported. This protects publication intent, not the entry against later changes by another writer.
 
 ## Local Envd
 
@@ -308,7 +310,7 @@ Prune policy, candidate persistence, grace periods, sharing checks, and destroy 
 
 `a13n.e2b` configuration schema version `1` selects `template` (default `base`), logical filesystem `root` (default `/home/user`), sandbox `user`, the Python executable used by file/port helpers, sandbox and request timeouts, sandbox-wide internet access, read-only access, finite file/traversal bounds and local observation limits. `timeout_seconds` defaults to 3600 seconds for sandbox TTL; `request_timeout_seconds` defaults to 30 seconds for native requests. `max_active_observations` defaults to 128 concurrent native attachments, `max_observation_bytes` to 1 MiB cumulative combined stdout/stderr per observed command, and `max_retained_output_bytes` to 128 MiB retained text across the adapter. Configuration contains no credential, sandbox ID, endpoint or live SDK object.
 
-`E2BProviderRuntime` supplies an explicit secret API key, backend domain, managed/external selection and optional Host operation correlation. Generic Provider Backend configuration contains the domain; its credential contains `api_key`. The library does not load `.env` or acquire credentials. Construction, discovery of Provider definitions and scope entry are inert.
+`E2BProviderRuntime` supplies an explicit secret API key, backend domain, managed/external selection and optional Host operation correlation. Generic Provider Backend configuration contains the domain and an optional HTTP(S) `api_url`; its credential contains `api_key`. All SDK lifecycle calls use the explicit API URL or `https://api.<domain>`, without inheriting an ambient API URL. The domain remains the sandbox routing suffix. Compatible services may require their own template IDs and may not implement every lifecycle operation. The library does not load `.env` or acquire credentials. Construction, discovery of Provider definitions and scope entry are inert.
 
 Commands use the official asynchronous E2B SDK's public `run`, `list`, `connect`, `kill`, `send_stdin` and `close_stdin` operations. File and port helpers use bounded Python standard-library commands. No guest command supervisor, PID registry, capture files, pidfd support, `a13n-envd`, executable upload or template build is required. The selected template provides Linux, Python 3.11 or later, Bash, the selected account and existing root. Git-ignore queries additionally require Git.
 

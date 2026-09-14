@@ -1,5 +1,5 @@
 import json
-from contextlib import asynccontextmanager
+from contextlib import aclosing, asynccontextmanager
 from dataclasses import replace
 from datetime import timedelta
 from unittest.mock import AsyncMock, Mock
@@ -34,12 +34,14 @@ from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.settings import Settings
 from a13n_service.storage import short_session, transaction
 from anyio import create_task_group, fail_after, sleep
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
 from pydantic_ai.messages import TextContent as NativeTextContent
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 from sqlalchemy import select
 
 from tests.lifecycle_support import test_lifecycle_writer
+from tests.observability.test_runtime import runtime as observation_runtime
 
 from . import test_attempt_execution as acceptance
 from .conftest import NOW, ORGANIZATION_ID, USER_ID, WORKSPACE_ID
@@ -257,20 +259,23 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
     model_factory = Mock(spec=NativeModelFactory)
     model_factory.build.return_value = FunctionModel(stream_function=model)
     settings = Settings(
-        _env_file=None,
-        build_version="test",
-        worker_concurrency=1,
-        worker_poll_interval_seconds=0.02,
-        worker_lease_seconds=12 if handoff else 30,
+        service={"build_version": "test"},
+        worker={"concurrency": 1, "poll_interval_seconds": 0.02, "lease_seconds": 12 if handoff else 30},
     )
-    async with worker_runtime(
-        interaction_sessions,
-        interaction_object_store,
-        tmp_path,
-        monkeypatch,
-        settings=settings,
-        model_factory=model_factory,
-    ) as (runtime, _shared):
+    exporter = InMemorySpanExporter()
+    observation = observation_runtime(exporter)
+    async with (
+        aclosing(observation),
+        worker_runtime(
+            interaction_sessions,
+            interaction_object_store,
+            tmp_path,
+            monkeypatch,
+            settings=settings,
+            model_factory=model_factory,
+            observability=observation,
+        ) as (runtime, _shared),
+    ):
         loop = runtime.execution_loop
         assert loop is not None
         with fail_after(20 if handoff else 15):
@@ -348,6 +353,19 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
                 )
                 assert asset is not None and asset.filename == "result.txt"
             assert published and published[0]["asset_id"] == asset.id
+        assert observation.tracer_provider.force_flush()
+        roots = [span for span in exporter.get_finished_spans() if span.name == "a13n.service.run_attempt"]
+        assert roots
+        for root in roots:
+            if root.attributes["a13n.run_attempt.id"] == attempt.id:
+                assert root.attributes["output.value"] == (
+                    '{"answer":42}' if recover_candidate and not late_input else "worker completed"
+                )
+                assert root.attributes["a13n.run_attempt.output.capture"] == "captured"
+            else:
+                # Earlier successful or yielded Attempts did not seal user-visible output.
+                assert "output.value" not in root.attributes
+                assert root.attributes["a13n.run_attempt.output.capture"] == "not_committed"
 
 
 @pytest.mark.parametrize("recover_candidate", [False, True])

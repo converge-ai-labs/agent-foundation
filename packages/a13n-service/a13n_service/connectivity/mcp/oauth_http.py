@@ -32,6 +32,8 @@ class OAuthTransport(httpx2.AsyncBaseTransport):
         )
         if 300 <= response.status_code < 400:
             raise ConnectivityHttpError("oauth_redirect_forbidden")
+        if response.status_code in {401, 403}:
+            raise ConnectivityHttpError("token_authorization_rejected")
         if response.status_code >= 500:
             raise ConnectivityHttpError("token_exchange_unavailable")
         if response.headers.get("content-type", "").split(";", 1)[0].strip().lower() != "application/json":

@@ -36,6 +36,16 @@ def terminal_text(value: str) -> str:
     return "".join(char for char in value if char in "\n\t" or (ord(char) >= 32 and not 127 <= ord(char) <= 159))
 
 
+def _elapsed_text(elapsed: float) -> str:
+    hours, remainder = divmod(max(0, round(elapsed)), 3600)
+    minutes, seconds = divmod(remainder, 60)
+    if hours:
+        return f"{hours}h {minutes:02d}m {seconds:02d}s"
+    if minutes:
+        return f"{minutes}m {seconds:02d}s"
+    return f"{seconds}s"
+
+
 @dataclass(slots=True)
 class Status:
     theme: Literal["auto", "dark", "light"] = "auto"
@@ -59,6 +69,7 @@ class Status:
     session_id: str | None = None
     usage: BoundedRequestUsage | None = None
     requests: int = 0
+    notices: list[str] = field(default_factory=list)
     _usage_ids: set[str] = field(default_factory=set)
 
     def reset_usage(self) -> None:
@@ -157,7 +168,7 @@ class Status:
             f"cache {self.cache_rate_text}",
             cost,
             self.model.split(":")[-1],
-            f"{elapsed:.0f}s",
+            _elapsed_text(elapsed),
         ]
         while width is not None and get_cwidth(" · ".join(fields)) + 2 > width and len(fields) > 1:
             fields.pop()

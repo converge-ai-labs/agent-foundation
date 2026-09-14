@@ -8,7 +8,7 @@ from a13n_service.gateway.queries import NativeInteractionQueries, NativeQueryEr
 from a13n_service.iam import WorkspaceAction
 from a13n_service.iam import authorization as iam_authorization
 from a13n_service.iam.models import RoleBindingRecord
-from a13n_service.interactions.commands import ContinueRunCommand
+from a13n_service.interactions.command_values import ContinueRunCommand
 from a13n_service.interactions.domain import ThreadOriginKind, ThreadRole
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.interactions.records import run_record, thread_record
@@ -53,6 +53,7 @@ async def _add_thread(
     updated_seconds: int = 1,
     agent_id: str = AGENT_ID,
     empty: bool = False,
+    trigger_type: str = "user_input",
 ) -> tuple[str, str]:
     source_thread = await database.get(ThreadRecord, THREAD_ID)
     source_run = await database.get(RunRecord, RUN_ID)
@@ -83,6 +84,7 @@ async def _add_thread(
                         "agent_id": agent_id,
                         "agent_revision_id": AGENT_REVISION_ID if agent_id == AGENT_ID else "agtr_hidden",
                         "input_text": f"input {suffix}",
+                        "trigger_type": trigger_type,
                     }
                 )
             )
@@ -109,7 +111,7 @@ async def _add_hidden_agent(database: AsyncSession) -> str:
     revision = await database.get(AgentRevisionRecord, AGENT_REVISION_ID)
     assert agent is not None and revision is not None
     agent_values = {column.name: getattr(agent, column.name) for column in AgentRecord.__table__.columns}
-    agent_values.update(id="agt_hidden", name="Hidden", normalized_name="hidden", current_revision_id="agtr_hidden")
+    agent_values.update(id="agt_hidden", name="Hidden", key="hidden", current_revision_id="agtr_hidden")
     database.add(AgentRecord(**agent_values))
     await database.flush()
     revision_values = {column.name: getattr(revision, column.name) for column in AgentRevisionRecord.__table__.columns}
@@ -147,6 +149,9 @@ async def test_preview_uses_latest_thread_with_stable_id_tiebreaker(
         original = await database.get(RunRecord, RUN_ID)
         assert original is not None
         original.updated_at = NOW + timedelta(seconds=100)
+        agent = await database.get(AgentRecord, AGENT_ID)
+        assert agent is not None
+        agent_name, status, trigger_type = agent.name, original.status, original.trigger_type
     page = await preview_queries.list_sessions(actor=hook_actor(), workspace_id=WORKSPACE_ID, limit=20, cursor=None)
     assert page.items[0].preview is not None
     assert page.items[0].preview.model_dump() == {
@@ -154,7 +159,11 @@ async def test_preview_uses_latest_thread_with_stable_id_tiebreaker(
         "run_id": run_id,
         "input_text": "input latest_z",
         "output_text": None,
+        "agent_name": agent_name,
+        "run_status": status,
+        "trigger_type": trigger_type,
     }
+    assert page.items[0].run_count == 4
 
 
 async def test_empty_session_and_latest_empty_thread_have_no_preview(
@@ -166,9 +175,10 @@ async def test_empty_session_and_latest_empty_thread_have_no_preview(
         await _add_thread(database, "latest_empty", empty=True)
     page = await preview_queries.list_sessions(actor=hook_actor(), workspace_id=WORKSPACE_ID, limit=20, cursor=None)
     assert {item.id: item.preview for item in page.items} == {SESSION_ID: None, empty_session: None}
+    assert {item.id: item.run_count for item in page.items} == {SESSION_ID: 1, empty_session: 0}
 
 
-async def test_agent_scoped_preview_selects_latest_visible_thread_before_ranking(
+async def test_agent_scoped_preview_selects_latest_visible_thread_before_selection(
     preview_queries: NativeInteractionQueries,
     lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
@@ -183,6 +193,7 @@ async def test_agent_scoped_preview_selects_latest_visible_thread_before_ranking
     assert page.items[0].preview is not None
     assert (page.items[0].preview.thread_id, page.items[0].preview.run_id) == (visible_thread, visible_run)
     assert "hidden" not in page.model_dump_json()
+    assert page.items[0].run_count == 2
 
 
 @pytest.mark.parametrize("missing_action", [WorkspaceAction.thread_read, WorkspaceAction.run_read])
@@ -200,6 +211,7 @@ async def test_session_read_does_not_grant_preview_permissions(
     assert [item.id for item in page.items] == [SESSION_ID]
     assert page.items[0].preview is None
     assert THREAD_ID not in page.model_dump_json() and RUN_ID not in page.model_dump_json()
+    assert page.items[0].run_count == (None if missing_action == WorkspaceAction.run_read else 1)
 
 
 async def test_unreadable_selected_run_does_not_fall_back_to_an_older_thread(
@@ -242,7 +254,7 @@ async def test_preview_text_is_bounded_unicode_and_prefers_current_over_head(
     await seed_hook_actor_access(lifecycle_interaction_sessions)
     objects = await LocalObjectStore.create(tmp_path / "objects")
     commands = _commands(lifecycle_interaction_sessions, objects, _Preparation(), _Freezing([_frozen()]))
-    source = await commands.start(
+    source = await commands.runs.start(
         actor=hook_actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="preview-source",
@@ -265,7 +277,7 @@ async def test_preview_text_is_bounded_unicode_and_prefers_current_over_head(
         thread = await database.get(ThreadRecord, source.thread_id)
         assert thread is not None
         thread.current_run_id = source.run_id
-    continued = await commands.continue_from(
+    continued = await commands.runs.continue_from(
         actor=hook_actor(),
         source_run_id=source.run_id,
         idempotency_key="preview-continue",
@@ -294,7 +306,7 @@ async def test_session_pagination_has_constant_sql_count_and_page_local_previews
             )
         assert len(page.items) == limit
         assert all(item.preview is not None for item in page.items)
-        assert len([statement for statement in statements if "row_number()" in statement]) == 1
+        assert len([statement for statement in statements if "substr(" in statement]) == 1
         counts.append(len(statements))
     assert counts[0] == counts[1]
     ids = []
@@ -338,7 +350,7 @@ async def test_postgresql_batch_previews_use_bounded_unicode_projections(
         run.input_text = input_text
     objects = await LocalObjectStore.create(tmp_path / "postgres-objects")
     commands = _commands(sessions, objects, _Preparation(), _Freezing([_frozen()]))
-    completed = await commands.start(
+    completed = await commands.runs.start(
         actor=hook_actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="postgres-preview",
@@ -361,7 +373,7 @@ async def test_postgresql_batch_previews_use_bounded_unicode_projections(
         assert page.items[0].preview is not None
         assert page.items[0].preview.output_text == output_text[:512]
         assert all(item.preview is not None and item.preview.input_text == input_text[:256] for item in page.items)
-        projection_queries = [statement for statement in statements if "row_number()" in statement]
+        projection_queries = [statement for statement in statements if "substr(" in statement]
         assert len(projection_queries) == 1
         assert "substr(" in projection_queries[0]
         counts.append(len(statements))
@@ -369,3 +381,17 @@ async def test_postgresql_batch_previews_use_bounded_unicode_projections(
     original_session = next(item for item in page.items if item.id == SESSION_ID)
     assert original_session.preview is not None
     assert (original_session.preview.thread_id, original_session.preview.run_id) == (latest_thread, latest_run)
+
+
+async def test_agent_name_requires_agent_read(
+    preview_queries: NativeInteractionQueries, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setitem(
+        iam_authorization._WORKSPACE_ROLE_ACTIONS,
+        "builder",
+        iam_authorization._WORKSPACE_ROLE_ACTIONS["builder"] - {WorkspaceAction.agent_read},
+    )
+    page = await preview_queries.list_sessions(actor=hook_actor(), workspace_id=WORKSPACE_ID, limit=20, cursor=None)
+    assert page.items[0].preview is not None
+    assert page.items[0].preview.agent_name is None
+    assert page.items[0].run_count == 1

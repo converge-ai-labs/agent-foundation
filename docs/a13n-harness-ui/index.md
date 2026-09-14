@@ -1,10 +1,12 @@
 # Harness UI
 
-Harness UI (`a13n-harness-ui`, installed from the `a13n-harness-ui` distribution) is an interactive coding CLI built on Agent Foundation Harness. Its native full-terminal interface supports Windows, macOS, and Linux, with reflowing Markdown, selectable interactions, and image drafts. One foreground process owns one `HarnessUiApp`, the current conversation, and its active work. The optional `a13n-harness-ui webui` command starts the HTTP API and a bundled Hello World page in a foreground server; browser chat and management are not implemented. There is no detached daemon or detached execution mode.
+Harness UI is a terminal application for working with AI agents in your own projects. Ask it to explain a codebase, edit files, run checks, or delegate a focused investigation. Connect a subscription account or an API-key model, choose execution permissions, and work from the directory you already use.
 
-## Install and update
+You do not need to learn the Harness SDK, create a Project resource, or deploy a server to start.
 
-Use [`uv`](https://docs.astral.sh/uv/getting-started/installation/) to install the published CLI in an isolated tool environment; no repository checkout or Node.js is required:
+## Install and start
+
+Install the `a13n-harness-ui` command with [uv](https://docs.astral.sh/uv/getting-started/installation/):
 
 ```console
 uv tool install a13n-harness-ui
@@ -12,69 +14,70 @@ cd your-repository
 a13n-harness-ui
 ```
 
-If the command is not on PATH, run `uv tool update-shell` and restart your shell. For a shortcut in Bash or Zsh, add this line to `~/.bashrc` or `~/.zshrc`, then reload the file or open a new shell:
+The terminal supports macOS, Linux, and Windows. The installed application does not require Node.js or a repository checkout. If the command is missing from PATH, run `uv tool update-shell` and open a new terminal.
 
-```bash
-alias anui='a13n-harness-ui'
+On first launch, setup guides you through:
+
+1. **Connect a model:** use a supported subscription login or an API key. Existing compatible account stores can be reused.
+2. **Select model settings:** choose the offered model and, where applicable, service tier. You can tune reasoning and context later.
+3. **Choose execution permissions:** Full Control uses your host account; Sandbox requires working local isolation and does not silently fall back.
+4. **Send your first prompt:** setup saves editable files, then opens chat. No model request is made until you send a prompt.
+
+Try a bounded first task:
+
+```text
+Explain this repository's main entry point and tests. Do not modify any files.
 ```
 
-Use `anui` to start, `anui setup` to reconfigure, and `anui update` to upgrade. The alias is optional and does not rename the installed executable.
+> **Choose permissions deliberately.** Full Control is not a sandbox: commands inherit your host account's filesystem and network access. Sandbox is available on supported Linux/macOS configurations; the built-in Windows mode is Full Control. See [execution permissions](environments-and-projects.md#execution-permissions).
+
+[Installation and upgrades](installation.md) covers source development and dependency updates. [Setup](setup.md) covers login, cancellation, and advanced choices.
+
+## Where is my configuration?
+
+Run this in your shell:
 
 ```console
-a13n-harness-ui update
+a13n-harness-ui config path
+a13n-harness-ui config show --format json
+a13n-harness-ui config validate
 ```
 
-This explicitly updates the running uv-tool installation without waiting for the cached startup check or opening chat/setup. It requires uv on PATH and does not ask for another confirmation. Restart Harness UI afterwards. Startup checks alone never install automatically. See [update behavior and troubleshooting](automation-and-troubleshooting.md#logs-updates-and-exit) for other installation methods and failures.
+Or type `/config` in chat. The default root file is **`~/.a13n-harness-ui/a13n-harness-ui.yaml`**. Models and Agents live in sibling directories, not inside that file:
 
-### Dependency upgrades and constraints
+| Change                                           | File or action                                                                               |
+| ------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| Default Agent, display, built-in tools           | `a13n-harness-ui.yaml` — [root reference](configuration.md#complete-root-document)           |
+| Model, endpoint, credentials, reasoning, context | `models/*.yaml` — [Model reference](models-and-authentication.md#model-file-reference)       |
+| Instructions, tools, MCP selection, children     | `agents/*.yaml` — [Agent reference](agents-and-subagents.md#agent-file-reference)            |
+| Global coding guidance                           | `AGENTS.md` beside the root YAML                                                             |
+| Project-specific guidance                        | `AGENTS.md` in the working directory                                                         |
+| Additional workspace directories                 | `projects/*.yaml` — [Project reference](environments-and-projects.md#project-file-reference) |
 
-You can also upgrade directly, without starting Harness UI:
+Start with [common configuration recipes](configuration-recipes.md) for copyable edits, or [the configuration guide](configuration.md) for all root fields and precedence. `--config PATH` selects another configuration tree; it does not merge it with the default tree.
 
-```console
-uv tool upgrade a13n-harness-ui
-```
+## Daily controls
 
-uv resolves the UI and its dependencies together within the installed tool's requirements and constraints. Published UI requirements allow compatible Harness-group patches within `>=0.0.5,<0.1.0` and Logging releases within `>=0.1.0,<0.2.0`. Environment accepts `a13n-envd-client>=0.0.6,<0.1.0`. The Harness-group packages still require matching versions of one another. A dependency patch does not require a new UI release while it remains within these bounds; consuming newer APIs or crossing a breaking compatibility line requires updated UI requirements. These ranges are not a general compatibility guarantee for all `0.x` releases.
+| Task                                    | In chat                        |
+| --------------------------------------- | ------------------------------ |
+| See available commands                  | `/help`                        |
+| Switch Agent                            | `/agent`                       |
+| Select and remember a Model per Project | `/model`                       |
+| Change reasoning or priority service    | `/thinking`, `/fast`           |
+| Change execution permissions            | `/environment`                 |
+| Inspect current configuration and usage | `/status`                      |
+| Browse saved conversations              | `/resume`                      |
+| Add guidance while work is running      | Type a message and press Enter |
+| Cancel work                             | Ctrl+C or `/cancel`            |
 
-An upgrade cannot widen requirements embedded in an older wheel. If your installed UI pins exact dependencies, install a newer UI release that publishes the bounded requirements. If an explicit tool-version pin or installation constraint prevents that upgrade, revise that constraint through uv rather than forcing incompatible dependencies into the tool environment. For example, an explicit UI range can be selected with `uv tool install 'a13n-harness-ui>=MIN,<MAX'`, replacing `MIN` and `MAX` with your intended UI versions. This changes the UI selection, not its dependency metadata.
+See [Use the terminal](everyday-use.md) for attachments, approvals, questions, history, and recovery. Add reusable resources outside chat with `a13n-harness-ui add model` or `a13n-harness-ui add agent`.
 
-Managed Local EIP selects the native daemon matching the installed `a13n-envd-client` version. It does not search for the latest daemon or silently update Python packages at startup; package installation requires an explicit update command or confirmation. After an explicit package upgrade, restart Harness UI; the next managed Local EIP use acquires the matching native release if it is not cached. Source client version `0.0.0`, missing metadata, or invalid metadata cannot select a managed release; use a validated explicit executable for source development. Full Control does not need that acquisition.
+## Go further
 
-For source development, use `make a13n-harness-ui` from the repository root; see the [repository contribution guide](https://github.com/converge-ai-labs/agent-foundation/blob/main/CONTRIBUTING.md) for prerequisites.
+- **Customize:** [Agents and subagents](agents-and-subagents.md), [Models and authentication](models-and-authentication.md).
+- **Connect tools:** [MCP and extensions](extensions-and-mcp.md), [native tools and Web providers](native-and-web-tools.md).
+- **Work across directories:** [Environments and Projects](environments-and-projects.md).
+- **Script a task or diagnose a failure:** [Automation and troubleshooting](automation-and-troubleshooting.md).
+- **Build another interface:** [Embed the Python App](embedding.md) or [use the HTTP API](http-api.md).
 
-Startup checks local configuration before opening full-terminal chat. If no Model is configured, a setup wizard opens in the same full-terminal interface before chat. A model request begins only when you explicitly send a prompt. The current directory is the workspace; you do not need to create or manage a Project.
-
-## First use
-
-Setup runs automatically when needed. To change configuration later, leave chat and run `a13n-harness-ui setup`; there is no `/setup` command inside chat.
-
-1. **Connect a model:** choose Codex subscription, Grok subscription, or an API key. Existing compatible Codex/Grok logins are detected and reused without another login prompt, including credentials that can refresh when used. API-key access guides you through provider/protocol, base URL, a hidden key or environment-variable/stored-key reference, model ID, and settings preset.
-2. **Choose a model:** Codex offers Astra, Sol, and Terra; Grok offers 4.6, 4.5, and 4.20 Reasoning. Sol and Grok 4.6 are the defaults. Availability depends on your account.
-3. **Choose Codex service tier:** Fast is selected by default and saves a priority request; Standard saves the default tier. This step is skipped for other providers. Priority may use more quota or cost more and does not guarantee speed. See [temporary and permanent Fast settings](models-and-authentication.md#fast-mode-and-service-tiers).
-4. **Choose execution permissions and finish:** Full Control runs as your host account; Sandbox checks isolation prerequisites before saving. Your answer saves the configuration directly, with no extra confirmation. There is no automatic fallback between modes.
-
-The subscription starter enables shell review at the extra-high risk threshold and all three built-in subagents (`code-reviewer`, `executor`, `explorer`). Codex uses high reasoning and a 350k working budget. Use `a13n-harness-ui setup --advanced` for optional context, reasoning, review, subagent, and instruction choices. These remain ordinary editable configuration values.
-
-After first use, run `a13n-harness-ui add model` to create only a reusable Model. Run `a13n-harness-ui add agent` to create another Agent: select an existing Model or **Create a new model**, then name the Agent. Existing resources, defaults, and permissions stay unchanged; repeated names create separate resources instead of replacing them. In chat, `/agent` switches the complete agent; `/model` temporarily overrides only the model for this TUI session without saving configuration. See [model choices](models-and-authentication.md#starter-model-choices) for the reviewed catalog.
-
-Use Up/Down and Enter, or type option numbers. Esc goes back; Ctrl+C or Ctrl+D cancels. Cancelling first-use setup returns to the command shell without opening chat. After successful first-use setup, chat opens automatically. Running `a13n-harness-ui setup` explicitly returns to the command shell after saving or cancelling.
-
-If the selected account is missing, setup shows the external `a13n-harness-ui login codex` or `a13n-harness-ui login grok` command, then offers recheck or configuration without signing in. Login runs outside the terminal UI; chat has no `/login` command. Unsupported or malformed stores show repair guidance and a recheck action; they are not overwritten. Discovery never refreshes tokens or starts authentication. Cancelling setup does not undo a completed login or configuration publication.
-
-External subagent migration is separate from built-in inclusion: use `/import` in chat to select Codex or Claude Code definitions, project/user scope, and an explicit import-and-enable confirmation. Setup does not scan or import external definitions.
-
-Imports preserve instructions and explicitly inherit the parent model and visible tools rather than activating foreign tool names. Preview lists unsupported settings and conflicts. Successful import enrolls selected definitions in the selected Agent's roster; file publication and enrollment are separate operations, and partial completion is reported for deliberate retry.
-
-Setup creates editable YAML resources. It does not put OAuth tokens or API keys into them, call a model to test entitlement, or silently overwrite edited Model resources. A preserved existing Model keeps its existing settings even if you selected different starter values; edit its YAML to change those values. Explicitly connecting the selected Agent can update its model binding through the reviewed publication.
-
-## Find your next step
-
-| I want to…                                                      | Guide                                                               |
-| --------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Send prompts, steer work, attach images, and handle decisions   | [Use the terminal](everyday-use.md)                                 |
-| Find every root setting and understand file precedence          | [Configuration reference](configuration.md)                         |
-| Use a subscription or API key; tune reasoning and context       | [Models and authentication](models-and-authentication.md)           |
-| Create an Agent file or reference an existing Agent as a child  | [Agents and subagents](agents-and-subagents.md)                     |
-| Choose execution permissions and configure multiple directories | [Environments and Projects](environments-and-projects.md)           |
-| Add MCP servers, Skills, or plugins                             | [Extensions and MCP](extensions-and-mcp.md)                         |
-| Use one-shot commands, recover work, or diagnose failures       | [Automation and troubleshooting](automation-and-troubleshooting.md) |
+Harness UI is a local interactive Host built on [Harness](../a13n-harness/index.md). Its foreground process owns active work; it is not a detached worker service. The optional `webui` command currently provides an HTTP API and a bundled authentication/status page, not browser chat. See [browser support](webui.md) before choosing it as an interface.

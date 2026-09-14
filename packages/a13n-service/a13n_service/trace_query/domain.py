@@ -1,4 +1,4 @@
-"""Typed public and provider-side trace query values."""
+"""Shared normalized trace resources and scoped provider queries."""
 
 from __future__ import annotations
 
@@ -12,8 +12,6 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, JsonValue
 
 TraceStatus = Literal["unset", "ok", "error"]
-ObservationType = Literal["span", "generation", "event", "unknown"]
-AttemptOutcome = Literal["succeeded", "yielded", "failed", "cancelled"]
 
 
 class SearchIn(StrEnum):
@@ -27,75 +25,61 @@ class TraceView(StrEnum):
     full = "full"
 
 
-class TraceSummary(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
+class TraceValue(BaseModel):
+    model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
-    id: str
+
+class Content(TraceValue):
+    media_type: str | None
+    value: JsonValue
+
+
+class ModelIdentity(TraceValue):
+    requested: str | None
+    response: str | None
+
+
+class InstrumentationScope(TraceValue):
+    name: str | None
+    version: str | None
+    attributes: Mapping[str, JsonValue] | None
+
+
+class ObservationEvent(TraceValue):
     name: str
-    started_at: datetime
-    ended_at: datetime | None
-    duration_ms: int | None
-    trace_status: TraceStatus
-    session_id: str
-    thread_id: str
-    run_id: str
-    run_attempt_id: str
-    run_attempt_number: int
-    run_attempt_outcome: AttemptOutcome | None
-    input: JsonValue | None
-    output: JsonValue | None
-    observation_count: int | None
-    models: tuple[str, ...]
-    usage: Mapping[str, int] | None
-    total_cost_usd: Decimal | None
-    source_url: str | None
+    occurred_at: datetime
+    attributes: Mapping[str, JsonValue]
 
 
-class Observation(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
+class ObservationLink(TraceValue):
+    trace_id: str
+    observation_id: str
+    attributes: Mapping[str, JsonValue] | None
 
+
+class Observation(TraceValue):
     id: str
     parent_id: str | None
-    type: ObservationType
+    type: str
     name: str
     started_at: datetime
     ended_at: datetime | None
-    duration_ms: int | None
-    status: TraceStatus
-    model: str | None
+    status: TraceStatus | None
+    level: str | None
+    status_message: str | None
+    model: ModelIdentity | None
     usage: Mapping[str, int] | None
     cost_usd: Decimal | None
-    input: JsonValue | None
-    output: JsonValue | None
-    metadata: Mapping[str, JsonValue]
+    input: Content | None
+    output: Content | None
+    attributes: Mapping[str, JsonValue] | None
+    resource_attributes: Mapping[str, JsonValue] | None
+    scope: InstrumentationScope | None
+    events: tuple[ObservationEvent, ...] | None
+    links: tuple[ObservationLink, ...] | None
 
 
-class TraceDetail(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    trace: TraceSummary
-    observations: tuple[Observation, ...]
-
-
-class TraceCollection(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    items: tuple[TraceSummary, ...]
-    next_cursor: str | None
-
-
-@dataclass(frozen=True, slots=True)
-class TraceQueryCapabilities:
-    input_search: bool = False
-    output_search: bool = False
-    combined_input_output_search: bool = False
-    usage: bool = False
-    cost: bool = False
-    source_url: bool = False
-
-
-@dataclass(frozen=True, slots=True)
-class TraceCorrelation:
+class TraceCorrelation(TraceValue):
     organization_id: str
     workspace_id: str
     session_id: str
@@ -105,6 +89,37 @@ class TraceCorrelation:
     agent_id: str
 
 
+class Trace(TraceValue):
+    id: str
+    provider: str
+    correlation: TraceCorrelation
+    root: Observation
+    source_url: str | None
+
+
+class TraceCollection(TraceValue):
+    items: tuple[Trace, ...]
+    next_cursor: str | None
+
+
+class ObservationCollection(TraceValue):
+    items: tuple[Observation, ...]
+    next_cursor: str | None
+
+
+class TraceQueryDescriptor(TraceValue):
+    provider: str
+    enabled: bool
+    search_in: tuple[SearchIn, ...]
+    history_from: datetime | None
+
+
+@dataclass(frozen=True, slots=True)
+class TraceQueryCapabilities:
+    search_in: tuple[SearchIn, ...] = ()
+    history_from: datetime | None = None
+
+
 @dataclass(frozen=True, slots=True)
 class ProviderTraceQuery:
     organization_id: str
@@ -112,6 +127,7 @@ class ProviderTraceQuery:
     from_started_at: datetime
     to_started_at: datetime
     limit: int
+    view: TraceView = TraceView.compact
     cursor: str | None = None
     query: str | None = None
     search_in: SearchIn | None = None
@@ -121,48 +137,36 @@ class ProviderTraceQuery:
 
 
 @dataclass(frozen=True, slots=True)
-class ProviderTraceSummary:
-    id: str
-    name: str
-    started_at: datetime
-    ended_at: datetime | None
-    duration_ms: int | None
-    trace_status: TraceStatus
-    correlation: TraceCorrelation
-    input: JsonValue | None
-    output: JsonValue | None
-    observation_count: int | None
-    models: tuple[str, ...]
-    usage: Mapping[str, int] | None
-    total_cost_usd: Decimal | None
-    source_url: str | None
+class ProviderTraceRead:
+    organization_id: str
+    workspace_id: str
+    trace_id: str
+    history_from: datetime | None
+    to_started_at: datetime
+    view: TraceView
+    limit: int = 50
+    cursor: str | None = None
 
 
-@dataclass(frozen=True, slots=True)
-class ProviderObservation:
-    id: str
-    parent_id: str | None
-    type: ObservationType
-    name: str
-    started_at: datetime
-    ended_at: datetime | None
-    duration_ms: int | None
-    status: TraceStatus
-    model: str | None
-    usage: Mapping[str, int] | None
-    cost_usd: Decimal | None
-    input: JsonValue | None
-    output: JsonValue | None
-    metadata: Mapping[str, JsonValue]
+def project_observation(item: Observation, view: TraceView) -> Observation:
+    """Apply the same content projection to roots and other observations."""
+    if view is TraceView.full:
+        return item
+    return item.model_copy(
+        update={
+            "input": None,
+            "output": None,
+            "attributes": None,
+            "resource_attributes": None,
+            "scope": None,
+            "status_message": None,
+            "events": None,
+            "links": tuple(link.model_copy(update={"attributes": None}) for link in item.links)
+            if item.links is not None
+            else None,
+        }
+    )
 
 
-@dataclass(frozen=True, slots=True)
-class ProviderTracePage:
-    items: tuple[ProviderTraceSummary, ...]
-    next_cursor: str | None
-
-
-@dataclass(frozen=True, slots=True)
-class ProviderTraceDetail:
-    trace: ProviderTraceSummary
-    observations: tuple[ProviderObservation, ...]
+def project_trace(item: Trace, view: TraceView) -> Trace:
+    return item.model_copy(update={"root": project_observation(item.root, view)})

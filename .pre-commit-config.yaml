@@ -4,6 +4,7 @@ repos:
     hooks:
       - id: check-added-large-files
         args: [--maxkb=1024]
+        exclude: ^sdk/go/generated/client\.gen\.go$
       - id: check-case-conflict
       - id: check-merge-conflict
       - id: check-json
@@ -31,6 +32,14 @@ repos:
 
   - repo: local
     hooks:
+      - id: sdk-generate
+        name: Regenerate SDKs when the Service contract changes
+        entry: make sdk-generate
+        exclude: ^packages/[^/]+/tests/
+        language: system
+        files: ^(packages/|scripts/export-a13n-service-openapi\.py$|sdk/codegen/|sdk/openapi\.json$|sdk/typescript/(generate\.mjs|package(-lock)?\.json)$|sdk/python/pyproject\.toml$|uv\.lock$)
+        pass_filenames: false
+
       - id: gofmt
         name: gofmt
         entry: gofmt -w

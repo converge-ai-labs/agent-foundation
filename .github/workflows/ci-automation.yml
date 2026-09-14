@@ -13,12 +13,21 @@ on:
       - "scripts/prepare-release-version.py"
       - "scripts/release_notes.py"
       - "scripts/release_version.py"
+      - "scripts/prepare_harness_ui_image.py"
+      - "scripts/tests/test_image_workflows.py"
+      - "scripts/tests/test_prepare_harness_ui_image.py"
+      - "scripts/tests/test_harness_ui_release_workflow.py"
+      - "scripts/tests/test_envd_ci_workflow.py"
+      - "scripts/tests/test_sdk_codegen.py"
+      - "sdk/codegen/**"
+      - "deploy/containers/**/Dockerfile"
       - "scripts/run_python_tests.py"
       - "conftest.py"
       - "scripts/tests/test_local_validation.py"
       - "scripts/tests/test_check_release_version.py"
       - "scripts/tests/test_prepare_release_version.py"
       - "scripts/tests/test_release_notes.py"
+      - "scripts/tests/test_pr_labels.py"
   push:
     branches: [main]
     paths:
@@ -31,12 +40,21 @@ on:
       - "scripts/prepare-release-version.py"
       - "scripts/release_notes.py"
       - "scripts/release_version.py"
+      - "scripts/prepare_harness_ui_image.py"
+      - "scripts/tests/test_image_workflows.py"
+      - "scripts/tests/test_prepare_harness_ui_image.py"
+      - "scripts/tests/test_harness_ui_release_workflow.py"
+      - "scripts/tests/test_envd_ci_workflow.py"
+      - "scripts/tests/test_sdk_codegen.py"
+      - "sdk/codegen/**"
+      - "deploy/containers/**/Dockerfile"
       - "scripts/run_python_tests.py"
       - "conftest.py"
       - "scripts/tests/test_local_validation.py"
       - "scripts/tests/test_check_release_version.py"
       - "scripts/tests/test_prepare_release_version.py"
       - "scripts/tests/test_release_notes.py"
+      - "scripts/tests/test_pr_labels.py"
   workflow_dispatch:
 
 env:
@@ -52,6 +70,7 @@ concurrency:
 jobs:
   workflows:
     name: GitHub Actions
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -67,6 +86,7 @@ jobs:
 
   release-tooling:
     name: Release tooling
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -96,6 +116,13 @@ jobs:
           scripts/release_notes.py
           scripts/release_version.py
           scripts/run_python_tests.py
+          scripts/prepare_harness_ui_image.py
+          sdk/codegen/generate.py
+
+      - name: Set up Node.js for workflow tests
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
 
       - name: Test release tooling
         run: >-
@@ -103,4 +130,10 @@ jobs:
           scripts/tests/test_check_release_version.py
           scripts/tests/test_prepare_release_version.py
           scripts/tests/test_release_notes.py
+          scripts/tests/test_pr_labels.py
           scripts/tests/test_local_validation.py
+          scripts/tests/test_image_workflows.py
+          scripts/tests/test_prepare_harness_ui_image.py
+          scripts/tests/test_harness_ui_release_workflow.py
+          scripts/tests/test_envd_ci_workflow.py
+          scripts/tests/test_sdk_codegen.py

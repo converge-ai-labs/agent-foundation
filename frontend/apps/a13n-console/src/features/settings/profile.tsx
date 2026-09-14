@@ -1,13 +1,25 @@
-import { useRef, useState, type FormEvent } from "react";
+import { Button, Input } from "a13n-ui";
+
+import { SettingsRow, SettingsSection } from "a13n-ui";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Input, SettingsRow, SettingsSection } from "a13n-ui";
-import { Upload, Trash2, Check } from "lucide-react";
+import { useId, useState, type FormEvent } from "react";
+
 import { useTranslation } from "react-i18next";
-import { useClient } from "../../auth/context";
+import { useLocation, useNavigate } from "react-router";
+import { ImagePicker, MAX_IMAGE_BYTES } from "../../shared/image-picker";
+import { ResourceKeyField } from "../../shared/resource-key";
+import { useClient, type IdentityData } from "../../auth/context";
+import { UserAvatar } from "../../layout/avatar";
 import { representation, type Schema } from "../../shared/api";
+import { CopyableId } from "../../shared/copy";
 import { ErrorNotice, Loading } from "../../shared/feedback";
-import { Avatar } from "../../layout/shell";
 import styles from "./settings.module.css";
+
+type ProfileRepresentation = {
+  value: Schema["User"] | Schema["Workspace"] | Schema["Organization"];
+  etag?: string;
+};
 
 export type ProfileTarget =
   { kind: "personal" } | { kind: "workspace" | "organization"; id: string };
@@ -26,27 +38,27 @@ export function Profile({
       target.kind,
       target.kind === "personal" ? "me" : target.id,
     ],
-    queryFn: ({ signal }) => {
+    queryFn: async ({ signal }): Promise<ProfileRepresentation> => {
       if (target.kind === "personal")
         return client.http
           .GET("/api/v1/users/me", { signal })
           .then(representation);
       if (target.kind === "workspace")
         return client.http
-          .GET("/api/v1/workspaces/{workspace_id}", {
-            params: { path: { workspace_id: target.id } },
+          .GET("/api/v1/workspaces/{workspace}", {
+            params: { path: { workspace: target.id } },
             signal,
           })
           .then(representation);
       return client.http
-        .GET("/api/v1/organizations/{organization_id}", {
-          params: { path: { organization_id: target.id } },
+        .GET("/api/v1/organizations/{organization}", {
+          params: { path: { organization: target.id } },
           signal,
         })
         .then(representation);
     },
   });
-  if (query.isPending) return <Loading />;
+  if (query.isPending) return <Loading variant="form" rows={3} />;
   if (!query.data)
     return (
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
@@ -70,22 +82,23 @@ function ProfileForm({
   editable,
   reload,
 }: {
-  resource: {
-    value: Schema["User"] | Schema["Workspace"] | Schema["Organization"];
-    etag?: string;
-  };
+  resource: ProfileRepresentation;
   target: ProfileTarget;
   editable: boolean;
   reload: () => Promise<void>;
 }) {
   const { t } = useTranslation(),
     client = useClient(),
-    cache = useQueryClient();
-  const [name, setName] = useState(resource.value.name),
-    uploadInput = useRef<HTMLInputElement>(null);
+    cache = useQueryClient(),
+    navigate = useNavigate(),
+    location = useLocation();
+  const [name, setName] = useState(resource.value.name);
+  const [key, setKey] = useState(
+    "key" in resource.value ? resource.value.key : "",
+  );
   const [current, setCurrent] = useState(resource);
   const save = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (): Promise<ProfileRepresentation> => {
       if (!current.etag)
         throw new Error(
           t("Version information is unavailable. Reload this page."),
@@ -101,22 +114,56 @@ function ProfileForm({
           .then(representation);
       if (target.kind === "workspace")
         return client.http
-          .PATCH("/api/v1/workspaces/{workspace_id}", {
-            params: { header: headers, path: { workspace_id: target.id } },
+          .PATCH("/api/v1/workspaces/{workspace}", {
+            params: { header: headers, path: { workspace: target.id } },
             headers,
-            body: { name },
+            body: { name, key },
           })
           .then(representation);
       return client.http
-        .PATCH("/api/v1/organizations/{organization_id}", {
-          params: { header: headers, path: { organization_id: target.id } },
+        .PATCH("/api/v1/organizations/{organization}", {
+          params: { header: headers, path: { organization: target.id } },
           headers,
-          body: { name },
+          body: { name, key },
         })
         .then(representation);
     },
     onSuccess: (result) => {
       setCurrent(result);
+      const value = result.value;
+      if ("organization_id" in value) {
+        cache.setQueryData<{ items: Schema["Workspace"][] }>(
+          ["workspaces", value.organization_id],
+          (previous) =>
+            previous && {
+              ...previous,
+              items: previous.items.map((item) =>
+                item.id === value.id ? value : item,
+              ),
+            },
+        );
+      } else if ("key" in value) {
+        cache.setQueryData<IdentityData>(
+          ["identity"],
+          (previous) =>
+            previous && {
+              ...previous,
+              organizations: previous.organizations.map((item) =>
+                item.id === value.id ? value : item,
+              ),
+            },
+        );
+      }
+      const oldKey = "key" in current.value ? current.value.key : undefined;
+      if (
+        target.kind === "workspace" &&
+        "key" in result.value &&
+        oldKey !== result.value.key
+      ) {
+        const parts = location.pathname.split("/");
+        parts[2] = result.value.key;
+        navigate(parts.join("/") + location.search, { replace: true });
+      }
       void cache.invalidateQueries();
     },
   });
@@ -126,7 +173,7 @@ function ProfileForm({
         throw new Error(
           t("Version information is unavailable. Reload this page."),
         );
-      if (file && file.size > 5 * 1024 * 1024)
+      if (file && file.size > MAX_IMAGE_BYTES)
         throw new Error(
           t("Choose a PNG, JPEG, or WebP image smaller than 5 MB."),
         );
@@ -152,30 +199,30 @@ function ProfileForm({
       if (target.kind === "workspace")
         return file
           ? client.http
-              .PUT("/api/v1/workspaces/{workspace_id}/icon", {
+              .PUT("/api/v1/workspaces/{workspace}/icon", {
                 headers,
-                params: { header: headers, path: { workspace_id: target.id } },
+                params: { header: headers, path: { workspace: target.id } },
                 body: file,
               })
               .then(representation)
           : client.http
-              .DELETE("/api/v1/workspaces/{workspace_id}/icon", {
+              .DELETE("/api/v1/workspaces/{workspace}/icon", {
                 headers,
-                params: { header: headers, path: { workspace_id: target.id } },
+                params: { header: headers, path: { workspace: target.id } },
               })
               .then(representation);
       return file
         ? client.http
-            .PUT("/api/v1/organizations/{organization_id}/icon", {
+            .PUT("/api/v1/organizations/{organization}/icon", {
               headers,
-              params: { header: headers, path: { organization_id: target.id } },
+              params: { header: headers, path: { organization: target.id } },
               body: file,
             })
             .then(representation)
         : client.http
-            .DELETE("/api/v1/organizations/{organization_id}/icon", {
+            .DELETE("/api/v1/organizations/{organization}/icon", {
               headers,
-              params: { header: headers, path: { organization_id: target.id } },
+              params: { header: headers, path: { organization: target.id } },
             })
             .then(representation);
     },
@@ -184,115 +231,109 @@ function ProfileForm({
       void cache.invalidateQueries();
     },
   });
+  const nameId = useId();
   const pending = save.isPending || image.isPending;
+  const nameLabel = t(
+    target.kind === "personal"
+      ? "Display name"
+      : target.kind === "workspace"
+        ? "Workspace name"
+        : "Organization name",
+  );
   return (
-    <div className={styles.profile}>
+    <form
+      className={styles.profile}
+      onSubmit={(event: FormEvent) => {
+        event.preventDefault();
+        save.mutate();
+      }}
+    >
       <SettingsSection
-        variant="plain"
-        title={t(
+        title={
           target.kind === "personal"
-            ? "Profile image"
-            : target.kind === "workspace"
-              ? "Workspace identity"
-              : "Organization identity",
-        )}
-        description={t(
-          target.kind === "personal"
-            ? "Choose an image people will recognize."
-            : "Make this space easy to recognize.",
-        )}
+            ? t("Account")
+            : t(target.kind === "workspace" ? "Workspace" : "Organization")
+        }
       >
         <SettingsRow
           label={t(target.kind === "personal" ? "Avatar" : "Icon")}
           description={t("PNG, JPEG, or WebP. Up to 5 MB.")}
         >
-          <div className={styles.profileImage}>
-            <Avatar name={current.value.name} url={current.value.image_url} />
-            {editable && (
-              <>
-                <input
-                  ref={uploadInput}
-                  type="file"
-                  accept="image/png,image/jpeg,image/webp"
-                  hidden
-                  disabled={pending}
-                  onChange={(event) => {
-                    const file = event.target.files?.[0];
-                    if (file) image.mutate(file);
-                    event.target.value = "";
-                  }}
-                />
-                <Button
-                  disabled={pending}
-                  icon={<Upload size={14} />}
-                  onClick={() => uploadInput.current?.click()}
-                >
-                  {t("Upload image")}
-                </Button>
-                {current.value.image_url && (
-                  <Button
-                    aria-label={t("Remove image")}
-                    variant="ghost"
-                    icon={<Trash2 size={14} />}
-                    disabled={pending}
-                    onClick={() => image.mutate(null)}
-                  />
-                )}
-              </>
+          <ImagePicker
+            hasImage={!!current.value.image_url}
+            editable={editable}
+            pending={pending}
+            onChange={(file) => image.mutate(file)}
+          >
+            <UserAvatar
+              name={current.value.name}
+              url={current.value.image_url}
+              className="size-12 rounded-xl"
+            />
+          </ImagePicker>
+        </SettingsRow>
+        <SettingsRow
+          label={nameLabel}
+          controlId={editable ? nameId : undefined}
+        >
+          <div className={styles.nameControl}>
+            {editable ? (
+              <Input
+                required
+                id={nameId}
+                value={name}
+                disabled={pending}
+                onChange={(event) => setName(event.target.value)}
+                maxLength={128}
+              />
+            ) : (
+              <span className="select-text text-sm">{name}</span>
             )}
           </div>
         </SettingsRow>
+        {"key" in current.value && (
+          <div className={styles.profileKey}>
+            <ResourceKeyField
+              value={key}
+              onChange={setKey}
+              disabled={pending}
+              readOnly={!editable}
+            />
+          </div>
+        )}
+        <SettingsRow label={t("ID")}>
+          <CopyableId value={current.value.id} />
+        </SettingsRow>
       </SettingsSection>
-      <form
-        className={styles.profileForm}
-        onSubmit={(event: FormEvent) => {
-          event.preventDefault();
-          save.mutate();
-        }}
-      >
-        <Input
-          label={t(
-            target.kind === "personal"
-              ? "Display name"
-              : target.kind === "workspace"
-                ? "Workspace name"
-                : "Organization name",
-          )}
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          required
-          maxLength={128}
-          disabled={!editable || pending}
-        />
-        <ErrorNotice
-          error={save.error ?? image.error}
-          retry={() => void reload()}
-        />
-        {editable && (
+      <ErrorNotice
+        error={save.error ?? image.error}
+        retry={() => void reload()}
+      />
+      {editable &&
+        (name !== current.value.name ||
+          ("key" in current.value && key !== current.value.key)) && (
           <div className={styles.saveRow}>
             <Button
+              variant="outline"
+              disabled={pending}
+              onClick={() => {
+                setName(current.value.name);
+                if ("key" in current.value) setKey(current.value.key);
+              }}
+              type="button"
+            >
+              {t("Cancel")}
+            </Button>
+            <Button
               type="submit"
-              disabled={pending || !name.trim() || name === current.value.name}
+              variant="default"
+              disabled={pending || !name.trim()}
               loading={save.isPending}
             >
               {t("Save changes")}
             </Button>
-            <span role="status">
-              {save.isSuccess && name === current.value.name ? (
-                <>
-                  <Check size={12} /> {t("Changes saved")}
-                </>
-              ) : name !== current.value.name ? (
-                t("Unsaved changes")
-              ) : null}
-            </span>
           </div>
         )}
-        <div className={styles.identityNote}>
-          <span>{t("ID")}</span>
-          <code>{current.value.id}</code>
-        </div>
-      </form>
-    </div>
+    </form>
   );
 }

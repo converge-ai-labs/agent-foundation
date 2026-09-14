@@ -45,6 +45,7 @@ def _write_wheel(
     include_entrypoint: bool = True,
     cli_content: bytes = b"def main(): pass\n",
     extra_packaged_files: dict[str, bytes] | None = None,
+    omitted_skill_file: str | None = None,
 ) -> None:
     files = {
         "index.html": index,
@@ -86,6 +87,15 @@ def _write_wheel(
             elif module.as_posix() == "a13n_harness_ui/cli.py":
                 content = cli_content
             archive.writestr(module.as_posix(), content)
+        skill_files = {
+            "SKILL.md": b"---\nname: harness-ui-configuration\ndescription: Configure Harness UI.\n---\n\n"
+            b"## Documentation map\n\n- [Configuration](docs/configuration.md)\n",
+            "references/navigation.md": b"# Navigation\n\nFile: `docs/configuration.md`\n",
+            "docs/configuration.md": b"# Configuration\n",
+        }
+        for relative, content in skill_files.items():
+            if relative != omitted_skill_file:
+                archive.writestr(str(checker.SKILL_PREFIX / relative), content)
         archive.writestr("a13n_harness_ui/interactive/__init__.py", b"\n")
         if include_entrypoint:
             archive.writestr(
@@ -213,9 +223,9 @@ def test_rejects_packaged_file_missing_from_manifest(tmp_path: Path) -> None:
         validate_wheel(wheel, require_compatible_dependencies=True)
 
 
-def _write_sdist(path: Path, *, requirements: list[str] | None = None) -> None:
+def _write_sdist(path: Path, *, requirements: list[str] | None = None, omitted_skill_file: str | None = None) -> None:
     wheel = path.with_suffix(".whl")
-    _write_wheel(wheel, requirements=requirements)
+    _write_wheel(wheel, requirements=requirements, omitted_skill_file=omitted_skill_file)
     root = "a13n_harness_ui-9.8.7"
     dependencies = RELEASE_REQUIREMENTS if requirements is None else requirements
     pyproject = (
@@ -238,6 +248,14 @@ def artifact(request: pytest.FixtureRequest, tmp_path: Path) -> Artifact:
     if request.param == "wheel":
         return tmp_path / "a13n_harness_ui-9.8.7-py3-none-any.whl", _write_wheel
     return tmp_path / "a13n_harness_ui-9.8.7.tar.gz", _write_sdist
+
+
+@pytest.mark.parametrize("missing", ["SKILL.md", "references/navigation.md", "docs/configuration.md"])
+def test_rejects_incomplete_configuration_skill(artifact: Artifact, missing: str) -> None:
+    path, write = artifact
+    write(path, omitted_skill_file=missing)
+    with pytest.raises(DistributionError, match="missing"):
+        _validate_release_artifact(path)
 
 
 def _validate_release_artifact(path: Path) -> dict[str, str] | None:

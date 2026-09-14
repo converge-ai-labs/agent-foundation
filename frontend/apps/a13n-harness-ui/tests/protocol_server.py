@@ -1,0 +1,124 @@
+"""Isolated real App for Node protocol tests; no browser or external provider."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import os
+import socket
+import subprocess
+import sys
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
+import uvicorn
+from a13n_harness_ui.app import open_harness_ui_app
+from a13n_harness_ui.model_runtime import HarnessUiModelResolver
+from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+from a13n_harness_ui.webui import create_webui
+from pydantic_ai.models.function import FunctionModel
+
+
+async def main() -> None:
+    with TemporaryDirectory(prefix="a13n-webui-protocol-") as directory:
+        root = Path(directory)
+        os.environ["HOME"] = directory
+        os.environ["USERPROFILE"] = directory
+        os.environ["XDG_CONFIG_HOME"] = str(root / "xdg")
+        if os.name == "posix":
+            os.environ["SHELL"] = "/bin/sh"
+            os.environ["ENV"] = str(root / "no-shell-init")
+            os.environ["BASH_ENV"] = str(root / "no-shell-init")
+        share_computer = "--native" in sys.argv
+        native_root = root / "native"
+        if share_computer:
+            native_root.mkdir()
+            (native_root / "sample.txt").write_bytes(b"first\r\nsecond\r\n")
+            (native_root / "binary.bin").write_bytes(b"\x00\x01\xff")
+            (native_root / "large.txt").write_bytes(b"x" * (512 * 1024 + 1))
+            repository = native_root / "repository"
+            repository.mkdir()
+            git_env = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+            git_env.update({"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull})
+            for args in (
+                ("init",),
+                ("config", "user.name", "Protocol Fixture"),
+                ("config", "user.email", "fixture@example.invalid"),
+            ):
+                subprocess.run(["git", *args], cwd=repository, env=git_env, check=True, capture_output=True)
+            (repository / "tracked.txt").write_text("base\n", encoding="utf-8")
+            subprocess.run(["git", "add", "tracked.txt"], cwd=repository, env=git_env, check=True, capture_output=True)
+            subprocess.run(
+                ["git", "-c", "commit.gpgsign=false", "commit", "-m", "Fixture baseline"],
+                cwd=repository,
+                env=git_env,
+                check=True,
+                capture_output=True,
+            )
+            (repository / "tracked.txt").write_text("staged\n", encoding="utf-8")
+            subprocess.run(["git", "add", "tracked.txt"], cwd=repository, env=git_env, check=True, capture_output=True)
+            (repository / "tracked.txt").write_text("worktree\n", encoding="utf-8")
+            (repository / "new.txt").write_text("untracked\n", encoding="utf-8")
+        configuration = root / "config" / "a13n-harness-ui.yaml"
+        configuration.parent.mkdir()
+        configuration.write_text('schema_version: "1"\ndefaults:\n  agent: agent-fixture\n', encoding="utf-8")
+        sources = {
+            "models/fixture.yaml": 'schema_version: "1"\nkind: model\nid: model-fixture\nname: Fixture\nroute: openai:gpt-5\nauthentication: {kind: api_key, env: FIXTURE_MODEL_KEY}\n',
+            "agents/fixture.yaml": 'schema_version: "1"\nkind: agent\nid: agent-fixture\nname: Fixture\nmodel: model-fixture\n',
+        }
+        for name, content in sources.items():
+            path = configuration.parent / name
+            path.parent.mkdir()
+            path.write_text(content, encoding="utf-8")
+
+        async def model(messages, info):
+            yield "Protocol "
+            await asyncio.sleep(0.4)
+            yield "response"
+
+        async def resolve(self, context, model_id):
+            return FunctionModel(stream_function=model)
+
+        HarnessUiModelResolver.__call__ = resolve
+        settings = HarnessUiSettings(storage=StorageSettings(data_root=root / "data"), pricing_auto_update=False)
+        server = create_webui(
+            lambda: open_harness_ui_app(
+                settings,
+                configuration_path=configuration,
+                host_mode="webui",
+                share_computer=share_computer,
+                instrumentation=None,
+            ),
+            api_key="test-only-key",
+        )
+        sock = socket.socket()
+        sock.bind(("127.0.0.1", 0))
+        native = uvicorn.Server(
+            uvicorn.Config(
+                server, log_level="error", lifespan="on", ws="websockets-sansio", timeout_graceful_shutdown=2
+            )
+        )
+        task = asyncio.create_task(native.serve(sockets=[sock]))
+        try:
+            async with asyncio.timeout(10):
+                while not native.started:
+                    if task.done():
+                        await task
+                        raise RuntimeError("Protocol listener stopped before startup")
+                    await asyncio.sleep(0.01)
+            print(
+                json.dumps(
+                    {"origin": f"http://127.0.0.1:{sock.getsockname()[1]}", "native_root": str(native_root.resolve())}
+                ),
+                flush=True,
+            )
+            await asyncio.to_thread(sys.stdin.readline)
+        finally:
+            native.should_exit = True
+            async with asyncio.timeout(10):
+                await task
+            sock.close()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

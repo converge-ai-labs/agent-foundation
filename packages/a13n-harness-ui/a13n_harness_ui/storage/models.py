@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Integer, String, Text, UniqueConstraint, text
+from sqlalchemy import Boolean, CheckConstraint, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from .metadata import Base
@@ -62,6 +62,13 @@ class ResourceIndexRecord(Base):
     name: Mapped[str] = mapped_column(String(256), nullable=False)
     source_digest: Mapped[str] = mapped_column(String(_DIGEST), nullable=False)
     normalized_digest: Mapped[str] = mapped_column(String(_DIGEST), nullable=False)
+
+
+class ProjectModelPreferenceRecord(Base):
+    __tablename__ = "project_model_preference"
+
+    project_id: Mapped[str] = mapped_column(String(_ID), primary_key=True)
+    model_id: Mapped[str] = mapped_column(String(_ID), nullable=False)
 
 
 class ThreadRecord(Base):
@@ -163,6 +170,30 @@ class ThreadUsageRecord(Base):
     observed_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
 
 
+class OutputCommentRecord(Base):
+    """Immutable human publication and a retention root for its saved output."""
+
+    __tablename__ = "output_comment"
+    __table_args__ = (
+        Index("ix_output_comment_thread_order", "root_thread_id", "created_at", "comment_id"),
+        Index("ix_output_comment_target_order", "root_thread_id", "target_key", "created_at", "comment_id"),
+    )
+
+    comment_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    root_thread_id: Mapped[str] = mapped_column(
+        String(80), ForeignKey("thread.thread_id", ondelete="RESTRICT"), nullable=False
+    )
+    producing_thread_id: Mapped[str] = mapped_column(
+        String(80), ForeignKey("thread.thread_id", ondelete="RESTRICT"), nullable=False
+    )
+    target_key: Mapped[str] = mapped_column(String(_DIGEST), nullable=False)
+    source_kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_schema_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_digest: Mapped[str] = mapped_column(String(_DIGEST), nullable=False)
+    publication_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+
+
 class EnvironmentBindingRecord(Base):
     __tablename__ = "environment_binding"
     __table_args__ = (
@@ -191,6 +222,7 @@ __all__ = [
     "ConfigurationSourceRecord",
     "CurrentConfigurationRecord",
     "EnvironmentBindingRecord",
+    "OutputCommentRecord",
     "ResourceIndexRecord",
     "ThreadConfigurationRecord",
     "ThreadRecord",

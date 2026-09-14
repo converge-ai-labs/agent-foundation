@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { ReplayGapError } from "@converge.ai/a13n";
+import { isCancelledError, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
 import { revalidateSession, useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import {
@@ -46,13 +46,31 @@ export function useLiveRun(runId: string) {
           );
       });
     }
+    async function current<T>(read: () => Promise<T>): Promise<T> {
+      for (;;) {
+        signal.throwIfAborted();
+        try {
+          return await read();
+        } catch (error) {
+          // Notifications may replace a shared query while recovery awaits it.
+          // Join its replacement instead of reporting a disconnected stream.
+          if (!isCancelledError(error) || signal.aborted) throw error;
+        }
+      }
+    }
     async function reconcile() {
       signal.throwIfAborted();
       // Recovery must read current resources even when the display cache is fresh.
       const [run, retained] = await Promise.all([
-        cache.fetchQuery({ ...queries.run(runId), staleTime: 0 }),
-        cache.fetchQuery({ ...queries.items(runId), staleTime: 0 }),
-        cache.fetchQuery({ ...queries.pending(runId), staleTime: 0 }),
+        current(() =>
+          cache.fetchQuery({ ...queries.run(runId), staleTime: 0 }),
+        ),
+        current(() =>
+          cache.fetchQuery({ ...queries.items(runId), staleTime: 0 }),
+        ),
+        current(() =>
+          cache.fetchQuery({ ...queries.pending(runId), staleTime: 0 }),
+        ),
       ]);
       if (signal.aborted) return { run, available: retained.available };
       projection.current = mergeRetainedItems(

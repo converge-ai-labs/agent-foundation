@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 import json
-from collections import deque
-from collections.abc import AsyncGenerator, AsyncIterator, Sequence
+from collections import OrderedDict, deque
+from collections.abc import AsyncGenerator, AsyncIterator, Iterator, Sequence
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from typing import Literal
 from uuid import uuid4
 
 from a13n_harness.usage import ModelUsageRecord
+from a13n_stream_protocol import HarnessAguiObserver
 from ag_ui.core import Event as AguiEvent
 from anyio import (
     BrokenResourceError,
@@ -55,6 +57,60 @@ class LiveEvent(_StreamModel):
     event_type: str = Field(min_length=1, max_length=128)
     payload: dict[str, JsonValue] | None
     payload_omitted: bool
+
+
+class RootStreamSummary(_StreamModel):
+    """Finite observer prefix covered by a focused watch's cutover."""
+
+    thread_id: str
+    run_id: str
+    base_continuation_id: str | None
+    event_count: int = Field(ge=0)
+
+
+class RootStreamEvent(_StreamModel):
+    index: int = Field(ge=0)
+    event_type: str
+    payload: dict[str, JsonValue] | None
+    payload_omitted: bool
+
+
+@dataclass(frozen=True, slots=True)
+class RootStreamReplay:
+    summary: RootStreamSummary
+    observer: HarnessAguiObserver
+
+    def batches(self) -> Iterator[tuple[RootStreamEvent, ...]]:
+        """Read only the captured prefix; do not copy an entire Run per page."""
+        for start in range(0, self.summary.event_count, 16):
+            events = self.observer.snapshot(start=start, stop=min(start + 16, self.summary.event_count))
+            batch = []
+            for index, event in enumerate(events, start):
+                payload, omitted = _bounded_payload(event)
+                batch.append(
+                    RootStreamEvent(index=index, event_type=event.type.value, payload=payload, payload_omitted=omitted)
+                )
+            yield tuple(batch)
+
+
+@dataclass(slots=True)
+class _RootStream:
+    thread_id: str
+    run_id: str
+    observer: HarnessAguiObserver
+    base_continuation_id: str | None
+    published_count: int = 0
+
+    def capture(self) -> RootStreamReplay:
+        return RootStreamReplay(
+            summary=RootStreamSummary(
+                thread_id=self.thread_id,
+                run_id=self.run_id,
+                base_continuation_id=self.base_continuation_id,
+                event_count=self.published_count,
+            ),
+            observer=self.observer,
+        )
 
 
 class RequestContextSample(_StreamModel):
@@ -123,9 +179,12 @@ class _LiveSubscriber:
 class LiveSubscription:
     """One App-owned best-effort detailed stream with an explicit cutover."""
 
-    def __init__(self, subscriber: _LiveSubscriber, cursor: LiveCursor) -> None:
+    def __init__(
+        self, subscriber: _LiveSubscriber, cursor: LiveCursor, root_stream: RootStreamReplay | None = None
+    ) -> None:
         self._subscriber = subscriber
         self._cursor = cursor
+        self.root_stream = root_stream
 
     @property
     def cursor(self) -> LiveCursor:
@@ -185,6 +244,8 @@ class HarnessUiLiveHub:
         self._sequence = 0
         self._closed = False
         self._lock = Lock()
+        self._root_streams: dict[str, _RootStream] = {}
+        self._terminal_streams: OrderedDict[str, None] = OrderedDict()
 
     @property
     def epoch(self) -> str:
@@ -200,10 +261,19 @@ class HarnessUiLiveHub:
         run_id: str,
         events: Sequence[AguiEvent],
         execution_id: str | None = None,
+        observer: HarnessAguiObserver | None = None,
+        base_continuation_id: str | None = None,
     ) -> None:
-        """Publish detached events while marking slow subscribers for reset."""
+        """Publish detached events while marking slow subscribers for reset.
 
-        for source in events:
+        The root producer supplies its existing observer and its latest batch.
+        Only the published prefix becomes visible to new subscriptions, even if
+        observation precedes asynchronous publication.
+        """
+        start = 0 if observer is None else observer.event_count - len(events)
+        if observer is not None and (run_kind != "root" or start < 0):
+            raise ValueError("observer replay requires the root's latest observed batch")
+        for index, source in enumerate(events, start):
             async with self._lock:
                 if self._closed:
                     return
@@ -224,6 +294,13 @@ class HarnessUiLiveHub:
                     payload_omitted=omitted,
                 )
                 self._ring.append(event.model_copy(deep=True))
+                if observer is not None:
+                    current = self._root_streams.get(thread_id)
+                    if current is None or current.run_id != run_id:
+                        current = _RootStream(thread_id, run_id, observer, base_continuation_id)
+                        self._root_streams[thread_id] = current
+                        self._terminal_streams.pop(thread_id, None)
+                    current.published_count = index + 1
                 for subscriber in self._subscribers:
                     if not subscriber.accepts(event) or subscriber.gap:
                         continue
@@ -238,6 +315,22 @@ class HarnessUiLiveHub:
             # A large framed event must not overflow even a ready consumer merely
             # because its producer submitted one batch. Never await under the lock.
             await checkpoint()
+
+    async def finish_root(self, *, thread_id: str, run_id: str, saved_continuation_id: str | None) -> None:
+        """Release saved Runs; bound inspection of terminal unsaved output."""
+        async with self._lock:
+            current = self._root_streams.get(thread_id)
+            if current is None or current.run_id != run_id:
+                return
+            if saved_continuation_id is not None:
+                self._root_streams.pop(thread_id, None)
+                self._terminal_streams.pop(thread_id, None)
+                return
+            self._terminal_streams[thread_id] = None
+            self._terminal_streams.move_to_end(thread_id)
+            while len(self._terminal_streams) > 256:
+                expired, _ = self._terminal_streams.popitem(last=False)
+                self._root_streams.pop(expired, None)
 
     async def snapshot(self, *, root_thread_id: str | None = None) -> tuple[LiveEvent, ...]:
         async with self._lock:
@@ -276,9 +369,11 @@ class HarnessUiLiveHub:
             for event in replay:
                 send.send_nowait(event.model_copy(deep=True))
             self._subscribers.add(subscriber)
+            root_stream = self._root_streams.get(root_thread_id or "")
             subscription = LiveSubscription(
                 subscriber,
                 LiveCursor(epoch=self._epoch, sequence=start_sequence),
+                root_stream.capture() if root_stream is not None and after is None else None,
             )
         try:
             yield subscription
@@ -313,6 +408,8 @@ class HarnessUiLiveHub:
             subscribers = tuple(self._subscribers)
             self._subscribers.clear()
             self._ring.clear()
+            self._root_streams.clear()
+            self._terminal_streams.clear()
             for subscriber in subscribers:
                 subscriber.send.close()
                 subscriber.receive.close()
@@ -326,7 +423,7 @@ class SummaryCursor(_StreamModel):
 class SummaryInvalidation(_StreamModel):
     epoch: str = Field(min_length=1, max_length=80)
     sequence: int = Field(ge=1)
-    kind: Literal["configuration", "catalog", "project", "thread", "root_operation", "child_execution"]
+    kind: Literal["configuration", "catalog", "project", "thread", "root_operation", "child_execution", "comment"]
     root_thread_id: str | None = Field(default=None, min_length=1, max_length=80)
     thread_id: str | None = Field(default=None, min_length=1, max_length=80)
     execution_id: str | None = Field(default=None, min_length=1, max_length=80)
@@ -399,7 +496,7 @@ class HarnessUiSummaryHub:
     async def publish(
         self,
         *,
-        kind: Literal["configuration", "catalog", "project", "thread", "root_operation", "child_execution"],
+        kind: Literal["configuration", "catalog", "project", "thread", "root_operation", "child_execution", "comment"],
         root_thread_id: str | None = None,
         thread_id: str | None = None,
         execution_id: str | None = None,

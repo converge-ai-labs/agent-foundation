@@ -34,7 +34,7 @@ flowchart LR
 | Agent execution, state, and process-local subagent graph                          | Agent Harness                                                                                                                                                                                                                                                       | Receives reconstructed definitions and fresh run bindings                   |
 | Run identity, acceptance, persistence, lineage, and recovery                      | [Agent Interaction and Execution Model](10-agent-interaction-and-execution-model.md), [Agent Control](18-agent-control-input-and-continuation.md), [Durable Run State](12-run-persistence.md), and [RunAttempt Recovery](13-run-attempt-scheduling-and-recovery.md) | Persist and reuse the exact selected Revision and effective config          |
 | Agent input wire, canonicalization, and adapter mapping                           | [Agent Input](17-agent-input.md)                                                                                                                                                                                                                                    | AgentConfig stores adapter configuration and each Revision freezes it       |
-| Managed capability and ConnectorConnection schemas                                | Their owning Skill and [Connectivity](40-connectivity/README.md) contracts                                                                                                                                                                                          | Agent configuration and Run overlays reference them without redefining them |
+| Managed capability and Connection schemas                                         | Their owning Skill and [Connectivity](40-connectivity/README.md) contracts                                                                                                                                                                                          | Agent configuration and Run overlays reference them without redefining them |
 | Product authorization and executable-code administration                          | [Service IAM](33-identity-and-access-management.md)                                                                                                                                                                                                                 | Separates Agent authoring from deployment code authority                    |
 | Secret values and run-time eligibility                                            | [Secret Management](27-secret-management.md)                                                                                                                                                                                                                        | Revisions store requirements and references, never plaintext values         |
 | Public HTTP paths and common mutation behavior                                    | [Management API](16-management-api.md) and [Platform API Conventions](../api-conventions.md)                                                                                                                                                                        | Expose the resources and commands defined here                              |
@@ -50,7 +50,9 @@ class Agent:
     workspace_id: WorkspaceId
     source: Literal["builtin", "custom"]
     name: str
+    key: str
     description: str | None
+    image_url: str | None
     version: int
     current_revision_id: AgentRevisionId
     default_environment_template_id: EnvironmentTemplateId | None
@@ -66,7 +68,15 @@ class Agent:
 
 `Agent.version` starts at `1` and always equals the current `AgentRevision.version`. It advances only when a genuinely new immutable Revision becomes current. `current_revision_id` is always present; Service never exposes an Agent without an executable Revision.
 
-`name`, `description` and `default_environment_template_id` are mutable head metadata. The template default only seeds new Thread Environment allocation under [Environment Management](29-environment-management.md#thread-defaults-and-run-selection); it never changes an existing Thread or Run and does not publish an AgentRevision. `enabled` and `archived_at` are independent lifecycle axes. Their mutations change `updated_at` and the representation ETag without advancing `version` or rewriting a Revision.
+`name`, `key`, `description` and `default_environment_template_id` are mutable head metadata. Name changes preserve the key; explicit key changes follow the shared resource-key contract and preserve the Agent ID. The template default only seeds new Thread Environment allocation under [Environment Management](29-environment-management.md#thread-defaults-and-run-selection); it never changes an existing Thread or Run and does not publish an AgentRevision. `enabled` and `archived_at` are independent lifecycle axes. Their mutations change `updated_at` and the representation ETag without advancing `version` or rewriting a Revision.
+
+### Avatar
+
+An Agent may have one current avatar. `image_url` is a nullable authenticated content URL; the internal image ID and object key are not writable metadata fields. `PUT` and `DELETE /api/v1/workspaces/{workspace}/agents/{agent}/avatar` replace or remove it under `agent.update`, exact `If-Match`, and the same custom, non-archived restrictions as other metadata changes. They update audit attribution, `updated_at`, and the ETag without creating a Revision or advancing `version`.
+
+Uploads use the shared [profile image processing rules](33-identity-and-access-management.md#profile-images). `GET /api/v1/workspaces/{workspace}/agents/{agent}/avatar/{image_id}` requires current `agent.read` authority and serves only the currently referenced image with private, non-storing cache policy. Agent collections and detail reads expose the same URL. Duplication starts without an avatar; image ownership remains local to one Agent.
+
+Image content lives at `organizations/{organization_id}/workspaces/{workspace_id}/agents/{agent_id}/avatar/{image_id}/content.webp`. Upload processing and object I/O happen outside relational transactions. Publication rechecks authorization, mutable state, and ETag before referencing the object under the shared object-publication fence. The current image remains retained, including for archived Agents; replaced, removed, and failed-publication images follow canonical orphan collection.
 
 ## AgentConfig
 
@@ -92,14 +102,8 @@ class EffectiveAgentModel:
     characteristics: HarnessModelCharacteristics
 
 
-class ConnectorConnectionToolSelection:
-    connector_connection_id: ConnectorConnectionId
-    tools: tuple[str, ...] | None = None
-    defer_loading: bool = False
-
-
-class MCPConnectionToolSelection:
-    mcp_connection_id: MCPConnectionId
+class ConnectionToolSelection:
+    connection_id: ConnectionId
     tools: tuple[str, ...] | None = None
     defer_loading: bool = False
 
@@ -165,12 +169,12 @@ class ProtocolConfig:
 class AgentConfig:
     subagent_mode: Literal["inline", "async"] = "inline"
     model: AgentModel
+    search: SearchSelection | None
     instructions: str
     input_adapter: InputAdapterConfig
     plugins: tuple[PluginSelection, ...]
     skills: tuple[SkillSelection, ...]
-    connector_tools: tuple[ConnectorConnectionToolSelection, ...]
-    mcp_tools: tuple[MCPConnectionToolSelection, ...]
+    connection_tools: tuple[ConnectionToolSelection, ...]
     subagents: dict[str, SubagentSelection]
     client_tools: tuple[ClientToolDefinition, ...]
     output_spec: OutputSpec | None
@@ -182,11 +186,13 @@ class AgentConfig:
 
 The [`PluginSelection` contract](36-installed-harness-plugins.md#configuration-and-recovery) selects an installed factory key, instance name, and bounded configuration. `instructions` is the Agent's stable system prompt; Service- and Harness-generated runtime context is not stored in this field. A [`SkillSelection`](31-skill-management.md#agent-selection-and-run-locking) names one stable Skill key and optionally pins an integer version. The model selects one stable Model key. Primary Environment selection is independent Thread/Run context under [Environment Management](29-environment-management.md#thread-defaults-and-run-selection). `ChildEnvironmentPolicy.template_revision_id` is required exactly for `dedicated`; `shared` uses the spawning Run's Environment and `none` supplies no environment. The selected Model owns its one calling API and default request settings. Agent Revision creation resolves and retains stable Model and Skill identities but does not freeze mutable Model configuration or an unpinned Skill's current Revision; every Run resolves those selections under their owning contracts. Subagent map keys are stable local names within the Agent.
 
-`connector_tools` and `mcp_tools` are ordered lists keyed semantically by their managed connection IDs, with no caller-defined aliases. Duplicate connection IDs within either category are invalid. Omitted or null `tools` selects all currently available authorized source tools; an empty list selects none; explicit names select only those source-native tools. Duplicate tool names are invalid. `defer_loading` defaults to false and uses the [Harness loading contract](40-connectivity/04-agent-facing-tools.md#deferred-loading). These fields control one Agent or Run selection rather than the connection resource itself.
+`search` selects one first-party search account and bounded parameters under [Search Provider Management](41-search-provider-management.md#agent-selection). Absence or null disables this feature. The selection is Agent Revision content and is retained in each accepted graph node; the Provider owns live credentials and availability. Service composes the search capability directly, without requiring a Connector or installed-plugin selection.
+
+`connection_tools` is an ordered list keyed semantically by managed connection IDs, with no caller-defined aliases. Duplicate connection IDs within the list are invalid. Omitted or null `tools` selects all currently available authorized source tools; an empty list selects none; explicit names select only those source-native tools. Duplicate tool names are invalid. `defer_loading` defaults to false and uses the [Harness loading contract](40-connectivity/04-agent-facing-tools.md#deferred-loading). These fields control one Agent or Run selection rather than the connection resource itself.
 
 `AgentModel.settings` defaults to an empty object and stores only Agent-authored overrides. Its JSON representation is validated against the selected Model's serializable native settings contract, including provider-specific fields, under [Model Management](30-model-management.md#parameter-schemas-and-validation). The same owner defines parameter descriptions, reserved fields, and [settings precedence](30-model-management.md#settings-precedence). `ResolvedAgentModel` retains these overrides, while `EffectiveAgentModel.settings` contains the final merged values used for execution.
 
-`OutputSpec` permits either one top-level schema with optional local resources or at least two mutually exclusive variants; it never permits nested variants. `RetryConfig` contains bounded non-negative tool-argument and structured-output correction budgets, not provider transport, Worker recovery, whole-Run, or business-workflow retries.
+`OutputSpec` permits either one top-level schema with optional local resources or at least two mutually exclusive variants; it never permits nested variants. Reconstruction resolves the supplied resources and uses the Harness shared structured-output validator for each schema or variant. Completed model and plugin outputs must satisfy Draft 2020-12 instance constraints; invalid model output consumes the structured-output correction budget. `RetryConfig` contains bounded non-negative tool-argument and structured-output correction budgets, not provider transport, Worker recovery, whole-Run, or business-workflow retries.
 
 The config contains no Python class, import target, callable, native Model, Toolset, Capability instance, Plugin object, client, credential value, plaintext Secret, Environment adapter, attachment session, entered facade, arbitrary artifact URL, or other process-local value. Revision creation validates authored structure and resolves managed references. Installed-plugin business configuration is validated by the executing Worker.
 
@@ -205,14 +211,14 @@ class RunCapabilityOverlay:
     exclude: tuple[CapabilityKey, ...] = ()
 ```
 
-`ManagedCapabilitySelection` is a tagged union owned by the corresponding managed Skill, MCPConnection, or ConnectorConnection tool contract. ConnectorConnection and MCPConnection entries reuse the tool-selection types above, including `tools` and `defer_loading`. `CapabilityKey` is derived from capability kind and managed source identity, not a caller-defined connection alias. Every selection retains its managed-resource references and compatibility evidence required by its owning contract; external tool schemas are discovered at execution. The overlay contains no Python object, import target, arbitrary local function tool, Plugin, credential, endpoint, or remote schema. Host-injected runtime capabilities are composed separately under their owning execution-context contract; this overlay cannot create or replace them.
+`ManagedCapabilitySelection` is a tagged union owned by the corresponding managed Skill, Connection, or Connection tool contract. Connection entries reuse the tool-selection types above, including `tools` and `defer_loading`. `CapabilityKey` is derived from capability kind and managed source identity, not a caller-defined connection alias. Every selection retains its managed-resource references and compatibility evidence required by its owning contract; external tool schemas are discovered at execution. The overlay contains no Python object, import target, arbitrary local function tool, Plugin, credential, endpoint, or remote schema. Host-injected runtime capabilities are composed separately under their owning execution-context contract; this overlay cannot create or replace them.
 
 ```text
 candidate = (overridden Agent selections when inherit_agent else empty) + include - exclude
 effective = candidate intersect current authorization and deployment policy
 ```
 
-`include` can select an authorized managed capability absent from the Agent defaults. `exclude` removes one exact selectable key and cannot remove mandatory Harness safety, Identity, policy, usage, output, or Environment behavior. `inherit_agent=false` replaces only the selectable managed capability surface; it does not replace the Agent, model, instructions, output contract, Plugins, subagents, or security ceiling. Duplicate keys, conflicting selections, unknown exclusions, unavailable compatibility evidence, and unauthorized additions fail Run acceptance.
+`include` can select an authorized managed capability absent from the Agent defaults. `exclude` removes one exact selectable key and cannot remove mandatory Harness safety, Identity, policy, usage, output, or Environment behavior. `inherit_agent=false` replaces only the selectable managed capability surface; it does not replace the Agent, model, search selection, instructions, output contract, Plugins, subagents, or security ceiling. Duplicate keys, conflicting selections, unknown exclusions, unavailable compatibility evidence, and unauthorized additions fail Run acceptance.
 
 The accepted Run retains the complete effective selections and the revision locks required by each capability owner. Connection selections retain source identity, tool scope, and deferred-loading policy; [external tool discovery](40-connectivity/04-agent-facing-tools.md#discovery-and-recovery) supplies current schemas without a durable tool snapshot. Replacement RunAttempts preserve those selections and locks while revalidating authority and discovering current external tools. Model input and tool output cannot create or modify an overlay.
 
@@ -253,11 +259,11 @@ class RetryOverride:
 
 class AgentRunOverride:
     model: ModelOverride | None
+    search: SearchSelection | None  # May be absent.
     instructions: str | None
     plugins: tuple[PluginSelection, ...] | None
     skills: tuple[SkillSelection, ...] | None
-    connector_tools: tuple[ConnectorConnectionToolSelection, ...]  # May be absent.
-    mcp_tools: tuple[MCPConnectionToolSelection, ...]  # May be absent.
+    connection_tools: tuple[ConnectionToolSelection, ...]  # May be absent.
     subagents: dict[str, SubagentOverride | None] | None
     client_tools: tuple[ClientToolDefinition, ...] | None
     output_spec: OutputSpec | None
@@ -268,7 +274,9 @@ The wire schema preserves absent fields separately from explicit nulls. Top-leve
 
 Within `model`, an absent `model_key` inherits the Agent selection; a supplied key selects another managed Model and cannot be null. There is no API override independent of that Model. `settings` follows the Model Management precedence contract, including explicit clearing of Agent overrides and validation against the final selected Model.
 
-`connector_tools` and `mcp_tools` each replace their complete category when present. Absence inherits, `[]` clears, and null for the whole category is invalid. Entries use the same complete selection types as Agent configuration; there is no per-alias patch or mapped deletion. Overrides can select existing authorized connections, tool scopes, and deferred loading, but cannot supply endpoints, credentials, external integration services, arbitrary headers, or native Ingress targets.
+`connection_tools` replaces the complete selection when present. Absence inherits, `[]` clears, and null for the whole category is invalid. Entries use the same complete selection types as Agent configuration; there is no per-alias patch or mapped deletion. Overrides can select existing authorized connections, tool scopes, and deferred loading, but cannot supply endpoints, credentials, external integration services, arbitrary headers, or native Ingress targets.
+
+`search` absence inherits the selected Revision, null disables first-party search, and an object replaces the complete selection. Its resource validation, override authorization, and per-node execution semantics belong to [Search Provider Management](41-search-provider-management.md#agent-selection).
 
 `subagents` remains a name-keyed patch: an absent map inherits, explicit null clears all entries, an empty object changes nothing, and a mapped null deletes one entry. Its entries select managed Agents only.
 
@@ -282,12 +290,12 @@ class EffectiveAgentConfig:
     child_configs: dict[AgentRevisionId, ChildAgentExecution]
     schema_version: str
     model: EffectiveAgentModel
+    search: SearchSelection | None
     instructions: str
     input_adapter: InputAdapterConfig
     plugins: tuple[PluginSelection, ...]
     skills: tuple[SkillRevisionLock, ...]
-    connector_tools: tuple[ConnectorConnectionToolSelection, ...]
-    mcp_tools: tuple[MCPConnectionToolSelection, ...]
+    connection_tools: tuple[ConnectionToolSelection, ...]
     subagents: tuple[ResolvedSubagentEdge, ...]
     client_tools: tuple[ClientToolDefinition, ...]
     output_spec: OutputSpec | None
@@ -300,7 +308,7 @@ class EffectiveAgentConfig:
 
 `subagent_mode` selects one standard Harness Tool surface for the accepted Run. The default `inline` executes the entire descendant graph in the parent Attempt and borrows its Environment facade. `async` delegates each direct child as an independent durable Run; when that child is claimed, its own accepted `subagent_mode` governs its descendants. A single Harness invocation does not mix the inline and asynchronous Tool surfaces. This field is selected by the Agent Revision, not a Run override.
 
-Each `child_configs` entry contains the child `agent_id`, `revision_content_digest`, complete recursive `effective_config`, and frozen `connector_connection_selections` and `mcp_connection_selections`. Its key is the exact child Revision ID from a resolved edge. The parent acceptance prepares the complete finite graph and revalidates all prepared evidence in the final transaction. Each node freezes its own Model execution, merged settings, Skill locks, authored Plugin configuration, and connection selections. The root digest covers these descendant snapshots. A child never substitutes the parent's Model or selectable capabilities. Asynchronous child admission copies the accepted child snapshot and rejects a changed config or connection scope; a retained child continuation preserves its own source snapshot.
+Each `child_configs` entry contains the child `agent_id`, `revision_content_digest`, complete recursive `effective_config`, and frozen `connection_selections`. Its key is the exact child Revision ID from a resolved edge. The parent acceptance prepares the complete finite graph and revalidates all prepared evidence in the final transaction. Each node freezes its own Model execution, merged settings, Skill locks, authored Plugin configuration, and connection selections. The root digest covers these descendant snapshots. A child never substitutes the parent's Model or selectable capabilities. Asynchronous child admission copies the accepted child snapshot and rejects a changed config or connection scope; a retained child continuation preserves its own source snapshot.
 
 Acceptance merges and resolves the selected Revision and request exactly once, then persists a complete immutable `EffectiveAgentConfig` plus its digest. Its Skill entries are the exact five-field [`SkillRevisionLock`](31-skill-management.md#agent-selection-and-run-locking) values selected at that acceptance boundary. Retry, waiting Continue, deferred-action completion, and other successor operations preserve the source snapshot when their owning contract requires it; Worker replacement of the same accepted Run always reuses it. No execution attempt re-reads an Agent or Skill head or reapplies merge rules. Input, Environment selection, attachments, timeout, usage budget, metadata, priority, idempotency, and scheduling mode remain Run fields rather than Agent config overrides.
 
@@ -327,8 +335,7 @@ class AgentRevision:
     config_digest: str
     resolved_model: ResolvedAgentModel
     resolved_skills: tuple[ResolvedSkillBinding, ...]
-    connector_tools: tuple[ConnectorConnectionToolSelection, ...]
-    mcp_tools: tuple[MCPConnectionToolSelection, ...]
+    connection_tools: tuple[ConnectionToolSelection, ...]
     resolved_subagents: tuple[ResolvedSubagentEdge, ...]
     content_digest: str
     source_revision_id: AgentRevisionId | None
@@ -338,7 +345,7 @@ class AgentRevision:
 
 Revision rows are append-only. `config_digest` identifies the canonical complete authoring config; `content_digest` also covers every resolved snapshot, stable managed-resource binding and selection policy, and subagent Revision. For an unpinned Skill, it covers `skill_id`, `skill_key`, and the absence of a version, not whichever current SkillRevision a later Run resolves. A Revision has no mutable lifecycle state and cannot be patched, archived independently, deleted, overwritten, or repointed after creation.
 
-Plugin selection is retained only in `config.plugins`; Worker-owned normalization follows the [plugin contract](36-installed-harness-plugins.md#configuration-and-recovery). The resolved Model field retains only stable Model identity, Agent-authored setting overrides, and characteristics; Run acceptance resolves the latest Model execution selection and effective settings under Model Management. Resolved Skill bindings freeze stable `skill_id` identity and pinned-or-current policy; only a pinned binding identifies versioned content before Run acceptance. The other resolved fields freeze ConnectorConnection and MCPConnection selections, and the complete child Revision graph with exact dedicated Environment template revisions. Secret values, current authorization, current Model and Provider configuration/lifecycle, an unpinned Skill's current Revision, live ConnectorProvider availability, and remote MCP catalogs remain fresh facts rather than immutable Agent Revision content.
+Plugin selection is retained only in `config.plugins`; Worker-owned normalization follows the [plugin contract](36-installed-harness-plugins.md#configuration-and-recovery). The resolved Model field retains only stable Model identity, Agent-authored setting overrides, and characteristics; Run acceptance resolves the latest Model execution selection and effective settings under Model Management. Resolved Skill bindings freeze stable `skill_id` identity and pinned-or-current policy; only a pinned binding identifies versioned content before Run acceptance. The other resolved fields freeze Connection selections, and the complete child Revision graph with exact dedicated Environment template revisions. Secret values, current authorization, current Model and Provider configuration/lifecycle, an unpinned Skill's current Revision, live ConnectorProvider availability, and remote MCP catalogs remain fresh facts rather than immutable Agent Revision content.
 
 ## Creation, Revision, and Restore
 
@@ -348,7 +355,7 @@ Create Revision accepts `expected_version` and one complete replacement `config`
 
 1. authorize the operation and every referenced resource;
 2. verify the expected Agent version;
-3. resolve exact Model identity, stable Skill bindings, ConnectorConnection, and subagent dependencies, including dedicated child Environment template revisions;
+3. resolve exact Model identity, stable Skill bindings, Connection, and subagent dependencies, including dedicated child Environment template revisions;
 4. verify structural schemas and the finite acyclic subagent graph;
 5. canonicalize the frozen content and compute its digests;
 6. return the current Agent and Revision unchanged for a semantic no-op; or
@@ -407,22 +414,22 @@ For each outbound model request, the Worker rechecks the current Model and Model
 
 Creator and updater attribution use IAM `ActorRef`: human and Service Account Principals retain their actual kind, while builtin reconciliation records `system` with its stable system actor ID. System attribution never grants authentication or invocation authority.
 
-The `agents` table stores stable identity, organization ownership, name, description, `version`, `current_revision_id`, lifecycle axes, duplication provenance, actors, and timestamps. `(workspace_id, normalized_name)` is unique.
+The `agents` table stores stable identity, organization ownership, name, key, description, `version`, `current_revision_id`, lifecycle axes, duplication provenance, actors, and timestamps. `(workspace_id, key)` is unique; display names may repeat. Agent keys follow [Readable Resource Keys](../data-conventions.md#readable-resource-keys).
 
 The `agent_revisions` table stores complete config, frozen resolution, digests, provenance, actor, and creation time. `(agent_id, version)` is unique. The Agent head and current Revision advance atomically. Runs and downstream records store `agent_revision_id`, not only an Agent ID or version.
 
 ## Agent Management API Contract
 
-- `POST /api/v1/workspaces/{workspace_id}/agents`
-- `GET /api/v1/workspaces/{workspace_id}/agents`
-- `GET /api/v1/agents/{agent_id}`
-- `PATCH /api/v1/agents/{agent_id}`
-- `POST /api/v1/agents/{agent_id}/revisions`
-- `GET /api/v1/agents/{agent_id}/revisions`
+- `POST /api/v1/workspaces/{workspace}/agents`
+- `GET /api/v1/workspaces/{workspace}/agents`
+- `GET /api/v1/workspaces/{workspace}/agents/{agent}`
+- `PATCH /api/v1/workspaces/{workspace}/agents/{agent}`
+- `POST /api/v1/workspaces/{workspace}/agents/{agent}/revisions`
+- `GET /api/v1/workspaces/{workspace}/agents/{agent}/revisions`
 - `GET /api/v1/agent-revisions/{revision_id}`
-- `POST /api/v1/agents/{agent_id}/revisions/{revision_id}/restore`
-- `POST /api/v1/agents/{agent_id}/duplicate`
-- `POST /api/v1/agents/{agent_id}/{enable|disable|archive|unarchive}`
+- `POST /api/v1/workspaces/{workspace}/agents/{agent}/revisions/{revision_id}/restore`
+- `POST /api/v1/workspaces/{workspace}/agents/{agent}/duplicate`
+- `POST /api/v1/workspaces/{workspace}/agents/{agent}/{enable|disable|archive|unarchive}`
 
 Create, Create Revision, Restore, Duplicate, and lifecycle commands require `Idempotency-Key`. Versioned Revision creation uses `expected_version`; metadata and lifecycle mutations use strong `If-Match`. Agent and Revision collections use opaque cursor pagination, and Revision List defaults to descending `version` with a stable ID tie-breaker.
 

@@ -5,12 +5,22 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { Schema } from "../../shared/api";
 import { ConnectionSetup } from "./setup";
-import { clearAuthorization, readAuthorization } from "./authorization-context";
-
-const http = vi.hoisted(() => ({ POST: vi.fn(), GET: vi.fn() }));
-vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
+const mocks = vi.hoisted(() => ({
+  POST: vi.fn(),
+  GET: vi.fn(),
+  start: vi.fn(),
+}));
+vi.mock("../../auth/context", () => ({
+  useClient: () => ({ http: { POST: mocks.POST, GET: mocks.GET } }),
+}));
+vi.mock("../connections/authorization-context", () => ({
+  startBrowserAuthorization: mocks.start,
+}));
 vi.mock("../../layout/workspace", () => ({
-  useWorkspace: () => ({ workspace: { id: "ws_test" } }),
+  useWorkspace: () => ({
+    basePath: "/workspace/design",
+    workspace: { id: "ws_test", name: "Design" },
+  }),
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
@@ -18,21 +28,28 @@ vi.mock("react-i18next", () => ({
     i18n: { resolvedLanguage: "en" },
   }),
 }));
-
 afterEach(() => {
   cleanup();
-  clearAuthorization();
   vi.resetAllMocks();
 });
-
-const connection = {
-  id: "cconn_test",
-  connector_provider_id: "cnr_test",
-  connector_key: "github",
+const connection: Schema["Connection"] = {
+  id: "conn_test",
+  organization_id: "org_test",
+  workspace_id: "ws_test",
+  source: {
+    kind: "connector",
+    provider_id: "cnr_test",
+    connector_key: "github",
+  },
   name: "GitHub",
   status: "pending",
   version: 1,
-} as Schema["ConnectorConnection"];
+  authorization_generation: 1,
+  credential_configured: false,
+  created_by: { principal_type: "user", principal_id: "usr_test" },
+  created_at: "2026-09-12T00:00:00Z",
+  updated_at: "2026-09-12T00:00:00Z",
+};
 const connector = {
   key: "github",
   connector_provider_id: "cnr_test",
@@ -47,8 +64,13 @@ const connector = {
     required: ["auth_config_id", "toolkit_version"],
   },
 } as Schema["Connector"];
-
-function mount(definition = connector) {
+function mount(resource?: Schema["Connection"]) {
+  mocks.GET.mockImplementation(async (path: string) => ({
+    data: path.includes("/connectors/{connector_key}")
+      ? connector
+      : (resource ?? connection),
+    response: new Response(),
+  }));
   render(
     <QueryClientProvider
       client={
@@ -57,90 +79,58 @@ function mount(definition = connector) {
         })
       }
     >
-      <ConnectionSetup connection={connection} connector={definition} />
+      <ConnectionSetup connection={resource} connector={connector} />
     </QueryClientProvider>,
   );
 }
-
-it("submits fixed schema values and binds same-tab authorization to the returned attempt", async () => {
-  const expiry = new Date(Date.now() + 60_000).toISOString();
-  http.POST.mockResolvedValue({
-    data: {
-      attempt_id: "csa_test",
-      requires_browser_callback: true,
-      redirect_url: "https://connect.composio.dev/link/test",
-      expires_at: expiry,
-      connection,
-    },
-    response: new Response(),
-  });
-  http.GET.mockResolvedValue({ data: connection, response: new Response() });
-  mount();
+it("submits fixed setup options through the common browser authorization", async () => {
+  mount(connection);
   expect(screen.queryByRole("textbox", { name: "toolkit_version" })).toBeNull();
   await userEvent.click(
-    screen.getByRole("button", { name: "Start authorization" }),
+    await screen.findByRole("button", { name: "Authorize connection" }),
   );
-  const link = await screen.findByRole("link", {
-    name: "Continue authorization",
-  });
-  expect(link.getAttribute("target")).toBe("_self");
-  const context = readAuthorization();
-  expect(context?.attempt_id).toBe("csa_test");
   await waitFor(() =>
-    expect(http.POST).toHaveBeenCalledWith(
-      "/api/v1/connector-connections/{connection_id}/setup",
-      expect.objectContaining({
-        body: expect.objectContaining({
-          browser_nonce: context?.browser_nonce,
-          setup: { auth_config_id: "ac_test", toolkit_version: "20260903_01" },
-        }),
-      }),
-    ),
-  );
-});
-
-it("explains missing authentication configuration without offering an invalid form", () => {
-  mount({
-    ...connector,
-    authentication_methods: [],
-    setup_schema: { not: {} },
-  });
-  expect(
-    screen.getByText(
-      "Configure an OAuth2 auth config in the provider before connecting.",
-    ),
-  ).toBeTruthy();
-  expect(
-    screen.queryByRole("button", { name: "Start authorization" }),
-  ).toBeNull();
-  expect(http.POST).not.toHaveBeenCalled();
-});
-
-it("restarts a lost link only on an explicit click with fresh browser proof", async () => {
-  const expiry = new Date(Date.now() + 60_000).toISOString();
-  http.POST.mockResolvedValue({
-    data: {
-      attempt_id: "csa_lost",
-      requires_browser_callback: true,
-      redirect_url: null,
-      expires_at: expiry,
+    expect(mocks.start).toHaveBeenCalledWith(
+      expect.anything(),
       connection,
-    },
-    response: new Response(),
-  });
-  http.GET.mockResolvedValue({ data: connection, response: new Response() });
-  mount();
-  await userEvent.click(
-    screen.getByRole("button", { name: "Start authorization" }),
+      "/workspace/design",
+      { auth_config_id: "ac_test", toolkit_version: "20260903_01" },
+    ),
   );
-  const restart = await screen.findByRole("button", {
-    name: "Restart authorization",
-  });
-  const original = readAuthorization();
-  expect(http.POST).toHaveBeenCalledTimes(1);
-  await userEvent.click(restart);
-  await waitFor(() => expect(http.POST).toHaveBeenCalledTimes(2));
-  const [path, request] = http.POST.mock.calls[1];
-  expect(path).toBe("/api/v1/connector-connections/{connection_id}/reconnect");
-  expect(request.body.browser_nonce).not.toBe(original?.browser_nonce);
+});
+it("reauthorizes a ready account under its stable connection ID", async () => {
+  const ready = { ...connection, status: "ready" as const, version: 7 };
+  mount(ready);
+  await userEvent.click(
+    await screen.findByRole("button", { name: "Authorize connection" }),
+  );
+  await waitFor(() =>
+    expect(mocks.start).toHaveBeenCalledWith(
+      expect.anything(),
+      ready,
+      expect.anything(),
+      expect.anything(),
+    ),
+  );
+  expect(mocks.POST).not.toHaveBeenCalled();
+});
+it("retains a created connection when authorization fails and starts again with its current version", async () => {
+  mocks.POST.mockResolvedValue({ data: connection, response: new Response() });
+  mocks.start
+    .mockRejectedValueOnce(new Error("Response lost"))
+    .mockResolvedValueOnce({ id: "auth_retry" });
+  mount();
+  await userEvent.click(await screen.findByRole("button", { name: "Connect" }));
+  await screen.findByText("Response lost");
+  await userEvent.click(
+    screen.getByRole("button", { name: "Authorize connection" }),
+  );
+  await waitFor(() => expect(mocks.start).toHaveBeenCalledTimes(2));
+  expect(mocks.POST).toHaveBeenCalledExactlyOnceWith(
+    "/api/v1/workspaces/{workspace}/connections",
+    expect.objectContaining({
+      body: { name: "GitHub", source: connection.source },
+    }),
+  );
+  expect(mocks.start.mock.calls[1][1].id).toBe(connection.id);
 });

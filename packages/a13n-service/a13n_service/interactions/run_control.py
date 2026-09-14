@@ -25,6 +25,7 @@ from pydantic_ai.tools import DeferredToolRequests
 from pydantic_graph import End
 
 from a13n_service.agents.domain import EffectiveAgentConfig, PreparedAgentPlugins
+from a13n_service.observability import observe_phase, observe_phase_result
 from a13n_service.storage import ObjectStoreUnavailable
 
 from .attempts import (
@@ -352,19 +353,20 @@ class RunAttemptControl:
                 await self._fence()
                 raise
 
-    async def before_nested_model_request(self) -> None:
+    async def before_nested_model_request(self, *, agent_id: str | None = None) -> None:
         """Fence and charge nested provider I/O without exporting its temporary history."""
 
         async with self._gate.lock:
             try:
-                await self._increment_model_request()
+                await self._increment_model_request(agent_id=agent_id)
             except AttemptAuthorityError:
                 await self._fence()
                 raise
 
-    async def _increment_model_request(self) -> None:
+    async def _increment_model_request(self, *, agent_id: str | None = None) -> None:
         async with self._authority_lock:
             self._require_open()
+            await self._context.authorization.admit_model_request(agent_id=agent_id)
             await self._execution.increment_model_request(self._context)
 
     async def after_model_response(
@@ -444,6 +446,7 @@ class RunAttemptControl:
                     self._require_open()
                     decision = await self._execution.commit_preparation_success(self._context)
                     if isinstance(decision, AttemptPreparationRejected):
+                        self._context.lease.invalidate()
                         self._gate.phase = _CoordinatorPhase.terminal
                     else:
                         self._gate.phase = _CoordinatorPhase.active
@@ -458,7 +461,12 @@ class RunAttemptControl:
         async with self._authority_lock:
             if self._gate.phase in {_CoordinatorPhase.terminal, _CoordinatorPhase.yielded, _CoordinatorPhase.fenced}:
                 return
-            await self._execution.heartbeat(self._context, lease_duration=self._context.lease_duration)
+            try:
+                receipt = await self._execution.heartbeat(self._context, lease_duration=self._context.lease_duration)
+            except BaseException:
+                self._context.lease.invalidate()
+                raise
+            self._context.lease.confirm_renewal(receipt.lease_expires_at)
 
     async def reconcile(self) -> None:
         """Reread durable control facts and offer active input only after stream entry."""
@@ -521,6 +529,7 @@ class RunAttemptControl:
                         if self._gate.phase is not _CoordinatorPhase.handoff_ready:
                             raise AttemptAuthorityError("Attempt lost authority before yielding")
                         mutation = await self._execution.yield_attempt(self._context, reason)
+                        self._context.lease.invalidate()
                         self._gate.phase = _CoordinatorPhase.yielded
                         return mutation
                 except AttemptAuthorityError:
@@ -532,10 +541,12 @@ class RunAttemptControl:
                     async with self._authority_lock:
                         self._require_open()
                         receipt = await committer.reconcile_cancelled(self._context)
+                        self._context.lease.invalidate()
                         self._gate.phase = _CoordinatorPhase.terminal
                     _require_terminal_disposition(receipt, AttemptDisposition.cancelled)
                 else:
                     await self._validate_authority()
+                    self._context.authorization.raise_if_failed()
                     if result.status == "failed":
                         failure = result.failure
                         if failure is None:  # pragma: no cover - enforced by HarnessRunResult
@@ -543,6 +554,7 @@ class RunAttemptControl:
                         async with self._authority_lock:
                             self._require_open()
                             receipt = await committer.commit_failure(self._context, failure)
+                            self._context.lease.invalidate()
                             self._gate.phase = _CoordinatorPhase.terminal
                         _require_terminal_disposition(
                             receipt,
@@ -554,6 +566,7 @@ class RunAttemptControl:
                         await self._publish_terminal(projection)
                         await self._confirm_inbox_receipts()
                         receipt = await self._commit_outcome(committer)
+                self._context.lease.invalidate()
                 self._gate.phase = _CoordinatorPhase.terminal
                 return receipt
             except AttemptAuthorityError:
@@ -575,6 +588,7 @@ class RunAttemptControl:
             self._require_open()
             receipt = await committer.commit_verified_state_outcome(self._context, verified)
             if receipt.disposition is not AttemptDisposition.continuing or self._gate.identity is not None:
+                self._context.lease.invalidate()
                 self._gate.phase = _CoordinatorPhase.terminal
             return receipt
 
@@ -589,7 +603,14 @@ class RunAttemptControl:
                     entry = entries[0]
                     self._gate.offered[entry.receipt.inbox_entry_id] = entry
                     return entry.tagged_input(self._context.run_id)
-                receipt = await self._commit_outcome(committer)
+                with observe_phase("a13n.service.persist", operation="continuation_decision") as span:
+                    receipt = await self._commit_outcome(committer)
+                    observe_phase_result(
+                        span,
+                        disposition=receipt.disposition.value,
+                        run_version=receipt.run_version,
+                        attempt_version=receipt.attempt_version,
+                    )
                 if receipt.disposition is not AttemptDisposition.continuing:
                     self._pre_execution_outcome = receipt
                     break
@@ -610,6 +631,7 @@ class RunAttemptControl:
             async with self._authority_lock:
                 self._require_open()
                 receipt = await committer.commit_failure(self._context, failure)
+                self._context.lease.invalidate()
                 self._gate.phase = _CoordinatorPhase.terminal
                 return receipt
 
@@ -629,6 +651,7 @@ class RunAttemptControl:
         """Prevent later control work during executor teardown."""
 
         async with self._authority_lock:
+            self._context.lease.invalidate()
             if self._gate.phase in {_CoordinatorPhase.preparing, _CoordinatorPhase.active}:
                 await self._fence()
 
@@ -864,10 +887,12 @@ class RunAttemptControl:
         await self._require_driver().cancel()
         async with self._authority_lock:
             self._require_open()
+            self._context.lease.invalidate()
             self._gate.phase = _CoordinatorPhase.handoff_ready
         return True
 
     async def _fence(self) -> None:
+        self._context.lease.invalidate()
         self._gate.phase = _CoordinatorPhase.fenced
         cancel_executor = self._cancel_executor
         if cancel_executor is None:

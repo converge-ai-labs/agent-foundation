@@ -1,6 +1,9 @@
-import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { ArrowLeftIcon, ArrowRightIcon } from "@phosphor-icons/react";
 import { Button } from "a13n-ui";
+
+import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -25,7 +28,7 @@ export function RunEvents({ runId }: { runId: string }) {
       <h3>{t("Lifecycle events")}</h3>
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
       {query.isPending ? (
-        <Loading />
+        <Loading variant="code" rows={6} />
       ) : (
         query.data && (
           <>
@@ -38,13 +41,17 @@ export function RunEvents({ runId }: { runId: string }) {
             <div className={styles.inline}>
               <Button
                 size="sm"
+                variant="outline"
                 disabled={pages.length === 1}
                 onClick={() => setPages((previous) => previous.slice(0, -1))}
+                type="button"
               >
+                <ArrowLeftIcon aria-hidden="true" />
                 {t("Previous")}
               </Button>
               <Button
                 size="sm"
+                variant="outline"
                 disabled={
                   query.data.next_resource_seq >=
                   query.data.high_watermark_resource_seq
@@ -55,8 +62,10 @@ export function RunEvents({ runId }: { runId: string }) {
                     query.data!.next_resource_seq,
                   ])
                 }
+                type="button"
               >
                 {t("Next")}
+                <ArrowRightIcon aria-hidden="true" />
               </Button>
             </div>
           </>

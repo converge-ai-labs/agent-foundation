@@ -1,40 +1,16 @@
+import { Button, FormField, Input } from "a13n-ui";
+
+import { ArrowLeftIcon, CaretDownIcon } from "@phosphor-icons/react";
 import type { ReactNode } from "react";
+import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import {
-  ArrowLeft,
-  User,
-  Building2,
-  Layers,
-  Shield,
-  Users,
-  KeyRound,
-  Mail,
-  Activity,
-  Monitor,
-  Settings,
-  Boxes,
-  Cable,
-} from "lucide-react";
+import { PageActionsTarget } from "../../shared/page-actions";
+
 import { useTranslation } from "react-i18next";
+import { useSettingsNavigation, type SettingsScope } from "./navigation";
+import { providerCategory } from "../providers/categories";
 import styles from "./settings.module.css";
 
-const icons = {
-  profile: User,
-  general: Settings,
-  security: Shield,
-  members: Users,
-  invitations: Mail,
-  "personal-keys": KeyRound,
-  "member-keys": KeyRound,
-  accounts: Shield,
-  audit: Activity,
-  activity: Activity,
-  sessions: Monitor,
-  models: Boxes,
-  environments: Monitor,
-  connectors: Cable,
-  workspaces: Layers,
-};
 const descriptions: Record<string, string> = {
   preferences: "Choose how Console looks and feels.",
   profile: "Manage your name and image.",
@@ -48,94 +24,145 @@ const descriptions: Record<string, string> = {
   activity: "Review recent security activity on your account.",
   sessions: "Manage browsers signed in to your account.",
   models: "Models available across your organization.",
-  environments: "Shared providers and templates for agent execution.",
-  connectors: "Providers available to connections across your organization.",
+  environments: "Shared templates for agent execution.",
   workspaces: "Separate resources, members, and work into workspaces.",
 };
 export function SettingsLayout({
   scope,
-  name,
-  items,
+  content,
 }: {
-  scope: "personal" | "workspace" | "organization";
-  name: string;
-  items: { value: string; label: string; content: ReactNode }[];
+  scope: SettingsScope;
+  content: Record<string, ReactNode>;
 }) {
   const { t } = useTranslation();
   const [search] = useSearchParams();
+  const [actionsTarget, setActionsTarget] = useState<HTMLDivElement | null>(
+    null,
+  );
+  const [navigationOpen, setNavigationOpen] = useState(false);
+  const [filter, setFilter] = useState("");
+  const groups = useSettingsNavigation();
+  const current = groups.find((group) => group.scope === scope)!;
   const selected =
-    items.find((item) => item.value === search.get("section")) ?? items[0];
-  const Icon =
-    scope === "personal" ? User : scope === "organization" ? Building2 : Layers;
+    current.sections.find(
+      (item) => item.value === search.get("section") && item.value in content,
+    ) ?? current.sections.find((item) => item.value in content)!;
+  const isForm = ["profile", "preferences", "security"].includes(
+    selected.value,
+  );
+  const visible = groups
+    .map((group) => ({
+      ...group,
+      sections: group.sections.filter((item) =>
+        `${t(group.label)} ${group.name ?? ""} ${t(item.label)}`
+          .toLocaleLowerCase()
+          .includes(filter.toLocaleLowerCase()),
+      ),
+    }))
+    .filter((group) => group.sections.length);
   return (
-    <div className={styles.layout}>
-      <aside className={styles.outline}>
-        <Link className={styles.back} to="/">
-          <ArrowLeft size={14} />
-          {t("Back to workspace")}
-        </Link>
-        <div className={styles.identity}>
-          <span>
-            <Icon size={18} />
-          </span>
-          <div>
-            <strong>{name}</strong>
-            <small>
-              {t(
-                scope === "personal"
-                  ? "Personal settings"
-                  : scope === "workspace"
-                    ? "Workspace settings"
-                    : "Organization settings",
-              )}
-            </small>
+    <PageActionsTarget value={actionsTarget}>
+      <div className={styles.layout}>
+        <div className={styles.mobileNavigation}>
+          <Button
+            variant="ghost"
+            aria-expanded={navigationOpen}
+            aria-controls="settings-outline"
+            onClick={() => setNavigationOpen(!navigationOpen)}
+            type="button"
+          >
+            {t("Settings")}
+            <CaretDownIcon size={14} />
+          </Button>
+          <span>{t(selected.label)}</span>
+        </div>
+        <aside
+          id="settings-outline"
+          className={`${styles.outline} a13n-scrollbar`}
+          data-open={navigationOpen}
+        >
+          <Link className={styles.back} to="/">
+            <ArrowLeftIcon size={14} />
+            {t("Back to workspace")}
+          </Link>
+          <div className={styles.settingsSearch}>
+            <FormField
+              className="min-w-0 w-full"
+              label={t("Search settings")}
+              hideLabel={true}
+            >
+              <Input
+                placeholder={t("Search settings…")}
+                value={filter}
+                onChange={(event) => setFilter(event.target.value)}
+                type="search"
+              />
+            </FormField>
+          </div>
+          <nav aria-label={t("Settings navigation")}>
+            {visible.map((group) => (
+              <section
+                className={styles.scopeGroup}
+                key={group.scope}
+                data-scope={group.scope}
+              >
+                <h2 className={styles.scopeLabel}>{t(group.label)}</h2>
+                {group.name && (
+                  <p className={styles.scopeName} title={group.name}>
+                    {group.name}
+                  </p>
+                )}
+                <div className={styles.sectionLinks}>
+                  {group.sections.map((item) => (
+                    <Link
+                      key={item.value}
+                      onClick={() => setNavigationOpen(false)}
+                      to={item.href ?? `${group.path}?section=${item.value}`}
+                      aria-current={
+                        group.scope === scope && item.value === selected.value
+                          ? "page"
+                          : undefined
+                      }
+                    >
+                      <item.icon size={14} />
+                      {t(item.label)}
+                    </Link>
+                  ))}
+                </div>
+              </section>
+            ))}
+            {!visible.length && (
+              <p className={styles.noResults}>{t("No matching settings")}</p>
+            )}
+          </nav>
+        </aside>
+        <div className={styles.surface} data-settings-part="surface">
+          <div
+            className={styles.content}
+            data-settings-part="content"
+            data-content={isForm ? "form" : "collection"}
+            key={`${scope}:${selected.value}`}
+          >
+            <header className={styles.heading} data-settings-part="heading">
+              <div>
+                <h1>{t(selected.label)}</h1>
+                {selected.value !== "profile" && (
+                  <p>
+                    {t(
+                      selected.value === "providers"
+                        ? providerCategory(search.get("category")).description
+                        : (descriptions[selected.value] ??
+                            "Manage settings for this space."),
+                    )}
+                  </p>
+                )}
+              </div>
+              <div className={styles.headingActions} ref={setActionsTarget} />
+            </header>
+            {content[selected.value]}
           </div>
         </div>
-        <nav aria-label={t("Settings navigation")}>
-          {items.map((item) => {
-            const ItemIcon =
-              item.value === "profile" && scope !== "personal"
-                ? Settings
-                : (icons[item.value as keyof typeof icons] ?? Settings);
-            return (
-              <Link
-                key={item.value}
-                to={{
-                  search: (() => {
-                    const next = new URLSearchParams(search);
-                    next.set("section", item.value);
-                    return next.toString();
-                  })(),
-                }}
-                aria-current={item === selected ? "page" : undefined}
-              >
-                <ItemIcon size={15} />
-                {item.label}
-              </Link>
-            );
-          })}
-        </nav>
-      </aside>
-      <div className={styles.content} key={selected.value}>
-        <header className={styles.heading}>
-          <span>
-            {t(
-              scope === "personal"
-                ? "Account"
-                : scope === "workspace"
-                  ? "Workspace"
-                  : "Organization",
-            )}
-          </span>
-          <h1>{selected.label}</h1>
-          <p>
-            {t(
-              descriptions[selected.value] ?? "Manage settings for this space.",
-            )}
-          </p>
-        </header>
-        {selected.content}
       </div>
-    </div>
+    </PageActionsTarget>
   );
 }

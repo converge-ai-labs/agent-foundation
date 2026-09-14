@@ -80,7 +80,13 @@ class BoundAgentSecrets:
         async with short_session(self._runtime._sessions) as database:
             actor = await self._authorize(database, (self._run.agent_id,))
             for binding in self._bindings.values():
-                await require_secret(database, actor=actor, binding=binding, accepting=False)
+                await require_secret(
+                    database,
+                    actor=actor,
+                    binding=binding,
+                    accepting=False,
+                    snapshot=self._current_attempt().authorization.snapshot,
+                )
 
     def capability(self) -> InvocationPolicyCapability:
         return InvocationPolicyCapability(evaluator=self, credential_broker=self)
@@ -114,7 +120,13 @@ class BoundAgentSecrets:
         async with short_session(self._runtime._sessions) as database:
             actor = await self._authorize(database, agent_id)
             snapshot = AgentSecretSnapshot.from_record(
-                await require_secret(database, actor=actor, binding=binding, accepting=False)
+                await require_secret(
+                    database,
+                    actor=actor,
+                    binding=binding,
+                    accepting=False,
+                    snapshot=self._current_attempt().authorization.snapshot,
+                )
             )
         try:
             value = self._runtime._protector.decrypt(**asdict(snapshot))
@@ -162,5 +174,6 @@ class BoundAgentSecrets:
                 workspace_id=self._workspace_id,
                 agent_id=selected,
                 action=WorkspaceAction.agent_invoke,
+                snapshot=self._current_attempt().authorization.snapshot,
             )
         return actor

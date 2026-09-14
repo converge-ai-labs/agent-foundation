@@ -34,6 +34,8 @@ def test_migration_history_clean_upgrade_and_schema_parity(tmp_path: Path) -> No
             "configuration_source",
             "current_configuration",
             "environment_binding",
+            "project_model_preference",
+            "output_comment",
             "resource_index",
             "thread",
             "thread_configuration",
@@ -167,7 +169,7 @@ def test_migration_verification_rejects_an_unknown_database_revision(tmp_path: P
     finally:
         engine.dispose()
 
-    with pytest.raises(DatabaseSchemaError, match="found: unknown"):
+    with pytest.raises(DatabaseSchemaError, match="missing required table"):
         DatabaseMigrator(path).verify_current()
 
 
@@ -256,5 +258,55 @@ def test_mcp_bundle_index_upgrade_preserves_rows_and_rejects_lossy_downgrade(tmp
         migrator.verify_current()
         with engine.connect() as connection:
             assert connection.execute(text("SELECT count(*) FROM resource_index")).scalar_one() == 2
+    finally:
+        engine.dispose()
+
+
+async def test_project_model_preferences_are_independent_and_last_write_wins(tmp_path: Path) -> None:
+    import asyncio
+
+    from a13n_harness_ui.storage.repositories import ProjectModelPreferenceRepository
+
+    settings = StorageSettings(data_root=tmp_path)
+    path = tmp_path / "metadata.sqlite3"
+    async with open_database(path, settings) as first_db, open_database(path, settings) as second_db:
+        first = ProjectModelPreferenceRepository(first_db.sessions)
+        second = ProjectModelPreferenceRepository(second_db.sessions)
+        await asyncio.gather(first.set("project-a", "model-a"), second.set("project-b", "model-b"))
+        assert await first.get("project-b") == "model-b"
+        assert await second.get("project-a") == "model-a"
+        await second.set("project-a", "model-new")
+        assert await first.get("project-a") == "model-new"
+        await first.set("project-a", None)
+        await first.set("project-a", None)
+        assert await second.get("project-a") is None
+        assert await second.get("project-b") == "model-b"
+    async with open_database(path, settings) as database:
+        repository = ProjectModelPreferenceRepository(database.sessions)
+        assert await repository.get("project-a") is None
+        assert await repository.get("project-b") == "model-b"
+
+
+def test_project_model_preference_migration_round_trip(tmp_path: Path) -> None:
+    path = tmp_path / "metadata.sqlite3"
+    migrator = DatabaseMigrator(path)
+    migrator._run(  # pyright: ignore[reportPrivateUsage]
+        lambda config: command.upgrade(config, "a65ad8a5330d"), write=True
+    )
+    migrator.upgrade()
+    engine = create_engine(f"sqlite:///{path}")
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("INSERT INTO project_model_preference VALUES ('project-a', 'model-a')"))
+        migrator.upgrade()
+        with engine.connect() as connection:
+            assert connection.execute(text("SELECT model_id FROM project_model_preference")).scalar_one() == "model-a"
+        migrator._run(  # pyright: ignore[reportPrivateUsage]
+            lambda config: command.downgrade(config, "a65ad8a5330d"), write=True
+        )
+        assert "project_model_preference" not in inspect(engine).get_table_names()
+        assert "thread_configuration" in inspect(engine).get_table_names()
+        migrator.upgrade()
+        migrator.verify_current()
     finally:
         engine.dispose()

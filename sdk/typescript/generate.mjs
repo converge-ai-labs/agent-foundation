@@ -3,7 +3,8 @@ import openapiTS, { astToString } from "openapi-typescript";
 import ts from "typescript";
 import prettier from "prettier";
 
-const source = new URL("./openapi.json", import.meta.url);
+const source = new URL("../openapi.json", import.meta.url);
+const published = new URL("./openapi.json", import.meta.url);
 const target = new URL("./src/schema.ts", import.meta.url);
 const ast = await openapiTS(source, {
   defaultNonNullable: false,
@@ -17,7 +18,13 @@ const content = await prettier.format(
     "\nexport type Binary = Blob | ReadableStream<Uint8Array>;\n",
   { parser: "typescript" },
 );
+const snapshot = await prettier.format(await fs.readFile(source, "utf8"), {
+  parser: "json",
+});
 if (process.argv.includes("--check")) {
+  if ((await fs.readFile(published, "utf8")) !== snapshot) {
+    throw new Error("Published OpenAPI changed. Run make sdk-generate.");
+  }
   if ((await fs.readFile(target, "utf8")) !== content) {
     throw new Error(
       "Generated Service types changed. Run make sdk-typescript-generate.",
@@ -25,10 +32,5 @@ if (process.argv.includes("--check")) {
   }
 } else {
   await fs.writeFile(target, content);
-  await fs.writeFile(
-    source,
-    await prettier.format(await fs.readFile(source, "utf8"), {
-      parser: "json",
-    }),
-  );
+  await fs.writeFile(published, snapshot);
 }

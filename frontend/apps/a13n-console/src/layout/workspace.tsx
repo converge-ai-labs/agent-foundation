@@ -1,12 +1,22 @@
+import { Button } from "a13n-ui";
+
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, type ReactNode } from "react";
 import { Link, Navigate, Outlet, useLocation, useParams } from "react-router";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { Button } from "a13n-ui";
+
 import { useTranslation } from "react-i18next";
 import { useAuth, useClient } from "../auth/context";
-import { allPages, data, type Schema } from "../shared/api";
-import { Empty, ErrorNotice, Loading, Page } from "../shared/feedback";
 import { CreateWorkspace } from "../features/settings/create-workspace";
+import { workspacePath } from "../shared/paths";
+import { allPages, data, type Schema } from "../shared/api";
+import {
+  Empty,
+  ErrorNotice,
+  ErrorPage,
+  ErrorToast,
+  Loading,
+  Page,
+} from "../shared/feedback";
 
 interface WorkspaceContextValue {
   workspace?: Schema["Workspace"];
@@ -21,8 +31,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
   const auth = useAuth(),
     client = useClient(),
     { t } = useTranslation();
-  const { workspaceId } = useParams();
+  const route = useParams();
   const location = useLocation();
+  const workspaceKey = route.workspaceKey;
   const organization = auth.data?.organizations[0];
   const userId = auth.data?.user.value.id;
   const workspaces = useQuery({
@@ -31,9 +42,9 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     queryFn: async ({ signal }) => ({
       items: await allPages((cursor) =>
         client.http
-          .GET("/api/v1/organizations/{organization_id}/workspaces", {
+          .GET("/api/v1/organizations/{organization}/workspaces", {
             params: {
-              path: { organization_id: organization!.id },
+              path: { organization: organization!.id },
               query: { limit: 100, cursor },
             },
             signal,
@@ -42,79 +53,72 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       ),
     }),
   });
+  const items = workspaces.data?.items ?? [];
   const remembered = userId ? lastWorkspaceByUser.get(userId) : undefined;
-  const selected =
-    workspaceId ??
-    workspaces.data?.items.find((item) => item.id === remembered)?.id ??
-    workspaces.data?.items[0]?.id;
+  const workspace = workspaceKey
+    ? items.find((item) => item.key === workspaceKey)
+    : (items.find((item) => item.id === remembered) ?? items[0]);
+  const selected = workspace?.id;
   const permissions = useQuery({
     queryKey: ["permissions", selected],
-    enabled:
-      !!selected &&
-      !!workspaces.data?.items.some((item) => item.id === selected),
+    enabled: !!selected,
     queryFn: ({ signal }) =>
       client.http
-        .GET("/api/v1/workspaces/{workspace_id}/permissions", {
-          params: { path: { workspace_id: selected! } },
+        .GET("/api/v1/workspaces/{workspace}/permissions", {
+          params: { path: { workspace: selected! } },
           signal,
         })
         .then(data),
   });
   useEffect(() => {
-    if (
-      userId &&
-      selected &&
-      workspaces.data?.items.some((item) => item.id === selected)
-    )
-      lastWorkspaceByUser.set(userId, selected);
-  }, [userId, selected, workspaces.data]);
+    if (userId && selected) lastWorkspaceByUser.set(userId, selected);
+  }, [userId, selected]);
   if (!auth.isPending && !organization) return <NoOrganization />;
   if (
     auth.isPending ||
     workspaces.isPending ||
-    (selected &&
-      workspaces.data?.items.some((item) => item.id === selected) &&
-      permissions.isPending)
+    (selected && permissions.isPending)
   )
-    return <Loading />;
+    return <Loading page />;
+  if (workspaceKey && workspaces.isSuccess && !selected)
+    return (
+      <ErrorPage
+        title={t("Not found")}
+        error={new Error(t("Resource not found"))}
+        actions={<WorkspaceRecoveryActions workspaces={items} />}
+      />
+    );
   if (organization && workspaces.data?.items.length === 0)
     return <NoWorkspace organization={organization} />;
   const error = auth.error ?? workspaces.error ?? permissions.error;
   if (error && location.pathname === "/settings/profile") return <Outlet />;
   if (error)
     return (
-      <Page title={t("Workspace unavailable")}>
-        <ErrorNotice
-          error={error}
-          retry={() => {
-            void workspaces.refetch();
-            void permissions.refetch();
-          }}
-        />
-        {workspaces.data?.items
-          .filter((item) => item.id !== selected)
-          .map((item) => (
-            <p key={item.id}>
-              <Link to={`/workspaces/${item.id}/agents`}>{item.name}</Link>
-            </p>
-          ))}
-        <Link to="/settings/profile">{t("Personal settings")}</Link>
-      </Page>
+      <ErrorPage
+        title={t("Workspace unavailable")}
+        error={error}
+        actions={
+          <WorkspaceRecoveryActions
+            workspaces={items}
+            currentWorkspaceId={selected}
+            retry={() => {
+              void workspaces.refetch();
+              if (selected) void permissions.refetch();
+            }}
+          />
+        }
+      />
     );
-  const workspace = workspaces.data?.items.find((item) => item.id === selected);
   if (!organization || !workspace || !permissions.data)
     return (
-      <Page title={t("Workspace unavailable")}>
-        <ErrorNotice error={new Error("Workspace unavailable")} />
-        {workspaces.data?.items.map((item) => (
-          <p key={item.id}>
-            <Link to={`/workspaces/${item.id}/agents`}>{item.name}</Link>
-          </p>
-        ))}
-      </Page>
+      <ErrorPage
+        title={t("Workspace unavailable")}
+        error={new Error(t("Workspace unavailable"))}
+        actions={<WorkspaceRecoveryActions workspaces={items} />}
+      />
     );
-  if (!workspaceId && window.location.pathname === "/")
-    return <Navigate to={`/workspaces/${workspace.id}/agents`} replace />;
+  if (!workspaceKey && location.pathname === "/")
+    return <Navigate to={`${workspacePath(workspace)}/agents`} replace />;
   return (
     <Context.Provider
       value={{
@@ -129,6 +133,37 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
     </Context.Provider>
   );
 }
+
+function WorkspaceRecoveryActions({
+  workspaces,
+  currentWorkspaceId,
+  retry,
+}: {
+  workspaces: Schema["Workspace"][];
+  currentWorkspaceId?: string;
+  retry?: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <>
+      {retry && <Button onClick={retry}>{t("Try again")}</Button>}
+      {workspaces
+        .filter((workspace) => workspace.id !== currentWorkspaceId)
+        .map((workspace) => (
+          <Button
+            key={workspace.id}
+            variant="outline"
+            render={<Link to={`${workspacePath(workspace)}/agents`} />}
+          >
+            {t("Switch workspace")}: {workspace.name}
+          </Button>
+        ))}
+      <Button variant="ghost" render={<Link to="/settings/profile" />}>
+        {t("Personal settings")}
+      </Button>
+    </>
+  );
+}
 export function useAccess() {
   const access = useContext(Context);
   if (!access) throw new Error("Missing access provider");
@@ -137,7 +172,11 @@ export function useAccess() {
 export function useWorkspace() {
   const access = useAccess();
   if (!access.workspace) throw new Error("Missing workspace provider");
-  return { ...access, workspace: access.workspace };
+  return {
+    ...access,
+    workspace: access.workspace,
+    basePath: workspacePath(access.workspace),
+  };
 }
 
 function NoWorkspace({
@@ -153,8 +192,8 @@ function NoWorkspace({
     queryKey: ["organization-permissions", organization.id],
     queryFn: ({ signal }) =>
       client.http
-        .GET("/api/v1/organizations/{organization_id}/permissions", {
-          params: { path: { organization_id: organization.id } },
+        .GET("/api/v1/organizations/{organization}/permissions", {
+          params: { path: { organization: organization.id } },
           signal,
         })
         .then(data),
@@ -176,13 +215,20 @@ function NoWorkspace({
             <>
               <Link to="/settings/profile">{t("Personal settings")}</Link>
               {permissions.data?.organization_admin && (
-                <Link to="/organization/settings">
-                  {t("Organization settings")}
-                </Link>
+                <>
+                  <Link to="/organization/settings">
+                    {t("Organization settings")}
+                  </Link>
+                  <Link to="/organization/settings?section=providers">
+                    {t("Providers")}
+                  </Link>
+                </>
               )}
               <Button
-                onClick={() => logout.mutate()}
+                variant="outline"
                 loading={logout.isPending}
+                onClick={() => logout.mutate()}
+                type="button"
               >
                 {t("Sign out")}
               </Button>
@@ -190,9 +236,10 @@ function NoWorkspace({
           }
         >
           <ErrorNotice
-            error={permissions.error ?? logout.error}
+            error={permissions.error}
             retry={() => void permissions.refetch()}
           />
+          <ErrorToast error={logout.error} />
           {["/settings/profile", "/organization/settings"].includes(
             location.pathname,
           ) && !permissions.isPending ? (
@@ -230,12 +277,17 @@ function NoOrganization() {
       <Page
         title={t("No organization access")}
         actions={
-          <Button onClick={() => logout.mutate()} loading={logout.isPending}>
+          <Button
+            variant="outline"
+            loading={logout.isPending}
+            onClick={() => logout.mutate()}
+            type="button"
+          >
             {t("Sign out")}
           </Button>
         }
       >
-        <ErrorNotice error={logout.error} />
+        <ErrorToast error={logout.error} />
         {location.pathname === "/settings/profile" ? (
           <Outlet />
         ) : (

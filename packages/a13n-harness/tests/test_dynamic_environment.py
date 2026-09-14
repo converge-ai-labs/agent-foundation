@@ -1366,6 +1366,8 @@ async def test_view_records_nested_usage_when_understanding_output_retries_exhau
         "ok": False,
         "error": {
             "code": "media_understanding_response_invalid",
+            "message": "Media understanding could not complete. Check the configured media model and provider.",
+            "details": {},
             "retry_hint": "dependency_change",
         },
     }
@@ -1434,6 +1436,8 @@ async def test_view_reports_unavailable_understanding_as_an_ordinary_tool_result
         "ok": False,
         "error": {
             "code": "media_understanding_unavailable",
+            "message": "Media understanding could not complete. Check the configured media model and provider.",
+            "details": {},
             "retry_hint": "dependency_change",
         },
     }
@@ -1586,12 +1590,16 @@ async def test_exact_edits_are_agent_friendly_and_failed_batch_is_not_published(
 
     assert result.output_or_raise() == "done"
     assert observed[0]["error"]["code"] == "environment_edit_not_found"
-    assert observed[0]["error"]["details"] == {"edit_index": 2}
+    assert observed[0]["error"]["details"] == {
+        "edit_index": 2,
+        "hint": "Read the current target and copy an exact old_string, including whitespace, before retrying the edit.",
+    }
     assert observed[1]["ok"] is True
     assert target.read_text() == "alpha\ngamma\ngamma\n"
 
 
-async def test_grep_returns_requested_context_at_file_boundaries(tmp_path: Path) -> None:
+@pytest.mark.parametrize("file_root", [False, True])
+async def test_grep_returns_requested_context_at_file_boundaries(tmp_path: Path, file_root: bool) -> None:
     (tmp_path / "context.txt").write_bytes(
         b"needle0 top\nbefore middle\nneedle1 middle\nafter middle\nneedle2 bottom\n"
     )
@@ -1601,6 +1609,8 @@ async def test_grep_returns_requested_context_at_file_boundaries(tmp_path: Path)
         {"pattern": "needle1", "context_lines": 1},
         {"pattern": "needle2", "context_lines": 2},
     )
+    if file_root:
+        requests = tuple({**request, "root": str(tmp_path / "context.txt")} for request in requests)
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
         del info
@@ -1632,10 +1642,13 @@ async def test_grep_returns_requested_context_at_file_boundaries(tmp_path: Path)
     )
     result = await executable.run(
         "grep",
-        bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
+        bindings=RunBindings.embedded(
+            environment=_local_binding(tmp_path, mount_path=str(tmp_path)), capabilities=(_policy(),)
+        ),
     )
 
     assert result.output_or_raise() == "done"
+    assert all(item["ok"] for item in observed), observed
     matches = {match["matching_line"]: match for item in observed for match in item["matches"].values()}
     assert matches["needle0 top"]["context_start_line"] == 1
     assert matches["needle0 top"]["context"].splitlines() == ["needle0 top"]
@@ -2206,7 +2219,12 @@ async def test_model_error_projection_omits_internal_environment_details() -> No
         lambda value: {},
     )
     assert result["ok"] is False
-    assert result["error"]["details"] == {"timeout_seconds": 3, "missing": ["files"]}
+    assert result["error"]["details"] == {
+        "timeout_seconds": 3,
+        "missing": ["files"],
+        "hint": "Check Environment readiness with the Host. Reconcile any previously dispatched work before retrying.",
+    }
+    assert result["error"]["message"] == "The selected Environment is unavailable."
 
 
 async def test_empty_environment_omits_environment_tools() -> None:
@@ -2276,6 +2294,100 @@ async def test_large_environment_result_is_bounded_without_retry_shaped_failure(
     assert "next_line_offset" not in observed
     assert isinstance(observed["content"], str)
     assert len(observed["content"]) == 2_000
+
+
+@pytest.mark.parametrize("line_count", [160, 520])
+@pytest.mark.parametrize("line_text", ["x" * 90, "中文𐐀" * 30, '\\"' * 45])
+async def test_text_view_output_budget_continues_without_skipping_lines(
+    tmp_path: Path, line_count: int, line_text: str
+) -> None:
+    content = "".join(f"line {index}: {line_text}\n" for index in range(line_count)) + "tail"
+    (tmp_path / "notes.md").write_bytes(content.encode("utf-8"))
+    pages: list[dict[str, Any]] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        del info
+        returns = [
+            part.content
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        ]
+        offset = 0
+        if returns:
+            page = returns[-1]
+            assert isinstance(page, dict)
+            pages.append(page)
+            assert page["ok"] is True
+            assert page["truncated_lines"] == []
+            assert page["lines_read"] == len(page["content"].splitlines())
+            assert content.startswith("".join(item["content"] for item in pages))
+            assert len(json.dumps(page, ensure_ascii=False, separators=(",", ":"))) <= 12_000
+            if not page["has_more"]:
+                assert "".join(item["content"] for item in pages) == content
+                assert "next_line_offset" not in page
+                yield "done"
+                return
+            offset = page["next_line_offset"]
+            assert offset == page["line_offset"] + page["lines_read"]
+            assert offset > page["line_offset"]
+            assert page["content"].endswith("\n")
+            assert page["disclosure"]["content_complete"] is False
+            assert page["disclosure"]["output_file_path"] is None
+            assert "next_line_offset" in page["disclosure"]["hint"]
+        yield {
+            0: DeltaToolCall(
+                name="view",
+                json_args=json.dumps({"file_path": "/workspace/notes.md", "line_offset": offset, "line_limit": 1000}),
+                tool_call_id=f"read-page-{len(pages)}",
+            )
+        }
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(DynamicEnvironmentCapability(_configuration()),),
+    )
+    result = await executable.run(
+        "read",
+        bindings=RunBindings.embedded(environment=_local_binding(tmp_path), capabilities=(_policy(),)),
+    )
+    assert result.output_or_raise() == "done"
+    assert len(pages) >= 2
+
+
+@pytest.mark.parametrize("provider_budget", [9, 1000])
+@pytest.mark.parametrize("line", ["abcd\n", "中文\n", "𐐀\r\n"])
+async def test_text_view_batches_obey_actual_page_budget(tmp_path: Path, provider_budget: int, line: str) -> None:
+    content = line * 7 + "tail"
+    (tmp_path / "text").write_text(content, encoding="utf-8", newline="")
+    files = LocalFileOperator(
+        root=tmp_path,
+        read_only=True,
+        policy=DirectLocalFilePolicy(max_value_bytes=provider_budget),
+        mount_id="workspace",
+        generation="test",
+    )
+    toolset = FileToolset(files)
+    pages = []
+    offset = 0
+    for _ in range(10):
+        page = await toolset._read_text_page(
+            files, "/text", line_offset=offset, line_limit=1000, max_line_length=20_000, page_bytes=19
+        )
+        assert len(page.text.encode("utf-8")) <= 19
+        assert page.lines_read == len(page.text.splitlines()) > 0
+        assert not page.truncated_lines
+        pages.append(page.text)
+        offset += page.lines_read
+        if not page.has_more:
+            break
+    else:
+        pytest.fail("Text pagination made no bounded progress")
+    assert "".join(pages) == content
+    assert offset == 8
 
 
 async def test_agent_spec_tool_retries_exhaust_once_without_environment_retry_loop() -> None:
@@ -2634,7 +2746,7 @@ async def test_terminal_waits_for_delayed_environment_change_adapter_drain(
     assert items[-1].result.output_or_raise() == "done"
 
 
-async def test_direct_local_move_replaces_a_nonempty_directory_portably(tmp_path: Path) -> None:
+async def test_direct_local_move_preserves_nonempty_directory_on_rejected_replace(tmp_path: Path) -> None:
     source = tmp_path / "source"
     destination = tmp_path / "destination"
     source.mkdir()
@@ -2649,11 +2761,12 @@ async def test_direct_local_move_replaces_a_nonempty_directory_portably(tmp_path
         generation="generation-1",
     )
 
-    await files.move("/source", "/destination", replace=True)
+    with pytest.raises(EnvironmentError):
+        await files.move("/source", "/destination", replace=True)
 
-    assert not source.exists()
-    assert (destination / "new.txt").read_text() == "new"
-    assert not (destination / "old.txt").exists()
+    assert (source / "new.txt").read_text() == "new"
+    assert (destination / "old.txt").read_text() == "old"
+    assert not (destination / "new.txt").exists()
     assert not tuple(tmp_path.glob(".destination.a13n-replaced-*"))
 
 
@@ -2893,6 +3006,7 @@ def test_file_failure_hints_preserve_specific_diagnostics_without_raw_provider_d
         "ok": False,
         "error": {
             "code": "environment_not_found",
+            "message": "The selected resource was not found or is not visible.",
             "details": {"hint": "Check the selected source.", "reason": "specific_lookup"},
         },
     }

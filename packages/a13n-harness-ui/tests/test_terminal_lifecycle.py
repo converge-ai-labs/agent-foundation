@@ -57,6 +57,18 @@ async def test_terminal_logs_are_files_and_plugin_diagnostics_are_once(
     assert captured.err == ""
 
 
+@pytest.mark.anyio
+async def test_terminal_capability_warnings_are_visible_once(tmp_path: Path) -> None:
+    notices: list[str] = []
+    warning = "Agent agent-main: skipped Capability missing: unavailable"
+    with terminal_logging(tmp_path, "INFO", notices.append):
+        logger = logging.getLogger("a13n_harness_ui.lifecycle_test")
+        for _ in range(2):
+            logger.warning("capability_skipped", extra={"warning": warning})
+        await asyncio.sleep(0)
+    assert notices == [f"Warning: {warning}"]
+
+
 def _assert_resume_command(hint: str, arguments: list[str], *, platform: str = os.name) -> None:
     command = hint.splitlines()[1].removeprefix("  ")
     if platform == "nt":

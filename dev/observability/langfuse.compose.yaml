@@ -1,0 +1,157 @@
+# Owned by dev.service.langfuse; configuration comes from SERVICE_CONFIG, never .env.
+
+x-langfuse-environment: &langfuse-environment
+  NEXTAUTH_URL: http://127.0.0.1:${LANGFUSE_LOCAL_PORT:-3000}
+  DATABASE_URL: postgresql://langfuse:langfuse@langfuse-postgres:5432/langfuse
+  NEXTAUTH_SECRET: agent-foundation-local-nextauth-secret
+  SALT: agent-foundation-local-langfuse-salt
+  ENCRYPTION_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  TELEMETRY_ENABLED: "false"
+  CLICKHOUSE_MIGRATION_URL: clickhouse://langfuse-clickhouse:9000
+  CLICKHOUSE_URL: http://langfuse-clickhouse:8123
+  CLICKHOUSE_USER: clickhouse
+  CLICKHOUSE_PASSWORD: clickhouse
+  CLICKHOUSE_CLUSTER_ENABLED: "false"
+  REDIS_HOST: langfuse-redis
+  REDIS_PORT: "6379"
+  REDIS_AUTH: langfuse
+  REDIS_TLS_ENABLED: "false"
+  LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+  LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+  LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+  LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+  LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
+  LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
+  LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
+  LANGFUSE_S3_MEDIA_UPLOAD_REGION: auto
+  LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minio
+  LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+  LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://langfuse-minio:9000
+  LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
+  LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
+
+services:
+  langfuse-web:
+    image: docker.langfuse.com/langfuse/langfuse:4
+    restart: unless-stopped
+    depends_on:
+      langfuse-postgres:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
+    environment:
+      <<: *langfuse-environment
+      LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://127.0.0.1:${LANGFUSE_LOCAL_MINIO_PORT:-3001}
+      LANGFUSE_INIT_ORG_ID: agent-foundation-local
+      LANGFUSE_INIT_ORG_NAME: Agent Foundation Local
+      LANGFUSE_INIT_PROJECT_ID: agent-foundation-local
+      LANGFUSE_INIT_PROJECT_NAME: Agent Foundation Local
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_LOCAL_PUBLIC_KEY:-lf_pk_agent_foundation_local}
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_LOCAL_SECRET_KEY:-lf_sk_agent_foundation_local}
+      LANGFUSE_INIT_USER_EMAIL: ${LANGFUSE_LOCAL_USER_EMAIL:-dev@agent-foundation.local}
+      LANGFUSE_INIT_USER_NAME: Agent Foundation Developer
+      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_LOCAL_USER_PASSWORD:-agent-foundation-local}
+    ports:
+      - "127.0.0.1:${LANGFUSE_LOCAL_PORT:-3000}:3000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "Promise.all(['/api/public/health?failIfDatabaseUnavailable=true','/api/public/ready'].map(p=>fetch('http://'+require('os').hostname()+':3000'+p).then(r=>{if(!r.ok)throw Error(r.status)}))).then(()=>process.exit(0),()=>process.exit(1))"]
+      interval: 3s
+      timeout: 5s
+      start_period: 30s
+      retries: 50
+
+  langfuse-worker:
+    image: docker.langfuse.com/langfuse/langfuse-worker:4
+    restart: unless-stopped
+    depends_on:
+      langfuse-postgres:
+        condition: service_healthy
+      langfuse-clickhouse:
+        condition: service_healthy
+      langfuse-redis:
+        condition: service_healthy
+      langfuse-minio:
+        condition: service_healthy
+    environment: *langfuse-environment
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://'+require('os').hostname()+':3030/api/health').then(r=>process.exit(r.ok?0:1),()=>process.exit(1))"]
+      interval: 3s
+      timeout: 5s
+      start_period: 30s
+      retries: 50
+
+  langfuse-postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: langfuse
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: langfuse
+      TZ: UTC
+      PGTZ: UTC
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse -d langfuse"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - langfuse-postgres:/var/lib/postgresql/data
+
+  langfuse-clickhouse:
+    image: clickhouse/clickhouse-server:25.12
+    restart: unless-stopped
+    user: "101:101"
+    environment:
+      CLICKHOUSE_DB: default
+      CLICKHOUSE_USER: clickhouse
+      CLICKHOUSE_PASSWORD: clickhouse
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:8123/ping || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - langfuse-clickhouse:/var/lib/clickhouse
+      - langfuse-clickhouse-logs:/var/log/clickhouse-server
+
+  langfuse-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "langfuse", "--maxmemory-policy", "noeviction"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "langfuse", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - langfuse-redis:/data
+
+  langfuse-minio:
+    image: cgr.dev/chainguard/minio:latest
+    restart: unless-stopped
+    entrypoint: sh
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: miniosecret
+    ports:
+      - "127.0.0.1:${LANGFUSE_LOCAL_MINIO_PORT:-3001}:9000"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - langfuse-minio:/data
+
+volumes:
+  langfuse-postgres:
+  langfuse-clickhouse:
+  langfuse-clickhouse-logs:
+  langfuse-redis:
+  langfuse-minio:

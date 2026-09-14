@@ -59,7 +59,7 @@ from a13n_harness_ui.surfaces import (
     ThreadMetadataMutation,
     ThreadMetadataPatch,
 )
-from anyio import Event, create_task_group, fail_after, sleep, sleep_forever
+from anyio import CancelScope, Event, create_task_group, fail_after, sleep, sleep_forever
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.exceptions import UnexpectedModelBehavior
 from pydantic_ai.messages import ModelMessage, ToolReturnPart
@@ -222,6 +222,48 @@ async def test_application_starts_persists_objects_and_closes(tmp_path: Path) ->
 
     async with open_harness_ui_app(settings) as reopened:
         assert (await reopened._store.read_object(reference)).payload == {"run": "root"}
+
+
+async def test_invalid_capabilities_warn_but_allow_real_composition_and_chat(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from a13n_harness_ui.cli import CliRequest, OutputFormat
+    from a13n_harness_ui.cli_runtime import _run_management
+
+    root = _write_configuration(tmp_path)
+    agent = tmp_path / "agents/assistant.yaml"
+    agent.write_text(agent.read_text() + "capabilities:\n  - capability: vendor.missing\n")
+    original = agent.read_bytes()
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del messages, info
+        yield "conversation still works"
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
+        status = await app.status()
+        assert status.candidate_error_code is None
+        assert len(status.capability_warnings) == 1
+        assert "agent-assistant" in status.capability_warnings[0]
+        assert "vendor.missing" in status.capability_warnings[0]
+        code = await _run_management(
+            app, CliRequest(command="config", action="validate", output_format=OutputFormat.json)
+        )
+        assert code == 0
+        validation = json.loads(capsys.readouterr().out)
+        assert validation["valid"] is True
+        assert validation["capability_warnings"] == list(status.capability_warnings)
+        thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="hello")
+        operation = await app.wait_root_operation(receipt.receipt_id)
+        assert operation.status is RootOperationStatus.completed
+        assert agent.read_bytes() == original
+        agent.write_text(agent.read_text().replace("  - capability: vendor.missing\n", "  - capability: web\n"))
+        await app.reload_configuration()
+        assert (await app.status()).capability_warnings == ()
 
 
 async def test_invalid_first_candidate_starts_with_diagnostics_and_observer_accepts_repair(
@@ -545,10 +587,17 @@ async def test_environment_run_service_prepares_sandbox_with_canonical_host_path
         plan = await executor._environments.prepare(published.value)
         project_root = Path(published.value.project_roots[0]).as_posix()
 
-        assert tuple(plan.environments) == ("workspace", "user-skills", "configuration", "thread-files")
+        assert tuple(plan.environments) == (
+            "workspace",
+            "builtin-skills",
+            "user-skills",
+            "configuration",
+            "thread-files",
+        )
         assert isinstance(plan.environments["workspace"], LocalEnvdEnvironment)
         assert tuple(item.mount_path for item in plan._mounts) == (
             project_root,
+            "/environment/builtin-skills",
             user_skills.resolve().as_posix(),
             root.parent.resolve().as_posix(),
             (tmp_path / "state/threads" / published.value.thread_id).as_posix(),
@@ -724,12 +773,14 @@ async def test_environment_run_service_mounts_plugin_files_read_write(tmp_path: 
 
         plan = await executor._environments.prepare(composition)
 
-        expected_aliases = ("workspace", "content-plugin-1") + (("user-skills",) if skills_enabled else ())
+        expected_aliases = ("workspace", "content-plugin-1") + (
+            ("builtin-skills", "user-skills") if skills_enabled else ()
+        )
         assert tuple(plan.environments) == (*expected_aliases, "configuration", "thread-files")
         assert tuple(item.mount_path for item in plan._mounts) == (
             (tmp_path / "workspace").resolve().as_posix(),
             plugin_skills.parent.resolve().as_posix(),
-        ) + ((user_skills.resolve().as_posix(),) if skills_enabled else ()) + (
+        ) + (("/environment/builtin-skills", user_skills.resolve().as_posix()) if skills_enabled else ()) + (
             root.parent.resolve().as_posix(),
             (tmp_path / "state/threads" / composition.thread_id).as_posix(),
         )
@@ -765,7 +816,7 @@ async def test_environment_run_service_mounts_plugin_files_read_write(tmp_path: 
     assert "Updated by the Agent." in plugin_skill.read_text()
 
 
-async def test_environment_run_service_adds_only_the_dedicated_user_skill_mount(tmp_path: Path) -> None:
+async def test_environment_run_service_adds_dedicated_skill_mounts(tmp_path: Path) -> None:
     root = _write_configuration(tmp_path)
     agent = tmp_path / "agents" / "assistant.yaml"
     agent.write_text(f"{agent.read_text()}capabilities:\n  - capability: skills\n")
@@ -796,7 +847,13 @@ async def test_environment_run_service_adds_only_the_dedicated_user_skill_mount(
         published = await executor._compositions.publish(source, selection)
         plan = await executor._environments.prepare(published.value)
 
-        assert tuple(plan.environments) == ("workspace", "user-skills", "configuration", "thread-files")
+        assert tuple(plan.environments) == (
+            "workspace",
+            "builtin-skills",
+            "user-skills",
+            "configuration",
+            "thread-files",
+        )
         assert plan.default_environment == "workspace"
         assert user_skills.is_dir()
         async with plan.runtime.bind(
@@ -810,6 +867,7 @@ async def test_environment_run_service_adds_only_the_dedicated_user_skill_mount(
         ) as environment:
             assert tuple(item.mount_path for item in environment.snapshot.mounts) == (
                 Path(published.value.project_roots[0]).as_posix(),
+                "/environment/builtin-skills",
                 user_skills.resolve().as_posix(),
                 root.parent.resolve().as_posix(),
                 (tmp_path / "state/threads" / stored.thread_id).as_posix(),
@@ -864,6 +922,7 @@ async def test_native_skills_reuse_a_project_mount_at_the_user_skill_root(
         plan = await executor._environments.prepare(composition)
 
         expected_aliases = ("workspace",) if project_position == "first" else ("workspace", "workspace-2")
+        expected_aliases = (*expected_aliases, "builtin-skills")
         assert tuple(plan.environments) == (*expected_aliases, "configuration", "thread-files")
         reconstructed = AgentReconstructor(user_skills_root=user_skills).reconstruct(
             composition,
@@ -1084,6 +1143,15 @@ async def test_checkpoint_save_failure_preserves_prior_selection(tmp_path: Path,
         assert retained.continuation_id == prior
         assert retained.thread.excerpt.first_input == "first"
         assert retained.thread.excerpt.latest_input == "first"
+        async with app.watch_thread(root_thread_id=thread.thread_id) as watch:
+            assert watch.root_stream is not None
+            assert watch.root_stream.summary.base_continuation_id == prior
+            assert watch.root_stream.summary.event_count > 0
+        monkeypatch.setattr(app._store.objects, "publish_model", publish)
+        third = await app.submit_thread(thread_id=thread.thread_id, prompt="third")
+        assert (await app.wait_root_operation(third.receipt_id)).status is RootOperationStatus.completed
+        async with app.watch_thread(root_thread_id=thread.thread_id) as watch:
+            assert watch.root_stream is None
 
 
 async def test_focused_watch_cuts_over_before_snapshot_and_summary_stream_invalidates(tmp_path: Path) -> None:
@@ -1293,6 +1361,47 @@ async def test_cancelled_application_lifetime_still_closes_owned_coordinators(tm
     assert app.state is AppState.closed
     assert app._root_runs._task_group is None
     assert app._subagent_operator._task_group is None
+
+
+@pytest.mark.parametrize("owner", ["root", "child"])
+async def test_owned_task_failure_preserves_error_and_closes_coordinators(tmp_path: Path, owner: str) -> None:
+    ready = Event()
+    storage_available_during_cleanup = False
+
+    async def fail() -> None:
+        await ready.wait()
+        raise RuntimeError("owned task failed")
+
+    async def sibling() -> None:
+        nonlocal storage_available_during_cleanup
+        try:
+            ready.set()
+            await sleep_forever()
+        finally:
+            with CancelScope(shield=True):
+                await sleep(0.01)
+                # Joining must finish before the App closes storage.
+                await app._store.object_count()
+                storage_available_during_cleanup = True
+
+    with pytest.raises(ExceptionGroup, match="unhandled errors") as caught:
+        async with open_harness_ui_app(_settings(tmp_path / "state")) as app:
+            coordinator = app._root_runs if owner == "root" else app._subagent_operator
+            assert coordinator._task_group is not None
+            coordinator._task_group.start_soon(sibling)
+            coordinator._task_group.start_soon(fail)
+            await sleep_forever()
+
+    expected, unexpected = caught.value.split(
+        lambda exc: isinstance(exc, RuntimeError) and str(exc) == "owned task failed"
+    )
+    assert expected is not None and unexpected is None
+    assert storage_available_during_cleanup
+    assert app.state is AppState.closed
+    assert app._root_runs._task_group is None
+    assert app._subagent_operator._task_group is None
+    # No leaked cancellation scope may poison the caller after cleanup.
+    await sleep(0)
 
 
 async def _candidate_error(path: Path):
@@ -1594,3 +1703,33 @@ async def test_conflicting_checkpoint_cannot_overwrite_excerpts(tmp_path: Path, 
         assert retained is not None
         assert retained.excerpt == current.excerpt
         assert retained.activity_at == current.activity_at
+
+
+@pytest.mark.parametrize("query", ["detail", "task_page"])
+async def test_focused_watch_resets_when_new_run_saves_during_bootstrap(tmp_path: Path, monkeypatch, query) -> None:
+    from a13n_harness_ui.errors import LivePresentationError
+
+    async with open_harness_ui_app(
+        _settings(tmp_path / "state"), configuration_path=_write_configuration(tmp_path)
+    ) as app:
+        app._root_runs._executor._agents = _CompletedReconstructor()
+        thread = await app.create_thread()
+        service = app._projections if query == "detail" else app._terminal_projections
+        original = service.detail if query == "detail" else service.task_page
+
+        async def complete_before_query(thread_id, **kwargs):
+            # No observer existed at cutover. A complete Run now appears in both
+            # the selected history and the subscriber's queued live events.
+            receipt = await app.submit_thread(thread_id=thread_id, prompt="during bootstrap")
+            await app.wait_root_operation(receipt.receipt_id)
+            return await original(thread_id=thread_id, **kwargs)
+
+        monkeypatch.setattr(service, query, complete_before_query)
+        with pytest.raises(LivePresentationError) as changed:
+            async with app.watch_thread(root_thread_id=thread.thread_id):
+                pytest.fail("incompatible bootstrap must not be delivered")
+        assert changed.value.code == "live_snapshot_changed"
+        monkeypatch.setattr(service, query, original)
+        async with app.watch_thread(root_thread_id=thread.thread_id) as watch:
+            assert watch.snapshot.thread.continuation_id is not None
+            assert watch.root_stream is None

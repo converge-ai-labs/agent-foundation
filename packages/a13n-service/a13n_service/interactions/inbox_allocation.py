@@ -9,14 +9,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .control_domain import ThreadInboxEntry, ThreadInboxKind, ThreadInboxStatus
 from .control_records import thread_inbox_record
 from .domain import JsonObject
-from .inbox_persistence import ThreadInboxCapacityExceeded, lock_inbox_counter
+from .inbox_persistence import ThreadInboxCapacityExceeded
+from .models import ThreadRecord
 
 
 async def allocate_steer(
     database: AsyncSession,
     *,
-    organization_id: str,
-    thread_id: str,
+    thread: ThreadRecord,
     accepted_against_run_id: str,
     target_run_id: str | None,
     source_waiting_run_id: str | None,
@@ -34,20 +34,19 @@ async def allocate_steer(
         max_pending_count=max_pending_count,
         max_pending_bytes=max_pending_bytes,
     )
-    counter = await lock_inbox_counter(database, organization_id, thread_id)
     _require_capacity(
-        pending_count=counter.pending_count,
-        pending_bytes=counter.pending_bytes,
+        pending_count=thread.pending_count,
+        pending_bytes=thread.pending_bytes,
         payload_size_bytes=payload_size_bytes,
         max_pending_count=max_pending_count,
         max_pending_bytes=max_pending_bytes,
     )
     entry = ThreadInboxEntry(
         id=entry_id,
-        organization_id=organization_id,
-        thread_id=thread_id,
+        organization_id=thread.organization_id,
+        thread_id=thread.id,
         kind=ThreadInboxKind.steer,
-        delivery_sequence=counter.next_delivery_sequence,
+        delivery_sequence=thread.next_delivery_sequence,
         accepted_against_run_id=accepted_against_run_id,
         target_run_id=target_run_id,
         source_waiting_run_id=source_waiting_run_id,
@@ -57,17 +56,16 @@ async def allocate_steer(
         created_at=now,
     )
     database.add(thread_inbox_record(entry))
-    counter.next_delivery_sequence += 1
-    counter.pending_count += 1
-    counter.pending_bytes += payload_size_bytes
+    thread.next_delivery_sequence += 1
+    thread.pending_count += 1
+    thread.pending_bytes += payload_size_bytes
     return entry
 
 
 async def allocate_async_result(
     database: AsyncSession,
     *,
-    organization_id: str,
-    thread_id: str,
+    thread: ThreadRecord,
     origin_run_id: str,
     relationship_id: str,
     target_run_id: str | None,
@@ -87,21 +85,20 @@ async def allocate_async_result(
         max_pending_count=max_pending_count,
         max_pending_bytes=max_pending_bytes,
     )
-    counter = await lock_inbox_counter(database, organization_id, thread_id)
     if not suppressed:
         _require_capacity(
-            pending_count=counter.pending_count,
-            pending_bytes=counter.pending_bytes,
+            pending_count=thread.pending_count,
+            pending_bytes=thread.pending_bytes,
             payload_size_bytes=payload_size_bytes,
             max_pending_count=max_pending_count,
             max_pending_bytes=max_pending_bytes,
         )
     entry = ThreadInboxEntry(
         id=entry_id,
-        organization_id=organization_id,
-        thread_id=thread_id,
+        organization_id=thread.organization_id,
+        thread_id=thread.id,
         kind=ThreadInboxKind.async_subagent_result,
-        delivery_sequence=counter.next_delivery_sequence,
+        delivery_sequence=thread.next_delivery_sequence,
         target_run_id=None if suppressed else target_run_id,
         source_waiting_run_id=None if suppressed else source_waiting_run_id,
         origin_run_id=origin_run_id,
@@ -113,10 +110,10 @@ async def allocate_async_result(
         finalized_at=now if suppressed else None,
     )
     database.add(thread_inbox_record(entry))
-    counter.next_delivery_sequence += 1
+    thread.next_delivery_sequence += 1
     if not suppressed:
-        counter.pending_count += 1
-        counter.pending_bytes += payload_size_bytes
+        thread.pending_count += 1
+        thread.pending_bytes += payload_size_bytes
     return entry
 
 

@@ -32,7 +32,9 @@ async def load_agent_record(
         AgentRecord.workspace_id == workspace_id,
     )
     if for_update:
-        statement = statement.with_for_update()
+        # Admission reads share a snapshot lock, excluding metadata edits while
+        # allowing concurrent freezes and retained Runs' foreign-key checks.
+        statement = statement.with_for_update(read=True)
     record = await session.scalar(statement)
     if record is None:
         raise agent_not_found()
@@ -55,7 +57,7 @@ async def load_revision_record(
         AgentRevisionRecord.workspace_id == workspace_id,
     )
     if for_update:
-        statement = statement.with_for_update()
+        statement = statement.with_for_update(read=True)
     record = await session.scalar(statement)
     if record is None:
         raise agent_revision_not_found()

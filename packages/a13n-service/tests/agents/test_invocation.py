@@ -153,24 +153,22 @@ def test_subagent_patch_is_name_keyed_and_supports_default_selection() -> None:
 
 def test_connection_tool_overrides_replace_complete_lists() -> None:
     base = agent_config(
-        connector_tools=({"connector_connection_id": "cconn_1234567890abcdef", "tools": ["lookup"]},),
-        mcp_tools=({"mcp_connection_id": "mcpc_1234567890abcdef"},),
+        connection_tools=(
+            *({"connection_id": "cconn_1234567890abcdef", "tools": ["lookup"]},),
+            *({"connection_id": "mcpc_1234567890abcdef"},),
+        ),
     )
     override = AgentRunOverride.model_validate(
         {
-            "connector_tools": [
-                {"connector_connection_id": "cconn_1111111111111111", "tools": [], "defer_loading": True}
-            ],
-            "mcp_tools": [],
+            "connection_tools": [{"connection_id": "cconn_1111111111111111", "tools": [], "defer_loading": True}],
         }
     )
     merged = merge_agent_run_override(base, override)
-    assert len(merged.connector_tools) == 1
-    assert merged.connector_tools[0].connector_connection_id == "cconn_1111111111111111"
-    assert merged.connector_tools[0].tools == ()
-    assert merged.connector_tools[0].defer_loading
-    assert merged.mcp_tools == ()
-    assert merge_agent_run_override(base, AgentRunOverride()).connector_tools == base.connector_tools
+    assert len(merged.connection_tools) == 1
+    assert merged.connection_tools[0].connection_id == "cconn_1111111111111111"
+    assert merged.connection_tools[0].tools == ()
+    assert merged.connection_tools[0].defer_loading
+    assert merge_agent_run_override(base, AgentRunOverride()).connection_tools == base.connection_tools
 
 
 @pytest.mark.parametrize(
@@ -182,8 +180,8 @@ def test_connection_tool_overrides_replace_complete_lists() -> None:
         ({"retries": None}, "retries", "null_not_allowed"),
         ({"retries": {"tools": None}}, "retries.tools", "null_not_allowed"),
         ({"subagents": {"new": {}}}, "subagents.new.agent_id", "required"),
-        ({"connector_tools": None}, "connector_tools", "null_not_allowed"),
-        ({"mcp_tools": None}, "mcp_tools", "null_not_allowed"),
+        ({"connection_tools": None}, "connection_tools", "null_not_allowed"),
+        ({"connection_tools": None}, "connection_tools", "null_not_allowed"),
     ],
 )
 def test_invalid_null_or_incomplete_overrides_are_bounded(payload: dict[str, object], path: str, reason: str) -> None:
@@ -257,12 +255,12 @@ async def test_run_acceptance_uses_latest_model_without_revising_agent(
     ("override", "reason"),
     [
         (
-            {"connector_tools": [{"connector_connection_id": "cconn_1234567890abcdef"}]},
-            "connector_connection_unavailable",
+            {"connection_tools": [{"connection_id": "cconn_1234567890abcdef"}]},
+            "connection_unavailable",
         ),
         (
-            {"mcp_tools": [{"mcp_connection_id": "mcpc_1234567890abcdef"}]},
-            "mcp_connection_unavailable",
+            {"connection_tools": [{"connection_id": "mcpc_1234567890abcdef"}]},
+            "connection_unavailable",
         ),
     ],
 )

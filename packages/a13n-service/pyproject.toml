@@ -22,8 +22,8 @@ dependencies = [
     "ag-ui-protocol>=0.1.18,<0.2",
     "fakeredis[lua]>=2.31,<3",
     "fastapi>=0.116,<1",
-    "fastmcp>=3.0,<4",
-    "mcp>=1.26,<2",
+    "fastmcp>=4.0,<5",
+    "mcp==2.2.0",
     "google-auth>=2.40,<3",
     "google-genai>=1.0,<3",
     "httpx2>=2.5,<3",
@@ -35,19 +35,20 @@ dependencies = [
     "pydantic-ai>=2.41.0,<3",
     "pydantic-core>=2.41,<3",
     "pydantic-graph>=2.38,<3",
-    "pydantic-settings>=2.10,<3",
     "psycopg[binary]>=3.2,<4",
     "pyyaml>=6.0,<7",
     "redis>=8,<9",
     "rfc8785>=0.1.4,<0.2",
     "referencing>=0.37,<1",
     "sqlalchemy[asyncio]>=2.0.41,<3",
+    "starlette>=0.52,<2",
     "uvicorn>=0.35,<1",
     "mypy-boto3-bedrock-runtime>=1.43,<2",
     "authlib>=1.8,<2",
     "argon2-cffi>=25,<26",
     "aiosmtplib>=5,<6",
     "pillow>=11.3,<13",
+    "anthropic>=1.3,<2",
 ]
 
 [project.scripts]
@@ -62,7 +63,7 @@ packages = ["a13n_service"]
 
 [tool.deptry]
 known_first_party = ["a13n_service"]
-package_module_name_map = { "a13n-environment" = "a13n_environment", "a13n-harness" = "a13n_harness", "a13n-logging" = "a13n_logging", "a13n-stream-protocol" = "a13n_stream_protocol", "a2a-sdk" = "a2a", "ag-ui-protocol" = "ag_ui", "google-auth" = "google", "httpx2" = "httpx2", "pydantic-ai" = "pydantic_ai", "pydantic-settings" = "pydantic_settings", "psycopg" = "psycopg", "sqlalchemy" = "sqlalchemy" }
+package_module_name_map = { "a13n-environment" = "a13n_environment", "a13n-harness" = "a13n_harness", "a13n-logging" = "a13n_logging", "a13n-stream-protocol" = "a13n_stream_protocol", "a2a-sdk" = "a2a", "ag-ui-protocol" = "ag_ui", "google-auth" = "google", "httpx2" = "httpx2", "pydantic-ai" = "pydantic_ai", "psycopg" = "psycopg", "sqlalchemy" = "sqlalchemy" }
 
 # Database drivers are loaded by SQLAlchemy from the selected backend. httpx2
 # is the service-wide outbound client contract and is used by service tests.

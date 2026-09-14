@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from a13n_harness import SafeFailure
 from sqlalchemy import select
@@ -12,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.environments.usage import refresh_run_retention
 from a13n_service.lifecycle import new_mutation_id
+from a13n_service.observability import remember_output
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
@@ -47,6 +49,7 @@ class RunOutcomeReceipt:
     run_version: int
     attempt_version: int | None
     thread_version: int
+    sealed_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -121,6 +124,7 @@ class RunOutcomeService:
             candidate = envelope.outcome_candidate
             can_seal = await apply_run_outcome(
                 database,
+                thread=thread,
                 run=run,
                 outcome="waiting" if isinstance(candidate, WaitingOutcomeCandidate) else "completed",
                 state=state,
@@ -174,7 +178,7 @@ class RunOutcomeService:
                 actor_type="worker",
                 actor_id=attempt.worker_id,
             )
-            return RunOutcomeReceipt(status, run.version, attempt.version, thread.version)
+            return RunOutcomeReceipt(status, run.version, attempt.version, thread.version, sealed_at=now)
 
     async def cancel(
         self,
@@ -246,7 +250,7 @@ class RunOutcomeService:
             thread.version += 1
             thread.updated_at = now
             await refresh_run_retention(database, run=run, now=now)
-            await apply_run_outcome(database, run=run, outcome="cancelled", now=now)
+            await apply_run_outcome(database, thread=thread, run=run, outcome="cancelled", now=now)
             if attempt is None:
                 await self._lifecycle.append_run_lifecycle(
                     database,
@@ -272,6 +276,7 @@ class RunOutcomeService:
                 run.version,
                 None if attempt is None else attempt.version,
                 thread.version,
+                sealed_at=now,
             )
             if transaction_hook is not None:
                 await transaction_hook(database)
@@ -292,12 +297,13 @@ class RunOutcomeService:
             validate_outcome_candidate_scope(state, run, thread)
         candidate = state.envelope.outcome_candidate
         if isinstance(candidate, CompletedOutcomeCandidate) and candidate.output_object is not None:
-            await self._payloads.verify_reference(
+            payload = await self._payloads.verify_reference(
                 authority.organization_id,
                 authority.run_id,
                 "output",
                 candidate.output_object,
             )
+            remember_output(candidate.output_object.digest_sha256, payload.payload)
         return VerifiedRunOutcome(state, authority.organization_id, authority.run_id, self._verifier)
 
     async def _best_effort_signal(self, *, organization_id: str, thread_id: str) -> None:

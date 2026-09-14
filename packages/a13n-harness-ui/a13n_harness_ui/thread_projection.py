@@ -11,7 +11,7 @@ from typing import Literal
 from a13n_harness import HarnessState
 from a13n_harness.model_context import user_prompt_content
 from a13n_stream_protocol.messages import project_input_content
-from pydantic import JsonValue, TypeAdapter, ValidationError
+from pydantic import BaseModel, JsonValue, TypeAdapter, ValidationError
 from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
@@ -29,6 +29,7 @@ from pydantic_ai.tools import DeferredToolRequests
 from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.composition.models import ResolvedRunComposition
 from a13n_harness_ui.errors import ThreadError
+from a13n_harness_ui.output_comment_models import RootOutputLocation, SavedOutputTarget
 from a13n_harness_ui.storage import (
     LocalStore,
     StoredContinuation,
@@ -225,7 +226,9 @@ class ThreadProjectionService:
         position = max(0, upper_bound - limit)
         # Display only conversation parts; the saved model history remains exact.
         selected = history[position:upper_bound]
-        entries = tuple(_message_entry(index, item) for index, item in enumerate(selected, start=position))
+        entries = tuple(
+            _message_entry(index, item, thread=thread) for index, item in enumerate(selected, start=position)
+        )
         next_cursor = None
         if position > 0:
             next_cursor = _encode_cursor(
@@ -259,7 +262,7 @@ class ThreadProjectionService:
         history = state.message_history
         if position < 0 or position >= len(history):
             raise ThreadError("Transcript position is invalid.", code="thread_history_position_invalid")
-        return _message_entry(position, history[position])
+        return _message_entry(position, history[position], thread=thread)
 
     async def projects(self) -> tuple[ProjectSummary, ...]:
         source = await self._configurations.current()
@@ -276,6 +279,7 @@ class ThreadProjectionService:
                 position=project.position,
                 roots=tuple(root.path for root in project.roots),
                 last_active_at=recency.get(project.id),
+                defaults=project.defaults,
             )
             for project in sorted(source.projects.values(), key=lambda item: (item.position, item.id))
         )
@@ -377,12 +381,12 @@ def _normalize_query(query: str | None) -> str | None:
     return normalized or None
 
 
-def _encode_cursor(value: _ThreadCursor | _TranscriptCursor) -> str:
+def _encode_cursor(value: BaseModel) -> str:
     payload = value.model_dump_json().encode("utf-8")
     return base64.urlsafe_b64encode(payload).decode("ascii").rstrip("=")
 
 
-def _decode_cursor[CursorT: _ThreadCursor | _TranscriptCursor](
+def _decode_cursor[CursorT: BaseModel](
     value: str,
     model: type[CursorT],
     *,
@@ -400,7 +404,7 @@ def _decode_cursor[CursorT: _ThreadCursor | _TranscriptCursor](
         raise ThreadError("Cursor is invalid.", code=code) from exc
 
 
-def _message_entry(position: int, message: ModelMessage) -> TranscriptEntry:
+def _message_entry(position: int, message: ModelMessage, *, thread: Thread | None = None) -> TranscriptEntry:
     if isinstance(message, ModelRequest):
         return TranscriptEntry(
             position=position,
@@ -413,7 +417,25 @@ def _message_entry(position: int, message: ModelMessage) -> TranscriptEntry:
             position=position,
             message_kind="response",
             timestamp=message.timestamp,
-            parts=tuple(_response_part(part) for part in message.parts),
+            parts=tuple(
+                _response_part(part).model_copy(
+                    update={
+                        "comment_target": SavedOutputTarget(
+                            producing_thread_id=thread.thread_id,
+                            source_id=thread.continuation.logical_digest,
+                            location=RootOutputLocation(message=position, part=index),
+                        )
+                    }
+                )
+                if (
+                    isinstance(part, TextPart)
+                    and thread is not None
+                    and thread.parent_thread_id is None
+                    and thread.continuation is not None
+                )
+                else _response_part(part)
+                for index, part in enumerate(message.parts)
+            ),
         )
     raise ThreadError("Thread history contains an unsupported message.", code="thread_history_invalid")
 
@@ -458,7 +480,9 @@ def _request_parts(part: object) -> tuple[TranscriptPart, ...]:
 
 def _response_part(part: object) -> TranscriptPart:
     if isinstance(part, TextPart):
-        return TranscriptPart(kind="assistant", text=_bounded_text(part.content))
+        return TranscriptPart(
+            kind="assistant", text=_bounded_text(part.content), text_truncated=len(part.content) > _MAX_TEXT
+        )
     if isinstance(part, ThinkingPart):
         return TranscriptPart(kind="thinking", text=_bounded_text(part.content))
     if isinstance(part, ToolCallPart):

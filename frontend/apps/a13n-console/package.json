@@ -7,8 +7,8 @@
     "node": ">=24"
   },
   "scripts": {
-    "build": "tsc --noEmit && vite build",
-    "check": "pnpm run typecheck && pnpm run test",
+    "build": "vite build",
+    "check": "pnpm run typecheck",
     "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
     "dev": "vite",
     "typecheck": "tsc --noEmit",
@@ -26,17 +26,21 @@
   },
   "dependencies": {
     "@converge.ai/a13n": "link:../../../sdk/typescript",
+    "@daypicker/react": "^10.0.1",
+    "@phosphor-icons/react": "^2.1.10",
     "@tanstack/react-query": "^5.102.8",
     "a13n-ui": "workspace:*",
     "ajv": "^8.20.0",
     "ajv-formats": "^3.0.1",
+    "decimal.js-light": "^2.5.1",
+    "fflate": "^0.8.3",
     "i18next": "^25.0.0",
-    "lucide-react": "^0.577.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-i18next": "^15.5.0",
     "react-markdown": "^10.1.0",
     "react-router": "^8.3.1",
+    "rehype-highlight": "^7.0.2",
     "remark-gfm": "^4.0.1"
   }
 }

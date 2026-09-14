@@ -1,0 +1,93 @@
+.runFacts {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  gap: 12px 16px;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.runFacts dt {
+  color: var(--a13n-secondary);
+}
+.runFacts dd {
+  margin: 0;
+  min-width: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.runFacts a {
+  color: var(--a13n-text);
+  text-decoration: none;
+}
+.runFacts a:hover {
+  text-decoration: underline;
+}
+.runFacts time {
+  font-variant-numeric: tabular-nums;
+}
+.inspectorBody {
+  display: grid;
+  gap: 20px;
+}
+.inspectorBody h3 {
+  font-size: 13px;
+  font-weight: 500;
+  margin: 4px 0 -8px;
+}
+.inspectorBody > .runFacts {
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--a13n-border-soft);
+}
+.metadata {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 14px;
+  font-size: 12px;
+  align-items: baseline;
+}
+.metadata dt {
+  color: var(--a13n-secondary);
+}
+.metadata dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.inspectorLineage {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+.inspectorLineage a {
+  color: var(--a13n-text);
+  text-decoration: none;
+  font-size: 13px;
+}
+.inspectorLineage small {
+  display: block;
+  color: var(--a13n-secondary);
+  font-size: 11px;
+  margin-top: 4px;
+}
+.inspectorLineage > span:last-child {
+  margin-left: auto;
+  min-width: 0;
+  max-width: 220px;
+}
+@media (max-width: 600px) {
+  .metadata {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 5px;
+  }
+  .metadata dd {
+    margin-bottom: 10px;
+  }
+  .inspectorLineage {
+    flex-wrap: wrap;
+  }
+  .inspectorLineage > span:last-child {
+    margin-left: 0;
+  }
+}

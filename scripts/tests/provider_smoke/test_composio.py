@@ -30,21 +30,18 @@ def smoke(monkeypatch):
         tool="GITHUB_LOOKUP",
         arguments='{"query":"hello"}',
         execute=False,
-        endpoint=None,
-        allow_private_domain=[],
         auth_config_id="auth-1",
         callback_url="https://callback.example/complete",
     )
     calls = []
     state = {"owner": "user-1", "changed": False, "unknown": False, "inspected": False}
-    origin = "https://backend.composio.dev"
 
     def handler(req):
         calls.append(req)
         assert req.headers["x-api-key"] == "dummy-key"
         path = req.url.path
         version = "20260904_01" if state["changed"] and state["inspected"] else "20260903_01"
-        account = {"id": "account-1", "toolkit_slug": "github", "user_id": state["owner"], "status": "ACTIVE"}
+        account = {"id": "account-1", "toolkit": {"slug": "github"}, "user_id": state["owner"], "status": "ACTIVE"}
         if path.endswith("/toolkits"):
             item = {"slug": "github", "name": "GitHub"}
             item.update({"meta": {"version": version}})
@@ -54,7 +51,12 @@ def smoke(monkeypatch):
             item.update({"toolkit": {"slug": "github"}, "status": "ENABLED", "auth_scheme": "OAUTH2"})
             value = {"items": [item], "total": 1}
         elif path.endswith("/toolkits/github"):
-            value = {"slug": "github", "meta": {"version": version}}
+            value = {
+                "slug": "github",
+                "name": "GitHub",
+                "meta": {"version": version},
+                "auth_config_details": [{"mode": "OAUTH2", "fields": {"connected_account_initiation": {}}}],
+            }
         elif path.endswith("/tools"):
             value = {"items": [{"slug": "GITHUB_LOOKUP", "version": version}]}
             assert req.url.params["toolkit_versions[github]"] == version
@@ -67,15 +69,16 @@ def smoke(monkeypatch):
             body = json.loads(req.content)
             assert body["auth_config_id"] == "auth-1"
             assert body["user_id"] == "user-1"
-            assert req.headers["idempotency-key"].startswith("smoke-setup-")
+            assert body["callback_url"] == args.callback_url
+            assert "idempotency-key" not in req.headers
             value = {
                 "connected_account_id": "account-1",
-                "session_uri": "session-1",
-                "redirect_url": origin + "/authorize",
+                "redirect_url": "https://connect.composio.dev/link/test",
+                "expires_at": "2026-09-09T18:00:00+00:00",
             }
         elif path.endswith("/complete_auth"):
-            assert json.loads(req.content)["session_uri"] == "session-1"
-            value = account
+            assert json.loads(req.content) == {"session_uri": "session-1", "user_id": "user-1"}
+            value = {"connected_account_id": "account-1", "toolkit_slug": "github"}
         elif path.endswith("/account-1"):
             state["inspected"] = True
             value = account
@@ -83,6 +86,7 @@ def smoke(monkeypatch):
             body = json.loads(req.content)
             assert body["arguments"] == {"query": "hello"}
             assert body["connected_account_id"] == "account-1"
+            assert body["user_id"] == "user-1"
             assert body["version"] == version
             assert req.headers["idempotency-key"].startswith("smoke-")
             if state["unknown"]:

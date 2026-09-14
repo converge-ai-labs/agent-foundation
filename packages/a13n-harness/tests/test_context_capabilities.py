@@ -74,6 +74,8 @@ from pydantic_ai.messages import (
     ModelMessagesTypeAdapter,
     ModelRequest,
     ModelResponse,
+    NativeToolCallPart,
+    NativeToolReturnPart,
     TextContent,
     TextPart,
     ThinkingPart,
@@ -208,7 +210,8 @@ def test_explicit_context_capability_thresholds_override_agent_model_config() ->
     assert compaction.policy == CompactionPolicy(trigger_tokens=23_456)
 
 
-async def test_handoff_replaces_history_and_carries_only_escaped_file_reminders() -> None:
+@pytest.mark.parametrize("native_history", [False, True])
+async def test_handoff_replaces_history_and_carries_only_escaped_file_reminders(native_history: bool) -> None:
     calls: list[tuple[list[ModelMessage], AgentInfo]] = []
 
     async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
@@ -236,10 +239,26 @@ async def test_handoff_replaces_history_and_carries_only_escaped_file_reminders(
         model=FunctionModel(stream_function=stream),
         capabilities=(RuntimeContextCapability(), HandoffCapability()),
     )
-    result = await executable.run("Build the feature", bindings=RunBindings.embedded())
+    previous = (
+        HarnessState.new(
+            message_history=(
+                ModelRequest(parts=[UserPromptPart("Search for background information")]),
+                ModelResponse(
+                    parts=[
+                        NativeToolCallPart("web_search", {}, tool_call_id="search-1"),
+                        NativeToolReturnPart("web_search", "Background information", tool_call_id="search-1"),
+                    ]
+                ),
+            )
+        )
+        if native_history
+        else None
+    )
+    result = await executable.run("Build the feature", bindings=RunBindings.embedded(), previous_state=previous)
 
     assert result.output_or_raise() == "done"
     assert len(calls) == 2
+    assert '<runtime-context source="a13n-harness">' in _user_text(calls[0][0])
     restored = calls[1][0]
     assert len(restored) == 1  # Native Pydantic preparation merges adjacent request messages.
     assert isinstance(restored[0], ModelRequest)
@@ -540,6 +559,67 @@ async def test_compaction_uses_same_agent_plain_text_run_without_handoff(
     assert persisted_compaction[1].metadata == {"keep": "compact"}
     assert len(result.new_messages()) == 2
     assert result.new_messages() == result.all_messages()[-2:]
+
+
+@pytest.mark.parametrize("tool_name", ["web_search", "image_generation"])
+async def test_compaction_resumes_after_completed_native_tools(tool_name: str) -> None:
+    calls: list[list[ModelMessage]] = []
+
+    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        del info
+        calls.append(deepcopy(messages))
+        if _COMPACTION_PROMPT in _user_text(messages):
+            yield "Compacted native tool history"
+        else:
+            yield "done"
+
+    previous = HarnessState.new(
+        message_history=(
+            ModelRequest(parts=[UserPromptPart("Original long task")]),
+            ModelResponse(
+                parts=[
+                    NativeToolCallPart(tool_name, {}, tool_call_id="native-1"),
+                    NativeToolReturnPart(tool_name, "Native result", tool_call_id="native-1"),
+                ],
+            ),
+            ModelRequest(parts=[UserPromptPart("Follow up after the native tool")]),
+            ModelResponse(
+                parts=[TextPart("Previous ordinary answer")],
+                usage=RequestUsage(input_tokens=320_000, output_tokens=100),
+            ),
+        )
+    )
+    executable = HarnessBuilder().build(
+        HarnessAgentSpec(
+            model_characteristics=HarnessModelCharacteristics(context_window=350_000, compact_threshold=0.9)
+        ),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(CompactionCapability(), RuntimeContextCapability()),
+    )
+    result = await executable.run("Continue", bindings=RunBindings.embedded(), previous_state=previous)
+
+    assert result.output_or_raise() == "done"
+    assert len(calls) == 2
+    assert calls[0][: len(previous.message_history)] == list(previous.message_history)
+    assert _COMPACTION_PROMPT in _user_text(calls[0])
+    assert _COMPACTION_PROMPT not in _user_text(calls[1])
+    assert "Original long task" not in _user_text(calls[1])
+    assert '<runtime-context source="a13n-harness">' in _user_text(calls[1])
+    assert result.state is not None
+    assert any(
+        isinstance(message, ModelResponse)
+        and message.metadata == {"keep": "compact"}
+        and any(
+            isinstance(part, TextPart) and part.content == "Compacted native tool history" for part in message.parts
+        )
+        for message in result.state.message_history
+    )
+    assert not any(
+        isinstance(part, NativeToolCallPart | NativeToolReturnPart)
+        for message in result.state.message_history
+        for part in message.parts
+    )
 
 
 async def test_compaction_preserves_native_provider_cache_prefixes() -> None:
@@ -1033,6 +1113,33 @@ async def test_context_mutation_waits_for_exact_provider_and_deferred_boundaries
     assert _requires_exact_history(suspended)
     assert _requires_exact_history(pending)
     assert not _requires_exact_history(integrated)
+
+
+@pytest.mark.parametrize("native_completed", [False, True])
+@pytest.mark.parametrize("local_pending", [False, True])
+@pytest.mark.parametrize("suspended", [False, True])
+def test_exact_history_tracks_native_results_without_clearing_other_pending_calls(
+    native_completed: bool, local_pending: bool, suspended: bool
+) -> None:
+    response = ModelResponse(
+        parts=[
+            NativeToolCallPart("web_search", {}, tool_call_id="native-1"),
+            *([NativeToolReturnPart("web_search", "result", tool_call_id="native-1")] if native_completed else []),
+            *([ToolCallPart("external", {}, tool_call_id="local-1")] if local_pending else []),
+        ],
+        state="suspended" if suspended else "complete",
+    )
+    history: list[ModelMessage] = [ModelRequest(parts=[UserPromptPart("start")]), response]
+
+    assert _requires_exact_history(history) is (suspended or local_pending or not native_completed)
+    if not suspended:
+        history.extend(
+            [ModelRequest(parts=[UserPromptPart("follow up")]), ModelResponse(parts=[TextPart("ordinary answer")])]
+        )
+        assert _requires_exact_history(history) is (local_pending or not native_completed)
+        if local_pending:
+            history.append(ModelRequest(parts=[ToolReturnPart("external", "done", tool_call_id="local-1")]))
+            assert _requires_exact_history(history) is (not native_completed)
 
 
 async def test_compaction_does_not_estimate_history_without_provider_usage() -> None:

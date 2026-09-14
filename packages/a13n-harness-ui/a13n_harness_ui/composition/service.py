@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from a13n_logging import get_logger
 from pydantic import BaseModel
 
 from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration, canonical_digest
@@ -12,6 +13,8 @@ from a13n_harness_ui.surfaces import RunModelOverrides
 
 from .models import ResolvedAgentNode, ResolvedRunComposition
 from .resolver import AgentCompositionResolver, ThreadCompositionSelection
+
+_LOGGER = get_logger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,11 +35,12 @@ class CompositionAcceptanceService:
     def __init__(self, store: LocalStore, resolver: AgentCompositionResolver) -> None:
         self._store = store
         self._resolver = resolver
+        self.capability_warnings: tuple[str, ...] = ()
 
     def validate(self, source: LoadedHarnessUiConfiguration) -> None:
         """Validate one complete candidate without publishing or selecting it."""
 
-        self._resolver.validate_generation(source)
+        self._resolver.validate_generation(source, warnings=[])
 
     async def accept(
         self,
@@ -44,7 +48,8 @@ class CompositionAcceptanceService:
         *,
         expected_current_digest: str | None,
     ) -> AcceptedComposition:
-        self.validate(source)
+        warnings: list[str] = []
+        self._resolver.validate_generation(source, warnings=warnings)
         envelope = await self._store.objects.publish_model(
             object_kind=ObjectKind.configuration_generation,
             value=source,
@@ -72,6 +77,9 @@ class CompositionAcceptanceService:
             resources=indexes,
             expected_current_digest=expected_current_digest,
         )
+        self.capability_warnings = tuple(warnings)
+        for warning in warnings:
+            _LOGGER.warning("capability_skipped", extra={"warning": warning})
         return AcceptedComposition(source_digest=source.source_digest, generation=envelope.ref)
 
     async def current(self) -> LoadedHarnessUiConfiguration | None:

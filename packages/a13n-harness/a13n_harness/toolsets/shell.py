@@ -30,7 +30,7 @@ from a13n_harness.tools.metadata import (
 )
 
 from ._instructions import InstructionFunctionToolset, tool_instruction
-from ._results import ToolError, ToolFailure
+from ._results import ToolFailure, environment_failure
 from .events import ShellStatusEvent
 from .output import DEFAULT_TOOL_OUTPUT_CHARS, disclose_text_paths
 from .process_manager import _PROCESS_OBSERVATION_ACTIONS, _ProcessController, _project_status
@@ -510,18 +510,9 @@ def _project_capture(capture: EnvironmentOutputCapture) -> OutputPageProjection:
 
 
 def _environment_error_result(error: EnvironmentError) -> ToolFailure:
-    details = ToolError(
-        code=error.code,
-        outcome_known=error.code != "environment_unknown_outcome",
-    )
-    safe_details = {
-        key: value for key in ("field", "reason", "hint") if isinstance(value := error.details.get(key), str)
-    }
-    if safe_details:
-        details["details"] = cast(dict[str, JsonValue], safe_details)
-    if error.retry_hint is not None:
-        details["retry_hint"] = error.retry_hint
-    return {"ok": False, "error": details}
+    result = environment_failure(error)
+    result["error"]["outcome_known"] = error.code != "environment_unknown_outcome"
+    return result
 
 
 def _string_argument(arguments: Mapping[str, object], name: str) -> str:
@@ -530,6 +521,7 @@ def _string_argument(arguments: Mapping[str, object], name: str) -> str:
         raise EnvironmentError(
             f"Environment tool argument {name!r} is invalid.",
             code="environment_request_invalid",
+            details={"field": name, "reason": "invalid_value", "hint": "Supply a non-empty string for this field."},
         )
     return value
 
@@ -542,6 +534,7 @@ def _optional_string_argument(arguments: Mapping[str, object], name: str) -> str
         raise EnvironmentError(
             f"Environment tool argument {name!r} is invalid.",
             code="environment_request_invalid",
+            details={"field": name, "reason": "invalid_value", "hint": "Supply a non-empty string for this field."},
         )
     return value
 

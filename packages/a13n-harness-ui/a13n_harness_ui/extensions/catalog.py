@@ -27,6 +27,7 @@ from a13n_harness.capabilities.context import (
 )
 from a13n_harness.capabilities.documents import DocumentsConfiguration
 from a13n_harness.capabilities.interaction import UserInteractionCapability
+from a13n_harness.capabilities.native_image_generation import NativeImageGenerationCapability
 from a13n_harness.capabilities.shell_review import ShellReviewAction, ShellReviewCapability, ShellRiskLevel
 from a13n_harness.capabilities.skills import FileSkillSource, SkillManager, SkillsCapability, SkillsPolicy
 from a13n_harness.capabilities.web import WebConfiguration
@@ -40,16 +41,18 @@ from a13n_harness.environment import (
     build_environment_run_extension_factory_catalog,
     discover_environment_run_extension_factory_references,
 )
+from a13n_harness.errors import DefinitionError
 from a13n_harness.plugin_factories import (
     HarnessPluginFactory,
     HarnessPluginFactoryCatalog,
     build_harness_plugin_factory_catalog,
     discover_harness_plugin_factory_references,
 )
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, model_validator
-from pydantic_ai.capabilities import CAPABILITY_TYPES, AbstractCapability
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError, model_validator
+from pydantic_ai.capabilities import CAPABILITY_TYPES, AbstractCapability, NativeTool
+from pydantic_ai.native_tools import ImageGenerationTool
 
-from a13n_harness_ui.environment_paths import EnvironmentPathLayout
+from a13n_harness_ui.environment_paths import BUILTIN_SKILLS_PATH, BUILTIN_SKILLS_SOURCE_ID, EnvironmentPathLayout
 from a13n_harness_ui.errors import CompositionError
 
 from .environment_adapters import (
@@ -72,6 +75,7 @@ _BUILTIN_CAPABILITIES: dict[str, type[AbstractCapability[Any]]] = {
     "documents": DocumentsCapability,
     "skills": SkillsCapability,
     "web": WebCapability,
+    "native_image_generation": NativeImageGenerationCapability,
     "working_state": WorkingStateCapability,
     "user_interaction": UserInteractionCapability,
     **{
@@ -246,6 +250,21 @@ class HarnessUiExtensionCatalog:
                 if entry.dist is not None:
                     distribution_name = entry.dist.metadata.get("Name")
                     distribution_version = entry.dist.version
+            if capability_type in custom_types:
+                try:
+                    CapabilityTypeCatalog.from_types(custom_types)
+                except DefinitionError as exc:
+                    raise CompositionError(
+                        "A selected Capability type is not eligible for declarative configuration.",
+                        code="capability_catalog_invalid",
+                        details={"capability": key},
+                    ) from exc
+                if capability_type.get_serialization_name() != key:
+                    raise CompositionError(
+                        "A Capability catalog key does not match its serialization name.",
+                        code="capability_catalog_invalid",
+                        details={"capability": key},
+                    )
             try:
                 capability = _construct_capability(
                     capability_type,
@@ -272,8 +291,6 @@ class HarnessUiExtensionCatalog:
                     ),
                 )
             )
-        if custom_types:
-            CapabilityTypeCatalog.from_types(custom_types)
         return tuple(result)
 
     def plugin_catalog(self, keys: tuple[str, ...]) -> HarnessPluginFactoryCatalog:
@@ -476,6 +493,17 @@ def _construct_capability(
             ),
         )
 
+    if capability_type is NativeImageGenerationCapability:
+        from a13n_harness_ui.capability_runtime import save_native_image
+
+        return NativeImageGenerationCapability(
+            saver=save_native_image,
+            tool=TypeAdapter(ImageGenerationTool).validate_python(configuration),
+        )
+    if capability_type is NativeTool:
+        native_arguments: dict[str, Any] = dict(configuration)
+        return NativeTool.from_spec(**native_arguments)
+
     arguments = dict(configuration)
     if capability_type is ShellReviewCapability:
         # JSON source carries enum values; the native constructor owns the remaining arguments.
@@ -497,10 +525,15 @@ def _construct_skills_capability(
     parsed = SkillsConfiguration.model_validate(configuration, strict=True)
     sources = [
         FileSkillSource(
+            BUILTIN_SKILLS_SOURCE_ID,
+            (BUILTIN_SKILLS_PATH,),
+            required=True,
+        ),
+        FileSkillSource(
             "a13n-harness-ui:user-skills",
             (path_layout.user_skills,),
             required=False,
-        )
+        ),
     ]
     sources.extend(
         FileSkillSource(

@@ -2,7 +2,7 @@ import { afterEach, vi } from "vitest";
 import { cleanup } from "@testing-library/react";
 afterEach(cleanup);
 
-// jsdom has no layout APIs; Radix and cmdk use these only to position/scroll UI.
+// jsdom has no layout APIs; floating controls use these to position and scroll.
 vi.stubGlobal(
   "ResizeObserver",
   class {
@@ -12,3 +12,5 @@ vi.stubGlobal(
   },
 );
 Element.prototype.scrollIntoView = vi.fn();
+
+Element.prototype.getAnimations = vi.fn(() => []);

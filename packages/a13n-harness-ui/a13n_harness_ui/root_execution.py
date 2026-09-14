@@ -23,11 +23,14 @@ from a13n_harness import (
 from a13n_harness import __version__ as harness_version
 from a13n_harness.capabilities import AskUserQuestionRequest, SubagentOperator, UserQuestionAnswers
 from a13n_harness.context import AgentContext
-from a13n_harness.input import RunInputValue
+from a13n_harness.environment.dynamic import DynamicEnvironmentCapability
+from a13n_harness.input import RunInputFactory, RunInputValue, RunPreparationContext
+from a13n_harness.observation import record_span_metadata
 from a13n_harness.pricing import get_current_pricing_catalog
 from a13n_logging import get_logger
 from a13n_stream_protocol import HarnessAguiObserver
 from anyio import CancelScope, to_thread
+from opentelemetry.trace import StatusCode
 from pydantic_ai import ToolDenied, ToolFailed
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.tools import DeferredToolApprovalResult, DeferredToolRequests, ToolApproved
@@ -47,7 +50,14 @@ from a13n_harness_ui.environment_runtime import EnvironmentFinalization, Environ
 from a13n_harness_ui.errors import RunCoordinationError, ThreadError
 from a13n_harness_ui.live import HarnessUiLiveHub
 from a13n_harness_ui.model_runtime import SubscriptionSource
-from a13n_harness_ui.root_input import detach_input
+from a13n_harness_ui.observation import (
+    phase,
+    record_configuration,
+    record_output,
+    record_phase_result,
+    record_skill_event,
+)
+from a13n_harness_ui.root_input import RootInputFiles, detach_input
 from a13n_harness_ui.storage import (
     LocalStore,
     ObjectKind,
@@ -59,6 +69,7 @@ from a13n_harness_ui.storage import (
 )
 from a13n_harness_ui.subagent_operator import HarnessUiSubagentOperator
 from a13n_harness_ui.surfaces import ApprovalDecision, ExternalToolResult, RunModelOverrides, ThreadDeferredResponse
+from a13n_harness_ui.thread_files import ThreadFiles
 from a13n_harness_ui.thread_service import ThreadService
 
 
@@ -93,6 +104,7 @@ class RootRunExecutor:
         subscription_sources: Mapping[str, SubscriptionSource] | None = None,
         live_hub: HarnessUiLiveHub | None = None,
         cleanup_timeout_seconds: float = 30.0,
+        thread_files: ThreadFiles | None = None,
     ) -> None:
         self._store = store
         self._threads = threads
@@ -104,6 +116,7 @@ class RootRunExecutor:
         self._subscription_sources = dict(subscription_sources or {})
         self._live_hub = live_hub
         self._cleanup_timeout_seconds = cleanup_timeout_seconds
+        self._thread_files = thread_files
         self._root_capability_factory: Callable[[str], AbstractCapability[AgentContext]] | None = None
 
     def replace_subscription_sources(self, sources: Mapping[str, SubscriptionSource]) -> None:
@@ -126,54 +139,103 @@ class RootRunExecutor:
         response: ThreadDeferredResponse | None = None,
         mutation: ThreadConfigurationMutation | None = None,
         model_overrides: RunModelOverrides | None = None,
-        on_stream: Callable[[HarnessRunStream[Any]], Awaitable[None]] | None = None,
+        on_stream: Callable[[HarnessRunStream[Any], RootInputFiles | None], Awaitable[None]] | None = None,
+        on_composition: Callable[[ObjectRef], Awaitable[None]] | None = None,
     ) -> RootRunOutcome:
-        if (prompt is None) == (response is None):
-            raise RunCoordinationError(
-                "A root operation requires exactly one prompt or deferred response.",
-                code="run_input_invalid",
+        with phase("prepare") as preparation_span:
+            record_span_metadata(
+                preparation_span,
+                {
+                    "prepare.input_kind": "deferred_response" if response is not None else "prompt",
+                    "prepare.configuration_mutation": mutation is not None,
+                },
             )
-        if prompt is not None:
-            prompt = detach_input(prompt)
-        thread = await self._threads.get(thread_id)
-        if thread.parent_thread_id is not None:
-            raise ThreadError("run_thread accepts only root Threads.", code="child_thread_scoped")
-        if thread.archived:
-            raise ThreadError("An archived Thread cannot run.", code="thread_archived")
-        if mutation is not None:
-            thread = await self._threads.update_configuration(thread_id=thread_id, mutation=mutation)
-        source = await self._required_configuration()
-        published = await self._compositions.publish(source, _selection(thread), model_overrides=model_overrides)
-        previous_state, deferred = await self._load_run_state(thread)
-        deferred_resume = _deferred_resume(thread=thread, requests=deferred, response=response)
-        if prompt is not None and deferred is not None:
-            raise RunCoordinationError(
-                "The selected Thread continuation has unresolved deferred tool requests.",
-                code="thread_deferred_pending",
+            if (prompt is None) == (response is None):
+                raise RunCoordinationError(
+                    "A root operation requires exactly one prompt or deferred response.",
+                    code="run_input_invalid",
+                )
+            if prompt is not None:
+                prompt = detach_input(prompt)
+            preparation_span.set_attribute("a13n.phase.step", "thread")
+            thread = await self._threads.get(thread_id)
+            if thread.parent_thread_id is not None:
+                raise ThreadError("run_thread accepts only root Threads.", code="child_thread_scoped")
+            if thread.archived:
+                raise ThreadError("An archived Thread cannot run.", code="thread_archived")
+            if mutation is not None:
+                thread = await self._threads.update_configuration(thread_id=thread_id, mutation=mutation)
+            preparation_span.set_attribute("a13n.phase.step", "configuration")
+            source = await self._required_configuration()
+            published = await self._compositions.publish(source, _selection(thread), model_overrides=model_overrides)
+            if on_composition is not None:
+                await on_composition(published.reference)
+            preparation_span.set_attribute("a13n.phase.step", "continuation")
+            previous_state, deferred = await self._load_run_state(thread)
+            deferred_resume = _deferred_resume(thread=thread, requests=deferred, response=response)
+            if prompt is not None and deferred is not None:
+                raise RunCoordinationError(
+                    "The selected Thread continuation has unresolved deferred tool requests.",
+                    code="thread_deferred_pending",
+                )
+            preparation_span.set_attribute("a13n.phase.step", "reconstruction")
+            pricing_catalog = await to_thread.run_sync(get_current_pricing_catalog)
+            reconstructed = self._agents.reconstruct(
+                published.value,
+                pricing_catalog=pricing_catalog,
+                subagent_operator=self._subagent_operator,
+                root_capabilities=(
+                    () if self._root_capability_factory is None else (self._root_capability_factory(thread.thread_id),)
+                ),
+                subscription_sources=self._subscription_sources,
             )
-        pricing_catalog = await to_thread.run_sync(get_current_pricing_catalog)
-        reconstructed = self._agents.reconstruct(
-            published.value,
-            pricing_catalog=pricing_catalog,
-            subagent_operator=self._subagent_operator,
-            root_capabilities=(
-                () if self._root_capability_factory is None else (self._root_capability_factory(thread.thread_id),)
-            ),
-            subscription_sources=self._subscription_sources,
-        )
-        environment = await self._environments.prepare(published.value)
-        instance = AgentInstanceContext(
-            identity=AgentIdentityRef(issuer="a13n-harness-ui", subject=thread.thread_id),
-            agent_instance_id=f"agent-{uuid4().hex[:20]}",
-            actor="a13n-harness-ui.root",
-            host_refs={"thread_id": thread.thread_id},
-        )
-        bindings = RunBindings(
-            instance=instance,
-            environment=environment.runtime,
-            model_resolver=reconstructed.model_resolver,
-            capabilities=production_run_capabilities(reconstructed.definition_capability_ids),
-        )
+            record_configuration(published.value, reconstructed.definition_capability_ids)
+            input_files = (
+                RootInputFiles(
+                    self._thread_files,
+                    thread_id,
+                    source.document.input,
+                    view_enabled=(published.value.root.tools is None or "view" in published.value.root.tools)
+                    and any(
+                        isinstance(capability, DynamicEnvironmentCapability) and capability.configuration.files_enabled
+                        for capability in reconstructed.executable.definition.capabilities
+                    ),
+                )
+                if self._thread_files is not None
+                else None
+            )
+            input_factory: RunInputFactory | None = None
+            if prompt is not None and input_files is not None:
+                submitted = prompt
+
+                async def prepare_input(context: RunPreparationContext) -> RunInputValue:
+                    assert input_files is not None
+                    return await input_files.prepare(submitted, context.environment)
+
+                input_factory = prepare_input
+                prompt = None
+            preparation_span.set_attribute("a13n.phase.step", "environment")
+            environment = await self._environments.prepare(published.value)
+            instance = AgentInstanceContext(
+                identity=AgentIdentityRef(issuer="a13n-harness-ui", subject=thread.thread_id),
+                agent_instance_id=f"agent-{uuid4().hex[:20]}",
+                actor="a13n-harness-ui.root",
+                host_refs={"thread_id": thread.thread_id},
+            )
+            bindings = RunBindings(
+                instance=instance,
+                environment=environment.runtime,
+                model_resolver=reconstructed.model_resolver,
+                capabilities=production_run_capabilities(reconstructed.definition_capability_ids),
+            )
+            record_phase_result(
+                preparation_span,
+                status="completed",
+                continuation_loaded=previous_state is not None,
+                deferred_resume=deferred_resume is not None,
+                capability_count=len(reconstructed.definition_capability_ids),
+                environment_prepared=True,
+            )
         result: HarnessRunResult[str] | None = None
         stream: HarnessRunStream[str] | None = None
         run_error: BaseException | None = None
@@ -181,13 +243,14 @@ class RootRunExecutor:
         try:
             stream = reconstructed.executable.stream(
                 prompt,
+                input_factory=input_factory,
                 bindings=bindings,
                 previous_state=previous_state,
                 deferred_resume=deferred_resume,
             )
             excerpts = ExcerptCollector(thread.excerpt, run_id=stream.run_id)
             if on_stream is not None:
-                await on_stream(stream)
+                await on_stream(stream, input_files)
             observer = HarnessAguiObserver()
             async with self._bind_subagent_parent(
                 thread_id=thread.thread_id,
@@ -197,6 +260,7 @@ class RootRunExecutor:
             ):
                 async with stream:
                     async for item in stream:
+                        record_skill_event(item)
                         excerpts.observe(item)
                         await self._store.usage.observe(thread_id=thread.thread_id, item=item)
                         try:
@@ -204,6 +268,10 @@ class RootRunExecutor:
                                 thread_id=thread.thread_id,
                                 run_id=stream.run_id,
                                 events=observer.observe(item),
+                                observer=observer,
+                                base_continuation_id=(
+                                    thread.continuation.logical_digest if thread.continuation is not None else None
+                                ),
                             )
                         except Exception:
                             pass
@@ -216,66 +284,103 @@ class RootRunExecutor:
                 # Preserve the whole envelope even when cleanup/cancellation prevents delivery.
                 result = stream.outcome
 
+        if result is not None:
+            record_output(result.output, status=result.status)
         finalization: EnvironmentFinalization | None = None
         finalization_error: Exception | None = None
         continuation = RootContinuationSelection(status="not_available")
-        with CancelScope(shield=True):
-            try:
-                finalization = await environment.finalize(timeout_seconds=self._cleanup_timeout_seconds)
-            except Exception as exc:
-                finalization_error = exc
-            if (
-                result is not None
-                and result.failure is not None
-                and stream is not None
-                and stream.diagnostic_error is not None
-            ):
-                feedback = await to_thread.run_sync(
-                    partial(
-                        exception_feedback,
-                        stream.diagnostic_error,
-                        thread_id=thread.thread_id,
-                        run_id=stream.run_id,
-                        phase="root_execution",
-                    )
-                )
-                result = result.replace(
-                    failure=result.failure.model_copy(update={"message": f"{result.failure.message}\n{feedback}"})
-                )
-            if result is not None:
-                continuation = await self._select_state(
-                    thread=thread,
-                    composition=published.reference,
-                    state=result.state,
-                    deferred=result.deferred,
-                    excerpt=thread.excerpt if excerpts is None else excerpts.finish(result),
-                    activity_changed=excerpts is not None and excerpts.changed,
-                )
-            elif stream is not None:
+        with phase("finalize") as finalization_span:
+            with CancelScope(shield=True):
+                finalization_span.set_attribute("a13n.phase.step", "environment")
                 try:
-                    state = await stream.export_state()
+                    finalization = await environment.finalize(timeout_seconds=self._cleanup_timeout_seconds)
                 except Exception as exc:
-                    continuation = RootContinuationSelection(status="failed", error=exc)
-                else:
+                    finalization_error = exc
+                if (
+                    result is not None
+                    and result.failure is not None
+                    and stream is not None
+                    and stream.diagnostic_error is not None
+                ):
+                    feedback = await to_thread.run_sync(
+                        partial(
+                            exception_feedback,
+                            stream.diagnostic_error,
+                            thread_id=thread.thread_id,
+                            run_id=stream.run_id,
+                            phase="root_execution",
+                        )
+                    )
+                    result = result.replace(
+                        failure=result.failure.model_copy(update={"message": f"{result.failure.message}\n{feedback}"})
+                    )
+                finalization_span.set_attribute("a13n.phase.step", "continuation")
+                if result is not None:
                     continuation = await self._select_state(
                         thread=thread,
                         composition=published.reference,
-                        state=state,
-                        excerpt=thread.excerpt if excerpts is None else excerpts.finish(None),
+                        state=result.state,
+                        deferred=result.deferred,
+                        excerpt=thread.excerpt if excerpts is None else excerpts.finish(result),
                         activity_changed=excerpts is not None and excerpts.changed,
                     )
-            else:
-                continuation = RootContinuationSelection(status="not_available")
-            if continuation.error is not None:
-                get_logger(__name__).error(
-                    "Root continuation save failed: thread_id=%s exception_type=%s",
-                    thread.thread_id,
-                    type(continuation.error).__name__,
-                )
-                if run_error is not None:
-                    run_error.add_note(
-                        "The latest continuation could not be saved; the previous selection is unchanged."
+                elif stream is not None:
+                    try:
+                        state = await stream.export_state()
+                    except Exception as exc:
+                        continuation = RootContinuationSelection(status="failed", error=exc)
+                    else:
+                        continuation = await self._select_state(
+                            thread=thread,
+                            composition=published.reference,
+                            state=state,
+                            excerpt=thread.excerpt if excerpts is None else excerpts.finish(None),
+                            activity_changed=excerpts is not None and excerpts.changed,
+                        )
+                else:
+                    continuation = RootContinuationSelection(status="not_available")
+                if continuation.error is not None:
+                    get_logger(__name__).error(
+                        "Root continuation save failed: thread_id=%s exception_type=%s",
+                        thread.thread_id,
+                        type(continuation.error).__name__,
                     )
+                    if run_error is not None:
+                        run_error.add_note(
+                            "The latest continuation could not be saved; the previous selection is unchanged."
+                        )
+            finalization_span.set_attribute("a13n.ui.continuation.status", continuation.status)
+            phase_failed = (
+                finalization_error is not None
+                or continuation.error is not None
+                or bool(finalization is not None and finalization.cleanup_errors)
+            )
+            record_phase_result(
+                finalization_span,
+                status="failed" if phase_failed else "completed",
+                continuation_status=continuation.status,
+                environment_finalized=finalization is not None,
+                cleanup_error_count=len(finalization.cleanup_errors) if finalization is not None else 0,
+                result_status=result.status if result is not None else "unavailable",
+            )
+            if (
+                finalization_error is not None
+                or continuation.error is not None
+                or (finalization is not None and finalization.cleanup_errors)
+            ):
+                finalization_span.set_attribute("a13n.phase.status", "failed")
+                finalization_span.set_status(StatusCode.ERROR)
+        if stream is not None and self._live_hub is not None:
+            with CancelScope(shield=True):
+                await self._live_hub.finish_root(
+                    thread_id=thread.thread_id,
+                    run_id=stream.run_id,
+                    saved_continuation_id=(
+                        continuation.reference.logical_digest
+                        if continuation.status == "selected" and continuation.reference is not None
+                        else None
+                    ),
+                )
         if run_error is not None:
             if finalization_error is not None:
                 run_error.add_note(f"Environment finalization also failed: {finalization_error!r}")
@@ -385,6 +490,8 @@ class RootRunExecutor:
         thread_id: str,
         run_id: str,
         events: tuple[Any, ...],
+        observer: HarnessAguiObserver,
+        base_continuation_id: str | None,
     ) -> None:
         if self._live_hub is None:
             return
@@ -395,6 +502,8 @@ class RootRunExecutor:
             thread_id=thread_id,
             run_id=run_id,
             events=events,
+            observer=observer,
+            base_continuation_id=base_continuation_id,
         )
 
 

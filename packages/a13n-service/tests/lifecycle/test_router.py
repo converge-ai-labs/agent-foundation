@@ -47,6 +47,7 @@ async def lifecycle_api_client(
 
     app.state.runtime = process_runtime_factory(
         request_authenticator=authenticate,
+        sessions=lifecycle_interaction_sessions,
         lifecycle_events=lifecycle_events,
     )
     transport = httpx2.ASGITransport(app=app)

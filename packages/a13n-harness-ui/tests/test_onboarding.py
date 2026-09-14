@@ -45,7 +45,7 @@ async def test_setup_reuses_existing_codex_login_without_login_or_refresh(
     account = _codex_login_file(datetime.now(UTC) + timedelta(hours=-1 if expired else 1))
     original = account.read_bytes()
     path = tmp_path / "config" / "a13n-harness-ui.yaml"
-    answers = deque(["codex", "gpt-5.6-sol", fast, "full-control"])
+    answers = deque(["codex", "gpt-5.6-sol", fast, "", "full-control"])
     asked, output = [], []
 
     async def ask(question, selection):
@@ -61,7 +61,7 @@ async def test_setup_reuses_existing_codex_login_without_login_or_refresh(
         codex_login=unexpected,
     ) as app:
         assert await run_setup(app, tmp_path, ask_user=ask, emit=output.append)
-    assert asked == ["provider", "model", "fast", "environment"]
+    assert asked == ["provider", "model", "fast", "tools", "environment"]
     assert not answers
     assert "Using existing Codex login" in "\n".join(output)
     assert account.read_bytes() == original
@@ -101,7 +101,7 @@ async def test_setup_reuses_an_existing_multi_root_project_without_publishing_a_
     )
     original = project.read_bytes()
     output = []
-    answers = deque(["codex", "gpt-5.6-sol", "", "full-control"])
+    answers = deque(["codex", "gpt-5.6-sol", "", "", "full-control"])
 
     async def ask(question, selection):
         return answers.popleft()
@@ -145,7 +145,7 @@ async def test_setup_available_grok_is_default_even_with_broken_codex(
         )
     )
     original = grok.read_bytes()
-    answers = deque(["grok", "grok-4.6", "full-control"])
+    answers = deque(["grok", "grok-4.6", "", "full-control"])
     output = []
 
     async def ask(question, selection):
@@ -165,7 +165,7 @@ async def test_setup_available_grok_is_default_even_with_broken_codex(
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("cancel_at", ["provider", "model", "fast", "environment"])
+@pytest.mark.parametrize("cancel_at", ["provider", "model", "fast", "tools", "environment"])
 async def test_cancel_setup_does_not_publish_configuration(tmp_path: Path, cancel_at: str) -> None:
     path = tmp_path / "config" / "a13n-harness-ui.yaml"
     account = _codex_login_file(datetime.now(UTC) + timedelta(hours=1))
@@ -189,7 +189,7 @@ async def test_cancel_setup_does_not_publish_configuration(tmp_path: Path, cance
 @pytest.mark.anyio
 async def test_missing_account_requires_external_login_and_allows_retry(tmp_path: Path) -> None:
     Path(os.environ["CODEX_HOME"]).mkdir(parents=True)
-    answers = deque(["codex", "later", "gpt-5.6-sol", "", "full-control"])
+    answers = deque(["codex", "later", "gpt-5.6-sol", "", "", "full-control"])
     asked = []
 
     async def ask(question, selection):
@@ -223,6 +223,7 @@ async def test_back_from_login_can_choose_another_connection(tmp_path: Path) -> 
             "gpt-test",
             "high",
             "",
+            "",
             "full-control",
         ]
     )
@@ -245,7 +246,7 @@ def test_custom_settings_are_optional_and_connection_change_clears_stale_values(
     wizard = SetupWizard(advanced=True)
     wizard.accept("codex")
     wizard.accept("gpt-6-astra")
-    for value in ("on", "all", "extended", "low", "no", "be concise", "full-control"):
+    for value in ("on", "all", "extended", "low", "", "no", "be concise", "full-control"):
         wizard.accept(value)
     assert wizard.question is None
     assert wizard.selection("/tmp")["codex_context_window"] == 872000
@@ -384,6 +385,74 @@ async def test_landing_chat_keeps_terminal_and_enables_composer_only_when_ready(
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("owner", ["root", "child"])
+@pytest.mark.parametrize("active_run", [False, True])
+async def test_chat_task_failure_preserves_error_after_terminal_cleanup(
+    tmp_path: Path, owner: str, active_run: bool
+) -> None:
+    import asyncio
+    from types import SimpleNamespace
+
+    from a13n_harness_ui.cli import CliRequest
+    from a13n_harness_ui.interactive.onboarding import LandingScreen
+    from a13n_harness_ui.interactive.shell import CliShell
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    async def empty():
+        return None
+
+    backend = SimpleNamespace(
+        thread_id=None, resumed_transcript=None, interaction=empty, skill_catalog=empty, cancel=empty
+    )
+    loop = asyncio.get_running_loop()
+    previous_handler = loop.get_exception_handler()
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+        screen = LandingScreen()
+        waiting = asyncio.Event()
+
+        async def wait_for_receipt() -> str:
+            waiting.set()
+            # An internal failure can prevent the terminal receipt being settled.
+            await asyncio.Future()
+            return "unreachable"
+
+        async with asyncio.timeout(3) as deadline:
+            with pytest.raises(ExceptionGroup) as caught:
+                async with (
+                    screen,
+                    open_harness_ui_app(HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))) as app,
+                ):
+                    shell = CliShell(CliRequest())
+
+                    async def fail() -> None:
+                        while not shell.ready:
+                            await asyncio.sleep(0)
+                        if active_run:
+                            shell.launch(wait_for_receipt(), kind="run")
+                            await waiting.wait()
+                        raise RuntimeError("owned chat task failed")
+
+                    coordinator = app._root_runs if owner == "root" else app._subagent_operator
+                    assert coordinator._task_group is not None
+                    coordinator._task_group.start_soon(fail)
+                    await screen.run_chat(shell, backend)
+        assert not deadline.expired()
+        expected, unexpected = caught.value.split(
+            lambda exc: isinstance(exc, RuntimeError) and str(exc) == "owned chat task failed"
+        )
+        assert expected is not None and unexpected is None
+        assert shell.job is None or shell.job.done()
+        assert not screen.application.is_running
+        assert screen._task is None
+        assert shell.backend is None
+        assert app._root_runs._task_group is None
+        assert app._subagent_operator._task_group is None
+    assert loop.get_exception_handler() is previous_handler
+
+
+@pytest.mark.anyio
 async def test_landing_busy_cancellation_releases_terminal() -> None:
     import asyncio
 
@@ -414,7 +483,7 @@ async def test_landing_busy_cancellation_releases_terminal() -> None:
 async def test_add_agent_wizard_has_no_publication_confirmation_and_keeps_defaults(tmp_path: Path) -> None:
     _codex_login_file(datetime.now(UTC) + timedelta(hours=1))
     path = tmp_path / "config.yaml"
-    answers = deque(["codex", "gpt-5.6-sol", "", "full-control"])
+    answers = deque(["codex", "gpt-5.6-sol", "", "", "full-control"])
     asked = []
 
     async def ask(question, selection):
@@ -428,9 +497,9 @@ async def test_add_agent_wizard_has_no_publication_confirmation_and_keeps_defaul
         assert await run_setup(app, tmp_path, ask_user=ask, emit=lambda text: None)
         root = path.read_bytes()
         asked.clear()
-        answers.extend(["new", "codex", "gpt-6-astra", "", "Astra coding"])
+        answers.extend(["new", "codex", "gpt-6-astra", "", "", "Astra coding"])
         assert await run_setup(app, tmp_path, ask_user=ask, emit=lambda text: None, add_agent=True)
-        assert asked == ["model_source", "provider", "model", "fast", "name"]
+        assert asked == ["model_source", "provider", "model", "fast", "tools", "name"]
         assert path.read_bytes() == root
         source = await app.current_configuration()
         assert source.models[source.agents["agent-astra-coding"].model].route == "openai-codex:gpt-6-astra"
@@ -442,7 +511,7 @@ async def test_add_agent_wizard_has_no_publication_confirmation_and_keeps_defaul
 async def test_add_model_only_then_add_agent_reuses_exact_model(tmp_path: Path, api: bool) -> None:
     _codex_login_file(datetime.now(UTC) + timedelta(hours=1))
     path = tmp_path / "config.yaml"
-    answers = deque(["codex", "gpt-5.6-sol", "", "full-control"])
+    answers = deque(["codex", "gpt-5.6-sol", "", "", "full-control"])
     asked = []
 
     async def ask(question, selection):
@@ -468,15 +537,16 @@ async def test_add_model_only_then_add_agent_reuses_exact_model(tmp_path: Path, 
                     "adaptive",
                     "",
                     "Shared model",
+                    "later",
                 ]
                 if api
-                else ["codex", "gpt-6-astra", "", "Shared model"]
+                else ["codex", "gpt-6-astra", "", "Shared model", "later"]
             )
             assert await run_setup(app, tmp_path, ask_user=ask, emit=lambda text: None, add_model=True)
             assert asked == (
-                ["provider", "api_provider", "base_url", "credential", "model", "preset", "context", "name"]
+                ["provider", "api_provider", "base_url", "credential", "model", "preset", "context", "name", "action"]
                 if api
-                else ["provider", "model", "fast", "name"]
+                else ["provider", "model", "fast", "name", "action"]
             )
         source = await app.current_configuration()
         assert set(source.agents) == {"agent-codex"}
@@ -485,9 +555,9 @@ async def test_add_model_only_then_add_agent_reuses_exact_model(tmp_path: Path, 
         models = {p: p.read_bytes() for p in (tmp_path / "models").glob("*.yaml")}
         for name in ("First agent", "Second agent"):
             asked.clear()
-            answers.extend(["model-shared-model", name])
+            answers.extend(["model-shared-model", "", name])
             assert await run_setup(app, tmp_path, ask_user=ask, emit=lambda text: None, add_agent=True)
-            assert asked == ["model_source", "name"]
+            assert asked == ["model_source", "tools", "name"]
         source = await app.current_configuration()
         assert source.agents["agent-first-agent"].model == "model-shared-model"
         assert source.agents["agent-second-agent"].model == "model-shared-model"
@@ -507,7 +577,7 @@ async def test_add_model_only_then_add_agent_reuses_exact_model(tmp_path: Path, 
 @pytest.mark.anyio
 async def test_add_agent_can_back_out_of_existing_model_and_create_new(tmp_path: Path) -> None:
     _codex_login_file(datetime.now(UTC) + timedelta(hours=1))
-    answers = deque(["codex", "gpt-5.6-sol", "", "full-control"])
+    answers = deque(["codex", "gpt-5.6-sol", "", "", "full-control"])
 
     async def ask(question, selection):
         value = answers.popleft()
@@ -520,7 +590,7 @@ async def test_add_agent_can_back_out_of_existing_model_and_create_new(tmp_path:
         configuration_path=tmp_path / "config.yaml",
     ) as app:
         assert await run_setup(app, tmp_path, ask_user=ask, emit=lambda text: None)
-        answers.extend(["model-codex", SetupBack(), "new", "codex", "gpt-6-astra", "", "Independent"])
+        answers.extend(["model-codex", SetupBack(), "new", "codex", "gpt-6-astra", "", "", "Independent"])
         assert await run_setup(app, tmp_path, ask_user=ask, emit=lambda text: None, add_agent=True)
         source = await app.current_configuration()
         assert source.agents["agent-independent"].model == "model-agent-independent"

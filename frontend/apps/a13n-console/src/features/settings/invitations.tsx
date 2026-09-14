@@ -1,10 +1,14 @@
-import { useState } from "react";
+import { ResourceEditorButton } from "../../shared/resource-editor-button";
+import { ChoiceField, FormField, Input, ModalFrame } from "a13n-ui";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Dialog, Input, SelectField } from "a13n-ui";
-import { Plus } from "lucide-react";
+import { useState } from "react";
+import { PageActions } from "../../shared/page-actions";
+
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { data, type Schema } from "../../shared/api";
+import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
 import {
   Empty,
   ErrorNotice,
@@ -13,10 +17,9 @@ import {
   Timestamp,
 } from "../../shared/feedback";
 import { Confirm, FormActions } from "../../shared/form";
-import { Pagination, Table, useCursor } from "../../shared/collection";
-import { roleOptions, type MembershipScope } from "./members";
-import { SecretReveal } from "./keys";
 import styles from "../../shared/shared.module.css";
+import { SecretReveal } from "./keys";
+import { roleOptions, type MembershipScope } from "./members";
 
 export function Invitations({ scope }: { scope: MembershipScope }) {
   const client = useClient(),
@@ -27,19 +30,19 @@ export function Invitations({ scope }: { scope: MembershipScope }) {
     queryFn: ({ signal }) =>
       scope.kind === "workspace"
         ? client.http
-            .GET("/api/v1/workspaces/{workspace_id}/invitations", {
+            .GET("/api/v1/workspaces/{workspace}/invitations", {
               signal,
               params: {
-                path: { workspace_id: scope.id },
+                path: { workspace: scope.id },
                 query: { cursor: page.cursor, limit: 30 },
               },
             })
             .then(data)
         : client.http
-            .GET("/api/v1/organizations/{organization_id}/invitations", {
+            .GET("/api/v1/organizations/{organization}/invitations", {
               signal,
               params: {
-                path: { organization_id: scope.id },
+                path: { organization: scope.id },
                 query: { cursor: page.cursor, limit: 30 },
               },
             })
@@ -47,22 +50,23 @@ export function Invitations({ scope }: { scope: MembershipScope }) {
   });
   return (
     <div className={styles.stack}>
-      <div className={styles.toolbar}>
-        <p className={styles.muted}>
-          {t("Invite people by email and select their access level.")}
-        </p>
+      <PageActions>
         <InvitationEditor scope={scope} />
-      </div>
+      </PageActions>
       {query.isPending ? (
-        <Loading />
+        <Loading variant="table" columns={5} rows={5} />
       ) : query.error ? (
         <ErrorNotice error={query.error} />
       ) : query.data?.items.length ? (
         <>
-          <Table
+          <ResourceTable
             items={query.data.items}
             columns={[
-              { label: t("Email"), render: (item) => item.email },
+              {
+                label: t("Email"),
+                tone: "primary",
+                render: (item) => item.email,
+              },
               {
                 label: t("Role"),
                 render: (item) =>
@@ -76,6 +80,7 @@ export function Invitations({ scope }: { scope: MembershipScope }) {
               },
               {
                 label: t("Expires"),
+                tone: "muted",
                 render: (item) => <Timestamp value={item.expires_at} />,
               },
               {
@@ -96,12 +101,15 @@ export function Invitations({ scope }: { scope: MembershipScope }) {
               },
               {
                 label: t("Actions"),
+                align: "right",
                 render: (item) =>
                   !item.accepted_at &&
                   !item.revoked_at && (
                     <div className={styles.actions}>
                       <InvitationEditor scope={scope} invitation={item} />
                       <Confirm
+                        subject={item.email}
+                        triggerVariant="ghost"
                         title={t("Revoke invitation")}
                         description={t(
                           "The invitation link will stop working.",
@@ -162,15 +170,15 @@ function InvitationEditor({
       if (scope.kind === "workspace") {
         if (role === "member") throw new Error("Invalid workspace role");
         return client.http
-          .POST("/api/v1/workspaces/{workspace_id}/invitations", {
-            params: { path: { workspace_id: scope.id } },
+          .POST("/api/v1/workspaces/{workspace}/invitations", {
+            params: { path: { workspace: scope.id } },
             body: { email, role },
           })
           .then(data);
       }
       return client.http
-        .POST("/api/v1/organizations/{organization_id}/invitations", {
-          params: { path: { organization_id: scope.id } },
+        .POST("/api/v1/organizations/{organization}/invitations", {
+          params: { path: { organization: scope.id } },
           body: {
             email,
             grants: [
@@ -191,7 +199,21 @@ function InvitationEditor({
     },
   });
   return (
-    <Dialog
+    <ModalFrame
+      onOpenChange={(value) => {
+        if (!mutation.isPending) {
+          setOpen(value);
+          mutation.reset();
+        }
+      }}
+      trigger={
+        <ResourceEditorButton
+          editing={!!invitation}
+          createLabel="Invite member"
+          editLabel="Resend"
+        />
+      }
+      size={"md"}
       title={t(invitation ? "Resend invitation" : "Invite member")}
       description={t(
         invitation
@@ -200,21 +222,6 @@ function InvitationEditor({
       )}
       closeLabel={t("Close")}
       open={open}
-      onOpenChange={(value) => {
-        if (!mutation.isPending) {
-          setOpen(value);
-          mutation.reset();
-        }
-      }}
-      trigger={
-        <Button
-          variant={invitation ? "secondary" : "primary"}
-          size="sm"
-          icon={!invitation && <Plus size={14} />}
-        >
-          {t(invitation ? "Resend" : "Invite member")}
-        </Button>
-      }
     >
       {mutation.data ? (
         <div className={styles.stack}>
@@ -241,37 +248,42 @@ function InvitationEditor({
         >
           {!invitation && (
             <>
-              <Input
-                label={t("Email address")}
-                type="email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                required
-              />
-              <SelectField
-                label={t("Role")}
+              <FormField className="min-w-0 w-full" label={t("Email address")}>
+                <Input
+                  required={true}
+                  type="email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                />
+              </FormField>
+              <ChoiceField
                 placeholder={t("Select role")}
                 value={role}
+                className="min-w-0"
                 onValueChange={(value) => {
                   const role = roleOptions(scope.kind).find(
                     (role) => role === value,
                   );
                   if (role) setRole(role);
                 }}
+                label={t("Role")}
                 options={roleOptions(scope.kind).map((value) => ({
                   value,
-                  label: t(`role.${value}`, { defaultValue: value }),
+                  label: t(`role.${value}`, {
+                    defaultValue: value,
+                  }),
                 }))}
               />
             </>
           )}
           <ErrorNotice error={mutation.error} />
           <FormActions
+            onCancel={() => setOpen(false)}
             pending={mutation.isPending}
             label={t(invitation ? "Resend invitation" : "Send invitation")}
           />
         </form>
       )}
-    </Dialog>
+    </ModalFrame>
   );
 }

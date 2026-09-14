@@ -18,6 +18,14 @@ The remote `a13n-service-cli` CLI is a first-party client of that public boundar
 
 An SDK does not own service startup, migrations, Worker control, persistence, internal operator routes, direct Redis/object access, or another HTTP contract.
 
+## Generated HTTP Contract
+
+Service owns one OpenAPI 3.1 contract for its public Native HTTP operations. Stable operation identities derive from HTTP method and path, not handler names. The document describes actual authentication choices, validation/error envelopes, response media types, streaming binary bodies, and precondition/correlation headers. Schema export does not start Service resources.
+
+All four language SDKs derive their low-level HTTP operations and structured wire types from that contract. Generated source has explicit ownership and is reproducible; contract or generator changes cannot leave committed bindings stale. Shared fixtures cover unions and omitted/null/value serialization, and language compilation rejects incorrect structured request types. Generator adapters may represent an already-unconstrained JSON schema as a JSON value, but must not erase a structured union to make generation succeed.
+
+Handwritten SDK policy owns transport lifetime, authentication, cancellation, pagination conveniences, and streaming protocol behavior. Generated operations used through a convenience client share its underlying transport rather than maintaining a parallel pool. Binary transfer preserves streaming. SSE/WebSocket recovery remains an explicit handwritten protocol boundary; generating an HTTP endpoint does not implement that protocol's lifecycle. Existing Search facades remain compatible alongside the generated low-level APIs.
+
 ## SDK Parity
 
 The standalone SDK projects under `sdk/{python,go,rust,typescript}` all belong to the Gateway completion boundary. For every public Native operation included in the OSS distribution, each SDK exposes:
@@ -39,6 +47,12 @@ The SDK source version and the server `/api/v1` version remain independent. An S
 SDK method names follow each language's conventions while preserving the same resource and command meaning. No language renames a Run to Run, maps a RunAttempt to a request retry, or treats stream close as cancellation.
 
 Request types and serializers preserve omitted fields separately from explicit `null` whenever the owning operation distinguishes them. For [successor inline Hooks](26-hook-notifications.md#successor-inline-subscriptions), Feedback, waiting Continue, and terminal Retry expose omission for inheritance, `null` for no subscription, and a complete object for replacement. SDK defaults emit omission, and explicit opt-out emits JSON `null`; neither default filling nor null filtering may collapse those states. The server resolves inheritance, so clients do not read and copy a mutable subscription before submitting the command. HookSubscription resource types expose `inline_run_id` and `expired_at` separately from enablement and deletion.
+
+Search Provider clients expose the type catalog, scoped account create/list/get/update, saved-account tests, and authorized reference reads under [Search Provider Management](41-search-provider-management.md#management-api). Agent types carry `SearchSelection`; Run overrides preserve omission for inheritance, null for disabling, and a complete object for replacement. Credential fields are write-only and absent from resource types and diagnostic representations. SDKs preserve account ETags and do not automatically replay create, credential replacement, or quota-consuming tests after an uncertain response. Account creation, testing, and Agent revision publication remain separate operations and results.
+
+## Workspace Binding
+
+API Key callers do not supply a Workspace to each SDK operation. The SDK reads `/api/v1/auth/context` and binds the Workspace operation surface to the authenticated Workspace ID. A key change does not affect that ID. In TypeScript, `await client.workspaceHttp()` returns the generated Workspace API with its parent path and Workspace parameter removed; `GET("/agents/{agent}", …)` accepts either an Agent ID or key. Python and Rust expose `workspace()` and Go exposes `Workspace(ctx)` with the same credential-derived binding for their implemented search operations. This binding shares the parent client's transport and shutdown. Switching credentials to another Workspace requires a new binding. Organization-bound browser clients retain explicit resource paths on `http`.
 
 ## Transport Lifetime
 

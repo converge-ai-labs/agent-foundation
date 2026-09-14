@@ -20,12 +20,19 @@ from anyio import to_thread
 from pydantic import ConfigDict, Field, JsonValue, model_validator
 
 from a13n_harness_ui.errors import ConfigurationError, HarnessUiError
-from a13n_harness_ui.model_presets import known_model_capabilities
+from a13n_harness_ui.model_presets import known_model_capabilities, starter_tool_capabilities
 from a13n_harness_ui.resource_names import coding_agent_name, model_name
 from a13n_harness_ui.subagents import BUILTIN_SUBAGENT_NAMES
 
 from .loader import _parse_yaml_mapping, _read_bounded_stable, _scan_directory, load_harness_ui_configuration
-from .models import ApiKeyAuthentication, ModelCharacteristics, ResourceId, StrictModel, ToolsConfiguration
+from .models import (
+    ApiKeyAuthentication,
+    CapabilitySelection,
+    ModelCharacteristics,
+    ResourceId,
+    StrictModel,
+    ToolsConfiguration,
+)
 from .mutation import CandidateValidator, _publish_content
 
 _EMPTY_ROOT = b'schema_version: "1"\n'
@@ -52,6 +59,7 @@ class SetupSelection(StrictModel):
     new_model_name: str = Field(default="", max_length=128)
     existing_model_id: ResourceId | None = None
     connect_default: bool = False
+    tool_capabilities: tuple[CapabilitySelection, ...] | None = None
     default_agent: ResourceId = "agent-default"
     project: ResourceId | None = None
     project_path: str | None = Field(default=None, min_length=1, max_length=4096)
@@ -78,6 +86,8 @@ class SetupSelection(StrictModel):
             raise ValueError("An optional setup Project requires both project and project_path")
         if self.new_model_id is not None and (self.new_agent_id is not None or self.existing_model_id is not None):
             raise ValueError("Add Model cannot also create an Agent or select an existing Model")
+        if self.new_model_id is not None and self.tool_capabilities is not None:
+            raise ValueError("Tools belong to an Agent; configure them when adding an Agent for this Model")
         if self.existing_model_id is not None and (
             self.new_agent_id is None or self.providers or self.api_key_model is not None
         ):
@@ -290,6 +300,24 @@ def _templates(selection: SetupSelection, *, existing_model: dict[str, object] |
         model = models[0]
         model.update(id=selection.new_model_id, name=selection.new_model_name)
         resources = {f"models/{selection.new_model_id.removeprefix('model-')}.yaml": model}
+    for resource in resources.values():
+        if resource["kind"] != "agent":
+            continue
+        selected_model = existing_model or next(
+            (item for item in resources.values() if item["id"] == resource.get("model")), {}
+        )
+        route = selected_model.get("route", "")
+        authentication = selected_model.get("authentication", {})
+        configuration = selected_model.get("model_configuration", {})
+        kind = authentication.get("kind") if isinstance(authentication, dict) else None
+        base_url = configuration.get("base_url") if isinstance(configuration, dict) else None
+        agent_capabilities = resource["capabilities"]
+        assert isinstance(agent_capabilities, list) and isinstance(route, str)
+        agent_capabilities.extend(
+            [capability.model_dump(mode="json") for capability in selection.tool_capabilities]
+            if selection.tool_capabilities is not None
+            else starter_tool_capabilities(route, authentication=kind, base_url=base_url)
+        )
     if selection.instructions.strip():
         for resource in resources.values():
             if resource["id"] == (selection.new_agent_id or selection.default_agent):
@@ -448,7 +476,10 @@ async def preview_setup(
             "environment_profile": selection.environment_profile,
         }
         if selection.include_default_subagents is not None:
-            root["subagents"] = {"include": list(BUILTIN_SUBAGENT_NAMES) if selection.include_default_subagents else []}
+            subagents = root.setdefault("subagents", {})
+            if not isinstance(subagents, dict):
+                raise ConfigurationError("Configuration subagents must be a mapping.", code="configuration_invalid")
+            subagents["include"] = list(BUILTIN_SUBAGENT_NAMES) if selection.include_default_subagents else []
         files[path.name] = yaml.safe_dump(root, sort_keys=False, allow_unicode=True)
     candidate = dict(baseline)
     candidate.update({name: text.encode() for name, text in files.items()})

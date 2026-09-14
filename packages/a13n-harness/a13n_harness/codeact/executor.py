@@ -124,7 +124,11 @@ class MontyExecutor:
                 call = self._dispatch_admitted(name, kwargs, ordinal)
                 ordinal = None
                 semaphore_owned = False
-                return await snapshot.resume(await _await_external(call))
+                # A barrier still exposes an async host function. Returning its
+                # value directly makes `await sequential_tool(...)` await a plain
+                # value; retain the settled result behind Monty's future boundary.
+                self._pre_resolved[snapshot.call_id] = await _await_external(call)
+                return await snapshot.resume({"future": ...})
 
             if self.global_sequential:
                 call = self._dispatch_admitted_after(self._global_tail, name, kwargs, ordinal)

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass
 from itertools import pairwise
 from pathlib import Path
@@ -218,6 +218,7 @@ async def _run_single_view(
     capability: AbstractCapability[AgentContext],
     file_path: str,
     view_arguments: dict[str, object] | None = None,
+    on_view: Callable[[dict[str, object]], None] | None = None,
 ) -> dict[str, object]:
     observed: dict[str, object] = {}
 
@@ -241,6 +242,8 @@ async def _run_single_view(
         else:
             assert isinstance(returns[-1].content, dict)
             observed.update(returns[-1].content)
+            if on_view is not None:
+                on_view(observed)
             yield "done"
 
     executable = HarnessBuilder().build(
@@ -969,7 +972,16 @@ def test_skill_selection_requires_immutable_bounded_exact_names() -> None:
         SkillSelectionRunCapability(id="custom", names=frozenset())
 
 
-async def test_ordinary_environment_skill_read_emits_usage_observation(tmp_path: Path) -> None:
+@pytest.mark.parametrize("content", ["none", "standard", "full"])
+async def test_ordinary_environment_skill_read_emits_usage_observation(tmp_path: Path, content: str) -> None:
+    from a13n_harness import HarnessInstrumentation, HarnessTraceContent
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
     path = tmp_path / ".agents" / "skills" / "review"
     path.mkdir(parents=True)
     (path / "SKILL.md").write_text(
@@ -997,7 +1009,9 @@ async def test_ordinary_environment_skill_read_emits_usage_observation(tmp_path:
         else:
             yield "done"
 
-    executable = HarnessBuilder().build(
+    executable = HarnessBuilder(
+        instrumentation=HarnessInstrumentation(tracer_provider=provider, trace_content=HarnessTraceContent(content))
+    ).build(
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
@@ -1029,6 +1043,35 @@ async def test_ordinary_environment_skill_read_emits_usage_observation(tmp_path:
         and payload.get("source_id") == "workspace"
         for payload in extension_payloads
     )
+
+    spans = exporter.get_finished_spans()
+    root = next(span for span in spans if span.name == "harness.run")
+    assert root.attributes["a13n.skills.available"] == ("review",)
+    assert root.attributes["a13n.skills.accessed"] == ("review",)
+    assert root.attributes["a13n.skills.access_count"] == 1
+    resolution = next(span for span in spans if span.name == "harness.skills.resolve")
+    assert resolution.attributes["a13n.skills.selection"] == "all"
+    assert resolution.attributes["a13n.skills.discovered_count"] == 1
+    assert resolution.attributes["a13n.skills.selected_count"] == 1
+    assert resolution.attributes["langfuse.observation.metadata.skills_excluded_count"] == 0
+    if content == "none":
+        assert "a13n.output" not in resolution.attributes
+    else:
+        assert json.loads(resolution.attributes["a13n.output"]) == {
+            "skills": [{"name": "review", "source_id": "workspace"}],
+            "count": 1,
+            "omitted": 0,
+        }
+    assert (
+        resolution.end_time
+        < next(span for span in spans if span.attributes.get("gen_ai.operation.name") == "chat").start_time
+    )
+    tool = next(span for span in spans if span.attributes.get("gen_ai.operation.name") == "execute_tool")
+    assert tool.attributes["a13n.skill.name"] == "review"
+    assert tool.attributes["a13n.skill.source_id"] == "workspace"
+    if content == "none":
+        assert "a13n.input" not in root.attributes
+    provider.shutdown()
 
 
 async def test_external_capability_can_publish_skill_paths_for_relaxed_markdown_view(tmp_path: Path) -> None:
@@ -1371,13 +1414,155 @@ async def test_large_view_bounds_return_successful_pages(
     assert isinstance(viewed["content"], str)
     assert content.startswith(viewed["content"])
     assert viewed["truncated_lines"] == []
-    if max_line_length == 2000:
-        assert viewed["content"] == content
-        assert viewed["has_more"] is False
-        assert "next_line_offset" not in viewed
+    assert viewed["content"] == content
+    assert viewed["has_more"] is False
+    assert "next_line_offset" not in viewed
+
+
+@pytest.mark.parametrize("requested_lines, expected_lines", [(300, 800), (1000, 905)])
+async def test_skill_default_and_larger_agent_line_requests_are_effective(
+    tmp_path: Path, requested_lines: int, expected_lines: int
+) -> None:
+    skill = tmp_path / ".agents" / "skills" / "review"
+    skill.mkdir(parents=True)
+    content = "---\nname: review\ndescription: Review code.\n---\n\n" + "line\n" * 900
+    (skill / "SKILL.md").write_text(content)
+    viewed = await _run_single_view(
+        tmp_path,
+        capability=SkillsCapability(_manager()),
+        file_path="/workspace/.agents/skills/review/SKILL.md",
+        view_arguments={"line_limit": requested_lines, "max_line_length": 262_144},
+    )
+    assert viewed["ok"] is True
+    assert viewed["lines_read"] == expected_lines
+    assert viewed["content"] == "".join(content.splitlines(keepends=True)[:expected_lines])
+    assert viewed["truncated_lines"] == []
+    assert viewed["has_more"] is (expected_lines < 905)
+
+
+@pytest.mark.parametrize("skill_path", [True, False])
+@pytest.mark.parametrize("tail", ["", "later\nlast"])
+async def test_model_clipped_first_line_does_not_skip_later_source_lines(
+    tmp_path: Path, skill_path: bool, tail: str
+) -> None:
+    skill = tmp_path / ".agents" / "skills" / "review"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("---\nname: review\ndescription: Review.\n---\n")
+    first_line = "中文𐐀" * 12_000 + "\n"
+    path = skill / "guide.md" if skill_path else tmp_path / "notes.md"
+    path.write_text(first_line + tail, encoding="utf-8")
+    logical_path = f"/workspace/{path.relative_to(tmp_path).as_posix()}"
+    viewed = await _run_single_view(
+        tmp_path,
+        capability=SkillsCapability(_manager()),
+        file_path=logical_path,
+        view_arguments={"line_limit": 1000, "max_line_length": 262_144},
+    )
+    assert viewed["ok"] is True
+    assert viewed["lines_read"] == 1
+    assert viewed["truncated_lines"] == [1]
+    assert first_line.startswith(viewed["content"])
+    assert viewed["has_more"] is bool(tail)
+    assert len(json.dumps(viewed, ensure_ascii=False, separators=(",", ":"))) <= (20_000 if skill_path else 12_000)
+    assert "model output limit" in viewed["disclosure"]["hint"]
+    if tail:
+        assert viewed["next_line_offset"] == 1
+        later = await _run_single_view(
+            tmp_path,
+            capability=SkillsCapability(_manager()),
+            file_path=logical_path,
+            view_arguments={"line_offset": viewed["next_line_offset"]},
+        )
+        assert later["content"] == tail
+        assert later["has_more"] is False
     else:
-        assert viewed["has_more"] is True
-        assert viewed["next_line_offset"] == viewed["lines_read"]
-        assert viewed["next_line_offset"] > 0
-        assert viewed["disclosure"]["content_complete"] is False
-        assert "next_line_offset" in viewed["disclosure"]["hint"]
+        assert "next_line_offset" not in viewed
+
+
+@pytest.mark.parametrize("requested_width, expected_truncation", [(2000, [1]), (262_144, [])])
+async def test_agent_line_width_above_skill_default_reaches_provider(
+    tmp_path: Path, requested_width: int, expected_truncation: list[int]
+) -> None:
+    skill = tmp_path / ".agents" / "skills" / "review"
+    skill.mkdir(parents=True)
+    (skill / "SKILL.md").write_text("---\nname: review\ndescription: Review.\n---\n")
+    # Redaction is irrelevant here: inspect the unshortened provider page in
+    # the output spill because the complete line exceeds the model budget.
+    content = "x" * 25_000
+    (skill / "guide.md").write_text(content)
+
+    def inspect_spill(viewed: dict[str, object]) -> None:
+        # Spill lifetime is Run-local; inspect before executable.run closes it.
+        spill = viewed["disclosure"]["output_file_path"]
+        assert isinstance(spill, str)
+        assert spill.startswith("/environment/local/")
+        stored = json.loads((tmp_path / spill.removeprefix("/environment/local/")).read_text())
+        assert stored["truncated_lines"] == expected_truncation
+        assert stored["content"] == (content[:20_000] if expected_truncation else content)
+
+    await _run_single_view(
+        tmp_path,
+        capability=SkillsCapability(_manager()),
+        file_path="/workspace/.agents/skills/review/guide.md",
+        view_arguments={"max_line_length": requested_width},
+        on_view=inspect_spill,
+    )
+
+
+@pytest.mark.parametrize("selection", [None, frozenset(), frozenset({"skill-00"}), frozenset({"missing"})])
+@pytest.mark.parametrize("content", ["none", "standard"])
+async def test_resolution_phase_records_selection_and_bounded_results(tmp_path, selection, content):
+    from a13n_harness import HarnessInstrumentation, HarnessTraceContent
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+    from opentelemetry.trace import StatusCode
+
+    for index in range(20):
+        path = tmp_path / "skills" / f"skill-{index:02}"
+        path.mkdir(parents=True)
+        (path / "SKILL.md").write_text(
+            f"---\nname: skill-{index:02}\ndescription: Private instruction.\n---\nPrivate skill body."
+        )
+    exporter = InMemorySpanExporter()
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(exporter))
+    executable = HarnessBuilder(
+        instrumentation=HarnessInstrumentation(tracer_provider=provider, trace_content=HarnessTraceContent(content))
+    ).build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=lambda messages, info: _text("done")),
+        capabilities=(SkillsCapability(SkillManager((FileSkillSource("workspace", ("/workspace/skills",)),))),),
+    )
+    bindings = RunBindings.embedded(
+        environment=_binding(tmp_path),
+        capabilities=() if selection is None else (SkillSelectionRunCapability(names=selection),),
+    )
+    try:
+        if selection == frozenset({"missing"}):
+            with pytest.raises(DefinitionError, match="absent"):
+                await executable.run("hello", bindings=bindings)
+        else:
+            await executable.run("hello", bindings=bindings)
+        span = next(span for span in exporter.get_finished_spans() if span.name == "harness.skills.resolve")
+        assert span.attributes["a13n.skills.selection"] == ("all" if selection is None else "explicit")
+        assert span.attributes["a13n.skills.discovered_count"] == 20
+        assert "Private" not in str(span.attributes)
+        assert "/workspace" not in str(span.attributes)
+        if selection == frozenset({"missing"}):
+            assert span.status.status_code is StatusCode.ERROR
+            assert span.attributes["a13n.phase.status"] == "failed"
+            assert span.attributes["a13n.skills.unknown_count"] == 1
+        else:
+            count = 20 if selection is None else len(selection)
+            assert span.attributes["a13n.skills.selected_count"] == count
+            if content != "none":
+                output = json.loads(span.attributes["a13n.output"])
+                assert output["count"] == count
+                assert len(output["skills"]) == min(count, 16)
+                assert output["omitted"] == max(0, count - 16)
+        if content == "none":
+            assert "a13n.output" not in span.attributes
+    finally:
+        provider.shutdown()

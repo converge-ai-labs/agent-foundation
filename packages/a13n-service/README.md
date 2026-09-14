@@ -13,7 +13,7 @@ Backend selection happens once during process startup. A failed network backend 
 
 ## Shared Configuration
 
-Model Providers, Models, Connector Providers, Environment Providers, and Environment Templates support Organization and Workspace ownership. A null `workspace_id` denotes Organization ownership. Organization collections use `/api/v1/organizations/{organization_id}/...`; Workspace configuration lists include local and parent resources. Organization Admin manages shared configuration, while Workspace roles retain their local management and shared-use permissions. Connections, actual Environments, and Runs remain Workspace-owned.
+Model Providers, Models, Connector Providers, Environment Providers, and Environment Templates support Organization and Workspace ownership. A null `workspace_id` denotes Organization ownership. Organization collections use `/api/v1/organizations/{organization}/...`; Workspace configuration lists include local and parent resources. Organization Admin manages shared configuration, while Workspace roles retain their local management and shared-use permissions. Connections, actual Environments, and Runs remain Workspace-owned.
 
 The Host authenticator supplies exactly one credential boundary: `boundary_workspace_id` for Workspace requests, or `boundary_organization_id` for an Organization-scoped human session. Workspace API keys cannot manage Organization resources. Initial migrations define these scopes directly; recreate local databases initialized from older baseline files.
 
@@ -48,23 +48,23 @@ Set `A13N_SERVICE_PRICING_AUTO_UPDATE=false` before startup to disable this proc
 
 The shared executable exposes Connectivity according to its process role:
 
-- `control` and `all` expose authenticated Account, AccountTarget, Connector Provider, ConnectorConnection, and MCPConnection management below `/api/v1` and run fenced Connector setup and local OAuth-state expiration reconcilers.
+- `control` and `all` expose authenticated Account, AccountTarget, Connector Provider, Connection, and Connection management below `/api/v1` and run fenced Connector setup and local OAuth-state expiration reconcilers.
 - `connectivity` and `all` expose provider-authenticated event delivery at `POST /connectivity/v1/accounts/{account_id}/events`, run durable admission processing, and retain no browser or product API surface.
 - `worker` constructs fresh native Ingress and Connector tool groups in process and connects directly to Remote MCP sources. It has no Connectivity management or provider-event routes.
 
 Control and Connectivity replicas share relational and object-storage facts; they do not call a private cross-pod Service API. The `all` role installs the union once. During shutdown readiness fails before new requests receive `503`, and background reconcilers stop under the application lifespan.
 
-Connector Provider types are explicitly registered through `Components.connector_provider_registry`. `GET /api/v1/connector-provider-types` returns safe configuration and credential schemas without upstream requests. Configured accounts use Organization or Workspace collections and `/api/v1/connector-providers/{connector_provider_id}` detail routes. Create accepts `type`, `configuration` (including its endpoint), and separate write-only `credentials`. Type and configuration are immutable; name, credentials, and administrative status retain management-version preconditions. Credentials are stored directly on the ConnectorProvider as one encrypted bundle using the configured master key. Account and MCPConnection credentials follow the same ownership pattern; OAuth sessions own their temporary encrypted setup material. User/Workspace Secrets remain independently managed values, and third-party ConnectorConnection tokens remain with the external integration service.
+Connector Provider types are explicitly registered through `Components.connector_provider_registry`. `GET /api/v1/connector-provider-types` returns safe configuration and credential schemas without upstream requests. Configured accounts use Organization or Workspace collections and `/api/v1/connector-providers/{connector_provider_id}` detail routes. Create accepts `type`, `configuration` (including its endpoint), and separate write-only `credentials`. Type and configuration are immutable; name, credentials, and administrative status retain management-version preconditions. Credentials are stored directly on the ConnectorProvider as one encrypted bundle using the configured master key. Account and Connection credentials follow the same ownership pattern; OAuth sessions own their temporary encrypted setup material. User/Workspace Secrets remain independently managed values, and third-party Connection tokens remain with the external integration service.
 
-`POST /api/v1/connector-providers/{connector_provider_id}/discover-connectors` reads the exact account's current directory under `connector_provider.read`. It creates no connections and publishes no tool catalog. Discovery and setup revalidation share a 30-second deadline and bounds of 128 pages, 2,048 directory entries, and 16 MiB across toolkit and auth-config responses. Composio v3.1 combines `/toolkits` with project `/auth_configs` using cursor pagination. Explicit configured allowlists filter the results. Only hosted OAuth supported by both the toolkit and current account is advertised; third-party credential input and upstream secret fields are excluded.
+`POST /api/v1/connector-providers/{connector_provider_id}/discover-connectors` reads the exact account's current directory under `connector_provider.read`. It creates no connections and publishes no tool catalog. Discovery and setup revalidation share a 30-second deadline and bounds of 128 pages, 2,048 directory entries, and 16 MiB across toolkit and auth-config responses. Composio v3.1 combines `/toolkits` with project `/auth_configs` using cursor pagination. Explicit configured allowlists filter the results. Supported OAuth, API-key, bearer, and basic setup includes safe method-specific credential schemas; existing credential values and upstream secrets are never exposed.
 
-Connection setup selects `connector_provider_id` and `connector_key`. Each operation constructs a fresh Provider runtime and binds the verified external account plus its opaque user correlation before inspection, live tool discovery, execution, or revocation. Construction and close never create or revoke accounts, and close does not dispose the process-owned HTTP client. Composio pins dated versions in tool-list, tool-detail, and execute requests. Worker composition supplies external tools to the Attempt preparation scope. Each Attempt receives one upstream MCP capability per authorized source; credentials and resource authority are rechecked for dispatch.
+Connection creation selects a discriminated `source`: Connector `provider_id` and `connector_key`, or an MCP endpoint and authentication mode. Creation is local; `/connections/{id}/authorizations` and `/connections/{id}/check` establish authorization and report scoped eligibility independently. Service Account API principals with Workspace Builder authority can manage customer Connections without Console identities. Each operation constructs a fresh Provider runtime and binds the verified external account plus its opaque user correlation before inspection, live tool discovery, execution, or revocation. Construction and close never create or revoke accounts, and close does not dispose the process-owned HTTP client. Composio pins dated versions in tool-list, tool-detail, and execute requests. Worker composition supplies external tools to the Attempt preparation scope. Each Attempt receives one upstream MCP capability per authorized source; credentials and resource authority are rechecked for dispatch.
 
 The registered account adapter follows the [Composio v3.1 reference](https://docs.composio.dev/reference). The service does not expose an unfenced public tool-execute endpoint.
 
-[OOMOL OpenConnector](https://github.com/oomol-lab/open-connector) is a registered Connector Provider at `https://connector.oomol.com`. Service initiates hosted authorization with a Project key, verifies the resulting account against the Workspace correlation, and executes tools using that exact account ID. A separate catalog key reads Provider and Action definitions. See the [external tools guide](../../docs/a13n-service/external-tools.md) for configuration and connection setup.
+For Connector and MCP OAuth callback flows, set `A13N_SERVICE_CONNECTIVITY_PUBLIC_ORIGIN` to the exact externally reachable control-plane origin. Noninteractive connection management does not require it. HTTP origins and private endpoint destinations are denied unless explicitly allowed by `A13N_SERVICE_CONNECTIVITY_HTTP_ORIGINS`, `A13N_SERVICE_CONNECTIVITY_PRIVATE_ENDPOINT_DOMAINS`, or `A13N_SERVICE_CONNECTIVITY_PRIVATE_ENDPOINT_CIDRS`. Provider source-origin allowlists use `A13N_SERVICE_CONNECTIVITY_PROVIDER_ORIGINS`; provider signatures or tokens remain mandatory.
 
-For Connector and MCP OAuth callback flows, set `A13N_SERVICE_CONNECTIVITY_PUBLIC_ORIGIN` to the exact externally reachable control-plane origin. Noninteractive connection management and OpenConnector polling do not require it. HTTP origins and private endpoint destinations are denied unless explicitly allowed by `A13N_SERVICE_CONNECTIVITY_HTTP_ORIGINS`, `A13N_SERVICE_CONNECTIVITY_PRIVATE_ENDPOINT_DOMAINS`, or `A13N_SERVICE_CONNECTIVITY_PRIVATE_ENDPOINT_CIDRS`. Provider source-origin allowlists use `A13N_SERVICE_CONNECTIVITY_PROVIDER_ORIGINS`; provider signatures or tokens remain mandatory.
+Remote MCP OAuth discovers Client ID Metadata, Dynamic Client Registration, manual application setup, and supported grants before choosing the next action. Automatically selected or registered clients are persisted and reused independently from tokens. Both authorization grants commit credentials before authenticated tool verification, so a temporary discovery failure can be retried without another consent flow. Explicit client-credentials connections skip browser setup and request tokens directly from the saved token endpoint under the same cross-Pod claim used for refresh. Provider endpoint changes require client reconfiguration to rediscover and validate the new metadata.
 
 Live tool discovery is bounded to 16 MiB, 128 pages, and 2,048 tools; results are bounded to 1 MiB. Agent and Run configuration use connection-selection lists with optional exact tool names and `defer_loading`. External schemas are discovered per Attempt and are never persisted as catalogs or Run snapshots. See [External tools](../../docs/a13n-service/external-tools.md) for selection semantics and host integration. Initial migrations create the current schema directly; recreate local databases initialized from the previous schema and reauthor Agent selections.
 
@@ -139,7 +139,7 @@ A13N_SERVICE_OBSERVABILITY_QUERY_LANGFUSE_SECRET_KEY='sk-lf-...'
 
 Product distributions can register additional trusted adapters through `TraceQueryProviderRegistry`; runtime configuration selects only one key already fixed into that artifact. Duplicate keys and selections absent from the artifact fail startup.
 
-`GET /api/v1/workspaces/{workspace_id}/traces` and `GET /api/v1/workspaces/{workspace_id}/traces/{trace_id}` remain present when querying is disabled and return the shared safe unavailable error. Backend correlation is never authorization evidence: a distribution must inject `Components.trace_access_authorizer` backed by its authoritative RunAttempt domain before results can be returned. The current repository does not yet contain that RunAttempt persistence domain, so configured querying fails closed until the owning implementation is composed.
+Trace roots are read through `GET /api/v1/workspaces/{workspace}/traces` and `GET /api/v1/workspaces/{workspace}/traces/{trace_id}`. Observations are loaded separately through `GET /api/v1/workspaces/{workspace}/traces/{trace_id}/observations`; follow continuations even on empty pages. Root metrics remain observation-local, without trace aggregates or durable Attempt outcomes. These data routes remain present when querying is disabled and return the shared safe unavailable error. `GET /api/v1/workspaces/{workspace}/trace-query` reports the enabled state, supported searches, and history lower bound. The built-in `logfire` adapter uses `logfire_base_url`, `logfire_read_token`, and timezone-aware `logfire_history_from` settings under `[observability.query]`; it queries completed span records, not the pending/log stream. The default composition supplies a Run/IAM-backed authorizer: callers need both `trace.read` and visibility of the owning Run, and backend correlation must match retained Service records. Current permissions and Service credential eligibility are rechecked after backend I/O, without holding a database session across that I/O. Distributions can replace this policy through `Components.trace_access_authorizer`. Local Langfuse ingestion and its own UI remain available independently.
 
 Run `make langfuse-test` to start the repository's local Langfuse v4 stack and verify a real standard-OTLP write followed by input search and Observations v2 list/detail reads. The ordinary Python test suite keeps this integration test skipped so it does not require Docker.
 
@@ -192,6 +192,36 @@ network_settings = StorageSettings.model_validate(
 
 The S3 client uses the standard AWS credential chain. Set `endpoint_url` and `force_path_style` only for a compatible non-AWS endpoint. The deployment mounts NFS at the configured filesystem root before the process starts.
 
+## Executable configuration
+
+Select one TOML file explicitly for every operation:
+
+```sh
+a13n-service --config /path/to/service.toml config check
+a13n-service --config /path/to/service.toml db upgrade
+a13n-service --config /path/to/service.toml serve
+```
+
+The precedence is defaults, then that TOML file, then `A13N_SERVICE_*` environment overrides, then explicit `serve --role` and `--host` overrides. Service never searches for `.env` or another configuration file. Invalid TOML, unknown fields and invalid effective values fail before startup. Configuration is immutable; restart the process after changing it. Relative storage paths use the selected file's directory (or the invocation directory with no file).
+
+The nested `Settings` model groups fields by operational concern. Most configuration fields map to the uppercase section and field name, for example `[database] pool_size` becomes `A13N_SERVICE_DATABASE_POOL_SIZE`. Existing singular deployment prefixes remain supported for plural sections:
+
+| TOML section                                                   | Environment prefix after `A13N_SERVICE_`                                               |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `service`                                                      | None (`port` → `PORT`, `name` → `SERVICE_NAME`, `instance_id` → `SERVICE_INSTANCE_ID`) |
+| `objects`, `assets`, `models`, `environments`                  | `OBJECT_`, `ASSET_`, `MODEL_`, `ENVIRONMENT_`                                          |
+| `plugins`, `subagents`, `webhooks`, `hooks`, `runs`, `secrets` | `PLUGIN_`, `SUBAGENT_`, `WEBHOOK_`, `HOOK_`, `RUN_`, `SECRET_`                         |
+| `logging`                                                      | `LOG_`                                                                                 |
+| `observability.query`                                          | `OBSERVABILITY_QUERY_`                                                                 |
+
+`[migration] auto_migrate` keeps `A13N_SERVICE_AUTO_MIGRATE`; `[gateway] a2a_*` keeps `A13N_SERVICE_A2A_*`. Arrays are native TOML arrays, or JSON arrays when supplied through the environment. Standard `OTEL_*` transport settings remain independent environment inputs.
+
+Secrets may be injected through deployment environment variables or a protected, explicitly selected configuration file. Never commit real credentials. The repository's [local TOML](../../dev/service/local.toml) contains only public, fictional credentials; use [the local development guide](../../dev/service/README.md) for a complete resettable environment including local Langfuse. `make dev` and `make setup` need no `.env`: the development launcher wires standard OTEL export from the selected local project configuration. Production export and query configuration remain independent. Embedded callers construct `Settings` explicitly, or call `load_settings` from `a13n_service.configuration.sources` to select input sources.
+
+The executable owns role-aware schema preparation: `all` and `control` upgrade only when `migration.auto_migrate` is enabled; otherwise they check the current heads. `worker` and `connectivity` always check and never migrate. The container entrypoint simply executes the requested command, so CLI overrides and TOML selection cannot disagree with migration behavior.
+
+The image selects `/app/service.toml` explicitly in both its default command and health probe. Mount a deployment TOML at that path to configure both. If replacing the command to select another path, also replace the container health command with `a13n-service --config PATH config healthcheck` for that same file.
+
 ## Relational Usage
 
 Consumers use SQLAlchemy directly. Generic storage does not define `get`, `insert`, or `do` wrappers.
@@ -228,16 +258,13 @@ The Alembic environment does not read process settings or create an engine. The 
 Select the database backend, then use the stable service CLI or repository commands:
 
 ```bash
-A13N_SERVICE_DATABASE_BACKEND=postgresql
-A13N_SERVICE_DATABASE_URL=postgresql+psycopg://a13n_service:a13n_service@127.0.0.1:5432/a13n_service
-
 make db-upgrade
 make db-current
 make db-check
 make db-history
 ```
 
-The corresponding executable commands are `a13n-service db upgrade`, `a13n-service db current --check-heads`, `a13n-service db history`, and `a13n-service db migrate "description"`. There is one process CLI; migration implementation remains in `database/migration.py` rather than introducing a second database-only settings or command layer.
+Repository database commands use `SERVICE_CONFIG` (default `dev/service/local.toml`). Corresponding executable commands use `a13n-service --config PATH db` followed by `upgrade`, `current --check-heads`, `history`, or `migrate "description"`. There is one process CLI; migration implementation remains in `database/migration.py` rather than introducing a second database-only settings or command layer.
 
 For the zero-service profile, set `A13N_SERVICE_DATABASE_BACKEND=sqlite` and `A13N_SERVICE_DATABASE_SQLITE_PATH=var/a13n-service.sqlite3`. The same accepted history is applied to both backends. A domain requiring PostgreSQL-only schema behavior must reject SQLite explicitly.
 

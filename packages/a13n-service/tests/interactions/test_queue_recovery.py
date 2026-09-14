@@ -19,7 +19,7 @@ pytestmark = pytest.mark.anyio
 async def _queued(sessions, objects):
     await seed_hook_actor_access(sessions)
     commands = _commands(sessions, objects, _Preparation(), _Freezing([_frozen()]))
-    receipt = await commands.start(
+    receipt = await commands.runs.start(
         actor=_actor(), workspace_id=WORKSPACE_ID, request=_request(), idempotency_key="queue-recovery-root"
     )
     queue = QueuedSubmissionStore(sessions, _inline_hooks(), clock=lambda: NOW)
@@ -41,7 +41,7 @@ async def test_overlapping_scans_accept_exactly_one_queued_run(interaction_sessi
     results = []
 
     async def scan():
-        results.append(await QueueRecovery(sessions, commands).scan())
+        results.append(await QueueRecovery(sessions, commands.queued).scan())
 
     async with anyio.create_task_group() as tasks:
         tasks.start_soon(scan)
@@ -66,7 +66,7 @@ async def test_reversible_disablement_defers_but_owner_deletion_fails_intent(
     async with transaction(sessions) as database:
         user = await database.get(UserRecord, USER_ID)
         user.status = "disabled"
-    collector = QueueRecovery(sessions, commands)
+    collector = QueueRecovery(sessions, commands.queued)
     assert (await collector.scan()).deferred == 1
     async with transaction(sessions) as database:
         row = await database.get(QueuedSubmissionRecord, queued.queued_submission_id)
@@ -74,7 +74,7 @@ async def test_reversible_disablement_defers_but_owner_deletion_fails_intent(
         workspace = await database.get(WorkspaceRecord, WORKSPACE_ID)
         workspace.deleted_at = NOW
     # A fresh replica recovers entirely from owning durable records.
-    assert (await QueueRecovery(sessions, commands).scan()).completed == 1
+    assert (await QueueRecovery(sessions, commands.queued).scan()).completed == 1
     async with short_session(sessions) as database:
         row = await database.get(QueuedSubmissionRecord, queued.queued_submission_id)
         thread = await database.get(ThreadRecord, source.thread_id)

@@ -4,7 +4,9 @@ Python SDK package for a13n Service.
 
 ## Status
 
-This `0.0.x` package reserves the stable distribution and import names while the service API is being designed. It intentionally exposes no client API yet. Generated models and transports will be added only after the service contract is stable enough to support compatibility guarantees.
+This SDK implements Search Provider management for Native `/api/v1`: the type catalog, Workspace/Organization account create/list/get/update, saved-account tests, and authorized references. Responses preserve ETags, and mutations are never automatically replayed after an uncertain outcome.
+
+The generated low-level API covers every ordinary Native `/api/v1` HTTP operation in the shared Service OpenAPI contract. The existing Search facade stays compatible; its `AgentConfig` and `AgentRunOverride` remain search-focused wrappers, while complete request/resource models live in `generated`. Generated HTTP bindings do not implement Run SSE or notification WebSocket recovery.
 
 ## Installation
 
@@ -17,6 +19,44 @@ import a13n
 
 print(a13n.__version__)
 ```
+
+## Search accounts
+
+Bind API Key operations with `await client.workspace()`. This reads `/api/v1/auth/context` once and returns search operations without a Workspace argument. The binding uses the immutable Workspace ID and shares the parent transport and shutdown. The parent client retains explicit `SearchScope` operations; Service always enforces the credential boundary.
+
+```python
+from a13n import Client, AgentRunOverride, SearchSelection
+
+
+async def accounts(base_url, token):
+    async with Client(base_url, token) as client:
+        workspace = await client.workspace()
+        page = await workspace.search_providers()
+        return page.items
+
+
+inherit = AgentRunOverride().to_wire()  # {}
+disable = AgentRunOverride(search=None).to_wire()  # {"search": None}
+replace = AgentRunOverride(search=SearchSelection(provider_id="sprov_example")).to_wire()
+```
+
+Use `CreateSearchProviderRequest` / `UpdateSearchProviderRequest` and `pydantic.SecretStr` for write-only credential input. Ordinary model diagnostics redact the key; the client reveals it only while serializing an authorized request. `test_search_provider` sends one quota-consuming probe only when called. Use `aclose()` or an async context manager to release the transport.
+
+## Generated HTTP operations
+
+```python
+from a13n import Client
+from a13n.generated.api.identity import get_auth_context
+
+
+async def context(base_url: str, token: str):
+    async with Client(base_url, token) as client:
+        return await client.execute(lambda api: get_auth_context.asyncio_detailed(client=api))
+```
+
+`Response.parsed` is a typed success/error union; `status_code`, `headers`, and `content` retain HTTP evidence. Models use attrs rather than the Search facade's Pydantic models. Use generated enums when constructing requests; `UNSET` means omitted and `None` means JSON null. `Client.execute` shares authentication, timeout, cancellation, and the existing httpx2 pool; it does not apply the Search facade's 1 MiB response limit or exception mapping.
+
+For uploads, generated methods accept `a13n.generated.types.File` with a caller-owned binary file and stream bounded chunks through the async transport. For downloads, use `async with client.stream(operation.build_request(...)) as response` and iterate `response.aiter_bytes()`. Do not use buffered generated `asyncio_detailed` downloads for large files. Low-level generated synchronous clients are separately owned, not another mode of the async facade.
 
 ## Development
 

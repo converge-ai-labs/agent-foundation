@@ -55,7 +55,7 @@ from a13n_harness.model_context import (
     _requires_exact_boundary,
     _requires_exact_history,
 )
-from a13n_harness.observation import observe_operation
+from a13n_harness.observation import observe_operation, observe_output, record_span_metadata
 from a13n_harness.tools.invocation import disabled_tool_execution
 
 RUNTIME_CONTEXT_CAPABILITY_ID = "a13n.runtime-context"
@@ -752,12 +752,29 @@ class CompactionCapability(AbstractCapability[AgentContext]):
                 "compaction",
                 capability_id=COMPACTION_CAPABILITY_ID,
                 operation_id=operation_id,
-            ):
+            ) as span:
+                record_span_metadata(span, {"compaction.message_count_before": len(request_context.messages)})
                 summary = await _compact_with_same_agent(ctx, request_context)
                 messages = _build_compacted_history(
                     request_context.messages,
                     summary,
                     retained_requests=ctx.deps._steering.replay_requests(ctx.run_id),
+                )
+                record_span_metadata(
+                    span,
+                    {
+                        "compaction.message_count_after": len(messages),
+                        "compaction.summary_bytes": len(summary.encode("utf-8")),
+                    },
+                )
+                observe_output(
+                    span,
+                    {
+                        "message_count_before": len(request_context.messages),
+                        "message_count_after": len(messages),
+                        "summary_bytes": len(summary.encode("utf-8")),
+                    },
+                    status="compacted",
                 )
         except asyncio.CancelledError:
             raise
@@ -819,6 +836,13 @@ async def _compact_with_same_agent(
             _COMPACTION_PROMPT,
             message_history=deepcopy(request_context.messages),
             deps=ctx.deps,
+            # This is another model request in the same logical Harness Run,
+            # not a new Host execution. Keep its already-bound collaborators.
+            capabilities=[
+                capability
+                for capability_id, capability in ctx.capabilities.items()
+                if capability_id in ctx.deps._capability_provenance.run_ids
+            ],
             model_settings=cast(ModelSettings, settings),
             output_type=str,
             usage=ctx.usage,

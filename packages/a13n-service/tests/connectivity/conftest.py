@@ -31,6 +31,7 @@ from a13n_service.connectivity.ingress.provider import (
 from a13n_service.database.metadata import service_metadata
 from a13n_service.digests import digest_request
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
+from a13n_service.iam.attempts import AttemptAuthorization
 from a13n_service.iam.models import (
     OrganizationRecord,
     RoleBindingRecord,
@@ -215,6 +216,25 @@ def actor() -> AuthenticatedActor:
     )
 
 
+@pytest.fixture
+def execution_authorization(connectivity_sessions):
+    async def create(*, principal=None):
+        authorization = AttemptAuthorization()
+        await authorization.initialize(
+            connectivity_sessions,
+            principal=actor().principal if principal is None else principal,
+            organization_id=ORG_ID,
+            workspace_id=WORKSPACE_ID,
+            root_agent_id=AGENT_ID,
+            agent_ids=frozenset(),
+            run_id="run_connectivitytest",
+            run_attempt_id="ratt_connectivitytest",
+        )
+        return authorization
+
+    return create
+
+
 def adapter_registry() -> AdapterRegistry[IngressAdapter]:
     return AdapterRegistry(
         (
@@ -260,14 +280,14 @@ async def postgres_connectivity_sessions(pg_url: str) -> AsyncIterator[async_ses
 
 async def _seed_connectivity_database(sessions: async_sessionmaker[AsyncSession]) -> None:
     async with transaction(sessions) as session:
-        session.add(OrganizationRecord(id=ORG_ID, name="Test", created_at=NOW, updated_at=NOW))
+        session.add(OrganizationRecord(id=ORG_ID, key="connectivity", name="Test", created_at=NOW, updated_at=NOW))
         await session.flush()
         session.add(
             WorkspaceRecord(
                 id=WORKSPACE_ID,
                 organization_id=ORG_ID,
                 name="Default",
-                normalized_name="default",
+                key="default",
                 created_at=NOW,
                 updated_at=NOW,
                 deleted_at=None,
@@ -308,7 +328,7 @@ async def _seed_connectivity_database(sessions: async_sessionmaker[AsyncSession]
                 workspace_id=WORKSPACE_ID,
                 source="custom",
                 name="Support",
-                normalized_name="support",
+                key="support",
                 description=None,
                 version=1,
                 current_revision_id="agtr_connectivity_test",

@@ -69,6 +69,8 @@ GET /api/v1/workspaces/ws_123/agents?limit=50&cursor=opaque-value
 
 Each endpoint defines one deterministic default order and uses a unique stable tie-breaker. It exposes only explicit filters and sort choices rather than a platform query language. A cursor is bound to the authenticated scope and the query that created it. A changed scope, filter, or ordering, or an invalid or expired cursor, returns a typed error instead of an empty page.
 
+[Trace Query](a13n-service/39-trace-query.md#filters-history-and-ordering) is a scoped exception for provider-backed telemetry: descending start time uses the selected backend's stable opaque identity continuation for ties rather than a cross-provider public ID comparator. Service preserves this native order across filtered pages; it does not impose a different global order by sorting individual pages.
+
 A bounded transient catalog command may return its complete `items` array without pagination when its owning API explicitly defines that contract and its response limits, as in [Model discovery](a13n-service/30-model-management.md#management-api). This does not change ordinary resource collection pagination.
 
 The cursor is a continuation value, not an object ID or bearer authority. Clients do not parse or construct it, and the server reauthorizes every page. Ordinary collection pagination does not imply a database snapshot; an API that requires snapshot isolation or durable replay defines that stronger contract separately.
@@ -137,3 +139,11 @@ Cursor encoding, storage layout, framework models, and SDK transport machinery a
 6. Each concurrent mutation axis uses either its owning counter and expected counter or a strong `ETag` and `If-Match`; it never adds a second generic revision counter or mixes both preconditions on one axis.
 7. A mutation is retried only with idempotency or other authoritative replay evidence; post-dispatch uncertainty remains explicit.
 8. `v1` changes are additive, and unknown response additions do not prevent an older client from decoding the response.
+
+## Resource References
+
+For Organization, Workspace, and Agent path segments, a reference accepts either the immutable ID or the current readable key. Path parameters are named `organization`, `workspace`, and `agent`. IDs contain an underscore and readable keys cannot, so resolution selects one namespace without fallback. Mixed ID/key paths are valid.
+
+Workspace keys resolve inside the authenticated Organization; a Workspace-bound API Key can resolve only its own Workspace. Browser sessions supply the Organization boundary, while an API Key supplies its Workspace boundary. Agent management uses `/api/v1/workspaces/{workspace}/agents/{agent}` and child operation paths. Resolving an Agent by ID still verifies membership in the path's Workspace. For example, `/api/v1/workspaces/research/agents/code-reviewer` and the equivalent all-ID path identify the same resource. AgentRevision and other unkeyed resource references retain their owning ID contracts.
+
+Resolution produces internal IDs before application use cases apply current authorization and lifecycle checks. A caller cannot widen its credential boundary by choosing another parent path. Unknown, obsolete, or out-of-scope references return a concealed not-found result. Key changes update the canonical address immediately without retaining old routes or aliases.

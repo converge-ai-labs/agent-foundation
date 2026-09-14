@@ -19,7 +19,11 @@ import {
   type Client,
   type RunEvent,
 } from "@converge.ai/a13n";
-import { conversationKeys, conversationQueries } from "./api";
+import {
+  conversationKeys,
+  conversationQueries,
+  invalidateConversation,
+} from "./api";
 import { useLiveRun } from "./live";
 
 let client: Client;
@@ -33,7 +37,11 @@ vi.mock("../../auth/context", () => ({
   revalidateSession: vi.fn(),
 }));
 vi.mock("../../layout/workspace", () => ({
-  useWorkspace: () => ({ workspace: { id: "workspace" }, can: () => false }),
+  useWorkspace: () => ({
+    basePath: "/workspace/design",
+    workspace: { id: "workspace" },
+    can: () => false,
+  }),
 }));
 
 function response(request: Request) {
@@ -247,6 +255,51 @@ it("explicit reconnect reads current snapshots even when cached resources remain
   expect(pathRequests("/runs/run_one")).toHaveLength(2);
   expect(pathRequests("/pending-actions")).toHaveLength(2);
   expect(pathRequests("/items")).toHaveLength(2);
+});
+
+it("joins replacement reads when a notification cancels terminal reconciliation", async () => {
+  let complete!: () => void;
+  const terminal = new Promise<void>((resolve) => {
+    complete = resolve;
+  });
+  client.streamRun = vi.fn(async function* () {
+    yield event("1-0", "Hello");
+    await terminal;
+  });
+  render(<View />);
+  await waitFor(() =>
+    expect(screen.getByTestId("live").textContent).toBe("connected"),
+  );
+  let release!: () => void;
+  const pending = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let blocked = false;
+  read = async (request) => {
+    if (!blocked && new URL(request.url).pathname.endsWith("/runs/run_one")) {
+      blocked = true;
+      await pending;
+    }
+    return response(request);
+  };
+  status = "completed";
+  version = 2;
+  await act(async () => {
+    complete();
+  });
+  await waitFor(() => expect(blocked).toBe(true));
+  await act(async () => {
+    await invalidateConversation(cache, "workspace", { runId: "run_one" });
+    release();
+  });
+  await waitFor(() =>
+    expect(screen.getByTestId("live").textContent).toBe("closed"),
+  );
+  expect(screen.getByTestId("version").textContent).toBe("2");
+  await waitFor(() =>
+    expect(screen.getByTestId("items").textContent).toBe("Hello"),
+  );
+  expect(client.streamRun).toHaveBeenCalledTimes(1);
 });
 
 it("reconciles replay gaps and deduplicates retained content before resuming delivery", async () => {

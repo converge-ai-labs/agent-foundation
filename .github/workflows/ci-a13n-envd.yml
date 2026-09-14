@@ -209,11 +209,9 @@ jobs:
 
   daemon:
     name: a13n-envd (${{ matrix.name }})
-    needs: [changes, protocol]
+    needs: changes
     if: >-
-      always() &&
-      (github.event_name == 'workflow_dispatch' || needs.changes.outputs.daemon == 'true') &&
-      (needs.protocol.result == 'success' || needs.protocol.result == 'skipped')
+      github.event_name == 'workflow_dispatch' || needs.changes.outputs.daemon == 'true'
     strategy:
       fail-fast: true
       matrix:
@@ -302,3 +300,30 @@ jobs:
           packages/a13n-envd-client/tests/eip/test_stdio_e2e.py
           -k "windows_eip_job_lifecycle or configured_daemon_command_process_and_output_plane or required_isolation_default_fails_closed"
           -q
+
+  validation:
+    name: a13n-envd checks
+    needs: [changes, protocol, client, daemon]
+    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require all selected checks to pass
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          PROTOCOL_RESULT: ${{ needs.protocol.result }}
+          CLIENT_RESULT: ${{ needs.client.result }}
+          DAEMON_RESULT: ${{ needs.daemon.result }}
+          PROTOCOL_SELECTED: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.protocol == 'true' }}
+          CLIENT_SELECTED: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.client == 'true' }}
+          DAEMON_SELECTED: ${{ github.event_name == 'workflow_dispatch' || needs.changes.outputs.daemon == 'true' }}
+        run: |
+          test "$CHANGES_RESULT" = success
+          for component in PROTOCOL CLIENT DAEMON; do
+            selected="${component}_SELECTED"
+            result="${component}_RESULT"
+            expected=skipped
+            if [[ "${!selected}" == true ]]; then
+              expected=success
+            fi
+            test "${!result}" = "$expected" || exit 1
+          done

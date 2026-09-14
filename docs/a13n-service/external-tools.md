@@ -1,62 +1,132 @@
 # External tools
 
-a13n Service selects external tools by managed ConnectorConnection or MCPConnection. Create the connection resource in the same Workspace before selecting it in an Agent configuration. Its ConnectorProvider may belong to that Workspace or its parent Organization. Organization Providers are automatically available to child Workspaces, while connections and authorized external accounts remain isolated by Workspace.
+A Connection is a Workspace resource for an authorized external account or a remote MCP server. Create it before selecting its tools in an Agent. Its immutable `source` identifies either a Connector Provider and application, or an MCP endpoint and authentication mode. A Connector Provider can belong to the Workspace or its parent Organization; Connections remain isolated by Workspace.
 
 ```json
 {
-  "connector_tools": [
+  "connection_tools": [
     {
-      "connector_connection_id": "cconn_1234567890abcdef",
+      "connection_id": "conn_1234567890abcdef",
       "tools": ["search"],
       "defer_loading": false
-    }
-  ],
-  "mcp_tools": [
+    },
     {
-      "mcp_connection_id": "mcpc_1234567890abcdef",
+      "connection_id": "conn_fedcba0987654321",
       "defer_loading": true
     }
   ]
 }
 ```
 
-Tool names in `tools` are exact source names. Omit `tools` or use `null` to allow all tools from that source. Use `[]` to allow none. A connection can appear only once in each list. Source aliases, inline URLs or credentials, and `exposure` are rejected.
+Tool names are exact source names. Omit `tools` or use `null` to allow all authorized tools from that source; `[]` selects none. Each Connection can appear only once. Run overrides inherit an omitted `connection_tools` list; a supplied list replaces the whole selection, and `[]` clears it. A null list, aliases, inline endpoints, and credentials are rejected.
 
-`defer_loading` defaults to `false`, which makes selected definitions immediately visible. With `true`, the Harness exposes the group through its built-in `load_capability` tool. This changes model visibility; discovery and authorization still run during preparation.
+`defer_loading` defaults to `false`, which makes selected definitions immediately visible. With `true`, the Harness exposes the group through `load_capability`. Discovery and authorization still run during preparation. Tools execute only inside an accepted Agent Run; there is no standalone connection execute endpoint.
 
-A Run override inherits an omitted `connector_tools` or `mcp_tools` list. A supplied list replaces that entire category, and `[]` clears it. A null category is invalid. For example, `{"mcp_tools": []}` removes remote MCP selections while inheriting Connector selections.
+Run acceptance freezes each selected Connection's authorization generation. Reauthorizing the same Connection, even as a different upstream account, keeps its ID and advances that generation. Earlier Runs cannot use the replacement authorization. Routine OAuth token refresh preserves the generation.
 
-## Connector Providers: Composio and OpenConnector
+## Create and authorize a Connection
 
-Create a Provider under `/api/v1/workspaces/{workspace_id}/connector-providers` or the parent Organization, supply its service credentials, discover its Connectors, and create a Workspace ConnectorConnection. Complete external authorization before selecting that connection in `connector_tools`. Both Providers support the same tool selection and deferred-loading fields shown above.
+Create either source with `POST /api/v1/workspaces/{workspace}/connections` and an `Idempotency-Key`:
 
-For Composio, choose `type: "composio"`, configure `enabled_toolkits` (for example `["slack"]`), and supply the write-only project `api_key`. Create an enabled OAuth2 auth config for each toolkit in the [Composio dashboard](https://dashboard.composio.dev). Console fills fixed toolkit-version values from discovery; an unavailable auth configuration prevents setup.
+```json
+{
+  "name": "Work GitHub",
+  "source": {
+    "kind": "connector",
+    "provider_id": "cnr_1234567890abcdef",
+    "connector_key": "github"
+  }
+}
+```
 
-Set a stable `A13N_SERVICE_CONNECTIVITY_SETUP_CORRELATION_SECRET` of at least 32 bytes, shared by replicas and preserved across restarts. Configure `A13N_SERVICE_CONNECTIVITY_PUBLIC_ORIGIN` and the IAM public origin to the same Console/API ingress origin. In Composio project **Settings → General → Configuration**, set the identity verifier URL to `https://<your-public-origin>/connector-setup/callback`. Local OAuth testing requires a public HTTPS tunnel; open Console through that tunnel before signing in and starting authorization. Start from Console, not the Composio dashboard. See [Composio callback identity verification](https://docs.composio.dev/reference/api-reference/connected-accounts).
+```json
+{
+  "name": "Research tools",
+  "source": {
+    "kind": "mcp",
+    "endpoint_url": "https://tools.example/mcp",
+    "auth_mode": "oauth"
+  }
+}
+```
 
-Complete Composio authorization in the same browser tab. Console retains an expiring browser proof in tab storage and posts the returned session to `/api/v1/connector-setup/complete` with the authenticated User and CSRF proof. The reverse proxy serves `/connector-setup/callback` from Console, routes `/api` to Service, and must omit callback query strings from access logs. If the tab context or login expires, sign in and start again; copying the authorization URL to another browser cannot complete the original connection.
+Creation is local and returns a pending Connection. Read or rename it through `/api/v1/connections/{connection_id}`. Enable, disable, check, and delete use the same resource for both source kinds. Enabling permits verification; it does not prove remote eligibility.
 
-An uncertain initial link request is not automatically repeated. A lost completion response is reconciled by reading the exact upstream account, never by replaying the single-use session. Check connection status before starting another authorization. If the authorization URL was lost, explicitly restart the unbound connection setup. An already verified Composio account cannot use this adapter's reconnect operation; create a new Connection instead of replacing its account identity.
+Create an Authorization with `POST /api/v1/connections/{connection_id}/authorizations`, an `Idempotency-Key`, and the Connection's `expected_version`. The returned operation has its own ID, status, expiry, safe error code, and `next_action`. Query it at `/api/v1/connection-authorizations/{authorization_id}`. A completed authorization may still require an explicit `POST /api/v1/connections/{connection_id}/check`; inspect the Connection's status and `last_check`. A failed or unavailable check reports what was checked without promising that every upstream action will succeed.
 
-When upgrading from the old callback protocol, stop old Control/all setup senders, apply the additive migration, deploy Console and Service together, and set the new verifier URL before opening setup again. The reconciler invalidates old incomplete Composio attempts without browser proof; ready Connections remain intact. Do not roll old senders back into the new flow. The old digest column remains unused for schema compatibility. Remote orphaned accounts are not automatically deleted.
+### Application-owned users
 
-For managed OpenConnector, choose `type: "openconnector"` and configure `enabled_services`, for example `["github", "gmail"]`. Supply `project_api_key` (OOMOL Project key) and `catalog_api_key` (OOMOL API key for catalog reads). Service uses the Project key for Workspace-isolated authorization and exact-account execution; third-party credentials stay with OOMOL. The returned authorization URL opens the external OAuth flow, and Control polls for completion. The Provider test response lists `verified_access`; OpenConnector's catalog test does not verify the Project key, which is checked during setup and account inspection.
+Your application owns its customer identities and maps them to Connection IDs. Service does not require an a13n User for each customer. Your backend can use a Service Account API key with Workspace Builder authority to create Connections and authorize them. Keep that API key in the backend.
 
-Preview tool definitions before linking an account with `GET /api/v1/connector-providers/{provider_id}/connectors/{connector_key}/tools`. Preview does not grant execution access. A verified Connection keeps its own account binding, so clearing completed setup history does not break tool calls or re-enabling a disabled connection.
+Connector browser authorization uses Service's browser handoff:
 
-OOMOL's published Project API has no remote revoke operation. Service revoke/delete still disables the connection immediately and reports remote cleanup as failed; finish remote account removal in OOMOL. An initial setup interrupted by a lost response, cancellation, or process failure is not automatically retried because the Project API does not promise idempotent link creation. Concurrent retries return the same pending setup without a redirect until the active sender finishes; retry the same command afterward to resume its authorization URL.
+1. Register the exact HTTPS application callback in `A13N_SERVICE_CONNECTIVITY_AUTHORIZATION_CALLBACK_URLS`. Configure a public HTTPS `A13N_SERVICE_CONNECTIVITY_PUBLIC_ORIGIN` for the Service browser handoff.
+2. Generate unpredictable application `state` and a completion verifier. Retain them in the initiating application session. Send `method: "browser"`, `return_url`, `state`, `completion_challenge` (the lowercase hexadecimal SHA-256 digest of the verifier), `expected_version`, and source-specific `options`.
+3. Open the returned `next_action.url` in the customer's browser. Service binds the link to that tab and handles the provider flow.
+4. At your callback, remove the query parameters from browser navigation state, validate `state` and `authorization_id`, and send `receipt` plus `completion_verifier` from the same authenticated backend principal to `POST /api/v1/connection-authorizations/{authorization_id}/complete`.
+5. Query the operation and Connection after an uncertain response. Start a new authorization only when needed. Customers do not log in to Console.
+
+Serve callbacks without caching or referrer forwarding, and exclude callback query strings from access logs. Route `/connection-authorizations/browser` and its script to Service and `/api` to Service. The application callback can be hosted separately.
+
+Remote MCP OAuth returns directly to the application instead:
+
+1. Add the exact application callback to `A13N_SERVICE_CONNECTIVITY_AUTHORIZATION_CALLBACK_URLS`. Use HTTPS, except for exact loopback HTTP during local development.
+2. Call `POST /api/v1/connections/{connection_id}/mcp/oauth-setup` with `{"redirect_uri":"https://app.example/oauth/callback"}`. Follow its typed `next_action`: configure a client, start authorization, authenticate with client credentials, check the Connection, or finish.
+3. For `start_authorization`, create a browser Authorization with `method: "browser"`, the Connection `expected_version`, and the same `redirect_uri`. Retain the returned authorization ID and the unpredictable `state` from `next_action.url` in the initiating application session, then open that URL.
+4. At the callback, remove the query from browser history before rendering or authenticating. Verify the returned state against the retained value. From the same authenticated principal that started the attempt, call `POST /api/v1/connection-authorizations/{authorization_id}/complete` with `state`, exactly one of `code` or provider `error`, and `iss` when supplied.
+5. Read the Authorization and Connection after an uncertain response. Never resubmit a possibly consumed code with a new attempt.
+
+For example, a backend completion request is:
+
+```http
+POST /api/v1/connection-authorizations/authz_123/complete
+Authorization: Bearer <application-service-account-key>
+Content-Type: application/json
+
+{"state":"<returned-state>","code":"<provider-code>","iss":"https://authorization.example"}
+```
+
+The application must not put its Service credential in browser code. Console performs the same completion through its authenticated, CSRF-protected client at `/connections/callback`. MCP OAuth has no public Service callback, receipt, completion verifier, or manual confirmation step.
+
+### Direct credentials
+
+For API key, bearer, or basic credentials, use `method: "credentials"` with the selected source's write-only `credentials` object and setup `options`. Connector discovery returns `credential_schemas` keyed by authentication method. For MCP bearer mode, credentials are `{"bearer": "..."}`. For MCP static headers, set `source.static_header_names` at creation and supply a complete map of those header names to values as `credentials`. Credentials never appear in Connection or Authorization reads.
+
+## Connector Provider: Composio
+
+Create a Provider under `/api/v1/workspaces/{workspace}/connector-providers` or the parent Organization with `type: "composio"`, `configuration: {}`, and its write-only project `api_key`. The Provider owns this project credential; each Connection owns one customer account binding. **Connections → New connection** lists available applications and Provider instances. Directory refresh publishes a complete snapshot only after a successful read; replacing the Provider key invalidates it.
+
+Select an authentication configuration and the toolkit version from the application's setup schema. OAuth 2.0, API key, bearer token, and basic authentication are supported. Browser setup uses Composio's hosted form. API clients can supply non-OAuth credentials directly, along with required instance fields such as subdomain or region. Composio stores the account credential; Service does not retain the plaintext submission.
+
+If no configuration exists, Service can create a reusable configuration for managed OAuth or an offered non-OAuth method that requires no application-level credentials. To use your own OAuth app or scopes, create the auth config in [Composio Dashboard](https://dashboard.composio.dev), configure its client credentials and redirect URI there, then refresh configurations in Console. If configuration creation has an uncertain outcome, inspect Composio before retrying; Service does not repeat an uncertain remote creation automatically.
+
+Set a stable `A13N_SERVICE_CONNECTIVITY_SETUP_CORRELATION_SECRET` of at least 32 bytes, shared by replicas. Set Composio's **OAuth user verification** callback to `https://<service-public-origin>/connection-authorizations/browser`. Connection return URLs do not replace this project setting. Local browser testing requires a public HTTPS ingress.
+
+Complete hosted authorization in the same tab. Service verifies the fixed upstream account, Provider, application, and correlation before binding it. A ready Connection means Composio accepted that account; some non-OAuth forms do not test credentials against the target service. The Connection check therefore reports `provider_account` scope. Later tool calls may report missing permissions or invalid credentials.
+
+Reauthorization uses the existing Connection's `/authorizations` endpoint. Its ID remains stable when the upstream account changes. A lost completion response is reconciled by reading the exact account, never by resending a consumed provider session. Explicit Connector revocation is `/api/v1/connections/{connection_id}/connector/revoke`; deletion and revocation report local invalidation separately from remote cleanup success or uncertainty.
+
+## Remote MCP
+
+MCP sources support `none`, `bearer`, `static_headers`, and `oauth`. A `none` connection becomes ready through an explicit check. Other modes require credentials or OAuth before checking. MCP checks report `mcp_discovery` scope; they establish protocol and tool-discovery eligibility, not successful execution of every tool.
+
+List the Service-owned setup catalog through `GET /api/v1/mcp-servers`; use `query`, `limit`, and `cursor` for search and pagination, or read one key through `GET /api/v1/mcp-servers/{server_key}`. Built-in and operator-configured entries are templates only. Create an ordinary Connection from the selected endpoint and authentication fields.
+
+OAuth uses discovered authorization-server metadata. Automatic registration is preferred where supported. Request the next setup action through `/api/v1/connections/{connection_id}/mcp/oauth-setup`, manage a connection-owned OAuth app through `/api/v1/connections/{connection_id}/mcp/oauth-client`, and use `/mcp/oauth-discovery` only when the raw safe capability projection is needed. The app configuration contains its issuer, client ID, grant type, token authentication method, bound redirect URI, and write-only client secret. Replacing or removing it clears active tokens and requires authorization again. Failed authorization retains the app configuration for correction.
+
+Authorization-code clients use the application-owned callback flow above. Machine clients use `method: "client_credentials"` at the common Authorization endpoint after their app configuration is saved. Refresh uses the current configured client and does not change the Connection's authorization generation.
 
 ## Application Accounts and event reception
 
-An Application Account represents one provider account, Bot, or concrete application installation. Configure its credentials through `/api/v1/workspaces/{workspace_id}/application-accounts`. Credentials are write-only and encrypted on the Account.
+An Application Account represents one provider account, Bot, or concrete application installation. Configure its credentials through `/api/v1/workspaces/{workspace}/application-accounts`. Credentials are write-only and encrypted on the Account.
 
 Reception is disabled by default. To receive events, set `receive_enabled: true`, `default_agent_id`, and a same-Workspace `execution_service_account_id` on the Account. Configure the provider webhook at `/connectivity/v1/accounts/{account_id}/events`. A tool-only Account needs neither an Agent nor an execution Service Account.
 
-Use `/api/v1/application-accounts/{account_id}/targets` to configure an exact Slack channel, Lark chat, or GitHub repository ID. Targets can override the Agent and only `model`, `skills`, `connector_tools`, and `mcp_tools`. Omitted categories inherit and empty lists clear. Optional batching and provider policy inherit Account defaults. Target updates replace the full configuration; disabled targets do not fall through to defaults.
+Use `/api/v1/application-accounts/{account_id}/targets` to configure an exact Slack channel, Lark chat, or GitHub repository ID. Targets can override the Agent and only `model`, `skills`, `connection_tools`. Omitted categories inherit and empty lists clear. Optional batching and provider policy inherit Account defaults. Target updates replace the full configuration; disabled targets do not fall through to defaults.
 
 The first event is submitted immediately; subsequent ordered batches obey the configured interval. An active or selected waiting Run receives Steer without changing its tools. The next ordinary Run uses the current Agent and override while retaining the same Thread. Closing reception stops new admission while already acknowledged batches continue processing. Disabling or deleting the Account also blocks pending execution and subsequent outbound calls.
 
-Account tools are injected automatically from the Run's trusted execution context. There is no Account selection in Agent configuration or Run overrides. Inbound admission supplies only its admitted reply actions and target. A trusted independent entry can supply explicit proactive actions and destinations. With no such context, the Run gets no Account tools; creating an Account alone does not expose it to every Agent. Clearing `connector_tools` or `mcp_tools` does not remove these default tools.
+Account tools are injected automatically from the Run's trusted execution context. There is no Account selection in Agent configuration or Run overrides. Inbound admission supplies only its admitted reply actions and target. A trusted independent entry can supply explicit proactive actions and destinations. With no such context, the Run gets no Account tools; creating an Account alone does not expose it to every Agent. Clearing `connection_tools` does not remove these default tools.
 
 For proactive sends, Slack accepts `channel_id` and `text` within the entry-authorized `channel_ids`; Lark accepts `chat_id` and typed `content` within `chat_ids`. GitHub scope contains exact repositories, and its tools accept a permitted repository ID, issue/PR number, and target kind. Tools cannot choose another Account or credential. Proactive sends do not automatically create an external Thread binding.
 
@@ -78,7 +148,7 @@ Worker composition provides `WorkerRuntime.external_tools`. A host constructing 
 
 Replacement Attempts and inherited continuations retain these contexts and resolve fresh credentials. New child Runs receive no parent native contexts by default. The Harness sees ordinary MCP capabilities and needs no Account-specific configuration.
 
-Control owns Account and connection management, setup, and short-lived OAuth state expiration. OAuth refresh is demand-driven before authenticated use; interrupted exchanges require new authorization. Connection deletion first invalidates locally, then makes one bounded remote cleanup attempt. Failed or unknown cleanup is reported honestly and has no background retry. Connectivity owns inbound delivery and admission. Workers own tool discovery and outbound execution. No local MCP listener or separate MCP service is needed. `A13N_SERVICE_CONNECTIVITY_PUBLIC_ORIGIN` is required for interactive callback flows, not for noninteractive management or OpenConnector polling. Remote MCP must negotiate protocol `2025-11-25`; authenticated MCP endpoint redirects are rejected.
+Control owns Account and connection management, setup, and short-lived OAuth state expiration. OAuth refresh is demand-driven before authenticated use; interrupted exchanges require new authorization. Connection deletion first invalidates locally, then makes one bounded remote cleanup attempt. Failed or unknown cleanup is reported honestly and has no background retry. Connectivity owns inbound delivery and admission. Workers own tool discovery and outbound execution. No local MCP listener or separate MCP service is needed. `A13N_SERVICE_CONNECTIVITY_PUBLIC_ORIGIN` is required when automatic OAuth uses a Client ID Metadata Document and for the Connector browser bridge; a pre-registered MCP client can return directly to an allowlisted application callback without it. Remote MCP must negotiate protocol `2025-11-25`; authenticated MCP endpoint redirects are rejected.
 
 ## Development database setup
 
@@ -88,4 +158,4 @@ The initial migrations create the current schema directly, without persisted too
 
 Use an `Idempotency-Key` containing 1–512 visible ASCII bytes for retryable management commands. If a response is lost, repeat the same key and request. For 24 hours from the original successful commit, an authorized replay returns the original accepted result, even if the resource has since advanced. Changing the request while reusing that key returns a conflict. Replay does not renew the window.
 
-Read an MCP connection after a mutation to observe current discovery status; the mutation receipt records its accepted state. Supply credentials through the owning Account, Provider, or MCP connection. Run configuration selects those managed resources and does not accept direct credential overrides.
+Read the Connection after a mutation to observe current discovery status; the mutation receipt records its accepted state. Supply credentials through the owning Account, Provider, or MCP connection. Run configuration selects those managed resources and does not accept direct credential overrides.

@@ -33,15 +33,16 @@ async def test_default_process_accepts_bootstrap_and_authenticates_product_api(t
             ws = (await client.get(f"/api/v1/organizations/{org}/workspaces")).json()["items"][0]["id"]
             key = await client.post(f"/api/v1/workspaces/{ws}/personal-api-keys", json={"name": "application"})
             assert key.status_code == 201, key.text
-            callbacks = [
-                "/api/v1/oauth/mcp/callback?code=code&state=" + "s" * 32 + "&iss=https://issuer.example",
-            ]
-            for callback in callbacks:
-                denied = await client.get(callback, headers={"X-A13N-CSRF-Token": ""})
-                assert denied.status_code == 403, denied.text
-                assert denied.json()["error"]["code"] == "csrf_rejected"
+            denied = await client.post(
+                "/api/v1/connection-authorizations/authz_test/complete",
+                headers={"X-A13N-CSRF-Token": ""},
+                json={"receipt": "private-receipt" * 3, "state": "s" * 32},
+            )
+            assert denied.status_code == 403, denied.text
+            assert denied.json()["error"]["code"] == "csrf_rejected"
+            assert "private-receipt" not in denied.text
             completion = await client.post(
-                "/api/v1/connector-setup/complete",
+                "/api/v1/connection-authorizations/authz_test/cancel",
                 headers={"X-A13N-CSRF-Token": ""},
                 json={"attempt_id": "csa_test", "browser_nonce": "b" * 64, "session_uri": "private-session"},
             )
@@ -60,7 +61,7 @@ def test_operator_reissue_invalidates_old_link(tmp_path, monkeypatch):
     import a13n_service.cli as cli
 
     settings = local_settings(tmp_path, role=ProcessRole.control)
-    monkeypatch.setattr(cli, "get_settings", lambda: settings)
+    monkeypatch.setattr(cli, "_settings", lambda: settings)
     runner = CliRunner()
     first = runner.invoke(main, ["iam", "reissue-bootstrap"])
     assert first.exit_code == 0, first.output

@@ -14,11 +14,14 @@ from datetime import UTC, datetime, timedelta
 from typing import Any, cast
 from uuid import uuid4
 
+from a13n_logging import exception_details, get_logger
 from pydantic import JsonValue, TypeAdapter, ValidationError
-from pydantic_ai import RunContext, TextContent, ToolReturn
-from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
-from pydantic_ai.exceptions import ApprovalRequired, ToolFailed
-from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults, ToolDenied
+from pydantic_ai import CallToolsNode, RunContext, TextContent, ToolReturn
+from pydantic_ai.capabilities import AbstractCapability, AgentNode, CapabilityOrdering, ValidatedToolArgs
+from pydantic_ai.exceptions import ApprovalRequired, CallDeferred, ToolFailed
+from pydantic_ai.messages import ToolCallPart
+from pydantic_ai.models import ModelRequestContext
+from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults, ToolDefinition, ToolDenied
 from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
 
 from a13n_harness._json import (
@@ -29,6 +32,7 @@ from a13n_harness._json import (
     redact_json,
     require_finite_json,
 )
+from a13n_harness._tool_observation import record_tool_operation_failure
 from a13n_harness.capabilities.shell_review import (
     SHELL_EXEC_TOOL_ID,
     SHELL_REVIEW_CAPABILITY_ID,
@@ -51,6 +55,7 @@ from a13n_harness.tools.approval import RESOURCE_APPROVAL_KEY, approval_facts, v
 from a13n_harness.tools.deferred import managed_approval_tool_id
 from a13n_harness.tools.metadata import (
     HARNESS_TOOL_METADATA_KEY,
+    RECOVERY_RETRY_SAFE_METADATA_KEY,
     CanonicalResource,
     HarnessToolMetadata,
     ToolOutputPolicy,
@@ -68,6 +73,7 @@ from a13n_harness.tools.policy import (
 from a13n_harness.usage import ProviderUsage
 
 TOOL_EXECUTION_BOUNDARY_CAPABILITY_ID = "a13n.tool-execution-boundary"
+logger = get_logger(__name__)
 MAX_ARGUMENT_BYTES = 64 * 1024
 _UNMANAGED_OUTPUT_POLICY = ToolOutputPolicy(
     max_inline_bytes=256 * 1024,
@@ -159,6 +165,39 @@ class ToolExecutionBoundaryCapability(AbstractCapability[AgentContext]):
     def get_wrapper_toolset(self, toolset: AbstractToolset[AgentContext]) -> AbstractToolset[AgentContext]:
         return ToolExecutionBoundaryToolset(toolset)
 
+    async def before_node_run(
+        self, ctx: RunContext[AgentContext], *, node: AgentNode[AgentContext]
+    ) -> AgentNode[AgentContext]:
+        recovery = ctx.deps._tool_recovery
+        if recovery is not None and recovery.pending and isinstance(node, CallToolsNode):
+            recovery.native_results = node.tool_call_results
+        return node
+
+    async def before_model_request(
+        self, ctx: RunContext[AgentContext], request_context: ModelRequestContext
+    ) -> ModelRequestContext:
+        # Recovery applies only before the model makes its next decision.
+        if (recovery := ctx.deps._tool_recovery) is not None:
+            recovery.pending.clear()
+            recovery.native_results = None
+        return request_context
+
+    async def after_tool_validate(
+        self,
+        ctx: RunContext[AgentContext],
+        *,
+        call: ToolCallPart,
+        tool_def: ToolDefinition,
+        args: ValidatedToolArgs,
+    ) -> ValidatedToolArgs:
+        recovery = ctx.deps._tool_recovery
+        if recovery is not None and call.tool_call_id in recovery.pending:
+            if tool_def.kind == "unapproved":
+                raise ApprovalRequired()
+            if tool_def.kind == "external":
+                raise CallDeferred()
+        return args
+
     async def handle_deferred_tool_calls(
         self,
         ctx: RunContext[AgentContext],
@@ -239,6 +278,13 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
 
         ctx.deps._record_managed_tool_surface({tool_name: tool_id for tool_id, tool_name in managed_ids.items()})
         _validate_resume_surface(ctx, normalized)
+        if (recovery := ctx.deps._tool_recovery) is not None:
+            recovery.resolve(
+                {
+                    name: (tool.tool_def.metadata or {}).get(RECOVERY_RETRY_SAFE_METADATA_KEY) is True
+                    for name, tool in normalized.items()
+                }
+            )
         return normalized
 
     async def call_tool(
@@ -250,6 +296,11 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
     ) -> Any:
         if _TOOL_EXECUTION_DISABLED.get():
             raise ToolFailed("Tool execution is disabled during context compaction.")
+        recovery = ctx.deps._tool_recovery
+        if recovery is not None and ctx.tool_call_id in recovery.pending:
+            # Native ToolApproved authorizes replay. Current managed policy still
+            # evaluates a fresh invocation, without borrowed approval evidence.
+            ctx = replace(ctx, tool_call_approved=False)
         tool_def = tool.tool_def
         if tool_def.kind == "external":
             return await self.wrapped.call_tool(name, tool_args, ctx, tool)
@@ -269,17 +320,11 @@ class ToolExecutionBoundaryToolset(WrapperToolset[AgentContext]):
         try:
             prepared = await _prepare_invocation(ctx, tool_def.name, tool_def.toolset_id, tool_args, managed)
         except EnvironmentError as exc:
+            record_tool_operation_failure(exc.code, reason=exc.details.get("reason"), stage="preparation")
             await _emit(ctx, managed, "preparation_failed")
             # Known Environment failures are actionable even before dispatch.
             # Project only public details, never raw provider exception text.
-            error: dict[str, JsonValue] = {
-                "code": exc.code,
-                "details": {
-                    key: value for key in ("field", "reason", "hint") if isinstance(value := exc.details.get(key), str)
-                },
-            }
-            if exc.retry_hint is not None:
-                error["retry_hint"] = exc.retry_hint
+            error = exc.safe_projection()
             return await _apply_result_policy(
                 {"ok": False, "error": error},
                 managed.output_policy,
@@ -653,6 +698,7 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
         _AsyncSubagentCapability,
         _InlineSubagentCapability,
     )
+    from a13n_harness.capabilities.tool_proxy import TOOL_PROXY_CAPABILITY_ID, _ToolProxySurfaceCapability
     from a13n_harness.capabilities.web import (
         WEB_CAPABILITY_ID,
         WEB_RUN_CAPABILITY_ID,
@@ -720,6 +766,10 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
         CLIENT_TOOLS_RUN_CAPABILITY_ID: (
             (ClientToolsRunCapability,),
             provenance.run_ids,
+        ),
+        TOOL_PROXY_CAPABILITY_ID: (
+            (_ToolProxySurfaceCapability,),
+            provenance.definition_ids,
         ),
         CODEACT_CAPABILITY_ID: (
             (CodeActCapability,),
@@ -954,6 +1004,15 @@ async def _prepare_invocation(
         except EnvironmentError:
             raise
         except Exception as exc:
+            logger.warning(
+                "managed_tool_resource_resolution_failed",
+                extra={
+                    "run_id": ctx.deps.run_id,
+                    "tool_call_id": ctx.tool_call_id,
+                    "tool_name": tool_name,
+                    "exception_chain": exception_details(exc),
+                },
+            )
             raise ToolFailed("Managed tool resources could not be resolved.") from exc
         if not isinstance(resolved, tuple) or not all(isinstance(item, CanonicalResource) for item in resolved):
             raise DefinitionError(
@@ -1450,13 +1509,16 @@ async def _emit_best_effort(
 def _validate_final_toolset_wrapper_order(toolset: AbstractToolset[AgentContext]) -> None:
     from a13n_harness.tools.surface import ToolSurfaceToolset
     from a13n_harness.toolsets.codeact import CodeActToolset
+    from a13n_harness.toolsets.tool_proxy import ToolProxySurfaceToolset
 
     current = toolset
     if isinstance(current, CodeActToolset):
         current = current.wrapped
+    if isinstance(current, ToolProxySurfaceToolset):
+        current = current.wrapped
     if not isinstance(current, ToolSurfaceToolset):
         raise DefinitionError(
-            "Only CodeAct may wrap the mandatory tool surface inside the execution boundary.",
+            "Only CodeAct and ToolProxy may wrap the mandatory tool surface inside the execution boundary.",
             code="tool_surface_order_invalid",
             details={"toolset_type": type(current).__name__},
         )

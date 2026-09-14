@@ -9,11 +9,11 @@ export function useAgentChoices() {
   return useQuery({
     queryKey: ["agent-choices", workspace.id],
     queryFn: async ({ signal }) => {
-      const path = { workspace_id: workspace.id };
-      const [models, skills, mcp, connectors] = await Promise.all([
+      const path = { workspace: workspace.id };
+      const [models, skills, connections] = await Promise.all([
         allPages((cursor) =>
           client.http
-            .GET("/api/v1/workspaces/{workspace_id}/models", {
+            .GET("/api/v1/workspaces/{workspace}/models", {
               params: { path, query: { cursor, limit: 100, enabled: true } },
               signal,
             })
@@ -21,7 +21,7 @@ export function useAgentChoices() {
         ),
         allPages((cursor) =>
           client.http
-            .GET("/api/v1/workspaces/{workspace_id}/skills", {
+            .GET("/api/v1/workspaces/{workspace}/skills", {
               params: { path, query: { cursor, limit: 100 } },
               signal,
             })
@@ -29,22 +29,14 @@ export function useAgentChoices() {
         ),
         allPages((cursor) =>
           client.http
-            .GET("/api/v1/workspaces/{workspace_id}/mcp-connections", {
-              params: { path, query: { cursor, limit: 100 } },
-              signal,
-            })
-            .then(data),
-        ),
-        allPages((cursor) =>
-          client.http
-            .GET("/api/v1/workspaces/{workspace_id}/connector-connections", {
+            .GET("/api/v1/workspaces/{workspace}/connections", {
               params: { path, query: { cursor, limit: 100 } },
               signal,
             })
             .then(data),
         ),
       ]);
-      return { models, skills, mcp, connectors };
+      return { models, skills, connections };
     },
   });
 }

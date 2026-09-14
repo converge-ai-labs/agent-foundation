@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from copy import deepcopy
 from dataclasses import dataclass
+from functools import partial
 from typing import Any, Protocol
 
 from a13n_harness import (
@@ -20,6 +21,7 @@ from a13n_harness import (
 from a13n_harness.capabilities import SubagentCapability
 from a13n_harness.environment import DynamicEnvironmentCapability, DynamicEnvironmentConfiguration
 from a13n_harness.errors import HarnessError
+from a13n_harness.output_schema import structured_output_type
 from a13n_harness.plugin_factories import (
     HarnessPluginFactoryCatalog,
     HarnessPluginFactoryContext,
@@ -32,12 +34,12 @@ from a13n_harness.tools.client import (
 )
 from pydantic_ai.agent.abstract import AgentRetries
 from pydantic_ai.capabilities import AbstractCapability
-from pydantic_ai.output import StructuredDict
 from referencing import Registry, Resource
 from referencing.exceptions import CannotDetermineSpecification, Unresolvable
 from referencing.jsonschema import DRAFT202012
 
 from a13n_service.digests import digest_request
+from a13n_service.search.runtime import search_capability
 
 from .domain import (
     EffectiveAgentConfig,
@@ -79,6 +81,7 @@ class AgentDefinitionCapabilityProvider(Protocol):
     def __call__(
         self,
         context: AgentDefinitionReconstructionContext,
+        /,
     ) -> Sequence[AbstractCapability[AgentContext]]: ...
 
 
@@ -90,11 +93,13 @@ class AgentReconstructor:
         plugin_catalog: HarnessPluginFactoryCatalog,
         *,
         capability_provider: AgentDefinitionCapabilityProvider | None = None,
+        run_capability_provider: AgentDefinitionCapabilityProvider | None = None,
     ) -> None:
         if not isinstance(plugin_catalog, HarnessPluginFactoryCatalog):
             raise TypeError("plugin_catalog must be a HarnessPluginFactoryCatalog")
         self._plugin_catalog = plugin_catalog
         self._capability_provider = capability_provider
+        self._run_capability_provider = run_capability_provider
 
     def reconstruct(
         self,
@@ -213,6 +218,20 @@ class AgentReconstructor:
                         task_state=edge.context.task_state,
                     ),
                     usage_limits=edge.usage_limits,
+                    run_capability_factory=(
+                        partial(
+                            self._run_capability_provider,
+                            AgentDefinitionReconstructionContext(
+                                agent_id=edge.child_agent_id,
+                                agent_revision_id=edge.child_agent_revision_id,
+                                content_digest=child.revision_content_digest,
+                                is_root=False,
+                                config=child.effective_config,
+                            ),
+                        )
+                        if self._run_capability_provider is not None
+                        else None
+                    ),
                 )
             )
 
@@ -220,6 +239,8 @@ class AgentReconstructor:
             DynamicEnvironmentCapability(DynamicEnvironmentConfiguration()),
             *self._provided_capabilities(node),
         ]
+        if config.search is not None:
+            capabilities.append(search_capability(config.search))
         if config.client_tools:
             capabilities.append(
                 ClientToolsCapability(
@@ -312,10 +333,10 @@ def _output_type(spec: OutputSpec | None) -> Any:
     try:
         if spec.schema_ is not None:
             schema = _inline_schema_resources(spec.schema_, spec.resources)
-            return StructuredDict(schema, name=spec.name, description=spec.description)
+            return structured_output_type(schema, name=spec.name, description=spec.description)
         assert spec.variants is not None
         return tuple(
-            StructuredDict(
+            structured_output_type(
                 _inline_schema_resources(variant.schema_, variant.resources),
                 name=variant.name,
                 description=variant.description,

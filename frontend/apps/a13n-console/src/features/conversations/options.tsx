@@ -1,15 +1,26 @@
-import { SlidersHorizontal } from "lucide-react";
-import { useState } from "react";
+import {
+  Button,
+  Checkbox,
+  ChoiceField,
+  DisclosureSection,
+  FormField,
+  Input,
+  Label,
+  ModalFrame,
+} from "a13n-ui";
+
 import { useQuery } from "@tanstack/react-query";
-import { Checkbox, Input, Select, Button, Dialog } from "a13n-ui";
+import { SlidersHorizontalIcon } from "@phosphor-icons/react";
+import { useState } from "react";
+
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { allPages, data, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
-import { TextArea } from "../../shared/form";
-import { jsonObject, runOverride } from "../../shared/validation";
+import { TextAreaField } from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
+import { jsonObject, runOverride } from "../../shared/validation";
 import { Composer } from "./composer";
 import styles from "./conversations.module.css";
 
@@ -166,11 +177,11 @@ export function RunOptions({
     queryKey: ["run-options", workspace.id],
     enabled: open,
     queryFn: async ({ signal }) => {
-      const path = { workspace_id: workspace.id };
+      const path = { workspace: workspace.id };
       const [agents, models, templates, environments] = await Promise.all([
         allPages((cursor) =>
           client.http
-            .GET("/api/v1/workspaces/{workspace_id}/agents", {
+            .GET("/api/v1/workspaces/{workspace}/agents", {
               params: { path, query: { cursor } },
               signal,
             })
@@ -178,7 +189,7 @@ export function RunOptions({
         ),
         allPages((cursor) =>
           client.http
-            .GET("/api/v1/workspaces/{workspace_id}/models", {
+            .GET("/api/v1/workspaces/{workspace}/models", {
               params: { path, query: { cursor, enabled: true } },
               signal,
             })
@@ -186,7 +197,7 @@ export function RunOptions({
         ),
         allPages((cursor) =>
           client.http
-            .GET("/api/v1/workspaces/{workspace_id}/environment-templates", {
+            .GET("/api/v1/workspaces/{workspace}/environment-templates", {
               params: { path, query: { cursor } },
               signal,
             })
@@ -194,7 +205,7 @@ export function RunOptions({
         ),
         allPages((cursor) =>
           client.http
-            .GET("/api/v1/workspaces/{workspace_id}/environments", {
+            .GET("/api/v1/workspaces/{workspace}/environments", {
               params: { path, query: { cursor } },
               signal,
             })
@@ -205,54 +216,56 @@ export function RunOptions({
     },
   });
   return (
-    <Dialog
-      open={open}
+    <ModalFrame
       onOpenChange={setOpen}
-      description={t("Customize the next run.")}
-      title={t("Run options")}
-      closeLabel={t("Close")}
       trigger={
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          icon={<SlidersHorizontal size={14} />}
-        >
+        <Button type="button" size="sm" variant="ghost">
+          {<SlidersHorizontalIcon size={14} />}
           {t("Options")}
+        </Button>
+      }
+      size={"md"}
+      title={t("Run options")}
+      description={t(
+        "Leave options inherited to keep the source configuration. Changes apply to the next run only.",
+      )}
+      closeLabel={t("Close")}
+      open={open}
+      footer={
+        <Button type="button" onClick={() => setOpen(false)}>
+          {t("Done")}
         </Button>
       }
     >
       <div className={styles.composerOptions}>
-        <p className={styles.notice}>
-          {t(
-            "Leave options inherited to keep the source configuration. Changes apply to the next run only.",
-          )}
-        </p>
         <ErrorNotice error={choices.error} />
         {showAgent && (
-          <Select
-            label={t("Agent")}
+          <ChoiceField
             placeholder={t("Inherit")}
             value={options.agent || "inherit"}
             onValueChange={(value) => {
               options.setAgent(value === "inherit" ? "" : value);
               options.setRevision("");
             }}
+            label={t("Agent")}
             options={[
               { value: "inherit", label: t("Inherit") },
               ...(choices.data?.agents ?? [])
                 .filter((agent) => agent.enabled)
-                .map((agent) => ({ value: agent.id, label: agent.name })),
+                .map((agent) => ({
+                  value: agent.id,
+                  label: agent.name,
+                })),
             ]}
           />
         )}
-        <Select
-          label={t("Model")}
+        <ChoiceField
           placeholder={t("Inherit")}
           value={options.model || "inherit"}
           onValueChange={(value) =>
             options.setModel(value === "inherit" ? "" : value)
           }
+          label={t("Model")}
           options={[
             { value: "inherit", label: t("Inherit") },
             ...(choices.data?.models ?? []).map((model) => ({
@@ -261,11 +274,11 @@ export function RunOptions({
             })),
           ]}
         />
-        <Select
-          label={t("Environment")}
+        <ChoiceField
           placeholder={t("Inherit")}
           value={options.environment}
-          onValueChange={options.setEnvironment}
+          onValueChange={(value) => options.setEnvironment(value)}
+          label={t("Environment")}
           options={[
             { value: "inherit", label: t("Inherit") },
             { value: "none", label: t("No environment") },
@@ -275,41 +288,46 @@ export function RunOptions({
             })),
             ...(choices.data?.environments ?? []).map((environment) => ({
               value: `instance:${environment.id}`,
-              label: environment.id,
+              label: `${t("Instance")}: ${environment.name}`,
             })),
           ]}
         />
-        <Checkbox
-          label={t("Override instructions")}
-          checked={options.overrideInstructions}
-          onCheckedChange={(value) =>
-            options.setOverrideInstructions(value === true)
-          }
-        />
+        <Label className="flex items-center gap-2">
+          <Checkbox
+            checked={options.overrideInstructions}
+            onCheckedChange={(value) =>
+              options.setOverrideInstructions(value === true)
+            }
+          />
+          {t("Override instructions")}
+        </Label>
         {options.overrideInstructions && (
-          <TextArea
+          <TextAreaField
             label={t("Instructions override")}
             value={options.instructions}
             onChange={options.setInstructions}
             rows={4}
           />
         )}
-        <TextArea
+        <TextAreaField
           label={t("Model settings (JSON)")}
           value={options.settings}
           onChange={options.setSettings}
           rows={3}
           code
         />
-        <details>
-          <summary>{t("Advanced configuration")}</summary>
+        <DisclosureSection title={<>{t("Advanced configuration")}</>}>
           <div className={styles.composerOptions}>
-            <Input
+            <FormField
+              className="min-w-0 w-full"
               label={t("Pinned agent revision ID")}
-              value={options.revision}
-              onChange={(event) => options.setRevision(event.target.value)}
-            />
-            <TextArea
+            >
+              <Input
+                value={options.revision}
+                onChange={(event) => options.setRevision(event.target.value)}
+              />
+            </FormField>
+            <TextAreaField
               label={t("Run configuration (JSON)")}
               hint={t(
                 "Skills, MCP and connector tools, client tools, output format, retries, and subagents.",
@@ -320,8 +338,8 @@ export function RunOptions({
               rows={8}
             />
           </div>
-        </details>
+        </DisclosureSection>
       </div>
-    </Dialog>
+    </ModalFrame>
   );
 }

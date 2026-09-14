@@ -115,67 +115,61 @@ The [integration package example](https://github.com/converge-ai-labs/agent-foun
 | `CodeActCapability`            | Restricted Python runners and explicit key-to-JSON stored values                            | Explicit eligible tools and Environment files for programs     |
 | `ContextualMCP`                | URL-based MCP with headers resolved once from the current logical run                       | Current `AgentContext` supplied by the Harness                 |
 
+For large local tool collections, [ToolProxyCapability](tool-proxy.md) accepts a `groups` mapping of passive `ToolProxyGroup(source=..., description=...)` values. This single code-first entry provides grouped discovery with dynamic schemas and CodeAct compatibility, without replacing native execution. The [Host integration guide](tool-proxy.md#host-integration) covers source selection and plugin composition.
+
 Provider-backed run Capabilities contain live trusted collaborators. They are not definition state and never enter `HarnessState`.
 
-## Context Composition
+## Native Image Generation with Saving
 
-Harness context features use one model-context coordinator, so each owner contributes a bounded block without directly rewriting another owner's messages.
-
-A practical general-purpose context composition is:
+`NativeImageGenerationCapability` combines the provider-native `ImageGenerationTool` with a required async saver. Unlike selecting the raw upstream tool, a completed generation produces a saved reference rather than leaving the image only inside the model response. There is no separate output-replacement Capability, image API client, or fallback Model.
 
 ```python
-from a13n_harness.capabilities import (
-    FileContextCapability,
-    RuntimeContextCapability,
-    WorkspaceOutlineCapability,
-)
+from uuid import uuid4
 
-capabilities = (
-    RuntimeContextCapability(),
-    WorkspaceOutlineCapability(),
-    FileContextCapability(),
-)
-```
+from anyio import Path
+from pydantic_ai import RunContext
+from pydantic_ai.agent.spec import AgentSpec
+from pydantic_ai.messages import FilePart
+from pydantic_ai.native_tools import ImageGenerationTool
 
-- Runtime context is refreshed for each request and can expose only explicitly selected metadata keys.
-- Workspace outline reads metadata, not file content, and appears only on input requests.
-- File context loads selected files once for the logical run and fences the Environment route used to load them.
+from a13n_harness import AgentContext, HarnessBuilder
+from a13n_harness.capabilities import NativeImageGenerationCapability
 
-All three have explicit byte, item, depth, or line bounds. Configure them to match the Environment and target model rather than treating their defaults as universal.
 
-For context lifecycle features, callers supply Harness-managed policy through the `AgentSpec.model_characteristics` construction key. An explicit Harness context window is projected onto the effective native `ModelProfile`. `HandoffCapability()` uses it to resolve its 65% reminder during build. An otherwise unconfigured `CompactionCapability()` resolves its 90% threshold at each request, preferring native `RunContext` context-window and usage values before falling back to Harness characteristics and captured provider usage. Explicit token settings override these values, and the Capabilities remain opt-in.
+async def save_image(ctx: RunContext[AgentContext], image: FilePart) -> str:
+    # This Host owns this directory and makes it available to its users/Agents.
+    directory = Path("/path/to/generated-images")
+    await directory.mkdir(parents=True, exist_ok=True)
+    target = directory / f"image-{uuid4().hex}.png"
+    await target.write_bytes(image.content.data)
+    return str(target)
 
-## Mem0 Long-Term Memory
 
-`mem0ai` is a default Harness dependency, so no package extra is required. The integration remains behaviorally opt-in: add `Mem0Capability` to an Agent definition and either configure `MEM0_API_KEY` (plus optional `MEM0_BASE_URL`) or pass a native `AsyncMemoryClient`. Environment-created clients defer the SDK's eager remote validation to the first bounded recall or memory-tool operation, so optional recall still fails open when authentication or the provider is unavailable.
-
-```python
-from a13n_harness.capabilities import Mem0Capability, Mem0Scope
-
-capabilities = (
-    Mem0Capability(
-        scope=Mem0Scope.USER,
-        auto_recall=True,
-        toolset=True,
-        recall_limit=5,
+agent = HarnessBuilder().build(
+    AgentSpec(model="openai-responses:gpt-5.4"),
+    output_type=str,
+    capabilities=(
+        NativeImageGenerationCapability(
+            tool=ImageGenerationTool(output_format="png"),
+            saver=save_image,
+        ),
     ),
 )
 ```
 
-A fixed scope exposes `memory_search`, `memory_list`, and `memory_add` without an entity or scope argument. The Harness resolves `thread` from the current `thread_id`, `agent` from the `agent_id` identity claim, and `user` from the `user_id` claim. With `scope=None`, one automatic recall searches all available scopes and each memory tool accepts only the `thread`, `agent`, or `user` selector; the model never supplies the underlying ID.
+The saver receives the current `RunContext` and native image `FilePart`; it can use authorized Environment storage, Host storage, or an upload service. Return a non-empty model-visible path or URL only after the write succeeds. Its code and credentials are process-local, not serialized configuration. The Host owns naming, access, retention, and sharing. Harness UI provides a default implementation that saves under the current Thread's `tmp` directory.
 
-The first eligible input in each logical run performs at most one bounded recall. Recalled records enter only as an untrusted input preamble and are removed from exported history. Internal model recovery reuses the same result. `memory_add` stores exactly the supplied bounded text with Mem0 inference disabled; update and delete are not model-visible.
+The Capability retains native generation call/return metadata, withholds image previews, saves final images, and includes text references in output and continuation history. Image-only replies work with `output_type=str`. Interrupted images are not embedded into checkpoints, and a saver exception fails the Run. Generation, saving, and continuation publication are separate effects; a failure or cancellation can leave a saved file without a published reference. Saved references do not automatically attach pixels on later turns; an Agent needs an authorized file/media reader to inspect them.
 
-When no client is supplied, the Harness constructs the native async client off the event loop and closes it at logical-run cleanup. A supplied client is borrowed and is never entered or closed by the Harness:
+Native search remains independently composable with `NativeTool(WebSearchTool(...))` or upstream `WebSearch`. Provider support and account entitlement are checked by the native Model integration, not by a Harness provider matrix.
 
-```python
-from mem0 import AsyncMemoryClient
+## Context Composition
 
-mem0_client = AsyncMemoryClient(api_key="...")
-capabilities = (Mem0Capability(client=mem0_client, scope=Mem0Scope.USER),)
-```
+See [Context and memory](context-and-memory.md#context-composition) for configuration, examples, and lifecycle boundaries.
 
-The Host owns the borrowed client's lifecycle. The Harness does not automatically write terminal transcripts to memory because a process-local result does not prove durable checkpoint acceptance. Applications that need extraction should enqueue it only after their own successful durable commit.
+## Mem0 Long-Term Memory
+
+See [Context and memory](context-and-memory.md#mem0-long-term-memory) for configuration, examples, and lifecycle boundaries.
 
 ## Shell Command Review
 
@@ -210,27 +204,7 @@ Code-first definitions can supply a custom `ShellCommandReviewer` to `ShellRevie
 
 ## Working State
 
-`WorkingStateCapability` can keep tasks and notes inside its portable Capability namespace:
-
-```python
-from a13n_harness.capabilities import WorkingStateCapability
-
-capabilities = (WorkingStateCapability(),)
-```
-
-This embedded mode is useful for one process-local or state-resumed Agent. Provider mode replaces task storage with a fresh `TaskStateRunCapability`; the provider remains authoritative, while Harness events report bounded committed deltas.
-
-The Notes tools have explicit mutation semantics:
-
-- `note_write(key, value)` creates or updates a note and reports `created` or `updated`;
-- `note_delete(key)` is idempotent and reports `deleted` or `already_absent`;
-- `note_get(key=None)` reads one complete value or lists sorted keys with a count.
-
-Notes are projected only on user-input boundaries; active Tasks are projected on both user-input and tool-result boundaries. Their bounded request epilogues put Notes first and Tasks last. Existing historical projections remain unchanged, so tool-result rounds do not refresh old Notes. Complete note values appear as `<note>` entries when they fit. A `<note-ref>` means the value is available through `note_get`, while `<notes-omitted>` reports entries outside the projection. Note values are never partially truncated, and empty Notes produce no Notes block. `WorkingStateConfiguration` defaults to at most 256 projected notes and 128 projected tasks within a shared 64 KiB context budget.
-
-Notes preserve structured session facts, Tasks preserve execution state, and `summarize` preserves narrative continuity and the next step. Before a handoff, reconcile stale notes and task statuses; do not copy every note or task into the summary. Automatic compaction likewise replaces history only, after which current Notes and Tasks are projected again. Its nested summary request sees the full unchanged history, including prior overlays and thinking, with no trimming or suffix-selection mode. It preserves `tool_choice` and tells the model not to call any tools. Both compaction and `summarize` replay the current logical run's initial input and delivered user steering in order, preserving multimodal content; pending steering and internal notices are not replayed.
-
-Working state is not a distributed workflow engine. Cross-worker ownership, durable leases, schedules, and delivery belong to the Host or task provider.
+See [Context and memory](context-and-memory.md#working-state) for configuration, examples, and lifecycle boundaries.
 
 ## Structured User Interaction
 
@@ -342,207 +316,11 @@ See [Environment tools](environments.md) for signatures, output provenance, obse
 
 ## Filters
 
-`MessageIntegrityFilterCapability` is mandatory and builder-owned. `ContentFilterCapability` is optional. Cold-start filtering is enabled by default through `AgentSpec.cold_start_filter`, with a one-hour idle interval:
-
-```python
-from a13n_harness import AgentSpec
-from a13n_harness.filters import (
-    ColdStartFilterConfiguration,
-    ContentFilterCapability,
-    ContentFilterConfiguration,
-)
-
-capabilities = (
-    ContentFilterCapability(
-        ContentFilterConfiguration(
-            accepted_media=frozenset({"image", "document"}),
-            max_media_items=16,
-        )
-    ),
-)
-spec = AgentSpec(cold_start_filter=ColdStartFilterConfiguration(idle_seconds=3_600))
-without_cold_compression = spec.with_updates(cold_start_filter=None)
-```
-
-Use content filtering only for provider/model multimodal compatibility. Cold-start filtering shortens old, already-consumed tool-result strings after the configured interval since the latest model response. It leaves user input, thinking, native media, and pending tool results unchanged. One hour is an intentional retention policy, not a promise about a provider's cache expiry. An explicitly composed `ColdStartFilterCapability` keeps its own policy and suppresses the automatic instance. Neither filter is transport retry, semantic recovery, or long-term memory.
+See [Context and memory](context-and-memory.md#filters) for configuration, examples, and lifecycle boundaries.
 
 ## MCP
 
-### Native MCP
-
-MCP uses Pydantic AI's native `MCP` Capability. Keep it in `AgentSpec.capabilities`; Agent Harness does not define a second MCP client, protocol, server schema, or peer `mcp_servers` field.
-
-A local URL server can be reconstructed directly from an AgentSpec document:
-
-```python
-from a13n_harness import AgentSpec
-
-agent_spec = AgentSpec.from_dict(
-    {
-        "capabilities": [
-            {
-                "MCP": {
-                    "url": "https://mcp.example.com/mcp",
-                    "id": "knowledge",
-                    "local": True,
-                    "native": False,
-                    "allowed_tools": ["search"],
-                }
-            }
-        ]
-    }
-)
-```
-
-The default `a13n-harness` installation includes Pydantic AI's MCP client runtime, so local URL and stdio transports need no separate Harness extra. For richer process-local inputs such as an in-process server, transport, script path, or prebuilt `MCPToolset`, construct `pydantic_ai.capabilities.MCP` in trusted code and pass it through definition Capability composition. A host that owns fresh authenticated clients or toolsets for one execution can instead attach an exact upstream `MCP` instance to `RunBindings.capabilities`; never reuse that authenticated instance across runs. `defer_loading=True` uses upstream `load_capability` under the same Harness tool boundaries. Use `native=True, local=False` when the selected model provider should execute a URL MCP server natively.
-
-### Run-scoped headers with `ContextualMCP`
-
-Use `ContextualMCP` when a URL-based MCP server needs headers derived from the current logical Harness run. The definition stores an inert URL recipe. During Pydantic Capability run binding, it resolves headers and constructs a fresh upstream `MCP` before native tools or a local MCP Toolset are extracted.
-
-For common Identity, lineage, run, and metadata values, use the declarative resolver:
-
-```python
-from a13n_harness import (
-    AgentIdentityRef,
-    HarnessBuilder,
-    RunBindings,
-)
-from a13n_harness.mcp import (
-    ContextualMCP,
-    MCPContextHeaderBinding,
-    MCPContextHeaders,
-    MCPContextHeadersConfig,
-)
-
-mcp = ContextualMCP(
-    "https://mcp.example.com/mcp",
-    id="knowledge",
-    native=True,
-    local=None,
-    headers={"X-Application": "support"},
-    headers_factory=MCPContextHeaders(
-        MCPContextHeadersConfig(
-            headers={
-                "X-Run-ID": MCPContextHeaderBinding("context.run_id"),
-                "X-Thread-ID": MCPContextHeaderBinding("context.thread_id"),
-                "X-User-ID": MCPContextHeaderBinding("identity.user_id"),
-                "X-Request-Context": MCPContextHeaderBinding(
-                    "context.metadata.request_context",
-                    required=False,
-                ),
-            }
-        )
-    ),
-)
-
-executable = HarnessBuilder().build(
-    agent_spec,
-    output_type=str,
-    model=model,
-    capabilities=(mcp,),
-)
-
-bindings = RunBindings.embedded(
-    identity=AgentIdentityRef(
-        issuer="my-host",
-        subject="support-agent",
-        user_id="user-123",
-        agent_id="agent-support",
-    ),
-    metadata={
-        "request_context": {
-            "region": "us-east",
-            "labels": ["interactive", "priority"],
-        }
-    },
-)
-result = await executable.run("Find the account record", bindings=bindings)
-```
-
-`RunBindings.metadata` is the intended place for additional per-run JSON values. Put an exact top-level key there, then select it through `context.metadata.<key>`. Do not attach ad hoc attributes to `AgentContext` or encode a nested reflection path.
-
-The declarative resolver supports these exact source families:
-
-| Source                              | Resolved value                                        |
-| ----------------------------------- | ----------------------------------------------------- |
-| `identity.issuer`                   | Workload Identity issuer                              |
-| `identity.subject`                  | Workload Identity subject                             |
-| `identity.<claim>`                  | One exact Identity claim such as `user_id`            |
-| `instance.agent_instance_id`        | Current Host-owned Agent instance ID                  |
-| `instance.parent_agent_instance_id` | Optional parent Agent instance ID                     |
-| `instance.delegation_id`            | Optional delegation correlation                       |
-| `instance.actor`                    | Optional actor string                                 |
-| `context.run_id`                    | Current logical Harness run ID                        |
-| `context.thread_id`                 | Current independently advancing Thread ID             |
-| `context.metadata.<top-level-key>`  | One exact value from immutable `RunBindings.metadata` |
-
-A selected string is sent unchanged. JSON numbers, booleans, objects, and arrays use finite, sorted-key, compact JSON. For example, `{"region": "us-east", "labels": ["interactive"]}` becomes `{"labels":["interactive"],"region":"us-east"}`. A missing value or `None` fails a required binding and omits an optional binding.
-
-Header names from `headers=` and the resolved factory result must not overlap case-insensitively. `authorization_token`, `allowed_tools`, `description`, and `defer_loading` retain upstream MCP behavior.
-
-### Custom header factories
-
-Use a custom synchronous or asynchronous factory when the curated selectors are not enough. It receives the complete trusted `AgentContext` for the logical run and returns an exact string-to-string mapping:
-
-```python
-from collections.abc import Mapping
-
-from a13n_harness import AgentContext
-from a13n_harness.mcp import ContextualMCP
-
-
-def resolve_mcp_headers(context: AgentContext) -> Mapping[str, str]:
-    return {
-        "X-Run-ID": context.run_id,
-        "X-Agent-Instance-ID": context.instance.agent_instance_id,
-        "X-Tenant-ID": context.instance.identity.require_claim("tenant_id"),
-    }
-
-
-mcp = ContextualMCP(
-    "https://mcp.example.com/mcp",
-    id="tenant-tools",
-    headers_factory=resolve_mcp_headers,
-    native=True,
-    local=None,
-)
-```
-
-An async factory has the same input and output contract:
-
-```python
-async def resolve_mcp_headers(context: AgentContext) -> Mapping[str, str]:
-    route = await route_store.resolve(context.instance.identity)
-    return {"X-Route": route}
-```
-
-The factory runs once per logical Harness run. Internal model-recovery attempts reuse the same active upstream MCP and header snapshot; another logical run resolves a fresh snapshot. The factory is trusted Host code, so it may read current run services deliberately, but model content cannot choose selectors or call it directly.
-
-### Local and provider-native execution
-
-`ContextualMCP` accepts URL-based upstream execution only:
-
-| Selection     | Arguments                  | Behavior                                                    |
-| ------------- | -------------------------- | ----------------------------------------------------------- |
-| Local default | `native=False, local=None` | Use upstream URL-based local MCP execution                  |
-| Automatic     | `native=True, local=None`  | Prefer provider-native MCP with the upstream local fallback |
-| Local only    | `native=False, local=True` | Require local URL-based MCP execution                       |
-| Native only   | `native=True, local=False` | Require provider-native MCP execution                       |
-
-Prebuilt clients, transports, in-process servers, scripts, and prebuilt Toolsets already own their connection setup. Use native `MCP` directly for those values rather than combining them with `ContextualMCP`.
-
-The URL is explicit trusted configuration. Harness requires an HTTP(S) URL for `ContextualMCP` and otherwise leaves URL, transport, authorization, and provider validation to upstream MCP integrations; it does not guess whether URL components contain credentials.
-
-### Host-authored configuration
-
-A Host can expose the same URL-based path through its own trusted configuration model. Preserve the `ContextualMCP` fields and exact execution selection rather than inventing a second MCP runtime. Persist only credential-free desired configuration; resolve headers, short-lived credentials, and current routing through process-local factories when constructing the Capability.
-
-An Agent can select multiple MCP servers when each has a unique `id`. Use code-first `ContextualMCP` when configuration requires callable factories, current identity, static headers, or an out-of-band secret resolver.
-
-### Result boundary
-
-Locally executed MCP tools are ordinary dynamically discovered function tools. Their text and JSON returns cross the mandatory Harness result boundary and default to explicit truncation rather than spill when oversized. This bounds the value integrated into model history; it does not impose a transport-body or process-memory limit before the MCP client receives the result. Provider-native MCP execution remains on the provider path and does not cross the local function-tool boundary.
+See [MCP tools](mcp.md) for native composition, Run-scoped headers, local versus provider-native execution, and result boundaries.
 
 ## Native Capabilities and Tools
 

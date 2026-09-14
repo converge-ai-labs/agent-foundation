@@ -14,7 +14,7 @@ from a13n_environment import (
     build_environment_provider_catalog,
     discover_environment_provider_references,
 )
-from pydantic import BaseModel, ConfigDict, JsonValue
+from pydantic import BaseModel, ConfigDict
 
 
 class _Configuration(BaseModel):
@@ -29,13 +29,8 @@ class _Provider(EnvironmentProvider):
         return "test.provider"
 
     @property
-    def configuration_versions(self) -> frozenset[str]:
-        return frozenset({"1"})
-
-    def validate_configuration(self, *, schema_version: str, value: JsonValue) -> BaseModel:
-        if schema_version != "1":
-            raise ValueError("unsupported")
-        return _Configuration.model_validate(value)
+    def configuration_models(self) -> dict[str, type[BaseModel]]:
+        return {"1": _Configuration}
 
     def describe_configuration(self, configuration):
         raise NotImplementedError
@@ -399,3 +394,25 @@ def test_catalog_require_validates_key_and_reports_missing_selection() -> None:
     assert missing.value.code == "provider_catalog_missing"
     assert missing.value.context.provider_key == "test.missing"
     assert invalid.value.code == "provider_catalog_key_invalid"
+
+
+def test_provider_names_are_owned_by_implementations():
+    catalog = build_environment_provider_catalog(
+        builtin_keys=(
+            "a13n.direct-local",
+            "a13n.local-envd",
+            "a13n.docker",
+            "a13n.e2b",
+            "a13n.http-envd",
+            "a13n.websocket-envd",
+        )
+    )
+    assert {key: provider.display_name for key, provider in catalog.items()} == {
+        "a13n.direct-local": "Direct Local",
+        "a13n.local-envd": "Local Envd",
+        "a13n.docker": "Docker",
+        "a13n.e2b": "E2B",
+        "a13n.http-envd": "HTTP Envd",
+        "a13n.websocket-envd": "WebSocket Envd",
+    }
+    assert _Provider().display_name == "test.provider"

@@ -4,13 +4,13 @@ The private React and TypeScript web application for Agent Foundation Service. C
 
 ## Local development
 
-From the repository root, start local PostgreSQL and Redis, upgrade the schema, prepare frontend dependencies and the TypeScript SDK, and run Service and Console together:
+From the repository root, prepare local PostgreSQL, Redis and Langfuse, upgrade the schema, prepare frontend dependencies and the TypeScript SDK, and run Service and Console together. Configuration comes from `dev/service/local.toml`; no `.env` or manual Langfuse setup is required:
 
 ```bash
 make dev
 ```
 
-Keep the terminal open; Ctrl+C stops both application processes. If either process exits, the launcher stops the other and returns the exited process's status. Configure Service browser authentication for login.
+Keep the terminal open; Ctrl+C stops both application processes. If either process exits, the launcher stops the other and returns the exited process's status. The local Service configuration selects the Console origin for browser authentication. Use `make dev-reset STATE=seeded` before startup for fictional accounts and content, or `STATE=empty` for the initial administrator flow. See [local Service development](../../../dev/service/README.md).
 
 To run only Console against an already running Service:
 
@@ -26,7 +26,7 @@ The development server listens on `http://127.0.0.1:5173` and proxies `/api` HTT
 
 - Workspace Agents with configuration, immutable versions, and lifecycle controls.
 - Sessions with threads, runs, retained and live output, attachments, branching, waiting feedback, steering, interruption, and queued messages.
-- Models and providers, Skills and versions, Assets, and Environment providers, templates, and instances.
+- Models and providers, Skills and versions, and Environment providers, templates, and instances.
 - Application accounts and targets, Connectors, and remote MCP connections and tool discovery.
 - Run attempt details and Traces, including an explicit unavailable state when no trace query backend is configured.
 - Workspace, organization, and personal settings, membership, invitations, API keys, service accounts, sessions, security activity, and profile images.
@@ -44,3 +44,5 @@ make frontend-check-all
 ```
 
 The production build is emitted to `dist/`. Hosting must serve the application shell for browser routes and route `/api` to the Service on the same origin, including WebSocket upgrades. Service deployment and static hosting configuration are managed separately. The design system showcase remains in `frontend/packages/a13n-ui/dev`.
+
+Console tests use Node.js for `*.test.ts` and jsdom for browser/React `*.test.tsx` files. Only the latter load the DOM setup. Both run under `test`; use `--project=unit` or `--project=dom` for an explicit subset. Keep real keyboard interactions where they are under test; paste complete fixture URLs when only the resulting value matters. Timer behavior uses Vitest fake timers rather than waiting for wall-clock delays.

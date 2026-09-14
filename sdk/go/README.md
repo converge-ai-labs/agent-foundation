@@ -4,7 +4,9 @@ Go SDK module for a13n Service.
 
 ## Status
 
-The `v0.0.x` module reserves the stable module and package names while the service API is being designed. It intentionally exposes no client API yet. Generated models and transports will be added only after the service contract is stable enough to support compatibility guarantees.
+This SDK implements Search Provider management for Native `/api/v1`: the type catalog, Workspace/Organization account create/list/get/update, saved-account tests, and authorized references. Responses preserve ETags, and mutations are never automatically replayed after an uncertain outcome.
+
+The generated low-level API covers every ordinary Native `/api/v1` HTTP operation in the shared Service OpenAPI contract. The existing Search facade stays compatible; its `AgentConfig` and `AgentRunOverride` remain search-focused wrappers, while complete request/resource models live in `generated`. Generated HTTP bindings do not implement Run SSE or notification WebSocket recovery.
 
 ## Installation
 
@@ -17,6 +19,22 @@ import "github.com/converge-ai-labs/agent-foundation/sdk/go"
 ```
 
 Go module releases use canonical module tags in the form `sdk/go/v<version>`, created by the `release/a13n/go/<version>` release workflow. `<version>` is stable `X.Y.Z` or RC `X.Y.Z-rc.N`.
+
+## Search accounts
+
+Bind API Key operations with `client.Workspace(ctx)`. This reads `/api/v1/auth/context` once and returns search operations without a Workspace argument. The binding uses the immutable Workspace ID and shares the parent transport and shutdown. The parent client retains explicit `SearchScope` operations; Service always enforces the credential boundary.
+
+Create a bearer client with `NewClient(baseURL, NewSecret(token), nil)` and call `Close` when finished. All operations accept `context.Context`. `SearchProviders` returns a `Representation[Page[SearchProvider]]`; pass `SearchListOptions{Cursor: ...}` to continue pagination. `UpdateSearchProvider` requires the current account ETag. `TestSearchProvider` sends one quota-consuming probe only when called.
+
+Credential request fields use `NewSecret(value)`. Their JSON and formatting diagnostics omit or redact credentials; the client serializes the write-only field for the request. `AgentRunOverride.Search` uses `Optional[SearchSelection]{}` to inherit, `Null[SearchSelection]()` to disable, and `Some(SearchSelection{ProviderID: accountID})` to replace. Configuration JSON round-trips preserve other fields in `Fields`.
+
+## Generated HTTP operations
+
+Call `api, err := client.API()` once, check the error, then use `api.GetAuthContextWithResponse(ctx)` or any other generated operation. The generated view shares the parent HTTP pool, authentication, context cancellation, and `Close`; it does not create a second transport.
+
+Import full request/resource types from `github.com/converge-ai-labs/agent-foundation/sdk/go/generated`. Nullable fields use `nullable.Nullable[T]`, preserving omitted/null/value. Union helpers expose typed `As...` and `From...` branches. `WithResponse` methods expose typed status-specific bodies and HTTP headers; callers handle those results rather than the Search facade's `ApiError` mapping. These low-level methods do not impose the Search facade's 1 MiB response bound.
+
+For binary transfer, use generated raw methods (without `WithResponse`) with `io.Reader` request bodies and the returned `*http.Response`; always close the response body. `WithResponse` helpers buffer the response. Go 1.25 or newer is required.
 
 ## Development
 

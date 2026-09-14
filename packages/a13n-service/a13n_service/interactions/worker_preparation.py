@@ -18,6 +18,7 @@ from a13n_harness import (
     RunPreparationContext,
 )
 from a13n_harness.capabilities import SubagentCapability
+from a13n_harness.errors import RunError
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 from anyio import to_thread
 from pydantic import TypeAdapter
@@ -25,6 +26,7 @@ from pydantic_ai import ToolDenied
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.agents.execution_graph import inline_child_executions
 from a13n_service.agents.plugin_preparation import prepare_agent_plugins
 from a13n_service.agents.reconstruction import AgentDefinitionReconstructionContext, AgentReconstructor
 from a13n_service.assets.runtime import AssetRuntime
@@ -34,6 +36,8 @@ from a13n_service.environments.runtime import prepare_run_environment, validate_
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.provider_runtime import LiveProviderResolver
 from a13n_service.models.runtime import SnapshotRunModelResolver
+from a13n_service.observability import observe_input
+from a13n_service.search.runtime import SearchRuntime, graph_uses_search
 from a13n_service.secrets.agent_inputs import graph_secret_requirements
 from a13n_service.secrets.agent_runtime import AgentSecretRuntime, BoundAgentSecrets
 from a13n_service.skills.runtime import PreparedSkillRuntime, SkillRuntimePreparer
@@ -46,6 +50,7 @@ from .attempts import AttemptContext
 from .control_domain import WaitingRunContinueInput, WaitingRunFeedback
 from .control_models import ThreadInboxRecord
 from .domain import Run, RunInputKind
+from .harness_control import InlineRunControlCapability
 from .harness_results import AttemptCommitter
 from .harness_runtime import (
     HarnessCollaborators,
@@ -84,9 +89,11 @@ class WorkerAttemptPreparer:
         external_tools: ExternalToolRuntime,
         subagent_capability: Callable[[], SubagentCapability],
         secrets: AgentSecretRuntime | None = None,
+        search: SearchRuntime | None = None,
     ) -> None:
         self._subagent_capability = subagent_capability
         self._secrets = secrets
+        self._search = search
         self._bound_secrets: BoundAgentSecrets | None = None
         self._environments = environments
         self._external_tools = external_tools
@@ -112,6 +119,26 @@ class WorkerAttemptPreparer:
     async def validate_dependencies(self, context: AttemptContext) -> None:
         """Validate resources against the final claimed checkpoint."""
         config = self._control.current_state.envelope.effective_agent_config
+        await context.authorization.initialize(
+            self._sessions,
+            principal=self._run.authority_principal,
+            organization_id=self._run.organization_id,
+            workspace_id=self._workspace_id,
+            root_agent_id=self._run.agent_id,
+            agent_ids=frozenset(edge.child_agent_id for edge, _ in inline_child_executions(config).values()),
+            run_id=context.run_id,
+            run_attempt_id=context.run_attempt_id,
+            environment_id=self._run.environment_id,
+        )
+        if self._search is not None:
+            await self._search.validate(
+                run=self._run,
+                workspace_id=self._workspace_id,
+                config=config,
+                current_context=lambda: self._control.current_context,
+            )
+        elif graph_uses_search(config):
+            raise RunError("Search runtime is unavailable.", code="search_provider_unavailable")
         bindings = self._control.current_state.envelope.secret_bindings
         if bindings or graph_secret_requirements(config):
             if self._secrets is None:
@@ -184,15 +211,43 @@ class WorkerAttemptPreparer:
 
         def capabilities(context: AgentDefinitionReconstructionContext):
             selected = resources.for_definition(context)
+            if not context.is_root:
+                selected = (InlineRunControlCapability(self._control, agent_id=context.agent_id), *selected)
             protocol_context = self._control.current_state.envelope.protocol_context
             if context.is_root and protocol_context is not None:
                 selected = (*selected, ProtocolContextCapability(protocol_context))
             return (*selected, WorkerInputCapability(self._sources)) if context.is_root else selected
 
+        def run_capabilities(node: AgentDefinitionReconstructionContext):
+            if node.config.search is None:
+                return ()
+            if self._search is None:
+                raise RuntimeError("Search runtime is unavailable")
+            return (
+                self._search.binding(
+                    run=run,
+                    workspace_id=self._workspace_id,
+                    agent_id=node.agent_id,
+                    selection=node.config.search,
+                    current_context=lambda: self._control.current_context,
+                ),
+            )
+
+        root_search = run_capabilities(
+            AgentDefinitionReconstructionContext(
+                agent_id=run.agent_id,
+                agent_revision_id=run.agent_revision_id,
+                content_digest=config.content_digest,
+                is_root=True,
+                config=config,
+            )
+        )
         prepared_plugins = self._control.current_state.envelope.prepared_plugins
         if prepared_plugins is None:
             raise RuntimeError("Plugin configuration has not been durably prepared")
-        definition = AgentReconstructor(self._catalog, capability_provider=capabilities).reconstruct(
+        definition = AgentReconstructor(
+            self._catalog, capability_provider=capabilities, run_capability_provider=run_capabilities
+        ).reconstruct(
             agent_id=run.agent_id,
             agent_revision_id=run.agent_revision_id,
             effective_config=config,
@@ -207,6 +262,7 @@ class WorkerAttemptPreparer:
                 if run.input_object is None
                 else (await self._payloads.read(run.organization_id, run.input_object)).payload
             )
+            observe_input(payload)
             if run.input_kind is RunInputKind.agent_input:
                 accepted = AcceptedAgentInput.model_validate(payload)
             elif run.input_kind in {RunInputKind.waiting_feedback, RunInputKind.waiting_continue}:
@@ -277,7 +333,10 @@ class WorkerAttemptPreparer:
             deferred_resume=resume,
             collaborators=HarnessCollaborators(
                 instance=instance,
-                capabilities=() if self._bound_secrets is None else (self._bound_secrets.capability(),),
+                capabilities=(
+                    *root_search,
+                    *((self._bound_secrets.capability(),) if self._bound_secrets is not None else ()),
+                ),
                 model_resolver=SnapshotRunModelResolver(
                     snapshots=resources.models,
                     organization_id=run.organization_id,

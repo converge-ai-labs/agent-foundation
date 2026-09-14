@@ -32,7 +32,7 @@ Accept: text/event-stream
 Last-Event-ID: <hosted-agui-cursor>
 ```
 
-The request body is one standard `RunAgentInput` under the pinned AG-UI schema. Its `agent_id` comes only from the route. No body field, `context`, or `forwardedProps` value can select another Service Agent, Workspace, Model, Secret, ConnectorConnection, or Principal.
+The request body is one standard `RunAgentInput` under the pinned AG-UI schema. Its `agent_id` comes only from the route. No body field, `context`, or `forwardedProps` value can select another Service Agent, Workspace, Model, Secret, Connection, or Principal.
 
 The response is SSE. Each AG-UI event is serialized as one standard JSON `BaseEvent` in a `data` field. Service can add an SSE `id` for retained delivery and reconnect; that ID is a Hosted AG-UI delivery cursor, not a standard AG-UI identity or Native Run Stream cursor. `Last-Event-ID` resumes exclusively after the last completely applied hosted event.
 

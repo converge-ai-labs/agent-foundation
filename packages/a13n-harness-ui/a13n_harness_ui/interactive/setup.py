@@ -6,6 +6,9 @@ import hashlib
 import json
 import re
 from dataclasses import dataclass, field, replace
+from typing import TYPE_CHECKING
+
+from pydantic import JsonValue
 
 from a13n_harness_ui.environment_profiles import WINDOWS_EXECUTION_NOTICE, local_sandbox_supported
 from a13n_harness_ui.model_presets import (
@@ -16,8 +19,12 @@ from a13n_harness_ui.model_presets import (
     settings_presets,
     validate_base_url,
 )
+from a13n_harness_ui.tool_presets import NATIVE_TOOLS_DOCS, selected_tool_capabilities, tool_choices
 
 from .selection import Choice, Selection, resolve_choice
+
+if TYPE_CHECKING:
+    from a13n_harness_ui.configuration.models import ModelResource
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +49,7 @@ class Question:
     choices: tuple[str, ...] = ()
     password: bool = False
     allow_custom: bool = False
+    multiple: bool = False
 
 
 _QUESTIONS = (
@@ -74,6 +82,21 @@ _QUESTIONS = (
         tuple(p.name for p in CONTEXT_PRESETS),
     ),
     Question("thinking", "Reasoning effort", "high", ("low", "medium", "high", "xhigh")),
+    Question("tools", "Choose native Agent tools (Space toggles; Enter confirms; none keeps Host web only)", ""),
+    Question(
+        "file_stores",
+        "Provider file/vector store IDs (comma-separated; upload and index files with the provider first)",
+        "",
+    ),
+    Question(
+        "mcp_url", "Remote MCP URL (provider-accessible HTTP/S; no credentials; public servers only in this wizard)", ""
+    ),
+    Question("mcp_id", "Remote MCP server label", "remote"),
+    Question(
+        "advisor_model",
+        "Advisor model ID (provider model name, not a Harness UI Model ID; account access required)",
+        "",
+    ),
     Question(
         "review",
         "Review shell commands; flagged commands require approval, timeouts deny, other review errors are skipped",
@@ -102,6 +125,7 @@ class SetupWizard:
     add_agent: bool = False
     add_model: bool = False
     model_choices: tuple[Choice, ...] = ()
+    model_resources: dict[str, ModelResource] = field(default_factory=dict)
     subscription_models: frozenset[str] = frozenset()
     suggested_name: str = ""
     existing_agent_ids: frozenset[str] = frozenset()
@@ -115,12 +139,40 @@ class SetupWizard:
         value = self.values.get("model_source", "new")
         return value if value != "new" else None
 
+    def tool_connection(self) -> tuple[str, str, str | None]:
+        if self.existing_model_id is not None:
+            model = self.model_resources.get(self.existing_model_id)
+            if model is None:
+                return "", "", None
+            base_url = model.model_configuration.get("base_url")
+            return model.route, model.authentication.kind, base_url if isinstance(base_url, str) else None
+        provider = self.values.get("provider", self.default_provider)
+        route = (
+            self.values.get("api_provider", "openai-responses")
+            if provider == "api"
+            else "openai-codex"
+            if provider == "codex"
+            else "grok"
+        )
+        return (
+            f"{route}:{self.values.get('model', '')}",
+            "api_key" if provider == "api" else f"{provider}_subscription",
+            self.values.get("base_url"),
+        )
+
     @property
     def question(self) -> Question | None:
         if self.index >= len(_QUESTIONS):
             return None
         question = _QUESTIONS[self.index]
         default = self.values.get(question.key, question.default)
+        if question.key == "tools":
+            route, authentication, base_url = self.tool_connection()
+            options = tool_choices(route, authentication=authentication, base_url=base_url)
+            default = self.values.get(
+                "tools", ",".join(choice.key for choice in options if choice.recommended) or "none"
+            )
+            return Question("tools", question.text, default, tuple(choice.key for choice in options), multiple=True)
         if question.key == "model_source":
             choices = (*tuple(str(c.value) for c in self.model_choices), "new")
             return Question("model_source", question.text, self.values.get("model_source", choices[0]), choices)
@@ -181,33 +233,37 @@ class SetupWizard:
                 return Question("environment", WINDOWS_EXECUTION_NOTICE, "full-control", ("full-control",))
         return replace(question, default=default)
 
+    @property
+    def progress(self) -> tuple[int, int]:
+        visible = tuple(index for index, question in enumerate(_QUESTIONS) if self._is_relevant(question.key))
+        current = visible.index(self.index) + 1 if self.index < len(_QUESTIONS) else len(visible)
+        return current, len(visible)
+
     def notice(self) -> str:
+        if self.question is None:
+            return "Ready to save."
+        current, total = self.progress
+        return f"{current} / {total} · {self._notice()}"
+
+    def _notice(self) -> str:
         question = self.question
         if question is None:
             return "Ready to save."
-        keys = (
-            (
-                "provider",
-                "api_provider",
-                "base_url",
-                "credential",
-                "model",
-                "preset",
-                "context",
-                "name" if self.add_agent or self.add_model else "environment",
+        if question.key == "tools":
+            route, authentication, _base_url = self.tool_connection()
+            return (
+                f"Tools for {route} ({authentication}). Recommendations are editable, not an account entitlement check.\n"
+                "Host web is always included: public HTTP fetch/download, keyless search and HTML-to-Markdown.\n"
+                "Native Search replaces Host search; native Web Fetch replaces Host scrape. No extra web keys needed.\n"
+                "Memory requires a Host memory handler and is not available in this wizard. "
+                "Listed native tools follow adapter support; provider/model restrictions still apply.\n"
+                "Custom endpoints and unreviewed model IDs are not preselected: verify their native-tool support before enabling.\n"
+                f"Provider requirements and all native options: {NATIVE_TOOLS_DOCS}"
             )
-            if self.values.get("provider") == "api"
-            else (
-                "provider",
-                "model",
-                *(("fast",) if self.values.get("provider", self.default_provider) == "codex" else ()),
-                "name" if self.add_agent or self.add_model else "environment",
-            )
-        )
-        if self.add_agent:
-            keys = ("model_source", "name") if self.existing_model_id else ("model_source", *keys)
-        if question.key in keys:
-            hint = f"{keys.index(question.key) + 1} / {len(keys)} · "
+        if question.key in {"file_stores", "mcp_url", "mcp_id", "advisor_model"}:
+            return "Configure the selected native tool · Esc returns to your choices. No remote resource is created."
+        if question.key in {"environment", "name", "provider", "preset"}:
+            hint = ""
             if question.key in {"environment", "name"}:
                 hint += "Review your selection. "
                 hint += "Saved after this choice."
@@ -219,7 +275,9 @@ class SetupWizard:
                         for p in settings_presets(self.values["api_provider"], self.values["model"])
                         if p.key == self.values["preset"]
                     )
-                    hint += f"\n{self.values['api_provider']}:{self.values['model']}\nBase URL: {self.values['base_url']}\nSettings: {json.dumps(preset.settings, sort_keys=True)}"
+                    endpoint = self.values.get("base_url", "xAI SDK default (gRPC)")
+                    hint += f"\n{self.values['api_provider']}:{self.values['model']}\nEndpoint: {endpoint}\nSettings: {json.dumps(preset.settings, sort_keys=True)}"
+                    hint += f"\n{preset.output_limit_label}. Saved as editable settings; not adjusted during a run."
                     hint += f"\nContext: {int(self.values['context']):,} tokens · Summary reminder: 65% · Compact: 90%."
                 else:
                     hint += f"\n{self.values['provider']}:{self.values['model']}"
@@ -251,23 +309,43 @@ class SetupWizard:
                         else "unknown; no native media enabled"
                     )
                     hint += f"\nNative media input: {media}. Editable in model_characteristics.capabilities."
+                if not self.add_model:
+                    hint += "\nAgent tools: " + self.values.get("tools", "recommended") + "."
                 if self.add_agent:
                     hint += "\nCreates a new agent; existing agents and defaults stay unchanged."
                 elif self.add_model:
-                    hint += "\nCreates only a Model; no Agent or default is changed."
+                    hint += "\nCreates only a Model; no Agent or default is changed. Next, optionally set up an Agent and choose its tools."
             elif question.key == "provider":
                 hint += "Reuse a subscription or connect an API key."
             elif question.key == "preset":
-                hint += "Choose settings supported by this model. Provider limits still apply."
-            else:
-                hint += "Esc goes back; Ctrl+C cancels."
+                hint += (
+                    "Thinking and output limits are saved together as editable settings. Provider limits still apply.\n"
+                    "Provider defaults adds no output cap; unreviewed models keep their existing preset behavior. "
+                    "Custom endpoints may impose different limits."
+                )
             return hint
-        return "Advanced options · Esc back · Ctrl+C cancel."
+        return "Esc goes back; Ctrl+C cancels."
 
     def selection_prompt(self) -> Selection | None:
         question = self.question
         if question is None or not question.choices:
             return None
+        if question.key == "tools":
+            route, authentication, base_url = self.tool_connection()
+            options = tool_choices(route, authentication=authentication, base_url=base_url)
+            selected = set(question.default.split(","))
+            return Selection(
+                tuple(
+                    Choice(
+                        option.key, option.label + (" (recommended)" if option.recommended else ""), option.description
+                    )
+                    for option in options
+                ),
+                cursor=0,
+                multiple=True,
+                empty_answer="none",
+                checked={index for index, option in enumerate(options) if option.key in selected},
+            )
         if question.key == "model_source":
             return Selection(
                 (
@@ -295,13 +373,20 @@ class SetupWizard:
             )
         if question.key == "api_provider":
             return Selection(
-                tuple(Choice(p.route, p.label, p.base_url) for p in API_PROVIDERS),
+                tuple(
+                    Choice(
+                        p.route,
+                        p.label,
+                        p.base_url or "Official gRPC endpoint; enables X Search and other native xAI tools",
+                    )
+                    for p in API_PROVIDERS
+                ),
                 cursor=question.choices.index(question.default),
             )
         if question.key == "preset":
             return Selection(
                 tuple(
-                    Choice(p.key, p.label, p.description)
+                    Choice(p.key, p.label, f"{p.description} · {p.output_limit_label}")
                     for p in settings_presets(self.values["api_provider"], self.values["model"])
                 ),
                 cursor=question.choices.index(question.default),
@@ -358,7 +443,24 @@ class SetupWizard:
         if question is None:
             raise ValueError("Setup choices are complete.")
         selected = text.strip() or question.default
-        if question.choices:
+        if question.multiple:
+            resolved = resolve_choice(selected, question.choices, multiple=True)
+            keys = (
+                resolved
+                if isinstance(resolved, tuple)
+                else tuple(part.strip() for part in resolved.split(","))
+                if resolved != "none"
+                else ()
+            )
+            if len(set(keys)) != len(keys) or any(key not in question.choices for key in keys):
+                raise ValueError("Choose tool numbers or names separated by commas, or none.")
+            route, _authentication, _base_url = self.tool_connection()
+            if route.startswith("google:") and "file_search" in keys and any(key != "file_search" for key in keys):
+                raise ValueError(
+                    "Google File Search cannot combine with other native tools. Deselect native search/fetch/code; Host web remains available."
+                )
+            selected = ",".join(keys) or "none"
+        elif question.choices:
             selected = str(resolve_choice(selected, question.choices))
             if not question.allow_custom and selected not in question.choices:
                 raise ValueError(f"Choose one of: {', '.join(question.choices)}")
@@ -371,11 +473,32 @@ class SetupWizard:
             selected = str(int(digits) * multiplier)
         if question.key == "name" and (not selected or len(selected) > 128):
             raise ValueError("Choose a name between 1 and 128 characters.")
-        if question.key == "base_url":
+        if question.key in {"base_url", "mcp_url"}:
             validate_base_url(selected)
+        if question.key == "file_stores":
+            stores = [part.strip() for part in selected.split(",")]
+            if not all(stores) or any(any(char.isspace() for char in store) for store in stores):
+                raise ValueError("Enter existing provider store IDs, separated by commas.")
+            selected = ",".join(stores)
+        if question.key in {"mcp_id", "advisor_model"} and (not selected or any(char.isspace() for char in selected)):
+            raise ValueError("Enter a non-empty provider identifier without whitespace.")
         if question.key == "model" and self.values.get("provider") == "api":
             if not selected or len(selected) > 480 or any(c.isspace() for c in selected) or ":" in selected:
                 raise ValueError("Enter a model ID without whitespace or a provider prefix.")
+        agent_route = (
+            f"{self.values.get('api_provider', '')}:{selected}"
+            if question.key == "model" and not self.add_model
+            else self.model_resources[selected].route
+            if question.key == "model_source" and selected in self.model_resources
+            else ""
+        )
+        if agent_route.startswith("google:"):
+            from pydantic_ai.profiles.google import google_model_profile
+
+            if not (google_model_profile(agent_route.partition(":")[2]) or {}).get("supports_tools", True):
+                raise ValueError(
+                    "Gemini image-only models cannot use this coding Agent's function tools. Add the Model separately and author a dedicated Agent without function tools."
+                )
         if question.key == "credential":
             kind, separator, name = selected.partition(":")
             if not separator or kind not in {"env", "key"} or not name or any(c.isspace() for c in name):
@@ -395,6 +518,8 @@ class SetupWizard:
         ):
             self.context_window_hint = None
             self.values.pop("context", None)
+            for key in ("tools", "file_stores", "mcp_url", "mcp_id", "advisor_model"):
+                self.values.pop(key, None)
         if question.key == "model" and self.values.get("model") != selected:
             self.values.pop("preset", None)
         self.values[question.key] = selected
@@ -403,46 +528,61 @@ class SetupWizard:
         self._skip_irrelevant()
 
     def _skip_irrelevant(self) -> None:
+        while self.index < len(_QUESTIONS) and not self._is_relevant(_QUESTIONS[self.index].key):
+            self.index += 1
+
+    def _is_relevant(self, key: str) -> bool:
+        """One visibility rule for navigation and progress, including conditional resource steps."""
         provider = self.values.get("provider", self.default_provider)
-        while self.question is not None:
-            key = self.question.key
-            if (
-                key in {"subagents", "context", "thinking", "review", "instructions"}
-                and not self.advanced
-                and not (key == "context" and provider == "api")
-            ):
-                self.index += 1
-            elif key == "model_source" and not self.add_agent:
-                self.index += 1
-            elif self.existing_model_id is not None and key in {
-                "provider",
-                "api_provider",
-                "base_url",
-                "credential",
-                "model",
-                "preset",
-                "fast",
-                "context",
-                "thinking",
-            }:
-                self.index += 1
-            elif key == "subagents" and (self.add_agent or self.add_model):
-                self.index += 1
-            elif self.add_model and key in {"review", "instructions"}:
-                self.index += 1
-            elif key == "fast" and provider != "codex":
-                self.index += 1
-            elif key in {"api_provider", "base_url", "credential", "preset"} and provider != "api":
-                self.index += 1
-            elif (key == "context" and provider not in {"codex", "api"}) or (key == "thinking" and provider != "codex"):
-                self.index += 1
-            elif key == "review" and (
-                provider == "api"
-                or (self.existing_model_id is not None and self.existing_model_id not in self.subscription_models)
-            ):
-                self.index += 1
-            else:
-                break
+        if (
+            key in {"subagents", "context", "thinking", "review", "instructions"}
+            and not self.advanced
+            and not (key == "context" and provider == "api")
+        ):
+            return False
+        if key == "model_source" and not self.add_agent:
+            return False
+        if self.existing_model_id is not None and key in {
+            "provider",
+            "api_provider",
+            "base_url",
+            "credential",
+            "model",
+            "preset",
+            "fast",
+            "context",
+            "thinking",
+        }:
+            return False
+        if key == "subagents" and (self.add_agent or self.add_model):
+            return False
+        resources = {
+            "file_stores": "file_search",
+            "mcp_url": "mcp_server",
+            "mcp_id": "mcp_server",
+            "advisor_model": "advisor",
+        }
+        if key in resources:
+            return not self.add_model and resources[key] in self.values.get("tools", "").split(",")
+        if self.add_model and key in {"review", "instructions", "tools"}:
+            return False
+        if key == "tools":
+            route, authentication, base_url = self.tool_connection()
+            return bool(tool_choices(route, authentication=authentication, base_url=base_url))
+        if key == "base_url" and self.values.get("api_provider") == "xai":
+            return False
+        if key == "fast" and provider != "codex":
+            return False
+        if key in {"api_provider", "base_url", "credential", "preset"} and provider != "api":
+            return False
+        if (key == "context" and provider not in {"codex", "api"}) or (key == "thinking" and provider != "codex"):
+            return False
+        if key == "review" and (
+            provider == "api"
+            or (self.existing_model_id is not None and self.existing_model_id not in self.subscription_models)
+        ):
+            return False
+        return True
 
     def selection(self, directory: str) -> dict[str, object]:
         provider = self.values.get("provider", "existing")
@@ -481,6 +621,18 @@ class SetupWizard:
                     "connect_default": False,
                 }
             )
+        if not self.add_model and "tools" in self.values:
+            _route, authentication, _base_url = self.tool_connection()
+            selected = tuple(key for key in self.values["tools"].split(",") if key != "none")
+            stores: list[JsonValue] = list(self.values.get("file_stores", "").split(","))
+            parameters: dict[str, dict[str, JsonValue]] = {
+                "file_search": {"file_store_ids": stores},
+                "mcp_server": {"id": self.values.get("mcp_id", "remote"), "url": self.values.get("mcp_url", "")},
+                "advisor": {"model": self.values.get("advisor_model", "")},
+            }
+            result["tool_capabilities"] = selected_tool_capabilities(
+                selected, authentication=authentication, parameters=parameters
+            )
         if self.existing_model_id is not None:
             result["existing_model_id"] = self.existing_model_id
             return result
@@ -502,7 +654,7 @@ class SetupWizard:
             result["api_key_model"] = {
                 "route": f"{self.values['api_provider']}:{self.values['model']}",
                 "authentication": {"kind": "api_key", "env" if kind == "env" else "credential_ref": name},
-                "model_configuration": {"base_url": self.values["base_url"]},
+                "model_configuration": {"base_url": self.values["base_url"]} if "base_url" in self.values else {},
                 "model_characteristics": {
                     "context_window": int(self.values["context"]),
                     "proactive_context_management_threshold": 0.65,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import stat
@@ -12,7 +13,7 @@ from typing import Any
 
 import yaml
 from anyio import to_thread
-from pydantic import TypeAdapter, ValidationError
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from a13n_harness_ui.content_plugins import ContentPluginStore, InstalledContentPlugin
 from a13n_harness_ui.errors import ConfigurationError
@@ -20,6 +21,7 @@ from a13n_harness_ui.errors import ConfigurationError
 from .models import (
     AgentResource,
     CanonicalSubagent,
+    ConfigurationModel,
     EnvironmentProfileResource,
     EnvironmentRunExtensionResource,
     ExtensionResource,
@@ -42,7 +44,8 @@ _MAX_YAML_NODES = 100_000
 _MAX_YAML_DEPTH = 64
 _STABLE_READ_ATTEMPTS = 3
 # Version normalized snapshots independently of user-owned source byte digests.
-_NORMALIZATION_VERSION = "2"
+_NORMALIZATION_VERSION = "4"
+logger = logging.getLogger(__name__)
 _YAML_DIRECTORIES = ("models", "extensions", "mcp", "agents", "projects")
 _RESOURCE_TYPES: dict[str, type[Any]] = {
     "models": ModelResource,
@@ -130,6 +133,7 @@ async def load_harness_ui_configuration(
         plugin_after = () if plugin_store is None else await plugin_store.fingerprint()
         if plugin_before != plugin_after:
             continue
+        _warn_unknown_fields(parsed)
         return parsed
 
     raise _error(
@@ -307,6 +311,8 @@ def _parse_complete_tree(
             resource_id = resource.id
         else:
             raw = _parse_yaml_mapping(source_path, content, code="configuration_resource_invalid")
+            if directory == "projects":
+                _normalize_project_roots(raw, source_path)
             if directory == "extensions":
                 resource = _validate_extension(raw, source_path)
                 if isinstance(resource, HarnessPluginResource):
@@ -386,6 +392,7 @@ def _parse_complete_tree(
                     _NORMALIZATION_VERSION,
                     tuple((item.relative_path, item.source_digest) for item in sources),
                     tuple(plugin_diagnostics),
+                    tuple((key, tuple(root.path for root in project.roots)) for key, project in projects.items()),
                 )
             ),
             sources=tuple(sources),
@@ -407,6 +414,42 @@ def _parse_complete_tree(
             root_path,
             exc,
         ) from exc
+
+
+def _normalize_project_roots(raw: dict[str, Any], path: Path) -> None:
+    """Canonicalize source paths once, without requiring available directories."""
+    roots = raw.get("roots")
+    if isinstance(roots, list):
+        for root in roots:
+            if isinstance(root, dict) and isinstance(root.get("path"), str):
+                try:
+                    expanded = Path(root["path"]).expanduser()
+                    if expanded.is_absolute():
+                        root["path"] = str(expanded.resolve(strict=False))
+                except (OSError, RuntimeError, ValueError) as exc:
+                    raise _error(
+                        "configuration_resource_invalid", "A Project root cannot be normalized.", path
+                    ) from exc
+
+
+def _warn_unknown_fields(value: object, path: str = "configuration") -> None:
+    """Report additive field names, never their potentially private values."""
+    if isinstance(value, BaseModel):
+        if isinstance(value, ConfigurationModel) and value.model_extra:
+            logger.warning(
+                "Unknown configuration fields at %s are preserved but not applied: %s",
+                path,
+                ", ".join(repr(name) for name in sorted(value.model_extra)),
+            )
+        for name in type(value).model_fields:
+            _warn_unknown_fields(value.__dict__[name], f"{path}.{name}")
+    elif isinstance(value, dict):
+        for name, item in value.items():
+            if isinstance(item, BaseModel):
+                _warn_unknown_fields(item, f"{path}[{name!r}]")
+    elif isinstance(value, tuple):
+        for index, item in enumerate(value):
+            _warn_unknown_fields(item, f"{path}[{index}]")
 
 
 def _parse_json_mapping(path: Path, content: bytes) -> dict[str, Any]:
@@ -823,6 +866,16 @@ _UniqueSafeLoader.add_constructor(
 
 
 def _validation_error(code: str, message: str, path: Path, exc: ValidationError) -> ConfigurationError:
+    # These authored diagnostics contain source IDs and group/configuration names,
+    # not arbitrary resource payloads or credential validation inputs.
+    from .models import _ToolProxyConfigurationError
+
+    for error in exc.errors(include_input=False, include_url=False):
+        cause = error.get("ctx", {}).get("error")
+        if isinstance(cause, _ToolProxyConfigurationError):
+            code = "tool_proxy_invalid"
+            message = str(cause)
+            break
     return ConfigurationError(
         message,
         code=code,

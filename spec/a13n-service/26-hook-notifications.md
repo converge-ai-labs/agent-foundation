@@ -376,7 +376,7 @@ sequenceDiagram
 
 Webhook requests carry a bounded timestamp and signature over the canonical request bytes. Receivers validate freshness and signature, then deduplicate by `delivery_id` or stable source identity before applying effects. Delivery is at least once. A successful HTTP acknowledgement proves only destination receipt; it does not prove that a user processed the event.
 
-Destination URL validation, redirect policy, address resolution, network egress policy, body and response limits, deadlines, TLS verification, and Secret resolution fail closed against server-side request forgery and credential disclosure. Response bodies and endpoint errors are reduced to bounded safe delivery diagnostics.
+Configured endpoint paths, including trailing slashes, are preserved by syntax validation. Destination URL validation, redirect policy, address resolution, network egress policy, body and response limits, deadlines, TLS verification, and Secret resolution fail closed against server-side request forgery and credential disclosure. Response bodies and endpoint errors are reduced to bounded safe delivery diagnostics.
 
 ### Caller-Side Duplicate Suppression and Gap Recovery
 

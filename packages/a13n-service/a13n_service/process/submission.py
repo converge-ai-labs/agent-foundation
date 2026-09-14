@@ -35,8 +35,8 @@ def build_input_commands(
         ),
         inbox=ThreadInboxStore(shared.storage.sessions, signals=signals),
         payloads=payloads,
-        execution_max_attempts=settings.gateway_run_execution_max_attempts,
-        max_handoffs=settings.gateway_run_max_handoffs,
-        queue_name=settings.gateway_run_queue_name,
-        priority=settings.gateway_run_priority,
+        execution_max_attempts=settings.gateway.run_execution_max_attempts,
+        max_handoffs=settings.gateway.run_max_handoffs,
+        queue_name=settings.gateway.run_queue_name,
+        priority=settings.gateway.run_priority,
     )

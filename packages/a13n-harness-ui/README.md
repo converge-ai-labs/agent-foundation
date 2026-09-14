@@ -1,6 +1,8 @@
 # Harness UI
 
-`a13n-harness-ui` is the interactive coding CLI supplied by the `a13n-harness-ui` distribution. It uses a native full-terminal Markdown viewport, an editable multiline/image draft, and a compact status bar. One reusable `HarnessUiApp` owns execution, continuation-backed history, async subagents, decisions, and live events. `a13n-harness-ui webui` starts the HTTP API and bundled Hello World page in a foreground server process; browser chat and management are not implemented. There is no detached daemon.
+`a13n-harness-ui` is the interactive coding CLI supplied by the `a13n-harness-ui` distribution. It uses a native full-terminal Markdown viewport, an editable multiline/image draft, and a compact status bar. One reusable `HarnessUiApp` owns execution, continuation-backed history, async subagents, decisions, and live events. `a13n-harness-ui webui` starts the HTTP API and bundled authentication/runtime-status page in a foreground server process; browser chat and management are not implemented. There is no detached daemon.
+
+For custom interfaces, see [Python App embedding](../../docs/a13n-harness-ui/embedding.md) and [the HTTP API](../../docs/a13n-harness-ui/http-api.md). These preserve the distinction between process-local operation receipts, saved continuation, and best-effort observation.
 
 ## Install and Run
 
@@ -38,7 +40,7 @@ First use opens a single-screen setup wizard before chat: choose a connection, a
 
 `/mode concise|detailed` or Ctrl+O switches output live. Concise mode emphasizes text and necessary results; detailed mode includes exposed reasoning, file/tool calls, and bounded results. Display mode never changes model reasoning or tool permissions.
 
-The current directory is the workspace. `/new` starts fresh without deleting history; `/resume` opens a searchable, paginated browser with saved input/reply previews. Ctrl+T inspects a selected conversation without switching, F2 edits its name, and Ctrl+A toggles current/all-directory scope. Enter resumes; Escape preserves the original conversation and draft. Internal Project and Thread identities are retained for persistence, not presented as a management workbench. `/agent` selects a complete configured agent for subsequent turns while retaining history; `/model` is its alias. `/thinking` adjusts reasoning without rewriting resources. The CLI and HTTP adapter reuse the same App boundary; the Hello World page does not call that API, and the CLI does not contain a second execution engine.
+The current directory is the workspace. `/new` starts fresh without deleting history; `/resume` opens a searchable, paginated browser with saved input/reply previews. Ctrl+T inspects a selected conversation without switching, F2 edits its name, and Ctrl+A toggles current/all-directory scope. Enter resumes; Escape preserves the original conversation and draft. Internal Project and Thread identities are retained for persistence, not presented as a management workbench. `/agent` selects a complete configured agent for subsequent turns while retaining history. `/model` selects and remembers a Model per Project without changing the Agent or YAML; `/model default` clears the preference and returns to the Agent's Model. Terminal restarts and resumed conversations use the launch Project's preference, while explicit launch `--agent` and noninteractive runs skip it. `/thinking` adjusts reasoning without rewriting resources. The CLI and HTTP adapter reuse the same App boundary; the browser foundation uses authenticated status queries, and the CLI does not contain a second execution engine.
 
 ```console
 a13n-harness-ui --environment-mode sandbox
@@ -55,7 +57,7 @@ See the [user guide](../../docs/a13n-harness-ui/index.md) for setup, all slash c
 
 ## Configuration
 
-Harness UI selects a root YAML from explicit `--config PATH` or the platform user path, `~/.a13n-harness-ui/a13n-harness-ui.yaml` on Unix-like systems. Fixed immediate sibling directories contain YAML Model, extension, MCP server, Agent, and Project resources, plus canonical Markdown `subagents/` definitions. MCP files also support `.json` and multi-server `mcpServers` objects, with literal or environment-referenced header/environment values. Direct editing remains a complete configuration path; valid changes reload without restarting imported Python code.
+Harness UI selects a root YAML from explicit `--config PATH` or the platform user path, `~/.a13n-harness-ui/a13n-harness-ui.yaml` on Unix-like systems. Fixed immediate sibling directories contain YAML Model, extension, MCP server, Agent, and Project resources, plus canonical Markdown `subagents/` definitions. MCP files also support `.json` and multi-server `mcpServers` objects, with literal or environment-referenced header/environment values. Direct editing remains a complete configuration path. Valid resource edits are accepted for later Run captures, not applied to an active Run; process settings and imported Python code require restart. See [configuration precedence and capture timing](../../docs/a13n-harness-ui/configuration.md#what-wins-and-when-edits-apply) for settings that apply live, to new Threads, or to subsequent Runs.
 
 App-owned file mutations validate replacement content and use last-write-wins atomic publication. They require no expected source digest and do not reject concurrent editor saves. SQLite stores accepted-generation indexes and mutable Thread/runtime heads, but files remain desired-configuration authority. The data root is resolved before root-YAML parsing from `--data-root`, `A13N_HARNESS_UI_DATA_ROOT`, or the config directory's `data/` default.
 
@@ -88,6 +90,16 @@ a13n-harness-ui plugin uninstall plugin-reviewer
 
 Install and list output includes the immutable installation directory so its complete content can be inspected directly. Uninstall removes the registration but retains that content-addressed directory for Runs that already captured it. Content Plugin management is an explicit CLI operation.
 
+## Built-in Configuration Skill
+
+Agents selecting the `skills` Capability automatically discover `harness-ui-configuration`. It supplies a configuration workflow, a generated documentation map, and a detailed section index with line ranges. Ask the Agent, for example, to use this Skill to inspect its configuration and explain how to enable an MCP server before changing anything.
+
+The Skill and this release's Harness UI documentation are bundled in the wheel and sdist. They are exposed at `/environment/builtin-skills/harness-ui-configuration` through a read-only, file-only mount, including in projectless conversations and with Sandbox or remote Project profiles. No files are copied into your project or user Skill directory. Existing sources override the built-in Skill by name; omitting the Skills Capability omits the mount and catalog entry.
+
+For source development, `make a13n-harness-ui-skills` regenerates the bundle from `mkdocs.yml`, `docs/a13n-harness-ui/`, and the package's operational template. `make a13n-harness-ui`, `make a13n-harness-ui-assets`, and `make test` prepare it before their consumers run. CI also generates it explicitly after dependency synchronization: cached editable wheels can skip the package build hook, so `uv sync` alone does not guarantee a current bundle. Package builds generate it; wheel rebuilds from the sdist use the bundled result without the repository docs. Generated content is ignored by Git. After editing documentation, regenerate before starting a new application process to inspect the updated Skill.
+
+The Skill does not grant new configuration permissions or guarantee external connectivity. The Agent must distinguish accepted edits and warnings from later-Run changes, restart requirements, and actual model/MCP connection tests. Cross-topic references outside the bundled docs remain online references, listed in the section index.
+
 ## Local Store Development
 
 Harness UI owns its SQLite schema and Alembic history independently from a13n Service. Before the first published Harness UI release, an unreleased history may be squashed to one generated base revision because no supported user database depends on its revision IDs. After publication, retain revision identity and generate additive revisions. Generate every reviewed revision from the repository root against a disposable SQLite database:
@@ -97,6 +109,8 @@ make a13n-harness-ui-db-migrate msg="describe the schema change"
 ```
 
 The generator upgrades the disposable database to the current package head before comparing it with Harness UI metadata. Application startup only applies committed migrations; it never autogenerates against a user's data root.
+
+Keep automatic upgrades compatible with concurrently running older TUI/WebUI processes: preserve existing read/write meanings and allow older inserts to omit new fields. Test an active Run saving across migration and an older schema reader reconnecting after it. Startup does not require revision equality with the package head: an unknown newer single revision is left unchanged when the package's required tables and columns remain present. Missing required storage still fails explicitly. This structural check cannot prove payload or constraint compatibility; migration and serializer changes must preserve those semantics in development rather than forcing active users to restart. Already published older readers retain their original startup behavior. See [the storage compatibility contract](../../spec/a13n-harness-ui/03-local-storage-and-recovery.md#compatible-upgrades-across-app-versions).
 
 ## CLI Validation
 
@@ -114,7 +128,7 @@ These tests inject the selected executable through App settings rather than down
 
 ## Dependencies
 
-The source manifest keeps project version `0.0.0` and unversioned workspace dependencies. `[tool.a13n.release-dependencies]` owns the bounded requirements injected into publishable artifacts: `>=0.0.5,<0.1.0` for each of Environment, Harness, and Stream Protocol, and `>=0.1.0,<0.2.0` for Logging. Keep all three Harness-group bounds identical; their own published dependencies retain exact group-version equality. Raise a lower bound only when consuming newer APIs or behavior, and explicitly review a move across a breaking compatibility line. See the [repository release policy](../../spec/repository-model.md#dependency-compatibility-lines).
+The source manifest keeps project version `0.0.0` and unversioned workspace dependencies. `[tool.a13n.release-dependencies]` owns the bounded requirements injected into publishable artifacts: `>=0.0.11,<0.1.0` for each of Environment, Harness, and Stream Protocol, and `>=0.1.0,<0.2.0` for Logging. Keep all three Harness-group bounds identical; their own published dependencies retain exact group-version equality. Raise a lower bound only when consuming newer APIs or behavior, and explicitly review a move across a breaking compatibility line. See the [repository release policy](../../spec/repository-model.md#dependency-compatibility-lines).
 
 ## Packaging
 
@@ -124,22 +138,45 @@ The wheel and sdist contain the native CLI, reusable App, and the project's Apac
 
 ## Versioning
 
-Harness UI releases independently through `release/a13n-harness-ui-v<version>`, where `<version>` is stable `X.Y.Z` or RC `X.Y.Z-rc.N`. Its version does not need to match its dependencies; Python package metadata represents an RC as `X.Y.ZrcN`. The release workflow checks clean PyPI installations at the declared internal minimums and with latest-compatible dependencies, including CLI/configuration and matching native acquisition smoke checks. This does not run the full application compatibility suite or prove Sandbox isolation. The CLI has no companion npm artifact or independent frontend release. For user upgrades and constraint handling, see [Install and update](https://agent-foundation-docs.converge.ai/a13n-harness-ui/#install-and-update).
+Harness UI releases independently through `release/a13n-harness-ui-v<version>`, where `<version>` is stable `X.Y.Z` or RC `X.Y.Z-rc.N`. Its version does not need to match its dependencies; Python package metadata represents an RC as `X.Y.ZrcN`. The release workflow publishes the Python artifacts and builds `ghcr.io/converge-ai-labs/a13n-harness-ui` from the same UI wheel. Stable images receive the release version and `latest` tags; RC images receive only the canonical RC tag. Application tests and local image smoke checks are not repeated during release. The CLI has no companion npm artifact or independent frontend release. For user upgrades and constraint handling, see [Install and update](https://agent-foundation-docs.converge.ai/a13n-harness-ui/#install-and-update).
 
 The accepted architecture is defined in the [Harness UI specification](../../spec/a13n-harness-ui/README.md).
 
 ## Browser UI
 
-The bundled page displays only **Hello World**. It does not authenticate, consume the URL's API-key fragment, open live streams, or provide conversation, setup, or management controls. The HTTP API and foreground server remain available independently.
+The bundled foundation page accepts an API key, consumes and removes the convenience URL's key fragment, and displays the installed Python package version returned by `/api/status`. It retains successfully used keys in same-origin localStorage, with an explicit Forget API key action. It does not yet provide conversation, setup, shared drafts, Host Files, Git, or terminal controls. The HTTP API is available independently: WebUI enables complete native Host Files operations as the server OS account by default; `--no-share-computer` opts out. `features.host_files` reports that App gate; `features.host_git` additionally requires an installed Git executable. Read-only [Git Changes](../../docs/a13n-harness-ui/http-api.md#native-git-changes) provides repository/worktree discovery, staged/unstaged status and diffs, and captured comparison input. PTY, shared drafts, and browser workbench panels remain unavailable. See the [Files API](../../docs/a13n-harness-ui/http-api.md#native-host-files) for revision conflicts, bounded transfers, deliberate deletion, and captured Thread input.
 
 ```bash
 a13n-harness-ui webui                       # 127.0.0.1:8765, generated per-process API key
 a13n-harness-ui webui --host 127.0.0.1 --port 9000
+a13n-harness-ui webui --no-share-computer   # Disable native Files and Git APIs
 ```
 
-Open the ordinary URL printed by the server to view the page; static assets require no API key. The server also prints a generated key and a convenience URL carrying it only in the fragment. The placeholder does not consume that fragment. API clients must send the key in `Authorization: Bearer <key>` for every API request. `--api-key` selects an explicit key; it is not echoed, but command arguments may be visible to the shell and operating system. `--dangerously-bypass-permission` disables authentication only by explicit request. A non-loopback listener is for a trusted single-user network, not a multi-user service. The server owns the App lifetime even when browsers disconnect; Ctrl+C stops the server and closes the App.
+Open the URL printed on startup stdout; static assets require no API key. Key precedence is `--apikey`, then `A13N_HARNESS_UI_API_KEY`, then a freshly generated process key. Only generated keys appear in startup stdout, together with a convenience fragment URL; supplied keys are never echoed. API clients send `Authorization: Bearer <key>` on every API request. Command-line keys may be visible to the shell and operating system. `--dangerous-skip-permissions` disables Web authentication only, not Agent permissions; combining it with a CLI or environment key is an error. `--api-key` and `--dangerously-bypass-permission` remain aliases. Conflicting repeated key values and explicitly empty keys are rejected. A non-loopback listener grants shared instance authority on a trusted network, not tenant isolation; use external TLS when needed. The server owns the App lifetime even when browsers disconnect; Ctrl+C or SIGTERM stops the server and closes the App. `/healthz` reports process liveness and `/readyz` reports App readiness without requiring credentials or revealing configuration. Missing model configuration does not block readiness for setup.
 
 The browser assets ship inside the wheel. End users do not need Node.js or a separate frontend checkout. For repository development, run `make a13n-harness-ui-assets` before `uv run --locked a13n-harness-ui webui`.
+
+### Docker
+
+The initial non-root image packages the application, Python, Bash, Git, curl, and the system CA store. The default container command enables native sharing and exposes the container's Files and Git APIs and mounted paths, not an Agent Environment. Override it with `webui --host 0.0.0.0 --no-share-computer` to disable sharing; native PTY and browser panels remain unavailable. The full development-image target is described in the [distribution specification](../../spec/a13n-harness-ui/webui/03-distribution.md). There is no Node.js runtime requirement, privileged mode, Docker socket, or separate service/database prerequisite.
+
+```bash
+# Published image, loopback port, and named persistent config/data/work volumes:
+docker compose -f deploy/compose/a13n-harness-ui.yaml up -d
+docker compose -f deploy/compose/a13n-harness-ui.yaml logs harness-ui
+
+# On-demand source build and local run:
+make image-a13n-harness-ui
+make image-check-a13n-harness-ui
+A13N_HARNESS_UI_IMAGE=a13n-harness-ui:local \
+  docker compose -f deploy/compose/a13n-harness-ui.yaml up -d
+```
+
+Use `A13N_HARNESS_UI_IMAGE=ghcr.io/converge-ai-labs/a13n-harness-ui:X.Y.Z` for a release rather than the mutable `dev` default. Development images show source package version `0.0.0` and their Git revision separately; RC package metadata displays `X.Y.ZrcN`. The private npm version is never used as the running application version. Main builds publish only `dev`; release builds publish the canonical version, plus `latest` for stable releases only. Overwriting `dev` does not delete old registry digests; automatic cleanup is not configured.
+
+The Compose file persists configuration under `/home/app/.a13n-harness-ui`, App data under `/data`, and the working directory under `/work`. Bind-mounted directories must be writable by UID/GID `10001:10001`; mounting a directory deliberately exposes it to the container account. Named volumes are initialized with the image's ownership. Do not use `down --volumes` when preserving data. Changing a container does not restore live Runs or terminals. With no supplied key, restart rotates the key; obtain the new convenience URL from container startup output. Keep that output private. Supply `A13N_HARNESS_UI_API_KEY` at runtime for a stable key, never as a build argument.
+
+Local image checks should cover non-root startup, protected API access, runtime version, persistent config/data/work across replacement, and graceful SIGTERM. They are on-demand checks, not recurring WebUI CI jobs. The image uses Tini to forward signals and reap children; its default port is `8765`.
 
 ## Windows Local Execution
 

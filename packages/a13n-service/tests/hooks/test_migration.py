@@ -84,14 +84,14 @@ def test_hook_revision_is_immutable_in_sqlite(tmp_path: Path) -> None:
         with engine.begin() as connection:
             connection.execute(
                 text(
-                    "INSERT INTO organizations (id, name, created_at, updated_at) "
-                    "VALUES ('org_1234567890abcdef', 'Test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
+                    "INSERT INTO organizations (id, name, key, created_at, updated_at) "
+                    "VALUES ('org_1234567890abcdef', 'Test', 'test', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
                 )
             )
             connection.execute(
                 text(
                     "INSERT INTO workspaces "
-                    "(id, organization_id, name, normalized_name, created_at, updated_at, deleted_at) "
+                    "(id, organization_id, name, key, created_at, updated_at, deleted_at) "
                     "VALUES ('ws_1234567890abcdef', 'org_1234567890abcdef', 'Test', 'test', "
                     "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL)"
                 )

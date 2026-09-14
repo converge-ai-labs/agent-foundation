@@ -1,19 +1,20 @@
 from datetime import UTC, datetime
 
 import pytest
-from a13n_service.connectivity.connectors.domain import ConnectorConnection
+from a13n_service.connectivity.connections.domain import Connection
 from a13n_service.iam.domain import PrincipalRef
 from pydantic import ValidationError
 
 
-def _connection(**changes: object) -> ConnectorConnection:
+def _connection(**changes: object) -> Connection:
     values: dict[str, object] = {
         "id": "cconn_abcdef1234567890",
         "organization_id": "org_abcdef1234567890",
         "workspace_id": "ws_abcdef1234567890",
-        "connector_provider_id": "cnr_abcdef1234567890",
+        "source": {"kind": "connector", "provider_id": "cnr_abcdef1234567890", "connector_key": "github"},
+        "authorization_generation": 1,
+        "credential_configured": False,
         "name": "GitHub",
-        "connector_key": "github",
         "safe_metadata": {},
         "status": "pending",
         "status_reason": None,
@@ -23,7 +24,7 @@ def _connection(**changes: object) -> ConnectorConnection:
         "updated_at": datetime(2026, 9, 3, tzinfo=UTC),
     }
     values.update(changes)
-    return ConnectorConnection.model_validate(values)
+    return Connection.model_validate(values)
 
 
 def test_connector_connection_status_reason_is_discriminated() -> None:
@@ -35,7 +36,7 @@ def test_connector_connection_status_reason_is_discriminated() -> None:
 
 
 def test_connector_connection_public_shape_excludes_external_reference() -> None:
-    schema = ConnectorConnection.model_json_schema()
+    schema = Connection.model_json_schema()
     assert "external_ref" not in schema["properties"]
 
 

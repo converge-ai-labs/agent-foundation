@@ -296,12 +296,6 @@ def _runtime_providers() -> dict[str, RuntimeProvider]:
         "deepseek": RuntimeProvider("deepseek", {}, "https://api.deepseek.com", "secret"),
         "moonshot": RuntimeProvider("moonshot", {}, "https://api.moonshot.cn/v1", "secret"),
         "zhipu": RuntimeProvider("zhipu", {}, "https://open.bigmodel.cn/api/paas/v4", "secret"),
-        "openai_compatible": RuntimeProvider(
-            "openai_compatible",
-            {"base_url": "https://models.example/v1", "auth_mode": "bearer"},
-            "https://models.example/v1",
-            "secret",
-        ),
     }
 
 
@@ -314,7 +308,7 @@ async def test_switch_to_unauthenticated_provider_clears_material_and_advances_g
         actor=actor(),
         workspace_id=WORKSPACE_ID,
         request=CreateModelProviderRequest(
-            type="openai_compatible",
+            type="openai",
             name="Optional credential",
             configuration={"base_url": "https://models.example/v1"},
             credential="private-token",

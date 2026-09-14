@@ -1,5 +1,4 @@
-// @vitest-environment jsdom
-import { afterEach, expect, it, vi } from "vitest";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   cleanup,
   fireEvent,
@@ -8,12 +7,16 @@ import {
   waitFor,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { afterEach, expect, it, vi } from "vitest";
 import { Composer } from "./composer";
 
 vi.mock("../../auth/context", () => ({ useClient: () => ({ http: {} }) }));
 vi.mock("../../layout/workspace", () => ({
-  useWorkspace: () => ({ workspace: { id: "workspace" }, can: () => false }),
+  useWorkspace: () => ({
+    basePath: "/workspace/design",
+    workspace: { id: "workspace" },
+    can: () => false,
+  }),
 }));
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
@@ -72,7 +75,7 @@ it("retains message and attachment drafts when closing the attachment dialog", a
   );
   await user.click(screen.getByRole("button", { name: "Attach URL" }));
   await user.keyboard("{Escape}");
-  expect(screen.queryByRole("dialog")).toBeNull();
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   expect((input as HTMLTextAreaElement).value).toBe("Read this file");
   await user.click(screen.getByRole("button", { name: "Send" }));
   await waitFor(() => expect(submit).toHaveBeenCalledTimes(1));

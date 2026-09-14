@@ -139,7 +139,7 @@ async def test_proactive_send_requires_exact_target_and_keeps_unknown_outcome():
 
 
 async def test_paused_ingress_keeps_accepted_reply_but_disabled_account_blocks_it(
-    account_service, connectivity_sessions, credential_protector, native_http
+    account_service, connectivity_sessions, credential_protector, native_http, execution_authorization
 ):
     from a13n_service.connectivity.providers.slack.adapter import CONTEXT_VERSION
 
@@ -167,8 +167,9 @@ async def test_paused_ingress_keeps_accepted_reply_but_disabled_account_blocks_i
         ),
         ORG_ID,
         WORKSPACE_ID,
-        FrozenRunConnectivity((), ()),
+        FrozenRunConnectivity(()),
         (context,),
+        authorization=await execution_authorization(principal=principal),
     )
 
     async def guard():

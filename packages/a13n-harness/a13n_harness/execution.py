@@ -18,6 +18,7 @@ from uuid import uuid4
 
 from a13n_logging import get_logger
 from anyio import CancelScope
+from opentelemetry.trace import StatusCode
 from pydantic import BaseModel, ConfigDict, JsonValue, PydanticSchemaGenerationError, TypeAdapter, ValidationError
 from pydantic_ai import Agent
 from pydantic_ai.agent import AgentRunEvents
@@ -42,7 +43,7 @@ from pydantic_ai.messages import (
 )
 from pydantic_ai.models import Model, ModelResolutionContext
 from pydantic_ai.models.instrumented import InstrumentedModel
-from pydantic_ai.output import NativeOutput, OutputSpec, PromptedOutput, StructuredDict, TextOutput, ToolOutput
+from pydantic_ai.output import NativeOutput, OutputSpec, PromptedOutput, TextOutput, ToolOutput
 from pydantic_ai.run import AgentRunResultEvent
 from pydantic_ai.tools import DeferredToolRequests
 from pydantic_ai.usage import RunUsage, UsageLimits
@@ -97,6 +98,12 @@ from a13n_harness.capabilities.steering import (
     SteeringCapability,
 )
 from a13n_harness.capabilities.subagents import SUBAGENT_CAPABILITY_ID, SubagentCapability
+from a13n_harness.capabilities.tool_proxy import (
+    TOOL_PROXY_CAPABILITY_ID,
+    ToolProxyPlan,
+    _ToolProxyGroupCapability,
+    _ToolProxySurfaceCapability,
+)
 from a13n_harness.capabilities.web import (
     WEB_CAPABILITY_ID,
     WEB_RUN_CAPABILITY_ID,
@@ -186,7 +193,11 @@ from a13n_harness.observation import (
     _LogicalRunObservation,
     _ObservationRuntime,
     observe_operation,
+    observe_output,
+    observe_phase,
+    record_span_metadata,
 )
+from a13n_harness.output_schema import structured_output_type
 from a13n_harness.plugin_configuration import HarnessBuildContext, HarnessPluginConfiguration
 from a13n_harness.plugin_factories import (
     HarnessPluginFactoryCatalog,
@@ -212,8 +223,10 @@ from a13n_harness.pricing import (
 from a13n_harness.recovery import (
     InterruptedResponseTracker,
     ModelRecoveryPolicy,
+    ToolRecoveryMode,
     is_recoverable_model_failure,
     normalize_interrupted_history,
+    prepare_tool_recovery,
 )
 from a13n_harness.result import HarnessRunResult, SafeFailure
 from a13n_harness.spec import AgentSpec as HarnessAgentSpec
@@ -444,6 +457,7 @@ class SubagentDefinition:
     context: DelegationContextPolicy = field(default_factory=DelegationContextPolicy)
     identity: SubagentIdentityPolicy = field(default_factory=SubagentIdentityPolicy)
     usage_limits: UsageLimits | None = None
+    run_capability_factory: Callable[[], Sequence[AbstractCapability[AgentContext]]] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not self.name.strip():
@@ -461,6 +475,8 @@ class SubagentDefinition:
             raise DefinitionError("Subagent identity must be SubagentIdentityPolicy.", code="subagent_identity_invalid")
         if self.usage_limits is not None and not isinstance(self.usage_limits, UsageLimits):
             raise DefinitionError("Subagent usage_limits must be UsageLimits or None.", code="subagent_limits_invalid")
+        if self.run_capability_factory is not None and not callable(self.run_capability_factory):
+            raise DefinitionError("Child run capability factory must be callable.", code="subagent_binding_invalid")
         object.__setattr__(self, "usage_limits", deepcopy(self.usage_limits))
 
 
@@ -474,6 +490,7 @@ class AgentDefinition[OutputT]:
     model: Model | None = None
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
     plugins: tuple[AbstractHarnessPlugin, ...] = ()
+    tool_proxy: ToolProxyPlan | None = None
     subagents: tuple[SubagentDefinition, ...] = ()
     model_recovery: ModelRecoveryPolicy = field(default_factory=ModelRecoveryPolicy)
 
@@ -511,6 +528,8 @@ class AgentDefinition[OutputT]:
         object.__setattr__(self, "agent", self.agent.model_copy(deep=True))
         object.__setattr__(self, "capabilities", tuple(self.capabilities))
         object.__setattr__(self, "plugins", tuple(self.plugins))
+        if self.tool_proxy is not None and not isinstance(self.tool_proxy, ToolProxyPlan):
+            raise TypeError("tool_proxy must be ToolProxyPlan or None")
         subagents = tuple(self.subagents)
         if not all(isinstance(child, SubagentDefinition) for child in subagents):
             raise DefinitionError(
@@ -756,6 +775,7 @@ class HarnessBuilder:
         model: Model | None = None,
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
         plugins: Sequence[AbstractHarnessPlugin] = (),
+        tool_proxy: ToolProxyPlan | None = None,
         subagents: Sequence[SubagentDefinition] = (),
         model_recovery: ModelRecoveryPolicy | None = None,
         pricing_catalog: PricingCatalog | None = None,
@@ -772,6 +792,7 @@ class HarnessBuilder:
         model: Model | None = None,
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
         plugins: Sequence[AbstractHarnessPlugin] = (),
+        tool_proxy: ToolProxyPlan | None = None,
         subagents: Sequence[SubagentDefinition] = (),
         model_recovery: ModelRecoveryPolicy | None = None,
         pricing_catalog: PricingCatalog | None = None,
@@ -787,6 +808,7 @@ class HarnessBuilder:
         model: Model | None = None,
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
         plugins: Sequence[AbstractHarnessPlugin] = (),
+        tool_proxy: ToolProxyPlan | None = None,
         subagents: Sequence[SubagentDefinition] = (),
         model_recovery: ModelRecoveryPolicy | None = None,
         pricing_catalog: PricingCatalog | None = None,
@@ -804,6 +826,7 @@ class HarnessBuilder:
                 or model is not None
                 or capabilities
                 or plugins
+                or tool_proxy is not None
                 or subagents
                 or model_recovery is not None
             ):
@@ -824,6 +847,7 @@ class HarnessBuilder:
             model=model,
             capabilities=tuple(capabilities),
             plugins=tuple(plugins),
+            tool_proxy=tool_proxy,
             subagents=tuple(subagents),
             model_recovery=model_recovery if model_recovery is not None else ModelRecoveryPolicy(),
         )
@@ -856,11 +880,16 @@ class HarnessBuilder:
         )
         subagents = SubagentCollection({child.declaration.name: child for child in built_children})
         configured_plugins = self._create_configured_plugins()
-        plugins, plugin_capabilities = bind_agent_plugins((*definition.plugins, *configured_plugins))
+        plugins, contributions = bind_agent_plugins((*definition.plugins, *configured_plugins))
+        plugin_capabilities = tuple(capability for sources in contributions.values() for capability in sources)
         _validate_capability_source(plugin_capabilities, source="plugin")
+        _validate_capability_source(definition.capabilities, source="definition")
+        selected_capabilities = (*definition.capabilities, *plugin_capabilities)
+        if definition.tool_proxy is not None:
+            selected_capabilities = definition.tool_proxy._compose(selected_capabilities, contributions)
         authored_capabilities = _resolve_model_characteristics_capabilities(
             definition.agent,
-            (*definition.capabilities, *plugin_capabilities),
+            selected_capabilities,
         )
         model_characteristics = (
             definition.agent.model_characteristics if isinstance(definition.agent, HarnessAgentSpec) else None
@@ -1037,6 +1066,7 @@ class ExecutableAgent[OutputT]:
         default_environment: None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
@@ -1053,6 +1083,7 @@ class ExecutableAgent[OutputT]:
         default_environment: str | None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
@@ -1069,6 +1100,7 @@ class ExecutableAgent[OutputT]:
         default_environment: None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
@@ -1084,6 +1116,7 @@ class ExecutableAgent[OutputT]:
         default_environment: str | None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
@@ -1097,6 +1130,7 @@ class ExecutableAgent[OutputT]:
             default_environment=default_environment,
             bindings=bindings,
             previous_state=previous_state,
+            tool_recovery=tool_recovery,
             deferred_resume=deferred_resume,
             usage=usage,
             usage_limits=usage_limits,
@@ -1117,6 +1151,7 @@ class ExecutableAgent[OutputT]:
         default_environment: None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
@@ -1133,6 +1168,7 @@ class ExecutableAgent[OutputT]:
         default_environment: str | None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
@@ -1149,6 +1185,7 @@ class ExecutableAgent[OutputT]:
         default_environment: None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
@@ -1164,6 +1201,7 @@ class ExecutableAgent[OutputT]:
         default_environment: str | None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
@@ -1177,6 +1215,7 @@ class ExecutableAgent[OutputT]:
             default_environment=default_environment,
             bindings=bindings,
             previous_state=previous_state,
+            tool_recovery=tool_recovery,
             deferred_resume=deferred_resume,
             usage=usage,
             usage_limits=usage_limits,
@@ -1192,10 +1231,13 @@ class ExecutableAgent[OutputT]:
         default_environment: str | None = None,
         bindings: RunBindings | None = None,
         previous_state: HarnessState | None = None,
+        tool_recovery: ToolRecoveryMode = "declared",
         deferred_resume: DeferredToolResume | None = None,
         usage: RunUsage | None = None,
         usage_limits: UsageLimits | None = None,
     ) -> HarnessRunStream[OutputT]:
+        if tool_recovery not in {"declared", "never", "always"}:
+            raise ValueError("tool_recovery must be 'declared', 'never', or 'always'")
         if input is not None and input_factory is not None:
             raise RunError(
                 "input and input_factory are mutually exclusive.",
@@ -1227,6 +1269,7 @@ class ExecutableAgent[OutputT]:
             bindings=resolved_bindings,
             environment_binding=environment_binding,
             previous_state=previous_state,
+            tool_recovery=tool_recovery,
             deferred_resume=normalized_resume,
             run_reserved_capability_ids=run_reserved_ids,
             skill_selection_names=skill_selection_names,
@@ -1247,6 +1290,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         bindings: RunBindings,
         environment_binding: EnvironmentRuntime,
         previous_state: HarnessState | None,
+        tool_recovery: ToolRecoveryMode,
         deferred_resume: DeferredToolResume | None,
         run_reserved_capability_ids: frozenset[str],
         skill_selection_names: frozenset[str] | None,
@@ -1263,6 +1307,11 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         )
         self.thread_id = self._previous_state.thread_id
         self.run_id = f"run-{uuid4().hex}"
+        self._tool_recovery = (
+            prepare_tool_recovery(self._previous_state.message_history, tool_recovery)
+            if deferred_resume is None
+            else None
+        )
         self._deferred_resume = deferred_resume
         self._run_reserved_capability_ids = run_reserved_capability_ids
         self._skill_selection_names = skill_selection_names
@@ -1356,83 +1405,124 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             instance=self._bindings.instance,
             observation_context=self._bindings.observation,
         )
-        activation = self._observation.activate() if self._observation is not None else None
+        activation = (
+            self._observation.activate() if self._observation is not None else _LogicalRunObservation.suppress()
+        )
         try:
-            self._environment_ready = asyncio.get_running_loop().create_future()
-            self._environment_lifecycle_task = asyncio.create_task(self._run_environment_lifecycle())
-            environment = await asyncio.shield(self._environment_ready)
-            self._environment_ready_delivered = True
-            preparation = RunPreparationContext(
-                run_id=self.run_id,
-                instance=self._bindings.instance,
-                environment=environment,
-                metadata=self._bindings.metadata,
-            )
-            input_value = self._input
-            if self._input_factory is not None:
+            with observe_phase("prepare") as phase:
+                record_span_metadata(
+                    phase,
+                    {
+                        "prepare.input_factory": self._input_factory is not None,
+                        "prepare.deferred_resume": self._deferred_resume is not None,
+                        "prepare.plugin_count": len(self._executable._plugins),
+                    },
+                )
+                phase.set_attribute("a13n.phase.step", "environment")
+                self._environment_ready = asyncio.get_running_loop().create_future()
+                # This task outlives preparation and also owns Environment teardown.
+                # Keep its ambient parent at Run scope, not an already-ended prepare span.
+                environment_activation = (
+                    self._observation.activate() if self._observation is not None else _LogicalRunObservation.suppress()
+                )
                 try:
-                    input_value = await self._input_factory(preparation)
-                except Exception as exc:
-                    raise RunError("Run input factory failed.", code="input_factory_failed") from exc
-            semantic_input = normalize_input(input_value)
-            plugin_context = BoundPluginContext()
-            usage_attribution = RunUsageLedger(
-                run_id=self.run_id,
-                instance=self._bindings.instance,
-                events=self._emitter,
-            )
-            context_state = AgentContextState(self._previous_state.agent_context_state)
-            context = AgentContext(
-                run_id=self.run_id,
-                thread_id=self._previous_state.thread_id,
-                instance=self._bindings.instance,
-                state=context_state,
-                environment=environment,
-                model_resolver=self._bindings.model_resolver,
-                model_characteristics=(
-                    self._executable.definition.agent.model_characteristics
-                    if isinstance(self._executable.definition.agent, HarnessAgentSpec)
-                    else None
-                ),
-                _model_inference=self._executable._model_inference,
-                toolset_instructions=(
-                    self._bindings.toolset_instructions
-                    if self._bindings.toolset_instructions is not None
-                    else _normalize_toolset_instructions(self._executable.definition.agent)
-                ),
-                _toolset_instructions_override=self._bindings.toolset_instructions,
-                model_context=self._bindings.model_context,
-                _inherited_model_cost=self._bindings._inherited_model_cost,
-                plugins=plugin_context,
-                subagents=self._executable.subagents,
-                events=self._emitter,
-                usage_attribution=usage_attribution,
-                deferred_resume=self._deferred_resume,
-                metadata=self._bindings.metadata,
-                _steering=SteeringBridge(
-                    context_state,
+                    self._environment_lifecycle_task = asyncio.create_task(self._run_environment_lifecycle())
+                finally:
+                    _LogicalRunObservation.deactivate(environment_activation)
+                environment = await asyncio.shield(self._environment_ready)
+                self._environment_ready_delivered = True
+                phase.set_attribute("a13n.phase.step", "input")
+                preparation = RunPreparationContext(
                     run_id=self.run_id,
-                    retain_inputs=bool(
-                        {COMPACTION_CAPABILITY_ID, HANDOFF_CAPABILITY_ID}
-                        & self._executable._definition_reserved_capability_ids
-                    ),
+                    instance=self._bindings.instance,
+                    environment=environment,
+                    metadata=self._bindings.metadata,
+                )
+                input_value = self._input
+                if self._input_factory is not None:
+                    try:
+                        input_value = await self._input_factory(preparation)
+                    except Exception as exc:
+                        raise RunError("Run input factory failed.", code="input_factory_failed") from exc
+                semantic_input = normalize_input(input_value)
+                if self._observation is not None:
+                    self._observation.record_input(
+                        semantic_input.value,
+                        kind="deferred_response" if self._deferred_resume is not None else "prompt",
+                    )
+                phase.set_attribute("a13n.phase.step", "context")
+                plugin_context = BoundPluginContext()
+                usage_attribution = RunUsageLedger(
+                    run_id=self.run_id,
+                    instance=self._bindings.instance,
                     events=self._emitter,
-                ),
-                _skill_selection_names=self._skill_selection_names,
-                _capability_provenance=_CapabilityProvenance(
-                    definition_ids=self._executable._definition_reserved_capability_ids,
-                    run_ids=self._run_reserved_capability_ids,
-                ),
-            )
-            self._context = context
-            run_plugins = await bind_run_plugins(self._executable._plugins, context)
-            exchange = PluginRunExchange(
-                input=semantic_input,
-                context=context,
-                _state_exporter=self.export_state,
-            )
-            self._response = self._build_response(run_plugins, 0, exchange)
-            return self
+                )
+                context_state = AgentContextState(self._previous_state.agent_context_state)
+                context = AgentContext(
+                    run_id=self.run_id,
+                    thread_id=self._previous_state.thread_id,
+                    instance=self._bindings.instance,
+                    state=context_state,
+                    environment=environment,
+                    model_resolver=self._bindings.model_resolver,
+                    model_characteristics=(
+                        self._executable.definition.agent.model_characteristics
+                        if isinstance(self._executable.definition.agent, HarnessAgentSpec)
+                        else None
+                    ),
+                    _model_inference=self._executable._model_inference,
+                    toolset_instructions=(
+                        self._bindings.toolset_instructions
+                        if self._bindings.toolset_instructions is not None
+                        else _normalize_toolset_instructions(self._executable.definition.agent)
+                    ),
+                    _toolset_instructions_override=self._bindings.toolset_instructions,
+                    model_context=self._bindings.model_context,
+                    _inherited_model_cost=self._bindings._inherited_model_cost,
+                    plugins=plugin_context,
+                    subagents=self._executable.subagents,
+                    events=self._emitter,
+                    usage_attribution=usage_attribution,
+                    deferred_resume=self._deferred_resume,
+                    _tool_recovery=self._tool_recovery,
+                    metadata=self._bindings.metadata,
+                    _steering=SteeringBridge(
+                        context_state,
+                        run_id=self.run_id,
+                        retain_inputs=bool(
+                            {COMPACTION_CAPABILITY_ID, HANDOFF_CAPABILITY_ID}
+                            & self._executable._definition_reserved_capability_ids
+                        ),
+                        events=self._emitter,
+                    ),
+                    _skill_selection_names=self._skill_selection_names,
+                    _capability_provenance=_CapabilityProvenance(
+                        definition_ids=self._executable._definition_reserved_capability_ids,
+                        run_ids=self._run_reserved_capability_ids,
+                    ),
+                )
+                self._context = context
+                phase.set_attribute("a13n.phase.step", "plugins")
+                run_plugins = await bind_run_plugins(self._executable._plugins, context)
+                exchange = PluginRunExchange(
+                    input=semantic_input,
+                    context=context,
+                    _state_exporter=self.export_state,
+                )
+                self._response = self._build_response(run_plugins, 0, exchange)
+                record_span_metadata(
+                    phase,
+                    {
+                        "phase.status": "completed",
+                        "prepare.capability_count": len(self._executable.definition.capabilities),
+                    },
+                )
+                observe_output(
+                    phase,
+                    {"environment_bound": True, "context_ready": True, "plugin_count": len(run_plugins)},
+                    status="prepared",
+                )
+                return self
         except asyncio.CancelledError as exc:
             await self._close_resources(outcome=None, cancellation=exc)
             raise
@@ -1440,8 +1530,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             await self._close_resources(outcome=None, failure=exc)
             raise
         finally:
-            if activation is not None:
-                _LogicalRunObservation.deactivate(activation)
+            _LogicalRunObservation.deactivate(activation)
 
     async def _run_environment_lifecycle(self) -> None:
         ready = self._environment_ready
@@ -1515,7 +1604,9 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         traceback: object,
     ) -> None:
         del exc_type, traceback
-        activation = self._observation.activate() if self._observation is not None else None
+        activation = (
+            self._observation.activate() if self._observation is not None else _LogicalRunObservation.suppress()
+        )
         try:
             if self._terminal_close_task is not None:
                 await self._terminal_close_task
@@ -1528,8 +1619,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                     failure=failure,
                 )
         finally:
-            if activation is not None:
-                _LogicalRunObservation.deactivate(activation)
+            _LogicalRunObservation.deactivate(activation)
 
     def __aiter__(self) -> HarnessRunStream[OutputT]:
         if not self._entered or self._closed:
@@ -1548,12 +1638,13 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 code="run_stream_concurrent_next",
             )
         self._next_active = True
-        activation = self._observation.activate() if self._observation is not None else None
+        activation = (
+            self._observation.activate() if self._observation is not None else _LogicalRunObservation.suppress()
+        )
         try:
             return await self._next_item()
         finally:
-            if activation is not None:
-                _LogicalRunObservation.deactivate(activation)
+            _LogicalRunObservation.deactivate(activation)
             self._next_active = False
 
     async def _next_item(self) -> HarnessStreamEvent[OutputT]:
@@ -2168,7 +2259,16 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         policy = self._executable.definition.model_recovery
         max_attempts = policy.max_attempts if policy.enabled else 1
         attempt_index = 0
-        current_history, _ = normalize_interrupted_history(self._previous_state.message_history)
+        current_history = (
+            self._tool_recovery.messages if self._tool_recovery is not None else self._previous_state.message_history
+        )
+        deferred_results = (
+            self._deferred_resume.results
+            if self._deferred_resume is not None
+            else self._tool_recovery.results
+            if self._tool_recovery is not None
+            else None
+        )
         current_history = _reconcile_system_prompt(
             current_history,
             self._executable._system_prompt,
@@ -2184,9 +2284,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
             manager = self._executable._agent.run_stream_events(
                 current_input.value,
                 message_history=current_history,
-                deferred_tool_results=(
-                    self._deferred_resume.results if attempt_index == 0 and self._deferred_resume is not None else None
-                ),
+                deferred_tool_results=(deferred_results if attempt_index == 0 else None),
                 run_id=f"model-attempt-{uuid4().hex}",
                 conversation_id=self.thread_id,
                 deps=self.context,
@@ -2383,11 +2481,21 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 )
             )
             if delay > 0:
-                with observe_operation("recovery"):
+                with observe_operation("recovery") as span:
+                    record_span_metadata(
+                        span,
+                        {
+                            "recovery.step": "backoff",
+                            "recovery.next_attempt": next_attempt_index + 1,
+                            "recovery.max_attempts": max_attempts,
+                            "recovery.delay_seconds": delay,
+                        },
+                    )
                     try:
                         await asyncio.wait_for(self._cancel_event.wait(), timeout=delay)
                     except TimeoutError:
                         pass
+                    observe_output(span, {"cancel_requested": self._cancel_requested}, status="wait_finished")
             if self._cancel_requested:
                 state = await exchange.context.export_state(self._latest_messages) if self._latest_messages else None
                 yield self._record_inner_candidate(
@@ -2403,8 +2511,18 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                     )
                 )
                 return
-            with observe_operation("recovery"):
+            with observe_operation("recovery") as span:
+                record_span_metadata(
+                    span,
+                    {
+                        "recovery.step": "build_prompt",
+                        "recovery.next_attempt": next_attempt_index + 1,
+                        "recovery.max_attempts": max_attempts,
+                        "recovery.history_count": len(self._latest_messages),
+                    },
+                )
                 retry_input = await policy.build_prompt(retry_error, next_attempt_index, self._latest_messages)
+                observe_output(span, {"retry_input_available": retry_input is not None}, status="prepared")
             current_input = normalize_input(retry_input)
             current_history = self._latest_messages
             attempt_index = next_attempt_index
@@ -2565,67 +2683,94 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         if failure is not None and cancellation is None:
             self._diagnostic_error = failure
 
-        fence_failure: BaseException | None = None
-        try:
-            self._environment_binding._begin_close()
-        except BaseException as exc:
-            fence_failure = exc
-
-        current_task = asyncio.current_task()
-        causes: list[BaseException] = [] if fence_failure is None else [fence_failure]
-
-        def capture_pending_cancellation(exc: asyncio.CancelledError | None = None) -> bool:
-            nonlocal cancellation
-            if current_task is None or not current_task.cancelling():
-                return False
-            if cancellation is None:
-                cancellation = exc or asyncio.CancelledError()
-            while current_task.cancelling():
-                current_task.uncancel()
-            return True
-
-        capture_pending_cancellation(cancellation)
-
-        async def finish_cleanup(awaitable: Awaitable[None]) -> None:
+        with observe_phase("finalize") as phase:
+            fence_failure: BaseException | None = None
             try:
-                # Cleanup normally stays in the task that entered plugin and AnyIO scopes.
-                await awaitable
-            except asyncio.CancelledError as exc:
-                if not capture_pending_cancellation(exc):
-                    causes.append(exc)
+                self._environment_binding._begin_close()
             except BaseException as exc:
-                causes.append(exc)
-            finally:
-                # Cleanup code may suppress or translate the injected CancelledError.
-                capture_pending_cancellation()
+                fence_failure = exc
 
-        # Repeated cancellation while draining the reader must not skip its producer.
-        await finish_cleanup(self._cancel_response_next_task())
-        await finish_cleanup(self._stop_response_pump())
-        await finish_cleanup(self._close_registered_responses())
-        outcome = outcome or self._last_valid_outcome
-        with CancelScope(shield=True):
-            if outcome is not None:
-                # A validated middleware-owned result remains the state authority.
-                self._shutdown_state = outcome.state
-            elif self._context is not None:
+            current_task = asyncio.current_task()
+            causes: list[BaseException] = [] if fence_failure is None else [fence_failure]
+
+            def capture_pending_cancellation(exc: asyncio.CancelledError | None = None) -> bool:
+                nonlocal cancellation
+                if current_task is None or not current_task.cancelling():
+                    return False
+                if cancellation is None:
+                    cancellation = exc or asyncio.CancelledError()
+                while current_task.cancelling():
+                    current_task.uncancel()
+                return True
+
+            capture_pending_cancellation(cancellation)
+
+            async def finish_cleanup(awaitable: Awaitable[None]) -> None:
                 try:
-                    self._shutdown_state = await self._context.export_state(self._latest_messages)
+                    # Cleanup normally stays in the task that entered plugin and AnyIO scopes.
+                    await awaitable
+                except asyncio.CancelledError as exc:
+                    if not capture_pending_cancellation(exc):
+                        causes.append(exc)
                 except BaseException as exc:
-                    # The Host can diagnose export failure without losing the original
-                    # execution error or preventing resource cleanup.
-                    self._shutdown_state_error = exc
-        await finish_cleanup(self._close_run_attachments())
-        causes.extend(self._source_cleanup_failures)
-        self._source_cleanup_failures.clear()
+                    causes.append(exc)
+                finally:
+                    # Cleanup code may suppress or translate the injected CancelledError.
+                    capture_pending_cancellation()
 
-        await finish_cleanup(self._close_environment_lifecycle())
-        self._emitter.close()
-        if self._environment_event_task is not None:
-            task = self._environment_event_task
-            self._environment_event_task = None
-            await finish_cleanup(_stop_environment_event_task(task))
-        self._closed = True
+            # Repeated cancellation while draining the reader must not skip its producer.
+            phase.set_attribute("a13n.phase.step", "responses")
+            await finish_cleanup(self._cancel_response_next_task())
+            await finish_cleanup(self._stop_response_pump())
+            await finish_cleanup(self._close_registered_responses())
+            phase.set_attribute("a13n.phase.step", "state_export")
+            outcome = outcome or self._last_valid_outcome
+            with CancelScope(shield=True):
+                if outcome is not None:
+                    # A validated middleware-owned result remains the state authority.
+                    self._shutdown_state = outcome.state
+                elif self._context is not None:
+                    try:
+                        self._shutdown_state = await self._context.export_state(self._latest_messages)
+                    except BaseException as exc:
+                        # The Host can diagnose export failure without losing the original
+                        # execution error or preventing resource cleanup.
+                        self._shutdown_state_error = exc
+            phase.set_attribute("a13n.phase.step", "attachments")
+            await finish_cleanup(self._close_run_attachments())
+            causes.extend(self._source_cleanup_failures)
+            self._source_cleanup_failures.clear()
+
+            phase.set_attribute("a13n.phase.step", "environment")
+            await finish_cleanup(self._close_environment_lifecycle())
+            self._emitter.close()
+            if self._environment_event_task is not None:
+                task = self._environment_event_task
+                self._environment_event_task = None
+                await finish_cleanup(_stop_environment_event_task(task))
+            self._closed = True
+
+            phase_status = "failed" if causes or self._shutdown_state_error is not None else "completed"
+            record_span_metadata(
+                phase,
+                {
+                    "phase.status": phase_status,
+                    "finalize.cleanup_error_count": len(causes),
+                    "finalize.state_export_failed": self._shutdown_state_error is not None,
+                },
+            )
+            observe_output(
+                phase,
+                {
+                    "state_available": self._shutdown_state is not None,
+                    "cleanup_error_count": len(causes),
+                    "state_export_failed": self._shutdown_state_error is not None,
+                    "cancelled": cancellation is not None,
+                },
+                status=phase_status,
+            )
+            if phase_status == "failed":
+                phase.set_status(StatusCode.ERROR)
 
         observation = self._observation
         if observation is not None:
@@ -2648,6 +2793,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                 failure_code = failure.code
             elif observed_outcome == "failed":
                 failure_code = "run_unhandled"
+            observation.record_output(outcome.output if outcome is not None else None, status=observed_outcome)
             observation.finish(
                 outcome=observed_outcome,
                 failure_code=failure_code,
@@ -2702,7 +2848,7 @@ def _resolve_business_output[OutputT](
     schema = construction_spec.output_schema
     assert schema is not None
     try:
-        business_output = StructuredDict(deepcopy(schema))
+        business_output = structured_output_type(schema)
         output_adapter = TypeAdapter(business_output)
     except Exception as exc:
         raise DefinitionError(
@@ -2763,6 +2909,7 @@ def _validate_built_capability_tree(
         CLIENT_TOOLS_CAPABILITY_ID,
         CLIENT_TOOLS_RUN_CAPABILITY_ID,
         CODEACT_CAPABILITY_ID,
+        TOOL_PROXY_CAPABILITY_ID,
         DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
         SHELL_REVIEW_CAPABILITY_ID,
         FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID,
@@ -2909,6 +3056,7 @@ def _validate_built_capability_tree(
             in (
                 ClientToolsCapability,
                 CodeActCapability,
+                _ToolProxySurfaceCapability,
                 DynamicEnvironmentCapability,
                 ShellReviewCapability,
                 RuntimeContextCapability,
@@ -2946,11 +3094,17 @@ def _validate_built_capability_tree(
     )
     if surface_index is not None:
         for capability in leaves[:surface_index]:
-            if isinstance(capability, ToolExecutionBoundaryCapability | CodeActCapability):
+            # Membership adds no global wrapper; its original nodes are visited
+            # separately below and retain the same surface-order validation.
+            if type(capability) is _ToolProxyGroupCapability:
+                continue
+            if isinstance(
+                capability, ToolExecutionBoundaryCapability | CodeActCapability | _ToolProxySurfaceCapability
+            ):
                 continue
             if type(capability).get_wrapper_toolset is not AbstractCapability.get_wrapper_toolset:
                 raise DefinitionError(
-                    "Only CodeAct and the tool execution boundary may wrap the mandatory tool surface.",
+                    "Only ToolProxy, CodeAct, and the tool execution boundary may wrap the mandatory tool surface.",
                     code="tool_surface_order_invalid",
                     details={"capability_type": type(capability).__name__},
                 )
@@ -3097,6 +3251,7 @@ def _validate_capability_source(
         CLIENT_TOOLS_CAPABILITY_ID,
         CLIENT_TOOLS_RUN_CAPABILITY_ID,
         CODEACT_CAPABILITY_ID,
+        TOOL_PROXY_CAPABILITY_ID,
         DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
         SHELL_REVIEW_CAPABILITY_ID,
         FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID,
@@ -3127,30 +3282,35 @@ def _validate_capability_source(
                 details={"source": source},
             )
         allowed = (
-            source == "definition"
-            and (
-                isinstance(capability, AbstractModelCostCapability)
-                or type(capability)
-                in (
-                    ClientToolsCapability,
-                    CodeActCapability,
-                    DynamicEnvironmentCapability,
-                    ShellReviewCapability,
-                    RuntimeContextCapability,
-                    WorkspaceOutlineCapability,
-                    FileContextCapability,
-                    HandoffCapability,
-                    CompactionCapability,
-                    UserInteractionCapability,
-                    SkillsCapability,
-                    MediaCapability,
-                    DocumentsCapability,
-                    WebCapability,
-                    WorkingStateCapability,
-                    SubagentCapability,
+            (
+                source == "definition"
+                and (
+                    isinstance(capability, AbstractModelCostCapability)
+                    or type(capability)
+                    in (
+                        ClientToolsCapability,
+                        CodeActCapability,
+                        _ToolProxySurfaceCapability,
+                        DynamicEnvironmentCapability,
+                        ShellReviewCapability,
+                        RuntimeContextCapability,
+                        WorkspaceOutlineCapability,
+                        FileContextCapability,
+                        HandoffCapability,
+                        CompactionCapability,
+                        UserInteractionCapability,
+                        SkillsCapability,
+                        MediaCapability,
+                        DocumentsCapability,
+                        WebCapability,
+                        WorkingStateCapability,
+                        SubagentCapability,
+                    )
                 )
             )
-        ) or (source == "run" and type(capability) in run_types)
+            or (source == "plugin" and type(capability) is _ToolProxySurfaceCapability)
+            or (source == "run" and type(capability) in run_types)
+        )
         reserved_type = isinstance(
             capability,
             ToolExecutionBoundaryCapability
@@ -3164,6 +3324,7 @@ def _validate_capability_source(
             | ClientToolsCapability
             | ClientToolsRunCapability
             | CodeActCapability
+            | _ToolProxySurfaceCapability
             | DynamicEnvironmentCapability
             | ShellReviewCapability
             | RuntimeContextCapability

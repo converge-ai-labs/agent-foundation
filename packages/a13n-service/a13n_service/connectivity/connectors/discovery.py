@@ -1,4 +1,4 @@
-"""Validate safe transient Connector directories at the application boundary."""
+"""Validate safe Connector directory snapshots at the application boundary."""
 
 from a13n_service.connectivity.bounds import DISCOVERY_MAX_BYTES, DISCOVERY_MAX_TOOLS, TOOL_SCHEMA_MAX_BYTES
 from a13n_service.connectivity.management import canonical_json
@@ -22,6 +22,10 @@ _CREDENTIAL_FIELDS = frozenset(
 )
 
 
+def is_credential_field(name: str) -> bool:
+    return name.casefold() in _CREDENTIAL_FIELDS
+
+
 def validate_connectors(items: tuple[DiscoveredConnector, ...]) -> None:
     if len(items) > DISCOVERY_MAX_TOOLS:
         raise ConnectorProviderError("directory_too_large")
@@ -43,9 +47,7 @@ def validate_connectors(items: tuple[DiscoveredConnector, ...]) -> None:
                 if "$ref" in value or "$dynamicRef" in value:
                     raise ConnectorProviderError("unsafe_setup_schema")
                 properties = value.get("properties")
-                if isinstance(properties, dict) and any(
-                    str(key).casefold() in _CREDENTIAL_FIELDS for key in properties
-                ):
+                if isinstance(properties, dict) and any(is_credential_field(str(key)) for key in properties):
                     raise ConnectorProviderError("unsafe_setup_schema")
                 pending.extend(value.values())
             elif isinstance(value, list):

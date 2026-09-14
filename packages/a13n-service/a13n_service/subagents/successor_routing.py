@@ -12,10 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.interactions.control_domain import RunAcceptanceReceipt
 from a13n_service.interactions.control_models import (
     QueuedSubmissionRecord,
-    ThreadInboxCounterRecord,
     ThreadInboxRecord,
 )
 from a13n_service.interactions.domain import RunStatus
+from a13n_service.interactions.inbox_persistence import lock_inbox_related_runs
 from a13n_service.interactions.models import RunRecord, ThreadRecord
 
 from .successor_inbox import bind_locked_unbound_async_entries, lock_unbound_async_entries
@@ -47,7 +47,6 @@ class LockedAsyncResultSelection:
     entry: ThreadInboxRecord
     selected_parent: RunRecord
     origin: RunRecord
-    counter: ThreadInboxCounterRecord
     later_entries: tuple[ThreadInboxRecord, ...]
 
 
@@ -69,20 +68,21 @@ async def lock_and_route_async_result(
         raise AsyncSubagentSuccessorError("parent Thread was not found")
     if thread.current_run_id is None:
         raise AsyncSubagentSuccessorError("Empty Thread has no child-result source")
-    current = await _lock_run(database, organization_id=organization_id, run_id=thread.current_run_id)
-    head = (
-        None
-        if thread.head_run_id is None
-        else await _lock_run(database, organization_id=organization_id, run_id=thread.head_run_id)
-    )
-    required_run_ids = (current.id,) if head is None else (current.id, head.id)
-    counter, entries = await lock_unbound_async_entries(
-        database,
-        organization_id=organization_id,
-        thread_id=thread_id,
-        required_run_ids=required_run_ids,
-        now=now,
-    )
+    required_run_ids = {thread.current_run_id}
+    if thread.head_run_id is not None:
+        required_run_ids.add(thread.head_run_id)
+    runs = {
+        run.id: run
+        for run in await lock_inbox_related_runs(
+            database,
+            organization_id=organization_id,
+            thread_id=thread.id,
+            required_run_ids=required_run_ids,
+        )
+    }
+    current = runs[thread.current_run_id]
+    head = None if thread.head_run_id is None else runs[thread.head_run_id]
+    entries = await lock_unbound_async_entries(database, thread=thread, now=now)
     if not entries:
         return AsyncSubagentSuccessorReceipt(thread_id=thread_id, outcome="idle")
     first_entry_id = entries[0].id
@@ -113,7 +113,7 @@ async def lock_and_route_async_result(
     origin_run_id = entries[0].origin_run_id
     if origin_run_id is None:
         raise AsyncSubagentSuccessorError("asynchronous result origin Run is missing")
-    origin = await _lock_run(database, organization_id=organization_id, run_id=origin_run_id)
+    origin = runs[origin_run_id]
     if origin.status in {RunStatus.failed.value, RunStatus.cancelled.value}:
         raise AsyncSubagentSuccessorError("origin gate left an ineligible result pending")
     return LockedAsyncResultSelection(
@@ -121,7 +121,6 @@ async def lock_and_route_async_result(
         entry=entries[0],
         selected_parent=selected_parent,
         origin=origin,
-        counter=counter,
         later_entries=entries[1:],
     )
 
@@ -177,15 +176,6 @@ async def _has_queued_submission(
         ).all()
     )
     return bool(rows)
-
-
-async def _lock_run(database: AsyncSession, *, organization_id: str, run_id: str) -> RunRecord:
-    run = await database.scalar(
-        select(RunRecord).where(RunRecord.organization_id == organization_id, RunRecord.id == run_id).with_for_update()
-    )
-    if run is None:
-        raise AsyncSubagentSuccessorError("Thread-selected Run was not found")
-    return run
 
 
 __all__ = [

@@ -1,4 +1,5 @@
 import pytest
+from a13n_service import __version__
 from a13n_service.app import create_app
 from a13n_service.settings import ProcessRole, Settings
 
@@ -6,7 +7,7 @@ from .support import request
 
 
 def test_app_exposes_settings_before_lifespan() -> None:
-    settings = Settings(_env_file=None, role=ProcessRole.worker)
+    settings = Settings(service={"role": ProcessRole.worker})
 
     app = create_app(settings)
 
@@ -14,20 +15,21 @@ def test_app_exposes_settings_before_lifespan() -> None:
 
 
 def test_health_reports_process_role() -> None:
-    response = request(create_app(Settings(_env_file=None, role=ProcessRole.worker)), "/healthz")
+    response = request(create_app(Settings(service={"role": ProcessRole.worker})), "/healthz")
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok", "role": "worker"}
 
 
 def test_control_plane_openapi_uses_api_namespace() -> None:
-    app = create_app(Settings(_env_file=None, role=ProcessRole.control, build_version="1.2.3"))
+    app = create_app(Settings(service={"role": ProcessRole.control, "build_version": "1.2.3"}))
 
     response = request(app, "/api/openapi.json")
 
     assert response.status_code == 200
     document = response.json()
-    assert document["info"] == {"title": "a13n Service", "version": "1.2.3"}
+    # A deployment build label must not replace the installed package version.
+    assert document["info"] == {"title": "a13n Service", "version": __version__}
     assert "/healthz" not in document["paths"]
     assert "/readyz" not in document["paths"]
     schemas = document["components"]["schemas"]
@@ -40,7 +42,15 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
         "SkillPackageManifest",
         "SkillRevision",
     } <= schemas.keys()
-    assert {"Observation", "TraceCollection", "TraceDetail", "TraceSummary"} <= schemas.keys()
+    assert {
+        "Observation",
+        "ObservationCollection",
+        "Trace",
+        "TraceCollection",
+        "TraceCorrelation",
+        "TraceQueryDescriptor",
+    } <= schemas.keys()
+    assert {"TraceDetail", "TraceSummary"}.isdisjoint(schemas)
     assert {
         "Ingress",
         "Route",
@@ -53,24 +63,26 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
     assert request(app, "/api/docs/oauth2-redirect").status_code == 200
     assert request(app, "/openapi.json").status_code == 404
     assert request(app, "/docs/oauth2-redirect").status_code == 404
-    assert "/api/v1/workspaces/{workspace_id}/traces" in document["paths"]
-    assert "/api/v1/workspaces/{workspace_id}/traces/{trace_id}" in document["paths"]
+    assert "/api/v1/workspaces/{workspace}/traces" in document["paths"]
+    assert "/api/v1/workspaces/{workspace}/traces/{trace_id}" in document["paths"]
+    assert "/api/v1/workspaces/{workspace}/traces/{trace_id}/observations" in document["paths"]
+    assert "/api/v1/workspaces/{workspace}/trace-query" in document["paths"]
     assert "/api/v1/plugins" not in document["paths"]
     assert "/api/v1/plugins/{plugin_id}/versions" not in document["paths"]
     assert "/api/v1/plugin-versions/{plugin_version_id}" not in document["paths"]
     assert "/api/v1/plugin-versions/{plugin_version_id}/activate" not in document["paths"]
     assert "/api/v1/plugins/{plugin_id}/deactivate" not in document["paths"]
     assert "/api/v1/operations/{operation_id}" not in document["paths"]
-    assert "/api/v1/workspaces/{workspace_id}/hook-subscriptions" in document["paths"]
+    assert "/api/v1/workspaces/{workspace}/hook-subscriptions" in document["paths"]
     assert "/api/v1/hook-subscriptions/{subscription_id}" in document["paths"]
-    assert "/api/v1/workspaces/{workspace_id}/events" in document["paths"]
+    assert "/api/v1/workspaces/{workspace}/events" in document["paths"]
     assert "/api/v1/runs/{run_id}/events" in document["paths"]
     assert "/api/v1/run-attempts/{run_attempt_id}/events" in document["paths"]
     assert "/api/v1/runs/{run_id}/stream" in document["paths"]
-    assert "/api/v1/workspaces/{workspace_id}/sessions" in document["paths"]
+    assert "/api/v1/workspaces/{workspace}/sessions" in document["paths"]
     assert "/api/v1/sessions/{session_id}/threads" in document["paths"]
     assert "/api/v1/threads/{thread_id}" in document["paths"]
-    assert "/api/v1/workspaces/{workspace_id}/runs" in document["paths"]
+    assert "/api/v1/workspaces/{workspace}/runs" in document["paths"]
     assert "/api/v1/threads/{thread_id}/runs" in document["paths"]
     assert "/api/v1/runs/{run_id}" in document["paths"]
     assert "/api/v1/runs/{run_id}/lineage" in document["paths"]
@@ -98,16 +110,16 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
     assert "/api/v1/threads/{thread_id}/queued-submissions/consume" in document["paths"]
     assert "/api/v1/queued-submissions/{queued_submission_id}" in document["paths"]
     assert "/api/v1/threads/{thread_id}/queued-submissions/reorder" in document["paths"]
-    assert "/api/v1/workspaces/{workspace_id}/application-accounts" in document["paths"]
+    assert "/api/v1/workspaces/{workspace}/application-accounts" in document["paths"]
     assert "/api/v1/application-accounts/{account_id}/credentials" in document["paths"]
     assert "/api/v1/ingresses/{ingress_id}/credentials" not in document["paths"]
-    assert "/api/v1/workspaces/{workspace_id}/ingresses" not in document["paths"]
+    assert "/api/v1/workspaces/{workspace}/ingresses" not in document["paths"]
     assert "/api/v1/application-accounts/{account_id}/targets" in document["paths"]
     assert "/api/v1/ingresses/{ingress_id}/routes" not in document["paths"]
     assert "/api/v1/application-accounts/{account_id}/targets/{target_id}" in document["paths"]
-    assert "/api/v1/workspaces/{workspace_id}/mcp-connections" in document["paths"]
-    assert "/api/v1/mcp-connections/{connection_id}/authorize" in document["paths"]
-    assert "/api/v1/oauth/mcp/client-metadata.json" in document["paths"]
+    assert "/api/v1/workspaces/{workspace}/connections" in document["paths"]
+    assert "/api/v1/connections/{connection_id}/authorizations" in document["paths"]
+    assert "/api/v1/oauth/mcp/client-metadata/{issuer_key}/{redirect_key}.json" in document["paths"]
     connectivity_paths = {
         path: operations
         for path, operations in document["paths"].items()
@@ -133,7 +145,7 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
 
 @pytest.mark.parametrize("role", [ProcessRole.control, ProcessRole.all])
 def test_control_roles_do_not_serve_browser_routes(role: ProcessRole) -> None:
-    app = create_app(Settings(_env_file=None, role=role))
+    app = create_app(Settings(service={"role": role}))
 
     for path in ("/", "/executions/example", "/assets/app.js"):
         response = request(app, path)
@@ -142,17 +154,24 @@ def test_control_roles_do_not_serve_browser_routes(role: ProcessRole) -> None:
 
 
 def test_unknown_api_paths_return_json_errors() -> None:
-    app = create_app(Settings(_env_file=None, role=ProcessRole.all))
+    app = create_app(Settings(service={"role": ProcessRole.all}))
 
     for path in ("/api", "/api/unknown"):
         response = request(app, path)
         assert response.status_code == 404
         assert response.headers["content-type"].startswith("application/json")
-        assert response.json() == {"detail": "API route not found"}
+        assert response.json() == {
+            "error": {
+                "code": "resource_not_found",
+                "message": "The requested resource was not found.",
+                "details": {},
+                "request_id": response.headers["X-Request-ID"],
+            }
+        }
 
 
 def test_worker_role_serves_only_operational_endpoints() -> None:
-    app = create_app(Settings(_env_file=None, role=ProcessRole.worker))
+    app = create_app(Settings(service={"role": ProcessRole.worker}))
 
     assert request(app, "/healthz").status_code == 200
     assert request(app, "/api/openapi.json").status_code == 404
@@ -160,7 +179,7 @@ def test_worker_role_serves_only_operational_endpoints() -> None:
 
 
 def test_a2a_switch_removes_discovery_and_runtime_routes() -> None:
-    app = create_app(Settings(_env_file=None, role=ProcessRole.control, a2a_enabled=False))
+    app = create_app(Settings(service={"role": ProcessRole.control}, gateway={"a2a_enabled": False}))
 
     document = request(app, "/api/openapi.json").json()
     assert all(not path.startswith("/a2a/") for path in document["paths"])
@@ -168,7 +187,7 @@ def test_a2a_switch_removes_discovery_and_runtime_routes() -> None:
 
 
 def test_connectivity_role_exposes_no_control_plane_routes() -> None:
-    app = create_app(Settings(_env_file=None, role=ProcessRole.connectivity))
+    app = create_app(Settings(service={"role": ProcessRole.connectivity}))
 
     assert request(app, "/healthz").json() == {"status": "ok", "role": "connectivity"}
     assert request(app, "/api/openapi.json").status_code == 404
@@ -178,5 +197,5 @@ def test_connectivity_role_exposes_no_control_plane_routes() -> None:
 
 def test_non_connectivity_roles_do_not_expose_provider_data_plane() -> None:
     for role in (ProcessRole.control, ProcessRole.worker):
-        app = create_app(Settings(_env_file=None, role=role))
+        app = create_app(Settings(service={"role": role}))
         assert request(app, "/connectivity/v1/accounts/acct_test/events", method="POST").status_code == 404

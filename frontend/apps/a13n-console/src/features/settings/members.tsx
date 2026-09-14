@@ -1,16 +1,21 @@
-import { useState } from "react";
+import { Button, ChoiceField, FormField, ModalFrame } from "a13n-ui";
+
+import { SearchPicker } from "a13n-ui";
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, Dialog, SelectField, Picker } from "a13n-ui";
+import { useState } from "react";
+import { PageActions } from "../../shared/page-actions";
+
 import { ApiError } from "@converge.ai/a13n";
-import { Plus } from "lucide-react";
+import { PlusIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
+import { UserAvatar as Avatar } from "../../layout/avatar";
 import { useAccess } from "../../layout/workspace";
 import { allPages, data, representation, type Schema } from "../../shared/api";
+import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
 import { Empty, ErrorNotice, Loading } from "../../shared/feedback";
 import { Confirm, FormActions } from "../../shared/form";
-import { Pagination, Table, useCursor } from "../../shared/collection";
-import { Avatar } from "../../layout/shell";
 import styles from "../../shared/shared.module.css";
 
 export type MembershipScope = {
@@ -38,18 +43,18 @@ export function Members({ scope }: { scope: MembershipScope }) {
       allPages((cursor) =>
         scope.kind === "organization"
           ? client.http
-              .GET("/api/v1/organizations/{organization_id}/users", {
+              .GET("/api/v1/organizations/{organization}/users", {
                 params: {
-                  path: { organization_id: scope.id },
+                  path: { organization: scope.id },
                   query: { cursor, limit: 100 },
                 },
                 signal,
               })
               .then(data)
           : client.http
-              .GET("/api/v1/workspaces/{workspace_id}/members", {
+              .GET("/api/v1/workspaces/{workspace}/members", {
                 params: {
-                  path: { workspace_id: scope.id },
+                  path: { workspace: scope.id },
                   query: { cursor, limit: 100 },
                 },
                 signal,
@@ -62,18 +67,18 @@ export function Members({ scope }: { scope: MembershipScope }) {
     queryFn: ({ signal }) =>
       scope.kind === "organization"
         ? client.http
-            .GET("/api/v1/organizations/{organization_id}/role-bindings", {
+            .GET("/api/v1/organizations/{organization}/role-bindings", {
               params: {
-                path: { organization_id: scope.id },
+                path: { organization: scope.id },
                 query: { cursor: page.cursor, limit: 30 },
               },
               signal,
             })
             .then(data)
         : client.http
-            .GET("/api/v1/workspaces/{workspace_id}/role-bindings", {
+            .GET("/api/v1/workspaces/{workspace}/role-bindings", {
               params: {
-                path: { workspace_id: scope.id },
+                path: { workspace: scope.id },
                 query: { cursor: page.cursor, limit: 30 },
               },
               signal,
@@ -98,25 +103,23 @@ export function Members({ scope }: { scope: MembershipScope }) {
   };
   return (
     <div className={styles.stack}>
-      <div className={styles.toolbar}>
-        <p className={styles.muted}>
-          {t("Manage access with roles scoped to this space.")}
-        </p>
+      <PageActions>
         {scope.kind === "workspace" && organizationAdmin && (
           <AddMember scope={scope} organizationId={organization.id} />
         )}
-      </div>
+      </PageActions>
       {members.isPending || bindings.isPending ? (
-        <Loading />
+        <Loading variant="table" columns={3} rows={5} />
       ) : members.error || bindings.error ? (
         <ErrorNotice error={members.error ?? bindings.error} />
       ) : bindings.data?.items.length ? (
         <>
-          <Table
+          <ResourceTable
             items={bindings.data.items}
             columns={[
               {
                 label: t("Member"),
+                tone: "primary",
                 render: (item) => {
                   const user = members.data?.find(
                     (user) => user.id === item.principal_id,
@@ -142,6 +145,7 @@ export function Members({ scope }: { scope: MembershipScope }) {
               },
               {
                 label: t("Actions"),
+                align: "right",
                 render: (item) => (
                   <div className={styles.actions}>
                     <ChangeRole
@@ -150,6 +154,8 @@ export function Members({ scope }: { scope: MembershipScope }) {
                       readVersion={readVersion}
                     />
                     <Confirm
+                      subject={`${members.data?.find((user) => user.id === item.principal_id)?.email ?? item.principal_id} · ${t(`role.${item.role_key}`, { defaultValue: item.role_key })}`}
+                      triggerVariant="ghost"
                       title={t("Remove member")}
                       description={t(
                         "This removes the selected role. Other explicit grants may still allow access.",
@@ -229,11 +235,7 @@ function ChangeRole({
     },
   });
   return (
-    <Dialog
-      title={t("Change role")}
-      description={t("Role changes apply immediately.")}
-      closeLabel={t("Close")}
-      open={open}
+    <ModalFrame
       onOpenChange={(value) => {
         if (!change.isPending) {
           if (value) {
@@ -244,7 +246,16 @@ function ChangeRole({
           change.reset();
         }
       }}
-      trigger={<Button size="sm">{t("Change role")}</Button>}
+      trigger={
+        <Button size="sm" variant="outline" type="button">
+          {t("Change role")}
+        </Button>
+      }
+      size={"md"}
+      title={t("Change role")}
+      description={t("The new role takes effect when you save.")}
+      closeLabel={t("Close")}
+      open={open}
     >
       <form
         onSubmit={(event) => {
@@ -252,14 +263,15 @@ function ChangeRole({
           change.mutate();
         }}
       >
-        <SelectField
-          label={t("Role")}
+        <ChoiceField
           placeholder={t("Select role")}
           value={role}
+          className="min-w-0"
           onValueChange={(value) => {
             const role = roles.find((role) => role === value);
             if (role) setRole(role);
           }}
+          label={t("Role")}
           options={roleOptions(scope.kind).map((value) => ({
             value,
             label: t(`role.${value}`, { defaultValue: value }),
@@ -269,9 +281,12 @@ function ChangeRole({
           error={reload.error ?? change.error}
           retry={() => reload.mutate()}
         />
-        <FormActions pending={change.isPending} />
+        <FormActions
+          onCancel={() => setOpen(false)}
+          pending={change.isPending}
+        />
       </form>
-    </Dialog>
+    </ModalFrame>
   );
 }
 function AddMember({
@@ -293,9 +308,9 @@ function AddMember({
     queryFn: ({ signal }) =>
       allPages((cursor) =>
         client.http
-          .GET("/api/v1/organizations/{organization_id}/users", {
+          .GET("/api/v1/organizations/{organization}/users", {
             params: {
-              path: { organization_id: organizationId },
+              path: { organization: organizationId },
               query: { cursor, limit: 100 },
             },
             signal,
@@ -305,8 +320,8 @@ function AddMember({
   });
   const add = useMutation({
     mutationFn: () =>
-      client.http.POST("/api/v1/workspaces/{workspace_id}/role-bindings", {
-        params: { path: { workspace_id: scope.id } },
+      client.http.POST("/api/v1/workspaces/{workspace}/role-bindings", {
+        params: { path: { workspace: scope.id } },
         body: { principal_id: userId, role },
       }),
     onSuccess: () => {
@@ -315,19 +330,21 @@ function AddMember({
     },
   });
   return (
-    <Dialog
+    <ModalFrame
+      onOpenChange={setOpen}
+      trigger={
+        <Button variant="outline" type="button">
+          {<PlusIcon size={14} />}
+          {t("Add member")}
+        </Button>
+      }
+      size={"md"}
       title={t("Add existing member")}
       description={t(
         "Choose someone who already belongs to your organization.",
       )}
       closeLabel={t("Close")}
       open={open}
-      onOpenChange={setOpen}
-      trigger={
-        <Button size="sm" icon={<Plus size={14} />}>
-          {t("Add member")}
-        </Button>
-      }
     >
       <form
         className={styles.form}
@@ -336,40 +353,47 @@ function AddMember({
           if (userId) add.mutate();
         }}
       >
-        <Picker
-          label={t("Member")}
-          placeholder={t("Find a member…")}
-          emptyMessage={t("No members found")}
-          value={userId}
-          onValueChange={setUserId}
-          groups={[
-            {
-              label: t("Organization members"),
-              options:
-                users.data?.map((user) => ({
-                  value: user.id,
-                  label: user.name,
-                  description: user.email,
-                })) ?? [],
-            },
-          ]}
-        />
-        <SelectField
-          label={t("Role")}
+        <FormField label={t("Member")}>
+          <SearchPicker
+            label={t("Member")}
+            placeholder={t("Choose a member…")}
+            emptyMessage={t("No members found")}
+            value={userId}
+            groups={[
+              {
+                label: t("Organization members"),
+                options:
+                  users.data?.map((user) => ({
+                    value: user.id,
+                    label: user.name,
+                    description: user.email,
+                  })) ?? [],
+              },
+            ]}
+            onValueChange={setUserId}
+          />
+        </FormField>
+        <ChoiceField
           placeholder={t("Select role")}
           value={role}
+          className="min-w-0"
           onValueChange={(value) => {
             const role = roles.find((role) => role === value);
             if (role) setRole(role);
           }}
+          label={t("Role")}
           options={roleOptions(scope.kind).map((value) => ({
             value,
             label: t(`role.${value}`, { defaultValue: value }),
           }))}
         />
         <ErrorNotice error={users.error ?? add.error} />
-        <FormActions pending={add.isPending} label={t("Add member")} />
+        <FormActions
+          onCancel={() => setOpen(false)}
+          pending={add.isPending}
+          label={t("Add member")}
+        />
       </form>
-    </Dialog>
+    </ModalFrame>
   );
 }

@@ -16,14 +16,13 @@ from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, ValidationError
 
 from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.iam import AuthenticatedActor, authenticate_request
+from a13n_service.iam.http.resource_dependencies import WorkspaceId
 from a13n_service.ids import new_object_id
 from a13n_service.interactions.acceptance import RunAcceptanceReceipt
-from a13n_service.interactions.commands import (
-    InteractionCommands,
-    InterruptReceipt,
-)
+from a13n_service.interactions.commands import InteractionCommands
 from a13n_service.interactions.control_domain import (
     ConsumeQueuedSubmissionRequest,
+    InterruptReceipt,
     InterruptRequest,
     QueuedSubmission,
     QueuedSubmissionCollection,
@@ -63,16 +62,21 @@ from .queries import (
     RunCollection,
     RunLineage,
     RunResource,
-    SessionCollection,
     ThreadCollection,
     ThreadResource,
 )
 from .requests import ContinueRunRequest, ForkRunRequest, RetryRunRequest, StartRunRequest
+from .session_queries import SessionCollection, SessionFilters
 
 NOTIFICATION_SUBPROTOCOL = "a13n.service.notifications.v1"
 
 router = APIRouter(tags=["protocol-gateway"])
 Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]
+
+
+class SessionListQuery(SessionFilters):
+    limit: int = Field(default=50, ge=1, le=200)
+    cursor: str | None = Field(default=None, max_length=2048)
 
 
 class SubscribeFrame(BaseModel):
@@ -202,18 +206,18 @@ async def cancel_hosted_agui_run(
 
 
 @router.post(
-    "/api/v1/workspaces/{workspace_id}/runs",
+    "/api/v1/workspaces/{workspace}/runs",
     response_model=RunAcceptanceReceipt,
     status_code=202,
 )
 async def start_run(
     request: Request,
     actor: Actor,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     body: StartRunRequest,
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", max_length=512)],
 ) -> RunAcceptanceReceipt:
-    return await _commands(request).start(
+    return await _commands(request).runs.start(
         actor=actor,
         workspace_id=workspace_id,
         idempotency_key=idempotency_key,
@@ -233,7 +237,7 @@ async def continue_from_run(
     body: ContinueRunRequest,
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", max_length=512)],
 ) -> RunAcceptanceReceipt:
-    return await _commands(request).continue_from(
+    return await _commands(request).runs.continue_from(
         actor=actor,
         source_run_id=source_run_id,
         idempotency_key=idempotency_key,
@@ -253,7 +257,7 @@ async def fork_run(
     body: ForkRunRequest,
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", max_length=512)],
 ) -> RunAcceptanceReceipt:
-    return await _commands(request).fork(
+    return await _commands(request).runs.fork(
         actor=actor,
         run_id=run_id,
         idempotency_key=idempotency_key,
@@ -273,7 +277,7 @@ async def retry_run(
     body: RetryRunRequest,
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", max_length=512)],
 ) -> RunAcceptanceReceipt:
-    return await _commands(request).retry(
+    return await _commands(request).continuations.retry(
         actor=actor,
         run_id=run_id,
         idempotency_key=idempotency_key,
@@ -293,7 +297,7 @@ async def feedback_run(
     body: WaitingRunFeedbackRequest,
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", max_length=512)],
 ) -> RunAcceptanceReceipt:
-    return await _commands(request).feedback(
+    return await _commands(request).continuations.feedback(
         actor=actor,
         run_id=run_id,
         idempotency_key=idempotency_key,
@@ -444,7 +448,7 @@ async def interrupt_run(
     body: InterruptRequest,
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", max_length=512)],
 ) -> InterruptReceipt:
-    return await _commands(request).interrupt(
+    return await _commands(request).active.interrupt(
         actor=actor,
         run_id=run_id,
         idempotency_key=idempotency_key,
@@ -464,7 +468,7 @@ async def steer_run(
     body: AgentInput,
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key", max_length=512)],
 ) -> SteerReceipt:
-    return await _commands(request).steer(
+    return await _commands(request).active.steer(
         actor=actor,
         run_id=run_id,
         idempotency_key=idempotency_key,
@@ -479,22 +483,22 @@ async def get_run_steer(
     run_id: str,
     steer_id: str,
 ) -> SteerStatus:
-    return await _commands(request).get_steer(actor=actor, run_id=run_id, steer_id=steer_id)
+    return await _commands(request).active.get_steer(actor=actor, run_id=run_id, steer_id=steer_id)
 
 
-@router.get("/api/v1/workspaces/{workspace_id}/sessions", response_model=SessionCollection)
+@router.get("/api/v1/workspaces/{workspace}/sessions", response_model=SessionCollection)
 async def list_sessions(
     request: Request,
     actor: Actor,
-    workspace_id: str,
-    limit: Annotated[int, Query(ge=1, le=200)] = 50,
-    cursor: Annotated[str | None, Query(max_length=2048)] = None,
+    workspace_id: WorkspaceId,
+    query: Annotated[SessionListQuery, Query()],
 ) -> SessionCollection:
     return await _queries(request).list_sessions(
         actor=actor,
         workspace_id=workspace_id,
-        limit=limit,
-        cursor=cursor,
+        limit=query.limit,
+        cursor=query.cursor,
+        filters=SessionFilters.model_validate(query.model_dump(exclude={"limit", "cursor"})),
     )
 
 
@@ -519,11 +523,11 @@ async def get_run(request: Request, actor: Actor, run_id: str) -> RunResource:
     return await _queries(request).get_run(actor=actor, run_id=run_id)
 
 
-@router.get("/api/v1/workspaces/{workspace_id}/runs", response_model=RunCollection)
+@router.get("/api/v1/workspaces/{workspace}/runs", response_model=RunCollection)
 async def list_workspace_runs(
     request: Request,
     actor: Actor,
-    workspace_id: str,
+    workspace_id: WorkspaceId,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     cursor: Annotated[str | None, Query(max_length=2048)] = None,
 ) -> RunCollection:
@@ -590,7 +594,11 @@ async def get_run_lineage(request: Request, actor: Actor, run_id: str) -> RunLin
     return await _queries(request).lineage(actor=actor, run_id=run_id)
 
 
-@router.get("/api/v1/runs/{run_id}/stream", response_class=StreamingResponse)
+@router.get(
+    "/api/v1/runs/{run_id}/stream",
+    response_class=StreamingResponse,
+    responses={200: {"content": {"text/event-stream": {"schema": {"type": "string"}}}}},
+)
 async def stream_run(
     request: Request,
     actor: Actor,
@@ -687,7 +695,7 @@ class _NotificationConnection:
     async def _receive(self) -> None:
         while True:
             raw = await self._websocket.receive_text()
-            if len(raw.encode()) > self._settings.gateway_notification_max_frame_bytes:
+            if len(raw.encode()) > self._settings.gateway.notification_max_frame_bytes:
                 await self._safe_close(1009, "frame_too_large")
                 return
             try:
@@ -714,10 +722,10 @@ class _NotificationConnection:
                 for key, item in self._subscriptions.items()
                 if key not in {candidate.subscription_id for candidate in frame.subscriptions}
             ) + sum(len(item.topics) for item in frame.subscriptions)
-        if resulting_count > self._settings.gateway_notification_max_subscriptions:
+        if resulting_count > self._settings.gateway.notification_max_subscriptions:
             await self._send_error(frame.request_id, "subscription_limit_exceeded", "Too many subscriptions.")
             return
-        if resulting_topics > self._settings.gateway_notification_max_topics:
+        if resulting_topics > self._settings.gateway.notification_max_topics:
             await self._send_error(frame.request_id, "topic_limit_exceeded", "Too many subscription topics.")
             return
         try:
@@ -753,12 +761,12 @@ class _NotificationConnection:
                 await self._safe_close(1001, "service_draining")
                 return
             now = monotonic()
-            if now - self._started >= self._settings.gateway_notification_maximum_lifetime_seconds:
+            if now - self._started >= self._settings.gateway.notification_maximum_lifetime_seconds:
                 await self._safe_close(1001, "connection_lifetime_reached")
                 return
             async with self._state_lock:
                 subscriptions = tuple(self._subscriptions.values())
-            if now - self._last_authorized >= self._settings.gateway_stream_authorization_interval_seconds:
+            if now - self._last_authorized >= self._settings.gateway.stream_authorization_interval_seconds:
                 subscriptions = tuple(
                     [await self._service.reauthorize(actor=self._actor, subscription=item) for item in subscriptions]
                 )
@@ -770,7 +778,7 @@ class _NotificationConnection:
             for subscription in subscriptions:
                 facts = await self._service.read(
                     subscription,
-                    limit=self._settings.gateway_notification_poll_limit,
+                    limit=self._settings.gateway.notification_poll_limit,
                 )
                 for fact in facts:
                     for topic in _fact_topics(fact, subscription.definition.topics):
@@ -783,10 +791,10 @@ class _NotificationConnection:
                                 current,
                                 after_seq=facts[-1].seq,
                             )
-            await anyio.sleep(self._settings.gateway_notification_poll_interval_seconds)
+            await anyio.sleep(self._settings.gateway.notification_poll_interval_seconds)
 
     async def _heartbeat(self) -> None:
-        interval = self._settings.gateway_notification_heartbeat_interval_seconds
+        interval = self._settings.gateway.notification_heartbeat_interval_seconds
         while True:
             await anyio.sleep(interval)
             if not self._heartbeat_acknowledged:
@@ -833,7 +841,7 @@ class _NotificationConnection:
 
     async def _send_json(self, value: dict[str, object]) -> None:
         async with self._send_lock:
-            with anyio.fail_after(self._settings.gateway_notification_send_timeout_seconds):
+            with anyio.fail_after(self._settings.gateway.notification_send_timeout_seconds):
                 await self._websocket.send_json(value)
 
     async def _safe_close(self, code: int, reason: str) -> None:

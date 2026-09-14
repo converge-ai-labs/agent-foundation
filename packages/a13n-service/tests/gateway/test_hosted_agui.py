@@ -200,13 +200,13 @@ async def test_protocol_state_context_and_client_tools_are_validated_and_frozen(
     async with AsyncExitStack() as stack:
         service, _stream, _objects = await _service(lifecycle_interaction_sessions, tmp_path, stack)
         captured = []
-        original = service._commands.start
+        original = service._commands.runs.start
 
         async def capture_start(**kwargs):
             captured.append(kwargs["request"])
             return await original(**kwargs)
 
-        service._commands.start = capture_start  # type: ignore[method-assign]
+        service._commands.runs.start = capture_start  # type: ignore[method-assign]
         attachment = await service.accept(actor=_actor(), agent_id=AGENT_ID, request=request, last_event_id=None)
 
     assert attachment.binding.agent_revision_id == "agtr_1234567890abcdef"
@@ -796,6 +796,38 @@ async def test_sealed_hosted_replay_survives_native_stream_loss_and_bounds_curso
     assert resumed_frames == frames[2:]
     assert captured.value.code == "agui_cursor_invalid"
     assert application_error_status(captured.value) == 409
+
+
+@pytest.mark.parametrize("publication_busy", [False, True])
+async def test_sealed_reconnect_uses_intact_native_prefix_before_snapshot_publication(
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession], tmp_path, monkeypatch, publication_busy
+) -> None:
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    async with AsyncExitStack() as stack:
+        service, stream, objects = await _service(lifecycle_interaction_sessions, tmp_path, stack)
+        attachment = await service.accept(actor=_actor(), agent_id=AGENT_ID, request=_request(), last_event_id=None)
+        await activate_stream(
+            stream, attachment.binding.organization_id, attachment.binding.run_id, "thread_1234567890abcdef"
+        )
+        events = service.events(attachment)
+        started = await anext(events)
+        await events.aclose()
+        cursor = started.split(b"\n", maxsplit=1)[0].removeprefix(b"id: ").decode()
+        await _complete_run(lifecycle_interaction_sessions, objects, run_id=attachment.binding.run_id)
+        # Spec 21/22: no history was lost. Durable sealing and stream snapshot
+        # publication are separate boundaries, so this is not a replay gap.
+        resumed = await service.accept(actor=_actor(), agent_id=AGENT_ID, request=_request(), last_event_id=cursor)
+        await stream.close(attachment.binding.organization_id, attachment.binding.run_id, closed_at=NOW)
+        if publication_busy:
+            from a13n_service.storage import ObjectStoreUnavailable
+
+            async def busy(*args, **kwargs):
+                raise ObjectStoreUnavailable("Another publisher holds the lease")
+
+            monkeypatch.setattr(objects, "put", busy)
+        frames = [frame async for frame in service.events(resumed)]
+    assert len(frames) == 1
+    assert b'"type":"RUN_FINISHED"' in frames[0]
 
 
 async def test_hosted_cancel_resolves_binding_and_interrupts_service_run(

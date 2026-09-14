@@ -76,6 +76,8 @@ class HarnessAguiRunStreamWriter:
         for index, observation in enumerate(self._observer.observe(event)):
             event_type = _event_type(observation)
             payload = _payload(observation)
+            if isinstance(native_call_id := payload.get("toolCallId"), str):
+                payload["source_tool_call_id"] = native_call_id
             child_scope = self._harness_run_id if self._source_thread_id != self._thread_id else None
             for field, kind in (("messageId", "message"), ("parentMessageId", "message"), ("toolCallId", "tool_call")):
                 if isinstance(value := payload.get(field), str):

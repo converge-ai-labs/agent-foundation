@@ -8,41 +8,38 @@ export function connectorApi(client: Client, scope: ConnectorScope) {
     providers: (signal: AbortSignal, cursor?: string) =>
       scope.kind === "organization"
         ? client.http
-            .GET(
-              "/api/v1/organizations/{organization_id}/connector-providers",
-              {
-                params: {
-                  path: { organization_id },
-                  query: { cursor, limit: 100 },
-                },
-                signal,
+            .GET("/api/v1/organizations/{organization}/connector-providers", {
+              params: {
+                path: { organization: organization_id },
+                query: { cursor, limit: 100 },
               },
-            )
+              signal,
+            })
             .then(data)
         : client.http
-            .GET("/api/v1/workspaces/{workspace_id}/connector-providers", {
-              params: { path: { workspace_id }, query: { cursor, limit: 100 } },
+            .GET("/api/v1/workspaces/{workspace}/connector-providers", {
+              params: {
+                path: { workspace: workspace_id },
+                query: { cursor, limit: 100 },
+              },
               signal,
             })
             .then(data),
     create: (body: Schema["CreateConnectorProviderRequest"], key: string) =>
       scope.kind === "organization"
         ? client.http
-            .POST(
-              "/api/v1/organizations/{organization_id}/connector-providers",
-              {
-                params: {
-                  path: { organization_id },
-                  header: { "Idempotency-Key": key },
-                },
-                body,
+            .POST("/api/v1/organizations/{organization}/connector-providers", {
+              params: {
+                path: { organization: organization_id },
+                header: { "Idempotency-Key": key },
               },
-            )
+              body,
+            })
             .then(data)
         : client.http
-            .POST("/api/v1/workspaces/{workspace_id}/connector-providers", {
+            .POST("/api/v1/workspaces/{workspace}/connector-providers", {
               params: {
-                path: { workspace_id },
+                path: { workspace: workspace_id },
                 header: { "Idempotency-Key": key },
               },
               body,

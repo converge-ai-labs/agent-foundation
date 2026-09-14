@@ -9,9 +9,12 @@ from typing import Annotated, Literal, Self
 from a13n_stream_protocol import ContentMetadata
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 
+from a13n_harness_ui.configuration.models import ProjectDefaults
 from a13n_harness_ui.conversation import ConversationExcerpt
-from a13n_harness_ui.live import LiveEvent
-from a13n_harness_ui.storage import AgentResourceSource, MarkdownSubagentSource
+from a13n_harness_ui.live import LiveEvent, RootStreamSummary
+from a13n_harness_ui.output_comment_models import SavedOutputTarget
+from a13n_harness_ui.storage import AgentResourceSource, MarkdownSubagentSource, ThreadConfiguration
+from a13n_harness_ui.storage import ThreadConfigurationPatch as StoredThreadConfigurationPatch
 
 _MAX_FAILURE_MESSAGE = 32 * 1024
 _MAX_DEFERRED_RESPONSE_BYTES = 1024 * 1024
@@ -65,6 +68,23 @@ class ThreadConfigurationView(SurfaceModel):
     harness_plugin_ids: tuple[str, ...] = ()
     environment_run_extension_ids: tuple[str, ...] = ()
     mcp_server_ids: tuple[str, ...] = ()
+
+
+ConfigurationOrigin = Literal["explicit", "project", "agent", "global", "builtin", "thread"]
+
+
+class ConfigurationProvenance(SurfaceModel):
+    project_id: ConfigurationOrigin
+    agent_source: ConfigurationOrigin
+    environment_profile_id: ConfigurationOrigin
+    harness_plugin_ids: ConfigurationOrigin
+    environment_run_extension_ids: ConfigurationOrigin
+    mcp_server_ids: ConfigurationOrigin
+
+
+class ThreadConfigurationResolution(SurfaceModel):
+    configuration: ThreadConfiguration
+    provenance: ConfigurationProvenance
 
 
 class RootActivityState(StrEnum):
@@ -157,6 +177,8 @@ class ThreadDetail(SurfaceModel):
 
 
 class TranscriptPart(SurfaceModel):
+    comment_target: SavedOutputTarget | None = None
+    text_truncated: bool = False
     metadata: ContentMetadata = Field(default_factory=ContentMetadata)
 
     kind: Literal[
@@ -216,6 +238,7 @@ class ProjectSummary(SurfaceModel):
     position: int
     roots: tuple[str, ...] = Field(min_length=1, max_length=64)
     last_active_at: datetime | None = None
+    defaults: ProjectDefaults = Field(default_factory=ProjectDefaults)
 
     @field_validator("last_active_at")
     @classmethod
@@ -462,6 +485,7 @@ class ThreadFocusSnapshot(SurfaceModel):
     children: ChildExecutionPage
     tasks: TaskPage = Field(default_factory=TaskPage)
     recent_events: tuple[LiveEvent, ...] = ()
+    root_stream: RootStreamSummary | None = None
 
 
 class LaunchProjectSelected(SurfaceModel):
@@ -574,6 +598,7 @@ class ThreadSelectorCatalog(SurfaceModel):
 
 
 class ThreadConfigurationPatch(SurfaceModel):
+    project_id: str | None = Field(default=None, min_length=1, max_length=128)
     agent_id: str | None = Field(default=None, min_length=1, max_length=128)
     environment_profile_id: str | None = Field(default=None, min_length=1, max_length=128)
     harness_plugin_ids: tuple[str, ...] | None = None
@@ -584,15 +609,37 @@ class ThreadConfigurationPatch(SurfaceModel):
     def _non_empty_and_non_null(self) -> Self:
         if not self.model_fields_set:
             raise ValueError("Thread configuration patch must not be empty")
-        for name in self.model_fields_set:
-            if getattr(self, name) is None:
+        values = self.model_dump(exclude_unset=True)
+        for name, value in values.items():
+            if name != "project_id" and value is None:
                 raise ValueError(f"{name} cannot be null when supplied")
+            if isinstance(value, tuple) and len(value) != len(set(value)):
+                raise ValueError(f"{name} must be unique and ordered")
         return self
 
 
 class ThreadConfigurationMutationInput(SurfaceModel):
     expected_version: int = Field(ge=1)
     patch: ThreadConfigurationPatch
+
+
+class ProjectDefaultsPatch(StoredThreadConfigurationPatch):
+    """Stored-axis preview patch, distinct from the root selection command schema."""
+
+
+class ProjectDefaultsPreview(SurfaceModel):
+    thread_id: str
+    project_id: str
+    defaults_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_version: int = Field(ge=1)
+    patch: ProjectDefaultsPatch
+    current: ThreadConfiguration
+    replacement: ThreadConfiguration
+
+
+class ProjectDefaultsApply(SurfaceModel):
+    expected_version: int = Field(ge=1)
+    defaults_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class ProjectPathCompletion(SurfaceModel):

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import base64
 import os
-from collections.abc import Sequence
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -12,19 +11,22 @@ import anyio
 import httpx2
 import pytest
 from a13n_service.app import Components, create_app
-from a13n_service.iam import AuthenticatedActor, PrincipalRef, PrincipalType
+from a13n_service.iam import AuthenticatedActor
+from a13n_service.interactions.models import RunAttemptRecord
 from a13n_service.observability import RunAttemptCorrelation, TraceContent, build_observability_runtime
 from a13n_service.settings import ProcessRole, Settings
+from a13n_service.storage import transaction
 from a13n_service.trace_query import (
-    AuthorizedRunAttempt,
     LangfuseTraceQueryProvider,
     ProviderTraceQuery,
+    ProviderTraceRead,
     SearchIn,
     TraceCorrelation,
-    TraceQueryScope,
     TraceView,
 )
 from fastapi import Request
+from tests.hooks.support import hook_actor
+from tests.interactions.conftest import AGENT_REVISION_ID
 
 _BASE_URL = os.getenv("A13N_TEST_LANGFUSE_BASE_URL")
 _PUBLIC_KEY = os.getenv("A13N_TEST_LANGFUSE_PUBLIC_KEY")
@@ -40,15 +42,18 @@ pytestmark = pytest.mark.skipif(
 async def test_otlp_trace_round_trips_through_langfuse_v4(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    service_sqlite_database: Path,
+    interaction_sessions,
+    trace_correlation: TraceCorrelation,
 ) -> None:
     assert _BASE_URL is not None
     assert _PUBLIC_KEY is not None
     assert _SECRET_KEY is not None
 
     suffix = uuid4().hex[:12]
-    organization_id = f"org-it-{suffix}"
-    workspace_id = f"workspace-it-{suffix}"
-    run_attempt_id = f"attempt-it-{suffix}"
+    organization_id = trace_correlation.organization_id
+    workspace_id = trace_correlation.workspace_id
+    run_attempt_id = trace_correlation.run_attempt_id
     search_token = f"trace-integration-{suffix}"
     authorization = base64.b64encode(f"{_PUBLIC_KEY}:{_SECRET_KEY}".encode()).decode()
     monkeypatch.setenv("OTEL_TRACES_EXPORTER", "otlp")
@@ -69,15 +74,9 @@ async def test_otlp_trace_round_trips_through_langfuse_v4(
         shutdown_timeout_seconds=10,
     )
     correlation = RunAttemptCorrelation(
-        organization_id=organization_id,
-        workspace_id=workspace_id,
-        session_id=f"session-it-{suffix}",
-        thread_id=f"thread-it-{suffix}",
-        run_id=f"run-it-{suffix}",
-        run_attempt_id=run_attempt_id,
+        **trace_correlation.model_dump(),
         run_attempt_number=1,
-        agent_id=f"preset-it-{suffix}",
-        agent_revision_id=f"preset-revision-it-{suffix}",
+        agent_revision_id=AGENT_REVISION_ID,
     )
     with runtime.run_attempt(correlation, input_value={"prompt": search_token}) as attempt:
         with attempt.phase("a13n.service.reconstruct"):
@@ -92,11 +91,12 @@ async def test_otlp_trace_round_trips_through_langfuse_v4(
         from_started_at=now - timedelta(minutes=5),
         to_started_at=now + timedelta(minutes=5),
         limit=100,
+        view=TraceView.full,
         query=search_token,
         search_in=SearchIn.input,
         run_attempt_id=run_attempt_id,
     )
-    async with httpx2.AsyncClient(follow_redirects=False, timeout=5) as client:
+    async with httpx2.AsyncClient(follow_redirects=False, timeout=5, trust_env=False) as client:
         provider = LangfuseTraceQueryProvider(
             client,
             base_url=_BASE_URL,
@@ -113,82 +113,70 @@ async def test_otlp_trace_round_trips_through_langfuse_v4(
         assert len(page.items) == 1
         summary = page.items[0]
         assert summary.correlation.run_attempt_id == run_attempt_id
-        assert summary.input == {"prompt": search_token}
-        assert summary.output == {"answer": "integration-ok"}
+        assert summary.root.input.value == {"prompt": search_token}
+        assert summary.root.output.value == {"answer": "integration-ok"}
 
         output_page = await provider.list_traces(replace(query, query="integration-ok", search_in=SearchIn.output))
         assert [item.id for item in output_page.items] == [summary.id]
 
-        detail = await provider.get_trace(summary.id, TraceView.full)
+        read = ProviderTraceRead(
+            organization_id=organization_id,
+            workspace_id=workspace_id,
+            trace_id=summary.id,
+            history_from=None,
+            to_started_at=now + timedelta(minutes=5),
+            view=TraceView.full,
+        )
+        detail = await provider.get_trace(read)
+        observation_page = await provider.list_observations(read)
 
     assert detail is not None
-    assert detail.trace.correlation.workspace_id == workspace_id
-    observations = {item.name: item for item in detail.observations}
+    assert detail.correlation.workspace_id == workspace_id
+    observations = {item.name: item for item in observation_page.items}
     assert observations.keys() == {"a13n.service.run_attempt", "a13n.service.reconstruct"}
     assert observations["a13n.service.run_attempt"].parent_id is None
     assert observations["a13n.service.reconstruct"].parent_id == observations["a13n.service.run_attempt"].id
 
-    actor = AuthenticatedActor(
-        principal=PrincipalRef(principal_type=PrincipalType.user, principal_id=f"user_{uuid4().hex[:16]}"),
-        auth_method="integration-test",
-        credential_id=f"credential-it-{suffix}",
-        boundary_workspace_id=workspace_id,
-    )
-
     async def authenticate(_request: Request) -> AuthenticatedActor:
-        return actor
+        return replace(
+            hook_actor(), auth_method="session", boundary_workspace_id=None, boundary_organization_id=organization_id
+        )
 
-    class Authorizer:
-        async def resolve_scope(
-            self,
-            *,
-            actor: AuthenticatedActor,
-            workspace_id: str,
-        ) -> TraceQueryScope:
-            assert actor is not None
-            assert workspace_id == correlation.workspace_id
-            return TraceQueryScope(organization_id, workspace_id)
-
-        async def authorize_run_attempts(
-            self,
-            *,
-            actor: AuthenticatedActor,
-            scope: TraceQueryScope,
-            correlations: Sequence[TraceCorrelation],
-        ) -> dict[str, AuthorizedRunAttempt]:
-            assert actor is not None
-            assert scope == TraceQueryScope(organization_id, workspace_id)
-            return {
-                item.run_attempt_id: AuthorizedRunAttempt(item.run_attempt_id, 1, "succeeded")
-                for item in correlations
-                if item.run_attempt_id == run_attempt_id
-            }
+    async with transaction(interaction_sessions) as database:
+        record = await database.get(RunAttemptRecord, run_attempt_id)
+        assert record is not None
+        record.status = "succeeded"
+        record.finished_at = now
 
     settings = Settings(
-        _env_file=None,
-        role=ProcessRole.control,
-        database_backend="sqlite",
-        database_sqlite_path=tmp_path / "database.sqlite3",
-        redis_backend="memory",
-        object_backend="local",
-        object_local_root=tmp_path / "objects",
-        filesystem_root=tmp_path / "files",
-        secret_master_key_base64=base64.b64encode(b"0123456789abcdef0123456789abcdef").decode(),
-        secret_encryption_key_id="trace-integration-test",
-        observability_tracing=False,
-        observability_query_provider="langfuse",
-        observability_query_langfuse_base_url=_BASE_URL,
-        observability_query_langfuse_public_key=_PUBLIC_KEY,
-        observability_query_langfuse_secret_key=_SECRET_KEY,
+        service={"role": ProcessRole.control},
+        database={"backend": "sqlite", "sqlite_path": service_sqlite_database},
+        redis={"backend": "memory"},
+        objects={"backend": "local", "local_root": tmp_path / "objects"},
+        filesystem={"root": tmp_path / "files"},
+        secrets={
+            "master_key_base64": base64.b64encode(b"0123456789abcdef0123456789abcdef").decode(),
+            "encryption_key_id": "trace-integration-test",
+        },
+        observability={
+            "tracing": False,
+            "query": {
+                "provider": "langfuse",
+                "langfuse_base_url": _BASE_URL,
+                "langfuse_public_key": _PUBLIC_KEY,
+                "langfuse_secret_key": _SECRET_KEY,
+            },
+        },
     )
     app = create_app(
         settings,
         components=Components(
             request_authenticator=authenticate,
-            trace_access_authorizer=Authorizer(),
         ),
     )
     async with app.router.lifespan_context(app):
+        # Only authentication is supplied by the Host. Default composition must
+        # authorize the real persisted Run through current Service IAM grants.
         transport = httpx2.ASGITransport(app=app)
         async with httpx2.AsyncClient(transport=transport, base_url="http://testserver") as client:
             response = await client.get(
@@ -197,10 +185,33 @@ async def test_otlp_trace_round_trips_through_langfuse_v4(
             )
             assert response.status_code == 200
             public_summary = response.json()["items"][0]
-            assert public_summary["run_attempt_number"] == 1
-            assert public_summary["run_attempt_outcome"] == "succeeded"
+            assert public_summary["correlation"]["run_attempt_id"] == run_attempt_id
+            assert "run_attempt_outcome" not in public_summary
 
+            descriptor_response = await client.get(f"/api/v1/workspaces/{workspace_id}/trace-query")
+            assert descriptor_response.status_code == 200
+            assert descriptor_response.json()["search_in"] == ["input", "output"]
+            assert descriptor_response.json()["enabled"] is True
             detail_response = await client.get(f"/api/v1/workspaces/{workspace_id}/traces/{public_summary['id']}")
+            observations_response = await client.get(
+                f"/api/v1/workspaces/{workspace_id}/traces/{public_summary['id']}/observations",
+                params={"view": "full", "limit": 1},
+            )
+            assert observations_response.status_code == 200
+            observations_page = observations_response.json()
+            assert len(observations_page["items"]) == 1
+            assert observations_page["items"][0]["status"] is None
+            assert observations_page["next_cursor"] is not None
+            second_response = await client.get(
+                f"/api/v1/workspaces/{workspace_id}/traces/{public_summary['id']}/observations",
+                params={"view": "full", "limit": 1, "cursor": observations_page["next_cursor"]},
+            )
+            assert second_response.status_code == 200
+            second_page = second_response.json()
+            assert second_page["next_cursor"] is None
+            public_ids = {item["id"] for item in observations_page["items"] + second_page["items"]}
+            assert public_ids == {item.id for item in observation_page.items}
+            assert detail_response.json()["root"]["id"] in public_ids
 
     assert detail_response.status_code == 200
-    assert detail_response.json()["trace"]["run_attempt_id"] == run_attempt_id
+    assert detail_response.json()["correlation"]["run_attempt_id"] == run_attempt_id

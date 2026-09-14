@@ -11,37 +11,37 @@ export function environmentApi(client: Client, scope: EnvironmentScope) {
     providers: (signal: AbortSignal, cursor?: string) =>
       scope.kind === "organization"
         ? client.http
-            .GET(
-              "/api/v1/organizations/{organization_id}/environment-providers",
-              {
-                params: {
-                  path: { organization_id },
-                  query: { cursor, limit: 100 },
-                },
-                signal,
+            .GET("/api/v1/organizations/{organization}/environment-providers", {
+              params: {
+                path: { organization: organization_id },
+                query: { cursor, limit: 100 },
               },
-            )
+              signal,
+            })
             .then(data)
         : client.http
-            .GET("/api/v1/workspaces/{workspace_id}/environment-providers", {
-              params: { path: { workspace_id }, query: { cursor, limit: 100 } },
+            .GET("/api/v1/workspaces/{workspace}/environment-providers", {
+              params: {
+                path: { workspace: workspace_id },
+                query: { cursor, limit: 100 },
+              },
               signal,
             })
             .then(data),
     templates: (signal: AbortSignal, cursor?: string) =>
       scope.kind === "organization"
         ? client.http
-            .GET(
-              "/api/v1/organizations/{organization_id}/environment-templates",
-              {
-                params: { path: { organization_id }, query: { cursor } },
-                signal,
+            .GET("/api/v1/organizations/{organization}/environment-templates", {
+              params: {
+                path: { organization: organization_id },
+                query: { cursor },
               },
-            )
+              signal,
+            })
             .then(data)
         : client.http
-            .GET("/api/v1/workspaces/{workspace_id}/environment-templates", {
-              params: { path: { workspace_id }, query: { cursor } },
+            .GET("/api/v1/workspaces/{workspace}/environment-templates", {
+              params: { path: { workspace: workspace_id }, query: { cursor } },
               signal,
             })
             .then(data),
@@ -49,13 +49,13 @@ export function environmentApi(client: Client, scope: EnvironmentScope) {
       scope.kind === "organization"
         ? client.http
             .POST(
-              "/api/v1/organizations/{organization_id}/environment-providers",
-              { params: { path: { organization_id } }, body },
+              "/api/v1/organizations/{organization}/environment-providers",
+              { params: { path: { organization: organization_id } }, body },
             )
             .then(data)
         : client.http
-            .POST("/api/v1/workspaces/{workspace_id}/environment-providers", {
-              params: { path: { workspace_id } },
+            .POST("/api/v1/workspaces/{workspace}/environment-providers", {
+              params: { path: { workspace: workspace_id } },
               body,
             })
             .then(data),
@@ -63,10 +63,10 @@ export function environmentApi(client: Client, scope: EnvironmentScope) {
       scope.kind === "organization"
         ? client.http
             .POST(
-              "/api/v1/organizations/{organization_id}/environment-templates",
+              "/api/v1/organizations/{organization}/environment-templates",
               {
                 params: {
-                  path: { organization_id },
+                  path: { organization: organization_id },
                   header: { "Idempotency-Key": key },
                 },
                 body,
@@ -74,9 +74,9 @@ export function environmentApi(client: Client, scope: EnvironmentScope) {
             )
             .then(data)
         : client.http
-            .POST("/api/v1/workspaces/{workspace_id}/environment-templates", {
+            .POST("/api/v1/workspaces/{workspace}/environment-templates", {
               params: {
-                path: { workspace_id },
+                path: { workspace: workspace_id },
                 header: { "Idempotency-Key": key },
               },
               body,

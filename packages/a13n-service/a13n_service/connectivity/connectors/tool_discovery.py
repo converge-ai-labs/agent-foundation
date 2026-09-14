@@ -15,8 +15,8 @@ def mcp_tool(tool: ConnectorTool) -> Tool:
     return Tool(
         name=tool.key,
         description=tool.description,
-        inputSchema=tool.input_schema,
-        outputSchema=tool.output_schema,
+        input_schema=tool.input_schema,
+        output_schema=tool.output_schema,
         annotations=ToolAnnotations.model_validate(tool.annotations),
     )
 

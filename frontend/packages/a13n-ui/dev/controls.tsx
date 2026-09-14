@@ -1,154 +1,227 @@
 import { useState } from "react";
-import { Globe, Plus } from "lucide-react";
+import { PlusIcon, XIcon } from "@phosphor-icons/react";
 import {
   Badge,
   Button,
+  Calendar,
   Checkbox,
-  Dialog,
+  ChoiceField,
+  Collapsible,
+  CollapsiblePanel,
+  CollapsibleTrigger,
+  DisclosureSection,
+  FormField,
   Input,
-  Picker,
-  SelectField,
-  Spinner,
+  Label,
+  ModalFrame,
+  ScrollArea,
   Switch,
+  Textarea,
   Tooltip,
+  TooltipPopup,
+  TooltipTrigger,
 } from "../src";
 import type { Translate } from "./showcase";
 export function Controls({ t }: { t: Translate }) {
-  const [selection, setSelection] = useState<string>();
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(false);
-  const options = [
-    {
-      value: "one",
-      label: t("First option", "第一个选项"),
-      icon: <Globe size={16} />,
-    },
-    { value: "two", label: t("Second option", "第二个选项") },
-    { value: "disabled", label: t("Unavailable", "不可用"), disabled: true },
-  ];
+  const [invalid, setInvalid] = useState(false);
+  const [date, setDate] = useState<Date>();
+  const [adding, setAdding] = useState(false);
+  const [channel, setChannel] = useState(false);
+  const [retries, setRetries] = useState("3");
+  const [delay, setDelay] = useState("5");
   return (
     <>
-      <section>
-        <h2>{t("Buttons & feedback", "按钮与反馈")}</h2>
-        <div className="row">
-          {(["primary", "secondary", "ghost", "danger"] as const).map(
-            (variant) => (
-              <Button variant={variant} key={variant}>
-                {variant}
-              </Button>
-            ),
+      <div>
+        <h1 className="text-2xl font-medium">{t("Components", "基础组件")}</h1>
+        <p className="mt-2 text-muted-foreground">
+          {t(
+            "Shared controls, focus behavior, and feedback.",
+            "统一的控件、焦点行为与反馈。",
           )}
+        </p>
+      </div>
+      <section className="flex flex-col gap-4">
+        <h2 className="font-medium">{t("Buttons & feedback", "按钮与反馈")}</h2>
+        <div className="flex flex-wrap gap-2">
+          {(
+            ["default", "outline", "secondary", "ghost", "destructive"] as const
+          ).map((variant) => (
+            <Button key={variant} variant={variant}>
+              {variant}
+            </Button>
+          ))}
           <Button disabled>{t("Disabled", "禁用")}</Button>
-          <Tooltip content={t("Add an item", "添加项目")}>
-            <Button icon={<Plus size={16} />} aria-label={t("Add", "添加")} />
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <Button
+                  size="icon"
+                  variant="outline"
+                  aria-label={t("Add", "添加")}
+                />
+              }
+            >
+              <PlusIcon />
+            </TooltipTrigger>
+            <TooltipPopup>{t("Add an item", "添加项目")}</TooltipPopup>
           </Tooltip>
         </div>
-        <div className="row">
-          <Button
-            variant="primary"
-            icon={<Plus size={16} />}
-            loading={loading}
-            loadingLabel={t("Saving…", "正在保存…")}
-          >
-            {t("Save changes", "保存更改")}
-          </Button>
-          <Switch
-            label={t("Loading state", "加载状态")}
-            checked={loading}
-            onCheckedChange={setLoading}
-          />
-          <Spinner />
-          <span className="secondary">
-            {t(
-              "Spinner is decorative; its owner supplies a label.",
-              "旋转图标仅作装饰，由使用方提供文字。",
-            )}
-          </span>
-        </div>
-        <div className="row">
-          {(["neutral", "success", "warning", "danger"] as const).map(
-            (tone) => (
-              <Badge key={tone} tone={tone}>
-                {tone}
+        <div className="flex flex-wrap items-center gap-3">
+          <Button loading={loading}>{t("Save changes", "保存更改")}</Button>
+          <Label>
+            <Switch checked={loading} onCheckedChange={setLoading} />
+            {t("Loading", "加载中")}
+          </Label>
+          {(["secondary", "default", "outline", "destructive"] as const).map(
+            (variant) => (
+              <Badge key={variant} variant={variant}>
+                {variant}
               </Badge>
             ),
           )}
         </div>
       </section>
-      <section>
-        <h2>{t("Fields & selection", "表单与选择")}</h2>
-        <div className="columns">
-          <div className="stack">
-            <Input
-              label={t("Display name", "显示名称")}
-              placeholder={t("Enter a name", "输入名称")}
-              hint={t("A short, recognizable label.", "简短且易于识别的名称。")}
-              error={
-                error
-                  ? t("Enter a display name.", "请输入显示名称。")
-                  : undefined
-              }
-            />
-            <Switch
-              label={t("Show validation error", "显示校验错误")}
-              checked={error}
-              onCheckedChange={setError}
-            />
-            <Input
-              label={t("Disabled field", "禁用输入框")}
-              disabled
-              value={t("Read only example", "禁用示例")}
-            />
-          </div>
-          <div className="stack">
-            <SelectField
-              label={t("Option", "选项")}
-              placeholder={t("Choose an option", "选择一个选项")}
-              options={options}
-            />
-            <Checkbox label={t("Enable this option", "启用此选项")} />
-            <Checkbox
-              label={t("Mixed selection", "部分选中")}
-              checked="indeterminate"
-            />
-            <Switch label={t("Disabled switch", "禁用开关")} disabled />
-          </div>
-        </div>
+      <section className="grid gap-6 sm:grid-cols-2">
+        <FormField
+          label={t("Name", "名称")}
+          description={t("Use a recognizable name.", "使用容易辨认的名称。")}
+          error={invalid ? t("A name is required.", "请填写名称。") : undefined}
+        >
+          <Input required />
+        </FormField>
+        <ChoiceField
+          label={t("Location", "位置")}
+          placeholder={t("Choose a location", "选择位置")}
+          options={[
+            { value: "one", label: t("Workspace", "工作空间") },
+            { value: "two", label: t("Personal", "个人") },
+            {
+              value: "disabled",
+              label: t("Unavailable", "不可用"),
+              disabled: true,
+            },
+          ]}
+        />
+        <Label>
+          <Checkbox checked={invalid} onCheckedChange={setInvalid} />
+          {t("Show validation error", "显示校验错误")}
+        </Label>
       </section>
-      <section>
-        <h2>{t("Overlays", "浮层")}</h2>
-        <p>
-          {t(
-            "Try Tab, arrow keys and Escape. Closing the dialog returns focus to its trigger.",
-            "试试 Tab、方向键和 Escape，关闭对话框后焦点返回触发按钮。",
-          )}
-        </p>
-        <Dialog
-          trigger={<Button>{t("Open dialog", "打开对话框")}</Button>}
-          title={t("Edit preferences", "编辑偏好")}
+      <section className="flex flex-col gap-4">
+        <h2 className="font-medium">{t("Configuration", "配置")}</h2>
+        <div className="rounded-lg bg-muted/50 p-4">
+          <FormField
+            className="flex flex-row flex-wrap items-center gap-3"
+            label={t("Pinned version", "固定版本")}
+          >
+            <Input type="number" min={1} defaultValue={1} className="w-20" />
+          </FormField>
+        </div>
+        <DisclosureSection
+          title={t("Retry settings", "重试设置")}
+          summary={`${retries} ${t("attempts", "次尝试")}`}
+        >
+          <FormField label={t("Maximum attempts", "最大尝试次数")}>
+            <Input
+              type="number"
+              min={1}
+              value={retries}
+              onChange={(event) => setRetries(event.target.value)}
+              className="max-w-28"
+            />
+          </FormField>
+          <FormField label={t("Retry delay (seconds)", "重试间隔（秒）")}>
+            <Input
+              type="number"
+              min={0}
+              defaultValue={5}
+              className="max-w-28"
+            />
+          </FormField>
+        </DisclosureSection>
+        <Collapsible
+          open={adding}
+          onOpenChange={setAdding}
+          className="rounded-lg data-open:bg-muted/50 data-open:p-3"
+        >
+          <CollapsibleTrigger render={<Button variant="secondary" size="sm" />}>
+            {adding ? <XIcon /> : <PlusIcon />}
+            {adding
+              ? t("Close selection", "关闭选择")
+              : t("Add channel", "添加渠道")}
+          </CollapsibleTrigger>
+          <CollapsiblePanel>
+            <Label className="flex items-center gap-2 px-1 pt-4 pb-1">
+              <Checkbox checked={channel} onCheckedChange={setChannel} />
+              {t("Activity feed", "动态列表")}
+            </Label>
+          </CollapsiblePanel>
+        </Collapsible>
+      </section>
+      <section className="flex flex-col gap-4">
+        <h2 className="font-medium">{t("Dialogs & calendar", "弹窗与日历")}</h2>
+        <ModalFrame
+          trigger={
+            <Button variant="outline">{t("Open dialog", "打开弹窗")}</Button>
+          }
+          title={t("Preferences", "偏好设置")}
           description={t(
-            "A focused surface for a small decision.",
-            "在聚焦的界面里完成一个小决定。",
+            "Changes stay in this preview.",
+            "更改仅保留在当前预览中。",
           )}
           closeLabel={t("Close", "关闭")}
         >
-          <div className="stack">
-            <Input label={t("Name", "名称")} />
-            <SelectField
-              label={t("Option", "选项")}
-              placeholder={t("Choose an option", "选择一个选项")}
-              options={options}
-            />
-            <Picker
-              label={t("Search options", "搜索选项")}
-              placeholder={t("Find an option", "查找选项")}
-              emptyMessage={t("No options found", "没有匹配选项")}
-              value={selection}
-              onValueChange={setSelection}
-              groups={[{ label: t("Options", "选项"), options }]}
-            />
+          <FormField label={t("Name", "名称")}>
+            <Input />
+          </FormField>
+          <div className="mt-4">
+            <ModalFrame
+              trigger={
+                <Button variant="outline">
+                  {t("Open nested dialog", "打开嵌套弹窗")}
+                </Button>
+              }
+              title={t("Details", "详情")}
+              closeLabel={t("Close details", "关闭详情")}
+            >
+              <Input aria-label={t("Note", "备注")} />
+            </ModalFrame>
           </div>
-        </Dialog>
+        </ModalFrame>
+        <div className="w-fit rounded-xl border">
+          <Calendar mode="single" selected={date} onSelect={setDate} />
+        </div>
+      </section>
+      <section className="grid gap-6 sm:grid-cols-2">
+        <FormField label={t("Scrollable input", "可滚动输入框")}>
+          <Textarea
+            rows={6}
+            defaultValue={Array.from(
+              { length: 24 },
+              (_, index) =>
+                `${index + 1}. ${t("Keep long content inside the editor.", "长内容在编辑器内部滚动。")}`,
+            ).join("\n")}
+          />
+        </FormField>
+        <div className="min-w-0">
+          <h2 className="mb-2 text-sm font-medium">
+            {t("Scroll area", "滚动区域")}
+          </h2>
+          <ScrollArea
+            className="h-40 rounded-lg bg-muted/50"
+            overscrollContain
+            scrollbarGutter
+          >
+            <div className="grid gap-3 p-4">
+              {Array.from({ length: 16 }, (_, index) => (
+                <p key={index} className="text-sm">
+                  {t("Item", "条目")} {index + 1}
+                </p>
+              ))}
+            </div>
+          </ScrollArea>
+        </div>
       </section>
     </>
   );

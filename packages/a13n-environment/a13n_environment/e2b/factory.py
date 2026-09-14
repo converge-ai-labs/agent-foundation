@@ -1,12 +1,10 @@
 """Inert E2B Provider registration and Host runtime construction."""
 
-from pydantic import BaseModel, JsonValue
+from pydantic import BaseModel
 
-from ..errors import EnvironmentProviderErrorCategory as Category
 from ..management import Environment, EnvironmentProvider, ProviderRuntimeContext
 from ..models import EnvironmentDescriptor, EnvironmentState
 from .configuration import PROVIDER_KEY, E2BBackendConfiguration, E2BCredential, E2BProviderConfiguration
-from .errors import provider_error
 from .provider import E2BEnvironment, decode_state, descriptor
 from .runtime import E2BProviderRuntime
 
@@ -19,20 +17,16 @@ class E2BEnvironmentProvider(EnvironmentProvider):
     requires_keepalive = True
 
     @property
+    def display_name(self) -> str:
+        return "E2B"
+
+    @property
     def key(self) -> str:
         return PROVIDER_KEY
 
     @property
-    def configuration_versions(self) -> frozenset[str]:
-        return frozenset({"1"})
-
-    def validate_configuration(self, *, schema_version: str, value: JsonValue) -> E2BProviderConfiguration:
-        if schema_version != "1":
-            raise provider_error("provider_schema_unsupported", Category.UNSUPPORTED)
-        try:
-            return E2BProviderConfiguration.model_validate(value)
-        except ValueError:
-            raise provider_error("provider_spec_invalid", Category.INVALID) from None
+    def configuration_models(self) -> dict[str, type[BaseModel]]:
+        return {"1": E2BProviderConfiguration}
 
     async def create_runtime(
         self, *, configuration: BaseModel, credential: BaseModel | None, context: ProviderRuntimeContext
@@ -42,6 +36,7 @@ class E2BEnvironmentProvider(EnvironmentProvider):
         return E2BProviderRuntime(
             api_key=credential.api_key,
             domain=configuration.domain,
+            api_url=configuration.api_url,
             managed=context.managed,
             operation_id=context.operation_id,
         )

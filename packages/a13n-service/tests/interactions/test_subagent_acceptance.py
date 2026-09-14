@@ -13,8 +13,7 @@ from a13n_service.agents.domain import (
 )
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.connectivity.selection_domain import (
-    ConnectorConnectionRunSelection,
-    MCPConnectionToolSelection,
+    ConnectionRunSelection,
 )
 from a13n_service.digests import digest_request
 from a13n_service.iam.models import RoleBindingRecord, UserRecord
@@ -60,14 +59,18 @@ pytestmark = pytest.mark.anyio
 CHILD_AGENT_ID = "agt_2222222222222222"
 CHILD_REVISION_ID = "agtr_2222222222222222"
 CHILD_DEFINITION_ID = f"agent-config-{'3' * 24}"
-CONNECTOR_SELECTION = ConnectorConnectionRunSelection(
-    connector_connection_id="cconn_2222222222222222",
+CONNECTOR_SELECTION = ConnectionRunSelection(
+    kind="connector",
+    authorization_generation=1,
+    connection_id="cconn_2222222222222222",
     connector_provider_id="cprv_2222222222222222",
     defer_loading=False,
     tools=("find_order",),
 )
-MCP_SELECTION = MCPConnectionToolSelection(
-    mcp_connection_id="mcpc_2222222222222222",
+MCP_SELECTION = ConnectionRunSelection(
+    kind="mcp",
+    authorization_generation=1,
+    connection_id="mcpc_2222222222222222",
     defer_loading=True,
     tools=("search_docs",),
 )
@@ -82,8 +85,7 @@ async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
         interaction_sessions,
         interaction_object_store,
         with_shared_environment=True,
-        connector_connection_selections=(CONNECTOR_SELECTION,),
-        mcp_connection_selections=(MCP_SELECTION,),
+        connection_selections=(CONNECTOR_SELECTION, MCP_SELECTION),
     )
     scheduler = AttemptScheduler(
         interaction_sessions,
@@ -119,8 +121,7 @@ async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
         authority.attempt_number,
         child_config,
         suffix="3",
-        connector_connection_selections=(CONNECTOR_SELECTION,),
-        mcp_connection_selections=(MCP_SELECTION,),
+        connection_selections=(CONNECTOR_SELECTION, MCP_SELECTION),
     )
     service = ChildRunAcceptanceService(
         interaction_sessions,
@@ -145,8 +146,7 @@ async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
         authority.attempt_number,
         altered_config,
         suffix="9",
-        connector_connection_selections=(CONNECTOR_SELECTION,),
-        mcp_connection_selections=(MCP_SELECTION,),
+        connection_selections=(CONNECTOR_SELECTION, MCP_SELECTION),
     )
     with pytest.raises(ChildRunAcceptanceError, match="accepted execution snapshot"):
         await service.accept(altered, authority)
@@ -161,8 +161,7 @@ async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
         authority.attempt_number,
         child_config,
         suffix="4",
-        connector_connection_selections=(CONNECTOR_SELECTION,),
-        mcp_connection_selections=(MCP_SELECTION,),
+        connection_selections=(CONNECTOR_SELECTION, MCP_SELECTION),
     )
     second_accepted = await service.accept(second, authority)
 
@@ -185,8 +184,10 @@ async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
         child_resource = child.to_resource()
         assert child_resource.native_tool_contexts == ()
         assert child_resource.authority_principal == running_parent.authority_principal
-        assert child_resource.connector_connection_selections == (CONNECTOR_SELECTION.model_dump(mode="json"),)
-        assert child_resource.mcp_connection_selections == (MCP_SELECTION.model_dump(mode="json"),)
+        assert child_resource.connection_selections == (
+            CONNECTOR_SELECTION.model_dump(mode="json"),
+            MCP_SELECTION.model_dump(mode="json"),
+        )
         assert (child.agent_id, child.agent_revision_id) == (CHILD_AGENT_ID, CHILD_REVISION_ID)
         assert (child_thread.session_id, child_thread.origin_run_id) == (SESSION_ID, running_parent.id)
         assert child.environment_id == running_parent.environment_id
@@ -352,8 +353,7 @@ async def test_completed_child_can_resume_as_linked_continuation(
     states, parent, parent_state = await _accept_parent(
         interaction_sessions,
         interaction_object_store,
-        connector_connection_selections=(CONNECTOR_SELECTION,),
-        mcp_connection_selections=(MCP_SELECTION,),
+        connection_selections=(CONNECTOR_SELECTION, MCP_SELECTION),
     )
     parent_claim = await AttemptScheduler(
         interaction_sessions,
@@ -376,8 +376,7 @@ async def test_completed_child_can_resume_as_linked_continuation(
         parent_authority.attempt_number,
         child_config,
         suffix="d",
-        connector_connection_selections=(CONNECTOR_SELECTION,),
-        mcp_connection_selections=(MCP_SELECTION,),
+        connection_selections=(CONNECTOR_SELECTION, MCP_SELECTION),
     )
     service = ChildRunAcceptanceService(
         interaction_sessions,
@@ -448,8 +447,10 @@ async def test_completed_child_can_resume_as_linked_continuation(
         assert child_run.parent_run_id == completed_child.id
         assert child_run.lineage_kind == "continue"
         child_resource = child_run.to_resource()
-        assert child_resource.connector_connection_selections == (CONNECTOR_SELECTION.model_dump(mode="json"),)
-        assert child_resource.mcp_connection_selections == (MCP_SELECTION.model_dump(mode="json"),)
+        assert child_resource.connection_selections == (
+            CONNECTOR_SELECTION.model_dump(mode="json"),
+            MCP_SELECTION.model_dump(mode="json"),
+        )
 
 
 async def _complete_run(
@@ -503,8 +504,7 @@ def _prepared_child(
     *,
     suffix: str,
     cancellation_policy: ChildCancellationPolicy = ChildCancellationPolicy.independent,
-    connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...] = (),
-    mcp_connection_selections: tuple[MCPConnectionToolSelection, ...] = (),
+    connection_selections: tuple[ConnectionRunSelection, ...] = (),
 ):
     return prepare_child_run(
         parent_run=parent,
@@ -518,8 +518,7 @@ def _prepared_child(
         child_agent_id=CHILD_AGENT_ID,
         child_agent_revision_id=CHILD_REVISION_ID,
         child_effective_config=child_config,
-        connector_connection_selections=connector_connection_selections,
-        mcp_connection_selections=mcp_connection_selections,
+        connection_selections=connection_selections,
         child_thread_id=f"thread-{suffix * 32}",
         child_run_id=f"run_{suffix * 16}",
         relationship_id=f"crr_{suffix * 16}",
@@ -534,8 +533,7 @@ async def _accept_parent(
     objects: ObjectStore,
     *,
     with_shared_environment: bool = False,
-    connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...] = (),
-    mcp_connection_selections: tuple[MCPConnectionToolSelection, ...] = (),
+    connection_selections: tuple[ConnectionRunSelection, ...] = (),
 ):
     edge = ResolvedSubagentEdge(
         name="researcher",
@@ -555,8 +553,7 @@ async def _accept_parent(
                     agent_id=CHILD_AGENT_ID,
                     revision_content_digest="3" * 64,
                     effective_config=base,
-                    connector_connection_selections=connector_connection_selections,
-                    mcp_connection_selections=mcp_connection_selections,
+                    connection_selections=connection_selections,
                 )
             },
         }
@@ -688,7 +685,7 @@ async def _grant_and_seed_child(sessions: async_sessionmaker[AsyncSession]) -> N
                 workspace_id=WORKSPACE_ID,
                 source="custom",
                 name="Child Agent",
-                normalized_name="child agent",
+                key="child-agent",
                 description=None,
                 version=1,
                 current_revision_id=CHILD_REVISION_ID,
@@ -716,8 +713,7 @@ async def _grant_and_seed_child(sessions: async_sessionmaker[AsyncSession]) -> N
                 config_digest="2" * 64,
                 resolved_model={},
                 resolved_skills=[],
-                connector_tools=[],
-                mcp_tools=[],
+                connection_tools=(),
                 resolved_subagents=[],
                 content_digest="3" * 64,
                 source_revision_id=None,

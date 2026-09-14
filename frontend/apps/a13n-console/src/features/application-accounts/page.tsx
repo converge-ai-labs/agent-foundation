@@ -1,28 +1,29 @@
+import { Button, ModalFrame } from "a13n-ui";
+
+import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
-import { useQuery } from "@tanstack/react-query";
-import { Button, Dialog, Tabs } from "a13n-ui";
+
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data } from "../../shared/api";
+import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
 import {
-  Page,
-  ErrorNotice,
   Empty,
+  ErrorNotice,
   Loading,
+  Page,
   StateBadge,
 } from "../../shared/feedback";
-import { Confirm, JsonView } from "../../shared/form";
-import { Table, Pagination, useCursor } from "../../shared/collection";
+import { Confirm } from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
-import { AccountForm } from "./form";
 import { AccountCredentials } from "./credentials";
-import { AccountTargets } from "./targets";
+import { AccountForm } from "./form";
 
 export function ApplicationAccountsPage() {
   const client = useClient(),
-    { workspace, can } = useWorkspace(),
+    { workspace, can, basePath } = useWorkspace(),
     { t } = useTranslation(),
     page = useCursor(),
     [open, setOpen] = useState(false),
@@ -31,9 +32,9 @@ export function ApplicationAccountsPage() {
     queryKey: ["application-accounts", workspace.id, page.cursor],
     queryFn: ({ signal }) =>
       client.http
-        .GET("/api/v1/workspaces/{workspace_id}/application-accounts", {
+        .GET("/api/v1/workspaces/{workspace}/application-accounts", {
           params: {
-            path: { workspace_id: workspace.id },
+            path: { workspace: workspace.id },
             query: { cursor: page.cursor },
           },
           signal,
@@ -48,38 +49,45 @@ export function ApplicationAccountsPage() {
       )}
       actions={
         can("application_account.manage") && (
-          <Dialog
+          <ModalFrame
+            onOpenChange={setOpen}
+            trigger={
+              <Button variant="default" type="button">
+                {t("Add account")}
+              </Button>
+            }
+            size={"lg"}
             title={t("Add application account")}
             description={t(
-              "Configure one concrete external identity and its reception settings.",
+              "Connect an external account and choose how incoming events reach your agents.",
             )}
             closeLabel={t("Close")}
             open={open}
-            onOpenChange={setOpen}
-            trigger={<Button variant="primary">{t("Add account")}</Button>}
           >
             {open && (
               <AccountForm
+                onCancel={() => setOpen(false)}
                 onSuccess={(account) => {
                   setOpen(false);
                   navigate(account.id);
                 }}
               />
             )}
-          </Dialog>
+          </ModalFrame>
         )
       }
     >
       <ErrorNotice error={query.error} />
       {query.isPending ? (
-        <Loading />
+        <Loading variant="table" columns={4} />
       ) : query.data?.items.length ? (
         <>
-          <Table
+          <ResourceTable
             items={query.data.items}
             columns={[
               {
                 label: t("Account"),
+                tone: "primary",
                 render: (item) => (
                   <Link to={item.id}>
                     <strong>{item.name}</strong>
@@ -128,7 +136,7 @@ export function ApplicationAccountsPage() {
 export function ApplicationAccountDetail() {
   const { accountId = "" } = useParams(),
     client = useClient(),
-    { workspace, can } = useWorkspace(),
+    { workspace, can, basePath } = useWorkspace(),
     { t } = useTranslation(),
     [generation, setGeneration] = useState(0),
     key = useIdempotency(),
@@ -147,7 +155,7 @@ export function ApplicationAccountDetail() {
     await query.refetch();
     setGeneration((value) => value + 1);
   }
-  if (query.isPending) return <Loading />;
+  if (query.isPending) return <Loading variant="detail" page />;
   if (!query.data)
     return <ErrorNotice error={query.error} retry={() => void reload()} />;
   const account = query.data,
@@ -156,11 +164,12 @@ export function ApplicationAccountDetail() {
     <Page
       title={account.name}
       description={account.provider_key}
-      back={`/workspaces/${workspace.id}/application-accounts`}
+      back={`${basePath}/application-accounts`}
       actions={
         manage && (
           <>
             <Confirm
+              subject={account.name}
               title={t(
                 account.status === "active"
                   ? "Disable account"
@@ -191,6 +200,7 @@ export function ApplicationAccountDetail() {
               }}
             />
             <Confirm
+              subject={account.name}
               title={t("Delete application account")}
               description={t(
                 "This makes the identity unavailable and clears its credentials. Retained run evidence keeps its original identity.",
@@ -207,49 +217,21 @@ export function ApplicationAccountDetail() {
                     },
                   },
                 );
-                navigate(`/workspaces/${workspace.id}/application-accounts`);
+                navigate(`${basePath}/application-accounts`);
               }}
             />
           </>
         )
       }
     >
-      <Tabs
+      <section
         key={generation}
-        label={t("Application account")}
-        defaultValue="details"
-        items={[
-          {
-            value: "details",
-            label: t("Details"),
-            content: manage ? (
-              <AccountForm
-                initial={account}
-                onSuccess={() => void reload()}
-                reload={reload}
-              />
-            ) : (
-              <JsonView value={account} />
-            ),
-          },
-          {
-            value: "targets",
-            label: t("Targets"),
-            content: <AccountTargets account={account} />,
-          },
-          ...(manage
-            ? [
-                {
-                  value: "credentials",
-                  label: t("Credentials"),
-                  content: (
-                    <AccountCredentials account={account} reload={reload} />
-                  ),
-                },
-              ]
-            : []),
-        ]}
-      />
+        className="grid gap-4"
+        aria-label={t("Credentials")}
+      >
+        <h2>{t("Credentials")}</h2>
+        <AccountCredentials account={account} reload={reload} />
+      </section>
     </Page>
   );
 }

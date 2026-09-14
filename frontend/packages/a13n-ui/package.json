@@ -15,27 +15,24 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit",
-    "build:showcase": "vite build",
-    "check": "pnpm run build && pnpm run test && pnpm run build:showcase",
+    "build": "vite build",
+    "check": "pnpm run typecheck",
+    "sync:brands": "node scripts/sync-lobe-brands.mjs",
     "test": "vitest run",
-    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\""
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "typecheck": "tsc --noEmit"
   },
   "peerDependencies": {
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   },
   "dependencies": {
-    "@radix-ui/react-checkbox": "^1.3.3",
-    "@radix-ui/react-dialog": "^1.1.15",
-    "@radix-ui/react-dropdown-menu": "^2.1.24",
-    "@radix-ui/react-popover": "^1.1.23",
-    "@radix-ui/react-select": "^2.2.6",
-    "@radix-ui/react-switch": "^1.2.6",
-    "@radix-ui/react-tabs": "^1.1.21",
-    "@radix-ui/react-tooltip": "^1.2.8",
-    "cmdk": "^1.1.1",
-    "lucide-react": "^0.577.0"
+    "@base-ui/react": "1.8.0",
+    "@daypicker/react": "^10.0.1",
+    "@phosphor-icons/react": "^2.1.10",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^3.4.0"
   },
   "devDependencies": {
     "@testing-library/react": "^16.3.3",

@@ -39,6 +39,8 @@ At execution time, trusted adapters reconstruct native Python objects and call `
 
 Harness owns only its narrow middleware-plugin configuration envelope. It is not a universal Agent or Environment configuration language.
 
+For large tool collections, the Host can offer direct versus grouped presentation in its own configuration and assemble one `ToolProxyCapability(groups=...)` from concrete sources at build time. [ToolProxy Host integration](tool-proxy.md#host-integration) describes source factories, configuration/UI responsibilities, and plugin contribution support without runtime interception.
+
 ## Build and Reuse
 
 A worker can cache a built executable for one exact trusted definition revision and reuse it across non-overlapping or supported concurrent runs. Each run still receives fresh bindings:
@@ -51,7 +53,7 @@ result = await executable.run(
 )
 ```
 
-Close the executable when its owning cache entry or process shuts down. Replacement builders or plugin graphs should be constructed and validated before routing new runs to them.
+The executable has no `close()` or context-manager API. Retire a cached executable after its active Runs finish; scope each `stream()` with `async with`, and close separately owned Host clients/operators at their own lifespan boundary. Construct and validate replacement builders or plugin graphs before routing new Runs to them. See [cleanup ownership](agents-and-runs.md#cleanup).
 
 ## Fresh Authority
 

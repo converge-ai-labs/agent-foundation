@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import sqlite3
 from datetime import datetime
 
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.application_errors import ApplicationError, ErrorCategory
@@ -75,16 +73,6 @@ def audit_record(
         outcome=outcome,
         occurred_at=now,
         details=None,
-    )
-
-
-def is_unique_conflict(error: IntegrityError, *, constraint: str, sqlite_columns: str) -> bool:
-    diagnostic = getattr(error.orig, "diag", None)
-    if diagnostic is not None:
-        return diagnostic.sqlstate == "23505" and diagnostic.constraint_name == constraint
-    return (
-        getattr(error.orig, "sqlite_errorcode", None) == sqlite3.SQLITE_CONSTRAINT_UNIQUE
-        and str(error.orig) == f"UNIQUE constraint failed: {sqlite_columns}"
     )
 
 

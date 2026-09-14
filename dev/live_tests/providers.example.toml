@@ -8,11 +8,35 @@ template = "" # Optional; defaults to base when enabled.
 [connector]
 provider = "" # composio
 api_key = ""
-# Optional when enabled; defaults to ["github"].
-# toolkits = ["github"]
 
 [model]
-provider = "" # openrouter or openai_compatible
+provider = "" # openrouter or openai
 api_key = ""
-model = "" # Required when enabled: an upstream Chat Completions model ID.
-base_url = "" # Required only for openai_compatible; leave blank for openrouter.
+model = "" # Required for the configured case; ignored by the fixed OpenRouter matrix.
+base_url = "" # Optional custom endpoint; leave blank for the provider default.
+
+[search]
+provider = "" # exa
+api_key = ""
+
+[brave_search]
+provider = "" # brave
+api_key = "" # Brave API key with Web Search access.
+
+# Optional real S3 single-request benchmark: make live-test-s3
+# Blank [s3] skips; partial settings fail. Other sections are independent.
+[s3]
+# Use an existing dedicated, unversioned test bucket. Enabled and suspended
+# versioning are rejected before writing. Required permissions: GetBucketVersioning,
+# ListBucket (for missing-key 404), and Get/Put/DeleteObject on bounded-operations/*.
+# No bucket creation or bucket-wide listing/deletion occurs. Cleanup uses exact
+# random keys allocated by this execution, including uncertain PUT responses.
+# dedicated_test_bucket = true
+endpoint_url = "" # Example: https://s3.us-east-1.amazonaws.com
+region = "" # Example: us-east-1
+bucket = ""
+access_key = ""
+secret_key = ""
+session_token = ""
+# Samples, concurrency, payload bytes and budgets belong in --performance-profile;
+# see performance/operations.example.toml. Never put credentials in that profile.

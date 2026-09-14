@@ -7,7 +7,7 @@ from a13n_service.background import PeriodicTask, Sweep
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
-from .models import MCPConnectionRecord, MCPOAuthSessionRecord
+from .models import MCPAuthorizationRecord, MCPConnectionRecord
 
 
 class MCPReconciler:
@@ -34,39 +34,41 @@ class MCPReconciler:
         async with transaction(self._sessions) as session:
             connection = await session.scalar(
                 select(MCPConnectionRecord)
-                .join(MCPOAuthSessionRecord, MCPOAuthSessionRecord.mcp_connection_id == MCPConnectionRecord.id)
+                .join(MCPAuthorizationRecord, MCPAuthorizationRecord.connection_id == MCPConnectionRecord.id)
                 .where(
-                    MCPOAuthSessionRecord.status.in_(("pending", "exchanging")),
+                    MCPAuthorizationRecord.status.in_(("starting", "pending", "received", "exchanging")),
                     or_(
-                        MCPOAuthSessionRecord.expires_at <= now,
-                        (MCPOAuthSessionRecord.status == "exchanging")
-                        & (MCPOAuthSessionRecord.claim_expires_at <= now),
+                        MCPAuthorizationRecord.expires_at <= now,
+                        (MCPAuthorizationRecord.status == "exchanging")
+                        & (MCPAuthorizationRecord.claim_expires_at <= now),
                     ),
                 )
-                .order_by(MCPOAuthSessionRecord.expires_at, MCPOAuthSessionRecord.id)
+                .order_by(MCPAuthorizationRecord.expires_at, MCPAuthorizationRecord.id)
                 .limit(1)
                 .with_for_update(of=MCPConnectionRecord, skip_locked=True)
             )
             if connection is None:
                 return False
             state = await session.scalar(
-                select(MCPOAuthSessionRecord)
+                select(MCPAuthorizationRecord)
                 .where(
-                    MCPOAuthSessionRecord.mcp_connection_id == connection.id,
-                    MCPOAuthSessionRecord.status.in_(("pending", "exchanging")),
+                    MCPAuthorizationRecord.connection_id == connection.id,
+                    MCPAuthorizationRecord.status.in_(("starting", "pending", "received", "exchanging")),
                     or_(
-                        MCPOAuthSessionRecord.expires_at <= now,
-                        (MCPOAuthSessionRecord.status == "exchanging")
-                        & (MCPOAuthSessionRecord.claim_expires_at <= now),
+                        MCPAuthorizationRecord.expires_at <= now,
+                        (MCPAuthorizationRecord.status == "exchanging")
+                        & (MCPAuthorizationRecord.claim_expires_at <= now),
                     ),
                 )
-                .order_by(MCPOAuthSessionRecord.expires_at, MCPOAuthSessionRecord.id)
+                .order_by(MCPAuthorizationRecord.expires_at, MCPAuthorizationRecord.id)
                 .limit(1)
                 .with_for_update()
             )
             if state is None:
                 return False
             self._last_lag = max(0, (now - assume_utc(state.expires_at)).total_seconds())
+            if state.status == "exchanging" or state.completion_method == "credentials":
+                state.last_error_code = "setup_outcome_unknown"
             state.status = "expired"
             state.clear_credential()
             state.claim_owner = None

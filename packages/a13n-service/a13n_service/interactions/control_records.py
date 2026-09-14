@@ -7,18 +7,7 @@ from typing import Any
 from sqlalchemy import JSON
 
 from .control_domain import QueuedSubmission, ThreadInboxEntry
-from .control_models import QueuedSubmissionRecord, ThreadInboxCounterRecord, ThreadInboxRecord
-from .domain import Thread
-
-
-def inbox_counter_record(thread: Thread) -> ThreadInboxCounterRecord:
-    return ThreadInboxCounterRecord(
-        organization_id=thread.organization_id,
-        thread_id=thread.id,
-        next_delivery_sequence=1,
-        pending_count=0,
-        pending_bytes=0,
-    )
+from .control_models import QueuedSubmissionRecord, ThreadInboxRecord
 
 
 def thread_inbox_record(value: ThreadInboxEntry) -> ThreadInboxRecord:
@@ -76,4 +65,4 @@ def _inline_json(value: Any) -> Any:
     return JSON.NULL if value is None else value
 
 
-__all__ = ["inbox_counter_record", "queued_submission_record", "thread_inbox_record"]
+__all__ = ["queued_submission_record", "thread_inbox_record"]

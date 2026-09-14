@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 from unittest.mock import AsyncMock, Mock
 
 import anyio
@@ -8,6 +9,7 @@ import httpx2
 import pytest
 from a13n_harness.errors import ModelResolutionError
 from a13n_service.etags import resource_etag
+from a13n_service.models import requests as model_requests
 from a13n_service.models.domain import (
     CreateModelProviderRequest,
     CreateModelRequest,
@@ -47,6 +49,7 @@ def _snapshot() -> ModelExecutionSnapshot:
 def _reply(streaming: bool = False) -> httpx2.Response:
     if streaming:
         chunk = {
+            "provider": "OpenAI",
             "id": "reply",
             "object": "chat.completion.chunk",
             "created": 1,
@@ -61,6 +64,7 @@ def _reply(streaming: bool = False) -> httpx2.Response:
     return httpx2.Response(
         200,
         json={
+            "provider": "OpenAI",
             "id": "reply",
             "object": "chat.completion",
             "created": 1,
@@ -81,16 +85,24 @@ async def _request(model, *, streaming=False, settings=None, parameters=None):
         await model.request(messages, settings, parameters)
 
 
-async def _live_model(client):
+async def _live_model(client, *, provider_type="openai", harness_thread_id=None):
     resolver = Mock(spec=LiveProviderResolver)
-    resolver.resolve = AsyncMock(return_value=RuntimeProvider("openai", {}, "https://api.openai.com/v1", "test-key"))
+    resolver.resolve = AsyncMock(
+        return_value=RuntimeProvider(provider_type, {}, "https://api.openai.com/v1", "test-key")
+    )
     factory = NativeModelFactory(client, built_in_provider_registry(), _AllowEndpoints())
     return await LiveProviderModel.create(
-        snapshot=_snapshot(),
+        snapshot=_snapshot().model_copy(
+            update={
+                "model_api": f"{provider_type}.chat_completions",
+                "upstream_model": "openai/gpt-4.1-mini" if provider_type == "openrouter" else "example-model",
+            }
+        ),
         organization_id=ORG_ID,
         workspace_id=WORKSPACE_ID,
         provider_resolver=resolver,
         model_factory=factory,
+        harness_thread_id=harness_thread_id,
     )
 
 
@@ -230,8 +242,32 @@ async def test_stream_failure_after_handoff_is_not_replayed():
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("streaming", [False, True])
-async def test_request_deadline_includes_retry_wait(streaming):
+async def test_request_deadline_includes_retry_wait(streaming, monkeypatch):
     sent = []
+    active_deadlines = []
+    retry_delays = []
+
+    @contextmanager
+    def capture_deadline(timeout):
+        with anyio.fail_after(timeout) as scope:
+            active_deadlines.append(scope)
+            try:
+                yield scope
+            finally:
+                active_deadlines.pop()
+
+    async def expire_during_retry(delay):
+        retry_delays.append(delay)
+        assert len(sent) == 1
+        assert active_deadlines
+        scope = active_deadlines[-1]
+        assert scope.deadline != float("inf")
+        # Expire the real request deadline only after reaching retry backoff.
+        scope.deadline = anyio.current_time()
+        await anyio.sleep(delay)
+
+    monkeypatch.setattr(model_requests, "fail_after", capture_deadline)
+    monkeypatch.setattr(model_requests, "sleep", expire_during_retry)
 
     def handler(request):
         sent.append(request)
@@ -240,7 +276,8 @@ async def test_request_deadline_includes_retry_wait(streaming):
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
         model = await _live_model(client)
         with pytest.raises(TimeoutError):
-            await _request(model, streaming=streaming, settings={"timeout": 0.05})
+            await _request(model, streaming=streaming, settings={"timeout": 30})
+    assert retry_delays == [1]
     assert len(sent) == 1
 
 
@@ -326,3 +363,27 @@ async def test_native_endpoint_validation_closes_bedrock_client_on_rejection():
     assert threads and threads[0] != main_thread
     policy.validate.assert_awaited_once_with("https://blocked.example", resolve_dns=True)
     client.close.assert_called_once()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_openrouter_accepts_only_exact_harness_correlation_defaults(streaming):
+    sent = []
+
+    def handler(request):
+        sent.append(request)
+        return _reply(streaming)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
+        model = await _live_model(client, provider_type="openrouter", harness_thread_id="thr_current")
+        settings = {"openai_prompt_cache_key": "thr_current", "extra_headers": {"x-session-id": "thr_current"}}
+        await _request(model, streaming=streaming, settings=settings)
+        assert sent[0].headers["x-session-id"] == "thr_current"
+        assert json.loads(sent[0].content)["prompt_cache_key"] == "thr_current"
+        assert settings["openai_prompt_cache_key"] == "thr_current"
+        with pytest.raises(ModelError):
+            await _request(model, streaming=streaming, settings={"openai_prompt_cache_key": "caller-value"})
+        unbound = await _live_model(client, provider_type="openrouter")
+        with pytest.raises(ModelError):
+            await _request(unbound, streaming=streaming, settings=settings)
+        assert len(sent) == 1

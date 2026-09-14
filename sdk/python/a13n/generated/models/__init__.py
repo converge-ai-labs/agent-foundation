@@ -1,0 +1,1047 @@
+"""Contains all the data models used in inputs/outputs"""
+
+from .a2a_skill_projection import A2ASkillProjection
+from .accept_invitation_request import AcceptInvitationRequest
+from .account import Account
+from .account_collection import AccountCollection
+from .account_command_request import AccountCommandRequest
+from .account_provider_config import AccountProviderConfig
+from .account_provider_definition import AccountProviderDefinition
+from .account_provider_definition_collection import AccountProviderDefinitionCollection
+from .account_provider_definition_configuration_schema import AccountProviderDefinitionConfigurationSchema
+from .account_provider_definition_credential_schema import AccountProviderDefinitionCredentialSchema
+from .account_provider_definition_reception_policy_schema import AccountProviderDefinitionReceptionPolicySchema
+from .account_provider_definition_target_kinds_item import AccountProviderDefinitionTargetKindsItem
+from .account_provider_policy_type_0 import AccountProviderPolicyType0
+from .account_status import AccountStatus
+from .account_target import AccountTarget
+from .account_target_provider_policy_type_0 import AccountTargetProviderPolicyType0
+from .account_target_target_kind import AccountTargetTargetKind
+from .activity_message import ActivityMessage
+from .activity_message_content import ActivityMessageContent
+from .agent import Agent
+from .agent_collection import AgentCollection
+from .agent_config_input import AgentConfigInput
+from .agent_config_input_subagent_mode import AgentConfigInputSubagentMode
+from .agent_config_input_subagents import AgentConfigInputSubagents
+from .agent_config_output import AgentConfigOutput
+from .agent_config_output_subagent_mode import AgentConfigOutputSubagentMode
+from .agent_config_output_subagents import AgentConfigOutputSubagents
+from .agent_input import AgentInput
+from .agent_input_schema_version import AgentInputSchemaVersion
+from .agent_model import AgentModel
+from .agent_model_settings import AgentModelSettings
+from .agent_revision import AgentRevision
+from .agent_revision_collection import AgentRevisionCollection
+from .agent_revision_create_result import AgentRevisionCreateResult
+from .agent_run_override_input import AgentRunOverrideInput
+from .agent_run_override_input_subagents_type_0 import AgentRunOverrideInputSubagentsType0
+from .agent_run_override_output import AgentRunOverrideOutput
+from .agent_run_override_output_subagents_type_0 import AgentRunOverrideOutputSubagentsType0
+from .agent_secret_binding import AgentSecretBinding
+from .agent_source import AgentSource
+from .api_key import ApiKey
+from .approve_pending_resolution import ApprovePendingResolution
+from .asset import Asset
+from .asset_binary_source import AssetBinarySource
+from .asset_collection import AssetCollection
+from .asset_publication_config import AssetPublicationConfig
+from .asset_source_kind import AssetSourceKind
+from .assistant_message import AssistantMessage
+from .audio_input_content import AudioInputContent
+from .auth_configuration import AuthConfiguration
+from .auth_session import AuthSession
+from .authorization import Authorization
+from .authorization_action import AuthorizationAction
+from .authorization_action_type import AuthorizationActionType
+from .authorization_redirect import AuthorizationRedirect
+from .authorization_status import AuthorizationStatus
+from .binary_content import BinaryContent
+from .binary_content_delivery import BinaryContentDelivery
+from .binary_input_content import BinaryInputContent
+from .change_password_request import ChangePasswordRequest
+from .change_role_request import ChangeRoleRequest
+from .change_role_request_role import ChangeRoleRequestRole
+from .child_environment_policy import ChildEnvironmentPolicy
+from .child_environment_policy_mode import ChildEnvironmentPolicyMode
+from .client_tool_definition import ClientToolDefinition
+from .client_tool_definition_metadata import ClientToolDefinitionMetadata
+from .client_tool_definition_parameters_json_schema import ClientToolDefinitionParametersJsonSchema
+from .client_tool_policy import ClientToolPolicy
+from .collection_environment import CollectionEnvironment
+from .collection_environment_provider import CollectionEnvironmentProvider
+from .collection_environment_provider_definition import CollectionEnvironmentProviderDefinition
+from .collection_environment_template import CollectionEnvironmentTemplate
+from .collection_environment_template_revision import CollectionEnvironmentTemplateRevision
+from .complete_authorization_request import CompleteAuthorizationRequest
+from .complete_email_change_request import CompleteEmailChangeRequest
+from .complete_password_reset_request import CompletePasswordResetRequest
+from .complete_pending_resolution import CompletePendingResolution
+from .configure_mcpo_auth_client_request import ConfigureMCPOAuthClientRequest
+from .connection import Connection
+from .connection_check import ConnectionCheck
+from .connection_check_scope import ConnectionCheckScope
+from .connection_check_status import ConnectionCheckStatus
+from .connection_cleanup_receipt import ConnectionCleanupReceipt
+from .connection_cleanup_receipt_local_status import ConnectionCleanupReceiptLocalStatus
+from .connection_cleanup_receipt_remote_status import ConnectionCleanupReceiptRemoteStatus
+from .connection_collection import ConnectionCollection
+from .connection_command_request import ConnectionCommandRequest
+from .connection_safe_metadata import ConnectionSafeMetadata
+from .connection_status import ConnectionStatus
+from .connection_status_reason import ConnectionStatusReason
+from .connection_tool_selection import ConnectionToolSelection
+from .connector import Connector
+from .connector_collection import ConnectorCollection
+from .connector_credential_schemas import ConnectorCredentialSchemas
+from .connector_credential_schemas_additional_property import ConnectorCredentialSchemasAdditionalProperty
+from .connector_provider import ConnectorProvider
+from .connector_provider_collection import ConnectorProviderCollection
+from .connector_provider_command_request import ConnectorProviderCommandRequest
+from .connector_provider_configuration import ConnectorProviderConfiguration
+from .connector_provider_definition import ConnectorProviderDefinition
+from .connector_provider_definition_collection import ConnectorProviderDefinitionCollection
+from .connector_provider_definition_configuration_schema import ConnectorProviderDefinitionConfigurationSchema
+from .connector_provider_definition_credential_schema import ConnectorProviderDefinitionCredentialSchema
+from .connector_provider_status import ConnectorProviderStatus
+from .connector_provider_test_result import ConnectorProviderTestResult
+from .connector_provider_test_result_verified_access_item import ConnectorProviderTestResultVerifiedAccessItem
+from .connector_setup_schema import ConnectorSetupSchema
+from .connector_source import ConnectorSource
+from .connector_tool import ConnectorTool
+from .connector_tool_annotations import ConnectorToolAnnotations
+from .connector_tool_input_schema import ConnectorToolInputSchema
+from .connector_tool_output_schema_type_0 import ConnectorToolOutputSchemaType0
+from .connector_tool_page import ConnectorToolPage
+from .consume_queued_submission_request import ConsumeQueuedSubmissionRequest
+from .content import Content
+from .context import Context
+from .continue_run_request import ContinueRunRequest
+from .create_account_request import CreateAccountRequest
+from .create_account_request_credentials import CreateAccountRequestCredentials
+from .create_account_request_provider_config import CreateAccountRequestProviderConfig
+from .create_account_request_provider_policy_type_0 import CreateAccountRequestProviderPolicyType0
+from .create_agent_request import CreateAgentRequest
+from .create_agent_revision_request import CreateAgentRevisionRequest
+from .create_authorization_request import CreateAuthorizationRequest
+from .create_authorization_request_credentials_type_0 import CreateAuthorizationRequestCredentialsType0
+from .create_authorization_request_method import CreateAuthorizationRequestMethod
+from .create_authorization_request_options import CreateAuthorizationRequestOptions
+from .create_connection_request import CreateConnectionRequest
+from .create_connector_provider_request import CreateConnectorProviderRequest
+from .create_connector_provider_request_configuration import CreateConnectorProviderRequestConfiguration
+from .create_connector_provider_request_credentials import CreateConnectorProviderRequestCredentials
+from .create_hook_subscription_request import CreateHookSubscriptionRequest
+from .create_invitation_request import CreateInvitationRequest
+from .create_key_request import CreateKeyRequest
+from .create_managed_environment_request import CreateManagedEnvironmentRequest
+from .create_model_provider_request import CreateModelProviderRequest
+from .create_model_provider_request_configuration import CreateModelProviderRequestConfiguration
+from .create_model_provider_request_extra_headers import CreateModelProviderRequestExtraHeaders
+from .create_model_request import CreateModelRequest
+from .create_model_request_settings import CreateModelRequestSettings
+from .create_provider_request import CreateProviderRequest
+from .create_provider_request_configuration import CreateProviderRequestConfiguration
+from .create_provider_request_credential_type_0 import CreateProviderRequestCredentialType0
+from .create_search_provider_request import CreateSearchProviderRequest
+from .create_search_provider_request_type import CreateSearchProviderRequestType
+from .create_service_account_request import CreateServiceAccountRequest
+from .create_service_account_request_role import CreateServiceAccountRequestRole
+from .create_skill_request import CreateSkillRequest
+from .create_skill_revision_request import CreateSkillRevisionRequest
+from .create_template_request import CreateTemplateRequest
+from .create_template_request_configuration import CreateTemplateRequestConfiguration
+from .create_template_request_preparation import CreateTemplateRequestPreparation
+from .create_template_revision_request import CreateTemplateRevisionRequest
+from .create_template_revision_request_configuration import CreateTemplateRevisionRequestConfiguration
+from .create_template_revision_request_preparation import CreateTemplateRevisionRequestPreparation
+from .create_thread_request import CreateThreadRequest
+from .create_workspace_request import CreateWorkspaceRequest
+from .created_key import CreatedKey
+from .credential_context import CredentialContext
+from .delegation_context_policy import DelegationContextPolicy
+from .delegation_context_policy_history import DelegationContextPolicyHistory
+from .delegation_context_policy_task_state import DelegationContextPolicyTaskState
+from .delete_queued_submission_request import DeleteQueuedSubmissionRequest
+from .describe_model_request import DescribeModelRequest
+from .developer_message import DeveloperMessage
+from .document_input_content import DocumentInputContent
+from .duplicate_agent_request import DuplicateAgentRequest
+from .email_change_request import EmailChangeRequest
+from .environment import Environment
+from .environment_access import EnvironmentAccess
+from .environment_command import EnvironmentCommand
+from .environment_command_action import EnvironmentCommandAction
+from .environment_command_status import EnvironmentCommandStatus
+from .environment_ownership import EnvironmentOwnership
+from .environment_provider import EnvironmentProvider
+from .environment_provider_configuration import EnvironmentProviderConfiguration
+from .environment_provider_configuration_source import EnvironmentProviderConfigurationSource
+from .environment_provider_definition import EnvironmentProviderDefinition
+from .environment_provider_definition_configuration_schema import EnvironmentProviderDefinitionConfigurationSchema
+from .environment_provider_definition_credential_schema_type_0 import EnvironmentProviderDefinitionCredentialSchemaType0
+from .environment_provider_definition_template_configuration_schemas import (
+    EnvironmentProviderDefinitionTemplateConfigurationSchemas,
+)
+from .environment_provider_definition_template_configuration_schemas_additional_property import (
+    EnvironmentProviderDefinitionTemplateConfigurationSchemasAdditionalProperty,
+)
+from .environment_retention_condition import EnvironmentRetentionCondition
+from .environment_state import EnvironmentState
+from .environment_status import EnvironmentStatus
+from .environment_template import EnvironmentTemplate
+from .environment_template_revision import EnvironmentTemplateRevision
+from .environment_template_revision_configuration import EnvironmentTemplateRevisionConfiguration
+from .environment_template_revision_preparation import EnvironmentTemplateRevisionPreparation
+from .error_detail import ErrorDetail
+from .error_detail_details import ErrorDetailDetails
+from .error_response import ErrorResponse
+from .existing_environment_selection import ExistingEnvironmentSelection
+from .expected_version import ExpectedVersion
+from .extended_agent_card_policy import ExtendedAgentCardPolicy
+from .fork_run_request import ForkRunRequest
+from .function_call import FunctionCall
+from .get_auth_csrf_response_browser_proof_api_v1_auth_csrf_get import GetAuthCsrfResponseBrowserProofApiV1AuthCsrfGet
+from .get_workspaces_workspace_models_scope_type_0 import GetWorkspacesWorkspaceModelsScopeType0
+from .get_workspaces_workspace_skills_source_kind_type_0 import GetWorkspacesWorkspaceSkillsSourceKindType0
+from .git_hub_revision_source import GitHubRevisionSource
+from .git_hub_skill_import_provenance import GitHubSkillImportProvenance
+from .grant import Grant
+from .grant_resource_type import GrantResourceType
+from .grant_role_key import GrantRoleKey
+from .harness_model_characteristics import HarnessModelCharacteristics
+from .hook_subscription import HookSubscription
+from .hook_subscription_collection import HookSubscriptionCollection
+from .hook_subscription_revision import HookSubscriptionRevision
+from .hosted_agui_cancel_receipt import HostedAguiCancelReceipt
+from .hosted_agui_cancel_request import HostedAguiCancelRequest
+from .http_validation_error import HTTPValidationError
+from .image_input_content import ImageInputContent
+from .inline_hook_subscription_input import InlineHookSubscriptionInput
+from .input_adapter_config import InputAdapterConfig
+from .input_adapter_config_config import InputAdapterConfigConfig
+from .input_batching_policy import InputBatchingPolicy
+from .input_content_data_source import InputContentDataSource
+from .input_content_url_source import InputContentUrlSource
+from .input_override import InputOverride
+from .instrumentation_scope import InstrumentationScope
+from .instrumentation_scope_attributes_type_0 import InstrumentationScopeAttributesType0
+from .interrupt_receipt import InterruptReceipt
+from .interrupt_request import InterruptRequest
+from .invitation import Invitation
+from .invitation_delivery import InvitationDelivery
+from .invitation_delivery_delivery import InvitationDeliveryDelivery
+from .invite_workspace_request import InviteWorkspaceRequest
+from .invite_workspace_request_role import InviteWorkspaceRequestRole
+from .invoking_user_secret_credential import InvokingUserSecretCredential
+from .item_collection import ItemCollection
+from .item_resource import ItemResource
+from .launch_authorization_request import LaunchAuthorizationRequest
+from .lifecycle_entity_type import LifecycleEntityType
+from .lifecycle_event import LifecycleEvent
+from .lifecycle_event_payload import LifecycleEventPayload
+from .lifecycle_projection_state import LifecycleProjectionState
+from .login_request import LoginRequest
+from .login_result import LoginResult
+from .mcp_client_metadata import MCPClientMetadata
+from .mcp_server import MCPServer
+from .mcp_server_auth_mode import MCPServerAuthMode
+from .mcp_server_collection import MCPServerCollection
+from .mcp_server_origin import MCPServerOrigin
+from .mcp_source import MCPSource
+from .mcp_source_auth_mode import MCPSourceAuthMode
+from .mcp_tool import MCPTool
+from .mcp_tool_annotations import MCPToolAnnotations
+from .mcp_tool_collection import MCPToolCollection
+from .mcp_tool_input_schema import MCPToolInputSchema
+from .mcp_tool_output_schema_type_0 import MCPToolOutputSchemaType0
+from .mcpo_auth_client_configuration import MCPOAuthClientConfiguration
+from .mcpo_auth_client_configuration_grant_type import MCPOAuthClientConfigurationGrantType
+from .mcpo_auth_client_configuration_source import MCPOAuthClientConfigurationSource
+from .mcpo_auth_client_configuration_token_endpoint_auth_method import (
+    MCPOAuthClientConfigurationTokenEndpointAuthMethod,
+)
+from .mcpo_auth_client_input import MCPOAuthClientInput
+from .mcpo_auth_client_input_grant_type import MCPOAuthClientInputGrantType
+from .mcpo_auth_client_input_token_endpoint_auth_method import MCPOAuthClientInputTokenEndpointAuthMethod
+from .mcpo_auth_discovery import MCPOAuthDiscovery
+from .mcpo_auth_discovery_client_registration import MCPOAuthDiscoveryClientRegistration
+from .mcpo_auth_discovery_grant_types_supported_item import MCPOAuthDiscoveryGrantTypesSupportedItem
+from .mcpo_auth_discovery_token_endpoint_auth_methods_supported_item import (
+    MCPOAuthDiscoveryTokenEndpointAuthMethodsSupportedItem,
+)
+from .mcpo_auth_setup import MCPOAuthSetup
+from .mcpo_auth_setup_action import MCPOAuthSetupAction
+from .mcpo_auth_setup_action_client_registration_type_0 import MCPOAuthSetupActionClientRegistrationType0
+from .mcpo_auth_setup_action_grant_types_item import MCPOAuthSetupActionGrantTypesItem
+from .mcpo_auth_setup_action_token_endpoint_auth_methods_item import MCPOAuthSetupActionTokenEndpointAuthMethodsItem
+from .mcpo_auth_setup_action_type import MCPOAuthSetupActionType
+from .mcpo_auth_setup_request import MCPOAuthSetupRequest
+from .model import Model
+from .model_candidate import ModelCandidate
+from .model_candidate_parameter_support import ModelCandidateParameterSupport
+from .model_candidate_parameter_support_additional_property import ModelCandidateParameterSupportAdditionalProperty
+from .model_candidate_suggested_settings import ModelCandidateSuggestedSettings
+from .model_capability import ModelCapability
+from .model_collection import ModelCollection
+from .model_connection_test_result import ModelConnectionTestResult
+from .model_description import ModelDescription
+from .model_description_parameter_support import ModelDescriptionParameterSupport
+from .model_description_parameter_support_additional_property import ModelDescriptionParameterSupportAdditionalProperty
+from .model_description_settings_schema import ModelDescriptionSettingsSchema
+from .model_description_suggested_settings import ModelDescriptionSuggestedSettings
+from .model_discovery import ModelDiscovery
+from .model_discovery_settings_schemas import ModelDiscoverySettingsSchemas
+from .model_discovery_settings_schemas_additional_property import ModelDiscoverySettingsSchemasAdditionalProperty
+from .model_identity import ModelIdentity
+from .model_limits import ModelLimits
+from .model_override import ModelOverride
+from .model_override_settings_type_0 import ModelOverrideSettingsType0
+from .model_profile import ModelProfile
+from .model_profile_input_modalities_type_0_item import ModelProfileInputModalitiesType0Item
+from .model_provider import ModelProvider
+from .model_provider_collection import ModelProviderCollection
+from .model_provider_configuration import ModelProviderConfiguration
+from .model_provider_definition import ModelProviderDefinition
+from .model_provider_definition_collection import ModelProviderDefinitionCollection
+from .model_provider_definition_configuration_schema import ModelProviderDefinitionConfigurationSchema
+from .model_provider_definition_credential_schema import ModelProviderDefinitionCredentialSchema
+from .model_settings import ModelSettings
+from .model_test_request import ModelTestRequest
+from .new_environment_selection import NewEnvironmentSelection
+from .notification_subscription import NotificationSubscription
+from .notification_subscription_scope import NotificationSubscriptionScope
+from .notification_subscription_topics_item import NotificationSubscriptionTopicsItem
+from .observation import Observation
+from .observation_attributes_type_0 import ObservationAttributesType0
+from .observation_collection import ObservationCollection
+from .observation_event import ObservationEvent
+from .observation_event_attributes import ObservationEventAttributes
+from .observation_link import ObservationLink
+from .observation_link_attributes_type_0 import ObservationLinkAttributesType0
+from .observation_resource_attributes_type_0 import ObservationResourceAttributesType0
+from .observation_status_type_0 import ObservationStatusType0
+from .observation_usage_type_0 import ObservationUsageType0
+from .organization import Organization
+from .organization_permissions import OrganizationPermissions
+from .output_spec import OutputSpec
+from .output_spec_resources import OutputSpecResources
+from .output_spec_schema_type_0 import OutputSpecSchemaType0
+from .output_variant import OutputVariant
+from .output_variant_resources import OutputVariantResources
+from .output_variant_schema import OutputVariantSchema
+from .page_api_key import PageApiKey
+from .page_auth_session import PageAuthSession
+from .page_invitation import PageInvitation
+from .page_organization import PageOrganization
+from .page_role_binding import PageRoleBinding
+from .page_security_event import PageSecurityEvent
+from .page_service_account import PageServiceAccount
+from .page_user import PageUser
+from .page_workspace import PageWorkspace
+from .password_reset_request import PasswordResetRequest
+from .path_binary_source import PathBinarySource
+from .pending_action_collection import PendingActionCollection
+from .pending_action_resource import PendingActionResource
+from .permissions import Permissions
+from .plugin_selection import PluginSelection
+from .plugin_selection_config import PluginSelectionConfig
+from .post_application_accounts_account_id_action_action import PostApplicationAccountsAccountIdActionAction
+from .post_connector_providers_connector_provider_id_action_action import (
+    PostConnectorProvidersConnectorProviderIdActionAction,
+)
+from .post_workspaces_workspace_agents_agent_action_action import PostWorkspacesWorkspaceAgentsAgentActionAction
+from .principal_ref import PrincipalRef
+from .principal_type import PrincipalType
+from .protocol_config import ProtocolConfig
+from .protocol_config_context_schema_type_0 import ProtocolConfigContextSchemaType0
+from .protocol_config_input_data_schema_type_0 import ProtocolConfigInputDataSchemaType0
+from .protocol_config_state_schema_type_0 import ProtocolConfigStateSchemaType0
+from .protocol_limits import ProtocolLimits
+from .queued_submission import QueuedSubmission
+from .queued_submission_collection import QueuedSubmissionCollection
+from .queued_submission_consumption_receipt import QueuedSubmissionConsumptionReceipt
+from .queued_submission_consumption_receipt_outcome import QueuedSubmissionConsumptionReceiptOutcome
+from .queued_submission_failure import QueuedSubmissionFailure
+from .queued_submission_mutation_receipt import QueuedSubmissionMutationReceipt
+from .queued_submission_state import QueuedSubmissionState
+from .reasoning_message import ReasoningMessage
+from .receive_authorization_request import ReceiveAuthorizationRequest
+from .register_environment_request import RegisterEnvironmentRequest
+from .register_environment_request_configuration import RegisterEnvironmentRequestConfiguration
+from .reject_pending_resolution import RejectPendingResolution
+from .reorder_queued_submissions_request import ReorderQueuedSubmissionsRequest
+from .replace_account_credentials_request import ReplaceAccountCredentialsRequest
+from .replace_account_credentials_request_credentials import ReplaceAccountCredentialsRequestCredentials
+from .replace_connector_provider_credentials_request import ReplaceConnectorProviderCredentialsRequest
+from .replace_connector_provider_credentials_request_credentials import (
+    ReplaceConnectorProviderCredentialsRequestCredentials,
+)
+from .replace_credential_request import ReplaceCredentialRequest
+from .replace_credential_request_credential_type_0 import ReplaceCredentialRequestCredentialType0
+from .replace_target_request import ReplaceTargetRequest
+from .replace_target_request_provider_policy_type_0 import ReplaceTargetRequestProviderPolicyType0
+from .replace_target_request_target_kind import ReplaceTargetRequestTargetKind
+from .resolved_agent_model import ResolvedAgentModel
+from .resolved_agent_model_settings import ResolvedAgentModelSettings
+from .resolved_skill_binding import ResolvedSkillBinding
+from .resolved_subagent_edge import ResolvedSubagentEdge
+from .resource_lifecycle_event_page import ResourceLifecycleEventPage
+from .resource_lifecycle_event_page_resource_type import ResourceLifecycleEventPageResourceType
+from .respond_pending_resolution import RespondPendingResolution
+from .restore_agent_revision_request import RestoreAgentRevisionRequest
+from .resume_entry import ResumeEntry
+from .resume_entry_status import ResumeEntryStatus
+from .retention_policy import RetentionPolicy
+from .retention_window import RetentionWindow
+from .retry_config import RetryConfig
+from .retry_override import RetryOverride
+from .retry_run_request import RetryRunRequest
+from .role_binding import RoleBinding
+from .run_acceptance_receipt import RunAcceptanceReceipt
+from .run_agent_input import RunAgentInput
+from .run_attempt_collection import RunAttemptCollection
+from .run_attempt_resource import RunAttemptResource
+from .run_collection import RunCollection
+from .run_lineage import RunLineage
+from .run_lineage_entry import RunLineageEntry
+from .run_lineage_kind import RunLineageKind
+from .run_output_asset_source import RunOutputAssetSource
+from .run_resource import RunResource
+from .run_status import RunStatus
+from .run_stream_event import RunStreamEvent
+from .run_stream_event_payload import RunStreamEventPayload
+from .safe_failure import SafeFailure
+from .safe_failure_details import SafeFailureDetails
+from .safe_failure_retry_hint import SafeFailureRetryHint
+from .search_configuration import SearchConfiguration
+from .search_in import SearchIn
+from .search_provider import SearchProvider
+from .search_provider_collection import SearchProviderCollection
+from .search_provider_configuration import SearchProviderConfiguration
+from .search_provider_definition import SearchProviderDefinition
+from .search_provider_definition_collection import SearchProviderDefinitionCollection
+from .search_provider_definition_configuration_schema import SearchProviderDefinitionConfigurationSchema
+from .search_provider_definition_credential_schema import SearchProviderDefinitionCredentialSchema
+from .search_provider_reference import SearchProviderReference
+from .search_provider_reference_collection import SearchProviderReferenceCollection
+from .search_provider_test_result import SearchProviderTestResult
+from .search_selection import SearchSelection
+from .secret_requirement import SecretRequirement
+from .security_event import SecurityEvent
+from .service_account import ServiceAccount
+from .session_collection import SessionCollection
+from .session_preview import SessionPreview
+from .session_resource import SessionResource
+from .set_role_request import SetRoleRequest
+from .set_role_request_role import SetRoleRequestRole
+from .skill import Skill
+from .skill_agent_reference import SkillAgentReference
+from .skill_agent_reference_collection import SkillAgentReferenceCollection
+from .skill_collection import SkillCollection
+from .skill_list_item import SkillListItem
+from .skill_list_item_source_kind import SkillListItemSourceKind
+from .skill_package_file import SkillPackageFile
+from .skill_package_manifest import SkillPackageManifest
+from .skill_publication_receipt import SkillPublicationReceipt
+from .skill_publication_receipt_outcome import SkillPublicationReceiptOutcome
+from .skill_revision import SkillRevision
+from .skill_revision_collection import SkillRevisionCollection
+from .skill_selection import SkillSelection
+from .skill_upload_receipt import SkillUploadReceipt
+from .start_run_request import StartRunRequest
+from .steer_receipt import SteerReceipt
+from .steer_status import SteerStatus
+from .steer_status_status import SteerStatusStatus
+from .subagent_override_input import SubagentOverrideInput
+from .subagent_override_output import SubagentOverrideOutput
+from .subagent_selection_input import SubagentSelectionInput
+from .subagent_selection_output import SubagentSelectionOutput
+from .system_actor_ref import SystemActorRef
+from .system_message import SystemMessage
+from .target_collection import TargetCollection
+from .target_config import TargetConfig
+from .target_config_provider_policy_type_0 import TargetConfigProviderPolicyType0
+from .target_config_target_kind import TargetConfigTargetKind
+from .text_content import TextContent
+from .text_input_content import TextInputContent
+from .thread import Thread
+from .thread_collection import ThreadCollection
+from .thread_origin_kind import ThreadOriginKind
+from .thread_queue_mutation_receipt import ThreadQueueMutationReceipt
+from .thread_resource import ThreadResource
+from .thread_role import ThreadRole
+from .thread_run_submission_intent_input import ThreadRunSubmissionIntentInput
+from .thread_run_submission_intent_output import ThreadRunSubmissionIntentOutput
+from .thread_run_submission_receipt import ThreadRunSubmissionReceipt
+from .thread_run_submission_receipt_outcome import ThreadRunSubmissionReceiptOutcome
+from .thread_run_submission_request import ThreadRunSubmissionRequest
+from .tool import Tool
+from .tool_call import ToolCall
+from .tool_message import ToolMessage
+from .trace import Trace
+from .trace_collection import TraceCollection
+from .trace_correlation import TraceCorrelation
+from .trace_query_descriptor import TraceQueryDescriptor
+from .trace_view import TraceView
+from .update_account_request import UpdateAccountRequest
+from .update_account_request_provider_config_type_0 import UpdateAccountRequestProviderConfigType0
+from .update_account_request_provider_policy_type_0 import UpdateAccountRequestProviderPolicyType0
+from .update_agent_request import UpdateAgentRequest
+from .update_connection_request import UpdateConnectionRequest
+from .update_connector_provider_request import UpdateConnectorProviderRequest
+from .update_connector_provider_request_credentials_type_0 import UpdateConnectorProviderRequestCredentialsType0
+from .update_environment_request import UpdateEnvironmentRequest
+from .update_hook_subscription_request import UpdateHookSubscriptionRequest
+from .update_hook_subscription_state_request import UpdateHookSubscriptionStateRequest
+from .update_model_provider_request import UpdateModelProviderRequest
+from .update_model_provider_request_configuration_type_0 import UpdateModelProviderRequestConfigurationType0
+from .update_model_provider_request_extra_headers import UpdateModelProviderRequestExtraHeaders
+from .update_model_request import UpdateModelRequest
+from .update_model_request_settings_type_0 import UpdateModelRequestSettingsType0
+from .update_profile_request import UpdateProfileRequest
+from .update_provider_request import UpdateProviderRequest
+from .update_provider_request_credential_type_0 import UpdateProviderRequestCredentialType0
+from .update_queued_submission_request import UpdateQueuedSubmissionRequest
+from .update_resource_profile_request import UpdateResourceProfileRequest
+from .update_search_provider_request import UpdateSearchProviderRequest
+from .update_service_account_request import UpdateServiceAccountRequest
+from .update_service_account_request_role import UpdateServiceAccountRequestRole
+from .update_service_account_request_status import UpdateServiceAccountRequestStatus
+from .update_skill_request import UpdateSkillRequest
+from .update_template_request import UpdateTemplateRequest
+from .uploaded_asset_source import UploadedAssetSource
+from .url_binary_source import UrlBinarySource
+from .usage_limits_input import UsageLimitsInput
+from .usage_limits_output import UsageLimitsOutput
+from .user import User
+from .user_message import UserMessage
+from .validation_error import ValidationError
+from .validation_error_context import ValidationErrorContext
+from .video_input_content import VideoInputContent
+from .waiting_resolution_defaults import WaitingResolutionDefaults
+from .waiting_run_feedback_request import WaitingRunFeedbackRequest
+from .webhook_destination_config import WebhookDestinationConfig
+from .workspace import Workspace
+from .workspace_event_page import WorkspaceEventPage
+from .workspace_secret_credential import WorkspaceSecretCredential
+from .zip_skill_import_provenance import ZipSkillImportProvenance
+from .zip_upload_skill_source import ZipUploadSkillSource
+
+__all__ = (
+    "A2ASkillProjection",
+    "AcceptInvitationRequest",
+    "Account",
+    "AccountCollection",
+    "AccountCommandRequest",
+    "AccountProviderConfig",
+    "AccountProviderDefinition",
+    "AccountProviderDefinitionCollection",
+    "AccountProviderDefinitionConfigurationSchema",
+    "AccountProviderDefinitionCredentialSchema",
+    "AccountProviderDefinitionReceptionPolicySchema",
+    "AccountProviderDefinitionTargetKindsItem",
+    "AccountProviderPolicyType0",
+    "AccountStatus",
+    "AccountTarget",
+    "AccountTargetProviderPolicyType0",
+    "AccountTargetTargetKind",
+    "ActivityMessage",
+    "ActivityMessageContent",
+    "Agent",
+    "AgentCollection",
+    "AgentConfigInput",
+    "AgentConfigInputSubagentMode",
+    "AgentConfigInputSubagents",
+    "AgentConfigOutput",
+    "AgentConfigOutputSubagentMode",
+    "AgentConfigOutputSubagents",
+    "AgentInput",
+    "AgentInputSchemaVersion",
+    "AgentModel",
+    "AgentModelSettings",
+    "AgentRevision",
+    "AgentRevisionCollection",
+    "AgentRevisionCreateResult",
+    "AgentRunOverrideInput",
+    "AgentRunOverrideInputSubagentsType0",
+    "AgentRunOverrideOutput",
+    "AgentRunOverrideOutputSubagentsType0",
+    "AgentSecretBinding",
+    "AgentSource",
+    "ApiKey",
+    "ApprovePendingResolution",
+    "Asset",
+    "AssetBinarySource",
+    "AssetCollection",
+    "AssetPublicationConfig",
+    "AssetSourceKind",
+    "AssistantMessage",
+    "AudioInputContent",
+    "AuthConfiguration",
+    "AuthSession",
+    "Authorization",
+    "AuthorizationAction",
+    "AuthorizationActionType",
+    "AuthorizationRedirect",
+    "AuthorizationStatus",
+    "BinaryContent",
+    "BinaryContentDelivery",
+    "BinaryInputContent",
+    "ChangePasswordRequest",
+    "ChangeRoleRequest",
+    "ChangeRoleRequestRole",
+    "ChildEnvironmentPolicy",
+    "ChildEnvironmentPolicyMode",
+    "ClientToolDefinition",
+    "ClientToolDefinitionMetadata",
+    "ClientToolDefinitionParametersJsonSchema",
+    "ClientToolPolicy",
+    "CollectionEnvironment",
+    "CollectionEnvironmentProvider",
+    "CollectionEnvironmentProviderDefinition",
+    "CollectionEnvironmentTemplate",
+    "CollectionEnvironmentTemplateRevision",
+    "CompleteAuthorizationRequest",
+    "CompleteEmailChangeRequest",
+    "CompletePasswordResetRequest",
+    "CompletePendingResolution",
+    "ConfigureMCPOAuthClientRequest",
+    "Connection",
+    "ConnectionCheck",
+    "ConnectionCheckScope",
+    "ConnectionCheckStatus",
+    "ConnectionCleanupReceipt",
+    "ConnectionCleanupReceiptLocalStatus",
+    "ConnectionCleanupReceiptRemoteStatus",
+    "ConnectionCollection",
+    "ConnectionCommandRequest",
+    "ConnectionSafeMetadata",
+    "ConnectionStatus",
+    "ConnectionStatusReason",
+    "ConnectionToolSelection",
+    "Connector",
+    "ConnectorCollection",
+    "ConnectorCredentialSchemas",
+    "ConnectorCredentialSchemasAdditionalProperty",
+    "ConnectorProvider",
+    "ConnectorProviderCollection",
+    "ConnectorProviderCommandRequest",
+    "ConnectorProviderConfiguration",
+    "ConnectorProviderDefinition",
+    "ConnectorProviderDefinitionCollection",
+    "ConnectorProviderDefinitionConfigurationSchema",
+    "ConnectorProviderDefinitionCredentialSchema",
+    "ConnectorProviderStatus",
+    "ConnectorProviderTestResult",
+    "ConnectorProviderTestResultVerifiedAccessItem",
+    "ConnectorSetupSchema",
+    "ConnectorSource",
+    "ConnectorTool",
+    "ConnectorToolAnnotations",
+    "ConnectorToolInputSchema",
+    "ConnectorToolOutputSchemaType0",
+    "ConnectorToolPage",
+    "ConsumeQueuedSubmissionRequest",
+    "Content",
+    "Context",
+    "ContinueRunRequest",
+    "CreateAccountRequest",
+    "CreateAccountRequestCredentials",
+    "CreateAccountRequestProviderConfig",
+    "CreateAccountRequestProviderPolicyType0",
+    "CreateAgentRequest",
+    "CreateAgentRevisionRequest",
+    "CreateAuthorizationRequest",
+    "CreateAuthorizationRequestCredentialsType0",
+    "CreateAuthorizationRequestMethod",
+    "CreateAuthorizationRequestOptions",
+    "CreateConnectionRequest",
+    "CreateConnectorProviderRequest",
+    "CreateConnectorProviderRequestConfiguration",
+    "CreateConnectorProviderRequestCredentials",
+    "CreateHookSubscriptionRequest",
+    "CreateInvitationRequest",
+    "CreateKeyRequest",
+    "CreateManagedEnvironmentRequest",
+    "CreateModelProviderRequest",
+    "CreateModelProviderRequestConfiguration",
+    "CreateModelProviderRequestExtraHeaders",
+    "CreateModelRequest",
+    "CreateModelRequestSettings",
+    "CreateProviderRequest",
+    "CreateProviderRequestConfiguration",
+    "CreateProviderRequestCredentialType0",
+    "CreateSearchProviderRequest",
+    "CreateSearchProviderRequestType",
+    "CreateServiceAccountRequest",
+    "CreateServiceAccountRequestRole",
+    "CreateSkillRequest",
+    "CreateSkillRevisionRequest",
+    "CreateTemplateRequest",
+    "CreateTemplateRequestConfiguration",
+    "CreateTemplateRequestPreparation",
+    "CreateTemplateRevisionRequest",
+    "CreateTemplateRevisionRequestConfiguration",
+    "CreateTemplateRevisionRequestPreparation",
+    "CreateThreadRequest",
+    "CreateWorkspaceRequest",
+    "CreatedKey",
+    "CredentialContext",
+    "DelegationContextPolicy",
+    "DelegationContextPolicyHistory",
+    "DelegationContextPolicyTaskState",
+    "DeleteQueuedSubmissionRequest",
+    "DescribeModelRequest",
+    "DeveloperMessage",
+    "DocumentInputContent",
+    "DuplicateAgentRequest",
+    "EmailChangeRequest",
+    "Environment",
+    "EnvironmentAccess",
+    "EnvironmentCommand",
+    "EnvironmentCommandAction",
+    "EnvironmentCommandStatus",
+    "EnvironmentOwnership",
+    "EnvironmentProvider",
+    "EnvironmentProviderConfiguration",
+    "EnvironmentProviderConfigurationSource",
+    "EnvironmentProviderDefinition",
+    "EnvironmentProviderDefinitionConfigurationSchema",
+    "EnvironmentProviderDefinitionCredentialSchemaType0",
+    "EnvironmentProviderDefinitionTemplateConfigurationSchemas",
+    "EnvironmentProviderDefinitionTemplateConfigurationSchemasAdditionalProperty",
+    "EnvironmentRetentionCondition",
+    "EnvironmentState",
+    "EnvironmentStatus",
+    "EnvironmentTemplate",
+    "EnvironmentTemplateRevision",
+    "EnvironmentTemplateRevisionConfiguration",
+    "EnvironmentTemplateRevisionPreparation",
+    "ErrorDetail",
+    "ErrorDetailDetails",
+    "ErrorResponse",
+    "ExistingEnvironmentSelection",
+    "ExpectedVersion",
+    "ExtendedAgentCardPolicy",
+    "ForkRunRequest",
+    "FunctionCall",
+    "GetAuthCsrfResponseBrowserProofApiV1AuthCsrfGet",
+    "GetWorkspacesWorkspaceModelsScopeType0",
+    "GetWorkspacesWorkspaceSkillsSourceKindType0",
+    "GitHubRevisionSource",
+    "GitHubSkillImportProvenance",
+    "Grant",
+    "GrantResourceType",
+    "GrantRoleKey",
+    "HTTPValidationError",
+    "HarnessModelCharacteristics",
+    "HookSubscription",
+    "HookSubscriptionCollection",
+    "HookSubscriptionRevision",
+    "HostedAguiCancelReceipt",
+    "HostedAguiCancelRequest",
+    "ImageInputContent",
+    "InlineHookSubscriptionInput",
+    "InputAdapterConfig",
+    "InputAdapterConfigConfig",
+    "InputBatchingPolicy",
+    "InputContentDataSource",
+    "InputContentUrlSource",
+    "InputOverride",
+    "InstrumentationScope",
+    "InstrumentationScopeAttributesType0",
+    "InterruptReceipt",
+    "InterruptRequest",
+    "Invitation",
+    "InvitationDelivery",
+    "InvitationDeliveryDelivery",
+    "InviteWorkspaceRequest",
+    "InviteWorkspaceRequestRole",
+    "InvokingUserSecretCredential",
+    "ItemCollection",
+    "ItemResource",
+    "LaunchAuthorizationRequest",
+    "LifecycleEntityType",
+    "LifecycleEvent",
+    "LifecycleEventPayload",
+    "LifecycleProjectionState",
+    "LoginRequest",
+    "LoginResult",
+    "MCPClientMetadata",
+    "MCPOAuthClientConfiguration",
+    "MCPOAuthClientConfigurationGrantType",
+    "MCPOAuthClientConfigurationSource",
+    "MCPOAuthClientConfigurationTokenEndpointAuthMethod",
+    "MCPOAuthClientInput",
+    "MCPOAuthClientInputGrantType",
+    "MCPOAuthClientInputTokenEndpointAuthMethod",
+    "MCPOAuthDiscovery",
+    "MCPOAuthDiscoveryClientRegistration",
+    "MCPOAuthDiscoveryGrantTypesSupportedItem",
+    "MCPOAuthDiscoveryTokenEndpointAuthMethodsSupportedItem",
+    "MCPOAuthSetup",
+    "MCPOAuthSetupAction",
+    "MCPOAuthSetupActionClientRegistrationType0",
+    "MCPOAuthSetupActionGrantTypesItem",
+    "MCPOAuthSetupActionTokenEndpointAuthMethodsItem",
+    "MCPOAuthSetupActionType",
+    "MCPOAuthSetupRequest",
+    "MCPServer",
+    "MCPServerAuthMode",
+    "MCPServerCollection",
+    "MCPServerOrigin",
+    "MCPSource",
+    "MCPSourceAuthMode",
+    "MCPTool",
+    "MCPToolAnnotations",
+    "MCPToolCollection",
+    "MCPToolInputSchema",
+    "MCPToolOutputSchemaType0",
+    "Model",
+    "ModelCandidate",
+    "ModelCandidateParameterSupport",
+    "ModelCandidateParameterSupportAdditionalProperty",
+    "ModelCandidateSuggestedSettings",
+    "ModelCapability",
+    "ModelCollection",
+    "ModelConnectionTestResult",
+    "ModelDescription",
+    "ModelDescriptionParameterSupport",
+    "ModelDescriptionParameterSupportAdditionalProperty",
+    "ModelDescriptionSettingsSchema",
+    "ModelDescriptionSuggestedSettings",
+    "ModelDiscovery",
+    "ModelDiscoverySettingsSchemas",
+    "ModelDiscoverySettingsSchemasAdditionalProperty",
+    "ModelIdentity",
+    "ModelLimits",
+    "ModelOverride",
+    "ModelOverrideSettingsType0",
+    "ModelProfile",
+    "ModelProfileInputModalitiesType0Item",
+    "ModelProvider",
+    "ModelProviderCollection",
+    "ModelProviderConfiguration",
+    "ModelProviderDefinition",
+    "ModelProviderDefinitionCollection",
+    "ModelProviderDefinitionConfigurationSchema",
+    "ModelProviderDefinitionCredentialSchema",
+    "ModelSettings",
+    "ModelTestRequest",
+    "NewEnvironmentSelection",
+    "NotificationSubscription",
+    "NotificationSubscriptionScope",
+    "NotificationSubscriptionTopicsItem",
+    "Observation",
+    "ObservationAttributesType0",
+    "ObservationCollection",
+    "ObservationEvent",
+    "ObservationEventAttributes",
+    "ObservationLink",
+    "ObservationLinkAttributesType0",
+    "ObservationResourceAttributesType0",
+    "ObservationStatusType0",
+    "ObservationUsageType0",
+    "Organization",
+    "OrganizationPermissions",
+    "OutputSpec",
+    "OutputSpecResources",
+    "OutputSpecSchemaType0",
+    "OutputVariant",
+    "OutputVariantResources",
+    "OutputVariantSchema",
+    "PageApiKey",
+    "PageAuthSession",
+    "PageInvitation",
+    "PageOrganization",
+    "PageRoleBinding",
+    "PageSecurityEvent",
+    "PageServiceAccount",
+    "PageUser",
+    "PageWorkspace",
+    "PasswordResetRequest",
+    "PathBinarySource",
+    "PendingActionCollection",
+    "PendingActionResource",
+    "Permissions",
+    "PluginSelection",
+    "PluginSelectionConfig",
+    "PostApplicationAccountsAccountIdActionAction",
+    "PostConnectorProvidersConnectorProviderIdActionAction",
+    "PostWorkspacesWorkspaceAgentsAgentActionAction",
+    "PrincipalRef",
+    "PrincipalType",
+    "ProtocolConfig",
+    "ProtocolConfigContextSchemaType0",
+    "ProtocolConfigInputDataSchemaType0",
+    "ProtocolConfigStateSchemaType0",
+    "ProtocolLimits",
+    "QueuedSubmission",
+    "QueuedSubmissionCollection",
+    "QueuedSubmissionConsumptionReceipt",
+    "QueuedSubmissionConsumptionReceiptOutcome",
+    "QueuedSubmissionFailure",
+    "QueuedSubmissionMutationReceipt",
+    "QueuedSubmissionState",
+    "ReasoningMessage",
+    "ReceiveAuthorizationRequest",
+    "RegisterEnvironmentRequest",
+    "RegisterEnvironmentRequestConfiguration",
+    "RejectPendingResolution",
+    "ReorderQueuedSubmissionsRequest",
+    "ReplaceAccountCredentialsRequest",
+    "ReplaceAccountCredentialsRequestCredentials",
+    "ReplaceConnectorProviderCredentialsRequest",
+    "ReplaceConnectorProviderCredentialsRequestCredentials",
+    "ReplaceCredentialRequest",
+    "ReplaceCredentialRequestCredentialType0",
+    "ReplaceTargetRequest",
+    "ReplaceTargetRequestProviderPolicyType0",
+    "ReplaceTargetRequestTargetKind",
+    "ResolvedAgentModel",
+    "ResolvedAgentModelSettings",
+    "ResolvedSkillBinding",
+    "ResolvedSubagentEdge",
+    "ResourceLifecycleEventPage",
+    "ResourceLifecycleEventPageResourceType",
+    "RespondPendingResolution",
+    "RestoreAgentRevisionRequest",
+    "ResumeEntry",
+    "ResumeEntryStatus",
+    "RetentionPolicy",
+    "RetentionWindow",
+    "RetryConfig",
+    "RetryOverride",
+    "RetryRunRequest",
+    "RoleBinding",
+    "RunAcceptanceReceipt",
+    "RunAgentInput",
+    "RunAttemptCollection",
+    "RunAttemptResource",
+    "RunCollection",
+    "RunLineage",
+    "RunLineageEntry",
+    "RunLineageKind",
+    "RunOutputAssetSource",
+    "RunResource",
+    "RunStatus",
+    "RunStreamEvent",
+    "RunStreamEventPayload",
+    "SafeFailure",
+    "SafeFailureDetails",
+    "SafeFailureRetryHint",
+    "SearchConfiguration",
+    "SearchIn",
+    "SearchProvider",
+    "SearchProviderCollection",
+    "SearchProviderConfiguration",
+    "SearchProviderDefinition",
+    "SearchProviderDefinitionCollection",
+    "SearchProviderDefinitionConfigurationSchema",
+    "SearchProviderDefinitionCredentialSchema",
+    "SearchProviderReference",
+    "SearchProviderReferenceCollection",
+    "SearchProviderTestResult",
+    "SearchSelection",
+    "SecretRequirement",
+    "SecurityEvent",
+    "ServiceAccount",
+    "SessionCollection",
+    "SessionPreview",
+    "SessionResource",
+    "SetRoleRequest",
+    "SetRoleRequestRole",
+    "Skill",
+    "SkillAgentReference",
+    "SkillAgentReferenceCollection",
+    "SkillCollection",
+    "SkillListItem",
+    "SkillListItemSourceKind",
+    "SkillPackageFile",
+    "SkillPackageManifest",
+    "SkillPublicationReceipt",
+    "SkillPublicationReceiptOutcome",
+    "SkillRevision",
+    "SkillRevisionCollection",
+    "SkillSelection",
+    "SkillUploadReceipt",
+    "StartRunRequest",
+    "SteerReceipt",
+    "SteerStatus",
+    "SteerStatusStatus",
+    "SubagentOverrideInput",
+    "SubagentOverrideOutput",
+    "SubagentSelectionInput",
+    "SubagentSelectionOutput",
+    "SystemActorRef",
+    "SystemMessage",
+    "TargetCollection",
+    "TargetConfig",
+    "TargetConfigProviderPolicyType0",
+    "TargetConfigTargetKind",
+    "TextContent",
+    "TextInputContent",
+    "Thread",
+    "ThreadCollection",
+    "ThreadOriginKind",
+    "ThreadQueueMutationReceipt",
+    "ThreadResource",
+    "ThreadRole",
+    "ThreadRunSubmissionIntentInput",
+    "ThreadRunSubmissionIntentOutput",
+    "ThreadRunSubmissionReceipt",
+    "ThreadRunSubmissionReceiptOutcome",
+    "ThreadRunSubmissionRequest",
+    "Tool",
+    "ToolCall",
+    "ToolMessage",
+    "Trace",
+    "TraceCollection",
+    "TraceCorrelation",
+    "TraceQueryDescriptor",
+    "TraceView",
+    "UpdateAccountRequest",
+    "UpdateAccountRequestProviderConfigType0",
+    "UpdateAccountRequestProviderPolicyType0",
+    "UpdateAgentRequest",
+    "UpdateConnectionRequest",
+    "UpdateConnectorProviderRequest",
+    "UpdateConnectorProviderRequestCredentialsType0",
+    "UpdateEnvironmentRequest",
+    "UpdateHookSubscriptionRequest",
+    "UpdateHookSubscriptionStateRequest",
+    "UpdateModelProviderRequest",
+    "UpdateModelProviderRequestConfigurationType0",
+    "UpdateModelProviderRequestExtraHeaders",
+    "UpdateModelRequest",
+    "UpdateModelRequestSettingsType0",
+    "UpdateProfileRequest",
+    "UpdateProviderRequest",
+    "UpdateProviderRequestCredentialType0",
+    "UpdateQueuedSubmissionRequest",
+    "UpdateResourceProfileRequest",
+    "UpdateSearchProviderRequest",
+    "UpdateServiceAccountRequest",
+    "UpdateServiceAccountRequestRole",
+    "UpdateServiceAccountRequestStatus",
+    "UpdateSkillRequest",
+    "UpdateTemplateRequest",
+    "UploadedAssetSource",
+    "UrlBinarySource",
+    "UsageLimitsInput",
+    "UsageLimitsOutput",
+    "User",
+    "UserMessage",
+    "ValidationError",
+    "ValidationErrorContext",
+    "VideoInputContent",
+    "WaitingResolutionDefaults",
+    "WaitingRunFeedbackRequest",
+    "WebhookDestinationConfig",
+    "Workspace",
+    "WorkspaceEventPage",
+    "WorkspaceSecretCredential",
+    "ZipSkillImportProvenance",
+    "ZipUploadSkillSource",
+)

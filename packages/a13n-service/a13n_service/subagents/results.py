@@ -166,8 +166,7 @@ class AsyncSubagentResultPublisher:
                     )
                 entry = await allocate_async_result(
                     database,
-                    organization_id=organization_id,
-                    thread_id=thread.id,
+                    thread=thread,
                     origin_run_id=parent.id,
                     relationship_id=authority.relationship.id,
                     target_run_id=target_run_id,

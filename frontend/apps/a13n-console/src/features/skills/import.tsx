@@ -1,10 +1,24 @@
-import { useState } from "react";
+import { ResourceIdentity } from "../../shared/collection";
+import {
+  Button,
+  Tabs,
+  TabsList,
+  TabsTab,
+  TabsPanel,
+  DisclosureSection,
+  FormField,
+  Input,
+  ModalFrame,
+} from "a13n-ui";
+import { FileUpload } from "../../shared/file-upload";
+
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Button, Dialog, Input, SelectField } from "a13n-ui";
+import { useState } from "react";
+
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { data, commandHeaders, type Schema } from "../../shared/api";
+import { commandHeaders, data, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 import { FormActions, JsonView } from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
@@ -20,38 +34,45 @@ export function ImportSkill({
   const { t } = useTranslation(),
     [open, setOpen] = useState(false);
   return (
-    <Dialog
-      open={open}
+    <ModalFrame
       onOpenChange={setOpen}
-      title={t(skill ? "Publish skill revision" : "Import skill")}
-      description={t(
-        "Import a normalized skill package from a ZIP file or GitHub repository.",
-      )}
-      closeLabel={t("Close")}
+      placement="top"
       trigger={
-        <Button variant="primary">
-          {t(skill ? "Publish revision" : "Import skill")}
+        <Button variant="default" type="button">
+          {t(skill ? "New version" : "Import skill")}
         </Button>
       }
+      size={"md"}
+      title={t(skill ? "New version" : "Import skill")}
+      description={
+        skill
+          ? t("Publish an updated package as a new version of this skill.")
+          : t("Import a skill from a ZIP file or GitHub repository.")
+      }
+      closeLabel={t("Close")}
+      open={open}
     >
       {open && (
         <ImportForm
           skill={skill}
+          onCancel={() => setOpen(false)}
           onSuccess={(result) => {
             setOpen(false);
             onSuccess?.(result);
           }}
         />
       )}
-    </Dialog>
+    </ModalFrame>
   );
 }
 function ImportForm({
   skill,
   onSuccess,
+  onCancel,
 }: {
   skill?: Schema["Skill"];
   onSuccess: (skill: Schema["Skill"]) => void;
+  onCancel: () => void;
 }) {
   const client = useClient(),
     { workspace } = useWorkspace(),
@@ -71,9 +92,9 @@ function ImportForm({
     mutationFn: async () => {
       if (!upload) throw new Error(t("Choose a ZIP file first."));
       return client.http
-        .POST("/api/v1/workspaces/{workspace_id}/skill-uploads", {
+        .POST("/api/v1/workspaces/{workspace}/skill-uploads", {
           params: {
-            path: { workspace_id: workspace.id },
+            path: { workspace: workspace.id },
             header: commandHeaders(workspace.id, upload.key),
           },
           headers: { "Content-Type": "application/zip" },
@@ -111,9 +132,9 @@ function ImportForm({
       }
       const body = { source, ...(name && { name }) };
       return client.http
-        .POST("/api/v1/workspaces/{workspace_id}/skills", {
+        .POST("/api/v1/workspaces/{workspace}/skills", {
           params: {
-            path: { workspace_id: workspace.id },
+            path: { workspace: workspace.id },
             header: commandHeaders(workspace.id, key.forBody(body)),
           },
           body,
@@ -133,88 +154,145 @@ function ImportForm({
         publish.mutate();
       }}
     >
-      {!basis && (
-        <Input
-          label={t("Display name")}
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-          hint={t("Leave empty to use the package name.")}
+      {basis && (
+        <ResourceIdentity
+          name={basis.name}
+          resourceId={basis.id}
+          resourceKey={basis.key}
+          description={t("Current version {{version}}", {
+            version: basis.version,
+          })}
         />
       )}
-      <SelectField
-        placeholder={t("Select source")}
-        label={t("Source")}
+      {!basis && (
+        <FormField
+          className="min-w-0 w-full"
+          label={t("Display name")}
+          description={t("Leave empty to use the package name.")}
+        >
+          <Input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+          />
+        </FormField>
+      )}
+      <Tabs
         value={kind}
-        onValueChange={setKind}
-        options={[
-          { value: "zip_upload", label: t("ZIP file") },
-          { value: "github", label: "GitHub" },
-        ]}
-      />
-      {kind === "zip_upload" ? (
-        <>
-          <label className={styles.field}>
-            {t("ZIP file")}
-            <input
-              type="file"
-              accept=".zip,application/zip"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                setUpload(
-                  file ? { file, key: crypto.randomUUID() } : undefined,
-                );
-                setReceipt(undefined);
-                stage.reset();
-              }}
-            />
-          </label>
-          <Button
-            disabled={!upload}
-            loading={stage.isPending}
-            onClick={() => stage.mutate()}
+        onValueChange={(value) => {
+          setKind(String(value));
+          publish.reset();
+        }}
+      >
+        <TabsList aria-label={t("Source")}>
+          <TabsTab
+            value="zip_upload"
+            disabled={publish.isPending || stage.isPending}
           >
-            {t("Validate package")}
-          </Button>
+            {t("ZIP file")}
+          </TabsTab>
+          <TabsTab
+            value="github"
+            disabled={publish.isPending || stage.isPending}
+          >
+            GitHub
+          </TabsTab>
+        </TabsList>
+        <TabsPanel value="zip_upload" className={styles.stack}>
+          <FileUpload
+            label={t("ZIP file")}
+            file={upload?.file}
+            disabled={stage.isPending || publish.isPending}
+            acceptedFileTypes={[".zip", "application/zip"]}
+            onSelect={(file) => {
+              setUpload(file ? { file, key: crypto.randomUUID() } : undefined);
+              setReceipt(undefined);
+              stage.reset();
+            }}
+          />
+          {upload && !receipt && (
+            <Button
+              variant="outline"
+              disabled={!upload}
+              loading={stage.isPending}
+              onClick={() => stage.mutate()}
+              type="button"
+            >
+              {t("Validate package")}
+            </Button>
+          )}
           {receipt && (
-            <details>
-              <summary>{t("Validated package")}</summary>
-              <JsonView value={receipt.manifest} />
-            </details>
+            <div className={styles.stack} role="status">
+              <ResourceIdentity
+                name={receipt.manifest.skill_name}
+                description={receipt.manifest.description}
+              />
+              <p className={styles.muted}>
+                {t("Validated · {{count}} files · {{size}} KB", {
+                  count: receipt.manifest.files.length,
+                  size: Math.ceil(receipt.manifest.total_size_bytes / 1024),
+                })}
+              </p>
+              <DisclosureSection title={t("Package manifest")}>
+                <JsonView value={receipt.manifest} />
+              </DisclosureSection>
+            </div>
           )}
           <ErrorNotice error={stage.error} />
-        </>
-      ) : (
-        <>
-          <Input
-            label={t("Repository URL")}
-            type="url"
-            value={repository}
-            onChange={(event) => setRepository(event.target.value)}
-            required
-            placeholder="https://github.com/owner/repository"
-          />
-          <Input
-            label={t("Git ref")}
-            value={ref}
-            onChange={(event) => setRef(event.target.value)}
-            placeholder={t("Default branch")}
-          />
-          <Input
-            label={t("Subdirectory")}
-            value={subdirectory}
-            onChange={(event) => setSubdirectory(event.target.value)}
-          />
-          <Input
-            label={t("Expected commit SHA (optional)")}
-            value={commit}
-            onChange={(event) => setCommit(event.target.value)}
-          />
-        </>
-      )}
+        </TabsPanel>
+        <TabsPanel value="github" className={styles.stack}>
+          <FormField className="min-w-0 w-full" label={t("Repository URL")}>
+            <Input
+              required={true}
+              type="url"
+              value={repository}
+              onChange={(event) => setRepository(event.target.value)}
+              placeholder="https://github.com/owner/repository"
+            />
+          </FormField>
+          <DisclosureSection title={t("Advanced settings")}>
+            <FormField
+              className="min-w-0 w-full"
+              label={t("Git ref")}
+              description={t(
+                "Use a branch, tag, or commit. Leave empty for the default branch.",
+              )}
+            >
+              <Input
+                value={ref}
+                onChange={(event) => setRef(event.target.value)}
+                placeholder={t("Default branch")}
+              />
+            </FormField>
+            <FormField
+              className="min-w-0 w-full"
+              label={t("Subdirectory")}
+              description={t(
+                "Path to the skill inside the repository. Leave empty for the repository root.",
+              )}
+            >
+              <Input
+                value={subdirectory}
+                onChange={(event) => setSubdirectory(event.target.value)}
+              />
+            </FormField>
+            <FormField
+              className="min-w-0 w-full"
+              label={t("Expected commit SHA (optional)")}
+            >
+              <Input
+                value={commit}
+                onChange={(event) => setCommit(event.target.value)}
+              />
+            </FormField>
+          </DisclosureSection>
+        </TabsPanel>
+      </Tabs>
       <ErrorNotice error={publish.error} />
       <FormActions
         pending={publish.isPending}
-        label={t(basis ? "Publish revision" : "Import skill")}
+        onCancel={onCancel}
+        disabled={stage.isPending || (kind === "zip_upload" && !receipt)}
+        label={t(basis ? "Publish version" : "Import skill")}
       />
     </form>
   );

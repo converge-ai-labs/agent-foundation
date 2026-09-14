@@ -30,6 +30,8 @@ RUN apt-get update \
 
 COPY --from=builder /src/target/release/a13n-envd /usr/local/bin/a13n-envd
 COPY LICENSE /usr/share/licenses/a13n-envd/LICENSE
+# A release label must agree with the version compiled into the daemon.
+RUN test "$BUILD_VERSION" = dev || test "$(a13n-envd --version)" = "a13n-envd $BUILD_VERSION"
 
 USER sandbox
 WORKDIR /workspace

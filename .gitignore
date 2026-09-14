@@ -3,8 +3,11 @@ discussion/
 local-reference/
 tmp/
 
-# Local runtime storage and caches
+# Local runtime storage and caches, including make cli config/data in var/harness-ui/
 /var/
+
+# Machine-specific Service configuration, selected with SERVICE_CONFIG
+/dev/service/local.private.toml
 
 # Live-test credentials and generated artifacts stay local, outside Git merges
 /dev/live_tests/.state/
@@ -26,8 +29,9 @@ wheels/
 # Python environments
 .env
 .env.*
-!.env.example
 !.env.harness.example
+!/dev/harness/.env.example
+!/dev/harness-ui/.env.example
 .venv/
 env/
 venv/
@@ -61,6 +65,7 @@ node_modules/
 *.tsbuildinfo
 /frontend/apps/*/dist/
 /packages/a13n-harness-ui/a13n_harness_ui/static/
+/packages/a13n-harness-ui/a13n_harness_ui/assets/builtin_skills/
 
 # Editors and operating systems
 .DS_Store

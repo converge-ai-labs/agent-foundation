@@ -27,6 +27,7 @@ from .cursors import decode_cursor, encode_cursor
 from .domain import (
     Collection,
     CreateEnvironmentRequest,
+    CreateManagedEnvironmentRequest,
     CreateProviderRequest,
     CreateTemplateRequest,
     CreateTemplateRevisionRequest,
@@ -34,16 +35,19 @@ from .domain import (
     EnvironmentCommand,
     EnvironmentCommandRequest,
     EnvironmentProvider,
+    EnvironmentProviderDefinition,
     EnvironmentTemplate,
     EnvironmentTemplateRevision,
     NewEnvironmentSelection,
     RegisterEnvironmentRequest,
     ReplaceCredentialRequest,
     TemplateConfiguration,
+    UpdateEnvironmentRequest,
     UpdateProviderRequest,
     UpdateTemplateRequest,
 )
 from .errors import EnvironmentManagementError, environment_not_found, invalid_environment, is_target_identity_conflict
+from .identity import default_environment_name
 from .identity import target_identity as scoped_target_identity
 from .models import (
     EnvironmentCommandRecord,
@@ -61,12 +65,15 @@ class EnvironmentService:
         sessions: async_sessionmaker[AsyncSession],
         catalog: EnvironmentProviderCatalog,
         protector: SecretProtector,
+        *,
+        deployment_provider_types: frozenset[str] = frozenset(),
     ) -> None:
         self.sessions = sessions
         self.catalog = catalog
         self.protector = protector
+        self.deployment_provider_types = deployment_provider_types
 
-    async def provider_types(self, actor: AuthenticatedActor) -> Collection[dict]:
+    async def provider_types(self, actor: AuthenticatedActor) -> Collection[EnvironmentProviderDefinition]:
         async with short_session(self.sessions) as session:
             await authorize_environment_workspace(
                 session,
@@ -76,25 +83,32 @@ class EnvironmentService:
             )
         return Collection(
             items=tuple(
-                {
-                    "type": key,
-                    "configuration_versions": sorted(provider.configuration_versions),
-                    "configuration_schema": provider.provider_configuration_model.model_json_schema(),
-                    "credential_schema": provider.credential_model.model_json_schema()
+                EnvironmentProviderDefinition(
+                    type=provider.key,
+                    display_name=provider.display_name,
+                    configuration_versions=tuple(sorted(provider.configuration_versions)),
+                    configuration_schema=provider.provider_configuration_model.model_json_schema(),
+                    template_configuration_schemas={
+                        version: model.model_json_schema() for version, model in provider.configuration_models.items()
+                    },
+                    deployment_managed=provider.key in self.deployment_provider_types,
+                    credential_schema=provider.credential_model.model_json_schema()
                     if provider.credential_model
                     else None,
-                    "supports_managed": provider.supports_managed,
-                    "supports_stop": provider.supports_stop,
-                    "supports_destroy": provider.supports_destroy,
-                    "requires_keepalive": provider.requires_keepalive,
-                }
-                for key, provider in self.catalog.items()
+                    supports_managed=provider.supports_managed,
+                    supports_stop=provider.supports_stop,
+                    supports_destroy=provider.supports_destroy,
+                    requires_keepalive=provider.requires_keepalive,
+                )
+                for provider in self.catalog.values()
             )
         )
 
     async def create_provider(
         self, *, actor: AuthenticatedActor, workspace_id: str | None, request: CreateProviderRequest
     ) -> EnvironmentProvider:
+        if request.type in self.deployment_provider_types:
+            raise invalid_environment("Local Providers are configured by the deployment")
         try:
             provider = self.catalog.require(request.type)
             configuration = provider.provider_configuration_model.model_validate(request.configuration)
@@ -145,22 +159,26 @@ class EnvironmentService:
         async with transaction(self.sessions) as session:
             row = await self._provider(session, actor, provider_id, manage=True, lock=True)
             self._match(row.id, row.updated_at, if_match)
+            if row.configuration_source == "deployment":
+                raise invalid_environment("Deployment-owned Providers are read-only")
             if request.name is not None:
                 row.name = request.name
             if request.enabled is not None:
                 row.enabled = request.enabled
+            if "credential" in request.model_fields_set:
+                row.replace_credential(self._credential(row.type, request.credential), self.protector)
             row.updated_at = utc_now()
             return row.to_resource()
 
     async def replace_credential(
         self, *, actor: AuthenticatedActor, provider_id: str, request: ReplaceCredentialRequest, if_match: str
     ) -> EnvironmentProvider:
-        async with transaction(self.sessions) as session:
-            row = await self._provider(session, actor, provider_id, manage=True, lock=True)
-            self._match(row.id, row.updated_at, if_match)
-            row.replace_credential(self._credential(row.type, request.credential), self.protector)
-            row.updated_at = utc_now()
-            return row.to_resource()
+        return await self.update_provider(
+            actor=actor,
+            provider_id=provider_id,
+            if_match=if_match,
+            request=UpdateProviderRequest(credential=request.credential),
+        )
 
     async def create_template(
         self,
@@ -347,7 +365,7 @@ class EnvironmentService:
                     actor=actor,
                     workspace_id=workspace_id,
                     action=WorkspaceAction.environment_template_use
-                    if isinstance(request, NewEnvironmentSelection)
+                    if isinstance(request, CreateManagedEnvironmentRequest)
                     else WorkspaceAction.environment_manage,
                 )
                 replay = await load_replay(
@@ -361,10 +379,12 @@ class EnvironmentService:
                 if replay:
                     await self.require_environment(session, actor, replay.result_ref)
                     return replay.restore(Environment)
-                if isinstance(request, NewEnvironmentSelection):
+                if isinstance(request, CreateManagedEnvironmentRequest):
                     row = await self.allocate(
                         session, actor=actor, workspace_id=workspace_id, selection=request, now=now
                     )
+                    if request.name is not None:
+                        row.name = request.name
                 else:
                     row = await self._register(session, actor, workspace_id, request, now)
                 session.add(
@@ -429,8 +449,10 @@ class EnvironmentService:
         except (ValueError, EnvironmentProviderError) as error:
             raise invalid_environment("Environment registration state is invalid") from error
         target_identity = scoped_target_identity(implementation, provider.configuration, target_identity)
+        environment_id = new_object_id("env")
         row = EnvironmentRecord(
-            id=new_object_id("env"),
+            id=environment_id,
+            name=request.name or default_environment_name(environment_id),
             organization_id=provider.organization_id,
             workspace_id=workspace_id,
             provider_id=provider.id,
@@ -508,16 +530,28 @@ class EnvironmentService:
         )
         return row
 
+    async def update_environment(
+        self, *, actor: AuthenticatedActor, environment_id: str, request: UpdateEnvironmentRequest, if_match: str
+    ) -> Environment:
+        async with transaction(self.sessions) as session:
+            row = await self.require_environment(session, actor, environment_id, lock=True)
+            await authorize_environment_workspace(
+                session, actor=actor, workspace_id=row.workspace_id, action=WorkspaceAction.environment_manage
+            )
+            self._match(row.id, row.updated_at, if_match)
+            row.name = request.name
+            row.updated_at = utc_now()
+            return row.to_resource()
+
     async def require_environment(
-        self, session: AsyncSession, actor: AuthenticatedActor, resource_id: str
+        self, session: AsyncSession, actor: AuthenticatedActor, resource_id: str, *, lock: bool = False
     ) -> EnvironmentRecord:
         boundary = await environment_actor_scope(session, actor)
-        row = await session.scalar(
-            select(EnvironmentRecord).where(
-                EnvironmentRecord.id == resource_id,
-                boundary.accessible(EnvironmentRecord.organization_id, EnvironmentRecord.workspace_id),
-            )
+        query = select(EnvironmentRecord).where(
+            EnvironmentRecord.id == resource_id,
+            boundary.accessible(EnvironmentRecord.organization_id, EnvironmentRecord.workspace_id),
         )
+        row = await session.scalar(query.with_for_update() if lock else query)
         if row is None:
             raise environment_not_found()
         await authorize_environment_workspace(

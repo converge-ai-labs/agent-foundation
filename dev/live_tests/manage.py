@@ -11,25 +11,24 @@ from pathlib import Path
 
 import anyio
 import httpx2
-import uvicorn
+from a13n_service.configuration.sources import load_settings
 from a13n_service.database import DatabaseMigrator
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
 from a13n_service.ids import new_object_id
 from a13n_service.log import configure_logging
-from a13n_service.settings import Settings
+from a13n_service.process.server import serve_app
 from a13n_service.storage import transaction
 from a13n_service.storage.relational import create_session_factory, create_sql_engine
 
-from .client import LiveClient
-from .config import CONFIG, STATE, load_config, save_config
-from .host import authenticated_control, local_app, settings_for
-from .wheel import approval_wheel
+from .infrastructure.client import LiveClient
+from .infrastructure.config import CONFIG, STATE, load_config, save_config
+from .infrastructure.host import authenticated_control, local_app, settings_for
 
 
-async def initialize() -> None:
-    if CONFIG.exists():
+async def initialize(config=None) -> None:
+    if config is None and CONFIG.exists():
         config = load_config()
-    else:
+    if config is None:
         config = {
             "control_url": "http://127.0.0.1:18000",
             "worker_url": "http://127.0.0.1:18001",
@@ -43,7 +42,7 @@ async def initialize() -> None:
         }
         save_config(config)
     Path(config["workspace_root"]).mkdir(parents=True, exist_ok=True, mode=0o700)
-    settings = Settings()
+    settings = load_settings()
     # Apply only committed migrations using the repository's make db-upgrade first.
     await anyio.to_thread.run_sync(
         lambda: DatabaseMigrator(settings.database_config(), settings.migration_config()).current(check_heads=True)
@@ -57,7 +56,13 @@ async def initialize() -> None:
             now = datetime.now(UTC)
             if await session.get(OrganizationRecord, config["organization_id"]) is None:
                 session.add(
-                    OrganizationRecord(id=config["organization_id"], name="Live tests", created_at=now, updated_at=now)
+                    OrganizationRecord(
+                        id=config["organization_id"],
+                        key=config["organization_id"].replace("_", "-"),
+                        name="Live tests",
+                        created_at=now,
+                        updated_at=now,
+                    )
                 )
             await session.flush()
             session.add(
@@ -77,7 +82,7 @@ async def initialize() -> None:
                     id=config["workspace_id"],
                     organization_id=config["organization_id"],
                     name=f"Live tests {config['workspace_id']}",
-                    normalized_name=f"live tests {config['workspace_id']}",
+                    key=config["workspace_id"].replace("_", "-"),
                     created_at=now,
                     updated_at=now,
                     deleted_at=None,
@@ -106,6 +111,16 @@ async def initialize() -> None:
     finally:
         await engine.dispose()
     print(f"Created local Workspace {config['workspace_id']}; private configuration: {CONFIG}")
+
+
+async def bootstrap() -> None:
+    """Migrate an owned lab and seed both identities in one interpreter startup."""
+    settings = load_settings()
+    await anyio.to_thread.run_sync(DatabaseMigrator(settings.database_config(), settings.migration_config()).upgrade)
+    config = load_config()
+    await initialize(config)
+    if "other_identity" in config:
+        await initialize({**config, **config["other_identity"]})
 
 
 async def provision() -> None:
@@ -137,7 +152,7 @@ async def provision() -> None:
             "model_provider_id",
             base + "/model-providers",
             {
-                "type": "openai_compatible",
+                "type": "openai",
                 "name": "Local live-test model",
                 "credential": config["token"],
                 "configuration": {"base_url": config["control_url"] + "/__live__/model/v1", "auth_mode": "bearer"},
@@ -188,18 +203,24 @@ async def provision() -> None:
         await create_once(
             "agent_id", base + "/agents", {"name": "Live test agent", "config": agent_config}, response_key="agent"
         )
-        if "approval_plugin_version_id" not in config:
-            filename, body = approval_wheel()
-            version = await client.request(
-                "POST",
-                "/api/v1/plugins",
-                expected=201,
-                params={"filename": filename},
-                content=body,
-                headers={"Content-Type": "application/octet-stream", "Idempotency-Key": "live-approval-" + filename},
-            )
-            config["approval_plugin_version_id"] = version["id"]
-            save_config(config)
+        await create_once(
+            "protocol_agent_id",
+            base + "/agents",
+            {
+                "name": "Live protocol agent",
+                "config": {
+                    **agent_config,
+                    "plugins": [
+                        {
+                            "instance_name": "effects",
+                            "plugin_key": "live.resilience",
+                            "config": {"root": config["workspace_root"]},
+                        }
+                    ],
+                },
+            },
+            response_key="agent",
+        )
         await create_once(
             "approval_agent_id",
             base + "/agents",
@@ -209,9 +230,8 @@ async def provision() -> None:
                     **agent_config,
                     "plugins": [
                         {
-                            "mode": "on_demand",
                             "instance_name": "approval",
-                            "plugin_version_id": config["approval_plugin_version_id"],
+                            "plugin_key": "live.approval",
                             "config": {"root": config["workspace_root"]},
                         }
                     ],
@@ -224,21 +244,23 @@ async def provision() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("init", "setup", "control", "worker", "authenticated-control"))
+    parser.add_argument("command", choices=("init", "bootstrap", "setup", "control", "worker", "authenticated-control"))
     args = parser.parse_args()
     if args.command == "init":
         anyio.run(initialize)
+    elif args.command == "bootstrap":
+        anyio.run(bootstrap)
     elif args.command == "setup":
         anyio.run(provision)
     elif args.command == "authenticated-control":
         settings, app = authenticated_control(load_config())
         configure_logging(settings)
-        uvicorn.run(app, host=settings.host, port=settings.port, workers=1, log_config=None)
+        serve_app(app)
     else:
         config = load_config()
         settings = settings_for(config, args.command)
         configure_logging(settings)
-        uvicorn.run(local_app(config, args.command), host=settings.host, port=settings.port, workers=1, log_config=None)
+        serve_app(local_app(config, args.command))
 
 
 if __name__ == "__main__":

@@ -1,3 +1,9 @@
+import { ArrowLeftIcon } from "@phosphor-icons/react";
+import { Button, FormField, Input } from "a13n-ui";
+
+import { Logo, Wordmark } from "a13n-ui";
+
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useEffect, useState, type FormEvent } from "react";
 import {
   Link,
@@ -6,13 +12,12 @@ import {
   useNavigate,
   useParams,
 } from "react-router";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import { Button, Input, Logo } from "a13n-ui";
-import { ArrowRight, CheckCircle2 } from "lucide-react";
+
+import { ArrowRightIcon, CheckCircleIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
-import { useAuth, useClient } from "./context";
 import { data } from "../shared/api";
 import { ErrorNotice, Loading } from "../shared/feedback";
+import { useAuth, useClient } from "./context";
 import styles from "./pages.module.css";
 
 export function AuthPage() {
@@ -114,16 +119,15 @@ export function AuthPage() {
   return (
     <main className={styles.screen}>
       <div className={styles.brand}>
-        <Logo alt="a13n" />
-        <span>Console</span>
+        <Logo alt="" />
+        <Wordmark />
       </div>
       <section className={styles.card}>
-        <span className={styles.eyebrow}>a13n CONSOLE</span>
         <h1>{titles[mode]}</h1>
         <p>{descriptions[mode]}</p>
         {mutation.isSuccess && ["forgot", "reset", "email"].includes(mode) ? (
           <div className={styles.success}>
-            <CheckCircle2 size={30} />
+            <CheckCircleIcon size={30} />
             <h2>
               {t(mode === "forgot" ? "Check your inbox" : "You're all set")}
             </h2>
@@ -141,38 +145,41 @@ export function AuthPage() {
         ) : (
           <form onSubmit={submit} className={styles.form}>
             {mode === "invite" && (
-              <Input
-                label={t("Your name")}
-                autoComplete="name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                maxLength={128}
-              />
+              <FormField className="min-w-0 w-full" label={t("Your name")}>
+                <Input
+                  required={true}
+                  autoComplete="name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  maxLength={128}
+                />
+              </FormField>
             )}
             {["login", "forgot"].includes(mode) && (
-              <Input
-                label={t("Email address")}
-                type="email"
-                autoComplete="username"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-              />
+              <FormField className="min-w-0 w-full" label={t("Email address")}>
+                <Input
+                  required={true}
+                  type="email"
+                  autoComplete="username"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </FormField>
             )}
             {["login", "invite", "reset"].includes(mode) && (
-              <Input
-                label={t("Password")}
-                type="password"
-                autoComplete={
-                  mode === "login" ? "current-password" : "new-password"
-                }
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={mode === "login" ? 1 : 15}
-                maxLength={128}
-              />
+              <FormField className="min-w-0 w-full" label={t("Password")}>
+                <Input
+                  required={true}
+                  type="password"
+                  autoComplete={
+                    mode === "login" ? "current-password" : "new-password"
+                  }
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  minLength={mode === "login" ? 1 : 15}
+                  maxLength={128}
+                />
+              </FormField>
             )}
             {["reset", "invite", "email"].includes(mode) && !token && (
               <ErrorNotice
@@ -206,7 +213,11 @@ export function AuthPage() {
                 <a href="/login" target="_blank" rel="noopener noreferrer">
                   {t("Sign in")}
                 </a>{" "}
-                <Button onClick={() => void auth.refresh()}>
+                <Button
+                  variant="outline"
+                  onClick={() => void auth.refresh()}
+                  type="button"
+                >
                   {t("Refresh sign-in")}
                 </Button>
               </p>
@@ -214,16 +225,16 @@ export function AuthPage() {
             <ErrorNotice error={mutation.error} />
             <Button
               type="submit"
-              variant="primary"
-              icon={<ArrowRight size={16} />}
-              loading={mutation.isPending}
+              variant="default"
               disabled={
                 (["reset", "invite", "email"].includes(mode) && !token) ||
                 (mode === "email" && (!auth.data || auth.anonymous)) ||
                 (mode === "forgot" &&
                   configuration.data?.email_delivery === false)
               }
+              loading={mutation.isPending}
             >
+              <ArrowRightIcon size={16} />
               {t(
                 mode === "login"
                   ? "Sign in"
@@ -244,7 +255,11 @@ export function AuthPage() {
           </Link>
         )}
         {mode === "forgot" && (
-          <Link className={styles.secondary} to="/login">
+          <Link
+            className={`${styles.secondary} inline-flex items-center justify-center gap-1.5`}
+            to="/login"
+          >
+            <ArrowLeftIcon size={14} aria-hidden="true" />{" "}
             {t("Back to sign in")}
           </Link>
         )}

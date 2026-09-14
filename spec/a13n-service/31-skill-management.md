@@ -107,7 +107,7 @@ All routes are under `/api/v1`, follow [Platform API Conventions](../api-convent
 ### Stage a ZIP
 
 ```http
-POST /api/v1/workspaces/{workspace_id}/skill-uploads
+POST /api/v1/workspaces/{workspace}/skill-uploads
 Content-Type: application/zip
 Idempotency-Key: opaque-caller-key
 
@@ -163,7 +163,7 @@ class CreateSkillRevisionRequest:
 ```
 
 ```http
-POST /api/v1/workspaces/{workspace_id}/skills
+POST /api/v1/workspaces/{workspace}/skills
 POST /api/v1/skills/{skill_id}/revisions
 Content-Type: application/json
 Idempotency-Key: opaque-caller-key
@@ -180,7 +180,8 @@ A GitHub source is a one-time acquisition performed during this request. Every c
 ### Read, Update, References, and Delete
 
 ```http
-GET /api/v1/workspaces/{workspace_id}/skills?limit=50&cursor=opaque
+GET /api/v1/workspaces/{workspace}/skills?limit=50&cursor=opaque&q=review
+GET /api/v1/workspaces/{workspace}/skills/{skill_key}
 GET /api/v1/skills/{skill_id}
 GET /api/v1/skills/{skill_id}/revisions?limit=50&cursor=opaque
 GET /api/v1/skill-revisions/{skill_revision_id}
@@ -199,6 +200,7 @@ class SkillAgentReference:
     agent_id: AgentId
     agent_revision_id: AgentRevisionId
     agent_name: str
+    agent_key: str
 
 
 class SkillPublicationReceipt:
@@ -209,9 +211,11 @@ class SkillPublicationReceipt:
 
 Reads expose safe provenance and manifest metadata, never Secret selectors, object keys, or provider responses. Skill head reads return a strong representation `ETag`. The authorized `/content` route streams a normalized ZIP as `application/zip` with `ETag: W/"sha256:<content_digest>"`; it is not the original upload or a public object-storage URL. Skill collections order by `(name, id)`, Revision collections by `(version desc, id)`, and reference collections by `(agent_name, agent_id)` under the shared cursor contract.
 
+The Workspace-scoped Skill read resolves the exact active `skill_key`, never an ID alias, and returns the same representation and `ETag` as the ID read under `skill.read` authorization. Deleted or inaccessible Skills remain concealed. The collection's optional `q` performs a case-insensitive literal substring match on name or key, trimming surrounding whitespace. Search terms are bounded to 256 characters and bound to pagination cursors; switching terms requires a new first page. Collection items extend the Skill representation with `source_kind` (`zip` or `github`) from the current revision. The optional `source_kind` query filters that same current revision provenance before pagination, combines with `q`, and is bound to the cursor. Publishing a new current revision updates the observed source without changing historical provenance.
+
 PATCH changes only `name` and requires the current strong `ETag` in `If-Match`. It does not append a Revision or advance `Skill.version`; `key` is never patchable.
 
-The references route returns exactly the unarchived Agents whose current AgentRevision contains a binding to this `skill_id`. Pinned and unpinned bindings both count. It excludes archived Agents, historical non-current AgentRevisions, and accepted Runs. DELETE uses the same query and returns `409 skill_in_use` when any item exists. The reference list is an observation, not a precondition token; DELETE always reevaluates the set in its own transaction.
+Each reference includes the current Agent name and key for navigation. The references route returns exactly the unarchived Agents whose current AgentRevision contains a binding to this `skill_id`. Pinned and unpinned bindings both count. It excludes archived Agents, historical non-current AgentRevisions, and accepted Runs. DELETE uses the same query and returns `409 skill_in_use` when any item exists. The reference list is an observation, not a precondition token; DELETE always reevaluates the set in its own transaction.
 
 DELETE otherwise requires the current strong `ETag`, tombstones the Skill, and releases its Workspace key. It appends no Revision and advances no version. After commit, the Skill is absent from collections and every ordinary public read for that Skill, its Revisions, and its content returns `404`. An exact mutation replay within its idempotency-evidence horizon remains operation evidence and follows the shared replay contract.
 
@@ -348,15 +352,19 @@ Before Harness entry, the current `RunAttemptExecutor` verifies the exact locks 
 3. scans only the verified package roots with the explicit `SkillManager`; and
 4. applies the already supplied exact-key selection before publishing model instructions or Skill paths.
 
-The completion manifest is Host-owned materialization metadata, not a package file. It remains outside every directory scanned as a Skill package and is excluded from normalized payloads, Revision manifests, content digests, and model-visible Skill resources.
+The completion manifest and private staging area are Host-owned materialization metadata, not package files. They remain inside the materializer root but outside every directory scanned as a Skill package, and are excluded from normalized payloads, Revision manifests, content digests, and model-visible Skill resources.
 
-An existing root is reused only after complete verification. An interrupted root has no valid completion manifest; a later Attempt verifies a complete root or materializes the exact bytes again. Harness never scans partial content or falls back to a Project, home, package, or Worker-cache directory.
+Concurrent materializers selecting the same exact catalog converge on immutable content without a shared preparation lock. Existing verified files are reused; missing files are written privately and published complete with atomic no-replace semantics. A publication conflict succeeds only when the existing regular file has the expected bytes. Directory creation conflicts are reconciled by verifying the existing directory. The Run's frozen Revision locks remain authoritative; newer Revisions never supersede them.
+
+Each materializer verifies every expected file's size and digest and the complete package entry set before publishing completion metadata. Verification tolerates concurrent identical publication and Host staging metadata, but rejects unexpected package entries, wrong entry kinds, conflicting bytes, or conflicting completion metadata with `skill_materialization_invalid`. A completion manifest alone never proves that content is valid. Concurrent identical completion publication succeeds.
+
+An interrupted preparation can leave verified files and missing files; a later materializer verifies and completes the same root. Normal initialization never deletes, replaces, or repairs conflicting shared content. Each materializer cleans up only its own private staging files, with bounded best-effort cleanup on failure or cancellation. Abandoned staging data and corrupted roots require separate Host-controlled cleanup or repair, coordinated with active users of the Environment. Harness never scans partial content or falls back to a Project, home, package, or Worker-cache directory.
 
 Materialization outcomes are:
 
 | Outcome                             | Semantics                                                                                                                           |
 | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `skill_materialization_invalid`     | A locked Revision, object, digest, or package contract is invalid; fail closed                                                      |
+| `skill_materialization_invalid`     | A locked Revision, object, digest, package contract, or materialized shared content is invalid; fail closed                         |
 | `skill_materialization_unavailable` | Object storage or Environment access is temporarily unavailable; retry only through a new fenced RunAttempt under ordinary ceilings |
 | `skill_materialization_stale`       | The Environment mount incarnation, Provider generation, or RunAttempt fence changed; abandon the Attempt and reacquire authority    |
 | `skill_materialization_cancelled`   | Cancellation or shutdown won; preserve the ordinary cancelled or interrupted lifecycle                                              |

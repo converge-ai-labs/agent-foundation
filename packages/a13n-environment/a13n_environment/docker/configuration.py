@@ -141,7 +141,7 @@ _DEFAULT_MOUNTS = (
 )
 _DEFAULT_SHELL_PROFILES = (
     DockerShellProfile(
-        profile_id="bash",
+        profile_id="default",
         executable=PurePosixPath("/bin/bash"),
         fixed_arguments=("-c",),
     ),
@@ -149,7 +149,11 @@ _DEFAULT_SHELL_PROFILES = (
 
 
 class DockerProviderConfiguration(BaseModel):
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    model_config = ConfigDict(
+        frozen=True,
+        extra="forbid",
+        json_schema_extra={"x-primary-fields": ["image", "pull_policy", "nano_cpus", "memory_bytes", "pids_limit"]},
+    )
 
     image: Annotated[str, Field(min_length=1, max_length=1024)] = DEFAULT_DOCKER_IMAGE
     pull_policy: DockerImagePullPolicy = DockerImagePullPolicy.IF_MISSING
@@ -157,9 +161,14 @@ class DockerProviderConfiguration(BaseModel):
     mounts: tuple[DockerMountConfiguration, ...] = _DEFAULT_MOUNTS
     trusted_executable_roots: tuple[PurePosixPath, ...] = ()
     shell_profiles: tuple[DockerShellProfile, ...] = _DEFAULT_SHELL_PROFILES
-    nano_cpus: Annotated[int, Field(gt=0)] | None = None
-    memory_bytes: Annotated[int, Field(gt=0)] | None = None
-    pids_limit: Annotated[int, Field(gt=0)] | None = None
+    nano_cpus: (
+        Annotated[
+            int, Field(gt=0, title="CPU limit (nanocpus)", description="1,000,000,000 nanocpus equals one CPU core.")
+        ]
+        | None
+    ) = None
+    memory_bytes: Annotated[int, Field(gt=0, title="Memory limit (bytes)")] | None = None
+    pids_limit: Annotated[int, Field(gt=0, title="Process limit")] | None = None
     stop_grace_seconds: Annotated[int, Field(ge=0, le=300)] = 10
     max_file_bytes: Annotated[int, Field(gt=0)] = 16 * _MIB
     max_output_preview_bytes: Annotated[int, Field(gt=0, le=_MAX_RESPONSE_BYTES)] = 64 * 1024

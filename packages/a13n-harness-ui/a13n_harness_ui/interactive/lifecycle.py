@@ -32,6 +32,12 @@ def terminal_logging(root: Path, level: str, emit: Callable[[str], None]) -> Ite
                 if key not in seen:
                     seen.add(key)
                     loop.call_soon_threadsafe(emit, f"Plugin skipped: {key[0]}\n{key[1]}\nDiagnostics: {path}")
+            elif record.getMessage() == "capability_skipped":
+                warning = str(record.__dict__.get("warning", ""))
+                key = ("capability", warning)
+                if key not in seen:
+                    seen.add(key)
+                    loop.call_soon_threadsafe(emit, f"Warning: {warning}")
             return True
 
     handler = RotatingFileHandler(path, maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8")

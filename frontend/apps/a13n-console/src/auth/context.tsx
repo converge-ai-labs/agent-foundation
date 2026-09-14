@@ -1,10 +1,3 @@
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useState,
-  type ReactNode,
-} from "react";
 import { createClient, type Client } from "@converge.ai/a13n";
 import {
   MutationCache,
@@ -13,7 +6,24 @@ import {
   QueryClientProvider,
   useQuery,
 } from "@tanstack/react-query";
-import { data, isUnauthorized, representation } from "../shared/api";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useState,
+  type ReactNode,
+} from "react";
+import {
+  data,
+  isUnauthorized,
+  representation,
+  type Schema,
+} from "../shared/api";
+
+export interface IdentityData {
+  user: ReturnType<typeof representation<Schema["User"]>>;
+  organizations: Schema["Organization"][];
+}
 
 const ClientContext = createContext<Client | null>(null);
 const AuthContext = createContext<ReturnType<typeof useIdentity> | null>(null);
@@ -38,7 +48,7 @@ export function revalidateSession(error: unknown) {
 }
 
 function useIdentity(client: Client, renew: () => void) {
-  const query = useQuery({
+  const query = useQuery<IdentityData>({
     queryKey: ["identity"],
     queryFn: async ({ signal }) => {
       const [user, csrf, organizations] = await Promise.all([

@@ -2,11 +2,11 @@
 
 ## Design Position
 
-Harness UI is a local single-user coding application with CLI and WebUI surfaces. One process-local `HarnessUiApp` owns configuration generations, trusted catalogs, internal Projects and Threads, process-local root receipts, persisted async children, Environment state, detached projections, and live presentation. The full-terminal CLI and foreground WebUI server are adapters over that reusable boundary; neither owns a second execution engine.
+Harness UI is a local Agent workbench with a personal CLI and a collaborative WebUI for trusted small teams sharing one instance. It provides no multi-tenant or per-participant execution isolation. One process-local `HarnessUiApp` owns configuration generations, trusted catalogs, internal Projects and Threads, process-local root receipts, persisted async children, Environment state, shared browser drafts, page presence, published output comments, optional native human computer access, detached projections, and live presentation. The full-terminal CLI and foreground WebUI server are adapters over that reusable boundary; neither owns a second execution engine.
 
-Human-editable files remain the desired-resource authority so Harness UI can be configured without a browser or a large command surface. Separately, explicit CLI operations install editable declarative Content Plugins under the data root. SQLite owns mutable Thread and execution heads, while immutable content-addressed objects retain complete Run compositions and continuation checkpoints.
+Human-editable files remain the desired-resource authority so Harness UI can be configured without a browser or a large command surface. Separately, explicit CLI operations install editable declarative Content Plugins under the data root. SQLite owns mutable Thread and execution heads plus [published human comments](webui/05-output-comments.md), while immutable content-addressed objects retain complete Run compositions and continuation checkpoints.
 
-Harness UI persists complete continuation boundaries, not accepted-work intent. Process loss can discard a root receipt, submitted message or deferred response, partial output, an active child segment, live events, and Run-local shell observations. Native command survival is Provider-owned. A later operation resumes only from a previously selected complete checkpoint.
+Harness UI persists complete continuation boundaries and independently published comments, not shared editing drafts, page presence, or accepted-work intent. Process loss can discard a root receipt, submitted message or deferred response, partial output, an active child segment, live events, and Run-local shell observations. Native command survival is Provider-owned. A later operation resumes only from a previously selected complete checkpoint.
 
 Harness UI owns two built-in local execution modes. **Full Control** uses the Direct Local Provider and runs commands as the Host user. **Sandbox** uses Local Envd over EIP with required native filesystem and process isolation plus denied networking; it never falls back to Direct Local. Both preserve the local machine's canonical Project-root paths in Harness aggregate routing and model context while retaining different execution authority. Other adapters use provider-neutral virtual routes unless they explicitly declare that their path space preserves Host paths.
 
@@ -18,7 +18,7 @@ flowchart TB
     Content[Installed Content Plugin catalog]
     Catalogs[Capability and extension catalogs]
     Generation[Accepted configuration generation]
-    Project[Project, ordered roots, and Thread organization]
+    Project[Project roots, creation configuration, and Thread organization]
     Thread[Sticky Thread configuration]
     Capture[Resolved Run composition]
     App[HarnessUiApp]
@@ -70,7 +70,7 @@ The core concepts are:
 | Async child admission and persistence  | `HarnessUiSubagentOperator`                   | Creates child Threads and runs the complete Harness Host-operator boundary                                          |
 | AG-UI conversion                       | Agent Stream Protocol                         | Uses one observer per root or child Harness Run                                                                     |
 | Local persistence                      | Harness UI                                    | Uses SQLite for compact mutable heads and immutable files for compositions and checkpoints                          |
-| Presentation                           | Full-terminal CLI and embedding adapters      | Consume detached App projections, exact process-local receipts, root-lineage live events, and summary invalidations |
+| Presentation                           | CLI, WebUI, and embedding adapters            | Consume detached App projections, exact process-local receipts, root-lineage live events, and summary invalidations |
 | Durable distributed execution          | a13n Service                                  | Not emulated by Harness UI                                                                                          |
 
 ## Configuration and Run Flow
@@ -83,7 +83,7 @@ sequenceDiagram
     participant Store as SQLite and objects
     participant Harness
 
-    Editor->>Files: manual save or expected-digest mutation
+    Editor->>Files: manual save or validated source mutation
     App->>Files: stable multi-file read
     App->>App: validate resources, graphs, and selected catalogs
     App->>Store: select accepted generation
@@ -101,7 +101,7 @@ A Thread configuration patch and root admission form one App operation. Every no
 
 The receipt returns before preparation completes. It supports exact current-process query, wait, cancel, and, once a Harness stream exists, steer. A suspended continuation can be resumed only by a response naming that exact continuation and completely answering its detached pending request set. Receipts and response input are not durable records.
 
-`HarnessState` preserves the conversation and Capability namespaces across composition changes. An unavailable or incompatible newly selected component fails the new Run explicitly; Harness UI does not silently substitute the previous component or reset state.
+`HarnessState` preserves the conversation and Capability namespaces across composition changes. Unusable Agent Capability source selections are [skipped with warnings](01a-extension-discovery-and-management.md#capability-catalog) before capture. Other unavailable or incompatible selected components fail explicitly; Harness UI does not silently substitute the previous component or reset state.
 
 Environment-state publication and continuation selection are independent completion boundaries. Known changed state is published after adapter cleanup even when execution or continuation publication fails.
 
@@ -136,15 +136,18 @@ Harness UI stores:
 - Thread metadata, sticky configuration, and selected continuation;
 - immutable resolved Run compositions;
 - child execution heads and immutable checkpoints;
-- Host-authoritative Environment state references.
+- Host-authoritative Environment state references;
+- published human comments and their original saved-output references under the [local comment storage contract](03-local-storage-and-recovery.md#output-comment-storage).
 
-It does not store root receipts, pending root input or deferred responses, active root Run records, a child scheduler, process-liveness records, shell-process handles, native runtime objects, credentials, or live streams.
+It does not durably store shared browser drafts, root receipts, execution-accepted pending input or deferred responses, active root Run records, a child scheduler, process-liveness records, shell-process handles, native terminal sessions, presence, native runtime objects, resolved credentials, or live streams. In-memory browser drafts are not queued inputs and never authorize automatic execution.
 
 ## Surfaces and Packaging
 
 The [interactive CLI](07-interactive-cli.md) uses one editable multimodal draft, a bounded Markdown viewport, shared slash-command metadata, and concise/detailed live presentation. Direct file editing remains a complete configuration path. CLI management locates, validates, and shows configuration, manages Content Plugins, and explicitly imports external subagents. Setup publishes reviewed starter resources. The App selects an ordinary Project by its exact first root, retaining all roots, and creates a single-root Project only when execution needs one and no match exists; the CLI offers lightweight session resume rather than Project or Thread management.
 
-The App remains reusable: adapters consume detached values and exact receipts, not SQLite or native Harness authority. Root-lineage live events remain bounded best-effort observations; retained continuations and operation state decide completion. The distribution contains the native CLI, App, WebUI HTTP/SSE adapter, and compiled browser assets. Local EIP selects its native runtime from installed client distribution metadata under the [Local EIP Runtime contract](04-projects-threads-and-environments.md#local-eip-runtime). `a13n-harness-ui` starts the CLI; `a13n-harness-ui webui` starts the foreground browser server. Browser sources under `frontend/apps/a13n-harness-ui` are private build input. Both wheel and sdist include the compiled asset tree and its hash manifest; installing the wheel, running either surface, and rebuilding a wheel from the sdist require no Node.js. Repository and release asset preparation use Node.js. The package has no Textual dependency or independent npm publication.
+The App remains reusable: adapters consume detached values and exact receipts, not SQLite or native Harness authority. Root-lineage live events remain bounded best-effort observations; retained continuations and operation state decide completion. The distribution contains the native CLI, App, WebUI HTTP/SSE adapter, compiled browser assets, and the [built-in configuration Skill and documentation](02b-environment-skill-sources.md#built-in-configuration-skill). Local EIP selects its native runtime from installed client distribution metadata under the [Local EIP Runtime contract](04-projects-threads-and-environments.md#local-eip-runtime). `a13n-harness-ui` starts the CLI; `a13n-harness-ui webui` starts the foreground browser server. Browser sources under `frontend/apps/a13n-harness-ui` are private build input. Both wheel and sdist include the compiled asset tree and its hash manifest; installing the wheel, running either surface, and rebuilding a wheel from the sdist require no Node.js. Repository and release asset preparation use Node.js. The package has no Textual dependency or independent npm publication.
+
+The [WebUI](webui/README.md) provides project navigation, page presence, collaborative prompts, comments on saved AI output, and resource composition. [Native computer sharing](webui/02-host-computer-sharing.md) adds Git-aware Host files and PTY only when explicitly enabled. These human operations belong to the server OS and do not follow Agent Environment selections. The [Docker development image](webui/03-distribution.md#docker-development-image) supplies the same workbench inside a non-root container with native sharing enabled and authentication retained.
 
 ## Stable Principles
 
@@ -158,5 +161,5 @@ The App remains reusable: adapters consume detached values and exact receipts, n
 08. Root receipts, input, deferred responses, and active work are not durably accepted.
 09. Root continuation, Environment state, and child checkpoint publication remain independent facts.
 10. Surface projections and streams are detached from storage and native runtime authority.
-11. The CLI and embedding integrations use the same App commands, projections, and immutable capture boundaries.
+11. The CLI, WebUI, and embedding integrations use the same App commands, projections, and immutable capture boundaries.
 12. Full Control and Sandbox expose canonical Host Project and user Skill paths while preserving Direct Local versus sandboxed EIP execution authority; other adapters retain virtual routes unless they explicitly preserve Host paths.

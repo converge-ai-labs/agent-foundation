@@ -9,7 +9,7 @@ from a13n_logging import get_logger
 from sqlalchemy import or_, select, update
 
 from a13n_service.background import PeriodicLoop
-from a13n_service.storage import short_session, transaction
+from a13n_service.storage import is_database_unavailable, short_session, transaction
 from a13n_service.temporal import assume_utc
 
 from .identity import local_backend_eligible
@@ -31,11 +31,21 @@ class EnvironmentMaintenanceLoop(PeriodicLoop):
     ) -> None:
         if interval_seconds <= 0 or concurrency < 1 or batch_size < 1:
             raise ValueError("Maintenance interval, concurrency, and batch size must be positive")
-        super().__init__(self.run_once, interval_seconds=interval_seconds)
+        super().__init__(self._run_iteration, interval_seconds=interval_seconds)
         self.lifecycle = lifecycle
         self.interval_seconds = interval_seconds
         self.concurrency = concurrency
         self.batch_size = batch_size
+
+    async def _run_iteration(self) -> None:
+        try:
+            await self.run_once()
+        except Exception as error:
+            if not is_database_unavailable(error):
+                raise
+            logger.warning(
+                "environment_maintenance_database_unavailable", extra={"retry_seconds": self.interval_seconds}
+            )
 
     async def run_once(self) -> None:
         cutoff = assume_utc(self.lifecycle.clock())

@@ -1,29 +1,46 @@
-import { useState } from "react";
+import {
+  ChoiceField,
+  DisclosureSection,
+  FormField,
+  Input,
+  Label,
+  Switch,
+} from "a13n-ui";
+
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { Input, SelectField, Switch } from "a13n-ui";
+import { useState } from "react";
+
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import { FormActions } from "../../shared/form";
+import { useIdempotency } from "../../shared/idempotency";
 import { SchemaFields } from "../../shared/schema-fields";
+import styles from "../../shared/shared.module.css";
 import {
   jsonObject,
   stringValues,
   validateSettings,
 } from "../../shared/validation";
-import { useIdempotency } from "../../shared/idempotency";
 import { useAccountProviders, useReceptionOptions } from "./data";
-import styles from "../../shared/shared.module.css";
+
+const accountProviderLabels: Record<string, string> = {
+  "github@github_app_http_v1": "GitHub",
+  "lark@lark_http_v1": "Lark",
+  "slack@slack_http_v1": "Slack",
+};
 
 export function AccountForm({
   initial,
   onSuccess,
+  onCancel,
   reload,
 }: {
   initial?: Schema["Account"];
   onSuccess: (account: Schema["Account"]) => void;
+  onCancel: () => void;
   reload?: () => Promise<void>;
 }) {
   const client = useClient(),
@@ -90,9 +107,9 @@ export function AccountForm({
         credentials: stringValues(credentials),
       };
       return client.http
-        .POST("/api/v1/workspaces/{workspace_id}/application-accounts", {
+        .POST("/api/v1/workspaces/{workspace}/application-accounts", {
           params: {
-            path: { workspace_id: workspace.id },
+            path: { workspace: workspace.id },
             header: commandHeaders(workspace.id, key.forBody(body)),
           },
           body,
@@ -104,9 +121,10 @@ export function AccountForm({
       onSuccess(result);
     },
   });
-  if (definitions.isPending) return <Loading />;
+  if (definitions.isPending) return <Loading variant="form" rows={5} />;
   return (
     <form
+      autoComplete="off"
       className={styles.form}
       onSubmit={(event) => {
         event.preventDefault();
@@ -118,18 +136,19 @@ export function AccountForm({
           definitions.error ?? options.agents.error ?? options.accounts.error
         }
       />
-      <Input
-        label={t("Name")}
-        value={name}
-        onChange={(event) => setName(event.target.value)}
-        required
-        maxLength={128}
-      />
-      <SelectField
-        label={t("Provider")}
+      <FormField className="min-w-0 w-full" label={t("Name")}>
+        <Input
+          required={true}
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          maxLength={128}
+        />
+      </FormField>
+      <ChoiceField
         placeholder={t("Select account provider")}
         value={provider}
-        disabled={!!basis}
+        className="min-w-0"
+        readOnly={!!basis}
         required
         onValueChange={(value) => {
           setProvider(value);
@@ -137,10 +156,14 @@ export function AccountForm({
           setCredentials({});
           setPolicy({});
         }}
+        label={t("Provider")}
         options={
           definitions.data?.items.map((item) => ({
             value: `${item.provider_key}@${item.config_version}`,
-            label: `${item.provider_key} · ${item.config_version}`,
+            label:
+              accountProviderLabels[
+                `${item.provider_key}@${item.config_version}`
+              ] ?? `${item.provider_key} · ${item.config_version}`,
           })) ?? []
         }
       />
@@ -154,61 +177,65 @@ export function AccountForm({
           />
           {!basis && (
             <>
-              <h3>{t("Credentials")}</h3>
-              <SchemaFields
-                key={`${provider}-credentials`}
-                schema={definition.credential_schema}
-                value={credentials}
-                onChange={setCredentials}
-                secret
-              />
+              <DisclosureSection title={t("Credentials")} defaultOpen>
+                <SchemaFields
+                  key={`${provider}-credentials`}
+                  schema={definition.credential_schema}
+                  value={credentials}
+                  onChange={setCredentials}
+                  secret
+                />
+              </DisclosureSection>
             </>
           )}
-          <h3>{t("Reception")}</h3>
-          <Switch
-            label={t("Receive events")}
-            checked={receive}
-            onCheckedChange={setReceive}
-          />
-          <SelectField
-            label={t("Default agent")}
-            placeholder={t("Select agent")}
-            required={receive}
-            value={agentId || "none"}
-            onValueChange={(value) => setAgentId(value === "none" ? "" : value)}
-            options={[
-              { value: "none", label: t("No default agent") },
-              ...(options.agents.data?.map((item) => ({
-                value: item.id,
-                label: item.name,
-              })) ?? []),
-            ]}
-          />
-          <SelectField
-            label={t("Execution service account")}
-            placeholder={t("Select service account")}
-            required={receive}
-            value={serviceAccountId || "none"}
-            onValueChange={(value) =>
-              setServiceAccountId(value === "none" ? "" : value)
-            }
-            options={[
-              { value: "none", label: t("No execution identity") },
-              ...(options.accounts.data
-                ?.filter((item) => item.status === "active")
-                .map((item) => ({ value: item.id, label: item.name })) ?? []),
-            ]}
-          />
-          <BatchingFields value={batching} onChange={setBatching} />
-          <details>
-            <summary>{t("Provider reception policy")}</summary>
-            <SchemaFields
-              key={`${provider}-policy`}
-              schema={definition.reception_policy_schema}
-              value={policy}
-              onChange={setPolicy}
+          <DisclosureSection title={t("Reception")} defaultOpen={receive}>
+            <Label className="flex items-center gap-2">
+              <Switch checked={receive} onCheckedChange={setReceive} />
+              {t("Receive events")}
+            </Label>
+            <ChoiceField
+              placeholder={t("Select agent")}
+              value={agentId || "none"}
+              className="min-w-0"
+              required={receive}
+              onValueChange={(value) =>
+                setAgentId(value === "none" ? "" : value)
+              }
+              label={t("Default agent")}
+              options={[
+                { value: "none", label: t("No default agent") },
+                ...(options.agents.data?.map((item) => ({
+                  value: item.id,
+                  label: item.name,
+                })) ?? []),
+              ]}
             />
-          </details>
+            <ChoiceField
+              placeholder={t("Select service account")}
+              value={serviceAccountId || "none"}
+              className="min-w-0"
+              required={receive}
+              onValueChange={(value) =>
+                setServiceAccountId(value === "none" ? "" : value)
+              }
+              label={t("Execution service account")}
+              options={[
+                { value: "none", label: t("No execution identity") },
+                ...(options.accounts.data
+                  ?.filter((item) => item.status === "active")
+                  .map((item) => ({ value: item.id, label: item.name })) ?? []),
+              ]}
+            />
+            <BatchingFields value={batching} onChange={setBatching} />
+            <DisclosureSection title={<>{t("Provider reception policy")}</>}>
+              <SchemaFields
+                key={`${provider}-policy`}
+                schema={definition.reception_policy_schema}
+                value={policy}
+                onChange={setPolicy}
+              />
+            </DisclosureSection>
+          </DisclosureSection>
         </>
       )}
       <ErrorNotice
@@ -216,6 +243,7 @@ export function AccountForm({
         retry={reload ? () => void reload() : undefined}
       />
       <FormActions
+        onCancel={onCancel}
         pending={save.isPending}
         label={t(basis ? "Save changes" : "Create account")}
       />
@@ -232,45 +260,55 @@ export function BatchingFields({
   const { t } = useTranslation();
   return (
     <div className={styles.stack}>
-      <Switch
-        label={t("Custom input batching")}
-        checked={value !== null}
-        onCheckedChange={(enabled) =>
-          onChange(
-            enabled ? { min_interval_ms: 1000, max_batch_events: 10 } : null,
-          )
-        }
-      />
+      <Label className="flex items-center gap-2">
+        <Switch
+          checked={value !== null}
+          onCheckedChange={(enabled) =>
+            onChange(
+              enabled ? { min_interval_ms: 1000, max_batch_events: 10 } : null,
+            )
+          }
+        />
+        {t("Custom input batching")}
+      </Label>
       {value && (
         <>
-          <Input
+          <FormField
+            className="min-w-0 w-full"
             label={t("Minimum interval (milliseconds)")}
-            type="number"
-            min={1}
-            step={1}
-            required
-            value={value.min_interval_ms}
-            onChange={(event) =>
-              onChange({
-                ...value,
-                min_interval_ms: Number(event.target.value),
-              })
-            }
-          />
-          <Input
+          >
+            <Input
+              required={true}
+              type="number"
+              min={1}
+              step={1}
+              value={value.min_interval_ms}
+              onChange={(event) =>
+                onChange({
+                  ...value,
+                  min_interval_ms: Number(event.target.value),
+                })
+              }
+            />
+          </FormField>
+          <FormField
+            className="min-w-0 w-full"
             label={t("Maximum events per batch")}
-            type="number"
-            min={1}
-            step={1}
-            required
-            value={value.max_batch_events}
-            onChange={(event) =>
-              onChange({
-                ...value,
-                max_batch_events: Number(event.target.value),
-              })
-            }
-          />
+          >
+            <Input
+              required={true}
+              type="number"
+              min={1}
+              step={1}
+              value={value.max_batch_events}
+              onChange={(event) =>
+                onChange({
+                  ...value,
+                  max_batch_events: Number(event.target.value),
+                })
+              }
+            />
+          </FormField>
         </>
       )}
     </div>

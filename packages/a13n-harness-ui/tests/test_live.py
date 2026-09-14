@@ -252,3 +252,115 @@ async def test_child_display_does_not_treat_input_or_compaction_as_an_answer() -
         )
         display.observe(observer.observe(source))
     assert [activity.text for activity in display.snapshot().activities] == ["actual answer"]
+
+
+async def test_root_observer_bootstrap_survives_ring_eviction_and_publication_races() -> None:
+    from datetime import UTC, datetime
+
+    from a13n_harness import HarnessEvent
+    from a13n_stream_protocol import HarnessAguiObserver
+    from pydantic_ai.messages import PartDeltaEvent, PartStartEvent, TextPart, TextPartDelta
+
+    observer = HarnessAguiObserver()
+    hub = HarnessUiLiveHub(ring_size=2)
+
+    def observe(sequence, value):
+        return observer.observe(
+            HarnessEvent(
+                thread_id="thread-root",
+                run_id="run-root",
+                sequence=sequence,
+                occurred_at=datetime.now(UTC),
+                event=value,
+            )
+        )
+
+    async def publish(events):
+        await hub.publish(
+            run_kind="root",
+            root_thread_id="thread-root",
+            parent_thread_id=None,
+            thread_id="thread-root",
+            run_id="run-root",
+            events=events,
+            observer=observer,
+            base_continuation_id="saved-before",
+        )
+
+    await publish(observe(1, PartStartEvent(index=0, part=TextPart(content="begin"))))
+    for index in range(2, 40):
+        await publish(observe(index, PartDeltaEvent(index=0, delta=TextPartDelta(content_delta=str(index)))))
+    count = observer.event_count
+    # Accumulated but not published yet: this must appear only in subsequent live delivery.
+    pending = observe(40, PartDeltaEvent(index=0, delta=TextPartDelta(content_delta="pending")))
+    async with hub.subscribe(root_thread_id="thread-root") as subscription:
+        replay = subscription.root_stream
+        assert replay is not None
+        assert replay.observer is observer  # Existing owner, no second payload store.
+        assert replay.summary.event_count == count
+        assert replay.summary.base_continuation_id == "saved-before"
+        batches = list(replay.batches())
+        events = [item for batch in batches for item in batch]
+        assert all(len(batch) <= 16 for batch in batches)
+        assert [item.index for item in events] == list(range(count))
+        assert any(item.payload and item.payload.get("delta") == "begin" for item in events)
+        assert not any(item.payload and item.payload.get("delta") == "pending" for item in events)
+        await publish(pending)
+        delivered = await subscription.receive()
+        assert delivered.sequence > subscription.root_stream.summary.event_count
+        assert delivered.payload is not None and delivered.payload["delta"] == "pending"
+        assert [item for batch in replay.batches() for item in batch] == events
+        await hub.finish_root(thread_id="thread-root", run_id="run-root", saved_continuation_id="saved-after")
+        assert "thread-root" not in hub._root_streams
+        assert list(replay.batches()) == batches  # Existing delivery retains its finite reference.
+    async with hub.subscribe(root_thread_id="thread-root") as subscription:
+        assert subscription.root_stream is None
+    await hub.close()
+
+
+async def test_unsaved_root_retention_is_bounded_and_never_evicts_active_runs() -> None:
+    from datetime import UTC, datetime
+
+    from a13n_harness import HarnessEvent
+    from a13n_stream_protocol import HarnessAguiObserver
+    from pydantic_ai.messages import PartStartEvent, TextPart
+
+    hub = HarnessUiLiveHub(ring_size=2)
+
+    async def start(thread_id, run_id):
+        observer = HarnessAguiObserver()
+        events = observer.observe(
+            HarnessEvent(
+                thread_id=thread_id,
+                run_id=run_id,
+                sequence=1,
+                occurred_at=datetime.now(UTC),
+                event=PartStartEvent(index=0, part=TextPart(content="output")),
+            )
+        )
+        await hub.publish(
+            run_kind="root",
+            root_thread_id=thread_id,
+            parent_thread_id=None,
+            thread_id=thread_id,
+            run_id=run_id,
+            events=events,
+            observer=observer,
+        )
+
+    await start("thread-active", "run-active")
+    for index in range(257):
+        thread_id = f"thread-{index}"
+        await start(thread_id, f"run-{index}")
+        await hub.finish_root(thread_id=thread_id, run_id=f"run-{index}", saved_continuation_id=None)
+    assert len(hub._terminal_streams) == 256
+    assert "thread-0" not in hub._root_streams
+    assert "thread-active" in hub._root_streams
+    await start("thread-256", "run-replacement")
+    await hub.finish_root(thread_id="thread-256", run_id="run-256", saved_continuation_id="old-save")
+    async with hub.subscribe(root_thread_id="thread-256") as subscription:
+        assert subscription.root_stream is not None
+        assert subscription.root_stream.summary.run_id == "run-replacement"
+    assert "thread-256" not in hub._terminal_streams
+    await hub.close()
+    assert not hub._root_streams

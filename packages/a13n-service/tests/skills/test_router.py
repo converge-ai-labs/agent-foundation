@@ -51,18 +51,16 @@ async def authenticate(request: Request) -> AuthenticatedActor:
 
 def settings(tmp_path: Path, database_path: Path) -> Settings:
     return Settings(
-        _env_file=None,
-        database_backend="sqlite",
-        database_sqlite_path=database_path,
-        redis_backend="memory",
-        object_backend="local",
-        object_local_root=tmp_path / "objects",
-        filesystem_root=tmp_path / "files",
-        model_resolve_dns_on_save=False,
-        secret_master_key_base64=b64encode(b"0123456789abcdef0123456789abcdef").decode(),
-        secret_encryption_key_id="skill-management-test-key",
-        connectivity_public_origin="http://testserver",
-        connectivity_http_origins=("http://testserver",),
+        database={"backend": "sqlite", "sqlite_path": database_path},
+        redis={"backend": "memory"},
+        objects={"backend": "local", "local_root": tmp_path / "objects"},
+        filesystem={"root": tmp_path / "files"},
+        models={"resolve_dns_on_save": False},
+        secrets={
+            "master_key_base64": b64encode(b"0123456789abcdef0123456789abcdef").decode(),
+            "encryption_key_id": "skill-management-test-key",
+        },
+        connectivity={"public_origin": "http://127.0.0.1", "http_origins": ("http://127.0.0.1",)},
     )
 
 
@@ -70,14 +68,14 @@ async def seed_database(config: Settings) -> None:
     engine = create_sql_engine(config.database_config())
     sessions = create_session_factory(engine)
     async with transaction(sessions) as session:
-        session.add(OrganizationRecord(id=ORG_ID, name="Test", created_at=NOW, updated_at=NOW))
+        session.add(OrganizationRecord(id=ORG_ID, key="test", name="Test", created_at=NOW, updated_at=NOW))
         await session.flush()
         session.add(
             WorkspaceRecord(
                 id=WORKSPACE_ID,
                 organization_id=ORG_ID,
                 name="Default",
-                normalized_name="default",
+                key="default",
                 created_at=NOW,
                 updated_at=NOW,
                 deleted_at=None,
@@ -178,8 +176,19 @@ async def test_skill_http_lifecycle_and_content_contract(api_client: httpx2.Asyn
     assert skill["key"] == "deploy-helper"
 
     listed = await api_client.get(f"/api/v1/workspaces/{WORKSPACE_ID}/skills")
-    assert listed.json() == {"items": [skill], "next_cursor": None}
+    assert listed.json() == {"items": [{**skill, "source_kind": "zip"}], "next_cursor": None}
     assert (await api_client.get(f"/api/v1/skills/{skill['id']}")).json() == skill
+    keyed = await api_client.get(f"/api/v1/workspaces/default/skills/{skill['key']}")
+    assert keyed.status_code == 200
+    assert keyed.json() == skill
+    assert keyed.headers["etag"] == created.headers["etag"]
+    assert (await api_client.get(f"/api/v1/workspaces/default/skills/{skill['id']}")).status_code == 404
+    for query in ("deploy", "DEPLOY-HELPER"):
+        searched = await api_client.get(f"/api/v1/workspaces/{WORKSPACE_ID}/skills", params={"q": query})
+        assert searched.json()["items"] == [{**skill, "source_kind": "zip"}]
+    assert (await api_client.get(f"/api/v1/workspaces/{WORKSPACE_ID}/skills", params={"q": "missing"})).json()[
+        "items"
+    ] == []
     revisions = await api_client.get(f"/api/v1/skills/{skill['id']}/revisions")
     assert revisions.json() == {"items": [revision], "next_cursor": None}
     references = await api_client.get(f"/api/v1/skills/{skill['id']}/references")
@@ -214,6 +223,7 @@ async def test_skill_http_lifecycle_and_content_contract(api_client: httpx2.Asyn
     deleted = await api_client.delete(f"/api/v1/skills/{skill['id']}", headers={"If-Match": patched.headers["etag"]})
     assert deleted.status_code == 204
     assert (await api_client.get(f"/api/v1/skills/{skill['id']}")).status_code == 404
+    assert (await api_client.get(f"/api/v1/workspaces/default/skills/{skill['key']}")).status_code == 404
     assert (await api_client.get(f"/api/v1/skill-revisions/{revision['id']}")).status_code == 404
     assert (await api_client.get(f"/api/v1/skill-revisions/{revision['id']}/content")).status_code == 404
 

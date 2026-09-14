@@ -22,15 +22,16 @@ from pydantic import (
 from pydantic_ai.usage import UsageLimits
 
 from a13n_service.connectivity.selection_domain import (
-    ConnectorConnectionRunSelection,
-    ConnectorConnectionToolSelection,
-    MCPConnectionToolSelection,
+    ConnectionRunSelection,
+    ConnectionToolSelection,
 )
 from a13n_service.digests import Sha256Digest
 from a13n_service.iam.domain import ActorRef
 from a13n_service.ids import ObjectId, new_object_id
 from a13n_service.models.domain import ModelExecutionSnapshot, ModelKey
 from a13n_service.models.settings import validate_settings_bounds
+from a13n_service.resource_keys import ResourceKey
+from a13n_service.search.domain import SearchSelection
 from a13n_service.secrets.domain import SecretKey
 from a13n_service.skills.domain import SkillKey, SkillRevisionLock
 
@@ -214,14 +215,14 @@ class ProtocolConfig(StrictModel):
 
 
 class AgentConfig(StrictModel):
+    search: SearchSelection | None = Field(default=None, exclude_if=lambda value: value is None)
     subagent_mode: Literal["inline", "async"] = "inline"
     model: AgentModel
     instructions: Annotated[str, StringConstraints(max_length=256 * 1024)] = ""
     input_adapter: InputAdapterConfig
     plugins: tuple[PluginSelection, ...] = Field(default=(), max_length=128)
     skills: tuple[SkillSelection, ...] = Field(default=(), max_length=512)
-    connector_tools: tuple[ConnectorConnectionToolSelection, ...] = Field(default=(), max_length=128)
-    mcp_tools: tuple[MCPConnectionToolSelection, ...] = Field(default=(), max_length=128)
+    connection_tools: tuple[ConnectionToolSelection, ...] = Field(default=(), max_length=128)
     subagents: dict[BoundedKey, SubagentSelection] = Field(default_factory=dict, max_length=128)
     client_tools: tuple[ClientToolDefinition, ...] = Field(default=(), max_length=128)
     output_spec: OutputSpec | None = None
@@ -241,8 +242,7 @@ class AgentConfig(StrictModel):
             ("Skill keys", skill_keys),
             ("client tool names", client_tool_names),
             ("Secret requirement keys", secret_keys),
-            ("Connector connections", tuple(item.connector_connection_id for item in self.connector_tools)),
-            ("MCP connections", tuple(item.mcp_connection_id for item in self.mcp_tools)),
+            ("Connector connections", tuple(item.connection_id for item in self.connection_tools)),
         ):
             if len(values) != len(set(values)):
                 raise ValueError(f"{label} must be unique")
@@ -270,15 +270,15 @@ class RetryOverride(StrictModel):
 
 
 class AgentRunOverride(StrictModel):
+    search: SearchSelection | None = None
     model: ModelOverride | None = None
     instructions: Annotated[str, StringConstraints(max_length=256 * 1024)] | None = None
     plugins: tuple[PluginSelection, ...] | None = Field(default=None, max_length=128)
     skills: tuple[SkillSelection, ...] | None = Field(default=None, max_length=512)
-    connector_tools: tuple[ConnectorConnectionToolSelection, ...] | None = Field(
+    connection_tools: tuple[ConnectionToolSelection, ...] | None = Field(
         default=None,
         max_length=128,
     )
-    mcp_tools: tuple[MCPConnectionToolSelection, ...] | None = Field(default=None, max_length=128)
     subagents: dict[BoundedKey, SubagentOverride | None] | None = Field(default=None, max_length=128)
     client_tools: tuple[ClientToolDefinition, ...] | None = Field(default=None, max_length=128)
     output_spec: OutputSpec | None = None
@@ -316,8 +316,7 @@ class ResolvedSubagentEdge(StrictModel):
 
 class _ResolvedContent[ResolvedModelT: BaseModel](StrictModel):
     resolved_model: ResolvedModelT
-    connector_tools: tuple[ConnectorConnectionToolSelection, ...] = ()
-    mcp_tools: tuple[MCPConnectionToolSelection, ...] = ()
+    connection_tools: tuple[ConnectionToolSelection, ...] = ()
     resolved_subagents: tuple[ResolvedSubagentEdge, ...] = ()
 
 
@@ -329,11 +328,11 @@ class ChildAgentExecution(StrictModel):
     agent_id: ObjectId
     revision_content_digest: Sha256Digest
     effective_config: EffectiveAgentConfig
-    connector_connection_selections: tuple[ConnectorConnectionRunSelection, ...] = ()
-    mcp_connection_selections: tuple[MCPConnectionToolSelection, ...] = ()
+    connection_selections: tuple[ConnectionRunSelection, ...] = ()
 
 
 class EffectiveAgentConfig(_ResolvedContent[EffectiveAgentModel]):
+    search: SearchSelection | None = Field(default=None, exclude_if=lambda value: value is None)
     plugins: tuple[PluginSelection, ...] = Field(default=(), max_length=128)
     subagent_mode: Literal["inline", "async"] = "inline"
     child_configs: dict[ObjectId, ChildAgentExecution] = Field(default_factory=dict, max_length=128)
@@ -369,12 +368,14 @@ class PreparedAgentPlugins(StrictModel):
 
 
 class Agent(StrictModel):
+    image_url: str | None = None
     default_environment_template_id: ObjectId | None = None
     id: ObjectId
     organization_id: ObjectId
     workspace_id: ObjectId
     source: AgentSource
     name: AgentName
+    key: ResourceKey
     description: str | None
     version: int = Field(ge=1)
     current_revision_id: ObjectId
@@ -398,8 +399,7 @@ class AgentRevision(StrictModel):
     config_digest: Sha256Digest
     resolved_model: ResolvedAgentModel
     resolved_skills: tuple[ResolvedSkillBinding, ...]
-    connector_tools: tuple[ConnectorConnectionToolSelection, ...] = ()
-    mcp_tools: tuple[MCPConnectionToolSelection, ...] = ()
+    connection_tools: tuple[ConnectionToolSelection, ...] = ()
     resolved_subagents: tuple[ResolvedSubagentEdge, ...]
     content_digest: Sha256Digest
     source_revision_id: ObjectId | None
@@ -432,6 +432,7 @@ class CreateAgentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: AgentName
+    key: ResourceKey | None = None
     description: AgentDescription | None = None
     config: AgentConfig
 
@@ -441,15 +442,17 @@ class UpdateAgentRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: AgentName | None = None
+    key: ResourceKey | None = None
     description: AgentDescription | None = None
 
     @model_validator(mode="after")
     def validate_change(self) -> UpdateAgentRequest:
-        changed = self.model_fields_set.intersection({"name", "description", "default_environment_template_id"})
+        changed = self.model_fields_set.intersection({"name", "key", "description", "default_environment_template_id"})
         if not changed:
             raise ValueError("at least one metadata field must be supplied")
-        if "name" in self.model_fields_set and self.name is None:
-            raise ValueError("name cannot be null")
+        for field in ("name", "key"):
+            if field in self.model_fields_set and getattr(self, field) is None:
+                raise ValueError(f"{field} cannot be null")
         return self
 
 
@@ -471,6 +474,7 @@ class DuplicateAgentRequest(BaseModel):
 
     expected_version: int = Field(ge=1)
     name: AgentName
+    key: ResourceKey | None = None
     description: AgentDescription | None = None
 
 

@@ -36,7 +36,7 @@ from a13n_harness.model_context import (
     ModelContextProjectionRequest,
     ModelContextRequestKind,
 )
-from a13n_harness.observation import observe_operation
+from a13n_harness.observation import observe_operation, observe_output, record_span_metadata
 
 MEM0_CAPABILITY_ID = "a13n.mem0"
 MEM0_API_KEY_ENV = "MEM0_API_KEY"
@@ -114,11 +114,23 @@ class _Mem0Binding:
     def scope_binding(self, scope: Mem0Scope | None = None) -> _ScopeBinding:
         selected = self.fixed_scope if self.fixed_scope is not None else scope
         if selected is None:
-            raise RunError("A memory scope is required.", code="mem0_scope_unavailable")
+            raise RunError(
+                "A memory scope is required.",
+                code="mem0_scope_unavailable",
+                details={"field": "scope", "reason": "scope_required", "hint": "Select an available memory scope."},
+            )
         for binding in self.scopes:
             if binding.scope is selected:
                 return binding
-        raise RunError("The selected memory scope is unavailable.", code="mem0_scope_unavailable")
+        raise RunError(
+            "The selected memory scope is unavailable.",
+            code="mem0_scope_unavailable",
+            details={
+                "field": "scope",
+                "reason": "scope_unavailable",
+                "hint": "Select a scope configured for this Run.",
+            },
+        )
 
     def recall_filter(self) -> dict[str, JsonValue]:
         if self.fixed_scope is not None:
@@ -319,11 +331,25 @@ class Mem0Capability(AbstractModelContextCapability):
             }
             if self.recall_threshold is not None:
                 kwargs["threshold"] = self.recall_threshold
-            with observe_operation("memory_recall"):
+            with observe_operation("memory_recall", capability_id=self.id, operation_id=operation_id) as span:
+                record_span_metadata(
+                    span,
+                    {
+                        "memory_recall.limit": self.recall_limit,
+                        "memory_recall.required": self.recall_required,
+                        "memory_recall.scope_count": len(scope_values),
+                    },
+                )
                 async with asyncio.timeout(self.recall_timeout):
                     response = await binding.client.search(query, **kwargs)
                 memories = _normalize_memories(response, limit=self.recall_limit)
                 recall_block = _recall_block(memories) if memories else None
+                record_span_metadata(span, {"memory_recall.result_count": len(memories)})
+                observe_output(
+                    span,
+                    {"result_count": len(memories), "context_available": recall_block is not None},
+                    status="recalled",
+                )
         except TimeoutError as exc:
             await self._recall_failed(ctx, operation_id, scope_values, "mem0_recall_timeout", retryable=True)
             if self.recall_required:

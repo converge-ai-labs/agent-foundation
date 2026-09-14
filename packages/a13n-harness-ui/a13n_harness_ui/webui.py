@@ -6,6 +6,7 @@ import base64
 import binascii
 import hmac
 import ipaddress
+import os
 import secrets
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
@@ -15,29 +16,97 @@ from urllib.parse import quote, urlsplit
 
 import click
 import uvicorn
-from anyio import create_task_group
-from fastapi import FastAPI, Query, Request
+from anyio import create_task_group, fail_after, move_on_after
+from fastapi import FastAPI, Query, Request, WebSocket
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
+from starlette.requests import HTTPConnection
 from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.websockets import WebSocketDisconnect
 
-from a13n_harness_ui.app import AppStatus, HarnessUiApp
+from a13n_harness_ui import __version__
+from a13n_harness_ui.app import AppState, AppStatus, HarnessUiApp
+from a13n_harness_ui.configuration import ResourceMutationRequest
 from a13n_harness_ui.configuration.setup import SetupPreview, SetupPublication, SetupSelection
+from a13n_harness_ui.configuration.views import (
+    AgentToolProxyView,
+    ConfigurationPublication,
+    ConfigurationSourceCatalog,
+    ConfigurationSourceView,
+    ConfigurationValidation,
+)
+from a13n_harness_ui.configuration_inspection import CapturedConfiguration, ThreadConfigurationInspection
 from a13n_harness_ui.errors import HarnessUiError
-from a13n_harness_ui.live import LiveCursor, LiveEvent, SummaryCursor, SummaryInvalidation
+from a13n_harness_ui.extensions import CatalogReference
+from a13n_harness_ui.host_files import (
+    DirectoryCreateRequest,
+    DirectoryPage,
+    FileCapture,
+    FileCaptureRequest,
+    FileDeleteRequest,
+    FileDeletion,
+    FileEntry,
+    FileMoveRequest,
+    FileReadRequest,
+    FileText,
+    FileWriteRequest,
+    NativePath,
+    Revision,
+)
+from a13n_harness_ui.host_git import (
+    Comparison,
+    GitCaptureRequest,
+    GitDiff,
+    GitDiffRequest,
+    GitDiscovery,
+    GitPath,
+    GitStatus,
+)
+from a13n_harness_ui.host_terminal import TerminalCommand, TerminalCreate, TerminalFrame, TerminalView
+from a13n_harness_ui.interactive_transport import InteractiveAuthentication, authenticate_interactive, receive_text
+from a13n_harness_ui.live import LiveCursor, LiveEvent, RootStreamEvent, SummaryCursor, SummaryInvalidation
+from a13n_harness_ui.model_accounts import AccountProjection, AccountStoreError, Provider
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginStatus
+from a13n_harness_ui.output_comment_models import (
+    CommentPage,
+    CommentPublication,
+    OutputComment,
+    SavedChildOutputPage,
+    SavedOutputTarget,
+    SavedOutputView,
+)
+from a13n_harness_ui.page_presence import (
+    PRESENCE_REFRESH_SECONDS,
+    PRESENCE_TIMEOUT_SECONDS,
+    PresenceFrame,
+    PresenceReport,
+)
 from a13n_harness_ui.setup import EnvironmentReadiness, SetupStatus
+from a13n_harness_ui.shared_drafts import DraftCommand, DraftFrame
+from a13n_harness_ui.storage import ThreadConfiguration
+from a13n_harness_ui.storage.usage import ThreadUsageView
 from a13n_harness_ui.surfaces import (
+    ChildControlResult,
+    ChildExecutionPage,
+    ContextUsageView,
     DecisionBatchView,
     DecisionResponseBatch,
     NewThreadDefaults,
+    NotePage,
+    ProjectDefaultsApply,
+    ProjectDefaultsPreview,
     ProjectSummary,
+    ReviewView,
     RootControlResult,
     RootOperationView,
     RootRunReceipt,
     SurfaceModel,
+    TaskPage,
+    ThreadActivityPage,
+    ThreadConfigurationMutationInput,
+    ThreadConfigurationResolution,
     ThreadDetail,
     ThreadFocusSnapshot,
     ThreadMetadataMutation,
@@ -54,8 +123,22 @@ _STATIC = Path(__file__).parent / "static"
 AppFactory = Callable[[], AbstractAsyncContextManager[HarnessUiApp]]
 
 
+class ListenerFeatures(SurfaceModel):
+    """Implemented browser facilities, not the eventual workbench roadmap."""
+
+    shared_drafts: Literal[True] = True
+    output_comments: Literal[True] = True
+    page_presence: Literal[True] = True
+    host_files: bool = False
+    host_git: bool = False
+    host_terminal: bool = False
+
+
 class ListenerStatus(SurfaceModel):
     api_version: Literal["1"] = "1"
+    version: str
+    build_revision: str | None = None
+    features: ListenerFeatures = Field(default_factory=ListenerFeatures)
     app: AppStatus
     host: str
     access: Literal["api_key", "dangerous_bypass"]
@@ -71,6 +154,14 @@ class PromptRequest(SurfaceModel):
     attachment_ids: tuple[str, ...] = Field(default=(), max_length=8)
 
 
+class SteerRequest(SurfaceModel):
+    prompt: str = Field(min_length=1, max_length=256 * 1024)
+
+
+class RootSteerRequest(SteerRequest):
+    attachment_ids: tuple[str, ...] = Field(default=(), max_length=8)
+
+
 class SetupApplyRequest(SurfaceModel):
     selection: SetupSelection
 
@@ -83,6 +174,17 @@ class PreflightRequest(SurfaceModel):
 class FocusSnapshotFrame(SurfaceModel):
     kind: Literal["snapshot"] = "snapshot"
     snapshot: ThreadFocusSnapshot
+    resume_cursor: str | None
+
+
+class FocusReplayFrame(SurfaceModel):
+    kind: Literal["root_stream"] = "root_stream"
+    run_id: str
+    events: tuple[RootStreamEvent, ...] = Field(min_length=1, max_length=16)
+
+
+class FocusReadyFrame(SurfaceModel):
+    kind: Literal["ready"] = "ready"
     resume_cursor: str
 
 
@@ -160,10 +262,18 @@ class AccessBoundary:
         self.allowed_hosts = allowed_hosts
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http":
+        if scope["type"] not in {"http", "websocket"}:
             await self.app(scope, receive, send)
             return
-        request = Request(scope)
+        request = HTTPConnection(scope)
+        interactive = scope["type"] == "websocket"
+
+        async def reject(code: str, message: str, status: int) -> None:
+            if interactive:
+                await send({"type": "websocket.close", "code": 4403, "reason": message})
+            else:
+                await _error(code, message, status)(scope, receive, send)
+
         host = request.url.hostname
         wildcard_ip = False
         if {"0.0.0.0", "::"} & self.allowed_hosts and host is not None:
@@ -173,26 +283,26 @@ class AccessBoundary:
             except ValueError:
                 pass
         if host not in self.allowed_hosts and not wildcard_ip:
-            await _error("host_rejected", "Use the listener's explicit browser address.", 400)(scope, receive, send)
+            await reject("host_rejected", "Use the listener's explicit browser address.", 400)
             return
         if scope["path"] == "/api" or scope["path"].startswith("/api/"):
             origin = request.headers.get("origin")
             if origin is not None:
                 parsed = urlsplit(origin)
                 if (
-                    parsed.scheme != request.url.scheme
+                    parsed.scheme != {"ws": "http", "wss": "https"}.get(request.url.scheme, request.url.scheme)
                     or parsed.netloc != request.headers.get("host")
                     or parsed.path
                     or parsed.query
                     or parsed.fragment
                 ):
-                    await _error("origin_rejected", "Cross-origin API access is not enabled.", 403)(
-                        scope, receive, send
-                    )
+                    await reject("origin_rejected", "Cross-origin API access is not enabled.", 403)
                     return
             authorization = request.headers.get("authorization", "")
-            if self.api_key is not None and not hmac.compare_digest(
-                authorization.encode(), f"Bearer {self.api_key}".encode()
+            if (
+                not interactive
+                and self.api_key is not None
+                and not hmac.compare_digest(authorization.encode(), f"Bearer {self.api_key}".encode())
             ):
                 await _error("authentication_required", "Enter the API key printed by this server.", 401)(
                     scope, receive, send
@@ -273,22 +383,367 @@ def create_webui(
     async def app_error(_request: Request, exc: HarnessUiError) -> JSONResponse:
         code = exc.code
         status = 409 if "conflict" in code or "stale" in code or "preflight_required" in code else 400
-        if code == "request_too_large":
+        if code in {"request_too_large", "host_files_too_large", "host_git_too_large"}:
             status = 413
-        elif code in {"app_not_ready", "app_stopping"}:
+        elif code in {
+            "host_files_disabled",
+            "host_files_permission_denied",
+            "host_git_disabled",
+            "host_terminal_disabled",
+            "host_git_permission_denied",
+        }:
+            status = 403
+        elif code in {"host_files_partial_failure", "thread_run_active"}:
+            status = 409
+        elif code == "host_files_io_error":
+            status = 500
+        elif code in {"app_not_ready", "app_stopping", "host_git_unavailable", "host_terminal_unavailable"}:
             status = 503
+        elif code == "host_git_timeout":
+            status = 504
         elif code.endswith("not_found"):
             status = 404
         return _error(code, str(exc), status)
+
+    @server.exception_handler(AccountStoreError)
+    async def account_error(_request: Request, exc: AccountStoreError) -> JSONResponse:
+        return _error(exc.code, str(exc), 400)
 
     @server.exception_handler(RequestValidationError)
     async def query_error(_request: Request, _exc: RequestValidationError) -> JSONResponse:
         return _error("request_invalid", "Query does not match the API schema.", 422)
 
+    @server.get("/healthz", include_in_schema=False)
+    async def health() -> JSONResponse:
+        return JSONResponse({"status": "ok"}, headers={"Cache-Control": "no-store"})
+
+    @server.get("/readyz", include_in_schema=False)
+    async def ready() -> JSONResponse:
+        # Missing model configuration does not block setup or App access.
+        available = owner is not None and owner.state is AppState.ready
+        return JSONResponse(
+            {"status": "ready" if available else "not_ready"},
+            status_code=200 if available else 503,
+            headers={"Cache-Control": "no-store"},
+        )
+
     @server.get("/api/status", response_model=ListenerStatus)
     async def status() -> ListenerStatus:
         return ListenerStatus(
-            app=await app().status(), host=host, access="api_key" if api_key is not None else "dangerous_bypass"
+            version=__version__,
+            build_revision=os.environ.get("A13N_HARNESS_UI_BUILD_REVISION"),
+            app=await app().status(),
+            features=ListenerFeatures(
+                host_files=app().shares_computer,
+                host_git=app().host_git_available,
+                host_terminal=app().host_terminal_available,
+            ),
+            host=host,
+            access="api_key" if api_key is not None else "dangerous_bypass",
+        )
+
+    @server.get("/api/presence", response_model=PresenceFrame)
+    async def presence(participant_id: Annotated[str | None, Query(max_length=80)] = None) -> PresenceFrame:
+        return await app().page_presence_snapshot(participant_id)
+
+    @server.websocket("/api/presence/connect")
+    async def connect_presence(socket: WebSocket) -> None:
+        if not await authenticate_interactive(socket, api_key):
+            return
+        try:
+            directory = app().page_presence()
+            participant = directory.attach()
+        except HarnessUiError as exc:
+            await socket.send_json(ErrorEnvelope(error=ErrorBody(code=exc.code, message=str(exc))).model_dump())
+            await socket.close(code=4404)
+            return
+        try:
+            async with create_task_group() as group:
+
+                async def output() -> None:
+                    while True:
+                        changed = directory.changed
+                        if directory.closed:
+                            frame = PresenceFrame(participant_id=participant, participants=(), closed=True)
+                        else:
+                            frame = await app().page_presence_snapshot(participant)
+                        await socket.send_json(frame.model_dump(mode="json"))
+                        if frame.closed:
+                            await socket.close()
+                            group.cancel_scope.cancel()
+                            return
+                        with move_on_after(PRESENCE_REFRESH_SECONDS):
+                            await changed.wait()
+
+                group.start_soon(output)
+                try:
+                    while True:
+                        try:
+                            with fail_after(PRESENCE_TIMEOUT_SECONDS):
+                                raw = await receive_text(socket, limit=16384)
+                            report = PresenceReport.model_validate_json(raw)
+                            await app().report_page_presence(participant, report)
+                        except (ValidationError, ValueError):
+                            await socket.send_json(
+                                ErrorEnvelope(
+                                    error=ErrorBody(code="presence_invalid", message="Invalid page presence report.")
+                                ).model_dump()
+                            )
+                        except HarnessUiError as exc:
+                            await socket.send_json(
+                                ErrorEnvelope(error=ErrorBody(code=exc.code, message=str(exc))).model_dump()
+                            )
+                except TimeoutError:
+                    await socket.close(code=4408, reason="Presence report timed out")
+                except WebSocketDisconnect:
+                    pass
+                finally:
+                    group.cancel_scope.cancel()
+        except* WebSocketDisconnect:
+            pass
+        finally:
+            directory.detach(participant)
+
+    @server.websocket("/api/threads/{thread_id}/draft/connect")
+    async def connect_draft(socket: WebSocket, thread_id: str) -> None:
+        if not await authenticate_interactive(socket, api_key):
+            return
+        try:
+            draft = await app().shared_draft(thread_id)
+        except HarnessUiError as exc:
+            await socket.send_json(ErrorEnvelope(error=ErrorBody(code=exc.code, message=str(exc))).model_dump())
+            await socket.close(code=4404)
+            return
+        participant = draft.attach()
+        try:
+            async with create_task_group() as group:
+
+                async def output() -> None:
+                    while True:
+                        changed = draft.changed
+                        frame = draft.frame(participant)
+                        await socket.send_json(frame.model_dump(mode="json"))
+                        if frame.closed:
+                            await socket.close()
+                            group.cancel_scope.cancel()
+                            return
+                        await changed.wait()
+
+                group.start_soon(output)
+                try:
+                    while True:
+                        try:
+                            command = DraftCommand.model_validate_json(await receive_text(socket, limit=710000))
+                            await app().edit_shared_draft(thread_id, participant, command)
+                        except (ValidationError, ValueError):
+                            await socket.send_json(
+                                ErrorEnvelope(
+                                    error=ErrorBody(
+                                        code="draft_invalid",
+                                        message="Invalid shared draft; local edits were not accepted.",
+                                    )
+                                ).model_dump()
+                            )
+                        except HarnessUiError as exc:
+                            await socket.send_json(
+                                ErrorEnvelope(error=ErrorBody(code=exc.code, message=str(exc))).model_dump()
+                            )
+                except WebSocketDisconnect:
+                    pass
+                finally:
+                    group.cancel_scope.cancel()
+        except* WebSocketDisconnect:
+            pass
+        finally:
+            draft.detach(participant)
+
+    @server.get("/api/host/terminals", response_model=tuple[TerminalView, ...])
+    async def terminals() -> tuple[TerminalView, ...]:
+        return await app().list_host_terminals()
+
+    @server.post("/api/host/terminals", response_model=TerminalView, openapi_extra=_body(TerminalCreate))
+    async def create_terminal(request: Request) -> TerminalView:
+        return await app().create_host_terminal(await _document(request, TerminalCreate))
+
+    @server.get("/api/host/terminals/{terminal_id}", response_model=TerminalView)
+    async def terminal(terminal_id: str) -> TerminalView:
+        return app().host_terminal(terminal_id).view()
+
+    @server.delete("/api/host/terminals/{terminal_id}", response_model=TerminalView)
+    async def close_terminal(terminal_id: str) -> TerminalView:
+        return await app().close_host_terminal(terminal_id)
+
+    @server.websocket("/api/host/terminals/{terminal_id}/connect")
+    async def connect_terminal(socket: WebSocket, terminal_id: str, cursor: int = 0) -> None:
+        if not await authenticate_interactive(socket, api_key):
+            return
+        try:
+            session = app().host_terminal(terminal_id)
+        except HarnessUiError as exc:
+            await socket.send_json(ErrorEnvelope(error=ErrorBody(code=exc.code, message=str(exc))).model_dump())
+            await socket.close(code=4404)
+            return
+        participant = session.attach()
+        try:
+            async with create_task_group() as group:
+
+                async def output() -> None:
+                    position = cursor
+                    while True:
+                        changed = session.changed
+                        frame = session.frame(participant, position)
+                        await socket.send_json(frame.model_dump(mode="json"))
+                        position = frame.end
+                        if frame.terminal.state == "closed":
+                            await socket.close()
+                            group.cancel_scope.cancel()
+                            return
+                        await changed.wait()
+
+                group.start_soon(output)
+                try:
+                    while True:
+                        try:
+                            raw = await receive_text(socket, limit=128 * 1024)
+                            command = TerminalCommand.model_validate_json(raw)
+                            await session.command(participant, command)
+                        except (ValidationError, ValueError):
+                            await socket.send_json(
+                                ErrorEnvelope(
+                                    error=ErrorBody(code="request_invalid", message="Invalid terminal command.")
+                                ).model_dump()
+                            )
+                        except HarnessUiError as exc:
+                            await socket.send_json(
+                                ErrorEnvelope(error=ErrorBody(code=exc.code, message=str(exc))).model_dump()
+                            )
+                except WebSocketDisconnect:
+                    pass
+                finally:
+                    group.cancel_scope.cancel()
+        except* WebSocketDisconnect:
+            pass
+        finally:
+            session.detach(participant)
+
+    @server.get("/api/host/files/metadata", response_model=FileEntry)
+    async def host_file_metadata(path: NativePath) -> FileEntry:
+        return await app().host_file_metadata(path)
+
+    @server.get("/api/host/files", response_model=DirectoryPage)
+    async def host_files(
+        path: NativePath,
+        offset: Annotated[int, Query(ge=0, le=10000)] = 0,
+        limit: Annotated[int, Query(ge=1, le=500)] = 200,
+        revision: Revision | None = None,
+    ) -> DirectoryPage:
+        return await app().browse_host_files(path, offset=offset, limit=limit, revision=revision)
+
+    @server.get("/api/host/files/text", response_model=FileText)
+    async def host_file_text(path: NativePath, expected_revision: Revision | None = None) -> FileText:
+        return await app().read_host_file(FileReadRequest(path=path, expected_revision=expected_revision))
+
+    @server.put("/api/host/files/text", response_model=FileEntry, openapi_extra=_body(FileWriteRequest))
+    async def save_host_text(request: Request) -> FileEntry:
+        app().require_host_files()
+        return await app().write_host_file(await _document(request, FileWriteRequest))
+
+    @server.post("/api/host/files/directories", response_model=FileEntry, openapi_extra=_body(DirectoryCreateRequest))
+    async def create_host_directory(request: Request) -> FileEntry:
+        app().require_host_files()
+        return await app().create_host_directory(await _document(request, DirectoryCreateRequest))
+
+    @server.post("/api/host/files/move", response_model=FileEntry, openapi_extra=_body(FileMoveRequest))
+    async def move_host_file(request: Request) -> FileEntry:
+        app().require_host_files()
+        return await app().move_host_file(await _document(request, FileMoveRequest))
+
+    @server.post("/api/host/files/delete", response_model=FileDeletion, openapi_extra=_body(FileDeleteRequest))
+    async def delete_host_file(request: Request) -> FileDeletion:
+        app().require_host_files()
+        return await app().delete_host_file(await _document(request, FileDeleteRequest))
+
+    @server.put(
+        "/api/host/files/content",
+        response_model=FileEntry,
+        openapi_extra={
+            "requestBody": {
+                "required": True,
+                "content": {"application/octet-stream": {"schema": {"type": "string", "format": "binary"}}},
+            }
+        },
+    )
+    async def upload_host_file(
+        request: Request, path: NativePath, expected_revision: Revision | None = None
+    ) -> FileEntry:
+        app().require_host_files()
+        data = bytearray()
+        async for chunk in request.stream():
+            if len(data) + len(chunk) > MAX_ATTACHMENT_BYTES:
+                raise HarnessUiError("Upload exceeds 10 MiB; no file was written.", code="request_too_large")
+            data.extend(chunk)
+        return await app().upload_host_file(path, bytes(data), expected_revision=expected_revision)
+
+    @server.get("/api/host/files/content")
+    async def download_host_file(path: NativePath, expected_revision: Revision | None = None) -> Response:
+        snapshot = await app().download_host_file(FileReadRequest(path=path, expected_revision=expected_revision))
+        return Response(
+            snapshot.data,
+            media_type="application/octet-stream",
+            headers={
+                "Content-Disposition": f"attachment; filename*=UTF-8''{quote(Path(path).name, safe='')}",
+                "Content-Security-Policy": "sandbox; default-src 'none'",
+                "ETag": f'"{snapshot.entry.revision}"',
+            },
+        )
+
+    @server.post(
+        "/api/threads/{thread_id}/host-file-captures",
+        response_model=FileCapture,
+        openapi_extra=_body(FileCaptureRequest),
+    )
+    async def capture_host_file(thread_id: str, request: Request) -> FileCapture:
+        app().require_host_files()
+        return await app().capture_host_file(thread_id=thread_id, request=await _document(request, FileCaptureRequest))
+
+    @server.get("/api/host/git/repository", response_model=GitDiscovery)
+    async def host_repository(path: NativePath) -> GitDiscovery:
+        return await app().discover_host_repository(path)
+
+    @server.get("/api/host/git/status", response_model=GitStatus)
+    async def host_git_status(
+        path: NativePath,
+        include_ignored: bool = False,
+        offset: Annotated[int, Query(ge=0, le=10000)] = 0,
+        limit: Annotated[int, Query(ge=1, le=500)] = 200,
+        expected_revision: Revision | None = None,
+    ) -> GitStatus:
+        return await app().host_git_status(
+            path, include_ignored=include_ignored, offset=offset, limit=limit, expected_revision=expected_revision
+        )
+
+    @server.get("/api/host/git/diff", response_model=GitDiff)
+    async def host_git_diff(
+        repository_path: NativePath,
+        path: GitPath,
+        comparison: Comparison = "unstaged",
+        expected_revision: Revision | None = None,
+    ) -> GitDiff:
+        return await app().read_host_git_diff(
+            GitDiffRequest(
+                repository_path=repository_path, path=path, comparison=comparison, expected_revision=expected_revision
+            )
+        )
+
+    @server.post(
+        "/api/threads/{thread_id}/host-git-captures",
+        response_model=FileCapture,
+        openapi_extra=_body(GitCaptureRequest),
+    )
+    async def capture_host_git_diff(thread_id: str, request: Request) -> FileCapture:
+        app().require_host_git()
+        return await app().capture_host_git_diff(
+            thread_id=thread_id, request=await _document(request, GitCaptureRequest)
         )
 
     @server.get("/api/setup", response_model=SetupStatus)
@@ -326,6 +781,22 @@ def create_webui(
             raise HarnessUiError("Environment preflight was cancelled.", code="preflight_cancelled")
         return readiness
 
+    @server.get("/api/auth/accounts/{provider}", response_model=AccountProjection)
+    async def account(provider: Provider) -> AccountProjection:
+        return await app().inspect_model_account(provider)
+
+    @server.delete("/api/auth/accounts/{provider}", response_model=bool)
+    async def logout_account(provider: Provider) -> bool:
+        return await app().logout_model_account(provider)
+
+    @server.get("/api/catalog", response_model=tuple[CatalogReference, ...])
+    async def implementation_catalog() -> tuple[CatalogReference, ...]:
+        return await app().list_catalog()
+
+    @server.get("/api/agents/{agent_id}/tool-proxy", response_model=AgentToolProxyView)
+    async def agent_tool_proxy(agent_id: str) -> AgentToolProxyView:
+        return await app().inspect_agent_tool_proxy(agent_id)
+
     @server.get("/api/auth/keys", response_model=tuple[ApiKeyStatus, ...])
     async def api_keys() -> tuple[ApiKeyStatus, ...]:
         return await app().list_api_keys()
@@ -350,17 +821,231 @@ def create_webui(
     async def cancel_login(session_id: str) -> LoginStatus:
         return await app().cancel_login(session_id)
 
+    @server.get("/api/configuration/sources", response_model=ConfigurationSourceCatalog)
+    async def configuration_sources() -> ConfigurationSourceCatalog:
+        return await app().configuration_sources()
+
+    @server.get("/api/configuration/sources/{relative_path:path}", response_model=ConfigurationSourceView)
+    async def configuration_source(relative_path: str) -> ConfigurationSourceView:
+        return await app().configuration_source(relative_path=relative_path)
+
+    @server.post(
+        "/api/configuration/validate",
+        response_model=ConfigurationValidation,
+        openapi_extra=_body(ResourceMutationRequest),
+    )
+    async def validate_source(
+        request: Request, path: Annotated[str, Query(min_length=1, max_length=4096)]
+    ) -> ConfigurationValidation:
+        return await app().validate_configuration(
+            relative_path=path, request=await _document(request, ResourceMutationRequest)
+        )
+
+    @server.put(
+        "/api/configuration/sources/{relative_path:path}",
+        response_model=ConfigurationPublication,
+        openapi_extra=_body(ResourceMutationRequest),
+    )
+    async def put_source(relative_path: str, request: Request) -> ConfigurationPublication:
+        result = await app().mutate_configuration(
+            relative_path=relative_path, request=await _document(request, ResourceMutationRequest)
+        )
+        return ConfigurationPublication.from_result(result)
+
+    @server.delete("/api/configuration/sources/{relative_path:path}", response_model=ConfigurationPublication)
+    async def delete_source(relative_path: str) -> ConfigurationPublication:
+        return ConfigurationPublication.from_result(await app().delete_configuration(relative_path=relative_path))
+
+    @server.post("/api/threads/preview", response_model=ThreadConfiguration, openapi_extra=_body(NewThreadDefaults))
+    async def preview_thread(request: Request) -> ThreadConfiguration:
+        return await app().preview_thread_configuration(defaults=await _document(request, NewThreadDefaults))
+
+    @server.post(
+        "/api/threads/configuration-preview",
+        response_model=ThreadConfigurationResolution,
+        openapi_extra=_body(NewThreadDefaults),
+    )
+    async def explain_creation(request: Request) -> ThreadConfigurationResolution:
+        return await app().explain_thread_configuration(defaults=await _document(request, NewThreadDefaults))
+
+    @server.get("/api/threads/{thread_id}/configuration", response_model=ThreadConfigurationInspection)
+    async def inspect_configuration(thread_id: str) -> ThreadConfigurationInspection:
+        return await app().inspect_thread_configuration(thread_id)
+
+    @server.get("/api/operations/{receipt_id}/configuration", response_model=CapturedConfiguration | None)
+    async def operation_configuration(receipt_id: str) -> CapturedConfiguration | None:
+        return await app().inspect_operation_configuration(receipt_id)
+
+    @server.post(
+        "/api/threads/{thread_id}/comments", response_model=OutputComment, openapi_extra=_body(CommentPublication)
+    )
+    async def publish_comment(thread_id: str, request: Request) -> OutputComment:
+        return await app().publish_output_comment(thread_id, await _document(request, CommentPublication))
+
+    @server.get("/api/threads/{thread_id}/comments", response_model=CommentPage)
+    async def comments(
+        thread_id: str,
+        cursor: Annotated[str | None, Query(max_length=4096)] = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 20,
+        target: Annotated[str | None, Query(max_length=2048)] = None,
+    ) -> CommentPage:
+        try:
+            selected = SavedOutputTarget.model_validate_json(target) if target is not None else None
+        except ValidationError:
+            raise HarnessUiError("Target query does not match the schema.", code="request_invalid") from None
+        return await app().list_output_comments(thread_id, target=selected, cursor=cursor, limit=limit)
+
+    @server.get("/api/threads/{thread_id}/comments/{comment_id}", response_model=OutputComment)
+    async def comment(thread_id: str, comment_id: str) -> OutputComment:
+        return await app().get_output_comment(thread_id, comment_id)
+
+    @server.post("/api/threads/{thread_id}/comments/{comment_id}/capture", response_model=ThreadAttachment)
+    async def capture_comment(thread_id: str, comment_id: str) -> ThreadAttachment:
+        return await app().capture_output_comment(thread_id, comment_id)
+
+    @server.post(
+        "/api/threads/{thread_id}/saved-output", response_model=SavedOutputView, openapi_extra=_body(SavedOutputTarget)
+    )
+    async def saved_output(
+        thread_id: str,
+        request: Request,
+        offset: Annotated[int, Query(ge=0)] = 0,
+        limit: Annotated[int, Query(ge=1, le=65536)] = 65536,
+    ) -> SavedOutputView:
+        return await app().read_commented_output(
+            thread_id, await _document(request, SavedOutputTarget), offset=offset, limit=limit
+        )
+
+    @server.get("/api/threads/{thread_id}/children/{execution_id}/saved-output", response_model=SavedChildOutputPage)
+    async def saved_child_output(
+        thread_id: str,
+        execution_id: str,
+        cursor: Annotated[str | None, Query(max_length=4096)] = None,
+        limit: Annotated[int, Query(ge=1, le=20)] = 20,
+    ) -> SavedChildOutputPage:
+        return await app().saved_child_outputs(thread_id, execution_id, cursor=cursor, limit=limit)
+
+    @server.get("/api/threads/{thread_id}/context-usage", response_model=ContextUsageView)
+    async def context_usage(thread_id: str) -> ContextUsageView:
+        return await app().context_usage(thread_id)
+
+    @server.get("/api/threads/{thread_id}/usage", response_model=ThreadUsageView)
+    async def usage(thread_id: str) -> ThreadUsageView:
+        return await app().thread_usage(thread_id=thread_id)
+
+    @server.get("/api/threads/{thread_id}/notes", response_model=NotePage)
+    async def notes(thread_id: str, expected_continuation_id: str | None = None) -> NotePage:
+        return await app().thread_notes(thread_id=thread_id, expected_continuation_id=expected_continuation_id)
+
+    @server.patch(
+        "/api/threads/{thread_id}/configuration",
+        response_model=ThreadSummary,
+        openapi_extra=_body(ThreadConfigurationMutationInput),
+    )
+    async def patch_configuration(thread_id: str, request: Request) -> ThreadSummary:
+        return await app().patch_thread_configuration(
+            thread_id=thread_id, mutation=await _document(request, ThreadConfigurationMutationInput)
+        )
+
+    @server.get(
+        "/api/threads/{thread_id}/project-defaults",
+        response_model=ProjectDefaultsPreview,
+        response_model_exclude_unset=True,
+    )
+    async def project_defaults(thread_id: str) -> ProjectDefaultsPreview:
+        return await app().preview_project_defaults(thread_id=thread_id)
+
+    @server.post(
+        "/api/threads/{thread_id}/project-defaults",
+        response_model=ThreadSummary,
+        openapi_extra=_body(ProjectDefaultsApply),
+    )
+    async def apply_project_defaults(thread_id: str, request: Request) -> ThreadSummary:
+        return await app().apply_project_defaults(
+            thread_id=thread_id, request=await _document(request, ProjectDefaultsApply)
+        )
+
     @server.get("/api/projects", response_model=tuple[ProjectSummary, ...])
     async def projects() -> tuple[ProjectSummary, ...]:
         return await app().projects()
 
     @server.get("/api/threads/{thread_id}/decisions", response_model=DecisionBatchView | None)
-    async def decision_batch(thread_id: str) -> DecisionBatchView | None:
-        return await app().thread_decisions(thread_id=thread_id)
+    async def decision_batch(
+        thread_id: str, expected_continuation_id: Annotated[str | None, Query(max_length=80)] = None
+    ) -> DecisionBatchView | None:
+        return await app().thread_decisions(thread_id=thread_id, expected_continuation_id=expected_continuation_id)
 
     @server.get("/api/selectors", response_model=ThreadSelectorCatalog)
     async def selectors() -> ThreadSelectorCatalog:
         return await app().thread_selectors()
+
+    @server.get("/api/threads/activity", response_model=ThreadActivityPage)
+    async def thread_activity(
+        project_id: Annotated[str | None, Query(max_length=128)] = None,
+        query: Annotated[str | None, Query(max_length=512)] = None,
+        include_archived: bool = False,
+        cursor: Annotated[str | None, Query(max_length=2048)] = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    ) -> ThreadActivityPage:
+        return await app().thread_activity(
+            project_id=project_id, query=query, include_archived=include_archived, cursor=cursor, limit=limit
+        )
+
+    @server.get("/api/threads/{thread_id}/tasks", response_model=TaskPage)
+    async def tasks(
+        thread_id: str,
+        expected_continuation_id: Annotated[str | None, Query(max_length=80)] = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 100,
+    ) -> TaskPage:
+        return await app().thread_tasks(
+            thread_id=thread_id, expected_continuation_id=expected_continuation_id, limit=limit
+        )
+
+    @server.get("/api/threads/{thread_id}/children", response_model=ChildExecutionPage)
+    async def children(
+        thread_id: str,
+        execution_id: Annotated[str | None, Query(max_length=80)] = None,
+        cursor: Annotated[str | None, Query(max_length=2048)] = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 20,
+    ) -> ChildExecutionPage:
+        return await app().query_child_executions(
+            parent_thread_id=thread_id, execution_id=execution_id, cursor=cursor, limit=limit
+        )
+
+    @server.get("/api/threads/{thread_id}/children/wait", response_model=ChildExecutionPage)
+    async def wait_children(
+        thread_id: str,
+        execution_id: Annotated[str | None, Query(max_length=80)] = None,
+        cursor: Annotated[str | None, Query(max_length=2048)] = None,
+        limit: Annotated[int, Query(ge=1, le=100)] = 20,
+        timeout_seconds: Annotated[float, Query(ge=0, le=60)] = 10,
+    ) -> ChildExecutionPage:
+        return await app().wait_child_executions(
+            parent_thread_id=thread_id,
+            execution_id=execution_id,
+            cursor=cursor,
+            limit=limit,
+            timeout_seconds=timeout_seconds,
+        )
+
+    @server.get("/api/threads/{thread_id}/children/{execution_id}/review", response_model=ReviewView)
+    async def child_review(thread_id: str, execution_id: str) -> ReviewView:
+        return await app().child_review(parent_thread_id=thread_id, execution_id=execution_id)
+
+    @server.post(
+        "/api/threads/{thread_id}/children/{execution_id}/steer",
+        response_model=ChildControlResult,
+        openapi_extra=_body(SteerRequest),
+    )
+    async def steer_child(thread_id: str, execution_id: str, request: Request) -> ChildControlResult:
+        body = await _document(request, SteerRequest)
+        return await app().steer_child_execution(
+            parent_thread_id=thread_id, execution_id=execution_id, message=body.prompt
+        )
+
+    @server.post("/api/threads/{thread_id}/children/{execution_id}/cancel", response_model=ChildControlResult)
+    async def cancel_child(thread_id: str, execution_id: str) -> ChildControlResult:
+        return await app().cancel_child_execution(parent_thread_id=thread_id, execution_id=execution_id)
 
     @server.get("/api/threads", response_model=ThreadPage)
     async def threads(
@@ -432,6 +1117,14 @@ def create_webui(
         except ValueError as exc:
             raise HarnessUiError(str(exc), code="attachment_invalid") from exc
 
+    @server.get("/api/threads/{thread_id}/attachments/{attachment_id}/metadata", response_model=ThreadAttachment)
+    async def attachment_metadata(thread_id: str, attachment_id: str) -> ThreadAttachment:
+        try:
+            attachment, _ = await app().read_thread_attachment(thread_id=thread_id, attachment_id=attachment_id)
+        except ValueError as exc:
+            raise HarnessUiError(str(exc), code="attachment_invalid") from exc
+        return attachment
+
     @server.get("/api/threads/{thread_id}/attachments/{attachment_id}")
     async def download_attachment(thread_id: str, attachment_id: str) -> Response:
         try:
@@ -471,17 +1164,22 @@ def create_webui(
         return await app().get_root_operation(receipt_id)
 
     @server.post(
-        "/api/operations/{receipt_id}/steer", response_model=RootControlResult, openapi_extra=_body(PromptRequest)
+        "/api/operations/{receipt_id}/steer", response_model=RootControlResult, openapi_extra=_body(RootSteerRequest)
     )
     async def steer(receipt_id: str, request: Request) -> RootControlResult:
-        document = await _document(request, PromptRequest)
-        return await app().steer_root_operation(receipt_id=receipt_id, message=document.prompt)
+        document = await _document(request, RootSteerRequest)
+        return await app().steer_root_operation(
+            receipt_id=receipt_id, message=document.prompt, attachment_ids=document.attachment_ids
+        )
 
     @server.post("/api/operations/{receipt_id}/cancel", response_model=RootControlResult)
     async def cancel(receipt_id: str) -> RootControlResult:
         return await app().cancel_root_operation(receipt_id)
 
-    @server.get("/api/threads/{thread_id}/events", response_model=FocusSnapshotFrame | FocusEventFrame | ResetFrame)
+    @server.get(
+        "/api/threads/{thread_id}/events",
+        response_model=FocusSnapshotFrame | FocusReplayFrame | FocusReadyFrame | FocusEventFrame | ResetFrame,
+    )
     async def focused(thread_id: str, after: Annotated[str | None, Query(max_length=1024)] = None) -> StreamingResponse:
         # Validate before response headers; the watch remains owned by the
         # generator task so cancellation closes delivery, never the root Run.
@@ -505,11 +1203,23 @@ def create_webui(
                         yield _frame(
                             FocusSnapshotFrame(
                                 snapshot=watch.snapshot,
-                                resume_cursor=_cursor(
-                                    "focus", thread_id, watch.snapshot.epoch, watch.snapshot.cutover_sequence
+                                resume_cursor=(
+                                    _cursor("focus", thread_id, watch.snapshot.epoch, watch.snapshot.cutover_sequence)
+                                    if watch.root_stream is None
+                                    else None
                                 ),
                             )
                         )
+                        if watch.root_stream is not None:
+                            for batch in watch.root_stream.batches():
+                                yield _frame(FocusReplayFrame(run_id=watch.root_stream.summary.run_id, events=batch))
+                            yield _frame(
+                                FocusReadyFrame(
+                                    resume_cursor=_cursor(
+                                        "focus", thread_id, watch.snapshot.epoch, watch.snapshot.cutover_sequence
+                                    )
+                                )
+                            )
                         async for event in watch.events:
                             yield _frame(
                                 FocusEventFrame(
@@ -561,9 +1271,16 @@ def create_webui(
                 return FileResponse(destination, headers={"Cache-Control": "public, max-age=31536000, immutable"})
             return _error("not_found", "Asset not found.", 404)
         segments = path.split("/")
-        recognized = path in {"", "setup", "settings"} or (
-            len(segments) == 2 and segments[0] == "threads" and bool(segments[1])
-        )
+        recognized = path in {
+            "",
+            "setup",
+            "settings",
+            "projects",
+            "settings/resources",
+            "settings/source",
+            "settings/accounts",
+            "settings/catalog",
+        } or (len(segments) == 2 and segments[0] in {"threads", "projects"} and bool(segments[1]))
         if not recognized:
             return _error("not_found", "Route not found.", 404)
         index = static_root / "index.html"
@@ -588,6 +1305,41 @@ def openapi_document(server: FastAPI) -> dict[str, Any]:
     """Lift strict JSON request definitions into one generated schema authority."""
     document = server.openapi()
     components = document.setdefault("components", {}).setdefault("schemas", {})
+    for model in (
+        InteractiveAuthentication,
+        TerminalCommand,
+        TerminalFrame,
+        DraftCommand,
+        DraftFrame,
+        PresenceReport,
+        PresenceFrame,
+        ErrorEnvelope,
+    ):
+        schema = model.model_json_schema(ref_template="#/components/schemas/{model}")
+        components.update(schema.pop("$defs", {}))
+        components[model.__name__] = schema
+    document["x-interactive"] = {
+        "authentication": {"$ref": "#/components/schemas/InteractiveAuthentication"},
+        "presence": {
+            "path": "/api/presence/connect",
+            "input": {"$ref": "#/components/schemas/PresenceReport"},
+            "output": {"$ref": "#/components/schemas/PresenceFrame"},
+            "error": {"$ref": "#/components/schemas/ErrorEnvelope"},
+            "report_timeout_seconds": PRESENCE_TIMEOUT_SECONDS,
+        },
+        "draft": {
+            "path": "/api/threads/{thread_id}/draft/connect",
+            "input": {"$ref": "#/components/schemas/DraftCommand"},
+            "output": {"$ref": "#/components/schemas/DraftFrame"},
+            "error": {"$ref": "#/components/schemas/ErrorEnvelope"},
+        },
+        "terminal": {
+            "path": "/api/host/terminals/{terminal_id}/connect",
+            "input": {"$ref": "#/components/schemas/TerminalCommand"},
+            "output": {"$ref": "#/components/schemas/TerminalFrame"},
+            "error": {"$ref": "#/components/schemas/ErrorEnvelope"},
+        },
+    }
     for path in document["paths"].values():
         for operation in path.values():
             body = operation.get("requestBody", {}).get("content", {}).get("application/json", {}).get("schema")
@@ -614,30 +1366,43 @@ async def run(
         address = ipaddress.ip_address(host)
     except ValueError:
         raise HarnessUiError("--host requires an IPv4 or IPv6 address.", code="webui_host_invalid") from None
+    if api_key is None:
+        api_key = os.environ.get("A13N_HARNESS_UI_API_KEY")
     if dangerously_bypass_permission and api_key is not None:
         raise HarnessUiError(
-            "--api-key and --dangerously-bypass-permission cannot be combined.", code="webui_access_conflict"
+            "--dangerous-skip-permissions cannot be combined with a CLI or environment API key.",
+            code="webui_access_conflict",
         )
     if api_key == "":
-        raise HarnessUiError("--api-key cannot be empty.", code="webui_key_invalid")
+        raise HarnessUiError("--apikey or A13N_HARNESS_UI_API_KEY cannot be empty.", code="webui_key_invalid")
     generated = api_key is None and not dangerously_bypass_permission
     selected_key = None if dangerously_bypass_permission else (api_key or secrets.token_urlsafe(32))
-    browser_host = f"[{host}]" if address.version == 6 else host
+    browser_ip = ("::1" if address.version == 6 else "127.0.0.1") if address.is_unspecified else host
+    browser_host = f"[{browser_ip}]" if address.version == 6 else browser_ip
     url = f"http://{browser_host}:{port}/"
-    click.echo(f"WebUI: {url}", err=True)
+    click.echo(f"WebUI {__version__}: {url}")
     if dangerously_bypass_permission:
         click.echo("WARNING: API authentication is disabled. Every reachable client has full App access.", err=True)
     elif generated:
         assert selected_key is not None
-        click.echo(f"API key: {selected_key}\nOpen: {url}#api_key={quote(selected_key, safe='')}", err=True)
+        click.echo(f"API key: {selected_key}\nOpen: {url}#api_key={quote(selected_key, safe='')}")
     else:
         click.echo("Using supplied API key (not echoed). Shell history and process arguments may expose it.", err=True)
     if not address.is_loopback:
         click.echo(
-            "WARNING: non-loopback plain HTTP is a single-user trusted-network listener, not a multi-user service. Use external TLS when needed.",
+            "WARNING: non-loopback plain HTTP grants shared instance access on a trusted network, not tenant isolation. Use external TLS when needed.",
             err=True,
         )
     server = create_webui(app_factory, api_key=selected_key, host=host)
     await uvicorn.Server(
-        uvicorn.Config(server, host=host, port=port, access_log=False, log_level="warning", timeout_graceful_shutdown=3)
+        uvicorn.Config(
+            server,
+            host=host,
+            port=port,
+            access_log=False,
+            log_level="warning",
+            timeout_graceful_shutdown=3,
+            ws="websockets-sansio",
+            ws_max_size=1024 * 1024,
+        )
     ).serve()

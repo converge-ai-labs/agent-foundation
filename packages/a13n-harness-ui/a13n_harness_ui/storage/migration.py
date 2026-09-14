@@ -9,9 +9,11 @@ from alembic import command
 from alembic.config import Config
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
-from sqlalchemy import URL, Connection, create_engine
+from sqlalchemy import URL, Connection, create_engine, inspect
 from sqlalchemy.engine import Engine
 from sqlalchemy.pool import NullPool
+
+from .metadata import harness_ui_metadata
 
 MIGRATIONS_PATH = Path(__file__).resolve().parent / "migrations"
 
@@ -21,7 +23,7 @@ class MigrationGraphError(RuntimeError):
 
 
 class DatabaseSchemaError(RuntimeError):
-    """The database revision does not match the package migration head."""
+    """The database cannot support this package's required storage surface."""
 
 
 class DatabaseMigrator:
@@ -40,25 +42,61 @@ class DatabaseMigrator:
 
     def upgrade(self) -> None:
         self.verify_history()
-        self._run(lambda config: command.upgrade(config, "head"), write=True)
+
+        def upgrade_known_history(config: Config) -> None:
+            connection = self._connection(config)
+            current = self._current_head(connection)
+            known = {revision.revision for revision in ScriptDirectory.from_config(config).walk_revisions()}
+            if current is not None and current not in known:
+                # A newer compatible package owns this head. Never downgrade,
+                # stamp, or pass an unknown future revision to older Alembic code.
+                self._verify_structure(connection)
+                return
+            command.upgrade(config, "head")
+
+        self._run(upgrade_known_history, write=True)
 
     def verify_current(self) -> None:
         self.verify_history()
-        expected_heads = set(self._heads())
 
         def verify(config: Config) -> None:
-            connection = config.attributes.get("connection")
-            if not isinstance(connection, Connection):
-                raise RuntimeError("Harness UI migration verification requires a SQLAlchemy connection")
-            current_heads = set(MigrationContext.configure(connection).get_current_heads())
-            if current_heads != expected_heads:
-                current = ", ".join(sorted(current_heads)) or "none"
-                expected = ", ".join(sorted(expected_heads))
-                raise DatabaseSchemaError(
-                    f"Harness UI database revision must match package head {expected}; found: {current}"
-                )
+            connection = self._connection(config)
+            if self._current_head(connection) is None:
+                raise DatabaseSchemaError("Harness UI database has no migration revision")
+            self._verify_structure(connection)
 
         self._run(verify)
+
+    @staticmethod
+    def _connection(config: Config) -> Connection:
+        connection = config.attributes.get("connection")
+        if not isinstance(connection, Connection):
+            raise RuntimeError("Harness UI migration verification requires a SQLAlchemy connection")
+        return connection
+
+    @staticmethod
+    def _current_head(connection: Connection) -> str | None:
+        heads = MigrationContext.configure(connection).get_current_heads()
+        if len(heads) > 1:
+            raise DatabaseSchemaError("Harness UI database must have a single migration head")
+        return heads[0] if heads else None
+
+    @staticmethod
+    def _verify_structure(connection: Connection) -> None:
+        # Extra tables/columns are compatible expansion, not grounds to stop an
+        # App. Migration authors must preserve old read/write semantics;
+        # structural inspection cannot prove payload or behavioral compatibility.
+        inspector = inspect(connection)
+        tables = set(inspector.get_table_names())
+        for table in harness_ui_metadata().sorted_tables:
+            if table.name not in tables:
+                raise DatabaseSchemaError(f"Harness UI database is missing required table {table.name}")
+            columns = {column["name"] for column in inspector.get_columns(table.name)}
+            missing = set(table.columns.keys()) - columns
+            if missing:
+                raise DatabaseSchemaError(
+                    f"Harness UI database table {table.name} is missing required columns: {', '.join(sorted(missing))}"
+                )
 
     def revision(self, message: str) -> None:
         if not message.strip():

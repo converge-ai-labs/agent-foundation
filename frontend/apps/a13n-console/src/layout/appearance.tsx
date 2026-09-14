@@ -24,8 +24,10 @@ export function AppearanceProvider({ children }: { children: ReactNode }) {
   useLayoutEffect(() => {
     const system = window.matchMedia("(prefers-color-scheme: dark)");
     const apply = () => {
-      document.documentElement.dataset.a13nTheme =
-        theme === "system" ? (system.matches ? "dark" : "light") : theme;
+      document.documentElement.classList.toggle(
+        "dark",
+        theme === "dark" || (theme === "system" && system.matches),
+      );
     };
     apply();
     system.addEventListener("change", apply);

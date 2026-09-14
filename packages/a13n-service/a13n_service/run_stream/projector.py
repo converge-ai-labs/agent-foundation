@@ -35,7 +35,7 @@ from .redis import RedisRunStream
 from .replay import RunReplayStore, project_retained_items
 
 logger = logging.getLogger("a13n_service.run_stream.projector")
-_TERMINAL_RUN_EVENTS = frozenset({"run.completed", "run.failed", "run.cancelled"})
+_TERMINAL_RUN_EVENTS = frozenset({"run.waiting", "run.completed", "run.failed", "run.cancelled"})
 _PROJECTION_FAILURE = SafeFailure(
     code="run_stream_projection_failed",
     message="Run presentation projection is temporarily unavailable.",

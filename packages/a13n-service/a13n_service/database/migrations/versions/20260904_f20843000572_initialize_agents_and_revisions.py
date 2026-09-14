@@ -26,7 +26,7 @@ def upgrade() -> None:
         sa.Column("workspace_id", sa.String(length=72), nullable=False),
         sa.Column("source", sa.String(length=16), nullable=False),
         sa.Column("name", sa.String(length=128), nullable=False),
-        sa.Column("normalized_name", sa.String(length=384), nullable=False),
+        sa.Column("key", sa.String(length=64), nullable=False),
         sa.Column("description", sa.String(length=4096), nullable=True),
         sa.Column("version", sa.BigInteger(), nullable=False),
         sa.Column("current_revision_id", sa.String(length=72), nullable=False),
@@ -65,7 +65,7 @@ def upgrade() -> None:
     )
     op.create_index("ix_agents_workspace_updated", "agents", ["workspace_id", "updated_at", "id"], unique=False)
     op.create_index("uq_agents_id_organization", "agents", ["id", "organization_id", "workspace_id"], unique=True)
-    op.create_index("uq_agents_workspace_name", "agents", ["workspace_id", "normalized_name"], unique=True)
+    op.create_index("uq_agents_workspace_key", "agents", ["workspace_id", "key"], unique=True)
     op.create_table(
         "agent_revisions",
         sa.Column("id", sa.String(length=72), nullable=False),
@@ -77,8 +77,7 @@ def upgrade() -> None:
         sa.Column("config_digest", sa.String(length=64), nullable=False),
         sa.Column("resolved_model", sa.JSON(), nullable=False),
         sa.Column("resolved_skills", sa.JSON(), nullable=False),
-        sa.Column("connector_tools", sa.JSON(), server_default=sa.text("'[]'"), nullable=False),
-        sa.Column("mcp_tools", sa.JSON(), server_default=sa.text("'[]'"), nullable=False),
+        sa.Column("connection_tools", sa.JSON(), server_default=sa.text("'[]'"), nullable=False),
         sa.Column("resolved_subagents", sa.JSON(), nullable=False),
         sa.Column("content_digest", sa.String(length=64), nullable=False),
         sa.Column("source_revision_id", sa.String(length=72), nullable=True),
@@ -112,7 +111,7 @@ def downgrade() -> None:
     op.drop_index("uq_agent_revisions_id_organization", table_name="agent_revisions")
     op.drop_index("ix_agent_revisions_agent_desc", table_name="agent_revisions")
     op.drop_table("agent_revisions")
-    op.drop_index("uq_agents_workspace_name", table_name="agents")
+    op.drop_index("uq_agents_workspace_key", table_name="agents")
     op.drop_index("uq_agents_id_organization", table_name="agents")
     op.drop_index("ix_agents_workspace_updated", table_name="agents")
     op.drop_index("ix_agents_workspace_availability", table_name="agents")

@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from a13n_service.application_errors import ApplicationError
 from a13n_service.environments.domain import (
+    CreateManagedEnvironmentRequest,
     CreateProviderRequest,
     CreateTemplateRequest,
     CreateTemplateRevisionRequest,
@@ -49,7 +50,7 @@ async def create_recipe(service, path, *, preparation="on_run"):
 async def test_template_allocation_is_inert_and_revision_is_frozen(environment_service, environment_sessions, tmp_path):
     root = tmp_path / "absent"
     provider, template = await create_recipe(environment_service, root)
-    selection = NewEnvironmentSelection(template_id=template.id)
+    selection = CreateManagedEnvironmentRequest(template_id=template.id)
     environment = await environment_service.create_environment(
         actor=actor(), workspace_id=WORKSPACE_ID, request=selection, idempotency_key="allocate"
     )
@@ -129,7 +130,7 @@ async def test_provider_disable_blocks_new_allocation(environment_service, tmp_p
         await environment_service.create_environment(
             actor=actor(),
             workspace_id=WORKSPACE_ID,
-            request=NewEnvironmentSelection(template_id=template.id),
+            request=CreateManagedEnvironmentRequest(template_id=template.id),
             idempotency_key="disabled",
         )
 
@@ -211,7 +212,7 @@ async def test_manual_command_is_a_durable_idempotent_receipt(environment_servic
     environment = await environment_service.create_environment(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
-        request=NewEnvironmentSelection(template_id=template.id),
+        request=CreateManagedEnvironmentRequest(template_id=template.id),
         idempotency_key="env",
     )
     request = EnvironmentCommandRequest(action="delete")
@@ -243,11 +244,11 @@ async def test_provider_credential_uses_owned_encrypted_bundle(
     from a13n_environment import DirectLocalEnvironmentProvider
     from a13n_service.environments.domain import ReplaceCredentialRequest
     from a13n_service.environments.models import EnvironmentProviderRecord
-    from pydantic import BaseModel, ConfigDict
+    from pydantic import BaseModel, ConfigDict, SecretStr
 
     class Credential(BaseModel):
         model_config = ConfigDict(extra="forbid")
-        token: str
+        token: SecretStr
 
     monkeypatch.setattr(DirectLocalEnvironmentProvider, "credential_model", Credential)
     provider = await environment_service.create_provider(
@@ -259,7 +260,10 @@ async def test_provider_credential_uses_owned_encrypted_bundle(
     async with short_session(environment_sessions) as session:
         stored = await session.get(EnvironmentProviderRecord, provider.id)
         assert b"initial-token" not in stored.ciphertext
-        assert Credential.model_validate_json(stored.credential_snapshot().decrypt(protector)).token == "initial-token"
+        assert (
+            Credential.model_validate_json(stored.credential_snapshot().decrypt(protector)).token.get_secret_value()
+            == "initial-token"
+        )
         generation = stored.credential_generation
     changed = await environment_service.replace_credential(
         actor=actor(),
@@ -270,7 +274,10 @@ async def test_provider_credential_uses_owned_encrypted_bundle(
     async with short_session(environment_sessions) as session:
         stored = await session.get(EnvironmentProviderRecord, provider.id)
         assert stored.credential_generation == generation + 1
-        assert Credential.model_validate_json(stored.credential_snapshot().decrypt(protector)).token == "rotated-token"
+        assert (
+            Credential.model_validate_json(stored.credential_snapshot().decrypt(protector)).token.get_secret_value()
+            == "rotated-token"
+        )
     assert "rotated-token" not in changed.model_dump_json()
 
 

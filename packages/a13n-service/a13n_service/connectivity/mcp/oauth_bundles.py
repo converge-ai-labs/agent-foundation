@@ -17,6 +17,7 @@ _JSON_OBJECT = TypeAdapter(JsonObject)
 
 def oauth_preparation(setup: JsonObject) -> OAuthPreparation:
     return OAuthPreparation(
+        redirect_uri=_required_string(setup, "redirect_uri"),
         resource_url=_required_string(setup, "resource_url"),
         issuer_url=_required_string(setup, "issuer_url"),
         authorization_endpoint=_required_string(setup, "authorization_endpoint"),
@@ -33,16 +34,14 @@ def oauth_preparation(setup: JsonObject) -> OAuthPreparation:
 
 def oauth_setup_bundle(preparation: OAuthPreparation, *, state: str, verifier: str) -> JsonObject:
     return {
+        "redirect_uri": preparation.redirect_uri,
         "resource_url": preparation.resource_url,
         "issuer_url": preparation.issuer_url,
         "authorization_endpoint": preparation.authorization_endpoint,
         "token_endpoint": preparation.token_endpoint,
-        "registration_endpoint": preparation.registration_endpoint,
         "client_id": preparation.client_id,
         "client_secret": preparation.client_secret,
         "token_endpoint_auth_method": preparation.token_endpoint_auth_method,
-        "registration_access_token": preparation.registration_access_token,
-        "registration_client_uri": preparation.registration_client_uri,
         "scope": preparation.scope,
         "state": state,
         "verifier": verifier,

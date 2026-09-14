@@ -1,6 +1,24 @@
 # Configuration reference
 
-Harness UI uses ordinary YAML and Markdown files. Start with `a13n-harness-ui setup`, add more agents with `a13n-harness-ui add agent`, then edit the resulting files when you need more control. There is no generated configuration database to edit and no generic CLI resource-creation command.
+Harness UI uses ordinary YAML and Markdown files. **The root file controls application defaults; Model and Agent files control agent behavior.** Start with `a13n-harness-ui setup`, then edit those files when you need more control. Do not edit the local database to change configuration.
+
+For task-oriented examples, start with [common configuration recipes](configuration-recipes.md). This page is the root-file and loading reference. The [built-in configuration Skill](skills-and-content-plugins.md#built-in-configuration-skill) gives the Agent offline guidance matching its installed release.
+
+## Find the right setting
+
+| I want to configure…                                      | Open…                               | Reference                                                                        |
+| --------------------------------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------- |
+| Startup checks and logging                                | `a13n-harness-ui.yaml` → `process`  | [Process settings](#process-settings)                                            |
+| Default Agent, Environment, plugins, or MCP               | `a13n-harness-ui.yaml` → `defaults` | [Default selections](#default-resource-selections)                               |
+| Theme and output detail                                   | `a13n-harness-ui.yaml` → `display`  | [Display settings](#display-settings)                                            |
+| Questions, CodeAct, built-in children                     | Root `tools` and `subagents`        | [Built-in tools](#built-in-tools-and-subagents)                                  |
+| Provider, API key reference, endpoint, reasoning, context | `models/*.yaml`                     | [Model fields](models-and-authentication.md#model-file-reference)                |
+| Instructions, Capabilities, visible tools, children       | `agents/*.yaml`                     | [Agent fields](agents-and-subagents.md#agent-file-reference)                     |
+| Extra workspace roots                                     | `projects/*.yaml`                   | [Project fields](environments-and-projects.md#project-file-reference)            |
+| External tools                                            | `mcp/*.yaml` or `mcp/*.json`        | [MCP fields](mcp.md#mcp-field-reference)                                         |
+| Installed integrations                                    | `extensions/*.yaml`                 | [Extension fields](extensions-and-mcp.md#harness-plugin-and-run-extension-files) |
+
+Resource references use their **`id`**, not a filename or display name. For example, `defaults.agent: agent-coder` selects the Agent whose YAML says `id: agent-coder`.
 
 ## Locate and validate your files
 
@@ -24,9 +42,17 @@ The root file's directory also contains:
 | `subagents/*.md`           | Your lightweight child instructions                   | [Markdown children](agents-and-subagents.md#write-a-markdown-child)   |
 | `projects/*.yaml`          | Named ordered workspace roots                         | [Projects](environments-and-projects.md#project-file-reference)       |
 | `extensions/*.yaml`        | Harness Plugins, Environment profiles, Run Extensions | [Extensions](extensions-and-mcp.md)                                   |
-| `mcp/*.yaml`, `mcp/*.json` | MCP server definitions                                | [MCP](extensions-and-mcp.md#mcp-servers)                              |
+| `mcp/*.yaml`, `mcp/*.json` | MCP server definitions                                | [MCP](mcp.md)                                                         |
 
-Only immediate lowercase `.yaml` or `.md` files are scanned, plus `.json` in `mcp/`; `subagents/README.md` is ignored. Filenames are for people; the resource `id` owns references. There is no recursive scan, YAML include, ancestor configuration merge, or symlink-based resource discovery. One file defines one resource, except MCP files may contain a multi-server `mcpServers` object. MCP environment/header values accept literals and environment references; see [MCP configuration](extensions-and-mcp.md#mcp-servers). Unknown fields, unsupported schema versions, duplicate IDs/keys, aliases, anchors, and invalid references reject the candidate configuration.
+Only immediate lowercase `.yaml` or `.md` files are scanned, plus `.json` in `mcp/`; `subagents/README.md` is ignored. Filenames are for people; the resource `id` owns references. There is no recursive scan, YAML include, ancestor configuration merge, or symlink-based resource discovery. One file defines one resource, except MCP files may contain a multi-server `mcpServers` object. MCP environment/header values accept literals and environment references; see [MCP configuration](mcp.md). Unknown fields, unsupported schema versions, duplicate IDs/keys, aliases, anchors, and invalid references reject the candidate configuration.
+
+### Skipped Capabilities
+
+A missing, ambiguous, unloadable, or invalid Capability in an Agent produces a warning instead of blocking conversations. Harness UI skips only that entry, keeps valid entries (including other `NativeTool` entries), and leaves your YAML unchanged. The warning names the Agent ID, Capability key, and reason. The interactive CLI displays these warnings; `config validate` and the Web API's App status expose them as `capability_warnings`. Validation still succeeds when these are the only problems.
+
+Correct the Capability name or arguments, install its trusted implementation if needed, or remove the entry. If an explicitly configured default Capability is invalid, it stays skipped rather than being replaced with broader defaults. A missing Shell Review auxiliary Model also skips that review Capability; Environment permissions, mandatory invocation policy, and tool switches still apply.
+
+Only valid selections are captured for a new Run. Already captured Runs do not change, and runtime/model-provider failures are not converted into configuration warnings. Invalid YAML structure, Model resources, and Environment or Plugin configuration still require repair.
 
 ## Complete root document
 
@@ -39,6 +65,8 @@ process:
   terminal_update_check: true
   log_level: INFO
   log_format: pretty
+input:
+  long_text_threshold_chars: 8000
 defaults:
   project: null
   agent: null
@@ -72,6 +100,21 @@ These settings take effect when the application starts; restart after changing t
 | `process.log_format`            | `pretty` | Noninteractive logging: `pretty` or `json`; interactive diagnostics use files            |
 
 Use `--no-update-check` for a one-invocation override. See [updates and logs](automation-and-troubleshooting.md#logs-updates-and-exit).
+
+### Long-text inputs
+
+`input.long_text_threshold_chars` defaults to `8000`. A user-text block longer than that many characters is automatically saved as a retained UTF-8 file. The model receives its file path and a reading instruction, **not an inline preview or summary**. Short text is unchanged. Use a positive integer to change the threshold, or `null` to keep all text inline:
+
+```yaml
+input:
+  long_text_threshold_chars: null
+```
+
+The policy applies to normal root messages and messages added while a root Run is active. Each Run captures its configuration; changes affect later Runs. Terminal paste folding is independent and still expands the authored text before submission.
+
+The selected Agent must have the built-in `view` tool enabled and a readable `thread-files` mount. Without that access, the original text stays inline with a notice; no tools are enabled automatically. A file-save failure fails the submission's execution or rejects the added message. Generated input files count toward the existing eight attachments, 10 MiB per file, and 20 MiB per input limits; HTTP request limits still apply.
+
+Original text remains available through the Thread attachment handle after restart and scratch cleanup. Model history keeps the reference, not an automatic expansion of the file. Reading content through a tool still consumes context, especially for tasks requiring the whole document. Existing history and images are not converted by this setting.
 
 ### Default resource selections
 
@@ -123,22 +166,33 @@ Setup writes all three `tools` fields explicitly into the selected root YAML (by
 
 Global disabled tool switches take precedence over explicit Agent capability selections. Tool allowlists still apply. The terminal question timeout does not choose an answer or approve a command; [decision handling](everyday-use.md#approvals-and-questions) explains recovery.
 
-For all built-ins use `[code-reviewer, executor, explorer]`; for a subset use, for example, `[explorer]`. Setup only asks all or none. Definitions remain package-owned; inclusion does not write `subagents/*.md`. [Built-in subagents](agents-and-subagents.md#built-in-subagents) explains inheritance and name conflicts.
+For all built-ins use `[code-reviewer, executor, explorer]`; for a subset use, for example, `[explorer]`. Advanced setup offers all or none; normal setup uses its starter inclusion. Definitions remain package-owned; inclusion does not write `subagents/*.md`. [Built-in subagents](agents-and-subagents.md#built-in-subagents) explains inheritance and name conflicts.
 
 ## What wins, and when edits apply
 
-- A live `/agent` selection applies to subsequent operations without writing YAML. `/model` temporarily overrides only the model in the current TUI session; `/thinking` overrides its reasoning setting.
-- Launch options such as `--agent` and `--environment-mode` select a new session's values.
-- Otherwise accepted Agent resources and root defaults apply, then documented package defaults.
-- Resume restores the Thread's selected Agent against current resources, preserving an explicit Model override in the current TUI session. A later TUI invocation does not restore a previous temporary Model choice. Without a Model override, saved reasoning is restored only when the continuation used that Agent's configured Model. Resume launch options cannot be combined with Agent, Environment, or title overrides.
-- A complete valid file tree becomes the next accepted generation. Invalid or partial saves leave the preceding accepted generation active and produce diagnostics. Fix the file and run `config validate` again.
-- A newly admitted Run captures its full composition. File edits, inclusion changes, or package prompt updates never rewrite an active or already captured Run.
+The open App observes configuration changes and accepts a stable, complete, valid tree. This is not synchronous with an editor's save. Invalid or incomplete candidates leave the previous accepted generation active and produce diagnostics. `config validate` deliberately checks the tree; `config show` reports accepted configuration, which can differ from invalid files on disk.
 
-This makes multi-file editing practical: write the files, validate the entire tree, and start the next Run only after validation succeeds. `config show` reports accepted configuration; it need not reflect a currently invalid on-disk edit.
+For a new Thread, selection precedence is explicit creation/launch choices, selected Project defaults, selected Agent defaults for its Plugin/MCP axes, root YAML defaults, and finally the built-in Environment fallback. Collections replace whole lists; an empty list selects none. Existing Threads retain exact selections until explicitly patched; editing Project defaults does not reapply them. See [Project defaults](environments-and-projects.md#defaults-for-new-conversations). Explicit live/session choices remain overrides for their owning operation or session. Agent and Model choices are different: `/agent` changes the Thread's Agent without writing YAML; `/model` changes the effective Model and remembers it per Project in local state, without rewriting YAML. `/model default` clears that preference. Explicit launch `--agent` and noninteractive callers do not inherit the remembered Model.
+
+| What changed                                                                  | When it takes effect                                                                             | What stays unchanged                                                                               |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| `process.*` and bootstrap paths                                               | Restart the process                                                                              | The open App's captured startup settings                                                           |
+| `display.*`                                                                   | Terminal backend initialization; `/mode` and `/theme` can change live presentation               | Stored YAML is not rewritten by presentation commands                                              |
+| Default Agent, Project, Environment, plugin, MCP and Run Extension selections | Initialize new Thread selections, or use an explicit supported selection change                  | Existing Threads keep their selected IDs                                                           |
+| Contents of selected Model/Agent/extension resources                          | A newly captured Run uses the accepted resources                                                 | An active or already captured composition is not rebuilt                                           |
+| Tool switches and built-in subagent inclusion                                 | Newly resolved Run composition                                                                   | Existing Run tool/child contracts                                                                  |
+| `input.long_text_threshold_chars`                                             | Captured for a root Run, including its later steering input                                      | The active Run's input policy                                                                      |
+| `tools.ask_user_question_timeout_seconds`                                     | Read when a terminal decision interaction is created                                             | It does not change the originating model call or shell-approval policy                             |
+| MCP literal-bearing source files                                              | New captures use new sources; an older capture verifies its source before client construction    | Already constructed clients retain their Run-local values; changed old sources can fail validation |
+| Skill content                                                                 | Catalog preparation uses the Run's current source set; files are read through Environment access | Catalog membership is Run-frozen, but file bytes are not copied into immutable composition         |
+
+Resume restores the Thread's selected Agent against current resources and preserves an explicit Model override in the current TUI. A later terminal invocation loads the launch Project's last manually selected Model, including when resuming an old Thread; it does not infer a model from Thread history. Without a Model override, saved reasoning is restored only when the continuation used that Agent's configured Model. `--resume` cannot be combined with Agent, Environment, or title launch overrides; resume first, then change a selection explicitly.
+
+For multi-file edits, save the whole tree, validate it, and start the next Run after acceptance. Do not delete local state to force reload. [MCP capture](mcp.md#literal-values-and-environment-references) and [Skill source lifetime](skills-and-content-plugins.md#automatic-sources-and-precedence) explain the file-content boundaries.
 
 ## Data root and environment variables
 
-The data root owns local sessions, immutable captures, logs, stored API keys, and installed Content Plugins. Selection order is:
+The data root owns local sessions, per-Project terminal Model preferences, immutable captures, logs, stored API keys, and installed Content Plugins. Selection order is:
 
 1. `--data-root PATH`.
 2. `A13N_HARNESS_UI_DATA_ROOT`.
@@ -156,4 +210,4 @@ Changing it opens separate state; it does not migrate old sessions. Relative boo
 | `GROK_AUTH`                                                 | Recognized inline Grok mode, unsupported for shared writable login; switch to a file store |
 | `COLORFGBG`                                                 | Passive terminal metadata for automatic theme selection                                    |
 
-There is no general `A13N_HARNESS_UI_*` setting override mechanism. `storage`, `envd_runtime`, and application shutdown timeouts are embedding/runtime settings, **not** root YAML sections. Web listener and authentication options are [process-local CLI arguments](automation-and-troubleshooting.md#browser-ui), not resource configuration.
+There is no general `A13N_HARNESS_UI_*` setting override mechanism. `storage`, `envd_runtime`, and application shutdown timeouts are embedding/runtime settings, **not** root YAML sections. Web listener and authentication options are [process-local CLI arguments](webui.md), not resource configuration.

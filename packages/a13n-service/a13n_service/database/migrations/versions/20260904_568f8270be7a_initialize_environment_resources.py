@@ -24,6 +24,7 @@ def upgrade() -> None:
         sa.Column("name", sa.String(length=128), nullable=False),
         sa.Column("configuration", sa.JSON(), nullable=False),
         sa.Column("enabled", sa.Boolean(), nullable=False),
+        sa.Column("configuration_source", sa.String(length=16), nullable=False),
         sa.Column("credential_generation", sa.BigInteger(), nullable=False),
         sa.Column("ciphertext", sa.LargeBinary(), nullable=True),
         sa.Column("nonce", sa.LargeBinary(length=12), nullable=True),
@@ -44,6 +45,14 @@ def upgrade() -> None:
             ["workspaces.id", "workspaces.organization_id"],
             name=op.f("fk_environment_providers_workspace_id_workspaces"),
             ondelete="CASCADE",
+        ),
+        sa.CheckConstraint(
+            "configuration_source IN ('user', 'deployment')",
+            name=op.f("ck_environment_providers_configuration_source_valid"),
+        ),
+        sa.CheckConstraint(
+            "configuration_source != 'deployment' OR workspace_id IS NULL",
+            name=op.f("ck_environment_providers_deployment_organization"),
         ),
         sa.PrimaryKeyConstraint("id", name=op.f("pk_environment_providers")),
         sa.UniqueConstraint("id", "organization_id", name="uq_environment_providers_scope"),
@@ -105,6 +114,7 @@ def upgrade() -> None:
     )
     op.create_table(
         "environments",
+        sa.Column("name", sa.String(length=128), nullable=False),
         sa.Column("provider_id", sa.String(length=72), nullable=False),
         sa.Column("template_revision_id", sa.String(length=72), nullable=True),
         sa.Column("ownership", sa.String(length=16), nullable=False),

@@ -1,6 +1,21 @@
 # Models and authentication
 
-Connect credentials separately from Model configuration. A Model file is reusable by multiple Agents; it does not contain credential bytes.
+A Model chooses a provider connection, request settings, and context budget. Store it in **`models/<name>.yaml` beside the selected root configuration**; Agents reference its `id`. Credentials are separate: Model authentication holds a reference, not the key or token.
+
+## Choose your task
+
+| Task                                          | Start here                                                                                    |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| Create a connection interactively             | `a13n-harness-ui add model`                                                                   |
+| Write a complete API-key Model                | [Configuration recipe](configuration-recipes.md#change-the-model-reasoning-or-context-budget) |
+| Point to a compatible endpoint                | [Custom endpoint recipe](configuration-recipes.md#connect-an-openai-compatible-endpoint)      |
+| Find every Model field                        | [Model file reference](#model-file-reference)                                                 |
+| Change request parameters                     | [Native request settings](#native-request-settings)                                           |
+| Tune context or enable image input            | [Context and modality policy](#context-and-modality-policy)                                   |
+| Use a subscription account                    | [Login](#subscription-login-and-api-keys), [Codex example](#codex-model-example)              |
+| Change a Model only for this terminal session | [Temporary selection](#change-agents-during-a-conversation)                                   |
+
+`settings` controls model requests. `model_configuration` controls connection wiring such as `base_url`. `model_characteristics` controls local context/input policy. These mappings are not interchangeable, and none belongs at the root of `a13n-harness-ui.yaml`.
 
 ## Subscription login and API keys
 
@@ -204,7 +219,7 @@ Logout and account replacement are explicit credential mutations; inspect which 
 
 ## Change agents during a conversation
 
-`/agent` lists configured Agents with their model routes. `/agent agent-primary` switches the full Agent configuration for the next operation and resets session reasoning. `/model` instead lists configured Models; `/model <model-id>` temporarily overrides only the model for this TUI session, leaving the Agent unchanged. `/model default` clears that override. It survives conversation navigation and Agent selection within this TUI lifetime, but not a TUI restart. History and Environment selection remain intact, and YAML is not rewritten. Add another model-backed Agent with `a13n-harness-ui add agent`, then switch to it.
+`/agent` lists configured Agents with their model routes. `/agent agent-primary` switches the full Agent configuration for the next operation and resets session reasoning. `/model` instead lists configured Models; `/model <model-id>` overrides only the model and remembers the choice per Project, leaving the Agent unchanged. `/model default` clears both the override and the Project preference. It survives conversation navigation, Agent selection, and TUI restarts. An explicit launch `--agent` skips the preference; headless runs and API callers do not inherit it. See [everyday model selection](everyday-use.md#everyday-interaction) for recovery and reset behavior. History and Environment selection remain intact, and YAML is not rewritten. Add another model-backed Agent with `a13n-harness-ui add agent`, then switch to it.
 
 `/thinking low` changes reasoning without editing files; `/thinking default` returns to the effective Model's configured settings. An in-flight operation keeps its captured values. An inherited Markdown child receives the parent's effective recipe; an independently referenced Agent keeps its own Model.
 
@@ -212,9 +227,9 @@ Logout and account replacement are explicit credential mutations; inspect which 
 
 ## API providers and settings presets
 
-The guided HTTP/API-key catalog maps to Pydantic AI integrations for OpenAI Responses, OpenAI-compatible Chat Completions, Anthropic, Google Gemini API, OpenRouter, DeepSeek, Z.AI / GLM, Moonshot AI / Kimi, Groq, Mistral, Together AI, and Fireworks AI. xAI's Grok API uses its Chat Completions endpoint; it is separate from Grok subscription authentication. For other OpenAI-compatible services, select **OpenAI-compatible · Chat Completions** and provide that service's URL and model ID. Cloud IAM and subscription transports are not generic URL/key connections.
+The guided HTTP/API-key catalog maps to Pydantic AI integrations for OpenAI Responses, OpenAI-compatible Chat Completions, Anthropic, Google Gemini API, OpenRouter, DeepSeek, Z.AI / GLM, Moonshot AI / Kimi, Groq, Mistral, Together AI, and Fireworks AI. xAI has two separate API-key choices: `grok:` uses Chat Completions, while `xai:` uses the native SDK's default gRPC endpoint and exposes native X Search and other xAI tools. The native SDK choice skips the HTTP base-URL step. Both are separate from Grok subscription authentication. For other OpenAI-compatible services, select **OpenAI-compatible · Chat Completions** and provide that service's URL and model ID. Cloud IAM and subscription transports are not generic URL/key connections.
 
-The last Environment or Agent-name question shows the assembled connection and settings before saving. Presets write normal editable YAML:
+The preset picker shows the output limit alongside thinking, and the last Environment or name question shows the assembled connection and settings before saving. First-use landing, `add model`, and `add agent` with a new Model share these creation-time presets. Presets write normal editable YAML:
 
 - **OpenAI Responses:** for models recognized by the upstream profile as reasoning-capable, high thinking, `openai_reasoning_summary: detailed`, and `openai_store: false`. Low, medium, extra-high (`xhigh`), and provider-default options are available. Unknown or non-reasoning models (such as GPT-4.1) default to neutral settings without reasoning-summary parameters. Chat Completions does not receive Responses-only summary fields.
 - **Anthropic:** adaptive thinking with returned summaries and high effort for newer supported model profiles; otherwise interleaved extended thinking with an 8,192-token budget and a 16,384-token output cap. The interleaved preset explicitly enables `interleaved-thinking-2025-05-14`; adaptive thinking interleaves automatically. Models whose upstream profile rejects budget thinking only offer adaptive and provider-default presets.
@@ -224,9 +239,30 @@ The last Environment or Agent-name question shows the assembled connection and s
 
 Streaming parsing, tool-result continuation, and serialized next-turn replay are regression-tested against mocked native SDK HTTP responses for DeepSeek Reasoner/V4 Pro, GLM 4.7/5.3, and Kimi K2.5/K2 Thinking. These tests verify local request fidelity, not live account access or provider availability.
 
-Choose **Provider defaults** when the model does not support the proposed reasoning settings. Presets do not establish entitlement or raise provider token limits. “Returned thinking” means the provider's exposed content or summaries, not private internal reasoning. Existing resource files are never migrated to new preset defaults.
+Choose **Provider defaults** when the model does not support the proposed reasoning settings. This option does not insert `max_tokens`; the native adapter/provider retains its default, which can still limit output. Presets do not establish entitlement or raise provider token limits. “Returned thinking” means the provider's exposed content or summaries, not private internal reasoning. Existing resource files are never migrated to new preset defaults.
 
-After initial setup, `add model` saves only a reusable Model. `add agent` first lets you select an existing Model or create a new one, then saves a new Agent. Reusing a Model references it directly without copying or modifying its settings. Both commands allocate separate identities for repeated names and leave existing Agents, Models, defaults, and conversations untouched. First-use landing creates the initial Model and Agent together without an existing-Model question. New subscription Agents enable shell review with `risk_threshold: extra_high`, `on_flagged: approval_required`, and `on_error: skip`. Flagged commands require approval; non-timeout review errors add no restriction beyond the effective tool policy. Review timeout always denies the command before execution. Existing Agents are not migrated. This risk threshold is independent of the review Model's low thinking effort.
+### Paired output budgets
+
+For the exact reviewed model IDs below, selecting a thinking preset also saves `settings.max_tokens`. These are **per-request output recommendations**, not total Run limits, model maximums, or targets that force the model to generate that much text. Reasoning can consume the output allowance according to the provider's native accounting. Working context controls reminders and compaction independently; choosing a smaller working context does not scale these values.
+
+| Connection and reviewed model IDs                                                                                                 | Thinking choice              |       Saved `max_tokens` |
+| --------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | -----------------------: |
+| OpenAI Responses / Chat Completions: `gpt-5`, `gpt-5.4`, `gpt-5.4-mini`, `gpt-5.5`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-6-astra` | low / medium / high or xhigh | 16,384 / 32,768 / 65,536 |
+| Anthropic: `claude-sonnet-4-6`, `claude-opus-4-6`, `claude-haiku-4-5`, `claude-sonnet-4-5`                                        | adaptive / interleaved       |          32,768 / 16,384 |
+| Google: `gemini-3.1-pro-preview`, `gemini-3.5-flash`, `gemini-2.5-pro`, `gemini-2.5-flash`                                        | low / medium or high         |          16,384 / 32,768 |
+| DeepSeek: `deepseek-v4-pro`, `deepseek-v4-flash`, `deepseek-reasoner`                                                             | Thinking · preserved         |                   32,768 |
+| Z.AI: `glm-5.3`, `glm-5.2`, `glm-4.7`, `glm-4.5`                                                                                  | Thinking · preserved         |                   32,768 |
+| Moonshot AI: `kimi-k2.6`, `kimi-k2.5`, `kimi-k2-thinking`                                                                         | Thinking · preserved         |                   32,768 |
+| OpenRouter: `openai/gpt-5.4`                                                                                                      | low / medium / high          | 16,384 / 32,768 / 65,536 |
+| OpenRouter: `anthropic/claude-sonnet-4.6`, `google/gemini-2.5-pro`                                                                | low / medium or high         |          16,384 / 32,768 |
+
+The selected native profile still determines which thinking presets are offered. For Gemini 2.5, native high thinking uses a 24,576-token thinking budget; its 32,768-token output cap leaves room for the answer. Claude's explicit 8,192-token interleaved thinking budget retains its existing 16,384-token cap, including for custom model IDs. Unreviewed Claude adaptive presets also retain the existing 16,384-token baseline. Other unreviewed models and routes get no new output cap; adding a suggestion or matching a model-name prefix does not opt a model into a budget. Exact reviewed IDs receive the same editable recommendations behind custom endpoints, whose limits may differ. Codex and Grok subscription creation is unchanged; no API preset is applied to those transports.
+
+Review the saved value for your endpoint, context size, reasoning needs, latency, and cost. You can edit `settings.max_tokens` independently afterward. Changing `/thinking` does **not** recalculate it. Reusing a Model, loading an existing file, or passing explicit settings to the setup API does not apply a preset. There is no runtime auto-budget policy, context-overflow guarantee, Harness preset dependency, or network lookup during setup.
+
+The release-owned recommendations were checked against provider references on September 10, 2026: [OpenAI model limits](https://developers.openai.com/api/docs/models/gpt-5.6-sol), [Claude model limits](https://platform.claude.com/docs/en/models/sonnet-4-6/overview), [Gemini output limits](https://ai.google.dev/gemini-api/docs/models/gemini-2.5-pro), [DeepSeek model details](https://api-docs.deepseek.com/quick_start/pricing), [GLM model details](https://docs.z.ai/guides/llm/glm-5.3), [Moonshot's model card](https://huggingface.co/moonshotai/Kimi-K2.5), and [OpenRouter's model metadata](https://openrouter.ai/api/v1/models). These sources describe model capabilities and examples, not a promise that a custom endpoint or account will accept every setting. Native SDK request serialization is tested with mock HTTP; it is not a live provider test. In particular, the installed native DeepSeek adapter emits `max_completion_tokens`, whereas DeepSeek's API reference documents `max_tokens`; acceptance and enforcement of that alias have not been verified against the live service. Harness UI does not override the adapter's field mapping.
+
+After initial setup, `add model` saves only a reusable Model, then offers a separate Add Agent flow for that Model. `add agent` first lets you select an existing Model or create a new one, then saves a new Agent. Reusing a Model references it directly without copying or modifying its settings. Both commands allocate separate identities for repeated names and leave existing Agents, Models, defaults, and conversations untouched. First-use landing creates the initial Model and Agent together without an existing-Model question. New subscription Agents enable shell review with `risk_threshold: extra_high`, `on_flagged: approval_required`, and `on_error: skip`. Flagged commands require approval; non-timeout review errors add no restriction beyond the effective tool policy. Review timeout always denies the command before execution. Existing Agents are not migrated. This risk threshold is independent of the review Model's low thinking effort.
 
 ## Native request settings
 
@@ -246,4 +282,4 @@ For example, an existing `settings.service_tier: priority` continues to work wit
 
 Opaque settings are retained verbatim, not secret-scrubbed by guessing field names. Use the dedicated authentication and MCP credential sources for secrets; do not place credentials in settings or extension configuration unless you intend those values to be persisted in local configuration captures. Diagnostics and settings display should be reviewed before sharing.
 
-`model_configuration` is separate Host wiring, not request settings: it accepts an optional `base_url` for the HTTP/API-key providers offered by setup (and the legacy `openai` alias). Use an HTTP(S) URL without embedded credentials, query parameters, or fragments. Local HTTP endpoints are supported. Subscription endpoints cannot be overridden. Unknown Host constructor fields and unsupported routes still fail rather than being silently ignored.
+`model_configuration` is separate Host wiring, not request settings: it accepts an optional `base_url` for the HTTP/API-key providers offered by setup (and the legacy `openai` alias). Use an HTTP(S) URL without embedded credentials, query parameters, or fragments. Local HTTP endpoints are supported. Subscription endpoints cannot be overridden. The `xai:` native SDK route also requires empty `model_configuration`; it uses upstream's default gRPC endpoint and does not accept an HTTP `base_url`. Unknown Host constructor fields and unsupported routes still fail rather than being silently ignored.

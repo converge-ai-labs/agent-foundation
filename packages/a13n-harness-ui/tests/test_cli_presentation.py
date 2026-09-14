@@ -46,6 +46,44 @@ def test_semantic_markdown_reflows_and_reuses_completed_cache() -> None:
     assert transcript.blocks[first].rows is not cache
 
 
+@pytest.mark.parametrize("variant", ["auto", "dark", "light"])
+@pytest.mark.parametrize("width", [32, 100])
+@pytest.mark.parametrize("prefix", ["Error [root_operation_failed]:", "Error:", "Warning:"])
+def test_system_errors_highlight_summary_without_emphasizing_diagnostics(variant, width, prefix) -> None:
+    from a13n_harness_ui.interactive.theme import prompt_toolkit_style_rules
+    from prompt_toolkit.styles import Style
+
+    theme = resolve_theme(variant, environ={})
+    styles = Style.from_dict(prompt_toolkit_style_rules(theme))
+    attention = styles.get_attrs_for_style_str("class:activity.waiting").color
+    muted = styles.get_attrs_for_style_str("class:activity.muted").color
+    transcript = Transcript()
+    transcript.theme = theme
+    heading = f"{prefix} Unexpected OperationalError."
+    detail = "Diagnostic report: /tmp/example.json.\nNothing was uploaded."
+    try:
+        block_id = transcript.append(f"{heading}\n{detail}", kind="notice")
+        transcript.render(width)
+        fragments = [(style, text) for row in transcript.rows for style, text in row if text.strip()]
+        highlighted = "".join(
+            text for style, text in fragments if styles.get_attrs_for_style_str(style).color == attention
+        )
+        secondary = "".join(text for style, text in fragments if styles.get_attrs_for_style_str(style).color == muted)
+        assert "".join(highlighted.split()) == "".join(f"System · {heading}".split())
+        assert "".join(secondary.split()) == "".join(detail.split())
+
+        transcript.replace(block_id, "Guidance sent.")
+        transcript.render(width)
+        assert not any(
+            styles.get_attrs_for_style_str(style).color == attention
+            for row in transcript.rows
+            for style, text in row
+            if text.strip()
+        )
+    finally:
+        transcript.close()
+
+
 @pytest.mark.parametrize("variant", ["dark", "light"])
 def test_theme_covers_transcript_composer_and_selection(variant: str) -> None:
     from a13n_harness_ui.interactive.theme import prompt_toolkit_style_rules
@@ -79,6 +117,34 @@ def test_composer_grows_for_multiline_and_adapts_hints(monkeypatch: pytest.Monke
         assert shell._composer_height().preferred <= 2
         assert len(shell._hints()) < 50
         assert shell.composer.text.startswith("中文 line")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(("char", "per_row"), [("x", 77), ("中", 38)])
+async def test_composer_keeps_cursor_visible_at_wrap_boundaries(
+    monkeypatch: pytest.MonkeyPatch, char: str, per_row: int
+) -> None:
+    from prompt_toolkit.application.current import set_app
+    from prompt_toolkit.data_structures import Size
+
+    output = DummyOutput()
+    monkeypatch.setattr(output, "get_size", lambda: Size(rows=24, columns=80))
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=output):
+        shell = CliShell(CliRequest())
+        with set_app(shell.app):
+            for rows in (3, 7):
+                # Grow at the third row; scroll once the seven-row cap is reached.
+                count = rows * per_row - (1 if char == "x" else 0)
+                shell.composer.buffer.document = Document(char * count, count)
+                for offset in range(3):
+                    shell.app.renderer.render(shell.app, shell.app.layout)
+                    info = shell.composer.window.render_info
+                    assert info is not None
+                    cursor = (0, shell.composer.buffer.cursor_position)
+                    assert cursor in info._rowcol_to_yx
+                    assert (0, cursor[1] - 1) in info._rowcol_to_yx
+                    assert info.window_height == min(7, rows + (offset > 0))
+                    shell.composer.buffer.insert_text(char, fire_event=False)
 
 
 def test_huge_delta_and_cache_budgets_are_visible_and_bounded() -> None:

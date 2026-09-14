@@ -520,7 +520,7 @@ async fn writer_transfer(
             return empty_response(StatusCode::PAYLOAD_TOO_LARGE);
         }
         for chunk in data.chunks(state.max_transfer_chunk_bytes) {
-            if state
+            if let Err(error) = state
                 .daemon
                 .handle_data_frame(DataFrame {
                     kind: DataFrameKind::Chunk,
@@ -530,10 +530,26 @@ async fn writer_transfer(
                     reset_status: None,
                 })
                 .await
-                .is_err()
             {
                 session.routes.lock().await.remove(&handle);
-                return empty_response(StatusCode::CONFLICT);
+                return empty_response(match error {
+                    crate::transfer::TransferError::Source => {
+                        // Finish bounded HTTP framing before replying. Dropping an
+                        // unread upload can reset a reused connection and race the
+                        // requester's subsequent file.abort_writer control request.
+                        match timeout(
+                            state.transfer_timeout,
+                            discard_body_bounded(body, state.max_transfer_bytes - next),
+                        )
+                        .await
+                        {
+                            Ok(Ok(())) => StatusCode::INTERNAL_SERVER_ERROR,
+                            Ok(Err(status)) => status,
+                            Err(_) => StatusCode::REQUEST_TIMEOUT,
+                        }
+                    }
+                    _ => StatusCode::CONFLICT,
+                });
             }
             offset += chunk.len() as u64;
         }
@@ -666,6 +682,18 @@ async fn close_session(state: &Arc<HttpState>, session: &Arc<HttpSession>) {
     {
         *current = None;
     }
+}
+
+async fn discard_body_bounded(mut body: Incoming, mut remaining: u64) -> Result<(), StatusCode> {
+    while let Some(frame) = body.frame().await {
+        let frame = frame.map_err(|_| StatusCode::BAD_REQUEST)?;
+        if let Ok(data) = frame.into_data() {
+            remaining = remaining
+                .checked_sub(data.len() as u64)
+                .ok_or(StatusCode::PAYLOAD_TOO_LARGE)?;
+        }
+    }
+    Ok(())
 }
 
 async fn read_body_bounded(mut body: Incoming, maximum: usize) -> Result<Vec<u8>, StatusCode> {

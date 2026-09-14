@@ -14,7 +14,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 from a13n_envd_client import __version__ as envd_client_version
 from anyio import CancelScope
-from pydantic import BaseModel, JsonValue, ValidationError
+from pydantic import BaseModel
 
 from .._local_identity import local_backing_identity
 from ..attachments import StdioEIPCarrier
@@ -51,7 +51,7 @@ _DAEMON_MAX_REQUEST_BYTES = 16 * 1024 * 1024
 _DAEMON_MAX_RESPONSE_BYTES = 16 * 1024 * 1024
 _DAEMON_MAX_TRANSFER_FRAME_BYTES = 4 * 1024 * 1024
 _READ_OPERATIONS = ("stat", "read_text", "open_reader", "list", "find", "search")
-_WRITE_OPERATIONS = ("write_text", "open_writer", "remove", "move")
+_WRITE_OPERATIONS = ("write_text", "open_writer", "mkdir", "patch_text", "copy", "remove", "move")
 _PYTHON_RELEASE_VERSION = re.compile(r"^(?P<base>[0-9]+\.[0-9]+\.[0-9]+)(?:rc(?P<rc>[1-9][0-9]*))?$")
 
 
@@ -61,30 +61,16 @@ class LocalEnvdEnvironmentProvider(EnvironmentProvider):
     provider_configuration_model = HostLocalProviderConfiguration
 
     @property
+    def display_name(self) -> str:
+        return "Local Envd"
+
+    @property
     def key(self) -> str:
         return _PROVIDER_KEY
 
     @property
-    def configuration_versions(self) -> frozenset[str]:
-        return frozenset({_CONFIGURATION_VERSION})
-
-    def validate_configuration(self, *, schema_version: str, value: JsonValue) -> BaseModel:
-        if schema_version != _CONFIGURATION_VERSION:
-            raise _provider_error(
-                "Local Envd configuration version is unsupported.",
-                code="provider_schema_unsupported",
-                category=EnvironmentProviderErrorCategory.UNSUPPORTED,
-                schema_version=schema_version,
-            )
-        try:
-            return LocalEnvdProviderConfiguration.model_validate(value)
-        except ValidationError as error:
-            raise _provider_error(
-                "Local Envd configuration is invalid.",
-                code="provider_spec_invalid",
-                category=EnvironmentProviderErrorCategory.INVALID,
-                schema_version=schema_version,
-            ) from error
+    def configuration_models(self) -> dict[str, type[BaseModel]]:
+        return {"1": LocalEnvdProviderConfiguration}
 
     async def create_runtime(
         self, *, configuration: BaseModel, credential: BaseModel | None, context: ProviderRuntimeContext

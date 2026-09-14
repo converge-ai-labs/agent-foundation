@@ -118,6 +118,12 @@ def upgrade() -> None:
         sa.UniqueConstraint("organization_id", "id", name="uq_threads_organization_id"),
         sa.UniqueConstraint("organization_id", "session_id", "id", name="uq_threads_session_id"),
     )
+    op.create_index(
+        "ix_threads_selected_run",
+        "threads",
+        ["organization_id", sa.text("coalesce(current_run_id, head_run_id)")],
+        unique=False,
+    )
     op.create_index("ix_threads_origin_run", "threads", ["organization_id", "origin_run_id", "id"], unique=False)
     op.create_index("ix_threads_origin_thread", "threads", ["organization_id", "origin_thread_id", "id"], unique=False)
     op.create_index(
@@ -159,8 +165,7 @@ def upgrade() -> None:
         sa.Column("agent_revision_id", sa.String(length=72), nullable=False),
         sa.Column("effective_agent_config_digest", sa.String(length=64), nullable=False),
         sa.Column("model_execution_observation_json", sa.JSON(), nullable=False),
-        sa.Column("connector_connection_selections_json", sa.JSON(), nullable=False),
-        sa.Column("mcp_connection_selections_json", sa.JSON(), nullable=False),
+        sa.Column("connection_selections_json", sa.JSON(), nullable=False),
         sa.Column("native_tool_contexts_json", sa.JSON(), nullable=False),
         sa.Column("priority", sa.Integer(), nullable=False),
         sa.Column("queue_name", sa.String(length=256), nullable=False),
@@ -342,6 +347,11 @@ def upgrade() -> None:
         sa.UniqueConstraint("organization_id", "thread_id", "id", name="uq_runs_organization_thread_id"),
     )
     op.create_index("ix_runs_environment_id", "runs", ["environment_id"], unique=False)
+    op.create_index("ix_runs_agent_session", "runs", ["organization_id", "agent_id", "session_id", "id"], unique=False)
+    op.create_index("ix_runs_status_session", "runs", ["organization_id", "status", "session_id", "id"], unique=False)
+    op.create_index(
+        "ix_runs_trigger_session", "runs", ["organization_id", "trigger_type", "session_id", "id"], unique=False
+    )
     op.create_index("ix_runs_parent", "runs", ["organization_id", "parent_run_id", "id"], unique=False)
     op.create_index("ix_runs_retry", "runs", ["organization_id", "retry_of_run_id", "id"], unique=False)
     op.create_index(
@@ -570,6 +580,9 @@ def downgrade() -> None:
         sqlite_where=sa.text("status = 'accepted' OR (status = 'running' AND current_run_attempt_id IS NULL)"),
     )
     op.drop_index("ix_runs_thread_created", table_name="runs")
+    op.drop_index("ix_runs_trigger_session", table_name="runs")
+    op.drop_index("ix_runs_status_session", table_name="runs")
+    op.drop_index("ix_runs_agent_session", table_name="runs")
     op.drop_index("ix_runs_session_created", table_name="runs")
     op.drop_index("ix_runs_retry", table_name="runs")
     op.drop_index("ix_runs_parent", table_name="runs")
@@ -580,6 +593,7 @@ def downgrade() -> None:
         postgresql_where=sa.text("role = 'root'"),
         sqlite_where=sa.text("role = 'root'"),
     )
+    op.drop_index("ix_threads_selected_run", table_name="threads")
     op.drop_index("ix_threads_session_updated", table_name="threads")
     op.drop_index("ix_threads_session_created", table_name="threads")
     op.drop_index("ix_threads_origin_thread", table_name="threads")

@@ -8,6 +8,7 @@ from collections.abc import Awaitable
 from datetime import datetime
 from typing import Never
 
+from a13n_envd_client import EIPSession
 from a13n_envd_client.eip import v1 as eip
 from a13n_envd_client.errors import (
     EIPMethodError,
@@ -16,6 +17,7 @@ from a13n_envd_client.errors import (
     EIPTransportClosedError,
     EIPTransportError,
 )
+from pydantic import JsonValue
 
 from .._file_patterns import PATTERN_HINTS
 from ..models import (
@@ -25,6 +27,14 @@ from ..models import (
 )
 
 _UINT64_MAX = 2**64 - 1
+
+
+def session_client(session: EIPSession) -> eip.EIPClient:
+    """Normalize synchronous session access before an async operation is built."""
+    try:
+        return session.client
+    except EIPSessionStateError as error:
+        raise_converted(error)
 
 
 def new_context(*, timeout_seconds: float = DEFAULT_ENVIRONMENT_OPERATION_TIMEOUT_SECONDS) -> eip.EIPCallContext:
@@ -101,15 +111,61 @@ def convert_error(error: BaseException) -> EnvironmentError:
             eip.ErrorType.OUTPUT_LIMIT_EXCEEDED: "environment_too_large",
             eip.ErrorType.TIMEOUT: "environment_timeout",
             eip.ErrorType.CANCELLED: "environment_cancelled",
+            eip.ErrorType.UNKNOWN_OUTCOME: "environment_unknown_outcome",
+            eip.ErrorType.OPERATION_IN_PROGRESS: "environment_busy",
+            eip.ErrorType.PROVIDER_UNAVAILABLE: "environment_unavailable",
             eip.ErrorType.CONFLICT: "environment_conflict",
         }.get(error_type, "environment_provider_failure")
         data = error.error.data
-        details: dict[str, str] = {}
-        if error_type == eip.ErrorType.INVALID_PARAMS and data.safe_detail in PATTERN_HINTS:
-            field = {"query": "pattern", "include_pattern": "include", "pattern": "pattern"}.get(data.field or "")
-            if field is not None and data.safe_detail is not None:
-                details = {"field": field, "reason": data.safe_detail, "hint": PATTERN_HINTS[data.safe_detail]}
-        return EnvironmentError("EIP operation failed", code=code, details=details)
+        details: dict[str, JsonValue] = {
+            "dispatch_stage": data.dispatch_stage.value,
+            "provider_retry_hint": data.retry_hint.value,
+        }
+        fields = {
+            "query": "pattern",
+            "include_pattern": "include",
+            "pattern": "pattern",
+            "root": "root",
+            "path": "path",
+            "source": "source",
+            "destination": "destination",
+            "cwd": "cwd",
+            "line_offset": "line_offset",
+            "line_limit": "line_limit",
+            "max_line_length": "max_line_length",
+            "offset": "offset",
+            "max_results": "max_results",
+            "context_lines": "context_lines",
+            "max_matches_per_file": "max_matches_per_file",
+            "max_files": "max_files",
+            "max_file_bytes": "max_file_bytes",
+        }
+        field = fields.get(data.field or "")
+        if field is not None:
+            details["field"] = field
+        hints = {
+            **PATTERN_HINTS,
+            "not_searchable": "Select a regular file or directory; special files cannot be searched.",
+            "not_directory": "Select a directory; use text search to search a single file.",
+            "not_file": "Select a regular file, not a directory or special file.",
+            "invalid_value": "Use a value within the field's documented range.",
+        }
+        if error_type == eip.ErrorType.INVALID_PARAMS and data.safe_detail in hints:
+            details["reason"] = data.safe_detail
+            details["hint"] = hints[data.safe_detail]
+        for key, value in (
+            ("emitted_items", data.emitted_items),
+            ("produced_bytes", data.produced_bytes),
+            ("dropped_items", data.dropped_items),
+        ):
+            if value is not None:
+                details[key] = value
+        return EnvironmentError(
+            "EIP operation failed",
+            code=code,
+            details=details,
+            retry_hint="reconcile_first" if code == "environment_unknown_outcome" else None,
+        )
     if isinstance(error, EIPSessionStateError | EIPTransportClosedError | EIPTransportError):
         return EnvironmentError(
             "EIP environment is unavailable",

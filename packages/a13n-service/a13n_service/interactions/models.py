@@ -131,6 +131,9 @@ class ThreadRecord(Base):
         ),
         CheckConstraint("version >= 1", name="version_positive"),
         CheckConstraint("queue_version >= 0", name="queue_version_non_negative"),
+        CheckConstraint("next_delivery_sequence >= 1", name="next_delivery_sequence_positive"),
+        CheckConstraint("pending_count >= 0", name="pending_count_non_negative"),
+        CheckConstraint("pending_bytes >= 0", name="pending_bytes_non_negative"),
         CheckConstraint("role IN ('root', 'child')", name="role_valid"),
         CheckConstraint("origin_kind IN ('new', 'fork', 'child')", name="origin_kind_valid"),
         CheckConstraint(
@@ -152,6 +155,7 @@ class ThreadRecord(Base):
         ),
         Index("ix_threads_session_created", "organization_id", "session_id", "created_at", "id"),
         Index("ix_threads_session_updated", "organization_id", "session_id", "updated_at", "id"),
+        Index("ix_threads_selected_run", "organization_id", text("coalesce(current_run_id, head_run_id)")),
         Index("ix_threads_origin_run", "organization_id", "origin_run_id", "id"),
         Index("ix_threads_origin_thread", "organization_id", "origin_thread_id", "id"),
     )
@@ -159,6 +163,9 @@ class ThreadRecord(Base):
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     queue_version: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    next_delivery_sequence: Mapped[int] = mapped_column(BigInteger, nullable=False, default=1, server_default="1")
+    pending_count: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
+    pending_bytes: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0, server_default="0")
     organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     session_id: Mapped[str] = mapped_column(String(72), nullable=False)
     role: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -393,6 +400,9 @@ class RunRecord(Base):
             sqlite_where=text("status = 'accepted' OR (status = 'running' AND current_run_attempt_id IS NULL)"),
         ),
         Index("ix_runs_session_created", "organization_id", "session_id", "created_at", "id"),
+        Index("ix_runs_agent_session", "organization_id", "agent_id", "session_id", "id"),
+        Index("ix_runs_status_session", "organization_id", "status", "session_id", "id"),
+        Index("ix_runs_trigger_session", "organization_id", "trigger_type", "session_id", "id"),
         Index("ix_runs_thread_created", "organization_id", "thread_id", "created_at", "id"),
         Index("ix_runs_parent", "organization_id", "parent_run_id", "id"),
         Index("ix_runs_retry", "organization_id", "retry_of_run_id", "id"),
@@ -424,8 +434,7 @@ class RunRecord(Base):
     )
     effective_agent_config_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     model_execution_observation_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
-    connector_connection_selections_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
-    mcp_connection_selections_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    connection_selections_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     native_tool_contexts_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     priority: Mapped[int] = mapped_column(Integer, nullable=False)
     queue_name: Mapped[str] = mapped_column(String(256), nullable=False)
@@ -504,10 +513,7 @@ class RunRecord(Base):
             "model_execution_observation": _MODEL_OBSERVATION_ADAPTER.validate_python(
                 self.model_execution_observation_json
             ),
-            "connector_connection_selections": _JSON_OBJECTS_ADAPTER.validate_python(
-                self.connector_connection_selections_json
-            ),
-            "mcp_connection_selections": _JSON_OBJECTS_ADAPTER.validate_python(self.mcp_connection_selections_json),
+            "connection_selections": _JSON_OBJECTS_ADAPTER.validate_python(self.connection_selections_json),
             "native_tool_contexts": _JSON_OBJECTS_ADAPTER.validate_python(self.native_tool_contexts_json),
             "priority": self.priority,
             "queue_name": self.queue_name,

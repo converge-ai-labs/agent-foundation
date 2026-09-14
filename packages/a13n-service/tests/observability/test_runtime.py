@@ -394,3 +394,265 @@ async def test_run_attempt_rejects_unregistered_link_attributes() -> None:
         ):
             pytest.fail("invalid link unexpectedly admitted")
     await observation.aclose()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("outcome", ["succeeded", "failed", "cancelled"])
+async def test_phase_observation_preserves_context_and_reports_only_safe_outcomes(outcome) -> None:
+    import asyncio
+
+    from a13n_service.observability import observe_phase
+    from opentelemetry import trace
+
+    exporter = InMemorySpanExporter()
+    observation = runtime(exporter)
+    try:
+        with observe_phase("a13n.service.persist") as absent:
+            assert absent is None
+        with observation.run_attempt(correlation()) as attempt:
+            root_context = trace.get_current_span().get_span_context()
+            try:
+                with observe_phase("a13n.service.persist"):
+                    if outcome == "cancelled":
+                        raise asyncio.CancelledError("private cancellation")
+                    if outcome == "failed":
+                        raise OSError("private exception contents")
+            except (OSError, asyncio.CancelledError):
+                pass
+            assert trace.get_current_span().get_span_context() == root_context
+            attempt.set_outcome("succeeded")
+        with observe_phase("a13n.service.persist") as absent:
+            assert absent is None
+        assert observation.tracer_provider.force_flush()
+        phases = [span for span in exporter.get_finished_spans() if span.name == "a13n.service.persist"]
+        assert len(phases) == 1
+        phase = phases[0]
+        assert phase.attributes["a13n.service.phase.outcome"] == outcome
+        assert (phase.status.status_code is StatusCode.ERROR) == (outcome == "failed")
+        assert phase.attributes.get("error.type") == ("OSError" if outcome == "failed" else None)
+        assert not phase.events
+        assert "private" not in str(phase.attributes)
+    finally:
+        await observation.aclose()
+
+
+@pytest.mark.anyio
+async def test_phase_start_failure_does_not_skip_work(monkeypatch) -> None:
+    from a13n_service.observability import observe_phase
+
+    exporter = InMemorySpanExporter()
+    observation = runtime(exporter)
+    try:
+        with observation.run_attempt(correlation()) as attempt:
+
+            def unavailable(*args, **kwargs):
+                raise RuntimeError("private exporter details")
+
+            monkeypatch.setattr(attempt._tracer, "start_span", unavailable)
+            with observe_phase("a13n.service.persist") as span:
+                assert span is None
+                attempt.set_outcome("succeeded")
+        assert observation.tracer_provider.force_flush()
+        (root,) = exporter.get_finished_spans()
+        assert root.attributes["a13n.run_attempt.outcome"] == "succeeded"
+    finally:
+        await observation.aclose()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("content", list(TraceContent))
+@pytest.mark.parametrize("value", [None, "", "plain text", {"answer": [42, None, "你好"]}])
+async def test_root_content_preserves_text_json_and_null(content, value):
+    import json
+
+    from a13n_service.observability import observe_input
+
+    exporter = InMemorySpanExporter()
+    observation = runtime(exporter, content=content)
+    try:
+        with observation.run_attempt(correlation(), input_external=True) as attempt:
+            observe_input(value)
+            attempt.set_outcome("succeeded", output_value=value)
+        assert observation.tracer_provider.force_flush()
+        attributes = exporter.get_finished_spans()[0].attributes
+        for prefix in ("input", "output"):
+            if content is TraceContent.none:
+                assert f"{prefix}.value" not in attributes
+                assert f"{prefix}.mime_type" not in attributes
+                assert attributes[f"a13n.run_attempt.{prefix}.capture"] == "content_disabled"
+            else:
+                assert attributes[f"a13n.run_attempt.{prefix}.capture"] == "captured"
+                if isinstance(value, str):
+                    assert attributes[f"{prefix}.value"] == value
+                    assert attributes[f"{prefix}.mime_type"] == "text/plain"
+                else:
+                    assert json.loads(attributes[f"{prefix}.value"]) == value
+                    assert attributes[f"{prefix}.mime_type"] == "application/json"
+    finally:
+        await observation.aclose()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "scenario", ["committed", "different_object", "recovered", "failed", "cancelled", "yielded", "waiting"]
+)
+async def test_external_output_requires_matching_committed_object_and_attempt(scenario):
+    from a13n_service.observability import remember_output
+
+    exporter = InMemorySpanExporter()
+    observation = runtime(exporter)
+    try:
+        with observation.run_attempt(correlation(), input_external=True) as attempt:
+            if scenario != "recovered":
+                remember_output("candidate-digest", {"answer": 42})
+            if scenario in {"committed", "different_object", "recovered"}:
+                attempt.set_outcome(
+                    "succeeded",
+                    output_object_digest="other-digest" if scenario == "different_object" else "candidate-digest",
+                )
+            else:
+                attempt.set_outcome("succeeded" if scenario == "waiting" else scenario)
+        assert observation.tracer_provider.force_flush()
+        root = exporter.get_finished_spans()[0]
+        assert "input.value" not in root.attributes
+        assert root.attributes["a13n.run_attempt.input.capture"] == "external_payload"
+        if scenario == "committed":
+            assert root.attributes["output.value"] == '{"answer":42}'
+            assert root.attributes["a13n.run_attempt.output.capture"] == "captured"
+        else:
+            assert "output.value" not in root.attributes
+            assert root.attributes["a13n.run_attempt.output.capture"] == (
+                "external_payload" if scenario in {"different_object", "recovered"} else "not_committed"
+            )
+    finally:
+        await observation.aclose()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("failure_recorded", [False, True])
+async def test_escaping_cancellation_does_not_invent_attempt_failure(failure_recorded: bool) -> None:
+    import asyncio
+
+    from opentelemetry import trace
+
+    exporter = InMemorySpanExporter()
+    observation = runtime(exporter)
+    before = trace.get_current_span().get_span_context()
+    try:
+        with pytest.raises(asyncio.CancelledError):
+            with observation.run_attempt(correlation()) as attempt:
+                if failure_recorded:
+                    attempt.set_outcome("failed", failure_code="execution_failed")
+                with attempt.phase("a13n.service.environment.prepare"):
+                    raise asyncio.CancelledError("private cancellation")
+        assert trace.get_current_span().get_span_context() == before
+        assert observation.tracer_provider.force_flush()
+        spans = {span.name: span for span in exporter.get_finished_spans()}
+        phase = spans["a13n.service.environment.prepare"]
+        root = spans["a13n.service.run_attempt"]
+        assert phase.attributes["a13n.service.phase.outcome"] == "cancelled"
+        assert phase.status.status_code is StatusCode.UNSET
+        assert (root.status.status_code is StatusCode.ERROR) == failure_recorded
+        assert root.attributes.get("a13n.run_attempt.outcome") == ("failed" if failure_recorded else None)
+        assert root.attributes.get("a13n.run_attempt.failure.code") == (
+            "execution_failed" if failure_recorded else None
+        )
+        assert not root.events
+        assert "private" not in str(root.attributes)
+        assert root.end_time is not None
+        # Context cleanup must permit another independent Attempt.
+        with observation.run_attempt(correlation()):
+            pass
+    finally:
+        await observation.aclose()
+
+
+@pytest.mark.anyio
+async def test_escaping_execution_error_still_marks_attempt_root() -> None:
+    exporter = InMemorySpanExporter()
+    observation = runtime(exporter)
+    try:
+        with pytest.raises(OSError, match="private execution error"):
+            with observation.run_attempt(correlation()):
+                raise OSError("private execution error")
+        assert observation.tracer_provider.force_flush()
+        root = exporter.get_finished_spans()[0]
+        assert root.status.status_code is StatusCode.ERROR
+        assert "a13n.run_attempt.outcome" not in root.attributes
+        assert not root.events
+        assert "private" not in str(root.attributes)
+    finally:
+        await observation.aclose()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("content", list(TraceContent))
+async def test_recovered_harness_tool_failure_exports_without_failing_attempt(content: TraceContent) -> None:
+    from a13n_harness.capabilities import WorkingStateCapability
+    from pydantic_ai.messages import ModelRequest, ToolReturnPart
+    from pydantic_ai.models.function import DeltaToolCall, DeltaToolCalls
+
+    calls = 0
+
+    async def stream(messages: list[ModelMessage], _info: AgentInfo) -> AsyncIterator[str | DeltaToolCalls]:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            yield {0: DeltaToolCall(name="note_get", json_args='{"key":"missing"}', tool_call_id="missing-note")}
+        else:
+            returns = [
+                part.content
+                for message in messages
+                if isinstance(message, ModelRequest)
+                for part in message.parts
+                if isinstance(part, ToolReturnPart)
+            ]
+            assert returns == [
+                {
+                    "ok": False,
+                    "error": {
+                        "code": "note_not_found",
+                        "message": "The note does not exist; list note keys before reading it.",
+                        "details": {},
+                        "key": "missing",
+                    },
+                }
+            ]
+            yield "recovered"
+
+    exporter = InMemorySpanExporter()
+    observation = runtime(exporter, content=content)
+    executable = HarnessBuilder(instrumentation=observation.harness_instrumentation).build(
+        AgentSpec(name="observed-tool-agent"),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=[WorkingStateCapability()],
+    )
+    try:
+        with observation.run_attempt(correlation()) as attempt:
+            result = await executable.run("inspect")
+            assert result.status == "completed"
+            with attempt.phase("a13n.service.persist"):
+                attempt.set_outcome("succeeded", output_value=result.output)
+        assert observation.tracer_provider.force_flush()
+        spans = exporter.get_finished_spans()
+        tool = next(span for span in spans if span.attributes.get("gen_ai.operation.name") == "execute_tool")
+        root = next(span for span in spans if span.name == "a13n.service.run_attempt")
+        harness = next(span for span in spans if span.name == "harness.run")
+        assert tool.status.status_code is StatusCode.ERROR
+        assert tool.attributes["a13n.tool.failure.code"] == "note_not_found"
+        assert tool.attributes["langfuse.observation.metadata.tool_result_status"] == "operation_failed"
+        assert root.status.status_code is StatusCode.UNSET
+        assert root.attributes["a13n.run_attempt.outcome"] == "succeeded"
+        assert harness.status.status_code is StatusCode.UNSET
+        assert "a13n.tool.result.status" not in root.attributes
+        for span in spans:
+            assert span.context.trace_id == root.context.trace_id
+            assert span.attributes["a13n.run_attempt.id"] == "attempt_123"
+            assert span.end_time is not None
+        if content is TraceContent.none:
+            assert "output.value" not in root.attributes
+        else:
+            assert root.attributes["output.value"] == "recovered"
+    finally:
+        await observation.aclose()

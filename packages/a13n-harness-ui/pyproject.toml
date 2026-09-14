@@ -16,17 +16,21 @@ dependencies = [
     "a13n-stream-protocol",
     "a13n-logging",
     "ag-ui-protocol>=0.1.18,<0.2",
-    "fastmcp-slim[client]>=3.4,<4",
+    "fastmcp-slim[client]>=4.0,<5",
     "filelock>=3.18,<4",
     "httpcore2>=2.12,<3",
-    "httpx>=0.28,<1",
     "httpx2>=2.5,<3",
     "openai>=3.5,<4",
+    "opentelemetry-api>=1.39,<2",
+    "opentelemetry-sdk>=1.39,<2",
+    "opentelemetry-exporter-otlp-proto-http>=1.39,<2",
     "packaging>=24,<27",
     "pydantic>=2.12,<3",
     "pydantic-ai-slim>=2.41.0,<3",
     "pyyaml>=6.0.2,<7",
     "prompt-toolkit>=3.0.52,<4",
+    "psutil>=7,<8",
+    "pycrdt>=0.14.5,<0.15",
     "rich>=15,<16",
     "pillow>=11,<13",
     "sqlalchemy[asyncio]>=2.0.41,<3",
@@ -39,6 +43,7 @@ dependencies = [
     "fastapi>=0.135,<1",
     "starlette>=0.52,<2",
     "uvicorn>=0.34,<1",
+    "websockets>=15,<16",
 ]
 
 [project.scripts]
@@ -47,18 +52,18 @@ a13n-harness-ui = "a13n_harness_ui.cli:main"
 [dependency-groups]
 test = [
     # MCP integration fixtures run real servers; the runtime only needs the client.
-    "fastmcp>=3.4,<4",
+    "fastmcp>=4.0,<5",
     "pyright>=1.1,<2",
     "pytest>=9,<10",
     "pytest-xdist>=3.8,<4",
 ]
 
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "pyyaml>=6,<7", "markdown-it-py>=3,<5"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build]
-artifacts = ["a13n_harness_ui/static/**"]
+artifacts = ["a13n_harness_ui/static/**", "a13n_harness_ui/assets/builtin_skills/**"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["a13n_harness_ui"]
@@ -67,6 +72,7 @@ packages = ["a13n_harness_ui"]
 include = [
     "a13n_harness_ui",
     "hatch_build.py",
+    "build_skills.py",
     "LICENSE",
     "README.md",
     "pyproject.toml",
@@ -76,16 +82,17 @@ include = [
 path = "hatch_build.py"
 
 [tool.a13n.release-dependencies]
-a13n-environment = ">=0.0.5,<0.1.0"
-a13n-harness = ">=0.0.5,<0.1.0"
-a13n-stream-protocol = ">=0.0.5,<0.1.0"
+a13n-environment = ">=0.0.11,<0.1.0"
+a13n-harness = ">=0.0.11,<0.1.0"
+a13n-stream-protocol = ">=0.0.11,<0.1.0"
 a13n-logging = ">=0.1.0,<0.2.0"
 
 [tool.deptry]
 known_first_party = ["a13n_harness_ui"]
 package_module_name_map = { "a13n-environment" = "a13n_environment", "a13n-harness" = "a13n_harness", "a13n-stream-protocol" = "a13n_stream_protocol", "a13n-logging" = "a13n_logging", "ag-ui-protocol" = "ag_ui", "fastmcp-slim" = "fastmcp", "sqlalchemy" = "sqlalchemy" }
 
-# aiosqlite is loaded by SQLAlchemy through the configured async driver. The
-# runtime packages remain selected for later Harness UI application blocks.
+# aiosqlite is loaded by SQLAlchemy through the configured async driver;
+# websockets is loaded by Uvicorn's selected sans-I/O protocol implementation.
+# Runtime packages remain selected for later Harness UI application blocks.
 [tool.deptry.per_rule_ignores]
-DEP002 = ["aiosqlite", "a13n-environment", "a13n-harness", "a13n-stream-protocol"]
+DEP002 = ["aiosqlite", "a13n-environment", "a13n-harness", "a13n-stream-protocol", "websockets"]

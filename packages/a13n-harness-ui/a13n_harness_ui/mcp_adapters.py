@@ -6,7 +6,7 @@ import os
 import re
 from pathlib import Path
 
-import httpx
+import httpx2
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError, RunError
 from anyio import to_thread
@@ -133,12 +133,14 @@ async def resolve_mcp_values(
 
 def _no_redirect_client(
     headers: dict[str, str] | None = None,
-    timeout: httpx.Timeout | None = None,
-    auth: httpx.Auth | None = None,
-) -> httpx.AsyncClient:
-    """Reject redirects so configured secret headers can never cross origins."""
-
-    return httpx.AsyncClient(
+    timeout: httpx2.Timeout | None = None,
+    auth: httpx2.Auth | None = None,
+    *,
+    follow_redirects: bool = False,
+) -> httpx2.AsyncClient:
+    """Accept the transport factory contract while retaining Host redirect policy."""
+    del follow_redirects
+    return httpx2.AsyncClient(
         headers=headers,
         timeout=timeout,
         auth=auth,

@@ -2,7 +2,7 @@
 
 ## Design Position
 
-The Harness preserves native Pydantic AI input, Model, settings, profile, messages, deferred values, and output semantics. It adds seven narrow boundaries:
+The Harness preserves native Pydantic AI input, Model, settings, profile, messages, deferred values, and output semantics. It adds these narrow boundaries:
 
 1. normalized code-first semantic input visible to Harness middleware;
 2. developer-facing native Model inference and deterministic patch composition;
@@ -10,7 +10,8 @@ The Harness preserves native Pydantic AI input, Model, settings, profile, messag
 4. optional fresh run-scoped resolution of a logical model ID;
 5. one automatic request-correlation header derived from the active Thread;
 6. optional exact one-shot provider-history self-healing;
-7. bounded logical-run recovery after a recoverable model interruption.
+7. bounded logical-run recovery after a recoverable model interruption;
+8. optional native image generation with Host-owned saving.
 
 It does not add a hosted input wire format, durable model registry, serialized settings/profile system, provider route-pin schema, output mode, or Capability-only retry framework.
 
@@ -396,9 +397,9 @@ Pydantic `OutputSpec`, object `AgentSpec.output_schema`, output validators, outp
 Exactly one build-time source is valid:
 
 1. **Code-first output.** `AgentDefinition.output_type` is a native `OutputSpec[OutputT]` and `AgentSpec.output_schema` is absent. Native Python types including `BaseModel`, dataclasses, `TypedDict`, constrained or annotated types, unions, output markers, and synchronous or asynchronous output functions preserve Pydantic semantics and the resulting `ExecutableAgent[OutputT]` type.
-2. **Declarative object schema.** `AgentDefinition.output_type is None` and `AgentSpec.output_schema` contains a valid object JSON Schema. The Harness constructs native `StructuredDict` from that detached schema, so the provider-facing structured-output schema remains exact and the public executable/result type is `dict[str, JsonValue]`. Native `StructuredDict` validates the returned Python value as a JSON object; it does not claim to be a second independent Draft 2020-12 instance validator.
+2. **Declarative object schema.** `AgentDefinition.output_type is None` and `AgentSpec.output_schema` contains a valid object JSON Schema. The Harness constructs native `StructuredDict` from that detached schema, so the provider-facing structured-output schema remains exact and the public executable/result type is `dict[str, JsonValue]`. A shared Pydantic after-validator enforces the detached schema using Draft 2020-12 instance validation, including required fields, types, and nested constraints, without coercing values. References may resolve within the supplied schema; validation never retrieves remote schemas. Validation errors consume the native output-retry budget.
 
-Neither source silently defaults to text. Callers request text explicitly with `output_type=str`. Supplying both sources is ambiguous and fails with `output_contract_conflict`; supplying neither fails with `output_contract_missing`. Native Pydantic validation rejects a non-object or otherwise invalid declarative schema.
+Neither source silently defaults to text. Callers request text explicitly with `output_type=str`. Supplying both sources is ambiguous and fails with `output_contract_conflict`; supplying neither fails with `output_contract_missing`. Build-time JSON Schema and native Pydantic checks reject an invalid or non-object declarative schema.
 
 A business output that directly or transitively includes `DeferredToolRequests` or a subclass through a parameterized collection, structured `BaseModel`/`RootModel`, dataclass or `TypedDict` field, union, `Annotated` value, PEP 695 type alias, output marker, or callable return type is rejected at definition construction; that native value is reserved as the Harness suspension control outcome. Completed candidate validation recursively enforces the same reservation across supported structured Python instances and built-in containers. At build time the Harness forms `[effective_business_output, DeferredToolRequests]` and supplies that complete contract once to `Agent.from_spec()`. Every `ModelAttempt` uses the built Agent contract without a run override, preserving suspension support, Agent-level output validators, and one stable output Toolset across recovery.
 
@@ -406,11 +407,23 @@ When the effective build-time business output can create one or more Pydantic ou
 
 This compatibility behavior avoids forced-tool modes rejected by provider profiles without weakening the business-output boundary. It does not remove thinking settings, claim that every provider supports tools, or silently convert provider text into a successful structured result. A provider that cannot select an output tool still reaches the existing bounded output-validation failure path.
 
-The Harness builds one matching process-local output adapter from the effective build-time contract, including return annotations of synchronous, `Awaitable`, and `Coroutine` output functions, and uses it to validate plugin-produced completed output. If Pydantic cannot generate a schema for an otherwise valid arbitrary process-local code-first return type, the adapter permits arbitrary types rather than rejecting the upstream output contract. Declarative output uses the schema-derived `StructuredDict` adapter and therefore accepts only string-keyed JSON-object values under native semantics.
+The Harness builds one matching process-local output adapter from the effective build-time contract, including return annotations of synchronous, `Awaitable`, and `Coroutine` output functions, and uses it to validate plugin-produced completed output. If Pydantic cannot generate a schema for an otherwise valid arbitrary process-local code-first return type, the adapter permits arbitrary types rather than rejecting the upstream output contract. Declarative output uses the same schema-derived `StructuredDict` adapter and instance validator as model output, so a plugin cannot bypass the declared constraints.
 
 For a root invocation, a Pydantic result whose output is `DeferredToolRequests` becomes a suspended Harness result rather than a completed business output. `.calls` and `.approvals` retain their native distinct meanings. The later Host or caller supplies the exact pending requests and matching Pydantic results through `DeferredToolResume` in a new logical run with prior state and fresh bindings. A child invocation resolves dynamic deferral as denied tool results inside the same loop; an unexpected terminal deferred output instead becomes a failed result with `code="subagent_deferred_unsupported"`.
 
 Trusted plugins may replace the complete result candidate, including output, usage, and state. The Harness revalidates field combinations, output type, message suffix, and run correlation. It does not enforce state provenance or require state history to match the result message view.
+
+## Native Image Generation
+
+`NativeImageGenerationCapability` registers Pydantic AI's `ImageGenerationTool` and owns saving the generated images. It is one code-first Capability, not a standalone response-replacement feature, general image-generation API, or fallback framework. Native search and other provider tools remain independently composable through Pydantic AI Capabilities; the effective Model and provider own their support, request options, account access, and usage.
+
+The Capability requires a Host-supplied asynchronous `NativeImageSaver`: a callable accepting `RunContext[AgentContext]` and the native image `FilePart`, returning a non-empty model-visible path or URL after saving succeeds. The Host owns storage authority, file naming, retention, retrieval, and any external publication. The saver is trusted process-local code and is not serialized into `AgentSpec` or continuation state. Tool options remain an ordinary native `ImageGenerationTool` instance.
+
+For a completed model response, the Capability saves each final image and records a text reference in place of its binary file part before output validation and continuation capture. Image-only responses therefore satisfy a text output contract without an extra model request. Text, native tool-call/return metadata, and non-image parts retain their native semantics. Stream consumers receive references only after saving, never provisional image bytes. Interrupted or incomplete images are represented as unsaved rather than embedded in continuation history. Saving failures propagate through the ordinary failed-Run path; they do not produce a successful reference or automatically switch to another generation backend.
+
+The Capability instructs the Model to present saved images in replies using Markdown image syntax with the exact saver-returned path or URL. This instruction does not publish a local file to the web or guarantee that a client can render it.
+
+A saved reference is not an image attachment and does not make subsequent Models see the pixels automatically. A later Agent can read the referenced file through its authorized tools. Continuation persistence does not imply that the Host has retained the target forever. Model execution, file saving, and continuation publication are separate effects, not an atomic transaction; cancellation or failure may leave saved files whose references were not published.
 
 ## Failure Semantics
 

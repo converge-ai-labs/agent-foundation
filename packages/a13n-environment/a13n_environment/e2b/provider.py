@@ -86,6 +86,7 @@ class E2BEnvironment(Environment):
         return ApiParams(
             api_key=self._runtime.api_key.get_secret_value(),
             domain=self._runtime.domain,
+            api_url=self._runtime.api_url or f"https://api.{self._runtime.domain}",
             request_timeout=self._configuration.request_timeout_seconds,
         )
 

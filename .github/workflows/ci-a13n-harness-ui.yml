@@ -1,10 +1,10 @@
-name: a13n Harness UI CI
+name: UI Tests
 
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
-      - ".github/workflows/ci-a13n-harness-ui.yml"
+      - ".github/workflows/ci-a13n-harness-ui*.yml"
       - ".github/workflows/release-a13n-harness-ui.yml"
       - ".gitignore"
       - "Makefile"
@@ -15,6 +15,8 @@ on:
       - "packages/a13n-harness/**"
       - "packages/a13n-stream-protocol/**"
       - "packages/a13n-harness-ui/**"
+      - "docs/a13n-harness-ui/**"
+      - "mkdocs.yml"
       - "pyproject.toml"
       - "conftest.py"
       - "scripts/run_python_tests.py"
@@ -32,7 +34,7 @@ on:
   push:
     branches: [main]
     paths:
-      - ".github/workflows/ci-a13n-harness-ui.yml"
+      - ".github/workflows/ci-a13n-harness-ui*.yml"
       - ".github/workflows/release-a13n-harness-ui.yml"
       - ".gitignore"
       - "Makefile"
@@ -43,6 +45,8 @@ on:
       - "packages/a13n-harness/**"
       - "packages/a13n-stream-protocol/**"
       - "packages/a13n-harness-ui/**"
+      - "docs/a13n-harness-ui/**"
+      - "mkdocs.yml"
       - "pyproject.toml"
       - "conftest.py"
       - "scripts/run_python_tests.py"
@@ -73,8 +77,93 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  linux:
-    name: Harness UI (Linux)
+  tests:
+    name: UI Python tests
+    if: github.event_name != 'schedule' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    runs-on: ubuntu-24.04-8core
+    timeout-minutes: 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Synchronize UI test environment
+        run: uv sync --locked --package a13n-harness-ui --group test --no-default-groups
+
+      # Cached editable wheels do not rerun the package build hook.
+      - name: Prepare bundled configuration Skill
+        run: uv run --locked --no-sync python packages/a13n-harness-ui/build_skills.py
+
+      - name: Type-check UI
+        run: >-
+          uv run --locked --no-sync pyright
+          packages/a13n-harness-ui/a13n_harness_ui
+          packages/a13n-harness-ui/build_skills.py
+          scripts/check-a13n-harness-ui-distribution.py
+          scripts/check_a13n_harness_ui_distribution.py
+          scripts/prepare-a13n-harness-ui-assets.py
+          scripts/prepare_a13n_harness_ui_assets.py
+          scripts/release_version.py
+
+      - name: Test UI
+        env:
+          PYTEST_ADDOPTS: --durations=20
+        run: >-
+          /usr/bin/time -p uv run --locked --no-sync python -m scripts.run_python_tests --workers 7
+          packages/a13n-harness-ui/tests
+
+      - name: Test native command lifecycle
+        run: >-
+          uv run --locked --no-sync python -m pytest
+          packages/a13n-environment/tests/test_direct_local.py
+          packages/a13n-environment/tests/test_direct_local_processes.py
+
+  frontend:
+    name: Console and shared frontend
+    if: github.event_name != 'schedule' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - name: Install and check frontend workspace
+        run: |
+          make sdk-typescript-build
+          pnpm --dir frontend install --frozen-lockfile
+          pnpm --dir frontend run format:check
+          pnpm --dir frontend --filter '!a13n-harness-ui-webui' -r run check
+          pnpm --dir frontend --filter '!a13n-harness-ui-webui' -r run test
+          pnpm --dir frontend --filter '!a13n-harness-ui-webui' -r run build
+
+  distribution:
+    name: UI distribution
     if: github.event_name != 'schedule' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     runs-on: ubuntu-24.04
     timeout-minutes: 12
@@ -107,47 +196,32 @@ jobs:
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
 
-      - name: Install and check frontend workspace
-        run: |
-          make sdk-typescript-build
-          pnpm --dir frontend install --frozen-lockfile
-          pnpm --dir frontend run check
-          pnpm --dir frontend run build
-
-      - name: Synchronize Harness UI test environment
+      - name: Synchronize UI test environment
         run: uv sync --locked --package a13n-harness-ui --group test --no-default-groups
 
-      - name: Prepare bundled Harness UI WebUI assets
+      # Cached editable wheels do not rerun the package build hook.
+      - name: Prepare bundled configuration Skill
+        run: uv run --locked --no-sync python packages/a13n-harness-ui/build_skills.py
+
+      - name: Check and build WebUI assets
+        run: |
+          pnpm --dir frontend install --frozen-lockfile
+          pnpm --dir frontend --filter a13n-harness-ui-webui run check
+          pnpm --dir frontend --filter a13n-harness-ui-webui run test
+          pnpm --dir frontend --filter a13n-harness-ui-webui run build
+
+      - name: Prepare bundled WebUI assets
         run: uv run --locked --no-sync python scripts/prepare-a13n-harness-ui-assets.py
 
-      - name: Type-check Harness UI
-        run: >-
-          uv run --locked --no-sync pyright
-          packages/a13n-harness-ui/a13n_harness_ui
-          scripts/check-a13n-harness-ui-distribution.py
-          scripts/check_a13n_harness_ui_distribution.py
-          scripts/prepare-a13n-harness-ui-assets.py
-          scripts/prepare_a13n_harness_ui_assets.py
-          scripts/release_version.py
-
-      - name: Test Harness UI
-        env:
-          PYTEST_ADDOPTS: --durations=20
+      - name: Test distribution tooling
         run: >-
           uv run --locked --no-sync python -m scripts.run_python_tests --workers 2
-          packages/a13n-harness-ui/tests
           scripts/tests/test_check_a13n_harness_ui_distribution.py
           scripts/tests/test_prepare_a13n_harness_ui_assets.py
           scripts/tests/test_prepare_release_version.py
           scripts/tests/test_harness_ui_ci_workflow.py
 
-      - name: Test native command lifecycle
-        run: >-
-          uv run --locked --no-sync python -m pytest
-          packages/a13n-environment/tests/test_direct_local.py
-          packages/a13n-environment/tests/test_direct_local_processes.py
-
-      - name: Build Harness UI distribution
+      - name: Build UI distribution
         run: uv build --package a13n-harness-ui --out-dir dist/a13n-harness-ui
 
       - name: Verify bundled assets and sdist wheel rebuild
@@ -155,8 +229,26 @@ jobs:
           uv run --locked --no-sync python scripts/check-a13n-harness-ui-distribution.py
           dist/a13n-harness-ui --rebuild-wheel
 
+  linux:
+    name: UI (Linux)
+    needs: [tests, frontend, distribution]
+    if: >-
+      always() && github.event_name != 'schedule' &&
+      (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require all Linux checks to pass
+        env:
+          TESTS_RESULT: ${{ needs.tests.result }}
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+          DISTRIBUTION_RESULT: ${{ needs.distribution.result }}
+        run: |
+          test "$TESTS_RESULT" = success
+          test "$FRONTEND_RESULT" = success
+          test "$DISTRIBUTION_RESULT" = success
+
   windows:
-    name: Harness UI (Windows)
+    name: UI (Windows)
     if: github.event_name != 'push' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     runs-on: windows-2025
     timeout-minutes: 12
@@ -177,8 +269,12 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
 
-      - name: Synchronize Harness UI test environment
+      - name: Synchronize UI test environment
         run: uv sync --locked --package a13n-harness-ui --group test --no-default-groups
+
+      # Cached editable wheels do not rerun the package build hook.
+      - name: Prepare bundled configuration Skill
+        run: uv run --locked --no-sync python packages/a13n-harness-ui/build_skills.py
 
       - name: Test Windows native UI integration
         if: github.event_name == 'pull_request'
@@ -188,6 +284,8 @@ jobs:
           uv run --locked --no-sync python -m pytest --durations=20
           packages/a13n-harness-ui/tests/test_entrypoint.py
           packages/a13n-harness-ui/tests/test_thread_files.py
+          packages/a13n-harness-ui/tests/test_host_files.py
+          packages/a13n-harness-ui/tests/test_host_git.py
           packages/a13n-harness-ui/tests/test_configuration_mutation.py
           packages/a13n-harness-ui/tests/test_composition.py::test_full_control_shell_inherits_host_path_and_custom_variables
           packages/a13n-harness-ui/tests/test_projectless_threads.py::test_scratch_cwd_and_selected_configuration_file_mount
@@ -195,7 +293,7 @@ jobs:
           packages/a13n-harness-ui/tests/test_configuration.py::test_loads_multi_file_resources_and_canonical_markdown_set
           packages/a13n-harness-ui/tests/test_configuration.py::test_rejects_symlinked_canonical_directory
 
-      - name: Test full Harness UI suite on Windows
+      - name: Test full UI suite on Windows
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         run: uv run --locked --no-sync python -m pytest --durations=20 packages/a13n-harness-ui/tests
 

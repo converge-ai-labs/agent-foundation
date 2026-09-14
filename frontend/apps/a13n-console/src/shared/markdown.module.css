@@ -1,0 +1,155 @@
+.markdown {
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+.markdown > :first-child {
+  margin-top: 0;
+}
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+.markdown p {
+  margin: 0 0 12px;
+}
+.markdown h1,
+.markdown h2,
+.markdown h3 {
+  font-weight: 500;
+  line-height: 1.4;
+  margin: 24px 0 12px;
+}
+.markdown h1 {
+  font-size: 21px;
+  letter-spacing: -0.5px;
+}
+.markdown h2 {
+  font-size: 17px;
+  letter-spacing: -0.2px;
+}
+.markdown h3 {
+  font-size: 15px;
+}
+.markdown strong {
+  font-weight: 600;
+}
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  font-size: 14px;
+}
+.markdown pre {
+  overflow-x: auto;
+  padding: 16px;
+  background: color-mix(in srgb, var(--a13n-surface) 50%, var(--a13n-canvas));
+  border: 1px solid var(--a13n-border);
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.7;
+}
+.markdown code {
+  font-family: var(--a13n-mono);
+  font-size: 0.92em;
+}
+.markdown :not(pre) > code {
+  padding: 2px 5px;
+  background: var(--a13n-surface);
+  border-radius: 3px;
+}
+.markdown blockquote {
+  border-left: 2px solid var(--a13n-secondary);
+  padding: 4px 0 4px 16px;
+  color: var(--a13n-secondary);
+  margin: 18px 0;
+}
+.markdown blockquote > :last-child {
+  margin-bottom: 0;
+}
+.markdown table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 14px 0;
+}
+.markdown th,
+.markdown td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--a13n-border);
+  vertical-align: top;
+  overflow-wrap: normal;
+}
+.markdown th {
+  font-weight: 500;
+  background: var(--a13n-surface);
+  font-size: 12px;
+}
+.markdown ul,
+.markdown ol {
+  padding-left: 22px;
+  margin: 12px 0 18px;
+}
+.markdown ol {
+  list-style: decimal;
+}
+.markdown ul {
+  list-style: disc;
+}
+.markdown li::marker {
+  color: var(--a13n-secondary);
+}
+.markdown li > p {
+  margin-bottom: 4px;
+}
+.markdown li + li {
+  margin-top: 6px;
+}
+.codeBlock {
+  margin: 16px 0;
+  overflow: hidden;
+  border: 1px solid var(--a13n-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--a13n-surface) 50%, var(--a13n-canvas));
+}
+.codeToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px 4px 14px;
+  color: var(--a13n-secondary);
+  font: 400 11px/1.5 var(--a13n-mono);
+  border-bottom: 1px solid var(--a13n-border-soft);
+}
+.markdown .codeBlock pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+/* Syntax tokens inherit semantic theme colors in both light and dark modes. */
+.markdown :global(.hljs-keyword),
+.markdown :global(.hljs-selector-tag),
+.markdown :global(.hljs-literal) {
+  color: var(--a13n-accent);
+}
+.markdown :global(.hljs-string),
+.markdown :global(.hljs-regexp),
+.markdown :global(.hljs-addition) {
+  color: var(--success-foreground);
+}
+.markdown :global(.hljs-number),
+.markdown :global(.hljs-symbol),
+.markdown :global(.hljs-attr),
+.markdown :global(.hljs-title) {
+  color: var(--info-foreground);
+}
+.markdown :global(.hljs-comment),
+.markdown :global(.hljs-quote),
+.markdown :global(.hljs-meta) {
+  color: var(--a13n-muted);
+}
+.markdown :global(.hljs-deletion) {
+  color: var(--a13n-danger);
+}

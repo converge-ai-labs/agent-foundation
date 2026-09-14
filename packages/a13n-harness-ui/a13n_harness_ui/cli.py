@@ -57,6 +57,7 @@ class CliRequest:
     web_port: int = 8765
     web_api_key: str | None = field(default=None, repr=False)
     dangerously_bypass_permission: bool = False
+    share_computer: bool = True
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,13 +162,39 @@ def cli(
 @cli.command("webui")
 @click.option("--host", default="127.0.0.1", show_default=True, help="Listener IPv4 or IPv6 address.")
 @click.option("--port", type=click.IntRange(1, 65535), default=8765, show_default=True)
-@click.option("--api-key", default=None, help="Explicit process-local API key (visible in shell arguments).")
-@click.option("--dangerously-bypass-permission", is_flag=True, help="Disable API authentication for this listener.")
+@click.option(
+    "--apikey",
+    "--api-key",
+    "api_keys",
+    multiple=True,
+    help="Listener API key; overrides A13N_HARNESS_UI_API_KEY (visible in shell arguments).",
+)
+@click.option(
+    "--dangerous-skip-permissions",
+    "--dangerously-bypass-permission",
+    "dangerously_bypass_permission",
+    is_flag=True,
+    help="Disable Web authentication only; does not change Agent permissions.",
+)
+@click.option(
+    "--share-computer/--no-share-computer",
+    default=True,
+    show_default=True,
+    help="Share native Host Files as the server OS account, independent of Agent permissions.",
+)
 @click.pass_context
 def webui_command(
-    ctx: click.Context, host: str, port: int, api_key: str | None, dangerously_bypass_permission: bool
+    ctx: click.Context,
+    host: str,
+    port: int,
+    api_keys: tuple[str, ...],
+    dangerously_bypass_permission: bool,
+    share_computer: bool,
 ) -> None:
     """Run one foreground WebUI server with bundled browser assets."""
+    if len(set(api_keys)) > 1:
+        raise click.UsageError("Conflicting --apikey/--api-key values cannot be combined.")
+    api_key = api_keys[0] if api_keys else None
     _execute(
         _request(
             ctx,
@@ -176,6 +203,7 @@ def webui_command(
             web_port=port,
             web_api_key=api_key,
             dangerously_bypass_permission=dangerously_bypass_permission,
+            share_computer=share_computer,
         )
     )
 

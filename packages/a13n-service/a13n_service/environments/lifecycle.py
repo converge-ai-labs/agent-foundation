@@ -18,6 +18,7 @@ from a13n_environment import (
     EnvironmentState,
 )
 from a13n_environment.management import ProviderRuntimeContext
+from a13n_logging import exception_details, get_logger
 from anyio import fail_after
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -53,6 +54,7 @@ if TYPE_CHECKING:
     from a13n_service.interactions.attempts import AttemptContext
 
 Action = Literal["prepare", "reconcile", "stop", "delete", "keepalive"]
+logger = get_logger(__name__)
 
 
 class EnvironmentOperationBusy(RuntimeError):
@@ -132,6 +134,7 @@ class EnvironmentLifecycle:
             if provider.configuration.get("host_id", socket.gethostname()) != socket.gethostname():
                 raise ValueError("Environment backend belongs to another host")
             if run is not None:
+                assert attempt is not None
                 await authorize_persisted_agent_principal_actions(
                     session,
                     principal=run.to_resource().authority_principal,
@@ -139,6 +142,7 @@ class EnvironmentLifecycle:
                     workspace_id=row.workspace_id,
                     agent_id=run.agent_id,
                     actions=frozenset({WorkspaceAction.environment_use, WorkspaceAction.agent_invoke}),
+                    snapshot=attempt.authorization.snapshot,
                 )
                 if not provider.enabled:
                     raise ValueError("Environment Provider is disabled")
@@ -197,31 +201,23 @@ class EnvironmentLifecycle:
                 attempt.run_attempt_id if attempt else None,
             )
 
-    async def validate_use(self, attempt: AttemptContext, environment_id: str) -> None:
-        from a13n_service.interactions.attempts import lock_attempt_authority
-
+    async def validate_operation(self, operation: LifecycleOperation) -> None:
+        """Reject a suspended owner before dispatching a new native lifecycle effect."""
+        now = assume_utc(self.clock())
         async with transaction(self.sessions) as session:
-            run, _, _ = await lock_attempt_authority(session, attempt, assume_utc(self.clock()))
-            row = await session.get(EnvironmentRecord, environment_id)
-            if row is None or run.environment_id != environment_id:
-                raise ValueError("Environment is not the Run selection")
-            provider = await session.get(EnvironmentProviderRecord, row.provider_id)
-            if provider is None or not provider.enabled:
-                raise ValueError("Environment Provider is disabled")
-            await authorize_persisted_agent_principal_actions(
-                session,
-                principal=run.to_resource().authority_principal,
-                organization_id=row.organization_id,
-                workspace_id=row.workspace_id,
-                agent_id=run.agent_id,
-                actions=frozenset({WorkspaceAction.environment_use, WorkspaceAction.agent_invoke}),
-            )
-
-    async def authorize_command(self, operation: LifecycleOperation) -> None:
-        async with transaction(self.sessions) as session:
-            row = await session.get(EnvironmentRecord, operation.environment_id)
-            if row is None:
-                raise ValueError("Environment is unavailable")
+            row = await session.get(EnvironmentRecord, operation.environment_id, with_for_update=True)
+            if row is None or (row.operation_id, row.operation_generation, row.operation_owner) != (
+                operation.operation_id,
+                operation.fence,
+                operation.owner,
+            ):
+                raise RuntimeError("Environment lifecycle authority changed")
+            if row.operation_expires_at is None or assume_utc(row.operation_expires_at) <= now:
+                raise RuntimeError("Environment lifecycle authority expired")
+            if operation.action not in {"stop", "delete"}:
+                return
+            if await has_active_use(session, row.id):
+                raise ValueError("Environment cannot be stopped or deleted while in use")
             command = await session.get(EnvironmentCommandRecord, operation.operation_id)
             if command is not None:
                 await authorize_persisted_workspace_principal_action(
@@ -268,10 +264,12 @@ class EnvironmentLifecycle:
         observation = None
         try:
             async with asyncio.timeout(self.timeout_seconds):
-                if operation.action in {"stop", "delete"}:
-                    await self.authorize_command(operation)
                 if environment is None:
                     environment = await self.construct(operation)
+                # Acquisition may have preceded a process suspension. Recheck
+                # immediately before dispatch; publication separately fences the
+                # result of I/O that was already in flight during a takeover.
+                await self.validate_operation(operation)
                 if operation.action == "reconcile":
                     observation = await environment.reconcile()
                 elif operation.action == "prepare":
@@ -299,6 +297,19 @@ class EnvironmentLifecycle:
                 generation = await self.publish(operation, environment, observation=observation, expires_at=expires_at)
             return LifecycleResult(environment, generation)
         except BaseException as error:
+            if isinstance(error, Exception):
+                logger.warning(
+                    "environment_lifecycle_failed",
+                    extra={
+                        "environment_id": operation.environment_id,
+                        "operation_id": operation.operation_id,
+                        "action": operation.action,
+                        "provider_type": operation.provider_type,
+                        "run_id": operation.run_id,
+                        "attempt_id": operation.attempt_id,
+                        "exception_chain": exception_details(error),
+                    },
+                )
             if is_target_identity_conflict(error):
                 error = EnvironmentError(
                     "This backend target already has an Environment owner.", code="environment_target_conflict"

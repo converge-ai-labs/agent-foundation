@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Mapping
 from enum import StrEnum
@@ -132,3 +133,131 @@ class EnvironmentProviderError(Exception):
             recovery_hint=self.recovery_hint,
             context=self.context,
         )
+
+
+# Operation diagnostics are separate from provider lifecycle failures above. These
+# messages are code-owned; exception descriptions remain local diagnostics only.
+_OPERATION_MESSAGES: dict[str, tuple[str, str]] = {
+    "environment_request_invalid": (
+        "Environment operation input is invalid.",
+        "Check the tool schema and the indicated field, then correct the request before retrying.",
+    ),
+    "environment_edit_not_found": (
+        "The text selected for replacement was not found.",
+        "Read the current target and copy an exact old_string, including whitespace, before retrying the edit.",
+    ),
+    "environment_edit_ambiguous": (
+        "The text selected for replacement occurs more than once.",
+        "Add enough surrounding context to select one match, or explicitly request replacement of every occurrence.",
+    ),
+    "environment_reference_invalid": (
+        "The Environment resource reference is invalid.",
+        "Use a reference returned by the current Run; do not invent process or output references.",
+    ),
+    "environment_reference_stale": (
+        "The Environment resource reference is stale.",
+        "Inspect current resources through the Host; do not reuse references from a replaced target or earlier Run.",
+    ),
+    "environment_cursor_invalid": (
+        "The Environment continuation offset is invalid.",
+        "Use the returned continuation offset and keep the original filters unchanged.",
+    ),
+    "environment_not_found": (
+        "The selected resource was not found or is not visible.",
+        "Verify the file path or resource reference in the selected mount. For files, use ls or glob on an existing "
+        "parent. This is not an outside-mount routing error.",
+    ),
+    "environment_denied": (
+        "The selected Environment does not permit this operation.",
+        "Check the selected mount and its permissions; do not switch authority to bypass a denial.",
+    ),
+    "environment_selection_invalid": (
+        "The Environment selection is invalid.",
+        "Use an available mount name or a path inside an advertised mount root.",
+    ),
+    "environment_unsupported": (
+        "This operation or option is not supported by the selected Environment.",
+        "Check the selected mount's advertised operations and supported options.",
+    ),
+    "environment_too_large": (
+        "The operation exceeded an Environment limit.",
+        "Narrow the operation or reduce the requested page size. For mutations, inspect the outcome before repeating.",
+    ),
+    "environment_timeout": (
+        "The Environment operation timed out.",
+        "Inspect available status and effect evidence before deciding whether to retry.",
+    ),
+    "environment_unknown_outcome": (
+        "The Environment operation may have taken effect; its outcome is unknown.",
+        "Reconcile current state or operation evidence before repeating any side effect.",
+    ),
+    "environment_conflict": (
+        "The operation conflicts with current Environment state.",
+        "Inspect current state and update the request; do not blindly repeat a mutation.",
+    ),
+    "environment_busy": (
+        "The Environment cannot admit the operation while it is busy.",
+        "Wait for current work or inspect its status before making another request.",
+    ),
+    "environment_stale_mount": (
+        "The Environment reference no longer identifies the current target.",
+        "Refresh the Environment through the Host and obtain current references; do not reuse stale process IDs.",
+    ),
+    "environment_closed": (
+        "The Environment operation scope is closed.",
+        "Start a new Run with a current Environment scope.",
+    ),
+    "environment_unavailable": (
+        "The selected Environment is unavailable.",
+        "Check Environment readiness with the Host. Reconcile any previously dispatched work before retrying.",
+    ),
+    "environment_cancelled": (
+        "The Environment operation was cancelled.",
+        "Inspect retained state or operation evidence before repeating a mutation.",
+    ),
+    "environment_provider_failure": (
+        "The Environment provider could not complete the operation.",
+        "Check provider readiness and Host diagnostics; reconcile possible effects before retrying.",
+    ),
+}
+
+
+def operation_error_projection(
+    code: str,
+    *,
+    details: Mapping[str, JsonValue],
+    retry_hint: str | None,
+) -> dict[str, JsonValue]:
+    """Project only bounded, explicitly public operation diagnostics, never causes."""
+    if not _CODE_PATTERN.fullmatch(code):
+        code = "environment_provider_failure"
+    message, hint = _OPERATION_MESSAGES.get(code, _OPERATION_MESSAGES["environment_provider_failure"])
+    safe: dict[str, JsonValue] = {"hint": hint}
+    for key, limit in (("field", 128), ("reason", 128), ("hint", 1024)):
+        value = details.get(key)
+        if isinstance(value, str) and value.strip():
+            safe[key] = value[:limit]
+    for key in ("timeout_seconds", "edit_index", "occurrences", "emitted_items", "produced_bytes", "dropped_items"):
+        value = details.get(key)
+        if (
+            isinstance(value, int | float)
+            and not isinstance(value, bool)
+            and 0 <= value <= 2**64 - 1
+            and (isinstance(value, int) or math.isfinite(value))
+        ):
+            safe[key] = value
+    missing = details.get("missing")
+    if isinstance(missing, list) and all(isinstance(value, str) for value in missing):
+        safe["missing"] = [value[:128] for value in missing[:32] if isinstance(value, str)]
+    # Typed protocol evidence is retained without native IDs, receipts, output or
+    # arbitrary safe_detail text from an external provider.
+    stage = details.get("dispatch_stage")
+    if stage in ("pre_dispatch", "dispatching", "dispatched", "completed", "unknown"):
+        safe["dispatch_stage"] = stage
+    protocol_retry = details.get("provider_retry_hint")
+    if protocol_retry in ("never", "same_request", "after_refresh", "after_capacity", "reconcile_first"):
+        safe["provider_retry_hint"] = protocol_retry
+    result: dict[str, JsonValue] = {"code": code, "message": message, "details": safe}
+    if retry_hint:
+        result["retry_hint"] = retry_hint[:128]
+    return result

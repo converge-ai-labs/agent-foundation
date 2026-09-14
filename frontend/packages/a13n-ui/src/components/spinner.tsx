@@ -1,13 +1,17 @@
-import type { ComponentProps } from "react";
-import styles from "./spinner.module.css";
-export type SpinnerProps = Omit<ComponentProps<"span">, "children">;
-/** Decorative by default; put a localized status label beside standalone spinners. */
-export function Spinner({ className = "", ...props }: SpinnerProps) {
+import { CircleNotchIcon } from "@phosphor-icons/react";
+import type React from "react";
+import { cn } from "../lib/utils";
+
+export function Spinner({
+  className,
+  ...props
+}: React.ComponentProps<typeof CircleNotchIcon>): React.ReactElement {
   return (
-    <span
-      aria-hidden="true"
+    <CircleNotchIcon
+      aria-label="Loading"
+      className={cn("animate-spin", className)}
+      role="status"
       {...props}
-      className={`${styles.spinner} ${className}`}
     />
   );
 }

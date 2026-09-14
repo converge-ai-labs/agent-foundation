@@ -62,7 +62,7 @@ A sealed Run stream closes after its final retained observation is delivered. Th
 ## Workspace Lifecycle Event Collection
 
 ```http
-GET /api/v1/workspaces/{workspace_id}/events?limit=50&cursor=<opaque>
+GET /api/v1/workspaces/{workspace}/events?limit=50&cursor=<opaque>
 ```
 
 This is a bounded JSON collection, not an SSE endpoint. It returns authorized durable lifecycle and management facts in ascending relational sequence order:

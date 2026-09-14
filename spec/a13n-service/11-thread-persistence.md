@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Service persists every hosted `Thread` as an independent versioned relational resource. The Thread row is the authority for Session membership, Thread origin, the most recently accepted Run, the selected continuation head, compare-and-swap serialization of accepted advancement, and an independent queue revision. A Thread is not a grouping inferred from Run timestamps or a `thread_id` copied into otherwise unrelated rows.
+Service persists every hosted `Thread` as an independent versioned relational resource. The Thread row is the authority for Session membership, Thread origin, the most recently accepted Run, the selected continuation head, compare-and-swap serialization of accepted advancement, an independent queue revision, and internal inbox sequence and admission counters. A Thread is not a grouping inferred from Run timestamps or a `thread_id` copied into otherwise unrelated rows.
 
 The shared [Platform Interaction Model](../interaction-model.md) owns the cross-platform meaning of Thread. The Harness owns creation and preservation of the matching `HarnessState.thread_id`. Service stores that exact ID rather than generating a parallel Host Thread identity. [Durable Run State](12-run-persistence.md) owns Run fields, state objects, parent edges, and outcomes; this contract owns which Run is current for a Service Thread and which sealed Run is selected as its continuation head. Whether the current Run is active derives from its own status rather than another stored Thread pointer.
 
@@ -21,11 +21,11 @@ A root Thread can be created before its first Run. Creation records its Session,
 | Agent invocation and advancement commands                                          | [Agent Control: Input and Continuation](18-agent-control-input-and-continuation.md) | Accepts start, the existing-Thread Run request and immediate branches, waiting Feedback or Continue, fork, and retry                        |
 | Asynchronous-result advancement                                                    | [Async Subagents](34-async-subagents.md)                                            | Delivers to the current active Run or accepts an eligible successor without resolving a waiting state                                       |
 | Queue-if-busy Run intent                                                           | [Agent Control: Queued Submissions](20-agent-control-queued-submissions.md)         | Owns the existing-Thread route's queued branch, queue rows, ordering, editing, and atomic consumption into a Run                            |
-| Thread inbox entries, FIFO counter, binding, steer, interrupt, and control wakeups | [Agent Control: Active Execution](19-agent-control-active-execution.md)             | Persists ordered inbound work and its independent counter separately from the Thread row and keeps Redis cursors outside relational state   |
+| Thread inbox entries, FIFO counter, binding, steer, interrupt, and control wakeups | [Agent Control: Active Execution](19-agent-control-active-execution.md)             | Owns FIFO and capacity transitions on the Thread row; inbox entries and Redis cursors keep their own stores                                 |
 | Public resource catalog and wire read models                                       | [Management API](16-management-api.md)                                              | Exposes authorized Thread reads and common API behavior                                                                                     |
 | Agent-facing history retrieval                                                     | [Agent Interaction Retrieval](35-agent-interaction-retrieval.md)                    | Projects authorized Thread and Run data without becoming authority                                                                          |
 
-A Thread row contains no message history, Thread inbox payload or sequence counter, Harness state, Item payload, provider state, credential, worker lease, queue entry, Redis consumer-group cursor, replay cursor, or live process object. Those values retain their owning stores and lifecycles.
+A Thread row contains no message history, Thread inbox payload, Harness state, Item payload, provider state, credential, worker lease, queue entry, Redis consumer-group cursor, replay cursor, or live process object. Those values retain their owning stores and lifecycles.
 
 ## Durable Thread Model
 
@@ -40,6 +40,12 @@ class Thread:
     id: str
     version: int
     queue_version: int
+
+    # Internal inbox accounting; omitted from public Thread reads.
+    next_delivery_sequence: int
+    pending_count: int
+    pending_bytes: int
+
     organization_id: str
     session_id: str
 
@@ -113,9 +119,12 @@ The conceptual model materializes as one row in `threads`. Supported relational 
 | Origin             | `role`, `origin_kind`, `origin_thread_id`, `origin_run_id`        | Immutable validated provenance; origin references can cross Session only for an authorized Session fork                  |
 | Advancement        | `head_run_id`, `current_run_id`                                   | Same-Thread Run references updated only by accepted advancement or outcome commit                                        |
 | Environment        | `default_environment_id`                                          | Mutable same-Workspace default; Run acceptance freezes its own selection and updates this field atomically               |
+| Inbox accounting   | `next_delivery_sequence`, `pending_count`, `pending_bytes`        | Internal FIFO allocation and pending-capacity state, serialized by the owning Thread row lock                            |
 | Time               | `created_at`, `updated_at`                                        | UTC instants; `updated_at` follows authoritative Thread mutation, not stream activity                                    |
 
-The independent `thread_inbox_counters` row owned by [Active Execution](19-agent-control-active-execution.md#thread-inbox) is keyed by the same organization and Thread. Its allocation and pending-budget updates do not change `version`, `queue_version`, `updated_at`, `current_run_id`, or `head_run_id`; it is delivery-order authority rather than another Thread resource field.
+The Thread row stores `next_delivery_sequence`, `pending_count`, and `pending_bytes` as non-null internal columns. Every new Thread initializes them to `1`, `0`, and `0`, respectively, including root, fork, and child creation. `next_delivery_sequence` remains positive and pending counters remain non-negative. These columns are omitted from public Thread representations and have no independent identity or lifecycle. [Active Execution](19-agent-control-active-execution.md#thread-inbox) owns sequence allocation, capacity reservation, and release semantics.
+
+Every counter mutation holds the owning Thread row lock until its short transaction commits or rolls back and commits atomically with the corresponding inbox changes. Counter-only updates do not change `version`, `queue_version`, `updated_at`, `current_run_id`, or `head_run_id`, and require no optimistic Thread-version increment or precondition of their own. Commands that also advance the Thread or mutate queued submissions retain their existing version rules. Other Thread mutations preserve these counters unless the same transaction performs an inbox transition; stale detached Thread values must not overwrite current counters.
 
 The relational contract preserves these constraints:
 
@@ -127,24 +136,26 @@ The relational contract preserves these constraints:
 6. Origin reference combinations match `origin_kind`; malformed or cross-organization origins are rejected.
 7. A root Thread may exist before its first Run. Combined root start, Fork and child acceptance publish the Thread and first Run atomically.
 8. `queue_version` starts at zero, is non-negative, and changes only under the queued-submission mutation contract; consumption updates it in the same transaction that advances the Thread, while terminal failure can update it without accepting a Run.
+9. Every Thread row contains a positive `next_delivery_sequence` and non-negative `pending_count` and `pending_bytes`; their initialization and lifecycle belong to that row.
 
 The accepted access paths are:
 
-| Access path                      | Index or uniqueness contract                                                         |
-| -------------------------------- | ------------------------------------------------------------------------------------ |
-| Exact Thread read and state lock | Unique `(organization_id, id)`                                                       |
-| Session Thread listing           | `(organization_id, session_id, created_at, id)`                                      |
-| Updated Thread listing           | `(organization_id, session_id, updated_at, id)`                                      |
-| Queue mutation lock              | Unique `(organization_id, id)` plus `queue_version`                                  |
-| Current or head Run join         | Same-organization unique Run references stored on the Thread                         |
-| Origin traversal                 | `(organization_id, origin_run_id, id)` and `(organization_id, origin_thread_id, id)` |
-| One root Thread per Session      | Partial unique `(organization_id, session_id)` for root role                         |
+| Access path                        | Index or uniqueness contract                                                         |
+| ---------------------------------- | ------------------------------------------------------------------------------------ |
+| Exact Thread read and state lock   | Unique `(organization_id, id)`                                                       |
+| Session Thread listing             | `(organization_id, session_id, created_at, id)`                                      |
+| Updated Thread listing             | `(organization_id, session_id, updated_at, id)`                                      |
+| Inbox allocation and capacity lock | Unique `(organization_id, id)`; the same row lock used for Thread advancement        |
+| Queue mutation lock                | Unique `(organization_id, id)` plus `queue_version`                                  |
+| Current or head Run join           | Same-organization unique Run references stored on the Thread                         |
+| Origin traversal                   | `(organization_id, origin_run_id, id)` and `(organization_id, origin_thread_id, id)` |
+| One root Thread per Session        | Partial unique `(organization_id, session_id)` for root role                         |
 
 Run-table indexes for Worker claims, Run listing, search, and DAG traversal remain owned by the Run contract. They do not replace the Thread row or its state version.
 
 ## Thread Creation
 
-`POST /workspaces/{workspace_id}/threads` creates an empty root Thread and selects or creates its Session under Session uniqueness and authorization. The request can select an Agent for its default template and an explicit environment choice. In one short transaction it allocates the Thread, optional Environment record and inbox counter, sets `version=1`, `queue_version=0`, and leaves both Run references null. No Harness execution or Provider preparation occurs. First Run acceptance creates `HarnessState.new(thread_id=thread.id)` and advances the existing Thread.
+`POST /workspaces/{workspace}/threads` creates an empty root Thread and selects or creates its Session under Session uniqueness and authorization. The request can select an Agent for its default template and an explicit environment choice. In one short transaction it allocates the Thread and optional Environment record, initializes the internal inbox columns as defined above, sets `version=1`, `queue_version=0`, and leaves both Run references null. No Harness execution or Provider preparation occurs. First Run acceptance creates `HarnessState.new(thread_id=thread.id)` and advances the existing Thread.
 
 The combined root Run command uses the same allocation rules and commits the new Thread, selected Environment and first Run together. [Agent Control](18-agent-control-input-and-continuation.md) owns root/Fork authorization and [Async Subagents](34-async-subagents.md) owns child creation. An existing Thread's default changes only under authorized Run acceptance; accepted Runs retain their own fixed selection. Physical Thread deletion releases its default reference but never implicitly deletes a shared target.
 
@@ -188,7 +199,7 @@ Adding safe read-only fields or indexes is compatible when authorization, orderi
 
 ## Trade-offs
 
-The independent Thread row duplicates relationships that are also present on Run rows and requires atomic cross-row updates at acceptance and outcome commit. Service accepts that cost to provide one explicit owner for Thread existence, Session membership, optimistic concurrency, current-Run selection, and continuation-head selection. Reads join the current Run to derive execution and latest-outcome state instead of maintaining another mutable active pointer. Run rows remain the immutable work and state DAG; the Thread row is a compact mutable selector rather than another transcript or checkpoint store.
+The independent Thread row duplicates relationships that are also present on Run rows and requires atomic cross-row updates at acceptance and outcome commit. Service accepts that cost to provide one explicit owner for Thread existence, Session membership, optimistic concurrency, current-Run selection, and continuation-head selection. Reads join the current Run to derive execution and latest-outcome state instead of maintaining another mutable active pointer. Run rows remain the immutable work and state DAG; the Thread row is a compact mutable selector with internal inbox accounting rather than another transcript or checkpoint store. Inbox accounting shares the Thread row lock already required by delivery and outcome selection. This avoids a separately created and locked counter record, while counter changes write the Thread row and share its contention with other mutations of the same Thread.
 
 ## Invariants
 
@@ -204,6 +215,6 @@ The independent Thread row duplicates relationships that are also present on Run
 10. No Thread mutation transaction spans Harness execution, object I/O, provider calls, Redis, streaming, sleeps, or other external work.
 11. Thread identity, origin, Run references, cursors, and object locators grant no authority by possession.
 12. Run state, Items, events, provider state, and presentation history never substitute for the durable Thread row.
-13. Thread inbox rows, their independent sequence counter, and Redis control-group cursors remain separate from the Thread resource; none changes current-Run or continuation-head meaning or increments the Thread state version or queue generation.
+13. Internal inbox sequence and capacity counters live on the Thread row and are updated atomically with inbox transitions under its row lock. They are absent from public Thread reads; counter-only updates preserve Thread versions, timestamps, and Run selection. Inbox entries and Redis control-group cursors retain their separate stores.
 14. `queue_version` changes on every queued-submission mutation. Consuming an entry atomically advances the queue version and creates one accepted Run; terminally failing permanently invalid queued intent advances the queue version and creates no Run. Either transition can commit with source completion under the owning queue contract.
 15. A state-first combined handoff can atomically select a completed source as head and either select an accepted queued successor as current or terminally fail permanently invalid queued intent while retaining the source as current. If that path is unavailable, terminal Thread state and a non-empty queue can coexist until recovery drain or while consumption is recoverably blocked; an existing-Thread Run submission appends behind that queue.

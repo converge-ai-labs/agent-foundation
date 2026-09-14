@@ -38,6 +38,8 @@ Capability availability and Capability grant are distinct. The Harness assigns e
 
 A type is denied from every unlisted source. Mandatory infrastructure and run-only authority types never enter the declarative custom-type catalog. A definition or plugin instance cannot use `for_run()` to replace itself with a run-only reserved type or ID, and a run attachment cannot launder itself into definition or mandatory infrastructure.
 
+`ToolProxyCapability` is an explicitly supported code-first presentation contribution from either `AgentDefinition.capabilities` or an Agent-bound plugin's `get_capabilities()`. Its grouped source tree remains subject to the original source checks; grouping does not authorize reserved infrastructure or run-only capabilities. It is not a run attachment or a built-in declarative type. [Grouped ToolProxy Discovery](07-tool-execution.md#grouped-toolproxy-discovery) owns composition and presentation behavior.
+
 Bare Pydantic `CapabilityFunc` values are not accepted in `AgentDefinition`, plugin contributions, or `RunBindings`. Pydantic resolves such a function once per native Agent run, while one logical Harness run can contain several native recovery attempts. Support requires a future Harness-bound form that resolves once per logical run, validates the complete result tree, memoizes it, and reuses the exact result across every attempt. Concrete `AbstractCapability` instances are the current contract.
 
 ## Declarative Custom Capability Types
@@ -182,6 +184,8 @@ One fresh context is created for every logical Harness run and reused by that ru
 `identity` is derived from `instance`; no second value can diverge. The context is not a generic service locator and cannot be supplied by plugins or model content. Skill paths and tool metadata contain no callable service, lifecycle hook, ordering edge, dispatch route, authority, or durable state. They are created once with the logical-run context and reused across its internal `ModelAttempt` values.
 
 ## MCP Context Headers
+
+For compact local MCP discovery, code-first `ToolProxyCapability` accepts a `ToolProxyGroup` descriptor whose source is the MCP Capability, not a definition-time extracted Toolset. It preserves this header lifecycle and requires local-only MCP execution. [Grouped ToolProxy Discovery](07-tool-execution.md#grouped-toolproxy-discovery) owns its discovery and call contract.
 
 `ContextualMCP` resolves outbound headers during Pydantic Capability run binding, before the returned fresh upstream `MCP` exposes either a provider-native `MCPServerTool` or a local `MCPToolset`. A code-first caller supplies any trusted sync or async `MCPHeadersFactory`. `MCPContextHeaders` is the shared declarative implementation backed by `MCPContextHeadersConfig` and exact header bindings.
 

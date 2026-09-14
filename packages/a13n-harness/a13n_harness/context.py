@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from a13n_harness.models import RunModelResolver
     from a13n_harness.plugins import BoundPluginContext
     from a13n_harness.pricing import AbstractModelCostCapability
+    from a13n_harness.recovery import ToolRecoveryPlan
     from a13n_harness.spec import HarnessModelCharacteristics
     from a13n_harness.tools.deferred import DeferredToolResume
     from a13n_harness.usage import ProviderUsage, ProviderUsageRecord, RunUsageLedger, UsageRecord
@@ -75,6 +76,7 @@ def _copy_subagent_declaration(declaration: SubagentDefinition) -> SubagentDefin
         context=declaration.context,
         identity=declaration.identity,
         usage_limits=declaration.usage_limits,
+        run_capability_factory=declaration.run_capability_factory,
     )
 
 
@@ -285,6 +287,7 @@ class AgentContext:
     deferred_resume: DeferredToolResume | None
     metadata: Mapping[str, JsonValue]
     _steering: SteeringBridge = field(repr=False, compare=False)
+    _tool_recovery: ToolRecoveryPlan | None = field(default=None, repr=False, compare=False)
     model_context: ModelContextMiddleware | None = None
     _inherited_model_cost: AbstractModelCostCapability | None = field(
         default=None,

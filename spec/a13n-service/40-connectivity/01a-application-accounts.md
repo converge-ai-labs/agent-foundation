@@ -12,7 +12,7 @@ An Application Account is one concrete external identity operated directly by Se
 | Reception, default Agent, execution Service Account and default input policy | Application Account |
 | Exact provider object Agent and narrow configuration override                | AccountTarget       |
 
-A reusable provider application definition is not an Account. Each concrete provider-tenant installation or authorization is a separate Account. Provider adapters own exact identity meaning and credential schemas. ConnectorProvider, ConnectorConnection, and MCPConnection retain their independent contracts.
+A reusable provider application definition is not an Account. Each concrete provider-tenant installation or authorization is a separate Account. Provider adapters own exact identity meaning and credential schemas. ConnectorProvider, Connection retain their independent contracts.
 
 ## Account Resource
 
@@ -67,7 +67,7 @@ Account use and target authority are distinct. Binding an Account requires curre
 
 The [Agent-facing tools contract](04-agent-facing-tools.md#default-native-tool-contexts) owns protected contexts, runtime composition, and continuation behavior. An Account may contribute proactive actions and a narrower inbound reply surface to the same Run; each retains its own scope. Credentials resolve at execution time. Tool arguments cannot choose another Account, credential, provider tenant, or API origin.
 
-Workspace Admin manages Accounts and credentials. Viewer has safe metadata read access; Runner, Builder, and Admin use Accounts only through authorized Run contexts. Binding and dispatch check current Workspace authority and resource eligibility; an external sender is never a Service Principal.
+Workspace Admin manages Accounts and credentials. Viewer has safe metadata read access; Runner, Builder, and Admin use Accounts only through authorized Run contexts. Trusted entry binding checks current Workspace authority; dispatch evaluates permissions against the [Attempt IAM snapshot](../33-identity-and-access-management.md#attempt-iam-snapshot) and checks current resource eligibility and Attempt fencing. An external sender is never a Service Principal.
 
 ## Built-in Proactive Scopes
 
@@ -83,9 +83,9 @@ Slack and Lark send actions accept the selected destination ID and provider-spec
 
 ## Management API
 
-`GET /api/v1/workspaces/{workspace_id}/application-account-provider-types` lists only distribution-registered Account adapters and configuration versions. Each entry exposes the provider-owned configuration, write-only credential, and reception-policy JSON schemas plus supported target kinds. This authorized metadata read performs no external I/O, returns no configured identity or credential, and does not grant account management permission. The same typed provider models own form metadata and request validation.
+`GET /api/v1/workspaces/{workspace}/application-account-provider-types` lists only distribution-registered Account adapters and configuration versions. Each entry exposes the provider-owned configuration, write-only credential, and reception-policy JSON schemas plus supported target kinds. This authorized metadata read performs no external I/O, returns no configured identity or credential, and does not grant account management permission. The same typed provider models own form metadata and request validation.
 
-Account management uses `/api/v1/workspaces/{workspace_id}/application-accounts` for create/list and `/api/v1/application-accounts/{account_id}` for get/update/delete. Credential replacement uses `PUT .../credentials`; administrative commands use `POST .../enable` and `POST .../disable`. Creation and commands follow shared idempotency rules; mutations require exact version preconditions. Responses contain safe metadata only.
+Account management uses `/api/v1/workspaces/{workspace}/application-accounts` for create/list and `/api/v1/application-accounts/{account_id}` for get/update/delete. Credential replacement uses `PUT .../credentials`; administrative commands use `POST .../enable` and `POST .../disable`. Creation and commands follow shared idempotency rules; mutations require exact version preconditions. Responses contain safe metadata only.
 
 Exact object management uses the Account `/targets` child collection. Workspace Builders can manage targets within their current Agent and capability authority. Account management and credentials require Workspace Admin. Possession of an Account or target ID grants no authority.
 

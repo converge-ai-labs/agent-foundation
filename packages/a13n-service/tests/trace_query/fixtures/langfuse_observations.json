@@ -1,0 +1,2704 @@
+[
+  {
+    "case": "live-152515/plain",
+    "rows": [
+      {
+        "id": "453f9c2b093e3e2b",
+        "traceId": "f44e33568b753f798e40ab304e42e4a3",
+        "startTime": "2026-09-11T07:26:14.276Z",
+        "endTime": "2026-09-11T07:26:14.295Z",
+        "parentObservationId": "58e9bf6d747684d9",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "a13n.service.persist",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "output.mime_type": "application/json",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_4ff862153f36e5e69ccf8f7c9ba9",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.observation.session.id": "sess_1234567890abcdef",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": "{\"disposition\": \"[fixture text]\", \"run_version\": 4, \"attempt_version\": 9}"
+      },
+      {
+        "id": "b79572091aa0f282",
+        "traceId": "f44e33568b753f798e40ab304e42e4a3",
+        "startTime": "2026-09-11T07:26:14.270Z",
+        "endTime": "2026-09-11T07:26:14.271Z",
+        "parentObservationId": "7880e8174105952d",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "harness.finalize",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_4ff862153f36e5e69ccf8f7c9ba9",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": "[fixture text]"
+      },
+      {
+        "id": "9261f29c875e723b",
+        "traceId": "f44e33568b753f798e40ab304e42e4a3",
+        "startTime": "2026-09-11T07:26:12.686Z",
+        "endTime": "2026-09-11T07:26:14.256Z",
+        "parentObservationId": "8f9ea1d66d6a1530",
+        "isRootObservation": false,
+        "type": "GENERATION",
+        "name": "chat cloudsway-sonnet-5",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_4ff862153f36e5e69ccf8f7c9ba9",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef",
+            "gen_ai.request.model": "cloudsway-sonnet-5"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": null
+      },
+      {
+        "id": "8f9ea1d66d6a1530",
+        "traceId": "f44e33568b753f798e40ab304e42e4a3",
+        "startTime": "2026-09-11T07:26:12.644Z",
+        "endTime": "2026-09-11T07:26:14.264Z",
+        "parentObservationId": "7880e8174105952d",
+        "isRootObservation": false,
+        "type": "AGENT",
+        "name": "Support run",
+        "level": "ERROR",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_4ff862153f36e5e69ccf8f7c9ba9",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": "Fixture backend diagnostic",
+        "input": "[fixture text]",
+        "output": null
+      },
+      {
+        "id": "c34c38b9046f0fb7",
+        "traceId": "f44e33568b753f798e40ab304e42e4a3",
+        "startTime": "2026-09-11T07:26:12.620Z",
+        "endTime": "2026-09-11T07:26:12.620Z",
+        "parentObservationId": "7880e8174105952d",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "harness.operation",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_4ff862153f36e5e69ccf8f7c9ba9",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": "[fixture text]"
+      },
+      {
+        "id": "7891f41362c3b82a",
+        "traceId": "f44e33568b753f798e40ab304e42e4a3",
+        "startTime": "2026-09-11T07:26:09.797Z",
+        "endTime": "2026-09-11T07:26:12.619Z",
+        "parentObservationId": "7880e8174105952d",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "harness.operation",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_4ff862153f36e5e69ccf8f7c9ba9",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": "[fixture text]"
+      },
+      {
+        "id": "581b4daaf199dd94",
+        "traceId": "f44e33568b753f798e40ab304e42e4a3",
+        "startTime": "2026-09-11T07:26:08.191Z",
+        "endTime": "2026-09-11T07:26:09.788Z",
+        "parentObservationId": "15aae1e8daa2633f",
+        "isRootObservation": false,
+        "type": "GENERATION",
+        "name": "chat cloudsway-sonnet-5",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_4ff862153f36e5e69ccf8f7c9ba9",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef",
+            "gen_ai.request.model": "cloudsway-sonnet-5"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": null
+      },
+      {
+        "id": "15aae1e8daa2633f",
+        "traceId": "f44e33568b753f798e40ab304e42e4a3",
+        "startTime": "2026-09-11T07:26:08.173Z",
+        "endTime": "2026-09-11T07:26:09.796Z",
+        "parentObservationId": "7880e8174105952d",
+        "isRootObservation": false,
+        "type": "AGENT",
+        "name": "Support run",
+        "level": "ERROR",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_4ff862153f36e5e69ccf8f7c9ba9",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": "Fixture backend diagnostic",
+        "input": "[fixture text]",
+        "output": null
+      },
+      {
+        "id": "c7294525c94f6acc",
+        "traceId": "f44e33568b753f798e40ab304e42e4a3",
+        "startTime": "2026-09-11T07:26:08.169Z",
+        "endTime": "2026-09-11T07:26:08.169Z",
+        "parentObservationId": "7880e8174105952d",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "harness.operation",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_4ff862153f36e5e69ccf8f7c9ba9",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": "[fixture text]"
+      },
+      {
+        "id": "1912580f1a15637b",
+        "traceId": "f44e33568b753f798e40ab304e42e4a3",
+        "startTime": "2026-09-11T07:26:06.032Z",
+        "endTime": "2026-09-11T07:26:08.169Z",
+        "parentObservationId": "7880e8174105952d",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "harness.operation",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_4ff862153f36e5e69ccf8f7c9ba9",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": "[fixture text]"
+      },
+      {
+        "id": "5b090e6b0f3da42a",
+        "traceId": "f44e33568b753f798e40ab304e42e4a3",
+        "startTime": "2026-09-11T07:26:04.411Z",
+        "endTime": "2026-09-11T07:26:06.025Z",
+        "parentObservationId": "e55e771c10eb9f9c",
+        "isRootObservation": false,
+        "type": "GENERATION",
+        "name": "chat cloudsway-sonnet-5",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_4ff862153f36e5e69ccf8f7c9ba9",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef",
+            "gen_ai.request.model": "cloudsway-sonnet-5"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": null
+      },
+      {
+        "id": "e55e771c10eb9f9c",
+        "traceId": "f44e33568b753f798e40ab304e42e4a3",
+        "startTime": "2026-09-11T07:26:04.384Z",
+        "endTime": "2026-09-11T07:26:06.032Z",
+        "parentObservationId": "7880e8174105952d",
+        "isRootObservation": false,
+        "type": "AGENT",
+        "name": "Support run",
+        "level": "ERROR",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_4ff862153f36e5e69ccf8f7c9ba9",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": "Fixture backend diagnostic",
+        "input": "[fixture text]",
+        "output": null
+      },
+      {
+        "id": "b03284aaa0bcb8b9",
+        "traceId": "f44e33568b753f798e40ab304e42e4a3",
+        "startTime": "2026-09-11T07:26:04.378Z",
+        "endTime": "2026-09-11T07:26:04.379Z",
+        "parentObservationId": "7880e8174105952d",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "harness.operation",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_4ff862153f36e5e69ccf8f7c9ba9",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": "[fixture text]"
+      },
+      {
+        "id": "74288d955fce2772",
+        "traceId": "f44e33568b753f798e40ab304e42e4a3",
+        "startTime": "2026-09-11T07:26:03.834Z",
+        "endTime": "2026-09-11T07:26:04.378Z",
+        "parentObservationId": "7880e8174105952d",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "harness.operation",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_4ff862153f36e5e69ccf8f7c9ba9",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": "[fixture text]"
+      },
+      {
+        "id": "8d4cc23c43dac7fc",
+        "traceId": "f44e33568b753f798e40ab304e42e4a3",
+        "startTime": "2026-09-11T07:26:02.264Z",
+        "endTime": "2026-09-11T07:26:03.825Z",
+        "parentObservationId": "abc3633e9ef3a315",
+        "isRootObservation": false,
+        "type": "GENERATION",
+        "name": "chat cloudsway-sonnet-5",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_4ff862153f36e5e69ccf8f7c9ba9",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef",
+            "gen_ai.request.model": "cloudsway-sonnet-5"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": null
+      },
+      {
+        "id": "abc3633e9ef3a315",
+        "traceId": "f44e33568b753f798e40ab304e42e4a3",
+        "startTime": "2026-09-11T07:26:02.242Z",
+        "endTime": "2026-09-11T07:26:03.834Z",
+        "parentObservationId": "7880e8174105952d",
+        "isRootObservation": false,
+        "type": "AGENT",
+        "name": "Support run",
+        "level": "ERROR",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_4ff862153f36e5e69ccf8f7c9ba9",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": "Fixture backend diagnostic",
+        "input": "[fixture text]",
+        "output": null
+      },
+      {
+        "id": "3756764046ceb7ff",
+        "traceId": "f44e33568b753f798e40ab304e42e4a3",
+        "startTime": "2026-09-11T07:26:02.237Z",
+        "endTime": "2026-09-11T07:26:02.237Z",
+        "parentObservationId": "7880e8174105952d",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "harness.operation",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_4ff862153f36e5e69ccf8f7c9ba9",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": "[fixture text]"
+      },
+      {
+        "id": "637fff348d90a9a1",
+        "traceId": "f44e33568b753f798e40ab304e42e4a3",
+        "startTime": "2026-09-11T07:26:01.460Z",
+        "endTime": "2026-09-11T07:26:02.237Z",
+        "parentObservationId": "7880e8174105952d",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "harness.operation",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_4ff862153f36e5e69ccf8f7c9ba9",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": "[fixture text]"
+      },
+      {
+        "id": "1754c77d6ff03199",
+        "traceId": "f44e33568b753f798e40ab304e42e4a3",
+        "startTime": "2026-09-11T07:25:59.518Z",
+        "endTime": "2026-09-11T07:26:01.436Z",
+        "parentObservationId": "8c28e769e769da4d",
+        "isRootObservation": false,
+        "type": "GENERATION",
+        "name": "chat cloudsway-sonnet-5",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_4ff862153f36e5e69ccf8f7c9ba9",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef",
+            "gen_ai.request.model": "cloudsway-sonnet-5"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": null
+      },
+      {
+        "id": "8c28e769e769da4d",
+        "traceId": "f44e33568b753f798e40ab304e42e4a3",
+        "startTime": "2026-09-11T07:25:59.499Z",
+        "endTime": "2026-09-11T07:26:01.457Z",
+        "parentObservationId": "7880e8174105952d",
+        "isRootObservation": false,
+        "type": "AGENT",
+        "name": "Support run",
+        "level": "ERROR",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_4ff862153f36e5e69ccf8f7c9ba9",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": "Fixture backend diagnostic",
+        "input": "[fixture text]",
+        "output": null
+      },
+      {
+        "id": "c5892ebbdec51667",
+        "traceId": "f44e33568b753f798e40ab304e42e4a3",
+        "startTime": "2026-09-11T07:25:59.488Z",
+        "endTime": "2026-09-11T07:25:59.488Z",
+        "parentObservationId": "7880e8174105952d",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "harness.prepare",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_4ff862153f36e5e69ccf8f7c9ba9",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": "[fixture text]"
+      },
+      {
+        "id": "7880e8174105952d",
+        "traceId": "f44e33568b753f798e40ab304e42e4a3",
+        "startTime": "2026-09-11T07:25:59.488Z",
+        "endTime": "2026-09-11T07:26:14.271Z",
+        "parentObservationId": "58e9bf6d747684d9",
+        "isRootObservation": false,
+        "type": "AGENT",
+        "name": "harness.run",
+        "level": "ERROR",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_4ff862153f36e5e69ccf8f7c9ba9",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": "[fixture text]",
+        "output": null
+      },
+      {
+        "id": "38572cb119c60f08",
+        "traceId": "f44e33568b753f798e40ab304e42e4a3",
+        "startTime": "2026-09-11T07:25:59.356Z",
+        "endTime": "2026-09-11T07:25:59.434Z",
+        "parentObservationId": "58e9bf6d747684d9",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "a13n.service.reconstruct",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "output.mime_type": "application/json",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_4ff862153f36e5e69ccf8f7c9ba9",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.observation.session.id": "sess_1234567890abcdef",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": "{\"disposition\": \"[fixture text]\", \"capability_count\": 2, \"deferred_resume\": false}"
+      },
+      {
+        "id": "58e9bf6d747684d9",
+        "traceId": "f44e33568b753f798e40ab304e42e4a3",
+        "startTime": "2026-09-11T07:25:59.354Z",
+        "endTime": "2026-09-11T07:26:14.297Z",
+        "parentObservationId": null,
+        "isRootObservation": true,
+        "type": "SPAN",
+        "name": "a13n.service.run_attempt",
+        "level": "ERROR",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "input.mime_type": "application/json",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_4ff862153f36e5e69ccf8f7c9ba9",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.observation.session.id": "sess_1234567890abcdef",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": "{\"schema_version\": \"[fixture text]\", \"content\": [{\"type\": \"[fixture text]\", \"text\": \"[fixture text]\"}]}",
+        "output": null
+      }
+    ]
+  },
+  {
+    "case": "live-152714/content_none",
+    "rows": [
+      {
+        "id": "9292b8ee9ca1d9c4",
+        "traceId": "6ddfdbc4126104f350ea95c8ee09ac8c",
+        "startTime": "2026-09-11T07:27:41.611Z",
+        "endTime": "2026-09-11T07:27:41.627Z",
+        "parentObservationId": "d2b83e7a95ac144c",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "a13n.service.persist",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_fb8db9c46dd56d700587ac4fca7d",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.observation.session.id": "sess_1234567890abcdef",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": null
+      },
+      {
+        "id": "c532187ceeb1186e",
+        "traceId": "6ddfdbc4126104f350ea95c8ee09ac8c",
+        "startTime": "2026-09-11T07:27:41.608Z",
+        "endTime": "2026-09-11T07:27:41.609Z",
+        "parentObservationId": "fa5c1ee3476245f2",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "harness.finalize",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_fb8db9c46dd56d700587ac4fca7d",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": null
+      },
+      {
+        "id": "26a19ee8bb0997b9",
+        "traceId": "6ddfdbc4126104f350ea95c8ee09ac8c",
+        "startTime": "2026-09-11T07:27:38.666Z",
+        "endTime": "2026-09-11T07:27:41.593Z",
+        "parentObservationId": "157461beb5797bbd",
+        "isRootObservation": false,
+        "type": "GENERATION",
+        "name": "chat cloudsway-sonnet-5",
+        "level": "DEFAULT",
+        "usageDetails": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0,
+          "text_tokens": 0,
+          "image_tokens": 0,
+          "input": 244,
+          "output": 24,
+          "input_cache_creation": 0,
+          "total": 268
+        },
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "gen_ai.response.model": "MaaS_Cl_Sonnet_5_20260630_cache",
+            "gen_ai.usage.details.image_tokens": 0,
+            "gen_ai.usage.details.text_tokens": 0,
+            "gen_ai.usage.details.rejected_prediction_tokens": 0,
+            "gen_ai.usage.details.reasoning_tokens": 0,
+            "gen_ai.usage.details.audio_tokens": 0,
+            "gen_ai.usage.details.accepted_prediction_tokens": 0,
+            "gen_ai.usage.details.cache_creation_input_tokens": 0,
+            "gen_ai.usage.output_tokens": 24,
+            "gen_ai.usage.input_tokens": 244,
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_fb8db9c46dd56d700587ac4fca7d",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef",
+            "gen_ai.request.model": "cloudsway-sonnet-5"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": "[fixture text]",
+        "output": "[fixture text]"
+      },
+      {
+        "id": "157461beb5797bbd",
+        "traceId": "6ddfdbc4126104f350ea95c8ee09ac8c",
+        "startTime": "2026-09-11T07:27:38.643Z",
+        "endTime": "2026-09-11T07:27:41.605Z",
+        "parentObservationId": "fa5c1ee3476245f2",
+        "isRootObservation": false,
+        "type": "AGENT",
+        "name": "Support run",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "gen_ai.aggregated_usage.details.image_tokens": 0,
+            "gen_ai.aggregated_usage.details.text_tokens": 0,
+            "gen_ai.aggregated_usage.details.rejected_prediction_tokens": 0,
+            "gen_ai.aggregated_usage.details.reasoning_tokens": 0,
+            "gen_ai.aggregated_usage.details.audio_tokens": 0,
+            "gen_ai.aggregated_usage.details.accepted_prediction_tokens": 0,
+            "gen_ai.aggregated_usage.details.cache_creation_input_tokens": 0,
+            "gen_ai.aggregated_usage.output_tokens": 24,
+            "gen_ai.aggregated_usage.input_tokens": 244,
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_fb8db9c46dd56d700587ac4fca7d",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": "[fixture text]",
+        "output": null
+      },
+      {
+        "id": "fa5c1ee3476245f2",
+        "traceId": "6ddfdbc4126104f350ea95c8ee09ac8c",
+        "startTime": "2026-09-11T07:27:38.631Z",
+        "endTime": "2026-09-11T07:27:41.609Z",
+        "parentObservationId": "d2b83e7a95ac144c",
+        "isRootObservation": false,
+        "type": "AGENT",
+        "name": "harness.run",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_fb8db9c46dd56d700587ac4fca7d",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": null
+      },
+      {
+        "id": "d863f40a4d497b57",
+        "traceId": "6ddfdbc4126104f350ea95c8ee09ac8c",
+        "startTime": "2026-09-11T07:27:38.631Z",
+        "endTime": "2026-09-11T07:27:38.631Z",
+        "parentObservationId": "fa5c1ee3476245f2",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "harness.prepare",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_fb8db9c46dd56d700587ac4fca7d",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": null
+      },
+      {
+        "id": "100e10cd71607d7f",
+        "traceId": "6ddfdbc4126104f350ea95c8ee09ac8c",
+        "startTime": "2026-09-11T07:27:38.559Z",
+        "endTime": "2026-09-11T07:27:38.629Z",
+        "parentObservationId": "d2b83e7a95ac144c",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "a13n.service.reconstruct",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_fb8db9c46dd56d700587ac4fca7d",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.observation.session.id": "sess_1234567890abcdef",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": null
+      },
+      {
+        "id": "d2b83e7a95ac144c",
+        "traceId": "6ddfdbc4126104f350ea95c8ee09ac8c",
+        "startTime": "2026-09-11T07:27:38.557Z",
+        "endTime": "2026-09-11T07:27:41.628Z",
+        "parentObservationId": null,
+        "isRootObservation": true,
+        "type": "SPAN",
+        "name": "a13n.service.run_attempt",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_fb8db9c46dd56d700587ac4fca7d",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.observation.session.id": "sess_1234567890abcdef",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": null
+      }
+    ]
+  },
+  {
+    "case": "live-152714/persist_failure",
+    "rows": [
+      {
+        "id": "0ed28e0c22a5d797",
+        "traceId": "dacd7e1fb8030031a238dde36a2355dc",
+        "startTime": "2026-09-11T07:27:44.935Z",
+        "endTime": "2026-09-11T07:27:44.952Z",
+        "parentObservationId": "88911cc982318841",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "a13n.service.persist",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "output.mime_type": "application/json",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_0f8c221d74dc537087b62add3f32",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.observation.session.id": "sess_1234567890abcdef",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": "{\"disposition\": \"[fixture text]\", \"run_version\": 4, \"attempt_version\": 4}"
+      },
+      {
+        "id": "287084897fd960f4",
+        "traceId": "dacd7e1fb8030031a238dde36a2355dc",
+        "startTime": "2026-09-11T07:27:44.924Z",
+        "endTime": "2026-09-11T07:27:44.935Z",
+        "parentObservationId": "88911cc982318841",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "a13n.service.persist",
+        "level": "ERROR",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_0f8c221d74dc537087b62add3f32",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.observation.session.id": "sess_1234567890abcdef",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": null
+      },
+      {
+        "id": "70d7032a6441d1f8",
+        "traceId": "dacd7e1fb8030031a238dde36a2355dc",
+        "startTime": "2026-09-11T07:27:44.921Z",
+        "endTime": "2026-09-11T07:27:44.922Z",
+        "parentObservationId": "4b0fe87650727765",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "harness.finalize",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_0f8c221d74dc537087b62add3f32",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": "[fixture text]"
+      },
+      {
+        "id": "02bf815b916af022",
+        "traceId": "dacd7e1fb8030031a238dde36a2355dc",
+        "startTime": "2026-09-11T07:27:41.886Z",
+        "endTime": "2026-09-11T07:27:44.899Z",
+        "parentObservationId": "030eb37622d7cabd",
+        "isRootObservation": false,
+        "type": "GENERATION",
+        "name": "chat cloudsway-sonnet-5",
+        "level": "DEFAULT",
+        "usageDetails": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0,
+          "text_tokens": 0,
+          "image_tokens": 0,
+          "input": 236,
+          "output": 15,
+          "input_cache_creation": 0,
+          "total": 251
+        },
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "gen_ai.response.model": "MaaS_Cl_Sonnet_5_20260630_cache",
+            "gen_ai.usage.details.image_tokens": 0,
+            "gen_ai.usage.details.text_tokens": 0,
+            "gen_ai.usage.details.rejected_prediction_tokens": 0,
+            "gen_ai.usage.details.reasoning_tokens": 0,
+            "gen_ai.usage.details.audio_tokens": 0,
+            "gen_ai.usage.details.accepted_prediction_tokens": 0,
+            "gen_ai.usage.details.cache_creation_input_tokens": 0,
+            "gen_ai.usage.output_tokens": 15,
+            "gen_ai.usage.input_tokens": 236,
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_0f8c221d74dc537087b62add3f32",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef",
+            "gen_ai.request.model": "cloudsway-sonnet-5"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": "[fixture text]",
+        "output": "[fixture text]"
+      },
+      {
+        "id": "030eb37622d7cabd",
+        "traceId": "dacd7e1fb8030031a238dde36a2355dc",
+        "startTime": "2026-09-11T07:27:41.866Z",
+        "endTime": "2026-09-11T07:27:44.914Z",
+        "parentObservationId": "4b0fe87650727765",
+        "isRootObservation": false,
+        "type": "AGENT",
+        "name": "Support run",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "gen_ai.aggregated_usage.details.image_tokens": 0,
+            "gen_ai.aggregated_usage.details.text_tokens": 0,
+            "gen_ai.aggregated_usage.details.rejected_prediction_tokens": 0,
+            "gen_ai.aggregated_usage.details.reasoning_tokens": 0,
+            "gen_ai.aggregated_usage.details.audio_tokens": 0,
+            "gen_ai.aggregated_usage.details.accepted_prediction_tokens": 0,
+            "gen_ai.aggregated_usage.details.cache_creation_input_tokens": 0,
+            "gen_ai.aggregated_usage.output_tokens": 15,
+            "gen_ai.aggregated_usage.input_tokens": 236,
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_0f8c221d74dc537087b62add3f32",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": "[fixture text]",
+        "output": "[fixture text]"
+      },
+      {
+        "id": "5ccce65cb326c2f9",
+        "traceId": "dacd7e1fb8030031a238dde36a2355dc",
+        "startTime": "2026-09-11T07:27:41.856Z",
+        "endTime": "2026-09-11T07:27:41.856Z",
+        "parentObservationId": "4b0fe87650727765",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "harness.prepare",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_0f8c221d74dc537087b62add3f32",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": "[fixture text]"
+      },
+      {
+        "id": "4b0fe87650727765",
+        "traceId": "dacd7e1fb8030031a238dde36a2355dc",
+        "startTime": "2026-09-11T07:27:41.856Z",
+        "endTime": "2026-09-11T07:27:44.922Z",
+        "parentObservationId": "88911cc982318841",
+        "isRootObservation": false,
+        "type": "AGENT",
+        "name": "harness.run",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_0f8c221d74dc537087b62add3f32",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": "[fixture text]",
+        "output": "[fixture text]"
+      },
+      {
+        "id": "de4df6293946aae5",
+        "traceId": "dacd7e1fb8030031a238dde36a2355dc",
+        "startTime": "2026-09-11T07:27:41.784Z",
+        "endTime": "2026-09-11T07:27:41.854Z",
+        "parentObservationId": "88911cc982318841",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "a13n.service.reconstruct",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "output.mime_type": "application/json",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_0f8c221d74dc537087b62add3f32",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.observation.session.id": "sess_1234567890abcdef",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": "{\"disposition\": \"[fixture text]\", \"capability_count\": 2, \"deferred_resume\": false}"
+      },
+      {
+        "id": "88911cc982318841",
+        "traceId": "dacd7e1fb8030031a238dde36a2355dc",
+        "startTime": "2026-09-11T07:27:41.782Z",
+        "endTime": "2026-09-11T07:27:44.953Z",
+        "parentObservationId": null,
+        "isRootObservation": true,
+        "type": "SPAN",
+        "name": "a13n.service.run_attempt",
+        "level": "ERROR",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "input.mime_type": "application/json",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_0f8c221d74dc537087b62add3f32",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.observation.session.id": "sess_1234567890abcdef",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": "{\"schema_version\": \"[fixture text]\", \"content\": [{\"type\": \"[fixture text]\", \"text\": \"[fixture text]\"}]}",
+        "output": null
+      }
+    ]
+  },
+  {
+    "case": "live-152714/plain",
+    "rows": [
+      {
+        "id": "4077061c54aece8e",
+        "traceId": "3987de79440512a1eaa5d54c8cfc01ff",
+        "startTime": "2026-09-11T07:27:22.762Z",
+        "endTime": "2026-09-11T07:27:22.784Z",
+        "parentObservationId": "1078e495ea95a72f",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "a13n.service.persist",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "output.mime_type": "application/json",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_ffba7ebf4e57d876e7e3456199c2",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.observation.session.id": "sess_1234567890abcdef",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": "{\"disposition\": \"[fixture text]\", \"run_version\": 4, \"attempt_version\": 4}"
+      },
+      {
+        "id": "29a2c5ba116c6347",
+        "traceId": "3987de79440512a1eaa5d54c8cfc01ff",
+        "startTime": "2026-09-11T07:27:22.759Z",
+        "endTime": "2026-09-11T07:27:22.760Z",
+        "parentObservationId": "ee4ee1bd791cf12d",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "harness.finalize",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_ffba7ebf4e57d876e7e3456199c2",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": "[fixture text]"
+      },
+      {
+        "id": "89094a68a10fd07c",
+        "traceId": "3987de79440512a1eaa5d54c8cfc01ff",
+        "startTime": "2026-09-11T07:27:19.760Z",
+        "endTime": "2026-09-11T07:27:22.738Z",
+        "parentObservationId": "0d2ae7676be4f6df",
+        "isRootObservation": false,
+        "type": "GENERATION",
+        "name": "chat cloudsway-sonnet-5",
+        "level": "DEFAULT",
+        "usageDetails": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0,
+          "text_tokens": 0,
+          "image_tokens": 0,
+          "input": 232,
+          "output": 15,
+          "input_cache_creation": 0,
+          "total": 247
+        },
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "gen_ai.response.model": "MaaS_Cl_Sonnet_5_20260630_cache",
+            "gen_ai.usage.details.image_tokens": 0,
+            "gen_ai.usage.details.text_tokens": 0,
+            "gen_ai.usage.details.rejected_prediction_tokens": 0,
+            "gen_ai.usage.details.reasoning_tokens": 0,
+            "gen_ai.usage.details.audio_tokens": 0,
+            "gen_ai.usage.details.accepted_prediction_tokens": 0,
+            "gen_ai.usage.details.cache_creation_input_tokens": 0,
+            "gen_ai.usage.output_tokens": 15,
+            "gen_ai.usage.input_tokens": 232,
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_ffba7ebf4e57d876e7e3456199c2",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef",
+            "gen_ai.request.model": "cloudsway-sonnet-5"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": "[fixture text]",
+        "output": "[fixture text]"
+      },
+      {
+        "id": "0d2ae7676be4f6df",
+        "traceId": "3987de79440512a1eaa5d54c8cfc01ff",
+        "startTime": "2026-09-11T07:27:19.738Z",
+        "endTime": "2026-09-11T07:27:22.754Z",
+        "parentObservationId": "ee4ee1bd791cf12d",
+        "isRootObservation": false,
+        "type": "AGENT",
+        "name": "Support run",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "gen_ai.aggregated_usage.details.image_tokens": 0,
+            "gen_ai.aggregated_usage.details.text_tokens": 0,
+            "gen_ai.aggregated_usage.details.rejected_prediction_tokens": 0,
+            "gen_ai.aggregated_usage.details.reasoning_tokens": 0,
+            "gen_ai.aggregated_usage.details.audio_tokens": 0,
+            "gen_ai.aggregated_usage.details.accepted_prediction_tokens": 0,
+            "gen_ai.aggregated_usage.details.cache_creation_input_tokens": 0,
+            "gen_ai.aggregated_usage.output_tokens": 15,
+            "gen_ai.aggregated_usage.input_tokens": 232,
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_ffba7ebf4e57d876e7e3456199c2",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": "[fixture text]",
+        "output": "[fixture text]"
+      },
+      {
+        "id": "fc0870d9c5efb562",
+        "traceId": "3987de79440512a1eaa5d54c8cfc01ff",
+        "startTime": "2026-09-11T07:27:19.723Z",
+        "endTime": "2026-09-11T07:27:19.723Z",
+        "parentObservationId": "ee4ee1bd791cf12d",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "harness.prepare",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_ffba7ebf4e57d876e7e3456199c2",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": "[fixture text]"
+      },
+      {
+        "id": "ee4ee1bd791cf12d",
+        "traceId": "3987de79440512a1eaa5d54c8cfc01ff",
+        "startTime": "2026-09-11T07:27:19.723Z",
+        "endTime": "2026-09-11T07:27:22.760Z",
+        "parentObservationId": "1078e495ea95a72f",
+        "isRootObservation": false,
+        "type": "AGENT",
+        "name": "harness.run",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_ffba7ebf4e57d876e7e3456199c2",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": "[fixture text]",
+        "output": "[fixture text]"
+      },
+      {
+        "id": "439de0d0e83e4fe4",
+        "traceId": "3987de79440512a1eaa5d54c8cfc01ff",
+        "startTime": "2026-09-11T07:27:19.594Z",
+        "endTime": "2026-09-11T07:27:19.666Z",
+        "parentObservationId": "1078e495ea95a72f",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "a13n.service.reconstruct",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "output.mime_type": "application/json",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_ffba7ebf4e57d876e7e3456199c2",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.observation.session.id": "sess_1234567890abcdef",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": "{\"disposition\": \"[fixture text]\", \"capability_count\": 2, \"deferred_resume\": false}"
+      },
+      {
+        "id": "1078e495ea95a72f",
+        "traceId": "3987de79440512a1eaa5d54c8cfc01ff",
+        "startTime": "2026-09-11T07:27:19.591Z",
+        "endTime": "2026-09-11T07:27:22.786Z",
+        "parentObservationId": null,
+        "isRootObservation": true,
+        "type": "SPAN",
+        "name": "a13n.service.run_attempt",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "output.mime_type": "text/plain",
+            "input.mime_type": "application/json",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_ffba7ebf4e57d876e7e3456199c2",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.observation.session.id": "sess_1234567890abcdef",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": "{\"schema_version\": \"[fixture text]\", \"content\": [{\"type\": \"[fixture text]\", \"text\": \"[fixture text]\"}]}",
+        "output": "[fixture text]"
+      }
+    ]
+  },
+  {
+    "case": "live-152714/tool_error_recovery",
+    "rows": [
+      {
+        "id": "7e86c3bb8c2886ca",
+        "traceId": "aed7b45dc57c6ca3fd68c8355c1ef7dd",
+        "startTime": "2026-09-11T07:27:38.248Z",
+        "endTime": "2026-09-11T07:27:38.276Z",
+        "parentObservationId": "dbbe1945c974e7c7",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "a13n.service.persist",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "output.mime_type": "application/json",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_f5111626b8eb8c4880e608f151ca",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.observation.session.id": "sess_1234567890abcdef",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": "{\"disposition\": \"[fixture text]\", \"run_version\": 4, \"attempt_version\": 5}"
+      },
+      {
+        "id": "8261a1b8bd4309e5",
+        "traceId": "aed7b45dc57c6ca3fd68c8355c1ef7dd",
+        "startTime": "2026-09-11T07:27:38.241Z",
+        "endTime": "2026-09-11T07:27:38.243Z",
+        "parentObservationId": "7c06c40089d949b0",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "harness.finalize",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_f5111626b8eb8c4880e608f151ca",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": "[fixture text]"
+      },
+      {
+        "id": "d70cfe6b2a57c68c",
+        "traceId": "aed7b45dc57c6ca3fd68c8355c1ef7dd",
+        "startTime": "2026-09-11T07:27:34.366Z",
+        "endTime": "2026-09-11T07:27:38.213Z",
+        "parentObservationId": "929d45843a28bd47",
+        "isRootObservation": false,
+        "type": "GENERATION",
+        "name": "chat cloudsway-sonnet-5",
+        "level": "DEFAULT",
+        "usageDetails": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0,
+          "text_tokens": 0,
+          "image_tokens": 0,
+          "input": 3754,
+          "output": 42,
+          "input_cache_creation": 0,
+          "total": 3796
+        },
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "gen_ai.response.model": "MaaS_Cl_Sonnet_5_20260630_cache",
+            "gen_ai.usage.details.image_tokens": 0,
+            "gen_ai.usage.details.text_tokens": 0,
+            "gen_ai.usage.details.rejected_prediction_tokens": 0,
+            "gen_ai.usage.details.reasoning_tokens": 0,
+            "gen_ai.usage.details.audio_tokens": 0,
+            "gen_ai.usage.details.accepted_prediction_tokens": 0,
+            "gen_ai.usage.details.cache_creation_input_tokens": 0,
+            "gen_ai.usage.output_tokens": 42,
+            "gen_ai.usage.input_tokens": 3754,
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_f5111626b8eb8c4880e608f151ca",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef",
+            "gen_ai.request.model": "cloudsway-sonnet-5"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": "[fixture text]",
+        "output": "[fixture text]"
+      },
+      {
+        "id": "fb12ee069cd0f7f2",
+        "traceId": "aed7b45dc57c6ca3fd68c8355c1ef7dd",
+        "startTime": "2026-09-11T07:27:34.263Z",
+        "endTime": "2026-09-11T07:27:34.304Z",
+        "parentObservationId": "929d45843a28bd47",
+        "isRootObservation": false,
+        "type": "TOOL",
+        "name": "view",
+        "level": "ERROR",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_f5111626b8eb8c4880e608f151ca",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": "[fixture text]",
+        "output": "[fixture text]"
+      },
+      {
+        "id": "050ae83e1a781a94",
+        "traceId": "aed7b45dc57c6ca3fd68c8355c1ef7dd",
+        "startTime": "2026-09-11T07:27:34.263Z",
+        "endTime": "2026-09-11T07:27:34.307Z",
+        "parentObservationId": "929d45843a28bd47",
+        "isRootObservation": false,
+        "type": "TOOL",
+        "name": "view",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_f5111626b8eb8c4880e608f151ca",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": "[fixture text]",
+        "output": "[fixture text]"
+      },
+      {
+        "id": "b55c93fed1850211",
+        "traceId": "aed7b45dc57c6ca3fd68c8355c1ef7dd",
+        "startTime": "2026-09-11T07:27:30.431Z",
+        "endTime": "2026-09-11T07:27:34.251Z",
+        "parentObservationId": "929d45843a28bd47",
+        "isRootObservation": false,
+        "type": "GENERATION",
+        "name": "chat cloudsway-sonnet-5",
+        "level": "DEFAULT",
+        "usageDetails": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 26,
+          "rejected_prediction_tokens": 0,
+          "text_tokens": 0,
+          "image_tokens": 0,
+          "input": 3352,
+          "output": 128,
+          "input_cache_creation": 0,
+          "total": 3506
+        },
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "gen_ai.response.model": "MaaS_Cl_Sonnet_5_20260630_cache",
+            "gen_ai.usage.details.image_tokens": 0,
+            "gen_ai.usage.details.text_tokens": 0,
+            "gen_ai.usage.details.rejected_prediction_tokens": 0,
+            "gen_ai.usage.details.reasoning_tokens": 26,
+            "gen_ai.usage.details.audio_tokens": 0,
+            "gen_ai.usage.details.accepted_prediction_tokens": 0,
+            "gen_ai.usage.details.cache_creation_input_tokens": 0,
+            "gen_ai.usage.output_tokens": 128,
+            "gen_ai.usage.input_tokens": 3352,
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_f5111626b8eb8c4880e608f151ca",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef",
+            "gen_ai.request.model": "cloudsway-sonnet-5"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": "[fixture text]",
+        "output": "[fixture text]"
+      },
+      {
+        "id": "929d45843a28bd47",
+        "traceId": "aed7b45dc57c6ca3fd68c8355c1ef7dd",
+        "startTime": "2026-09-11T07:27:30.384Z",
+        "endTime": "2026-09-11T07:27:38.235Z",
+        "parentObservationId": "7c06c40089d949b0",
+        "isRootObservation": false,
+        "type": "AGENT",
+        "name": "Support run",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "gen_ai.aggregated_usage.details.image_tokens": 0,
+            "gen_ai.aggregated_usage.details.text_tokens": 0,
+            "gen_ai.aggregated_usage.details.rejected_prediction_tokens": 0,
+            "gen_ai.aggregated_usage.details.reasoning_tokens": 26,
+            "gen_ai.aggregated_usage.details.audio_tokens": 0,
+            "gen_ai.aggregated_usage.details.accepted_prediction_tokens": 0,
+            "gen_ai.aggregated_usage.details.cache_creation_input_tokens": 0,
+            "gen_ai.aggregated_usage.output_tokens": 170,
+            "gen_ai.aggregated_usage.input_tokens": 7106,
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_f5111626b8eb8c4880e608f151ca",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": "[fixture text]",
+        "output": "[fixture text]"
+      },
+      {
+        "id": "d0bb5b2cf6627024",
+        "traceId": "aed7b45dc57c6ca3fd68c8355c1ef7dd",
+        "startTime": "2026-09-11T07:27:30.374Z",
+        "endTime": "2026-09-11T07:27:30.374Z",
+        "parentObservationId": "7c06c40089d949b0",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "harness.prepare",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_f5111626b8eb8c4880e608f151ca",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": "[fixture text]"
+      },
+      {
+        "id": "7c06c40089d949b0",
+        "traceId": "aed7b45dc57c6ca3fd68c8355c1ef7dd",
+        "startTime": "2026-09-11T07:27:30.374Z",
+        "endTime": "2026-09-11T07:27:38.243Z",
+        "parentObservationId": "dbbe1945c974e7c7",
+        "isRootObservation": false,
+        "type": "AGENT",
+        "name": "harness.run",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_f5111626b8eb8c4880e608f151ca",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": "[fixture text]",
+        "output": "[fixture text]"
+      },
+      {
+        "id": "5c4fd30aa22ccf78",
+        "traceId": "aed7b45dc57c6ca3fd68c8355c1ef7dd",
+        "startTime": "2026-09-11T07:27:30.345Z",
+        "endTime": "2026-09-11T07:27:30.372Z",
+        "parentObservationId": "dbbe1945c974e7c7",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "a13n.service.environment.prepare",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "output.mime_type": "application/json",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_f5111626b8eb8c4880e608f151ca",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.observation.session.id": "sess_1234567890abcdef",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": "{\"generation_before\": 0, \"generation_after\": 1, \"generation_changed\": true}"
+      },
+      {
+        "id": "76cbf0f6c57ae4c0",
+        "traceId": "aed7b45dc57c6ca3fd68c8355c1ef7dd",
+        "startTime": "2026-09-11T07:27:30.270Z",
+        "endTime": "2026-09-11T07:27:30.372Z",
+        "parentObservationId": "dbbe1945c974e7c7",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "a13n.service.reconstruct",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "output.mime_type": "application/json",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_f5111626b8eb8c4880e608f151ca",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.observation.session.id": "sess_1234567890abcdef",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": "{\"disposition\": \"[fixture text]\", \"capability_count\": 2, \"deferred_resume\": false}"
+      },
+      {
+        "id": "dbbe1945c974e7c7",
+        "traceId": "aed7b45dc57c6ca3fd68c8355c1ef7dd",
+        "startTime": "2026-09-11T07:27:30.269Z",
+        "endTime": "2026-09-11T07:27:38.278Z",
+        "parentObservationId": null,
+        "isRootObservation": true,
+        "type": "SPAN",
+        "name": "a13n.service.run_attempt",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "output.mime_type": "text/plain",
+            "input.mime_type": "application/json",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_f5111626b8eb8c4880e608f151ca",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.observation.session.id": "sess_1234567890abcdef",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": "{\"schema_version\": \"[fixture text]\", \"content\": [{\"type\": \"[fixture text]\", \"text\": \"[fixture text]\"}]}",
+        "output": "[fixture text]"
+      }
+    ]
+  },
+  {
+    "case": "live-152714/tool_read",
+    "rows": [
+      {
+        "id": "0ff9d9353efbad6d",
+        "traceId": "baa3235a9c7f44ea39a3eed6914e65f2",
+        "startTime": "2026-09-11T07:27:30.092Z",
+        "endTime": "2026-09-11T07:27:30.113Z",
+        "parentObservationId": "7596ad073800046c",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "a13n.service.persist",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "output.mime_type": "application/json",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_98f0e3e199b1cdd7d9800553372d",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.observation.session.id": "sess_1234567890abcdef",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": "{\"disposition\": \"[fixture text]\", \"run_version\": 4, \"attempt_version\": 5}"
+      },
+      {
+        "id": "fea90b6d4619a1aa",
+        "traceId": "baa3235a9c7f44ea39a3eed6914e65f2",
+        "startTime": "2026-09-11T07:27:30.085Z",
+        "endTime": "2026-09-11T07:27:30.087Z",
+        "parentObservationId": "3659d9a3500825a8",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "harness.finalize",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_98f0e3e199b1cdd7d9800553372d",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": "[fixture text]"
+      },
+      {
+        "id": "59baa686e1697c26",
+        "traceId": "baa3235a9c7f44ea39a3eed6914e65f2",
+        "startTime": "2026-09-11T07:27:26.801Z",
+        "endTime": "2026-09-11T07:27:30.067Z",
+        "parentObservationId": "80211a80b1937769",
+        "isRootObservation": false,
+        "type": "GENERATION",
+        "name": "chat cloudsway-sonnet-5",
+        "level": "DEFAULT",
+        "usageDetails": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0,
+          "text_tokens": 0,
+          "image_tokens": 0,
+          "input": 3533,
+          "output": 32,
+          "input_cache_creation": 0,
+          "total": 3565
+        },
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "gen_ai.response.model": "MaaS_Cl_Sonnet_5_20260630_cache",
+            "gen_ai.usage.details.image_tokens": 0,
+            "gen_ai.usage.details.text_tokens": 0,
+            "gen_ai.usage.details.rejected_prediction_tokens": 0,
+            "gen_ai.usage.details.reasoning_tokens": 0,
+            "gen_ai.usage.details.audio_tokens": 0,
+            "gen_ai.usage.details.accepted_prediction_tokens": 0,
+            "gen_ai.usage.details.cache_creation_input_tokens": 0,
+            "gen_ai.usage.output_tokens": 32,
+            "gen_ai.usage.input_tokens": 3533,
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_98f0e3e199b1cdd7d9800553372d",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef",
+            "gen_ai.request.model": "cloudsway-sonnet-5"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": "[fixture text]",
+        "output": "[fixture text]"
+      },
+      {
+        "id": "3cd8488a8349a7fc",
+        "traceId": "baa3235a9c7f44ea39a3eed6914e65f2",
+        "startTime": "2026-09-11T07:27:26.666Z",
+        "endTime": "2026-09-11T07:27:26.701Z",
+        "parentObservationId": "80211a80b1937769",
+        "isRootObservation": false,
+        "type": "TOOL",
+        "name": "view",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_98f0e3e199b1cdd7d9800553372d",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": "[fixture text]",
+        "output": "[fixture text]"
+      },
+      {
+        "id": "71b6bd1c29207511",
+        "traceId": "baa3235a9c7f44ea39a3eed6914e65f2",
+        "startTime": "2026-09-11T07:27:23.253Z",
+        "endTime": "2026-09-11T07:27:26.657Z",
+        "parentObservationId": "80211a80b1937769",
+        "isRootObservation": false,
+        "type": "GENERATION",
+        "name": "chat cloudsway-sonnet-5",
+        "level": "DEFAULT",
+        "usageDetails": {
+          "accepted_prediction_tokens": 0,
+          "audio_tokens": 0,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": 0,
+          "text_tokens": 0,
+          "image_tokens": 0,
+          "input": 3328,
+          "output": 55,
+          "input_cache_creation": 0,
+          "total": 3383
+        },
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "gen_ai.response.model": "MaaS_Cl_Sonnet_5_20260630_cache",
+            "gen_ai.usage.details.image_tokens": 0,
+            "gen_ai.usage.details.text_tokens": 0,
+            "gen_ai.usage.details.rejected_prediction_tokens": 0,
+            "gen_ai.usage.details.reasoning_tokens": 0,
+            "gen_ai.usage.details.audio_tokens": 0,
+            "gen_ai.usage.details.accepted_prediction_tokens": 0,
+            "gen_ai.usage.details.cache_creation_input_tokens": 0,
+            "gen_ai.usage.output_tokens": 55,
+            "gen_ai.usage.input_tokens": 3328,
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_98f0e3e199b1cdd7d9800553372d",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef",
+            "gen_ai.request.model": "cloudsway-sonnet-5"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": "[fixture text]",
+        "output": "[fixture text]"
+      },
+      {
+        "id": "80211a80b1937769",
+        "traceId": "baa3235a9c7f44ea39a3eed6914e65f2",
+        "startTime": "2026-09-11T07:27:23.202Z",
+        "endTime": "2026-09-11T07:27:30.081Z",
+        "parentObservationId": "3659d9a3500825a8",
+        "isRootObservation": false,
+        "type": "AGENT",
+        "name": "Support run",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "gen_ai.aggregated_usage.details.image_tokens": 0,
+            "gen_ai.aggregated_usage.details.text_tokens": 0,
+            "gen_ai.aggregated_usage.details.rejected_prediction_tokens": 0,
+            "gen_ai.aggregated_usage.details.reasoning_tokens": 0,
+            "gen_ai.aggregated_usage.details.audio_tokens": 0,
+            "gen_ai.aggregated_usage.details.accepted_prediction_tokens": 0,
+            "gen_ai.aggregated_usage.details.cache_creation_input_tokens": 0,
+            "gen_ai.aggregated_usage.output_tokens": 87,
+            "gen_ai.aggregated_usage.input_tokens": 6861,
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_98f0e3e199b1cdd7d9800553372d",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": "[fixture text]",
+        "output": "[fixture text]"
+      },
+      {
+        "id": "3659d9a3500825a8",
+        "traceId": "baa3235a9c7f44ea39a3eed6914e65f2",
+        "startTime": "2026-09-11T07:27:23.192Z",
+        "endTime": "2026-09-11T07:27:30.087Z",
+        "parentObservationId": "7596ad073800046c",
+        "isRootObservation": false,
+        "type": "AGENT",
+        "name": "harness.run",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_98f0e3e199b1cdd7d9800553372d",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": "[fixture text]",
+        "output": "[fixture text]"
+      },
+      {
+        "id": "104506db4f9dfebb",
+        "traceId": "baa3235a9c7f44ea39a3eed6914e65f2",
+        "startTime": "2026-09-11T07:27:23.192Z",
+        "endTime": "2026-09-11T07:27:23.193Z",
+        "parentObservationId": "3659d9a3500825a8",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "harness.prepare",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "a13n.observation.session.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_98f0e3e199b1cdd7d9800553372d",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": "[fixture text]"
+      },
+      {
+        "id": "d207d8d11bf6f118",
+        "traceId": "baa3235a9c7f44ea39a3eed6914e65f2",
+        "startTime": "2026-09-11T07:27:23.157Z",
+        "endTime": "2026-09-11T07:27:23.190Z",
+        "parentObservationId": "7596ad073800046c",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "a13n.service.environment.prepare",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "output.mime_type": "application/json",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_98f0e3e199b1cdd7d9800553372d",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.observation.session.id": "sess_1234567890abcdef",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": "{\"generation_before\": 0, \"generation_after\": 1, \"generation_changed\": true}"
+      },
+      {
+        "id": "248b73bf1a3d4a8f",
+        "traceId": "baa3235a9c7f44ea39a3eed6914e65f2",
+        "startTime": "2026-09-11T07:27:23.083Z",
+        "endTime": "2026-09-11T07:27:23.190Z",
+        "parentObservationId": "7596ad073800046c",
+        "isRootObservation": false,
+        "type": "SPAN",
+        "name": "a13n.service.reconstruct",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "output.mime_type": "application/json",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_98f0e3e199b1cdd7d9800553372d",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.observation.session.id": "sess_1234567890abcdef",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": null,
+        "output": "{\"disposition\": \"[fixture text]\", \"capability_count\": 2, \"deferred_resume\": false}"
+      },
+      {
+        "id": "7596ad073800046c",
+        "traceId": "baa3235a9c7f44ea39a3eed6914e65f2",
+        "startTime": "2026-09-11T07:27:23.079Z",
+        "endTime": "2026-09-11T07:27:30.114Z",
+        "parentObservationId": null,
+        "isRootObservation": true,
+        "type": "SPAN",
+        "name": "a13n.service.run_attempt",
+        "level": "DEFAULT",
+        "usageDetails": {},
+        "totalCost": null,
+        "projectId": "fixture-project",
+        "metadata": {
+          "attributes": {
+            "output.mime_type": "text/plain",
+            "input.mime_type": "application/json",
+            "a13n.agent.preset.id": "agt_1234567890abcdef",
+            "a13n.run_attempt.id": "rat_98f0e3e199b1cdd7d9800553372d",
+            "a13n.service.run.id": "run_5555555555555555",
+            "a13n.thread.id": "thread-1234567890abcdef1234567890abcdef",
+            "a13n.observation.session.id": "sess_1234567890abcdef",
+            "a13n.workspace.id": "ws_1234567890abcdef",
+            "a13n.organization.id": "org_1234567890abcdef"
+          },
+          "resourceAttributes": {
+            "service.name": "fixture-service"
+          },
+          "scope": {
+            "name": "fixture-scope"
+          }
+        },
+        "statusMessage": null,
+        "input": "{\"schema_version\": \"[fixture text]\", \"content\": [{\"type\": \"[fixture text]\", \"text\": \"[fixture text]\"}]}",
+        "output": "[fixture text]"
+      }
+    ]
+  }
+]

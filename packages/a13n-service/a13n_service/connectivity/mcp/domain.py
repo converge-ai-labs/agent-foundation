@@ -9,8 +9,6 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, StringConstraints, model_validator
 
 from a13n_service.connectivity.domain import JsonObject
-from a13n_service.iam.domain import PrincipalRef
-from a13n_service.names import DisplayName
 
 MCP_PROTOCOL_REVISION = "2025-11-25"
 Endpoint = Annotated[str, StringConstraints(min_length=1, max_length=2048)]
@@ -28,62 +26,77 @@ class MCPAuthMode(StrEnum):
     static_headers = "static_headers"
 
 
-class MCPConnectionStatus(StrEnum):
-    pending = "pending"
-    ready = "ready"
-    action_required = "action_required"
-    disabled = "disabled"
+OAuthTokenAuthMethod = Literal["none", "client_secret_basic", "client_secret_post"]
+OAuthGrantType = Literal["authorization_code", "client_credentials"]
+OAuthClientSource = Literal["pre_registered", "dynamic", "metadata_document"]
 
 
-class MCPConnectionStatusReason(StrEnum):
-    reauthorization_required = "reauthorization_required"
-    incompatible = "incompatible"
+class MCPOAuthClientConfiguration(StrictModel):
+    issuer_url: Endpoint
+    client_id: str = Field(min_length=1, max_length=2048)
+    token_endpoint_auth_method: OAuthTokenAuthMethod
+    grant_type: OAuthGrantType
+    source: OAuthClientSource
+    redirect_uri: Endpoint | None = None
 
 
-class MCPConnection(StrictModel):
-    id: str
-    organization_id: str
-    workspace_id: str
-    name: DisplayName
-    endpoint_url: Endpoint
-    auth_mode: MCPAuthMode
-    static_header_names: tuple[HeaderName, ...] = Field(max_length=16)
-    status: MCPConnectionStatus
-    status_reason: MCPConnectionStatusReason | None
-    version: int = Field(ge=1)
-    credential_configured: bool
-    credential_generation: int = Field(ge=0)
-    created_by: PrincipalRef
-    created_at: datetime
-    updated_at: datetime
+class MCPOAuthClientInput(StrictModel):
+    issuer_url: Endpoint
+    client_id: str = Field(min_length=1, max_length=2048)
+    token_endpoint_auth_method: OAuthTokenAuthMethod
+    grant_type: OAuthGrantType = "authorization_code"
+    redirect_uri: Endpoint | None = None
+    client_secret: SecretStr | None = Field(default=None, min_length=1, max_length=16_384, repr=False)
 
     @model_validator(mode="after")
-    def valid_status(self) -> MCPConnection:
-        if (self.status is MCPConnectionStatus.action_required) != (self.status_reason is not None):
-            raise ValueError("status_reason is required exactly for action_required")
-        if self.auth_mode is MCPAuthMode.static_headers:
-            if not self.static_header_names:
-                raise ValueError("static_headers requires header names")
-        elif self.static_header_names:
-            raise ValueError("static header names require static_headers auth mode")
+    def valid_client(self) -> MCPOAuthClientInput:
+        confidential = self.token_endpoint_auth_method != "none" or self.grant_type == "client_credentials"
+        if confidential != (self.client_secret is not None):
+            raise ValueError("Confidential clients require a secret; public clients must not supply one")
+        if self.grant_type == "client_credentials" and self.token_endpoint_auth_method == "none":
+            raise ValueError("Client credentials requires authenticated token requests")
+        if (self.grant_type == "authorization_code") != (self.redirect_uri is not None):
+            raise ValueError("Authorization-code clients require a redirect URI; machine clients must omit it")
         return self
 
 
-class MCPConnectionCollection(StrictModel):
-    items: tuple[MCPConnection, ...]
-    next_cursor: str | None = None
-
-
-class CreateMCPConnectionRequest(StrictModel):
-    name: DisplayName
-    endpoint_url: Endpoint
-    auth_mode: MCPAuthMode
-    static_header_names: tuple[HeaderName, ...] = Field(default=(), max_length=16)
-
-
-class UpdateMCPConnectionRequest(StrictModel):
+class ConfigureMCPOAuthClientRequest(StrictModel):
     expected_version: int = Field(ge=1)
-    name: DisplayName
+    client: MCPOAuthClientInput | None
+
+
+class MCPOAuthSetupRequest(StrictModel):
+    redirect_uri: Endpoint | None = None
+
+
+class MCPOAuthDiscovery(StrictModel):
+    issuer_url: Endpoint
+    redirect_uri: Endpoint | None
+    token_endpoint_auth_methods_supported: tuple[OAuthTokenAuthMethod, ...]
+    grant_types_supported: tuple[OAuthGrantType, ...]
+    client_registration: Literal["metadata_document", "dynamic", "manual"]
+    authorization_response_iss_parameter_supported: bool
+
+
+class MCPOAuthSetupAction(StrictModel):
+    type: Literal[
+        "configure_oauth_client",
+        "start_authorization",
+        "authenticate_client_credentials",
+        "check_connection",
+        "completed",
+    ]
+    redirect_uri: Endpoint | None = None
+    issuer_url: Endpoint | None = None
+    token_endpoint_auth_methods: tuple[OAuthTokenAuthMethod, ...] = ()
+    grant_types: tuple[OAuthGrantType, ...] = ()
+    client_registration: Literal["metadata_document", "dynamic", "manual"] | None = None
+    documentation_url: Endpoint | None = None
+
+
+class MCPOAuthSetup(StrictModel):
+    next_action: MCPOAuthSetupAction
+    client: MCPOAuthClientConfiguration | None = None
 
 
 class MCPConnectionCommandRequest(StrictModel):
@@ -102,9 +115,9 @@ class ReplaceMCPCredentialsRequest(MCPConnectionCommandRequest):
 
 
 class MCPAuthorizationLaunch(StrictModel):
-    id: str = Field(pattern=r"^mos_[0-9A-Za-z]+$")
-    status: Literal["pending"] = "pending"
-    authorization_url: str = Field(max_length=8192, repr=False)
+    id: str = Field(pattern=r"^authz_[0-9A-Za-z]+$")
+    status: str = "pending"
+    authorization_url: str | None = Field(max_length=8192, repr=False)
     expires_at: datetime
 
 

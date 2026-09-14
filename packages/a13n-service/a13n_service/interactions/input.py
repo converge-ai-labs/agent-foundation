@@ -172,6 +172,14 @@ class AcceptedAgentInput(StrictModel):
             raise AgentInputError("input_not_canonicalizable", "Agent input is not canonical JSON") from error
 
 
+def input_text(accepted: AcceptedAgentInput) -> str | None:
+    """Return the plain-text preview only for a single unstructured text input."""
+    if len(accepted.content) != 1 or accepted.structured_content is not None:
+        return None
+    block = accepted.content[0]
+    return block.text if block.type == "text" else None
+
+
 class AgentInputError(ValueError):
     def __init__(self, code: str, message: str) -> None:
         super().__init__(message)

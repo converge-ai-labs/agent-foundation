@@ -28,8 +28,12 @@ async def test_http_registration_runtime_and_external_only_metadata(
 ):
     service = environment_service
     types = await service.provider_types(actor())
-    assert {item["type"] for item in types.items} == {"a13n.http-envd", "a13n.websocket-envd"}
-    assert all(not item["supports_managed"] for item in types.items)
+    assert {item.type for item in types.items} == {"a13n.http-envd", "a13n.websocket-envd"}
+    assert {item.type: item.display_name for item in types.items} == {
+        "a13n.http-envd": "HTTP Envd",
+        "a13n.websocket-envd": "WebSocket Envd",
+    }
+    assert all(not item.supports_managed for item in types.items)
     provider = await service.create_provider(
         actor=actor(),
         workspace_id=WORKSPACE_ID,

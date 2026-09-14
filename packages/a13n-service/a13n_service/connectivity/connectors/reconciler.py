@@ -11,18 +11,19 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.background import PeriodicTask, Sweep
+from a13n_service.connectivity.connections.domain import ConnectionStatus, ConnectionStatusReason
 from a13n_service.connectivity.connectors.contracts import (
     AdapterConnectionStatus,
     ConnectorProviderError,
+    SetupCompletionMethod,
 )
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
-from .domain import ConnectorConnectionStatus, ConnectorConnectionStatusReason
 from .errors import ConnectorError
 from .management import configure_provider, require_active_provider
-from .models import ConnectorConnectionRecord, ConnectorSetupAttemptRecord
+from .models import ConnectorAuthorizationRecord, ConnectorConnectionRecord
 from .setup import ConnectorSetupCoordinator, _setup_context
 
 
@@ -62,7 +63,7 @@ class ConnectorReconciler:
             return Sweep()
         await self._reconcile_attempt(*claim)
         async with short_session(self._sessions) as session:
-            record = await session.get(ConnectorSetupAttemptRecord, claim[0])
+            record = await session.get(ConnectorAuthorizationRecord, claim[0])
             complete = record is not None and record.status not in ("pending", "starting", "attached", "reserved")
             age = max(0, (self._clock() - assume_utc(record.created_at)).total_seconds()) if record else None
         return Sweep(examined=1, completed=int(complete), deferred=int(not complete), oldest_age_seconds=age)
@@ -82,27 +83,27 @@ class ConnectorReconciler:
             connection = await session.scalar(
                 select(ConnectorConnectionRecord)
                 .join(
-                    ConnectorSetupAttemptRecord,
-                    ConnectorSetupAttemptRecord.connector_connection_id == ConnectorConnectionRecord.id,
+                    ConnectorAuthorizationRecord,
+                    ConnectorAuthorizationRecord.connection_id == ConnectorConnectionRecord.id,
                 )
                 .where(
-                    ConnectorSetupAttemptRecord.status.in_(("pending", "starting", "attached", "reserved")),
-                    ConnectorSetupAttemptRecord.expires_at <= now,
+                    ConnectorAuthorizationRecord.status.in_(("pending", "starting", "attached", "reserved")),
+                    ConnectorAuthorizationRecord.expires_at <= now,
                 )
-                .order_by(ConnectorSetupAttemptRecord.expires_at, ConnectorSetupAttemptRecord.id)
+                .order_by(ConnectorAuthorizationRecord.expires_at, ConnectorAuthorizationRecord.id)
                 .limit(1)
                 .with_for_update(of=ConnectorConnectionRecord, skip_locked=True)
             )
             if connection is None:
                 return False
             attempt = await session.scalar(
-                select(ConnectorSetupAttemptRecord)
+                select(ConnectorAuthorizationRecord)
                 .where(
-                    ConnectorSetupAttemptRecord.connector_connection_id == connection.id,
-                    ConnectorSetupAttemptRecord.status.in_(("pending", "starting", "attached", "reserved")),
-                    ConnectorSetupAttemptRecord.expires_at <= now,
+                    ConnectorAuthorizationRecord.connection_id == connection.id,
+                    ConnectorAuthorizationRecord.status.in_(("pending", "starting", "attached", "reserved")),
+                    ConnectorAuthorizationRecord.expires_at <= now,
                 )
-                .order_by(ConnectorSetupAttemptRecord.expires_at, ConnectorSetupAttemptRecord.id)
+                .order_by(ConnectorAuthorizationRecord.expires_at, ConnectorAuthorizationRecord.id)
                 .limit(1)
                 .with_for_update()
             )
@@ -113,8 +114,8 @@ class ConnectorReconciler:
             attempt.status = "expired"
             attempt.updated_at = now
             if connection.setup_generation == attempt.generation and connection.status == "pending":
-                connection.status = ConnectorConnectionStatus.action_required.value
-                connection.status_reason = ConnectorConnectionStatusReason.reauthorization_required.value
+                connection.status = ConnectionStatus.action_required.value
+                connection.status_reason = ConnectionStatusReason.reauthorization_required.value
                 connection.version += 1
                 connection.updated_at = now
             return True
@@ -123,24 +124,24 @@ class ConnectorReconciler:
         now = self._clock()
         async with transaction(self._sessions) as session:
             attempt = await session.scalar(
-                select(ConnectorSetupAttemptRecord)
+                select(ConnectorAuthorizationRecord)
                 .where(
-                    ConnectorSetupAttemptRecord.status.in_(("pending", "starting", "attached", "reserved")),
+                    ConnectorAuthorizationRecord.status.in_(("pending", "starting", "attached", "reserved")),
                     not_(
                         and_(
-                            ConnectorSetupAttemptRecord.status == "attached",
-                            ConnectorSetupAttemptRecord.supports_verified_callback.is_(True),
-                            ConnectorSetupAttemptRecord.browser_binding_digest.is_not(None),
+                            ConnectorAuthorizationRecord.status == "attached",
+                            ConnectorAuthorizationRecord.completion_method != SetupCompletionMethod.polling,
+                            ConnectorAuthorizationRecord.browser_binding_digest.is_not(None),
                         )
                     ),
-                    ConnectorSetupAttemptRecord.available_at <= now,
-                    ConnectorSetupAttemptRecord.expires_at > now,
+                    ConnectorAuthorizationRecord.available_at <= now,
+                    ConnectorAuthorizationRecord.expires_at > now,
                     or_(
-                        ConnectorSetupAttemptRecord.claim_expires_at.is_(None),
-                        ConnectorSetupAttemptRecord.claim_expires_at <= now,
+                        ConnectorAuthorizationRecord.claim_expires_at.is_(None),
+                        ConnectorAuthorizationRecord.claim_expires_at <= now,
                     ),
                 )
-                .order_by(ConnectorSetupAttemptRecord.available_at, ConnectorSetupAttemptRecord.id)
+                .order_by(ConnectorAuthorizationRecord.available_at, ConnectorAuthorizationRecord.id)
                 .limit(1)
                 .with_for_update(skip_locked=True)
             )
@@ -154,19 +155,10 @@ class ConnectorReconciler:
     async def _reconcile_attempt(self, attempt_id: str, claim_generation: int) -> None:
         try:
             async with short_session(self._sessions) as session:
-                attempt = await session.get(ConnectorSetupAttemptRecord, attempt_id)
+                attempt = await session.get(ConnectorAuthorizationRecord, attempt_id)
                 if attempt is None:
                     return
                 status = attempt.status
-                legacy = attempt.type == "composio" and attempt.browser_binding_digest is None
-            if legacy:
-                await self._setup.fail_attempt(
-                    attempt_id,
-                    code="setup_protocol_changed",
-                    claim_owner=self._instance_id,
-                    claim_generation=claim_generation,
-                )
-                return
             if status in {"pending", "starting"}:
                 try:
                     await self._setup.start_attempt(
@@ -179,7 +171,7 @@ class ConnectorReconciler:
                 return
             snapshot = await self._setup.attempt_snapshot(attempt_id)
             require_active_provider(snapshot.connector)
-            if status == "attached" and snapshot.attempt.supports_verified_callback:
+            if status == "attached" and snapshot.attempt.completion_method != SetupCompletionMethod.polling:
                 await self._defer_attempt(attempt_id, claim_generation, code=None, increment=False)
                 return
             if snapshot.attempt.setup_ref is None:
@@ -228,7 +220,7 @@ class ConnectorReconciler:
         increment: bool = True,
     ) -> None:
         async with transaction(self._sessions) as session:
-            attempt = await session.get(ConnectorSetupAttemptRecord, attempt_id, with_for_update=True)
+            attempt = await session.get(ConnectorAuthorizationRecord, attempt_id, with_for_update=True)
             if (
                 attempt is None
                 or attempt.status not in {"pending", "starting", "attached", "reserved"}
@@ -243,7 +235,7 @@ class ConnectorReconciler:
 
 
 def _owns_attempt(
-    attempt: ConnectorSetupAttemptRecord | None,
+    attempt: ConnectorAuthorizationRecord | None,
     owner: str,
     generation: int,
     now: datetime,

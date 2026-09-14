@@ -15,6 +15,7 @@ from a13n_envd_client.eip.v1 import DataFrame, DataFrameKind
 from a13n_envd_client.errors import (
     EIPConnectionError,
     EIPProtocolError,
+    EIPTransferTransportError,
     EIPTransportClosedError,
     EIPTransportError,
 )
@@ -34,6 +35,7 @@ class _TransferState:
     upload: asyncio.Queue[bytes | None] | None = None
     task: asyncio.Task[None] | None = None
     offset: int = 0
+    failure: EIPTransferTransportError | None = None
 
 
 class HttpTransport:
@@ -208,7 +210,9 @@ class HttpTransport:
                 content=b"",
             ) as response:
                 if response.status_code != 200:
-                    raise EIPTransportError(f"EIP HTTP reader failed with status {response.status_code}")
+                    raise EIPTransferTransportError(
+                        f"EIP HTTP reader failed with status {response.status_code}", handle=handle
+                    )
                 _validate_response_headers(response, "application/octet-stream")
                 await self._received.put(DataFrame(kind=DataFrameKind.ATTACHED, handle=handle))
                 async for chunk in response.aiter_bytes(self._max_transfer_frame_bytes):
@@ -221,6 +225,14 @@ class HttpTransport:
                 await self._received.put(DataFrame(kind=DataFrameKind.END, handle=handle, offset=state.offset))
         except asyncio.CancelledError:
             raise
+        except EIPTransferTransportError as error:
+            state.failure = error
+            await self._received.put(error)
+        except httpx2.HTTPError:
+            # One HTTP exchange is not the logical EIP session. Control requests
+            # can still abort/close the resource after transfer connection loss.
+            state.failure = EIPTransferTransportError("EIP HTTP transfer exchange failed", handle=handle)
+            await self._received.put(state.failure)
         except BaseException as error:
             await self._fail_background(error)
 
@@ -242,11 +254,21 @@ class HttpTransport:
                 content=content(),
             )
             if response.status_code != 204:
-                raise EIPTransportError(f"EIP HTTP writer failed with status {response.status_code}")
+                raise EIPTransferTransportError(
+                    f"EIP HTTP writer failed with status {response.status_code}", handle=handle
+                )
             _validate_response_headers(response, "application/octet-stream")
             await self._received.put(DataFrame(kind=DataFrameKind.END_ACK, handle=handle, offset=state.offset))
         except asyncio.CancelledError:
             raise
+        except EIPTransferTransportError as error:
+            state.failure = error
+            await self._received.put(error)
+        except httpx2.HTTPError:
+            # One HTTP exchange is not the logical EIP session. Control requests
+            # can still abort/close the resource after transfer connection loss.
+            state.failure = EIPTransferTransportError("EIP HTTP transfer exchange failed", handle=handle)
+            await self._received.put(state.failure)
         except BaseException as error:
             await self._fail_background(error)
 
@@ -295,6 +317,8 @@ async def _put_upload(state: _TransferState, item: bytes | None) -> None:
     put = asyncio.create_task(upload.put(item))
     try:
         done, _ = await asyncio.wait({put, task}, return_when=asyncio.FIRST_COMPLETED)
+        if task in done and state.failure is not None:
+            raise state.failure
         if task in done and put not in done:
             raise EIPTransportClosedError("HTTP writer transfer ended before accepting the body")
         await put

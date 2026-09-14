@@ -20,7 +20,7 @@ from a13n_harness.events import (
     ContextOperationStartedPayload,
     emit_harness_event,
 )
-from a13n_harness.observation import observe_operation
+from a13n_harness.observation import observe_operation, observe_output, record_span_metadata
 
 from ._instructions import InstructionFunctionToolset, tool_instruction
 from .events import HandoffSummaryEvent
@@ -125,8 +125,16 @@ class HandoffToolset:
                     "handoff",
                     capability_id=self._owner.id,
                     operation_id=operation_id,
-                ):
+                ) as span:
+                    record_span_metadata(
+                        span,
+                        {
+                            "handoff.summary_bytes": len(rendered.encode("utf-8")),
+                            "handoff.file_count": len(state.files),
+                        },
+                    )
                     await self.replace_state(state)
+                    observe_output(span, {"state_replaced": True, "file_count": len(state.files)}, status="prepared")
             except BaseException as exc:
                 error_code = _safe_context_error_code(exc)
                 await emit_harness_event(

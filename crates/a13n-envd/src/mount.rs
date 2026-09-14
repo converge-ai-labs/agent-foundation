@@ -1107,11 +1107,14 @@ pub(crate) enum MountPathError {
 }
 
 impl MountPathError {
-    fn from_io(error: std::io::Error) -> Self {
+    pub(crate) fn from_io(error: std::io::Error) -> Self {
         match error.kind() {
             std::io::ErrorKind::NotFound => Self::NotFound,
             std::io::ErrorKind::AlreadyExists => Self::AlreadyExists,
             std::io::ErrorKind::PermissionDenied => Self::Denied,
+            std::io::ErrorKind::NotADirectory | std::io::ErrorKind::IsADirectory => {
+                Self::NotRegular
+            }
             std::io::ErrorKind::Unsupported => Self::Unsupported,
             _ => Self::Io,
         }

@@ -1,0 +1,21 @@
+# Compare equivalent dependency topology and idle host conditions.
+# Omit scenarios to run all 22. Example focused selection:
+# scenarios = ["pg.update", "run.complete", "steer.append", "steer.consume"]
+concurrency = [1, 8, 32, 64, 256]
+samples = 256 # Per cell, excluding warmup; use >=1000 for P99 gates.
+warmup_waves = 1
+payload_bytes = [1024, 1048576]
+pg_pool_size = 256 # Must cover largest concurrency for pre-acquired SQL calls.
+s3_pool_size = 256
+http_pool_size = 256 # Both total and retained preparation HTTP connections.
+thread_connection_states = ["cold", "warm"] # Reset PG connections before every Thread wave.
+
+# Optional operation-specific budgets in milliseconds. No implicit E2E budget is
+# reused. These are illustrative overrides; choose budgets for the actual target.
+# [budgets_ms."run.complete"]
+# p95 = 500
+# p99 = 1000
+# [budgets_ms."steer.append"]
+# p95 = 100
+# [budgets_ms."s3.put"]
+# p95 = 200

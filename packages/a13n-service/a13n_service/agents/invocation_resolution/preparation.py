@@ -139,13 +139,15 @@ class AgentInvocationPreparer:
                     workspace_id=workspace_id,
                     action=WorkspaceAction.models_read,
                 )
+                # Explicit Skill overrides resolve active keys even when their values match the Revision.
+                skills_overridden = config_override is not None and "skills" in config_override.model_fields_set
                 skills = await prepare_skills(
                     session,
                     actor=actor,
                     organization_id=authorized.organization_id,
                     workspace_id=workspace_id,
                     selections=merged.skills,
-                    retained=(revision.resolved_skills if merged.skills == revision.config.skills else None),
+                    retained=None if skills_overridden else revision.resolved_skills,
                 )
             async with short_session(self._sessions) as session:
                 subagents = await self._prepare_subagents(

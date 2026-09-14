@@ -4,7 +4,7 @@
 
 Harness UI uses a small multi-file configuration tree so people can configure and inspect the CLI with an ordinary editor or another agent. Files own desired Models, configured extensions, MCP servers, Agents, local Markdown subagents, Projects, and global defaults. The separately managed [Content Plugin catalog](01b-content-plugin-repositories.md) contributes editable fallback Markdown subagents and Skill sources. SQLite records accepted-generation indexes and mutable Thread selections but never becomes a competing editable resource source.
 
-A stable valid read of the configuration tree plus usable optional Content Plugin sources produces one accepted configuration generation. A malformed, incomplete, or changing primary configuration tree leaves the previous accepted generation active. Invalid optional plugin content is skipped with diagnostics under the [Content Plugin loading contract](01b-content-plugin-repositories.md#configuration-integration). Existing Threads retain their sticky resource IDs, but each later Run resolves those IDs from the current accepted generation.
+A stable valid read of the configuration tree plus usable optional Content Plugin sources produces one accepted configuration generation. A malformed, incomplete, or changing primary configuration tree leaves the previous accepted generation active. Invalid optional plugin content is skipped with diagnostics under the [Content Plugin loading contract](01b-content-plugin-repositories.md#configuration-integration). Unusable Agent Capability selections are skipped with warnings under the [Capability catalog contract](01a-extension-discovery-and-management.md#capability-catalog), without rejecting the generation or rewriting source files. Existing Threads retain their sticky resource IDs, but each later Run resolves those IDs from the current accepted generation.
 
 ## Configuration Tree
 
@@ -33,7 +33,7 @@ Each resource file defines one resource except MCP files, which also accept a mu
 
 The optional `AGENTS.md` beside the root YAML is global user-role guidance. Its exact UTF-8 content participates in the accepted generation fingerprint and source digest, under the same stable regular-file read and size limits as other primary sources. Edits and removal take effect on later accepted generations; captured Runs remain immutable. `RULES.md` and `AGENTS.override.md` are not instruction sources. Harness UI does not import guidance from ambient Codex configuration. [Composition](02-agent-composition-and-snapshots.md#resolution) owns injection and capture.
 
-The root file owns restart-bound process settings, global defaults, and application tool switches:
+The root file owns restart-bound process settings, user-input delivery, global defaults, and application tool switches:
 
 ```yaml
 schema_version: "1"
@@ -43,6 +43,9 @@ process:
   terminal_update_check: true
   log_level: INFO
   log_format: pretty
+
+input:
+  long_text_threshold_chars: 8000
 
 tools:
   enable_ask_user_question: true
@@ -64,6 +67,8 @@ defaults:
 `subagents.include` is an ordered unique list of release-owned names: `code-reviewer`, `executor`, and `explorer`. Omitted or `[]` includes none. Normal setup includes all three; `setup --advanced` offers all or none; individual names remain editor-configurable. These selections extend the root Run roster, not every descendant roster. They are composition inputs, not sticky Thread selections. The package owns the definitions; no definition files are copied into the configuration tree. `a13n-harness-ui config subagents` lists available roles and current inclusion. [Composition](02-agent-composition-and-snapshots.md#built-in-subagents) owns expansion, identity, inheritance, and conflict handling.
 
 `tools.enable_ask_user_question` defaults to `true`; disabling it excludes the built-in `ask_user_question` Capability from newly resolved Runs, including explicitly authored selections. `tools.enable_codeact` defaults to `true`; when enabled it includes the native Harness CodeAct Capability with `run_code`, `run_program`, and its explicit `store`, `load`, and `forget` state tools. State bounds and persistence semantics follow the [Harness CodeAct contract](../a13n-harness/18-codeact.md). An explicit Agent `codeact` Capability configuration can narrow or tune its native runners, but cannot bypass the global disabled switch. Ordinary tool visibility filters still apply. These switches participate in accepted generations and captured compositions; they do not alter active or previously captured Runs. [Composition](02-agent-composition-and-snapshots.md#resolution) owns reconstruction.
+
+`input.long_text_threshold_chars` is a positive integer, default `8000`, or `null` to disable automatic text files. It counts Unicode characters in each submitted user-text block, not tokens or UTF-8 bytes. A block is eligible only when strictly longer than the threshold. A root Run captures the policy from its accepted generation and uses it for initial input and human steering; later configuration changes affect later Runs. The [root input contract](05-runtime-subagents-and-surfaces.md#long-text-input-files) owns conversion, readability checks, and failure behavior.
 
 `tools.ask_user_question_timeout_seconds` is a positive finite number, default `120`. It controls the terminal's wait for each displayed structured question, not model execution or shell-approval timeouts. The [interactive contract](07-interactive-cli.md#decisions-cancellation-and-recovery) owns expiry and continuation behavior.
 
@@ -115,14 +120,14 @@ sequenceDiagram
     participant DB as SQLite
 
     Loader->>Sources: scan and stable-read bounded files
-    Loader->>Loader: parse strict documents and resolve IDs
+    Loader->>Loader: validate known fields, retain additive fields, and resolve IDs
     Loader->>Catalogs: validate selected Capability and extension keys
     Loader->>Loader: validate Agent graphs, defaults, and Projects
     Loader->>Objects: publish normalized resource generation
     Loader->>DB: compare-and-select accepted generation digest
 ```
 
-The loader captures configuration directory membership and each file's identity, size, modification time, bytes, and digest. It also captures release-owned built-in Markdown sources and their exact digests, plus current Content Plugin metadata, editable directory paths, diagnostics, and usable canonical Markdown. It retries a bounded number of times when membership or a file changes during capture. The source-generation digest covers the normalization-format revision, ordered source-relative identities, exact source digests, and plugin diagnostics, not timestamps. Changing normalized serialization advances the normalization revision, so unchanged user files can be accepted after an upgrade without colliding with historical immutable objects. Per-file byte digests and existing historical generations remain unchanged. Normalized resource content has its own canonical digests, so presentation-only edits create a new source generation without changing behavior-derived identities such as an Environment profile digest.
+The loader captures configuration directory membership and each file's identity, size, modification time, bytes, and digest. It also captures release-owned built-in Markdown sources and their exact digests, plus current Content Plugin metadata, editable directory paths, diagnostics, and usable canonical Markdown. It retries a bounded number of times when membership or a file changes during capture. The source-generation digest covers the normalization-format revision, ordered source-relative identities, exact source digests, plugin diagnostics, and normalized Project root paths, not timestamps. Source-time path normalization can observe a changed symlink target without changed YAML bytes; the normalized roots therefore also participate in generation identity. Changing normalized serialization advances the normalization revision, so unchanged user files can be accepted after an upgrade without colliding with historical immutable objects. Per-file byte digests and existing historical generations remain unchanged. Normalized resource content has its own canonical digests, so presentation-only edits create a new source generation without changing behavior-derived identities such as an Environment profile digest.
 
 Acceptance is all-or-nothing. Publishing immutable content can leave harmless unreferenced objects, but SQLite selects a generation only after every selected resource, catalog key, graph, credential reference, and default validates. A failed candidate never removes or partially updates the previous accepted generation.
 
@@ -145,12 +150,18 @@ Rules:
 
 1. Creation and update submit replacement content for an approved source path. An existing destination is replaced; callers supply no expected digest. Resource-ID uniqueness and reference validation still apply to the candidate.
 2. Deletion removes the current non-root source without a digest precondition. An already absent source is a successful no-op.
-3. New content or removal is validated as part of a complete candidate generation before publication. Source paths, regular-file bounds, encoding, schema, and composition validation remain in force.
+3. New content or removal is validated as part of a complete candidate generation before publication. The replaced or removed source need not itself parse successfully; other current sources must form a valid candidate with the requested change. Source paths, regular-file bounds, encoding, schema, and composition validation remain in force. Validation alone returns a candidate digest without publishing or accepting it; publication repeats validation rather than treating that digest as a write precondition.
 4. Publication uses a same-directory temporary file, file sync, and atomic replacement, followed by directory sync. It does not compare the current source or generation to an earlier read, detach an existing file into a recovery directory, or compare written bytes to the subsequently loaded generation.
 5. A concurrent editor or App save is not a conflict: the last filesystem write to each selected path wins. Writes to unselected paths are not undone. Validation is not a transaction over concurrent edits; automatic reload accepts the latest valid generation and retains the prior accepted generation when current files are invalid.
 6. Direct editor writes do not need a Harness UI token or command. They participate through the same stable-read and generation-validation path.
 
 A completed source write is not a promise that its bytes remain current after another writer saves. Source digests remain read/provenance facts for accepted generations and frozen Runs, not file-write preconditions. Internal SQLite head selection and immutable-object integrity follow [Local Storage](03-local-storage-and-recovery.md); last-write-wins file publication does not change Thread, continuation, or execution concurrency contracts.
+
+### Agent Tool-Proxy Configuration and Preview
+
+Agent YAML owns tool-proxy groups. `config show` exposes a static preview for Agents with grouping configured: the Agent ID, authored grouping configuration, and configured MCP/Harness Plugin source identities with enabled membership and `active`, `dormant`, `direct`, or `disabled` presentation. It uses Agent creation defaults, not a particular Thread's sticky selections or live tools. Neither preview nor validation constructs MCP clients or discovers tools.
+
+Grouping semantics and immutable Run capture belong to [Agent composition](02-agent-composition-and-snapshots.md#tool-proxy-groups). Browser group editing is not implemented; the existing configuration source HTTP contract is unchanged.
 
 ## First-use Initialization
 
@@ -158,10 +169,11 @@ A completed source write is not a promise that its bytes remain current after an
 
 ## Global Defaults
 
-Global defaults initialize a new root Thread. The App resolves omitted create fields in this order:
+The App first resolves the new Thread's optional Project from explicit creation input or the global Project default; explicit null suppresses that default. The selected Project contributes its [creation configuration](04-projects-threads-and-environments.md#project-creation-configuration) automatically for omitted creation axes. It does not become a live inheritance layer for existing Threads. The App resolves each supported creation axis in this order:
 
 ```text
 explicit Thread creation selection
+then selected Project creation default
 then selected Agent default, where that Agent owns the axis
 then root YAML global default
 then the release-owned Full Control Environment profile (`environment-native`)
@@ -169,7 +181,11 @@ then the release-owned Full Control Environment profile (`environment-native`)
 
 The resulting Thread stores exact resource IDs, with null for an unselected optional Project. `defaults.project` is optional and is not generated by normal setup. Without an explicit creation Project or global Project default, a new Thread runs using its own scratch directory under the [projectless Thread contract](04-projects-threads-and-environments.md#threads-without-a-project). Later global-default or file changes do not rewrite an existing Thread's selections. A Thread Run with no configuration patch therefore uses that Thread's previous sticky values.
 
-Collection defaults are ordered exact resource IDs. Empty means select none. A missing, wrong-kind, or duplicate default rejects the candidate generation.
+Creation inspection reports the winning source per axis from this same resolver, including explicit null Project and empty collection selections. Sources distinguish explicit input, Project, Agent, global defaults, and built-in fallback. Existing sticky Thread selections are labeled as Thread values; matching a current default does not prove the historical origin of a stored ID. No historical inheritance provenance is inferred or persisted by this inspection.
+
+The Agent selection is resolved before axes that can use that Agent's defaults. A Project cannot recursively select another Project, and Agent-owned Model/Capability behavior remains in the selected Agent resource. A projectless Thread skips the Project layer.
+
+Collection defaults are ordered exact resource IDs. The first explicitly supplied collection wins as a whole; collections are not concatenated or unioned across layers. Omission continues fallback and an explicitly empty collection selects none. A missing referenced resource, wrong-kind reference, or duplicate default rejects the candidate generation.
 
 ## Credentials
 
@@ -214,13 +230,19 @@ Model API-key authentication, MCP headers, MCP command environments, and Provide
 
 The root `schema_version` governs tree layout and global fields. Canonical resources carry their own kind schema version. MCP `mcpServers` wrappers omit version/kind metadata and normalize to the same version-1 MCP resources. A format migration writes ordinary inspectable files through the same validated last-write-wins boundary. Existing content is never reinterpreted under a new version.
 
+Within a supported version, root configuration sections, resource envelopes, Project roots/defaults, Capability selections, tool-proxy groups, canonical subagent metadata, and retained generation/source envelopes accept additive JSON fields. Readers preserve those fields in normalized round trips without applying unknown behavior. Source loading logs unknown field locations and names, never their values, so a typo remains diagnosable without disabling the whole tree. Managed read-modify-write operations preserve unrelated known and unknown fields; explicit full-source replacement still replaces the submitted document.
+
+Known types, required fields, references, graph rules, and supported version/kind discriminators remain strict. Authentication sources, MCP transports/value sources, and Agent-versus-Markdown selectors are closed execution contracts, not additive metadata. Native Harness settings and tool-proxy configuration follow their owning schemas. Explicitly forbidden semantics, including obsolete question-tool policy names, authored Markdown `model`, and recursive Project defaults, remain errors. Unknown fields cannot grant a new credential source, transport, or execution authority. Changes that require older readers to enforce new semantics require an explicit incompatible version or discriminator transition, not an ignorable field.
+
+Writers omit semantically absent newly introduced optional fields where the historical shape allows it: empty Project `defaults` is omitted, while explicit empty selection lists remain present. This reduces avoidable incompatibility but cannot retrofit tolerant readers into already released strict packages; populated new features require a reader supporting those features. Historical format checks are separate from database structural compatibility and do not promise arbitrary old-wheel interoperability.
+
 ## Invariants
 
 1. Files are the only editable desired-resource authority.
 2. Each resource has one stable ID; an MCP source file can define multiple resources without duplicate physical source rows.
 3. One accepted generation is complete and coherent across the whole tree.
 4. Invalid intermediate edits never partially replace the accepted generation.
-5. Managed writes require expected source content and never knowingly clobber a newer observed revision; the CLI exposes no generic desired-resource write.
-6. Global defaults initialize new Threads and never live-update existing Threads.
+5. Managed configuration writes validate the complete candidate and publish under the owning last-write-wins source contract; the CLI exposes no generic desired-resource write.
+6. Project and global defaults initialize new Threads under the documented precedence and never live-update existing Thread selections.
 7. Host-managed authentication and MCP credentials remain references until fresh Run construction; user-owned MCP sources may hold literal credentials. Opaque native payloads are copied verbatim, so users must not rely on automatic credential detection or removal there.
 8. Installed runtime-package or Content Plugin availability never grants selection.

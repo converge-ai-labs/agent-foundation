@@ -65,7 +65,7 @@ def test_override_distinguishes_inheritance_and_empty_selection():
         Reception(receive_enabled=True)
 
 
-@pytest.mark.parametrize("field", ["skills", "connector_tools", "mcp_tools"])
+@pytest.mark.parametrize("field", ["skills", "connection_tools", "connection_tools"])
 def test_null_override_categories_are_rejected_at_configuration(field):
     with pytest.raises(ValidationError):
         InputOverride.model_validate({field: None})

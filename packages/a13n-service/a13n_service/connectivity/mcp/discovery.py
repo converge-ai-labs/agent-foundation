@@ -2,17 +2,27 @@
 
 from __future__ import annotations
 
-from pydantic_ai.mcp import MCPToolset
+from dataclasses import dataclass
+
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
+from a13n_service.connectivity.connections.domain import Connection
+from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
+from a13n_service.iam import AuthenticatedActor
 from a13n_service.storage import transaction
 
 from .domain import MCPTool
 from .errors import MCPConnectionError
-from .management import require_connection
+from .management import authorize_connection, require_connection
 from .refresh import OAuthCredentialRefresh
 from .transport import RemoteTransport
+
+
+@dataclass(frozen=True, slots=True)
+class DiscoveryResult:
+    connection: Connection
+    tools: tuple[MCPTool, ...]
 
 
 class MCPDiscoveryService:
@@ -26,7 +36,9 @@ class MCPDiscoveryService:
         self._transport = transport
         self._credentials = credentials
 
-    async def discover(self, connection_id: str) -> tuple[MCPTool, ...]:
+    async def discover(
+        self, connection_id: str, *, actor: AuthenticatedActor, command_id: str | None = None
+    ) -> DiscoveryResult:
         snapshot = await self._credentials.current(connection_id)
         generation = snapshot.credential_generation
 
@@ -35,7 +47,7 @@ class MCPDiscoveryService:
             current = await self._credentials.current(connection_id)
             if current.endpoint != snapshot.endpoint or current.version != snapshot.version:
                 raise MCPConnectionError(
-                    "connection_changed", "MCPConnection changed during discovery.", category=ErrorCategory.conflict
+                    "connection_changed", "Connection changed during discovery.", category=ErrorCategory.conflict
                 )
             generation = current.credential_generation
             return current.headers
@@ -44,20 +56,18 @@ class MCPDiscoveryService:
             async with self._transport.connect(
                 snapshot.endpoint, headers=snapshot.headers, refresh_headers=headers
             ) as client:
-                toolset = MCPToolset(client)
-                async with toolset:
-                    tools = tuple(
-                        MCPTool(
-                            name=tool.name,
-                            description=tool.description or "",
-                            input_schema=tool.inputSchema,
-                            output_schema=tool.outputSchema,
-                            annotations=tool.annotations.model_dump(mode="json", exclude_none=True)
-                            if tool.annotations
-                            else {},
-                        )
-                        for tool in await toolset.list_tools()
+                tools = tuple(
+                    MCPTool(
+                        name=tool.name,
+                        description=tool.description or "",
+                        input_schema=tool.input_schema,
+                        output_schema=tool.output_schema,
+                        annotations=tool.annotations.model_dump(mode="json", exclude_none=True)
+                        if tool.annotations
+                        else {},
                     )
+                    for tool in await client.list_tools_bounded()
+                )
         except Exception as error:
             raise MCPConnectionError(
                 "mcp_discovery_unavailable", "Remote tool discovery failed.", category=ErrorCategory.unavailable
@@ -71,8 +81,26 @@ class MCPDiscoveryService:
                 or current.status not in {"pending", "ready"}
             ):
                 raise MCPConnectionError(
-                    "connection_changed", "MCPConnection changed during discovery.", category=ErrorCategory.conflict
+                    "connection_changed", "Connection changed during discovery.", category=ErrorCategory.conflict
                 )
+            await authorize_connection(session, actor, current, mode="manage")
+            evidence = None
+            if command_id is not None:
+                evidence = await session.get(IdempotencyEvidenceRecord, command_id, with_for_update=True)
+                if (
+                    evidence is None
+                    or evidence.result_ref != connection_id
+                    or evidence.receipt_json is None
+                    or evidence.receipt_json.get("version") != current.version
+                ):
+                    raise MCPConnectionError(
+                        "connection_changed",
+                        "Connection command changed during discovery.",
+                        category=ErrorCategory.conflict,
+                    )
             current.status = "ready"
             current.status_reason = None
-        return tools
+            resource = current.to_resource()
+            if evidence is not None:
+                evidence.receipt_json = {"version": resource.version, "resource": resource.model_dump(mode="json")}
+        return DiscoveryResult(connection=resource, tools=tools)

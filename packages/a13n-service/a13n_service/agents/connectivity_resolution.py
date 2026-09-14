@@ -14,16 +14,13 @@ from a13n_service.connectivity.selection_resolution import (
 )
 from a13n_service.iam import AuthenticatedActor
 
-from .domain import ConnectorConnectionToolSelection, MCPConnectionToolSelection
+from .domain import ConnectionToolSelection
 from .errors import agent_revision_create_failed, agent_revision_not_executable
 
 
 class _ConnectivityConfig(Protocol):
     @property
-    def connector_tools(self) -> tuple[ConnectorConnectionToolSelection, ...]: ...
-
-    @property
-    def mcp_tools(self) -> tuple[MCPConnectionToolSelection, ...]: ...
+    def connection_tools(self) -> tuple[ConnectionToolSelection, ...]: ...
 
 
 async def prepare_revision_connectivity(
@@ -39,8 +36,7 @@ async def prepare_revision_connectivity(
             actor=actor,
             organization_id=organization_id,
             workspace_id=workspace_id,
-            connector_tools=config.connector_tools,
-            mcp_tools=config.mcp_tools,
+            connection_tools=config.connection_tools,
         )
     except ConnectivitySelectionError as error:
         raise agent_revision_create_failed(error.code, path=error.path) from error
@@ -70,8 +66,7 @@ async def prepare_invocation_connectivity(
             actor=actor,
             organization_id=organization_id,
             workspace_id=workspace_id,
-            connector_tools=config.connector_tools,
-            mcp_tools=config.mcp_tools,
+            connection_tools=config.connection_tools,
         )
     except ConnectivitySelectionError as error:
         raise agent_revision_not_executable(error.code) from error

@@ -8,8 +8,9 @@ from a13n_service.etags import resource_etag
 from a13n_service.hooks import InlineHookSubscriptionInput, WebhookDestinationConfig
 from a13n_service.hooks.models import HookSubscriptionRecord, HookSubscriptionRevisionRecord
 from a13n_service.iam.models import RoleBindingRecord
-from a13n_service.interactions.commands import InteractionCommandError, RetryRunCommand, WaitingContinueRunCommand
+from a13n_service.interactions.command_values import RetryRunCommand, WaitingContinueRunCommand
 from a13n_service.interactions.control_domain import InterruptRequest, WaitingRunFeedbackRequest
+from a13n_service.interactions.errors import InteractionCommandError
 from a13n_service.interactions.models import RunRecord, ThreadRecord
 from a13n_service.lifecycle.models import LifecycleEventRecord
 from a13n_service.secrets.models import SecretRecord
@@ -53,14 +54,14 @@ async def _prepare(sessions, tmp_path, operation: str):
         )
     objects = await LocalObjectStore.create(tmp_path / "objects")
     commands = _commands(sessions, objects, _Preparation(), _Freezing([_frozen()]))
-    source = await commands.start(
+    source = await commands.runs.start(
         actor=_actor(),
         workspace_id=WORKSPACE_ID,
         idempotency_key="source",
         request=_request().model_copy(update={"hook_subscription": _hook()}),
     )
     if operation == "retry":
-        await commands.interrupt(
+        await commands.active.interrupt(
             actor=_actor(),
             run_id=source.run_id,
             idempotency_key="cancel-source",
@@ -68,17 +69,17 @@ async def _prepare(sessions, tmp_path, operation: str):
         )
         values = {"expected_thread_version": 2}
         request_type = RetryRunCommand
-        command = commands.retry
+        command = commands.continuations.retry
     else:
         digest = await _wait_run(sessions, objects, run_id=source.run_id)
         values = {"expected_thread_version": 2, "sealed_state_digest_sha256": digest}
         if operation == "feedback":
             request_type = WaitingRunFeedbackRequest
-            command = commands.feedback
+            command = commands.continuations.feedback
         else:
             values["input"] = _request().input
             request_type = WaitingContinueRunCommand
-            command = commands.continue_waiting
+            command = commands.continuations.continue_waiting
     return command, source, request_type, values
 
 
@@ -209,7 +210,7 @@ async def test_retry_only_inherits_direct_source(lifecycle_interaction_sessions,
     )
     objects = await LocalObjectStore.create(tmp_path / "objects")
     commands = _commands(sessions, objects, _Preparation(), _Freezing([_frozen()]))
-    await commands.interrupt(
+    await commands.active.interrupt(
         actor=_actor(),
         run_id=first.run_id,
         idempotency_key="cancel-first",

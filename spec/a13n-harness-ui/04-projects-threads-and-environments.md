@@ -2,7 +2,7 @@
 
 ## Design Position
 
-A Project is the optional Harness UI concept for grouping local roots and organizing project-bound root Threads. It is a mutable named ordered root list modeled after Codex Project. Threads can run without selecting a Project. Harness UI defines no separate Workspace resource, Workspace root collection, or `WorkspaceBinding` input.
+A Project is the optional Harness UI concept for grouping local roots and organizing project-bound root Threads. It owns a mutable named ordered root list and Project-scoped creation configuration for project-bound conversations. Threads can run without selecting a Project. Harness UI defines no separate Workspace resource, Workspace root collection, or `WorkspaceBinding` input.
 
 A Thread is one continuation-backed root or child conversation. It owns mutable sticky selections for Project, Agent, Environment profile, Harness Plugins, Environment Run Extensions, and MCP servers. A Run can atomically patch those selections and captures their complete effective values before execution. Subsequent Project or Thread changes do not affect the admitted Run.
 
@@ -21,7 +21,7 @@ roots:
   - path: /work/design-notes
 ```
 
-The conceptual model is:
+The conceptual root-identity projection is:
 
 ```python
 class ProjectRoot(BaseModel):
@@ -35,9 +35,19 @@ class Project(BaseModel):
     position: int
 ```
 
-Roots are canonical absolute existing directories, ordered and unique. The first root is the default working directory and receives mount alias `workspace`; later roots receive `workspace-2`, `workspace-3`, and so on. These are Run-local mount names, not opaque Harness mount IDs or Workspace resources. The selected profile's approved Host adapter determines whether those mounts preserve canonical Host paths or use virtual aggregate routes. Project position provides stable user ordering; recency is aggregated in storage from all associated non-archived Threads and does not belong in the file or a bounded Thread-list scan.
+Source loading expands home paths and canonicalizes absolute roots without requiring the directories to exist. Roots are ordered, unique, bounded, and NUL-free. Retained configuration decoding validates their structure without resolving paths or consulting current filesystem availability. Missing or moved roots do not prevent catalog inspection, accepted-generation recovery, or unrelated Project use. Selected Run Environment preparation resolves and verifies every captured root as an accessible directory and rejects unavailable or duplicate normalized roots without falling back to projectless execution. The first root is the default working directory and receives mount alias `workspace`; later roots receive `workspace-2`, `workspace-3`, and so on. These are Run-local mount names, not opaque Harness mount IDs or Workspace resources. The selected profile's approved Host adapter determines whether those mounts preserve canonical Host paths or use virtual aggregate routes. Project position provides stable user ordering; recency is aggregated in storage from all associated non-archived Threads and does not belong in the file or a bounded Thread-list scan.
 
 Changing Project roots affects later Runs of every Thread selecting the Project. A Run already admitted retains its captured roots. Removing a Project file removes it from the next accepted generation. Existing Threads retain the unresolved ID and reject later Runs until explicitly reassigned; no global fallback silently changes their local authority.
+
+### Project Creation Configuration
+
+A Project combines working roots with resource selections for creating conversations: Agent, Environment profile, Harness Plugins, Environment Run Extensions, and MCP servers. These selections refer to the existing resource catalog; they are not embedded copies of Provider implementations, credentials, or runtime objects. Agent-owned Model and Capability choices retain their own composition authority.
+
+Each Project owns one `defaults` combination in its file-backed resource, not a collection of named presets. Its optional fields are `agent`, `environment_profile`, `harness_plugins`, `environment_run_extensions`, and `mcp_servers`; null has the same fallback meaning as omission. Lists contain ordered, unique IDs and retain explicit empty selections. Old files without `defaults` remain valid. New root Threads selecting that Project automatically use it through the [configuration default rules](01-configuration-and-resource-catalog.md#global-defaults), with explicit creation choices taking precedence. Omitted selections retain the ordinary creation fallback behavior; an explicitly empty collection selects none, and nonempty collections replace lower layers as a whole. The resulting Thread stores exact values, not a live inheritance link. A new Thread's selected Project and effective configuration are inspectable before execution.
+
+Editing a Project's creation configuration does not rewrite existing Thread selections. Applying current Project selections to an existing Thread previews and updates only the axes explicitly present in the Project's default combination, including explicit empty collections. Unspecified axes retain the Thread's values. The action uses an explicit expected-version configuration mutation; it does not alter an admitted Run. Its preview includes the Thread configuration version, current and proposed exact configurations, a patch containing only Project-specified axes, and the canonical digest of that Project's default combination. Apply names the reviewed version and defaults digest. Changed Thread selection or defaults rejects apply as stale; unrelated source edits do not invalidate the defaults digest. An empty combination produces an unchanged preview and cannot be applied. Preview allocates no Thread, Run, or continuation. Editing a selected shared resource's content or the Project's roots retains its independently specified later-Run effects.
+
+Project grouping does not imply that every Thread shares a worktree, native process, or remote sandbox. Human [Host Files and Terminal](webui/02-host-computer-sharing.md) operate on the server, not on the selected Agent Environment. No separate Environment browser or debug terminal is introduced.
 
 ### Current-directory Resolution
 
@@ -107,7 +117,7 @@ class ThreadConfiguration(BaseModel):
 
 The stored value is exact. It contains no `inherit`, omitted, or globally enabled state. A null `project_id` means no Project, not an unresolved reference or a request to inherit a global default. A configuration patch can explicitly clear the Project with null; omission retains the current selection.
 
-A new root Thread resolves an explicit Agent resource or the root YAML Agent default into `AgentResourceSource`, then resolves the other creation defaults and stores the exact result. Root Threads cannot select a Markdown subagent as their source; that concise format depends on a parent Agent capture.
+A new root Thread resolves its Agent resource from explicit creation input, the selected Project's Agent default, or the root YAML Agent default into `AgentResourceSource`, then resolves other axes under the shared creation precedence and stores the exact result. Root Threads cannot select a Markdown subagent as their source; that concise format depends on a parent Agent capture.
 
 A child Thread stores the selected roster entry as either an Agent resource or Markdown subagent source. Project, Environment profile, and Run Extensions default from the admitting parent capture. Agent-resource children use their own Plugin and MCP defaults when present; Markdown children inherit the admitting parent capture's exact Plugin and MCP lists. After creation the child owns these stored selections independently.
 
@@ -209,6 +219,8 @@ The directory is not a Project and does not contribute Project Skills or change 
 Each App-prepared root or child Run receives a `thread-files` mount for its own Thread file area. The [storage contract](03-local-storage-and-recovery.md#thread-files-and-automatic-scratch-cleanup) owns its persistence and cleanup. The mount contains `tmp/` for scratch work and `attachments/` for submitted inputs. Built-in Full Control and Sandbox modes bind this area as a separate root using the selected adapter and profile; model-facing paths follow the same canonical-host-path rule as Project roots. Scratch files are usable through real Environment file operations and shell cwd selection, not merely through a path mentioned in a prompt. This mount's default working directory is `tmp/`; it is the default mount when no Project is selected.
 
 A Sandbox command selected in a Project root does not gain access to the Thread file mount. To process an attachment with a shell, select a cwd under the Thread file root; that sandbox can access its own scratch and attachments, not arbitrary Project or Host paths. Custom adapters receive a Host Direct Local file-only mount rather than silently interpreting a Host directory as a remote Provider workspace. Availability and permission ceilings remain authoritative. Release-owned guidance tells the model to preserve attachments and to copy valuable results out of scratch.
+
+When an Agent selects `native_image_generation`, UI instantiation supplies the Harness Capability with a saver that writes a uniquely named image under the current Run's `thread-files/tmp/` through the Environment file boundary. This applies to roots and children, with or without a Project, and to Host-path and virtual-path layouts. It returns the aggregate file path only after the write succeeds. Generated images are scratch outputs, not submitted attachments; transcripts and continuation messages contain the saved references rather than generated image bytes. Scratch retention and pruning apply unchanged. Keeping an image long-term requires copying or publishing it outside scratch.
 
 This mount is not a Project binding or a durable shell-process recovery store. It publishes no Environment-state head. Finalization closes its Run-local Environment like other mounts while retaining the files themselves. Child Threads have their own file area; no parent's file authority is implicitly inherited.
 

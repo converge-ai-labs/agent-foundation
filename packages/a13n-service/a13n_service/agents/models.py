@@ -22,7 +22,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.database import Base
 from a13n_service.iam.domain import ActorRef, PrincipalRef, PrincipalType, SystemActorRef
-from a13n_service.names import CASEFOLDED_NAME_MAX_LENGTH
+from a13n_service.resource_keys import RESOURCE_KEY_MAX_LENGTH
 from a13n_service.temporal import assume_utc, optional_assume_utc
 
 from .domain import (
@@ -30,8 +30,7 @@ from .domain import (
     AgentConfig,
     AgentRevision,
     AgentSource,
-    ConnectorConnectionToolSelection,
-    MCPConnectionToolSelection,
+    ConnectionToolSelection,
     ResolvedAgentModel,
     ResolvedSkillBinding,
     ResolvedSubagentEdge,
@@ -40,8 +39,7 @@ from .domain import (
 _CONFIG_ADAPTER = TypeAdapter(AgentConfig)
 _MODEL_ADAPTER = TypeAdapter(ResolvedAgentModel)
 _SKILLS_ADAPTER = TypeAdapter(tuple[ResolvedSkillBinding, ...])
-_CONNECTOR_TOOLS_ADAPTER = TypeAdapter(tuple[ConnectorConnectionToolSelection, ...])
-_MCP_TOOLS_ADAPTER = TypeAdapter(tuple[MCPConnectionToolSelection, ...])
+_CONNECTION_TOOLS_ADAPTER = TypeAdapter(tuple[ConnectionToolSelection, ...])
 _SUBAGENTS_ADAPTER = TypeAdapter(tuple[ResolvedSubagentEdge, ...])
 
 
@@ -59,7 +57,7 @@ class AgentRecord(Base):
         CheckConstraint("created_by_type IN ('user', 'service_account', 'system')", name="created_by_type_valid"),
         CheckConstraint("updated_by_type IN ('user', 'service_account', 'system')", name="updated_by_type_valid"),
         Index("uq_agents_id_organization", "id", "organization_id", "workspace_id", unique=True),
-        Index("uq_agents_workspace_name", "workspace_id", "normalized_name", unique=True),
+        Index("uq_agents_workspace_key", "workspace_id", "key", unique=True),
         Index("ix_agents_workspace_updated", "workspace_id", "updated_at", "id"),
         Index("ix_agents_workspace_availability", "workspace_id", "enabled", "archived_at", "updated_at", "id"),
     )
@@ -70,7 +68,8 @@ class AgentRecord(Base):
     workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
     source: Mapped[str] = mapped_column(String(16), nullable=False)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
-    normalized_name: Mapped[str] = mapped_column(String(CASEFOLDED_NAME_MAX_LENGTH), nullable=False)
+    key: Mapped[str] = mapped_column(String(RESOURCE_KEY_MAX_LENGTH), nullable=False)
+    image_id: Mapped[str | None] = mapped_column(String(72))
     description: Mapped[str | None] = mapped_column(String(4096))
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     current_revision_id: Mapped[str] = mapped_column(String(72), nullable=False)
@@ -93,7 +92,13 @@ class AgentRecord(Base):
             workspace_id=self.workspace_id,
             source=AgentSource(self.source),
             name=self.name,
+            key=self.key,
             description=self.description,
+            image_url=(
+                f"/api/v1/workspaces/{self.workspace_id}/agents/{self.id}/avatar/{self.image_id}"
+                if self.image_id
+                else None
+            ),
             version=self.version,
             current_revision_id=self.current_revision_id,
             enabled=self.enabled,
@@ -138,12 +143,7 @@ class AgentRevisionRecord(Base):
     config_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     resolved_model: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     resolved_skills: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
-    connector_tools: Mapped[list[dict[str, Any]]] = mapped_column(
-        JSON,
-        nullable=False,
-        server_default=text("'[]'"),
-    )
-    mcp_tools: Mapped[list[dict[str, Any]]] = mapped_column(
+    connection_tools: Mapped[list[dict[str, Any]]] = mapped_column(
         JSON,
         nullable=False,
         server_default=text("'[]'"),
@@ -166,8 +166,7 @@ class AgentRevisionRecord(Base):
             config_digest=self.config_digest,
             resolved_model=_MODEL_ADAPTER.validate_python(self.resolved_model),
             resolved_skills=_SKILLS_ADAPTER.validate_python(self.resolved_skills),
-            connector_tools=_CONNECTOR_TOOLS_ADAPTER.validate_python(self.connector_tools),
-            mcp_tools=_MCP_TOOLS_ADAPTER.validate_python(self.mcp_tools),
+            connection_tools=_CONNECTION_TOOLS_ADAPTER.validate_python(self.connection_tools),
             resolved_subagents=_SUBAGENTS_ADAPTER.validate_python(self.resolved_subagents),
             content_digest=self.content_digest,
             source_revision_id=self.source_revision_id,

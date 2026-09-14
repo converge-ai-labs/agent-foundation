@@ -12,14 +12,14 @@ def _webhook(endpoint_url: str = "https://EXAMPLE.com/hooks/") -> WebhookDestina
     )
 
 
-def test_canonicalizes_durable_hook_names_and_endpoint() -> None:
+def test_canonicalizes_hook_names_and_host_but_preserves_endpoint_path() -> None:
     value = InlineHookSubscriptionInput(
         hook_names=("run_attempt.failed", "run.accepted"),
         webhook=_webhook(),
     )
 
     assert value.hook_names == ("run.accepted", "run_attempt.failed")
-    assert value.webhook.endpoint_url == "https://example.com/hooks"
+    assert value.webhook.endpoint_url == "https://example.com/hooks/"
 
 
 @pytest.mark.parametrize("hook_name", ["agui.run_finished", "item.completed", "unknown.event"])

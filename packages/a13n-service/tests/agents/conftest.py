@@ -50,8 +50,7 @@ def agent_config(
     instructions: str = "Be helpful.",
     plugins: list[object] | None = None,
     skills: list[object] | None = None,
-    connector_tools: tuple[dict[str, object], ...] | None = None,
-    mcp_tools: tuple[dict[str, object], ...] | None = None,
+    connection_tools: tuple[dict[str, object], ...] | None = None,
     subagents: dict[str, object] | None = None,
 ) -> AgentConfig:
     return AgentConfig.model_validate(
@@ -65,8 +64,7 @@ def agent_config(
             "input_adapter": {"adapter_key": "native", "config": {}},
             "plugins": plugins or [],
             "skills": skills or [],
-            "connector_tools": connector_tools or (),
-            "mcp_tools": mcp_tools or (),
+            "connection_tools": connection_tools or (),
             "subagents": subagents or {},
             "client_tools": [],
             "output_spec": None,
@@ -108,14 +106,14 @@ async def agent_sessions(
     engine = create_sql_engine(SQLiteConfig(path=service_sqlite_database))
     sessions = create_session_factory(engine)
     async with transaction(sessions) as session:
-        session.add(OrganizationRecord(id=ORG_ID, name="Test", created_at=NOW, updated_at=NOW))
+        session.add(OrganizationRecord(id=ORG_ID, key="test", name="Test", created_at=NOW, updated_at=NOW))
         await session.flush()
         session.add(
             WorkspaceRecord(
                 id=WORKSPACE_ID,
                 organization_id=ORG_ID,
                 name="Default",
-                normalized_name="default",
+                key="default",
                 created_at=NOW,
                 updated_at=NOW,
                 deleted_at=None,

@@ -65,6 +65,17 @@ export class Transport {
       throw new RangeError("maxReadRetries must be 0–5.");
   }
 
+  httpOptions(baseUrl = this.baseUrl) {
+    return {
+      baseUrl,
+      fetch: this.fetch,
+      bodySerializer: (body: unknown) =>
+        body instanceof Blob || body instanceof ReadableStream
+          ? body
+          : JSON.stringify(body),
+    };
+  }
+
   setCsrfToken(token: string | undefined): void {
     this.csrfToken = token;
   }

@@ -19,6 +19,7 @@ from pydantic_ai.tools import DeferredToolRequests
 
 from a13n_harness_ui.composition import CompositionAcceptanceService
 from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration
+from a13n_harness_ui.environment_paths import BUILTIN_SKILLS_PATH, BUILTIN_SKILLS_ROOT, BUILTIN_SKILLS_SOURCE_ID
 from a13n_harness_ui.environment_profiles import built_in_environment_profile
 from a13n_harness_ui.errors import AppStateError, ThreadError
 from a13n_harness_ui.root_run import RootRunCoordinator
@@ -61,6 +62,7 @@ from a13n_harness_ui.surfaces import (
     ThreadSummary,
 )
 from a13n_harness_ui.thread_projection import ThreadProjectionService
+from a13n_harness_ui.thread_service import RootThreadDefaults, resolve_thread_configuration
 
 _MAX_PATH_SCAN = 10_000
 _MAX_SKILLS = 512
@@ -289,11 +291,11 @@ class TerminalProjectionService:
         thread = await self._store.threads.get(thread_id)
         if thread is None:
             raise ThreadError("Thread does not exist.", code="thread_missing")
-        if thread.continuation is None:
-            return TaskPage(continuation_id=None)
-        continuation_id = thread.continuation.logical_digest
+        continuation_id = thread.continuation.logical_digest if thread.continuation is not None else None
         if expected_continuation_id is not None and continuation_id != expected_continuation_id:
             raise ThreadError("The selected continuation changed.", code="thread_continuation_conflict")
+        if thread.continuation is None:
+            return TaskPage(continuation_id=None)
         continuation = await self._store.objects.read_model(thread.continuation, StoredContinuation)
         entry = continuation.harness_state.agent_context_state.entries.get(WORKING_STATE_CAPABILITY_ID)
         if entry is None:
@@ -335,11 +337,11 @@ class TerminalProjectionService:
         thread = await self._store.threads.get(thread_id)
         if thread is None:
             raise ThreadError("Thread does not exist.", code="thread_missing")
-        if thread.continuation is None:
-            return None
-        continuation_id = thread.continuation.logical_digest
+        continuation_id = thread.continuation.logical_digest if thread.continuation is not None else None
         if expected_continuation_id is not None and continuation_id != expected_continuation_id:
             raise ThreadError("The selected continuation changed.", code="thread_continuation_conflict")
+        if thread.continuation is None or continuation_id is None:
+            return None
         continuation = await self._store.objects.read_model(thread.continuation, StoredContinuation)
         requests = continuation.deferred_requests
         if requests is None or (not requests.calls and not requests.approvals):
@@ -487,10 +489,11 @@ class TerminalProjectionService:
         context_kind: Literal["draft", "idle", "active"] = "draft"
         if thread_id is None:
             selected = defaults or NewThreadDefaults()
-            project_id = (
-                selected.project_id if "project_id" in selected.model_fields_set else source.document.defaults.project
+            resolved = resolve_thread_configuration(
+                source, RootThreadDefaults(**selected.model_dump(exclude_unset=True))
             )
-            agent_id = selected.agent_id or source.document.defaults.agent
+            project_id = resolved.project_id
+            agent_id = resolved.agent_source.id
         else:
             thread = await self._store.threads.get(thread_id)
             if thread is None:
@@ -544,15 +547,18 @@ class TerminalProjectionService:
     ) -> tuple[str, ...]:
         if not references:
             return ()
-        if any(item.catalog_id != catalog.catalog_id for item in references):
-            raise ThreadError("A selected Skill catalog is stale.", code="skill_reference_stale")
-        available = {(item.item_id, item.name) for item in catalog.items}
-        selected = tuple((item.item_id, item.name) for item in references)
-        if len(selected) != len(set(selected)):
+        names = tuple(item.name for item in references)
+        if len(names) != len(set(names)):
             raise ThreadError("Skill references must be unique.", code="skill_reference_invalid")
-        if any(item not in available for item in selected):
-            raise ThreadError("A selected Skill is unavailable.", code="skill_reference_unavailable")
-        return tuple(item.name for item in references)
+        for reference in references:
+            matches = tuple(item for item in catalog.items if item.name == reference.name)
+            if len(matches) != 1:
+                raise ThreadError("A selected Skill is unavailable.", code="skill_reference_unavailable")
+            # Completion references are previews, not version locks. Resolve an old
+            # catalog's name against the fresh (or active Run's pinned) catalog.
+            if reference.catalog_id == catalog.catalog_id and reference.item_id != matches[0].item_id:
+                raise ThreadError("A selected Skill is unavailable.", code="skill_reference_unavailable")
+        return names
 
     def pin_active_skill_catalog(
         self,
@@ -889,6 +895,7 @@ def _scan_skill_catalog(
     capability = next((item for item in agent.capabilities if item.capability == "skills"), None)
     sources: list[tuple[str, Path, bool]] = []
     if capability is not None:
+        sources.append((BUILTIN_SKILLS_SOURCE_ID, BUILTIN_SKILLS_ROOT, True))
         user_root = (Path.home() / ".agents" / "skills").resolve(strict=False)
         sources.append(("a13n-harness-ui:user-skills", user_root, False))
         roots = tuple(Path(item.path) for item in project.roots) if project is not None else ()
@@ -911,7 +918,7 @@ def _scan_skill_catalog(
     for source_id, root, required in sources:
         if not root.exists():
             if required:
-                raise ThreadError("An explicit Skill root is unavailable.", code="skill_source_unavailable")
+                raise ThreadError("A required Skill root is unavailable.", code="skill_source_unavailable")
             continue
         if not root.is_dir():
             raise ThreadError("A selected Skill root is not a directory.", code="skill_source_unavailable")
@@ -933,7 +940,11 @@ def _scan_skill_catalog(
                 name=name,
                 description=description,
                 source_id=source_id,
-                logical_path=os.fspath(directory),
+                logical_path=(
+                    f"{BUILTIN_SKILLS_PATH}/{directory.relative_to(BUILTIN_SKILLS_ROOT).as_posix()}"
+                    if directory.is_relative_to(BUILTIN_SKILLS_ROOT)
+                    else os.fspath(directory)
+                ),
             )
     if len(selected) > _MAX_SKILLS:
         raise ThreadError("The selected Skill catalog is too large.", code="skill_catalog_too_large")
@@ -949,6 +960,8 @@ def _scan_skill_catalog(
 
 
 def _logical_to_host(value: str, roots: tuple[Path, ...], user_root: Path) -> Path:
+    if value == BUILTIN_SKILLS_PATH or value.startswith(f"{BUILTIN_SKILLS_PATH}/"):
+        return BUILTIN_SKILLS_ROOT / value.removeprefix(BUILTIN_SKILLS_PATH).lstrip("/")
     if value == "/environment/user-skills" or value.startswith("/environment/user-skills/"):
         return user_root / value.removeprefix("/environment/user-skills").lstrip("/")
     if value == "/workspace" or value.startswith("/workspace/"):
