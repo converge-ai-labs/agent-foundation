@@ -178,3 +178,108 @@ async def test_child_question_competing_response_history_and_restart(
             ]
             assert "Child completed." in (await api.get(prefix + f"/children/{child['execution_id']}/review")).text
             assert (await api.get(prefix + "/decisions")).json() is None
+
+
+async def test_child_streams_provisional_text_before_message_close_and_saved_completion(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from anyio import create_task_group
+
+    root = _write_configuration(tmp_path)
+    agent_path = tmp_path / "agents/assistant.yaml"
+    parent = yaml.safe_load(agent_path.read_text())
+    parent["subagents"] = [{"agent": "agent-worker"}]
+    agent_path.write_text(yaml.safe_dump(parent))
+    (tmp_path / "agents/worker.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "schema_version": "1",
+                "kind": "agent",
+                "id": "agent-worker",
+                "name": "Worker",
+                "model": "model-primary",
+                "subagents": [],
+            }
+        )
+    )
+    release, observed, subscribed, completed = Event(), Event(), Event(), Event()
+    child_events: list[dict] = []
+
+    async def stream(messages, info):
+        returned = {
+            part.tool_name for message in messages for part in message.parts if isinstance(part, ToolReturnPart)
+        }
+        if "delegate" not in {tool.name for tool in info.function_tools}:
+            yield "Provisional child text. "
+            await release.wait()
+            yield "Retained final text."
+            return
+        if "delegate" not in returned:
+            name, args = "delegate", {"subagent_name": "agent-worker", "prompt": "Inspect output"}
+        elif "wait_subagent" not in returned:
+            name, args = "wait_subagent", {"timeout_seconds": 40}
+        else:
+            yield "Root complete."
+            return
+        yield {0: DeltaToolCall(name=name, tool_call_id=name, json_args=json.dumps(args))}
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=stream)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    async with listener(tmp_path, configuration_path=root) as (http, _ws):
+        async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False, timeout=30) as api:
+            thread_id = (await api.post("/api/threads", json={})).json()["thread_id"]
+            prefix = f"/api/threads/{thread_id}"
+
+            async def watch():
+                async with api.stream("GET", prefix + "/events") as response:
+                    subscribed.set()
+                    async for line in response.aiter_lines():
+                        if not line.startswith("data: "):
+                            continue
+                        frame = json.loads(line[6:])
+                        if frame["kind"] != "event" or frame["event"]["run_kind"] != "child":
+                            continue
+                        event = frame["event"]
+                        child_events.append(event)
+                        if event["event_type"] == "TEXT_MESSAGE_CONTENT" and "Provisional" in event["payload"]["delta"]:
+                            observed.set()
+                        if event["event_type"] == "RUN_FINISHED":
+                            completed.set()
+                            return
+
+            async with create_task_group() as group:
+                group.start_soon(watch)
+                try:
+                    with fail_after(10):
+                        await subscribed.wait()
+                        receipt = (await api.post(prefix + "/submit", json={"prompt": "Delegate"})).json()["receipt_id"]
+                        await observed.wait()
+                    assert not completed.is_set()
+                    child = (await api.get(prefix + "/children")).json()["executions"][0]
+                    assert child["persisted_status"] == "running"
+                    assert not any(
+                        event["event_type"] == "TEXT_MESSAGE_END"
+                        and event["payload"].get("message_id") == child_events[-1]["payload"].get("message_id")
+                        for event in child_events
+                    )
+                    saved = await api.get(prefix + f"/children/{child['execution_id']}/saved-output")
+                    assert saved.status_code == 400 and saved.json()["error"]["code"] == "comment_source_unavailable"
+                    assert all(
+                        event["root_thread_id"] == thread_id and event["execution_id"] == child["execution_id"]
+                        for event in child_events
+                    )
+                    run_ids = {event["run_id"] for event in child_events}
+                    assert len(run_ids) == 1
+                finally:
+                    release.set()
+                with fail_after(10):
+                    await completed.wait()
+                assert (await settled(api, receipt))["status"] == "completed"
+                child = (await api.get(prefix + "/children")).json()["executions"][0]
+                assert child["persisted_status"] == "succeeded"
+                assert child["child_run_id"] == child_events[-1]["run_id"]
+                saved = await api.get(prefix + f"/children/{child['execution_id']}/saved-output")
+                assert "Retained final text." in saved.text
+                assert sum(event["event_type"] == "RUN_FINISHED" for event in child_events) == 1

@@ -475,3 +475,26 @@ it("does not pair provider search results with local calls sharing an ID", () =>
   expect(tools[1].result).toBeUndefined();
   expect(activitySummary(tools).issue).toBe(true);
 });
+
+it("folds task/note and subagent operations with semantic details and visible failures", () => {
+  const tools = [
+    completed("task_create", { subject: "Review output" }),
+    completed("note_write", { key: "Design" }),
+  ];
+  render(<ToolActivity tools={tools} />);
+  const trigger = screen.getByRole("button", {
+    name: "Tasks & notes · 2 operations",
+  });
+  expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(trigger);
+  expect(screen.getByText("Create task")).toBeTruthy();
+  expect(screen.getByText("Review output")).toBeTruthy();
+  expect(screen.getByText("Update note")).toBeTruthy();
+  expect(
+    activitySummary([{ ...completed("wait_subagent"), outcome: "failed" }]),
+  ).toMatchObject({
+    title: "Subagents · 1 operation",
+    issue: true,
+    status: "Failed",
+  });
+});

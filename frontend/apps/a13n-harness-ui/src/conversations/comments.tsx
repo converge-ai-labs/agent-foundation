@@ -828,10 +828,13 @@ export function ChildSavedOutputs({
   executionId: string;
 }) {
   const { client } = useTransport();
+  const queries = useQueryClient();
   const [open, setOpen] = useState(false);
   const output = useInfiniteQuery({
     queryKey: ["child-saved-output", threadId, executionId],
     enabled: open,
+    retry: (count, error) =>
+      !(error instanceof ApiError && error.status < 500) && count < 2,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) =>
       result(
@@ -854,17 +857,46 @@ export function ChildSavedOutputs({
       className={styles.activity}
     >
       <summary>Saved child output and comments</summary>
-      <ErrorNotice error={output.error} />
+      <ErrorNotice
+        error={
+          output.error instanceof ApiError &&
+          output.error.code === "comment_source_unavailable"
+            ? undefined
+            : output.error
+        }
+        retry={() =>
+          void queries.resetQueries({
+            queryKey: ["child-saved-output", threadId, executionId],
+            exact: true,
+          })
+        }
+      />
       {output.isFetching && <p>Loading saved child output…</p>}
+      {((output.error instanceof ApiError &&
+        output.error.code === "comment_source_unavailable") ||
+        (output.data &&
+          !output.data.pages.some((page) => page.outputs.length))) && (
+        <p>No retained saved text is available yet.</p>
+      )}
       {output.data?.pages
         .flatMap((page) => page.outputs)
-        .map((item) => (
-          <SavedOutput
-            key={targetKey(item.target)}
-            target={item.target}
-            text={item.text}
-          />
-        ))}
+        .map((item) =>
+          item.target.location.kind === "child_text" &&
+          item.target.location.activity != null ? (
+            <details key={targetKey(item.target)} className={styles.activity}>
+              <summary>
+                Recorded text · activity {item.target.location.activity + 1}
+              </summary>
+              <SavedOutput target={item.target} text={item.text} />
+            </details>
+          ) : (
+            <SavedOutput
+              key={targetKey(item.target)}
+              target={item.target}
+              text={item.text}
+            />
+          ),
+        )}
       {output.hasNextPage && (
         <Button
           loading={output.isFetchingNextPage}
