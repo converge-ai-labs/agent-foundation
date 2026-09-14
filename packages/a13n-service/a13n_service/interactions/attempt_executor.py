@@ -7,7 +7,7 @@ from contextlib import AbstractAsyncContextManager, ExitStack
 from typing import Protocol
 
 from a13n_harness import SafeFailure
-from a13n_harness.errors import RunError
+from a13n_harness.errors import DefinitionError, RunError
 from a13n_harness.observation import record_span_metadata
 from a13n_logging import exception_details, get_logger
 from anyio import TASK_STATUS_IGNORED, CancelScope, create_task_group, fail_after, sleep
@@ -206,6 +206,12 @@ class RunAttemptExecutor[OutputT]:
                         },
                     )
                     if isinstance(error, (SkillRuntimeError, AttemptAuthorizationError)):
+                        code = error.code
+                    elif isinstance(error, DefinitionError) and error.code in {
+                        "skill_materialization_invalid",
+                        "skill_materialization_unavailable",
+                        "skill_materialization_stale",
+                    }:
                         code = error.code
                     elif isinstance(error, (PluginSelectionError, AgentDefinitionReconstructionError)):
                         code = error.reason

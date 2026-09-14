@@ -18,7 +18,7 @@ from a13n_harness import (
     HarnessState,
     SafeFailure,
 )
-from a13n_harness.errors import RunError
+from a13n_harness.errors import DefinitionError, RunError
 from a13n_service.iam.attempts import AttemptAuthorization
 from a13n_service.interactions.attempt_executor import ControlWatcher, LeaseMonitor, RunAttemptExecutor
 from a13n_service.interactions.attempts import (
@@ -345,20 +345,25 @@ def _terminal_receipt(context: AttemptContext) -> AttemptOutcome:
 
 
 @pytest.mark.parametrize(
-    ("reject_preparation", "preflight_code"),
+    ("reject_preparation", "preflight_code", "error_type"),
     [
-        (False, None),
-        (True, None),
-        (False, "environment_required"),
-        (False, "search_provider_unavailable"),
-        (False, "web_operation_unavailable"),
-        (False, "untrusted_provider_code"),
+        (False, None, RunError),
+        (True, None, RunError),
+        (False, "environment_required", RunError),
+        (False, "search_provider_unavailable", RunError),
+        (False, "web_operation_unavailable", RunError),
+        (False, "untrusted_provider_code", RunError),
+        (False, "skill_materialization_invalid", DefinitionError),
+        (False, "skill_materialization_unavailable", DefinitionError),
+        (False, "skill_materialization_stale", DefinitionError),
+        (False, "untrusted_provider_code", DefinitionError),
     ],
 )
 async def test_executor_supervises_two_children_before_cleanup_and_capacity_release(
     interaction_object_store: ObjectStore,
     reject_preparation: bool,
     preflight_code: str | None,
+    error_type: type[RunError] | type[DefinitionError],
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -416,7 +421,7 @@ async def test_executor_supervises_two_children_before_cleanup_and_capacity_rele
         monkeypatch.setattr(
             ClosingPreparer,
             "validate_dependencies",
-            AsyncMock(side_effect=RunError("private diagnostic", code=preflight_code)),
+            AsyncMock(side_effect=error_type("private diagnostic", code=preflight_code)),
         )
         monkeypatch.setattr(committer, "commit_failure", failure_commit)
     executor = RunAttemptExecutor(
@@ -440,7 +445,7 @@ async def test_executor_supervises_two_children_before_cleanup_and_capacity_rele
         assert failure.message == "The RunAttempt could not complete execution."
         record = next(record for record in caplog.records if record.msg == "run_attempt_execution_failed")
         assert record.run_id == RUN_ID and record.attempt_number == context.attempt_number
-        assert record.exception_chain[0]["type"] == "a13n_harness.errors.RunError"
+        assert record.exception_chain[0]["type"] == f"a13n_harness.errors.{error_type.__name__}"
         assert record.exception_chain[0]["frames"] and record.exc_info is None
         assert "private diagnostic" not in str(record.exception_chain)
         assert "attempt:enter" not in trace

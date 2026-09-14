@@ -8,6 +8,7 @@ from functools import partial
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.agents.invocation_resolution.skills import validate_retained_skills
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.assets import Asset
 from a13n_service.digests import digest_request
@@ -194,6 +195,13 @@ class ContinuationCommands:
                 )
             except AuthorizationError as error:
                 raise command_not_found() from error
+
+            await validate_retained_skills(
+                database,
+                organization_id=source.organization_id,
+                workspace_id=actor.workspace_id,
+                locks=source_state.envelope.effective_agent_config.skills,
+            )
 
         try:
             return await self._acceptance.advance_thread(
@@ -490,6 +498,13 @@ class ContinuationCommands:
                 )
             except AuthorizationError as error:
                 raise command_not_found() from error
+
+            await validate_retained_skills(
+                database,
+                organization_id=source.organization_id,
+                workspace_id=actor.workspace_id,
+                locks=source_state.envelope.effective_agent_config.skills,
+            )
 
         return await self._acceptance.advance_thread(
             environment=RetainedRunEnvironment(source.id, source.thread_id),

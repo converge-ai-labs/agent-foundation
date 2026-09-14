@@ -12,6 +12,8 @@ from a13n_environment.direct_local.provider import _DirectLocalFilePolicy
 from a13n_harness.environment.files import FileEntriesResult, FileMutationResult, FileWriteMode, FileWriteResult
 from a13n_harness.environment.models import EnvironmentError
 from a13n_harness.errors import DefinitionError
+from a13n_service.agents.errors import AgentError
+from a13n_service.agents.invocation_resolution.skills import validate_retained_skills
 from a13n_service.iam.models import OrganizationRecord, WorkspaceRecord
 from a13n_service.skills.domain import SkillRevisionLock
 from a13n_service.skills.materialization import (
@@ -621,16 +623,27 @@ async def test_materializer_rereads_package_without_retaining_run_lifetime_bytes
 
 
 @pytest.mark.anyio
-async def test_runtime_keeps_retained_deleted_revision_executable(runtime_fixture: RuntimeFixture) -> None:
+async def test_deletion_blocks_successors_but_keeps_accepted_runtime_executable(
+    runtime_fixture: RuntimeFixture,
+) -> None:
+    locks = _locks(runtime_fixture, (DEPLOY_REVISION_ID,))
+    async with transaction(runtime_fixture.sessions) as session:
+        await validate_retained_skills(session, organization_id=ORG_ID, workspace_id=WORKSPACE_ID, locks=locks)
     async with transaction(runtime_fixture.sessions) as session:
         skill = await session.get(SkillRecord, DEPLOY_SKILL_ID)
         assert skill is not None
         skill.deleted_at = NOW
 
+    with pytest.raises(AgentError) as rejected:
+        async with transaction(runtime_fixture.sessions) as session:
+            await validate_retained_skills(session, organization_id=ORG_ID, workspace_id=WORKSPACE_ID, locks=locks)
+    assert rejected.value.code == "agent_revision_not_executable"
+    assert rejected.value.details == {"reason": "skill_selection_invalid"}
+
     runtime = await runtime_fixture.runtime.prepare(
         organization_id=ORG_ID,
         workspace_id=WORKSPACE_ID,
-        locks=_locks(runtime_fixture, (DEPLOY_REVISION_ID,)),
+        locks=locks,
     )
 
     assert runtime.manager is not None
