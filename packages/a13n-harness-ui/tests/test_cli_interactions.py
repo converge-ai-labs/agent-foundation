@@ -558,8 +558,11 @@ def _shell_approval(**changes) -> DecisionInteraction:
     return DecisionInteraction(DecisionBatchView(continuation_id="b" * 64, requests=(request,)))
 
 
-def test_approval_panel_puts_reason_before_command_and_keeps_explicit_choices() -> None:
+def test_approval_panel_puts_reason_before_command_and_keeps_explicit_choices(monkeypatch: pytest.MonkeyPatch) -> None:
     interaction = _shell_approval()
+    now = 10.0
+    interaction.request_started = now
+    monkeypatch.setattr("a13n_harness_ui.interactive.decisions.time.monotonic", lambda: now)
     text = interaction.prompt()
     assert interaction.prompt_kind == "approval"
     assert text.index("Risk: high") < text.index("Reason: Deletes a report") < text.index("Command:")
@@ -571,7 +574,7 @@ def test_approval_panel_puts_reason_before_command_and_keeps_explicit_choices() 
     assert selection is not None and selection.cursor == -1
     with pytest.raises(ValueError):
         interaction.accept("")
-    interaction.request_started = 0
+    now += interaction.timeout_seconds
     assert interaction.expired
     response = interaction.expire()
     assert isinstance(response, ThreadDeferredResponse)
@@ -778,10 +781,14 @@ def test_external_action_opens_result_editor_without_inventing_execution():
 
 
 @pytest.mark.parametrize("external", [False, True])
-def test_timeout_while_editing_denies_without_resetting_clock(external):
+def test_timeout_while_editing_denies_without_resetting_clock(external, monkeypatch):
     interaction = _external_interaction() if external else _shell_approval()
+    now = 10.0
+    interaction.request_started = now
+    monkeypatch.setattr("a13n_harness_ui.interactive.decisions.time.monotonic", lambda: now)
     assert interaction.accept("1" if external else "3") is None
-    interaction.request_started = 0
+    assert interaction.request_started == now
+    now += interaction.timeout_seconds
     response = interaction.accept('{"ok": true}' if external else "too late")
     assert isinstance(response, ThreadDeferredResponse)
     item = response.responses[0]
