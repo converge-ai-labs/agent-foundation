@@ -20,7 +20,13 @@ import { useAuth } from "../auth/context";
 import { ErrorToast } from "../shared/feedback";
 import { UserAvatar } from "./avatar";
 
-export function AccountMenu({ onNavigate }: { onNavigate: () => void }) {
+export function AccountMenu({
+  onNavigate,
+  compact = false,
+}: {
+  onNavigate: () => void;
+  compact?: boolean;
+}) {
   const { t } = useTranslation(),
     auth = useAuth(),
     navigate = useNavigate();
@@ -37,17 +43,37 @@ export function AccountMenu({ onNavigate }: { onNavigate: () => void }) {
           delay={100}
           closeDelay={150}
           render={
-            <Button
-              variant="ghost"
-              className="h-auto w-full justify-start py-2"
-            />
+            compact ? (
+              <Button variant="ghost" size="icon-sm" className="mx-auto" />
+            ) : (
+              <Button
+                variant="ghost"
+                className="h-auto w-full justify-start py-2"
+              />
+            )
           }
         >
-          <UserAvatar name={user.name} url={user.image_url} />
-          <span className="min-w-0 flex-1 truncate text-left">{user.name}</span>
-          <CaretUpDownIcon aria-hidden="true" />
+          <UserAvatar
+            name={user.name}
+            url={user.image_url}
+            className={compact ? "size-6" : undefined}
+          />
+          {compact ? (
+            <span className="sr-only">{user.name}</span>
+          ) : (
+            <>
+              <span className="min-w-0 flex-1 truncate text-left">
+                {user.name}
+              </span>
+              <CaretUpDownIcon aria-hidden="true" />
+            </>
+          )}
         </MenuTrigger>
-        <MenuPopup align="start" className="w-(--anchor-width)">
+        <MenuPopup
+          align="start"
+          side={compact ? "right" : "bottom"}
+          className={compact ? "min-w-48" : "w-(--anchor-width)"}
+        >
           <MenuGroup>
             <MenuGroupLabel>{user.email}</MenuGroupLabel>
             <MenuItem
