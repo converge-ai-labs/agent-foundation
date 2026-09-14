@@ -11,6 +11,7 @@ from ..types import UNSET, Unset
 if TYPE_CHECKING:
     from ..models.environment_state import EnvironmentState
     from ..models.register_environment_request_configuration import RegisterEnvironmentRequestConfiguration
+    from ..models.register_environment_request_labels import RegisterEnvironmentRequestLabels
 
 
 T = TypeVar("T", bound="RegisterEnvironmentRequest")
@@ -24,6 +25,7 @@ class RegisterEnvironmentRequest:
         provider_id (str):
         access (EnvironmentAccess | Unset):
         configuration_schema_version (str | Unset):
+        labels (RegisterEnvironmentRequestLabels | Unset):
         name (None | str | Unset):
         state (EnvironmentState | None | Unset):
     """
@@ -32,6 +34,7 @@ class RegisterEnvironmentRequest:
     provider_id: str
     access: EnvironmentAccess | Unset = UNSET
     configuration_schema_version: str | Unset = UNSET
+    labels: RegisterEnvironmentRequestLabels | Unset = UNSET
     name: str | Unset | None = UNSET
     state: EnvironmentState | Unset | None = UNSET
 
@@ -47,6 +50,10 @@ class RegisterEnvironmentRequest:
             access = self.access.value
 
         configuration_schema_version = self.configuration_schema_version
+
+        labels: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.labels, Unset):
+            labels = self.labels.to_dict()
 
         name: str | Unset | None
         if isinstance(self.name, Unset):
@@ -74,6 +81,8 @@ class RegisterEnvironmentRequest:
             field_dict["access"] = access
         if configuration_schema_version is not UNSET:
             field_dict["configuration_schema_version"] = configuration_schema_version
+        if labels is not UNSET:
+            field_dict["labels"] = labels
         if name is not UNSET:
             field_dict["name"] = name
         if state is not UNSET:
@@ -87,6 +96,7 @@ class RegisterEnvironmentRequest:
         from ..models.register_environment_request_configuration import (
             RegisterEnvironmentRequestConfiguration,
         )
+        from ..models.register_environment_request_labels import RegisterEnvironmentRequestLabels
 
         d = dict(src_dict)
         configuration = RegisterEnvironmentRequestConfiguration.from_dict(d.pop("configuration"))
@@ -101,6 +111,13 @@ class RegisterEnvironmentRequest:
             access = EnvironmentAccess(_access)
 
         configuration_schema_version = d.pop("configuration_schema_version", UNSET)
+
+        _labels = d.pop("labels", UNSET)
+        labels: RegisterEnvironmentRequestLabels | Unset
+        if isinstance(_labels, Unset):
+            labels = UNSET
+        else:
+            labels = RegisterEnvironmentRequestLabels.from_dict(_labels)
 
         def _parse_name(data: object) -> str | Unset | None:
             if data is None:
@@ -133,6 +150,7 @@ class RegisterEnvironmentRequest:
             provider_id=provider_id,
             access=access,
             configuration_schema_version=configuration_schema_version,
+            labels=labels,
             name=name,
             state=state,
         )

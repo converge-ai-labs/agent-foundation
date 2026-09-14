@@ -14,15 +14,17 @@ from a13n_service.durable_operations.idempotency import (
 )
 from a13n_service.durable_operations.requests import evidence_record
 from a13n_service.environments.authoring import authorize_template
+from a13n_service.etags import etag_matches
 from a13n_service.iam import (
     AuthenticatedActor,
     AuthorizationError,
     authorize_workspace,
 )
 from a13n_service.iam.authorization import WorkspaceAction
+from a13n_service.labels import LabelsBody, labels_etag
 from a13n_service.resource_keys import flush_key_change, insert_with_key
 from a13n_service.storage import transaction
-from a13n_service.temporal import Clock, utc_now
+from a13n_service.temporal import Clock, next_updated_at, utc_now
 
 from .domain import (
     Agent,
@@ -148,6 +150,7 @@ class AgentCommands:
                     default_environment_template_id=request.default_environment_template_id,
                     name=request.name,
                     description=request.description,
+                    labels=request.labels,
                     version=1,
                     current_revision_id=revision_id,
                     enabled=True,
@@ -215,6 +218,45 @@ class AgentCommands:
                     if replay_ref is not None:
                         return replay_ref.restore(AgentRevisionCreateResult)
             raise
+
+    async def replace_labels(
+        self, *, actor: AuthenticatedActor, agent_id: str, if_match: str, body: LabelsBody
+    ) -> tuple[LabelsBody, str]:
+        now = self._clock()
+        try:
+            async with transaction(self._sessions) as session:
+                workspace = await authorize_agent_scope(
+                    session,
+                    actor=actor,
+                    agent_id=agent_id,
+                    action=WorkspaceAction.agent_update,
+                )
+                record = await lock_agent(session, workspace.organization_id, workspace.workspace_id, agent_id)
+                require_custom_mutable(record)
+                current = labels_etag(record.id, record.labels)
+                if not etag_matches(if_match, current):
+                    raise AgentError(
+                        "labels_etag_mismatch",
+                        "Labels changed since they were read.",
+                        category=ErrorCategory.stale_version,
+                        details={"current_etag": current},
+                    )
+                if record.labels != body.labels:
+                    record.labels = dict(body.labels)
+                    touch_agent(record, actor=actor, now=next_updated_at(record.updated_at, now))
+                    session.add(
+                        new_agent_audit(
+                            actor=actor,
+                            organization_id=workspace.organization_id,
+                            workspace_id=workspace.workspace_id,
+                            action="agent.labels.update",
+                            agent_id=agent_id,
+                            now=now,
+                        )
+                    )
+                return LabelsBody(labels=record.labels), labels_etag(record.id, record.labels)
+        except AuthorizationError as error:
+            raise map_authorization_error(error, exact=True) from error
 
     async def patch_metadata(
         self,

@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import datetime
 from collections.abc import Mapping
-from typing import Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from attrs import define as _attrs_define
 
 from ..models.run_lineage_kind import RunLineageKind
 from ..models.run_status import RunStatus
+
+if TYPE_CHECKING:
+    from ..models.run_resource_labels import RunResourceLabels
+
 
 T = TypeVar("T", bound="RunResource")
 
@@ -28,6 +32,7 @@ class RunResource:
         input_ (Any | None):
         input_kind (str):
         input_text (None | str):
+        labels (RunResourceLabels):
         lineage_kind (RunLineageKind):
         output (Any | None):
         output_text (None | str):
@@ -59,6 +64,7 @@ class RunResource:
     input_: Any | None
     input_kind: str
     input_text: str | None
+    labels: RunResourceLabels
     lineage_kind: RunLineageKind
     output: Any | None
     output_text: str | None
@@ -110,6 +116,8 @@ class RunResource:
 
         input_text: str | None
         input_text = self.input_text
+
+        labels = self.labels.to_dict()
 
         lineage_kind = self.lineage_kind.value
 
@@ -180,6 +188,7 @@ class RunResource:
                 "input": input_,
                 "input_kind": input_kind,
                 "input_text": input_text,
+                "labels": labels,
                 "lineage_kind": lineage_kind,
                 "output": output,
                 "output_text": output_text,
@@ -204,6 +213,8 @@ class RunResource:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+        from ..models.run_resource_labels import RunResourceLabels
+
         d = dict(src_dict)
         agent_id = d.pop("agent_id")
 
@@ -266,6 +277,8 @@ class RunResource:
             return cast(str | None, data)
 
         input_text = _parse_input_text(d.pop("input_text"))
+
+        labels = RunResourceLabels.from_dict(d.pop("labels"))
 
         lineage_kind = RunLineageKind(d.pop("lineage_kind"))
 
@@ -388,6 +401,7 @@ class RunResource:
             input_=input_,
             input_kind=input_kind,
             input_text=input_text,
+            labels=labels,
             lineage_kind=lineage_kind,
             output=output,
             output_text=output_text,

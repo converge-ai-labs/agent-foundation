@@ -15,6 +15,7 @@ def build_request(
     *,
     limit: int | Unset = UNSET,
     cursor: str | Unset | None = UNSET,
+    label: list[str] | Unset = UNSET,
 ) -> dict[str, Any]:
 
     params: dict[str, Any] = {}
@@ -27,6 +28,12 @@ def build_request(
     else:
         json_cursor = cursor
     params["cursor"] = json_cursor
+
+    json_label: list[str] | Unset = UNSET
+    if not isinstance(label, Unset):
+        json_label = label
+
+    params["label"] = json_label
 
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
@@ -76,6 +83,7 @@ def sync_detailed(
     client: AuthenticatedClient,
     limit: int | Unset = UNSET,
     cursor: str | Unset | None = UNSET,
+    label: list[str] | Unset = UNSET,
 ) -> Response[CollectionEnvironmentTemplate | ErrorResponse]:
     """List Templates
 
@@ -83,6 +91,7 @@ def sync_detailed(
         workspace (str):
         limit (int | Unset):
         cursor (None | str | Unset):
+        label (list[str] | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -96,6 +105,7 @@ def sync_detailed(
         workspace=workspace,
         limit=limit,
         cursor=cursor,
+        label=label,
     )
 
     response = client.get_httpx_client().request(
@@ -111,6 +121,7 @@ def sync(
     client: AuthenticatedClient,
     limit: int | Unset = UNSET,
     cursor: str | Unset | None = UNSET,
+    label: list[str] | Unset = UNSET,
 ) -> CollectionEnvironmentTemplate | ErrorResponse | None:
     """List Templates
 
@@ -118,6 +129,7 @@ def sync(
         workspace (str):
         limit (int | Unset):
         cursor (None | str | Unset):
+        label (list[str] | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -132,6 +144,7 @@ def sync(
         client=client,
         limit=limit,
         cursor=cursor,
+        label=label,
     ).parsed
 
 
@@ -141,6 +154,7 @@ async def asyncio_detailed(
     client: AuthenticatedClient,
     limit: int | Unset = UNSET,
     cursor: str | Unset | None = UNSET,
+    label: list[str] | Unset = UNSET,
 ) -> Response[CollectionEnvironmentTemplate | ErrorResponse]:
     """List Templates
 
@@ -148,6 +162,7 @@ async def asyncio_detailed(
         workspace (str):
         limit (int | Unset):
         cursor (None | str | Unset):
+        label (list[str] | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -161,6 +176,7 @@ async def asyncio_detailed(
         workspace=workspace,
         limit=limit,
         cursor=cursor,
+        label=label,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -174,6 +190,7 @@ async def asyncio(
     client: AuthenticatedClient,
     limit: int | Unset = UNSET,
     cursor: str | Unset | None = UNSET,
+    label: list[str] | Unset = UNSET,
 ) -> CollectionEnvironmentTemplate | ErrorResponse | None:
     """List Templates
 
@@ -181,6 +198,7 @@ async def asyncio(
         workspace (str):
         limit (int | Unset):
         cursor (None | str | Unset):
+        label (list[str] | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -196,5 +214,6 @@ async def asyncio(
             client=client,
             limit=limit,
             cursor=cursor,
+            label=label,
         )
     ).parsed

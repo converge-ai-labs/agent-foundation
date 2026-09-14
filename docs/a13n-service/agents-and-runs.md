@@ -170,4 +170,14 @@ A control-capable process reconciles sealed child results, configured cancellati
 
 ## Next steps
 
-[Manage resources](resources.md), [select external tools](external-tools.md), [use a language SDK](sdks.md), or inspect the [complete Native API](api-reference.md). The companion `a13n-service-cli` currently has help/version only; it cannot execute this workflow.
+[Manage resources](resources.md), [select external tools](external-tools.md), [use a language SDK](sdks.md), or inspect the [complete Native API](api-reference.md). The companion `a13n-service-cli` supports remote label reads and replacements; it cannot execute this Run workflow.
+
+## Resource labels
+
+Agents, Sessions, Threads, Runs, Skills, Environment Templates, and Environments support string-to-string `labels` for business classification. For example, `{"project":"support","batch":"eval-09"}` can identify a project and evaluation batch. Use repeated `label=key=value` parameters on collection requests to require all matching pairs. Existing authorization and pagination still apply.
+
+New Threads copy their Session labels; new Runs copy their Thread labels. New Environments copy their Template's current labels, including when a historical Template revision is selected. Explicit creation labels override matching inherited keys. Forked Threads and retried Runs copy their source instead. These are one-time copies: later parent edits do not update existing resources. Queued Run overrides are merged when execution is accepted, using the Thread labels at that time.
+
+Read `<resource-path>/labels` to obtain the label map and its `ETag`. Replace the entire map with `PUT` to that same path, a body of `{"labels": {...}}`, and the exact `If-Match` tag. Send `{"labels": {}}` to clear the map. A stale tag returns `412`; read current labels before resolving the conflict. Label edits update the resource timestamp without changing configuration revisions, execution versions, queue versions, or Environment generations.
+
+Each resource permits up to 32 labels. Keys use 1–63 ASCII letters, digits, underscores, hyphens, or dots and begin with a letter or digit. Values permit up to 256 Unicode characters, including empty strings, but no control characters. Matching is case-sensitive. Labels provide classification, not access control or Agent instructions.

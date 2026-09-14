@@ -320,6 +320,8 @@ pub mod item_collection;
 pub use self::item_collection::ItemCollection;
 pub mod item_resource;
 pub use self::item_resource::ItemResource;
+pub mod labels_body;
+pub use self::labels_body::LabelsBody;
 pub mod launch_authorization_request;
 pub use self::launch_authorization_request::LaunchAuthorizationRequest;
 pub mod lifecycle_entity_type;

@@ -6,6 +6,7 @@ from a13n_service.agents.domain import AgentRunOverride
 from a13n_service.environments.domain import EnvironmentSelection
 from a13n_service.environments.selection import Omitted
 from a13n_service.hooks.domain import InlineHookRequest, InlineHookSubscriptionInput
+from a13n_service.labels import Labels
 
 from .domain import StrictModel
 from .input import AgentInput
@@ -20,6 +21,9 @@ class StartRunIntent(StrictModel):
     expected_current_revision_id: str | None = None
     config_override: AgentRunOverride | None = None
     hook_subscription: InlineHookSubscriptionInput | None = None
+    session_labels: Labels = Field(default_factory=dict)
+    thread_labels: Labels = Field(default_factory=dict)
+    labels: Labels = Field(default_factory=dict)
 
 
 class StartRunCommand(StartRunIntent):
@@ -35,6 +39,7 @@ class ContinueRunIntent(StrictModel):
     expected_current_revision_id: str | None = None
     config_override: AgentRunOverride | None = None
     hook_subscription: InlineHookSubscriptionInput | None = None
+    labels: Labels = Field(default_factory=dict)
 
 
 class ContinueRunCommand(ContinueRunIntent):
@@ -43,6 +48,7 @@ class ContinueRunCommand(ContinueRunIntent):
 
 
 class WaitingContinueRunCommand(InlineHookRequest):
+    labels: Labels = Field(default_factory=dict)
     expected_thread_version: int = Field(ge=1)
     sealed_state_digest_sha256: str
     input: AgentInput
@@ -51,6 +57,7 @@ class WaitingContinueRunCommand(InlineHookRequest):
 
 class RetryRunCommand(InlineHookRequest):
     expected_thread_version: int = Field(ge=1)
+    labels: Labels = Field(default_factory=dict)
 
 
 class ForkRunIntent(StrictModel):
@@ -60,6 +67,8 @@ class ForkRunIntent(StrictModel):
     expected_current_revision_id: str | None = None
     config_override: AgentRunOverride | None = None
     hook_subscription: InlineHookSubscriptionInput | None = None
+    thread_labels: Labels = Field(default_factory=dict)
+    labels: Labels = Field(default_factory=dict)
 
 
 class ForkRunCommand(ForkRunIntent):

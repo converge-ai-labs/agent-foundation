@@ -16,6 +16,7 @@ def session_record(value: Session) -> SessionRecord:
         id=value.id,
         organization_id=value.organization_id,
         workspace_id=value.workspace_id,
+        labels=value.labels,
         created_at=value.created_at,
         updated_at=value.updated_at,
     )
@@ -38,6 +39,7 @@ def thread_record(value: Thread) -> ThreadRecord:
         head_run_id=value.head_run_id,
         current_run_id=value.current_run_id,
         default_environment_id=value.default_environment_id,
+        labels=value.labels,
         created_at=value.created_at,
         updated_at=value.updated_at,
     )
@@ -57,6 +59,7 @@ def run_record(value: Run) -> RunRecord:
         authority_principal_id=value.authority_principal.principal_id,
         session_id=value.session_id,
         thread_id=value.thread_id,
+        labels=value.labels,
         parent_run_id=value.parent_run_id,
         retry_of_run_id=value.retry_of_run_id,
         lineage_kind=value.lineage_kind.value,

@@ -32,6 +32,9 @@ pub struct DuplicateAgentRequest {
     )]
     pub key: Option<Option<String>>,
 
+    #[serde(rename = "labels", skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Value>,
+
     #[serde(rename = "name")]
     pub name: String,
 }
@@ -42,6 +45,7 @@ impl DuplicateAgentRequest {
             description: None,
             expected_version,
             key: None,
+            labels: None,
             name,
         }
     }

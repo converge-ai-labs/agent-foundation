@@ -21,6 +21,7 @@ def build_request(
     trigger_type: list[str] | Unset = UNSET,
     updated_after: datetime.datetime | Unset | None = UNSET,
     updated_before: datetime.datetime | Unset | None = UNSET,
+    label: list[str] | Unset = UNSET,
     limit: int | Unset = UNSET,
     cursor: str | Unset | None = UNSET,
 ) -> dict[str, Any]:
@@ -73,6 +74,12 @@ def build_request(
     else:
         json_updated_before = updated_before
     params["updated_before"] = json_updated_before
+
+    json_label: list[str] | Unset = UNSET
+    if not isinstance(label, Unset):
+        json_label = label
+
+    params["label"] = json_label
 
     params["limit"] = limit
 
@@ -135,6 +142,7 @@ def sync_detailed(
     trigger_type: list[str] | Unset = UNSET,
     updated_after: datetime.datetime | Unset | None = UNSET,
     updated_before: datetime.datetime | Unset | None = UNSET,
+    label: list[str] | Unset = UNSET,
     limit: int | Unset = UNSET,
     cursor: str | Unset | None = UNSET,
 ) -> Response[ErrorResponse | SessionCollection]:
@@ -148,6 +156,7 @@ def sync_detailed(
         trigger_type (list[str] | Unset):
         updated_after (datetime.datetime | None | Unset):
         updated_before (datetime.datetime | None | Unset):
+        label (list[str] | Unset):
         limit (int | Unset):
         cursor (None | str | Unset):
 
@@ -167,6 +176,7 @@ def sync_detailed(
         trigger_type=trigger_type,
         updated_after=updated_after,
         updated_before=updated_before,
+        label=label,
         limit=limit,
         cursor=cursor,
     )
@@ -188,6 +198,7 @@ def sync(
     trigger_type: list[str] | Unset = UNSET,
     updated_after: datetime.datetime | Unset | None = UNSET,
     updated_before: datetime.datetime | Unset | None = UNSET,
+    label: list[str] | Unset = UNSET,
     limit: int | Unset = UNSET,
     cursor: str | Unset | None = UNSET,
 ) -> ErrorResponse | SessionCollection | None:
@@ -201,6 +212,7 @@ def sync(
         trigger_type (list[str] | Unset):
         updated_after (datetime.datetime | None | Unset):
         updated_before (datetime.datetime | None | Unset):
+        label (list[str] | Unset):
         limit (int | Unset):
         cursor (None | str | Unset):
 
@@ -221,6 +233,7 @@ def sync(
         trigger_type=trigger_type,
         updated_after=updated_after,
         updated_before=updated_before,
+        label=label,
         limit=limit,
         cursor=cursor,
     ).parsed
@@ -236,6 +249,7 @@ async def asyncio_detailed(
     trigger_type: list[str] | Unset = UNSET,
     updated_after: datetime.datetime | Unset | None = UNSET,
     updated_before: datetime.datetime | Unset | None = UNSET,
+    label: list[str] | Unset = UNSET,
     limit: int | Unset = UNSET,
     cursor: str | Unset | None = UNSET,
 ) -> Response[ErrorResponse | SessionCollection]:
@@ -249,6 +263,7 @@ async def asyncio_detailed(
         trigger_type (list[str] | Unset):
         updated_after (datetime.datetime | None | Unset):
         updated_before (datetime.datetime | None | Unset):
+        label (list[str] | Unset):
         limit (int | Unset):
         cursor (None | str | Unset):
 
@@ -268,6 +283,7 @@ async def asyncio_detailed(
         trigger_type=trigger_type,
         updated_after=updated_after,
         updated_before=updated_before,
+        label=label,
         limit=limit,
         cursor=cursor,
     )
@@ -287,6 +303,7 @@ async def asyncio(
     trigger_type: list[str] | Unset = UNSET,
     updated_after: datetime.datetime | Unset | None = UNSET,
     updated_before: datetime.datetime | Unset | None = UNSET,
+    label: list[str] | Unset = UNSET,
     limit: int | Unset = UNSET,
     cursor: str | Unset | None = UNSET,
 ) -> ErrorResponse | SessionCollection | None:
@@ -300,6 +317,7 @@ async def asyncio(
         trigger_type (list[str] | Unset):
         updated_after (datetime.datetime | None | Unset):
         updated_before (datetime.datetime | None | Unset):
+        label (list[str] | Unset):
         limit (int | Unset):
         cursor (None | str | Unset):
 
@@ -321,6 +339,7 @@ async def asyncio(
             trigger_type=trigger_type,
             updated_after=updated_after,
             updated_before=updated_before,
+            label=label,
             limit=limit,
             cursor=cursor,
         )

@@ -23,6 +23,9 @@ pub struct RetryRunRequest {
         skip_serializing_if = "Option::is_none"
     )]
     pub hook_subscription: Option<Option<Box<models::InlineHookSubscriptionInput>>>,
+
+    #[serde(rename = "labels", skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Value>,
 }
 
 impl RetryRunRequest {
@@ -30,6 +33,7 @@ impl RetryRunRequest {
         RetryRunRequest {
             expected_thread_version,
             hook_subscription: None,
+            labels: None,
         }
     }
 }

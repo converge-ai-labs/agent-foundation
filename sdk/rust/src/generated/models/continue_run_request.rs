@@ -66,6 +66,9 @@ pub struct ContinueRunRequest {
 
     #[serde(rename = "input")]
     pub input: Box<models::AgentInput>,
+
+    #[serde(rename = "labels", skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Value>,
 }
 
 impl ContinueRunRequest {
@@ -79,6 +82,7 @@ impl ContinueRunRequest {
             expected_thread_version,
             hook_subscription: None,
             input: Box::new(input),
+            labels: None,
         }
     }
 }

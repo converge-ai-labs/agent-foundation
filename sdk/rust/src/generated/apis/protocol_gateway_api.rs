@@ -67,6 +67,15 @@ pub enum GetRunsRunIdItemsError {
     UnknownValue(serde_json::Value),
 }
 
+/// struct for typed errors of method [`get_runs_run_id_labels`]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum GetRunsRunIdLabelsError {
+    Status400(models::ErrorResponse),
+    DefaultResponse(models::ErrorResponse),
+    UnknownValue(serde_json::Value),
+}
+
 /// struct for typed errors of method [`get_runs_run_id_lineage`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -103,6 +112,15 @@ pub enum GetRunsRunIdStreamError {
     UnknownValue(serde_json::Value),
 }
 
+/// struct for typed errors of method [`get_sessions_session_id_labels`]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum GetSessionsSessionIdLabelsError {
+    Status400(models::ErrorResponse),
+    DefaultResponse(models::ErrorResponse),
+    UnknownValue(serde_json::Value),
+}
+
 /// struct for typed errors of method [`get_sessions_session_id_threads`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -116,6 +134,15 @@ pub enum GetSessionsSessionIdThreadsError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum GetThreadsThreadIdError {
+    Status400(models::ErrorResponse),
+    DefaultResponse(models::ErrorResponse),
+    UnknownValue(serde_json::Value),
+}
+
+/// struct for typed errors of method [`get_threads_thread_id_labels`]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum GetThreadsThreadIdLabelsError {
     Status400(models::ErrorResponse),
     DefaultResponse(models::ErrorResponse),
     UnknownValue(serde_json::Value),
@@ -251,6 +278,33 @@ pub enum PostThreadsThreadIdRunsError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum PostWorkspacesWorkspaceRunsError {
+    Status400(models::ErrorResponse),
+    DefaultResponse(models::ErrorResponse),
+    UnknownValue(serde_json::Value),
+}
+
+/// struct for typed errors of method [`put_runs_run_id_labels`]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum PutRunsRunIdLabelsError {
+    Status400(models::ErrorResponse),
+    DefaultResponse(models::ErrorResponse),
+    UnknownValue(serde_json::Value),
+}
+
+/// struct for typed errors of method [`put_sessions_session_id_labels`]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum PutSessionsSessionIdLabelsError {
+    Status400(models::ErrorResponse),
+    DefaultResponse(models::ErrorResponse),
+    UnknownValue(serde_json::Value),
+}
+
+/// struct for typed errors of method [`put_threads_thread_id_labels`]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum PutThreadsThreadIdLabelsError {
     Status400(models::ErrorResponse),
     DefaultResponse(models::ErrorResponse),
     UnknownValue(serde_json::Value),
@@ -686,6 +740,72 @@ pub async fn get_runs_run_id_items(
     }
 }
 
+pub async fn get_runs_run_id_labels(
+    configuration: &configuration::Configuration,
+    run_id: &str,
+) -> Result<Response<models::LabelsBody>, Error<GetRunsRunIdLabelsError>> {
+    // add a prefix to parameters to efficiently prevent name collisions
+    let p_path_run_id = run_id;
+
+    let uri_str = format!(
+        "{}/api/v1/runs/{run_id}/labels",
+        configuration.base_path,
+        run_id = crate::generated::apis::urlencode(p_path_run_id)
+    );
+    let mut req_builder = configuration.client.request(reqwest::Method::GET, &uri_str);
+
+    if let Some(ref user_agent) = configuration.user_agent {
+        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
+    }
+    if let Some(ref token) = configuration.bearer_access_token {
+        req_builder = req_builder.bearer_auth(token.to_owned());
+    };
+
+    let req = req_builder.build()?;
+    let resp = configuration.client.execute(req).await?;
+
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream");
+    let content_type = super::ContentType::from(content_type);
+
+    if !status.is_client_error() && !status.is_server_error() {
+        let content = resp.text().await?;
+        match content_type {
+            ContentType::Json => serde_json::from_str(&content)
+                .map(|data| Response {
+                    data,
+                    status,
+                    headers,
+                })
+                .map_err(Error::from),
+            ContentType::Text => {
+                return Err(Error::from(serde_json::Error::custom(
+                    "Received `text/plain` content type response that cannot be converted to `models::LabelsBody`",
+                )));
+            }
+            ContentType::Unsupported(unknown_type) => {
+                return Err(Error::from(serde_json::Error::custom(format!(
+                    "Received `{unknown_type}` content type response that cannot be converted to `models::LabelsBody`"
+                ))));
+            }
+        }
+    } else {
+        let content = resp.text().await?;
+        let entity: Option<GetRunsRunIdLabelsError> = serde_json::from_str(&content).ok();
+        Err(Error::ResponseError(Box::new(ResponseContent {
+            status,
+            headers,
+            content,
+            entity,
+        })))
+    }
+}
+
 pub async fn get_runs_run_id_lineage(
     configuration: &configuration::Configuration,
     run_id: &str,
@@ -963,16 +1083,84 @@ pub async fn get_runs_run_id_stream(
     }
 }
 
+pub async fn get_sessions_session_id_labels(
+    configuration: &configuration::Configuration,
+    session_id: &str,
+) -> Result<Response<models::LabelsBody>, Error<GetSessionsSessionIdLabelsError>> {
+    // add a prefix to parameters to efficiently prevent name collisions
+    let p_path_session_id = session_id;
+
+    let uri_str = format!(
+        "{}/api/v1/sessions/{session_id}/labels",
+        configuration.base_path,
+        session_id = crate::generated::apis::urlencode(p_path_session_id)
+    );
+    let mut req_builder = configuration.client.request(reqwest::Method::GET, &uri_str);
+
+    if let Some(ref user_agent) = configuration.user_agent {
+        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
+    }
+    if let Some(ref token) = configuration.bearer_access_token {
+        req_builder = req_builder.bearer_auth(token.to_owned());
+    };
+
+    let req = req_builder.build()?;
+    let resp = configuration.client.execute(req).await?;
+
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream");
+    let content_type = super::ContentType::from(content_type);
+
+    if !status.is_client_error() && !status.is_server_error() {
+        let content = resp.text().await?;
+        match content_type {
+            ContentType::Json => serde_json::from_str(&content)
+                .map(|data| Response {
+                    data,
+                    status,
+                    headers,
+                })
+                .map_err(Error::from),
+            ContentType::Text => {
+                return Err(Error::from(serde_json::Error::custom(
+                    "Received `text/plain` content type response that cannot be converted to `models::LabelsBody`",
+                )));
+            }
+            ContentType::Unsupported(unknown_type) => {
+                return Err(Error::from(serde_json::Error::custom(format!(
+                    "Received `{unknown_type}` content type response that cannot be converted to `models::LabelsBody`"
+                ))));
+            }
+        }
+    } else {
+        let content = resp.text().await?;
+        let entity: Option<GetSessionsSessionIdLabelsError> = serde_json::from_str(&content).ok();
+        Err(Error::ResponseError(Box::new(ResponseContent {
+            status,
+            headers,
+            content,
+            entity,
+        })))
+    }
+}
+
 pub async fn get_sessions_session_id_threads(
     configuration: &configuration::Configuration,
     session_id: &str,
     limit: Option<i32>,
     cursor: Option<&str>,
+    label: Option<Vec<String>>,
 ) -> Result<Response<models::ThreadCollection>, Error<GetSessionsSessionIdThreadsError>> {
     // add a prefix to parameters to efficiently prevent name collisions
     let p_path_session_id = session_id;
     let p_query_limit = limit;
     let p_query_cursor = cursor;
+    let p_query_label = label;
 
     let uri_str = format!(
         "{}/api/v1/sessions/{session_id}/threads",
@@ -986,6 +1174,25 @@ pub async fn get_sessions_session_id_threads(
     }
     if let Some(ref param_value) = p_query_cursor {
         req_builder = req_builder.query(&[("cursor", &param_value.to_string())]);
+    }
+    if let Some(ref param_value) = p_query_label {
+        req_builder = match "multi" {
+            "multi" => req_builder.query(
+                &param_value
+                    .into_iter()
+                    .map(|p| ("label".to_owned(), p.to_string()))
+                    .collect::<Vec<(std::string::String, std::string::String)>>(),
+            ),
+            _ => req_builder.query(&[(
+                "label",
+                &param_value
+                    .into_iter()
+                    .map(|p| p.to_string())
+                    .collect::<Vec<String>>()
+                    .join(",")
+                    .to_string(),
+            )]),
+        };
     }
     if let Some(ref user_agent) = configuration.user_agent {
         req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
@@ -1105,6 +1312,72 @@ pub async fn get_threads_thread_id(
     }
 }
 
+pub async fn get_threads_thread_id_labels(
+    configuration: &configuration::Configuration,
+    thread_id: &str,
+) -> Result<Response<models::LabelsBody>, Error<GetThreadsThreadIdLabelsError>> {
+    // add a prefix to parameters to efficiently prevent name collisions
+    let p_path_thread_id = thread_id;
+
+    let uri_str = format!(
+        "{}/api/v1/threads/{thread_id}/labels",
+        configuration.base_path,
+        thread_id = crate::generated::apis::urlencode(p_path_thread_id)
+    );
+    let mut req_builder = configuration.client.request(reqwest::Method::GET, &uri_str);
+
+    if let Some(ref user_agent) = configuration.user_agent {
+        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
+    }
+    if let Some(ref token) = configuration.bearer_access_token {
+        req_builder = req_builder.bearer_auth(token.to_owned());
+    };
+
+    let req = req_builder.build()?;
+    let resp = configuration.client.execute(req).await?;
+
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream");
+    let content_type = super::ContentType::from(content_type);
+
+    if !status.is_client_error() && !status.is_server_error() {
+        let content = resp.text().await?;
+        match content_type {
+            ContentType::Json => serde_json::from_str(&content)
+                .map(|data| Response {
+                    data,
+                    status,
+                    headers,
+                })
+                .map_err(Error::from),
+            ContentType::Text => {
+                return Err(Error::from(serde_json::Error::custom(
+                    "Received `text/plain` content type response that cannot be converted to `models::LabelsBody`",
+                )));
+            }
+            ContentType::Unsupported(unknown_type) => {
+                return Err(Error::from(serde_json::Error::custom(format!(
+                    "Received `{unknown_type}` content type response that cannot be converted to `models::LabelsBody`"
+                ))));
+            }
+        }
+    } else {
+        let content = resp.text().await?;
+        let entity: Option<GetThreadsThreadIdLabelsError> = serde_json::from_str(&content).ok();
+        Err(Error::ResponseError(Box::new(ResponseContent {
+            status,
+            headers,
+            content,
+            entity,
+        })))
+    }
+}
+
 pub async fn get_threads_thread_id_queued_submissions(
     configuration: &configuration::Configuration,
     thread_id: &str,
@@ -1190,11 +1463,13 @@ pub async fn get_threads_thread_id_runs(
     thread_id: &str,
     limit: Option<i32>,
     cursor: Option<&str>,
+    label: Option<Vec<String>>,
 ) -> Result<Response<models::RunCollection>, Error<GetThreadsThreadIdRunsError>> {
     // add a prefix to parameters to efficiently prevent name collisions
     let p_path_thread_id = thread_id;
     let p_query_limit = limit;
     let p_query_cursor = cursor;
+    let p_query_label = label;
 
     let uri_str = format!(
         "{}/api/v1/threads/{thread_id}/runs",
@@ -1208,6 +1483,25 @@ pub async fn get_threads_thread_id_runs(
     }
     if let Some(ref param_value) = p_query_cursor {
         req_builder = req_builder.query(&[("cursor", &param_value.to_string())]);
+    }
+    if let Some(ref param_value) = p_query_label {
+        req_builder = match "multi" {
+            "multi" => req_builder.query(
+                &param_value
+                    .into_iter()
+                    .map(|p| ("label".to_owned(), p.to_string()))
+                    .collect::<Vec<(std::string::String, std::string::String)>>(),
+            ),
+            _ => req_builder.query(&[(
+                "label",
+                &param_value
+                    .into_iter()
+                    .map(|p| p.to_string())
+                    .collect::<Vec<String>>()
+                    .join(",")
+                    .to_string(),
+            )]),
+        };
     }
     if let Some(ref user_agent) = configuration.user_agent {
         req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
@@ -1266,11 +1560,13 @@ pub async fn get_workspaces_workspace_runs(
     workspace: &str,
     limit: Option<i32>,
     cursor: Option<&str>,
+    label: Option<Vec<String>>,
 ) -> Result<Response<models::RunCollection>, Error<GetWorkspacesWorkspaceRunsError>> {
     // add a prefix to parameters to efficiently prevent name collisions
     let p_path_workspace = workspace;
     let p_query_limit = limit;
     let p_query_cursor = cursor;
+    let p_query_label = label;
 
     let uri_str = format!(
         "{}/api/v1/workspaces/{workspace}/runs",
@@ -1284,6 +1580,25 @@ pub async fn get_workspaces_workspace_runs(
     }
     if let Some(ref param_value) = p_query_cursor {
         req_builder = req_builder.query(&[("cursor", &param_value.to_string())]);
+    }
+    if let Some(ref param_value) = p_query_label {
+        req_builder = match "multi" {
+            "multi" => req_builder.query(
+                &param_value
+                    .into_iter()
+                    .map(|p| ("label".to_owned(), p.to_string()))
+                    .collect::<Vec<(std::string::String, std::string::String)>>(),
+            ),
+            _ => req_builder.query(&[(
+                "label",
+                &param_value
+                    .into_iter()
+                    .map(|p| p.to_string())
+                    .collect::<Vec<String>>()
+                    .join(",")
+                    .to_string(),
+            )]),
+        };
     }
     if let Some(ref user_agent) = configuration.user_agent {
         req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
@@ -1346,6 +1661,7 @@ pub async fn get_workspaces_workspace_sessions(
     trigger_type: Option<Vec<String>>,
     updated_after: Option<chrono::DateTime<chrono::FixedOffset>>,
     updated_before: Option<chrono::DateTime<chrono::FixedOffset>>,
+    label: Option<Vec<String>>,
     limit: Option<i32>,
     cursor: Option<&str>,
 ) -> Result<Response<models::SessionCollection>, Error<GetWorkspacesWorkspaceSessionsError>> {
@@ -1357,6 +1673,7 @@ pub async fn get_workspaces_workspace_sessions(
     let p_query_trigger_type = trigger_type;
     let p_query_updated_after = updated_after;
     let p_query_updated_before = updated_before;
+    let p_query_label = label;
     let p_query_limit = limit;
     let p_query_cursor = cursor;
 
@@ -1416,6 +1733,25 @@ pub async fn get_workspaces_workspace_sessions(
     }
     if let Some(ref param_value) = p_query_updated_before {
         req_builder = req_builder.query(&[("updated_before", &param_value.to_string())]);
+    }
+    if let Some(ref param_value) = p_query_label {
+        req_builder = match "multi" {
+            "multi" => req_builder.query(
+                &param_value
+                    .into_iter()
+                    .map(|p| ("label".to_owned(), p.to_string()))
+                    .collect::<Vec<(std::string::String, std::string::String)>>(),
+            ),
+            _ => req_builder.query(&[(
+                "label",
+                &param_value
+                    .into_iter()
+                    .map(|p| p.to_string())
+                    .collect::<Vec<String>>()
+                    .join(",")
+                    .to_string(),
+            )]),
+        };
     }
     if let Some(ref param_value) = p_query_limit {
         req_builder = req_builder.query(&[("limit", &param_value.to_string())]);
@@ -2293,6 +2629,222 @@ pub async fn post_workspaces_workspace_runs(
     } else {
         let content = resp.text().await?;
         let entity: Option<PostWorkspacesWorkspaceRunsError> = serde_json::from_str(&content).ok();
+        Err(Error::ResponseError(Box::new(ResponseContent {
+            status,
+            headers,
+            content,
+            entity,
+        })))
+    }
+}
+
+pub async fn put_runs_run_id_labels(
+    configuration: &configuration::Configuration,
+    run_id: &str,
+    if_match: &str,
+    labels_body: models::LabelsBody,
+) -> Result<Response<models::LabelsBody>, Error<PutRunsRunIdLabelsError>> {
+    // add a prefix to parameters to efficiently prevent name collisions
+    let p_path_run_id = run_id;
+    let p_header_if_match = if_match;
+    let p_body_labels_body = labels_body;
+
+    let uri_str = format!(
+        "{}/api/v1/runs/{run_id}/labels",
+        configuration.base_path,
+        run_id = crate::generated::apis::urlencode(p_path_run_id)
+    );
+    let mut req_builder = configuration.client.request(reqwest::Method::PUT, &uri_str);
+
+    if let Some(ref user_agent) = configuration.user_agent {
+        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
+    }
+    req_builder = req_builder.header("If-Match", p_header_if_match.to_string());
+    if let Some(ref token) = configuration.bearer_access_token {
+        req_builder = req_builder.bearer_auth(token.to_owned());
+    };
+    req_builder = req_builder.json(&p_body_labels_body);
+
+    let req = req_builder.build()?;
+    let resp = configuration.client.execute(req).await?;
+
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream");
+    let content_type = super::ContentType::from(content_type);
+
+    if !status.is_client_error() && !status.is_server_error() {
+        let content = resp.text().await?;
+        match content_type {
+            ContentType::Json => serde_json::from_str(&content)
+                .map(|data| Response {
+                    data,
+                    status,
+                    headers,
+                })
+                .map_err(Error::from),
+            ContentType::Text => {
+                return Err(Error::from(serde_json::Error::custom(
+                    "Received `text/plain` content type response that cannot be converted to `models::LabelsBody`",
+                )));
+            }
+            ContentType::Unsupported(unknown_type) => {
+                return Err(Error::from(serde_json::Error::custom(format!(
+                    "Received `{unknown_type}` content type response that cannot be converted to `models::LabelsBody`"
+                ))));
+            }
+        }
+    } else {
+        let content = resp.text().await?;
+        let entity: Option<PutRunsRunIdLabelsError> = serde_json::from_str(&content).ok();
+        Err(Error::ResponseError(Box::new(ResponseContent {
+            status,
+            headers,
+            content,
+            entity,
+        })))
+    }
+}
+
+pub async fn put_sessions_session_id_labels(
+    configuration: &configuration::Configuration,
+    session_id: &str,
+    if_match: &str,
+    labels_body: models::LabelsBody,
+) -> Result<Response<models::LabelsBody>, Error<PutSessionsSessionIdLabelsError>> {
+    // add a prefix to parameters to efficiently prevent name collisions
+    let p_path_session_id = session_id;
+    let p_header_if_match = if_match;
+    let p_body_labels_body = labels_body;
+
+    let uri_str = format!(
+        "{}/api/v1/sessions/{session_id}/labels",
+        configuration.base_path,
+        session_id = crate::generated::apis::urlencode(p_path_session_id)
+    );
+    let mut req_builder = configuration.client.request(reqwest::Method::PUT, &uri_str);
+
+    if let Some(ref user_agent) = configuration.user_agent {
+        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
+    }
+    req_builder = req_builder.header("If-Match", p_header_if_match.to_string());
+    if let Some(ref token) = configuration.bearer_access_token {
+        req_builder = req_builder.bearer_auth(token.to_owned());
+    };
+    req_builder = req_builder.json(&p_body_labels_body);
+
+    let req = req_builder.build()?;
+    let resp = configuration.client.execute(req).await?;
+
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream");
+    let content_type = super::ContentType::from(content_type);
+
+    if !status.is_client_error() && !status.is_server_error() {
+        let content = resp.text().await?;
+        match content_type {
+            ContentType::Json => serde_json::from_str(&content)
+                .map(|data| Response {
+                    data,
+                    status,
+                    headers,
+                })
+                .map_err(Error::from),
+            ContentType::Text => {
+                return Err(Error::from(serde_json::Error::custom(
+                    "Received `text/plain` content type response that cannot be converted to `models::LabelsBody`",
+                )));
+            }
+            ContentType::Unsupported(unknown_type) => {
+                return Err(Error::from(serde_json::Error::custom(format!(
+                    "Received `{unknown_type}` content type response that cannot be converted to `models::LabelsBody`"
+                ))));
+            }
+        }
+    } else {
+        let content = resp.text().await?;
+        let entity: Option<PutSessionsSessionIdLabelsError> = serde_json::from_str(&content).ok();
+        Err(Error::ResponseError(Box::new(ResponseContent {
+            status,
+            headers,
+            content,
+            entity,
+        })))
+    }
+}
+
+pub async fn put_threads_thread_id_labels(
+    configuration: &configuration::Configuration,
+    thread_id: &str,
+    if_match: &str,
+    labels_body: models::LabelsBody,
+) -> Result<Response<models::LabelsBody>, Error<PutThreadsThreadIdLabelsError>> {
+    // add a prefix to parameters to efficiently prevent name collisions
+    let p_path_thread_id = thread_id;
+    let p_header_if_match = if_match;
+    let p_body_labels_body = labels_body;
+
+    let uri_str = format!(
+        "{}/api/v1/threads/{thread_id}/labels",
+        configuration.base_path,
+        thread_id = crate::generated::apis::urlencode(p_path_thread_id)
+    );
+    let mut req_builder = configuration.client.request(reqwest::Method::PUT, &uri_str);
+
+    if let Some(ref user_agent) = configuration.user_agent {
+        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
+    }
+    req_builder = req_builder.header("If-Match", p_header_if_match.to_string());
+    if let Some(ref token) = configuration.bearer_access_token {
+        req_builder = req_builder.bearer_auth(token.to_owned());
+    };
+    req_builder = req_builder.json(&p_body_labels_body);
+
+    let req = req_builder.build()?;
+    let resp = configuration.client.execute(req).await?;
+
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream");
+    let content_type = super::ContentType::from(content_type);
+
+    if !status.is_client_error() && !status.is_server_error() {
+        let content = resp.text().await?;
+        match content_type {
+            ContentType::Json => serde_json::from_str(&content)
+                .map(|data| Response {
+                    data,
+                    status,
+                    headers,
+                })
+                .map_err(Error::from),
+            ContentType::Text => {
+                return Err(Error::from(serde_json::Error::custom(
+                    "Received `text/plain` content type response that cannot be converted to `models::LabelsBody`",
+                )));
+            }
+            ContentType::Unsupported(unknown_type) => {
+                return Err(Error::from(serde_json::Error::custom(format!(
+                    "Received `{unknown_type}` content type response that cannot be converted to `models::LabelsBody`"
+                ))));
+            }
+        }
+    } else {
+        let content = resp.text().await?;
+        let entity: Option<PutThreadsThreadIdLabelsError> = serde_json::from_str(&content).ok();
         Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,

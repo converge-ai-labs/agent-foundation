@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 
 from pydantic import ValidationError
 from sqlalchemy import select
@@ -10,7 +10,6 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
-from a13n_service.digests import digest_request
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.hooks.domain import InlineHookSubscriptionInput
 from a13n_service.hooks.persistence import load_inline_hook_subscription
@@ -22,9 +21,11 @@ from a13n_service.interactions.environment_selection import (
     queued_environment_choice,
     requested_environment,
 )
+from a13n_service.labels import merge_labels
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, utc_now
 
+from .acceptance_validation import validate_new_thread, validate_prepared_run, validate_queued_run_input
 from .control_domain import (
     QueuedSubmissionConsumptionReceipt,
     QueuedSubmissionFailure,
@@ -89,9 +90,11 @@ class RunAcceptanceService:
         final_validator: Callable[[AsyncSession], Awaitable[None]] | None = None,
         transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
         environment: EnvironmentIntent = EnvironmentDefault.agent,
+        thread_label_overrides: Mapping[str, str] | None = None,
+        run_label_overrides: Mapping[str, str] | None = None,
     ) -> RunAcceptanceReceipt:
         validate_prepared_run(run, state)
-        _validate_new_thread(thread, run, session)
+        validate_new_thread(thread, run, session)
         replay = await self._load_replay(run, state, accepted_thread_version=1)
         if replay is not None:
             await self._require_inline_hook_replay(run, hook_subscription)
@@ -106,9 +109,11 @@ class RunAcceptanceService:
                 if session is None:
                     session_record_value = await require_session(database, run)
                     workspace_id = session_record_value.workspace_id
+                    session_labels = session_record_value.labels
                 else:
                     database.add(session_record(session))
                     workspace_id = session.workspace_id
+                    session_labels = session.labels
                 await self._inline_hooks.authorize(
                     database,
                     run=run,
@@ -117,10 +122,25 @@ class RunAcceptanceService:
                 )
                 if thread.origin_kind is not ThreadOriginKind.new:
                     await _require_origin(database, thread, run)
-                database.add(thread_record(thread))
+                if thread.origin_kind is ThreadOriginKind.fork:
+                    assert thread.origin_thread_id is not None
+                    label_parent = await _lock_thread_by_id(
+                        database,
+                        organization_id=thread.organization_id,
+                        thread_id=thread.origin_thread_id,
+                    )
+                    parent_labels = label_parent.labels
+                else:
+                    parent_labels = session_labels
+                accepted_thread_labels = _accepted_labels(parent_labels, thread_label_overrides)
+                accepted_run = run.model_copy(
+                    update={"labels": _accepted_labels(accepted_thread_labels, run_label_overrides)}
+                )
+                accepted_thread = thread.model_copy(update={"labels": accepted_thread_labels})
+                database.add(thread_record(accepted_thread))
                 run_record_value = await add_run_with_environment(
                     database,
-                    run=run,
+                    run=accepted_run,
                     state=state,
                     workspace_id=workspace_id,
                     intent=environment,
@@ -155,6 +175,8 @@ class RunAcceptanceService:
         final_validator: Callable[[AsyncSession], Awaitable[None]] | None = None,
         transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
         environment: EnvironmentIntent = EnvironmentDefault.thread,
+        label_overrides: Mapping[str, str] | None = None,
+        label_source_run_id: str | None = None,
     ) -> RunAcceptanceReceipt:
         validate_prepared_run(run, state)
         accepted_thread_version = expected_thread_version + 1
@@ -198,9 +220,15 @@ class RunAcceptanceService:
                     next_head_run_id=next_head_run_id,
                 )
                 session_record_value = await require_session(database, run)
+                parent_labels = (
+                    (await _load_run(database, run.organization_id, label_source_run_id)).labels
+                    if label_source_run_id is not None
+                    else thread.labels
+                )
+                accepted_run = run.model_copy(update={"labels": _accepted_labels(parent_labels, label_overrides)})
                 await self._inline_hooks.authorize(
                     database,
-                    run=run,
+                    run=accepted_run,
                     workspace_id=session_record_value.workspace_id,
                     subscription=hook_subscription,
                     source_run_id=hook_source_run_id,
@@ -208,7 +236,7 @@ class RunAcceptanceService:
                 )
                 run_record_value = await add_run_with_environment(
                     database,
-                    run=run,
+                    run=accepted_run,
                     state=state,
                     workspace_id=session_record_value.workspace_id,
                     intent=environment,
@@ -279,6 +307,7 @@ class RunAcceptanceService:
         next_head_run_id: str | None,
         final_validator: Callable[[AsyncSession], Awaitable[None]] | None = None,
         transaction_hook: Callable[[AsyncSession, QueuedSubmissionConsumptionReceipt], Awaitable[None]] | None = None,
+        label_overrides: Mapping[str, str] | None = None,
     ) -> QueuedSubmissionConsumptionReceipt:
         """Atomically consume the first queue row and accept its prepared Run."""
 
@@ -330,10 +359,11 @@ class RunAcceptanceService:
                     next_head_run_id=next_head_run_id,
                 )
                 session_record_value = await require_session(database, run)
+                accepted_run = run.model_copy(update={"labels": _accepted_labels(thread.labels, label_overrides)})
                 choice = await queued_environment_choice(database, queued_submission_id)
                 run_record_value = await add_run_with_environment(
                     database,
-                    run=run,
+                    run=accepted_run,
                     state=state,
                     workspace_id=session_record_value.workspace_id,
                     intent=requested_environment(choice, default=EnvironmentDefault.thread),
@@ -594,66 +624,6 @@ class RunAcceptanceService:
             return queued
 
 
-def validate_prepared_run(run: Run, state: RunCheckpoint) -> None:
-    if run.status is not RunStatus.accepted or run.version != 1:
-        raise ValueError("prepared acceptance requires a version-one accepted Run")
-    if state.checkpoint_kind != "initial" or state.checkpoint_seq != 0:
-        raise ValueError("prepared acceptance requires initial Run state")
-    validate_run_state_selection(run, state)
-
-
-def validate_run_state_selection(run: Run, state: RunCheckpoint) -> None:
-    """Validate immutable Run selection facts against any retained checkpoint."""
-
-    if (state.run_id, state.thread_id) != (run.id, run.thread_id):
-        raise ValueError("Run and state identities do not match")
-    if (state.agent_id, state.agent_revision_id) != (run.agent_id, run.agent_revision_id):
-        raise ValueError("Run and state Agent selection do not match")
-    effective = state.effective_agent_config
-    effective_payload = effective.model_dump(mode="json", by_alias=True, exclude={"content_digest"})
-    if digest_request(effective_payload) != effective.content_digest:
-        raise ValueError("Run effective configuration digest is invalid")
-    if effective.content_digest != run.effective_agent_config_digest:
-        raise ValueError("Run effective configuration digest does not match state")
-    if effective.resolved_model.execution.observation() != run.model_execution_observation:
-        raise ValueError("Run model observation does not match state")
-
-
-def _validate_new_thread(thread: Thread, run: Run, session: Session | None) -> None:
-    _validate_new_thread_identity(thread, run)
-    _validate_new_thread_session(thread, run, session)
-    _validate_new_thread_origin(thread, run)
-
-
-def _validate_new_thread_identity(thread: Thread, run: Run) -> None:
-    if thread.version != 1 or thread.queue_version != 0 or thread.head_run_id is not None:
-        raise ValueError("new Thread must start at version one with an empty head and queue")
-    if thread.current_run_id != run.id:
-        raise ValueError("new Thread must select its first Run")
-    if (thread.organization_id, thread.session_id, thread.id) != (run.organization_id, run.session_id, run.thread_id):
-        raise ValueError("new Thread and first Run scope do not match")
-    if run.retry_of_run_id is not None:
-        raise ValueError("the first Run of a new Thread cannot retry another Run")
-
-
-def _validate_new_thread_session(thread: Thread, run: Run, session: Session | None) -> None:
-    if session is not None and (session.id, session.organization_id) != (thread.session_id, thread.organization_id):
-        raise ValueError("new Session and root Thread scope do not match")
-    if session is not None and thread.role is not ThreadRole.root:
-        raise ValueError("a new Session must begin with its root Thread")
-    if session is None and thread.role is not ThreadRole.child:
-        raise ValueError("an existing Session can accept only a child Thread")
-
-
-def _validate_new_thread_origin(thread: Thread, run: Run) -> None:
-    if thread.origin_kind is ThreadOriginKind.fork and run.lineage_kind is not RunLineageKind.fork:
-        raise ValueError("fork Thread requires fork Run lineage")
-    if thread.origin_kind is ThreadOriginKind.child and run.lineage_kind is not RunLineageKind.root:
-        raise ValueError("independent child Thread requires root Run lineage")
-    if thread.origin_kind is ThreadOriginKind.new and run.lineage_kind is not RunLineageKind.root:
-        raise ValueError("new root Thread requires root Run lineage")
-
-
 async def require_session(database: AsyncSession, run: Run) -> SessionRecord:
     record = await database.scalar(
         select(SessionRecord).where(
@@ -665,6 +635,17 @@ async def require_session(database: AsyncSession, run: Run) -> SessionRecord:
             "session_not_found", "The interaction Session was not found", category=ErrorCategory.not_found
         )
     return record
+
+
+def _accepted_labels(parent: Mapping[str, str], overrides: Mapping[str, str] | None) -> dict[str, str]:
+    try:
+        return merge_labels(parent, overrides)
+    except ValueError as error:
+        raise RunAcceptanceError(
+            "merged_labels_invalid",
+            str(error),
+            category=ErrorCategory.invalid_request,
+        ) from error
 
 
 async def _require_origin(database: AsyncSession, thread: Thread, run: Run) -> None:
@@ -929,19 +910,6 @@ async def _validate_replay(
     )
 
 
-def validate_queued_run_input(
-    run: Run,
-    payload: RunPayloadEnvelope | None,
-    accepted_input: AcceptedAgentInput,
-) -> None:
-    if run.input_kind is not RunInputKind.agent_input or run.retry_of_run_id is not None:
-        raise ValueError("queue consumption requires ordinary non-retry Agent input")
-    expected = accepted_input.model_dump(mode="json", by_alias=True, exclude_none=True)
-    actual = run.input if payload is None else payload.payload
-    if actual != expected:
-        raise ValueError("prepared queued Run input does not match its accepted submission")
-
-
 def _receipt(
     thread: Thread,
     run: Run,
@@ -962,6 +930,4 @@ __all__ = [
     "RunAcceptanceError",
     "RunAcceptanceReceipt",
     "RunAcceptanceService",
-    "validate_prepared_run",
-    "validate_run_state_selection",
 ]

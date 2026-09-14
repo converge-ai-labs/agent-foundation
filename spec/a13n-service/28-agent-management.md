@@ -45,6 +45,7 @@ The following schemas are conceptual. They define durable field meaning rather t
 
 ```python
 class Agent:
+    labels: dict[str, str]
     id: AgentId
     organization_id: OrganizationId
     workspace_id: WorkspaceId
@@ -68,7 +69,7 @@ class Agent:
 
 `Agent.version` starts at `1` and always equals the current `AgentRevision.version`. It advances only when a genuinely new immutable Revision becomes current. `current_revision_id` is always present; Service never exposes an Agent without an executable Revision.
 
-`name`, `key`, `description` and `default_environment_template_id` are mutable head metadata. Name changes preserve the key; explicit key changes follow the shared resource-key contract and preserve the Agent ID. The template default only seeds new Thread Environment allocation under [Environment Management](29-environment-management.md#thread-defaults-and-run-selection); it never changes an existing Thread or Run and does not publish an AgentRevision. `enabled` and `archived_at` are independent lifecycle axes. Their mutations change `updated_at` and the representation ETag without advancing `version` or rewriting a Revision.
+`name`, `key`, `description`, `labels`, and `default_environment_template_id` are mutable head metadata. Label reads and replacement follow [Resource labels](16-management-api.md#resource-labels). Name changes preserve the key; explicit key changes follow the shared resource-key contract and preserve the Agent ID. The template default only seeds new Thread Environment allocation under [Environment Management](29-environment-management.md#thread-defaults-and-run-selection); it never changes an existing Thread or Run and does not publish an AgentRevision. `enabled` and `archived_at` are independent lifecycle axes. Their mutations change `updated_at` and the representation ETag without advancing `version` or rewriting a Revision.
 
 ### Avatar
 
@@ -482,3 +483,4 @@ Atomically creating and advancing immutable Revisions removes a mutable draft/de
 08. Restore copies retained content into a new later Revision and never moves the Agent head backward.
 09. ProtocolConfig is Agent-owned Revision content rather than another resource, digest, or per-Agent protocol switch.
 10. Plugin code and dependencies belong to the Worker build; Agent Management stores authored selections and Worker execution owns durable normalized configuration under the installed Plugin contract.
+11. Agent labels are head metadata outside immutable Revisions. Duplicate copies the source Agent's current labels and applies explicit overrides; publish and restore retain the target head labels.

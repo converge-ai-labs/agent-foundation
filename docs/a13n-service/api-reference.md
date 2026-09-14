@@ -36,6 +36,7 @@ List Agents.
 | `enabled`          | query    | false    | boolean or null     | —                                  |
 | `source`           | query    | false    | AgentSource or null | —                                  |
 | `include_archived` | query    | false    | boolean             | default=false                      |
+| `label`            | query    | false    | array of string     | maxItems=64; default=[]            |
 
 Responses:
 
@@ -166,6 +167,41 @@ Request body: required.
 Responses:
 
 - **201** — Successful Response (`application/json: Agent`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/workspaces/{workspace}/agents/{agent}/labels`
+
+Get Agent Labels.
+
+| Parameter   | Location | Required | Type / schema | Constraints and default |
+| ----------- | -------- | -------- | ------------- | ----------------------- |
+| `workspace` | path     | true     | string        | —                       |
+| `agent`     | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: LabelsBody`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `PUT /api/v1/workspaces/{workspace}/agents/{agent}/labels`
+
+Put Agent Labels.
+
+| Parameter   | Location | Required | Type / schema | Constraints and default    |
+| ----------- | -------- | -------- | ------------- | -------------------------- |
+| `workspace` | path     | true     | string        | —                          |
+| `agent`     | path     | true     | string        | —                          |
+| `If-Match`  | header   | true     | string        | minLength=1; maxLength=256 |
+
+Request body: required.
+
+- `application/json`: `LabelsBody`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: LabelsBody`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
@@ -1282,6 +1318,39 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
+### `GET /api/v1/environment-templates/{template_id}/labels`
+
+Get Template Labels.
+
+| Parameter     | Location | Required | Type / schema | Constraints and default |
+| ------------- | -------- | -------- | ------------- | ----------------------- |
+| `template_id` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: LabelsBody`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `PUT /api/v1/environment-templates/{template_id}/labels`
+
+Put Template Labels.
+
+| Parameter     | Location | Required | Type / schema | Constraints and default    |
+| ------------- | -------- | -------- | ------------- | -------------------------- |
+| `template_id` | path     | true     | string        | —                          |
+| `If-Match`    | header   | true     | string        | minLength=1; maxLength=256 |
+
+Request body: required.
+
+- `application/json`: `LabelsBody`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: LabelsBody`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
 ### `GET /api/v1/environment-templates/{template_id}/revisions`
 
 List Revisions.
@@ -1347,6 +1416,39 @@ Delete Environment.
 Responses:
 
 - **202** — Successful Response (`application/json: EnvironmentCommand`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/environments/{environment_id}/labels`
+
+Get Environment Labels.
+
+| Parameter        | Location | Required | Type / schema | Constraints and default |
+| ---------------- | -------- | -------- | ------------- | ----------------------- |
+| `environment_id` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: LabelsBody`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `PUT /api/v1/environments/{environment_id}/labels`
+
+Put Environment Labels.
+
+| Parameter        | Location | Required | Type / schema | Constraints and default    |
+| ---------------- | -------- | -------- | ------------- | -------------------------- |
+| `environment_id` | path     | true     | string        | —                          |
+| `If-Match`       | header   | true     | string        | minLength=1; maxLength=256 |
+
+Request body: required.
+
+- `application/json`: `LabelsBody`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: LabelsBody`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
@@ -1417,11 +1519,12 @@ Responses:
 
 Organization List Templates.
 
-| Parameter      | Location | Required | Type / schema  | Constraints and default            |
-| -------------- | -------- | -------- | -------------- | ---------------------------------- |
-| `organization` | path     | true     | string         | —                                  |
-| `limit`        | query    | false    | integer        | minimum=1; maximum=100; default=50 |
-| `cursor`       | query    | false    | string or null | —                                  |
+| Parameter      | Location | Required | Type / schema   | Constraints and default            |
+| -------------- | -------- | -------- | --------------- | ---------------------------------- |
+| `organization` | path     | true     | string          | —                                  |
+| `limit`        | query    | false    | integer         | minimum=1; maximum=100; default=50 |
+| `cursor`       | query    | false    | string or null  | —                                  |
+| `label`        | query    | false    | array of string | maxItems=64; default=[]            |
 
 Responses:
 
@@ -1486,11 +1589,12 @@ Responses:
 
 List Templates.
 
-| Parameter   | Location | Required | Type / schema  | Constraints and default            |
-| ----------- | -------- | -------- | -------------- | ---------------------------------- |
-| `workspace` | path     | true     | string         | —                                  |
-| `limit`     | query    | false    | integer        | minimum=1; maximum=100; default=50 |
-| `cursor`    | query    | false    | string or null | —                                  |
+| Parameter   | Location | Required | Type / schema   | Constraints and default            |
+| ----------- | -------- | -------- | --------------- | ---------------------------------- |
+| `workspace` | path     | true     | string          | —                                  |
+| `limit`     | query    | false    | integer         | minimum=1; maximum=100; default=50 |
+| `cursor`    | query    | false    | string or null  | —                                  |
+| `label`     | query    | false    | array of string | maxItems=64; default=[]            |
 
 Responses:
 
@@ -1521,11 +1625,12 @@ Responses:
 
 List Environments.
 
-| Parameter   | Location | Required | Type / schema  | Constraints and default            |
-| ----------- | -------- | -------- | -------------- | ---------------------------------- |
-| `workspace` | path     | true     | string         | —                                  |
-| `limit`     | query    | false    | integer        | minimum=1; maximum=100; default=50 |
-| `cursor`    | query    | false    | string or null | —                                  |
+| Parameter   | Location | Required | Type / schema   | Constraints and default            |
+| ----------- | -------- | -------- | --------------- | ---------------------------------- |
+| `workspace` | path     | true     | string          | —                                  |
+| `limit`     | query    | false    | integer         | minimum=1; maximum=100; default=50 |
+| `cursor`    | query    | false    | string or null  | —                                  |
+| `label`     | query    | false    | array of string | maxItems=64; default=[]            |
 
 Responses:
 
@@ -3323,6 +3428,39 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
+### `GET /api/v1/runs/{run_id}/labels`
+
+Get Run Labels.
+
+| Parameter | Location | Required | Type / schema | Constraints and default |
+| --------- | -------- | -------- | ------------- | ----------------------- |
+| `run_id`  | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: LabelsBody`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `PUT /api/v1/runs/{run_id}/labels`
+
+Put Run Labels.
+
+| Parameter  | Location | Required | Type / schema | Constraints and default    |
+| ---------- | -------- | -------- | ------------- | -------------------------- |
+| `run_id`   | path     | true     | string        | —                          |
+| `If-Match` | header   | true     | string        | minLength=1; maxLength=256 |
+
+Request body: required.
+
+- `application/json`: `LabelsBody`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: LabelsBody`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
 ### `GET /api/v1/runs/{run_id}/lineage`
 
 Get Run Lineage.
@@ -3439,15 +3577,49 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
+### `GET /api/v1/sessions/{session_id}/labels`
+
+Get Session Labels.
+
+| Parameter    | Location | Required | Type / schema | Constraints and default |
+| ------------ | -------- | -------- | ------------- | ----------------------- |
+| `session_id` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: LabelsBody`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `PUT /api/v1/sessions/{session_id}/labels`
+
+Put Session Labels.
+
+| Parameter    | Location | Required | Type / schema | Constraints and default    |
+| ------------ | -------- | -------- | ------------- | -------------------------- |
+| `session_id` | path     | true     | string        | —                          |
+| `If-Match`   | header   | true     | string        | minLength=1; maxLength=256 |
+
+Request body: required.
+
+- `application/json`: `LabelsBody`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: LabelsBody`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
 ### `GET /api/v1/sessions/{session_id}/threads`
 
 List Threads.
 
-| Parameter    | Location | Required | Type / schema  | Constraints and default            |
-| ------------ | -------- | -------- | -------------- | ---------------------------------- |
-| `session_id` | path     | true     | string         | —                                  |
-| `limit`      | query    | false    | integer        | minimum=1; maximum=200; default=50 |
-| `cursor`     | query    | false    | string or null | —                                  |
+| Parameter    | Location | Required | Type / schema   | Constraints and default            |
+| ------------ | -------- | -------- | --------------- | ---------------------------------- |
+| `session_id` | path     | true     | string          | —                                  |
+| `limit`      | query    | false    | integer         | minimum=1; maximum=200; default=50 |
+| `cursor`     | query    | false    | string or null  | —                                  |
+| `label`      | query    | false    | array of string | maxItems=64; default=[]            |
 
 Responses:
 
@@ -3466,6 +3638,39 @@ Get Thread.
 Responses:
 
 - **200** — Successful Response (`application/json: ThreadResource`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/threads/{thread_id}/labels`
+
+Get Thread Labels.
+
+| Parameter   | Location | Required | Type / schema | Constraints and default |
+| ----------- | -------- | -------- | ------------- | ----------------------- |
+| `thread_id` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: LabelsBody`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `PUT /api/v1/threads/{thread_id}/labels`
+
+Put Thread Labels.
+
+| Parameter   | Location | Required | Type / schema | Constraints and default    |
+| ----------- | -------- | -------- | ------------- | -------------------------- |
+| `thread_id` | path     | true     | string        | —                          |
+| `If-Match`  | header   | true     | string        | minLength=1; maxLength=256 |
+
+Request body: required.
+
+- `application/json`: `LabelsBody`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: LabelsBody`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
@@ -3527,11 +3732,12 @@ Responses:
 
 List Thread Runs.
 
-| Parameter   | Location | Required | Type / schema  | Constraints and default            |
-| ----------- | -------- | -------- | -------------- | ---------------------------------- |
-| `thread_id` | path     | true     | string         | —                                  |
-| `limit`     | query    | false    | integer        | minimum=1; maximum=200; default=50 |
-| `cursor`    | query    | false    | string or null | —                                  |
+| Parameter   | Location | Required | Type / schema   | Constraints and default            |
+| ----------- | -------- | -------- | --------------- | ---------------------------------- |
+| `thread_id` | path     | true     | string          | —                                  |
+| `limit`     | query    | false    | integer         | minimum=1; maximum=200; default=50 |
+| `cursor`    | query    | false    | string or null  | —                                  |
+| `label`     | query    | false    | array of string | maxItems=64; default=[]            |
 
 Responses:
 
@@ -3562,11 +3768,12 @@ Responses:
 
 List Workspace Runs.
 
-| Parameter   | Location | Required | Type / schema  | Constraints and default            |
-| ----------- | -------- | -------- | -------------- | ---------------------------------- |
-| `workspace` | path     | true     | string         | —                                  |
-| `limit`     | query    | false    | integer        | minimum=1; maximum=200; default=50 |
-| `cursor`    | query    | false    | string or null | —                                  |
+| Parameter   | Location | Required | Type / schema   | Constraints and default            |
+| ----------- | -------- | -------- | --------------- | ---------------------------------- |
+| `workspace` | path     | true     | string          | —                                  |
+| `limit`     | query    | false    | integer         | minimum=1; maximum=200; default=50 |
+| `cursor`    | query    | false    | string or null  | —                                  |
+| `label`     | query    | false    | array of string | maxItems=64; default=[]            |
 
 Responses:
 
@@ -3606,6 +3813,7 @@ List Sessions.
 | `trigger_type`   | query    | false    | array of string    | maxItems=16; default=[]            |
 | `updated_after`  | query    | false    | string or null     | —                                  |
 | `updated_before` | query    | false    | string or null     | —                                  |
+| `label`          | query    | false    | array of string    | maxItems=64; default=[]            |
 | `limit`          | query    | false    | integer            | minimum=1; maximum=200; default=50 |
 | `cursor`         | query    | false    | string or null     | —                                  |
 
@@ -3960,6 +4168,39 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
+### `GET /api/v1/skills/{skill_id}/labels`
+
+Get Skill Labels.
+
+| Parameter  | Location | Required | Type / schema | Constraints and default |
+| ---------- | -------- | -------- | ------------- | ----------------------- |
+| `skill_id` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: LabelsBody`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `PUT /api/v1/skills/{skill_id}/labels`
+
+Put Skill Labels.
+
+| Parameter  | Location | Required | Type / schema | Constraints and default    |
+| ---------- | -------- | -------- | ------------- | -------------------------- |
+| `skill_id` | path     | true     | string        | —                          |
+| `If-Match` | header   | true     | string        | minLength=1; maxLength=256 |
+
+Request body: required.
+
+- `application/json`: `LabelsBody`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: LabelsBody`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
 ### `GET /api/v1/skills/{skill_id}/references`
 
 List Skill References.
@@ -4041,6 +4282,7 @@ List Skills.
 | `cursor`      | query    | false    | string or null          | —                                  |
 | `q`           | query    | false    | string or null          | —                                  |
 | `source_kind` | query    | false    | "zip", "github" or null | —                                  |
+| `label`       | query    | false    | array of string         | maxItems=64; default=[]            |
 
 Responses:
 

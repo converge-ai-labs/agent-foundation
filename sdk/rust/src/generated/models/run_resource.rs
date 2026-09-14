@@ -52,6 +52,9 @@ pub struct RunResource {
     #[serde(rename = "input_text", deserialize_with = "Option::deserialize")]
     pub input_text: Option<String>,
 
+    #[serde(rename = "labels")]
+    pub labels: serde_json::Value,
+
     #[serde(rename = "lineage_kind")]
     pub lineage_kind: models::RunLineageKind,
 
@@ -121,6 +124,7 @@ impl RunResource {
         input: Option<serde_json::Value>,
         input_kind: String,
         input_text: Option<String>,
+        labels: serde_json::Value,
         lineage_kind: models::RunLineageKind,
         output: Option<serde_json::Value>,
         output_text: Option<String>,
@@ -160,6 +164,7 @@ impl RunResource {
             },
             input_kind,
             input_text,
+            labels,
             lineage_kind,
             output: if let Some(x) = output {
                 Some(Box::new(x))

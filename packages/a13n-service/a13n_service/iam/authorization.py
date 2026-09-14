@@ -49,8 +49,11 @@ class WorkspaceAction(StrEnum):
     environment_use = "environment.use"
     secrets_bind = "secrets.bind"
     session_read = "session.read"
+    session_labels_update = "session.labels.update"
     thread_read = "thread.read"
+    thread_labels_update = "thread.labels.update"
     run_read = "run.read"
+    run_labels_update = "run.labels.update"
     lifecycle_event_read = "lifecycle_event.read"
     notification_subscribe = "notification.subscribe"
     usage_read = "usage.read"
@@ -171,6 +174,9 @@ _BUILDER_ACTIONS = _RUNNER_ACTIONS | frozenset(
         WorkspaceAction.environment_provider_manage,
         WorkspaceAction.environment_template_manage,
         WorkspaceAction.environment_manage,
+        WorkspaceAction.session_labels_update,
+        WorkspaceAction.thread_labels_update,
+        WorkspaceAction.run_labels_update,
         WorkspaceAction.hook_subscription_update,
         WorkspaceAction.hook_subscription_delete,
         WorkspaceAction.hook_subscription_redrive,

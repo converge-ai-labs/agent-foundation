@@ -23,6 +23,7 @@ from a13n_service.environments.domain import EnvironmentSelection
 from a13n_service.hooks.domain import InlineHookRequest, InlineHookSubscriptionInput
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.ids import new_object_id
+from a13n_service.labels import Labels
 
 from .domain import (
     BoundedKey,
@@ -41,6 +42,7 @@ from .input import AcceptedAgentInput, AgentInput
 
 class ThreadRunSubmissionIntent(StrictModel):
     input: AgentInput
+    labels: Labels = Field(default_factory=dict)
     agent_id: ObjectId | None = None
     agent_revision_id: ObjectId | None = None
     expected_current_revision_id: ObjectId | None = None
@@ -78,6 +80,7 @@ class WaitingResolutionDefaults(StrictModel):
 class ThreadRunSubmissionRequest(StrictModel):
     expected_thread_version: int = Field(ge=1)
     input: AgentInput
+    labels: Labels = Field(default_factory=dict)
     agent_id: ObjectId | None = None
     agent_revision_id: ObjectId | None = None
     expected_current_revision_id: ObjectId | None = None
@@ -156,6 +159,7 @@ SubmittedPendingResolution = Annotated[
 
 
 class WaitingRunFeedbackRequest(InlineHookRequest):
+    labels: Labels = Field(default_factory=dict)
     expected_thread_version: int = Field(ge=1)
     sealed_state_digest_sha256: Sha256Digest
     resolutions: tuple[SubmittedPendingResolution, ...] = Field(default=(), max_length=256)

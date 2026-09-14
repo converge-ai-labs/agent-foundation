@@ -31,6 +31,9 @@ pub struct Skill {
     #[serde(rename = "key")]
     pub key: String,
 
+    #[serde(rename = "labels", skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Value>,
+
     #[serde(rename = "name")]
     pub name: String,
 
@@ -72,6 +75,7 @@ impl Skill {
             deleted_at,
             id,
             key,
+            labels: None,
             name,
             organization_id,
             updated_at,

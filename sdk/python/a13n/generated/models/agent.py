@@ -10,6 +10,7 @@ from ..models.agent_source import AgentSource
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
+    from ..models.agent_labels import AgentLabels
     from ..models.principal_ref import PrincipalRef
     from ..models.system_actor_ref import SystemActorRef
 
@@ -40,6 +41,7 @@ class Agent:
         workspace_id (str):
         default_environment_template_id (None | str | Unset):
         image_url (None | str | Unset):
+        labels (AgentLabels | Unset):
     """
 
     archived_at: datetime.datetime | None
@@ -61,6 +63,7 @@ class Agent:
     workspace_id: str
     default_environment_template_id: str | Unset | None = UNSET
     image_url: str | Unset | None = UNSET
+    labels: AgentLabels | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.principal_ref import PrincipalRef
@@ -126,6 +129,10 @@ class Agent:
         else:
             image_url = self.image_url
 
+        labels: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.labels, Unset):
+            labels = self.labels.to_dict()
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update(
@@ -153,11 +160,14 @@ class Agent:
             field_dict["default_environment_template_id"] = default_environment_template_id
         if image_url is not UNSET:
             field_dict["image_url"] = image_url
+        if labels is not UNSET:
+            field_dict["labels"] = labels
 
         return field_dict
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+        from ..models.agent_labels import AgentLabels
         from ..models.principal_ref import PrincipalRef
         from ..models.system_actor_ref import SystemActorRef
 
@@ -275,6 +285,13 @@ class Agent:
 
         image_url = _parse_image_url(d.pop("image_url", UNSET))
 
+        _labels = d.pop("labels", UNSET)
+        labels: AgentLabels | Unset
+        if isinstance(_labels, Unset):
+            labels = UNSET
+        else:
+            labels = AgentLabels.from_dict(_labels)
+
         agent = cls(
             archived_at=archived_at,
             created_at=created_at,
@@ -295,6 +312,7 @@ class Agent:
             workspace_id=workspace_id,
             default_environment_template_id=default_environment_template_id,
             image_url=image_url,
+            labels=labels,
         )
 
         return agent

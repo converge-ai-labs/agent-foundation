@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.iam.models import WorkspaceRecord
 from a13n_service.iam.resource_scope import ResourceScope
 from a13n_service.ids import new_object_id
+from a13n_service.labels import Labels, merge_labels
 
 from .domain import EnvironmentSelection, NewEnvironmentSelection
 from .errors import invalid_environment
@@ -68,19 +69,28 @@ def intersect_access(access: str, ceiling: str | None = None) -> str:
     return min((access, ceiling or access), key=ranks.__getitem__)
 
 
-def allocate_selection(
+async def allocate_selection(
     session: AsyncSession,
     selected: EnvironmentRecord | EnvironmentTemplateRevisionRecord,
     *,
     workspace_id: str,
     now: datetime,
+    labels: Labels | None = None,
 ) -> EnvironmentRecord:
     if isinstance(selected, EnvironmentRecord):
         return selected
+    template = await session.get(EnvironmentTemplateRecord, selected.template_id)
+    if template is None:
+        raise invalid_environment("Environment template is unavailable")
     environment_id = new_object_id("env")
+    try:
+        inherited_labels = merge_labels(template.labels, labels)
+    except ValueError as error:
+        raise invalid_environment(str(error)) from error
     environment = EnvironmentRecord(
         id=environment_id,
         name=default_environment_name(environment_id),
+        labels=inherited_labels,
         organization_id=selected.organization_id,
         workspace_id=workspace_id,
         provider_id=selected.provider_id,

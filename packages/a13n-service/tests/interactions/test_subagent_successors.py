@@ -65,6 +65,9 @@ async def test_completed_parent_result_accepts_exact_checkpoint_zero_successor(
     ).publish(organization_id=ORGANIZATION_ID, child_run_id=child_run_id)
     assert result.target_run_id is None and result.source_waiting_run_id is None
 
+    async with transaction(interaction_sessions) as database:
+        current_thread = await database.get(ThreadRecord, parent.thread_id)
+        current_thread.labels = {"team": "latest"}
     receipt = await AsyncSubagentSuccessorReconciler(
         interaction_sessions,
         states,
@@ -85,6 +88,7 @@ async def test_completed_parent_result_accepts_exact_checkpoint_zero_successor(
         thread = await database.get(ThreadRecord, parent.thread_id)
         assert thread is not None and successor is not None and entry is not None
         accepted = successor.to_resource()
+        assert accepted.labels == {"team": "latest"}
         assert (thread.version, thread.current_run_id, thread.head_run_id) == (
             3,
             successor_id,

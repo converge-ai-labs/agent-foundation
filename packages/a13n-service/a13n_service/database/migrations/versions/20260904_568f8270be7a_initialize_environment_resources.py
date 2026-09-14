@@ -9,6 +9,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision: str = "568f8270be7a"
 down_revision: str | Sequence[str] | None = "f20843000572"
@@ -62,6 +63,12 @@ def upgrade() -> None:
         "environment_templates",
         sa.Column("name", sa.String(length=128), nullable=False),
         sa.Column("description", sa.String(length=4096), nullable=True),
+        sa.Column(
+            "labels",
+            sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), "postgresql"),
+            server_default=sa.text("'{}'"),
+            nullable=False,
+        ),
         sa.Column("version", sa.BigInteger(), nullable=False),
         sa.Column("current_revision_id", sa.String(length=72), nullable=False),
         sa.Column("archived_at", sa.DateTime(timezone=True), nullable=True),
@@ -87,6 +94,14 @@ def upgrade() -> None:
         sa.UniqueConstraint("id", "organization_id", name="uq_environment_templates_scope"),
     )
     op.create_index("ix_environment_templates_workspace", "environment_templates", ["workspace_id", "id"], unique=False)
+    op.create_index(
+        "ix_environment_templates_labels",
+        "environment_templates",
+        ["labels"],
+        unique=False,
+        postgresql_using="gin",
+        postgresql_ops={"labels": "jsonb_path_ops"},
+    )
     op.create_table(
         "environment_template_revisions",
         sa.Column("id", sa.String(length=72), nullable=False),
@@ -115,6 +130,12 @@ def upgrade() -> None:
     op.create_table(
         "environments",
         sa.Column("name", sa.String(length=128), nullable=False),
+        sa.Column(
+            "labels",
+            sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), "postgresql"),
+            server_default=sa.text("'{}'"),
+            nullable=False,
+        ),
         sa.Column("provider_id", sa.String(length=72), nullable=False),
         sa.Column("template_revision_id", sa.String(length=72), nullable=True),
         sa.Column("ownership", sa.String(length=16), nullable=False),
@@ -185,6 +206,14 @@ def upgrade() -> None:
     )
     op.create_index("ix_environments_maintenance", "environments", ["next_maintenance_at", "id"], unique=False)
     op.create_index("ix_environments_capacity", "environments", ["workspace_id", "ownership", "status"], unique=False)
+    op.create_index(
+        "ix_environments_labels",
+        "environments",
+        ["labels"],
+        unique=False,
+        postgresql_using="gin",
+        postgresql_ops={"labels": "jsonb_path_ops"},
+    )
     op.create_table(
         "environment_commands",
         sa.Column("principal_type", sa.String(length=32), nullable=False),
