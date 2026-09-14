@@ -123,3 +123,41 @@ async def test_inline_registry_selects_live_order_and_bounds_pending_tokens() ->
     with pytest.raises(ValueError, match="eight"):
         await draft.command(participant, sync(draft, author), validate)
     assert draft.document.get_update() == before
+
+
+async def test_editor_presence_expires_without_changing_draft_or_losing_names(monkeypatch):
+    from a13n_harness_ui.shared_drafts import DraftPresence
+
+    clock = 100.0
+    monkeypatch.setattr("a13n_harness_ui.shared_drafts.monotonic", lambda: clock)
+    draft = SharedDraft()
+    first, observer = draft.attach(), draft.attach()
+    author = composer_document()
+    author.get("text", type=Text).insert(0, "Keep shared input")
+    await draft.command(first, sync(draft, author), valid)
+    before = draft.document.get_update()
+    await draft.command(
+        first,
+        DraftCommand(
+            kind="presence",
+            draft_id=draft.draft_id,
+            presence=DraftPresence(name="Alice", color="#2563eb", anchor="YQ==", head="Yg=="),
+        ),
+        valid,
+    )
+    changed = draft.changed
+    clock += 29
+    draft.expire_presence()
+    assert not changed.is_set()
+    assert draft.frame(observer).participants[first].head == "Yg=="
+    clock += 1
+    draft.expire_presence()
+    assert changed.is_set()
+    peer = draft.frame(observer).participants[first]
+    assert peer.name == "Alice" and peer.color == "#2563eb"
+    assert peer.anchor is None and peer.head is None
+    assert draft.document.get_update() == before
+    # Detached identities have no expiry that can later reintroduce them.
+    draft.detach(first)
+    clock += 30
+    assert first not in draft.frame(observer).participants

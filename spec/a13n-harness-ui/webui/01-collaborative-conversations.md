@@ -24,6 +24,12 @@ Participants see one shared draft and can edit it concurrently. Edits merge rath
 
 Names and colors identify collaborators for interaction and attribution; they are not verified identities. Input submission, approval, cancellation, steering, and other shared controls identify their originating participant where available, without fabricating Agent tool messages for human actions.
 
+## Create-Only Conversation Identity
+
+The existing Thread creation API accepts an optional `thread_id` in the canonical `thread-` plus 32 lowercase hexadecimal format. Omitting it retains server-generated identity. A browser may allocate and retain this identity before creating its first conversation so a lost acknowledgement can be resolved through the ordinary exact Thread read.
+
+Creation is create-only, not an upsert or a permanent request cache. The storage transaction rejects an existing identity without replacing its configuration, title, or initial state. Concurrent requests for one identity can create at most one Thread. A client receiving a conflict or uncertain result reads that exact identity; it never silently allocates another one. Current mutable Thread fields are not interpreted as an immutable creation-request receipt. Thread creation remains separate from prompt admission and starts no Run.
+
 ## Page Presence and Personal Focus
 
 Page presence is available across the authenticated workbench, including when no Thread or shared draft is open. It does not require native computer sharing. The App owns the current participant directory; clients report their own current view and consume detached directory and same-page membership projections.
@@ -36,11 +42,17 @@ Two participants are on the same page when their area and resource target match.
 
 A visible focused tab reports foreground participation. A background or unfocused tab may remain attached but is shown as inactive rather than claiming the person is currently reading it. The UI distinguishes that observation from disconnected or unknown state; transport reachability alone is not human attention. On reported navigation, the old page membership is replaced by the new one. Closing, forgetting access, or detecting a lost presence connection removes its live membership within the transport's bounded loss-detection interval. These observations never establish Agent-process liveness, a lease, or permission to take over execution.
 
-Participants can inspect who is on each page and who shares their current page. Opening a collaborator's reported location is an explicit personal navigation action through the ordinary access and availability checks. There is no implicit follow mode, synchronized scrolling, screen recording, or mouse-pointer broadcast. Page membership itself does not read file contents, create a terminal, change configuration, submit a prompt, or start a Run.
+Participants can inspect who is on each page and who shares their current page. Opening a collaborator's reported location is an explicit personal navigation action through the ordinary access and availability checks. There is no implicit follow mode, synchronized scrolling, or screen recording. Thread navigation shows stacked participant avatars, with an inspectable list that distinguishes the current tab, active participants, and away tabs; separate tab identities are never merged by display name. Page membership itself does not read file contents, create a terminal, change configuration, submit a prompt, or start a Run.
+
+## Shared Mouse Pointers
+
+On the same conversation page, participants can see named, color-coded mouse pointers over the shared composer and loaded saved transcript entries. Pointers are approximate positions relative to those surfaces, not desktop coordinates or precise text selections. A receiver resolves only the matching visible surface; absent, clipped, or covered content does not acquire a floating pointer. Different viewport sizes and personal scroll positions do not force navigation or scrolling. Other workbench areas and live output do not broadcast pointer positions.
+
+Mouse observations use the existing authenticated per-tab presence connection with explicit pointer capability opt-in. They retain only the latest bounded position, are coalesced independently of directory/resource inspection, and never enter the shared document, transcript, comments, or storage. Only other foreground participants on the same conversation receive current positions. Navigation, leaving the supported surface, loss of focus, disconnect, and a short idle expiry clear them; reconnect does not replay old positions. Legacy participants that do not opt in continue receiving only the ordinary directory frames.
 
 ## Editor Presence and CRDT Scope
 
-The shared document contains prompt text and selected attachment references only. Editor presence carries optional relative cursor/selection positions for that document; the browser resolves and renders those positions through the CRDT library. They are not page-wide mouse coordinates, durable comments, or edits to the document. Disconnect removes editor presence without deleting shared content.
+The shared document contains prompt text and selected attachment references only. Editor presence carries optional relative cursor/selection positions for that document; the browser resolves and renders those positions through the CRDT library. They are not page-wide mouse coordinates, durable comments, or edits to the document. Disconnect removes editor presence without deleting shared content. Remote carets retain a visible name label and participant color; blurring the editor or 30 seconds without local editor interaction clears its selection report without changing the draft. Remote edits and awareness heartbeats do not renew local editing activity. The server expires unrefreshed cursor reports after 30 seconds, and a browser independently clears peer cursors when draft delivery stalls, including a half-open connection.
 
 Page presence, editor presence, and the draft are distinct values even when an implementation shares an authenticated connection. Page changes update presence, not the CRDT roots. A same-page group uses that page's existing capabilities: the shared composer for prompt coediting, [comments](05-output-comments.md) for saved AI output, and the existing native-operation rules for files or terminals. Presence does not make every text surface collaboratively editable.
 

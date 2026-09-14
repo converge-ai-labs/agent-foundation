@@ -270,61 +270,19 @@ it("reopens an unpublished resource draft without treating it as a missing serve
   expect(window.location.search).toContain("new=1");
 });
 
-it("submits only additional instructions and consumes setup preview before an uncertain publication", async () => {
+it("keeps incomplete existing configuration in focused repair without initialization", async () => {
   window.history.replaceState(null, "", "/setup");
-  const writes: Record<string, unknown>[] = [];
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (request: Request) => {
-      const path = new URL(request.url).pathname;
-      if (path === "/api/setup/preview") {
-        const body = await request.json();
-        writes.push(body);
-        return json({ files: {}, preserved_paths: [], project_paths: [] });
-      }
-      if (path === "/api/setup/apply") throw new TypeError("Connection lost");
-      return fixture(request);
-    }),
-  );
   render(<BrowserApp />);
+  await screen.findByRole("heading", { name: "Setup & readiness" });
   expect(
-    (
-      (await screen.findByLabelText(
-        "Additional agent instructions",
-      )) as HTMLTextAreaElement
-    ).value,
-  ).toBe("");
-  await waitFor(() =>
-    expect(
-      (
-        screen.getByRole("button", {
-          name: "Review changes",
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(false),
-  );
-  fireEvent.click(screen.getByRole("button", { name: "Review changes" }));
-  await waitFor(() =>
-    expect(
-      (
-        screen.getByRole("button", {
-          name: "Save setup",
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(false),
-  );
-  expect(writes[0].instructions).toBe("");
-  expect(writes[0].shell_review).toBe(true);
-  expect(
-    screen.getByText(/Existing root settings stay unchanged/),
+    screen.getByRole("link", { name: "Repair agent connection" }),
   ).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Save setup" }));
-  await screen.findByText("Connection lost");
+  expect(screen.queryByRole("button", { name: /Save and start/ })).toBeNull();
   expect(
-    (screen.getByRole("button", { name: "Save setup" }) as HTMLButtonElement)
-      .disabled,
+    vi
+      .mocked(fetch)
+      .mock.calls.every(([request]) => (request as Request).method === "GET"),
   ).toBe(true);
-  expect(screen.getByText(/Settings may have been saved/)).toBeTruthy();
 });
 
 it("attempts offline publication immediately and does not queue it for reconnect", async () => {

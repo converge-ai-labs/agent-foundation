@@ -37,9 +37,17 @@ import { result, type Schema } from "../transport/client";
 import { ErrorNotice, TextField } from "../shell/ui";
 import { useThreads } from "./queries";
 import { ResourceChoice } from "../configuration/resource-choice";
+import {
+  ParticipantAvatars,
+  threadParticipants,
+} from "../shell/participant-avatars";
 import styles from "./conversation.module.css";
 
-export function ConversationNavigation() {
+export function ConversationNavigation({
+  presence = null,
+}: {
+  presence?: Schema<"PresenceFrame"> | null;
+}) {
   const projects = useProjects();
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
@@ -189,6 +197,18 @@ export function ConversationNavigation() {
                         {threadState(row) && <small>{threadState(row)}</small>}
                       </span>
                     </NavLink>
+                    <ParticipantAvatars
+                      participants={threadParticipants(
+                        presence,
+                        row.thread.thread_id,
+                      )}
+                      ownId={presence?.participant_id}
+                      threadTitle={
+                        row.thread.title ||
+                        row.thread.excerpt?.first_input ||
+                        "Untitled conversation"
+                      }
+                    />
                     <Menu>
                       <MenuTrigger
                         render={<Button variant="ghost" size="icon-sm" />}

@@ -189,6 +189,10 @@ class ThreadRepository:
         _require_kind(initial_state, ObjectKind.thread_initial_state)
         now = _utc(created_at)
         async with transaction(self._sessions) as session:
+            if await session.get(ThreadRecord, thread_id) is not None:
+                raise StoreIntegrityError(
+                    "Thread identity already exists; read it before retrying.", code="thread_exists"
+                )
             if parent_thread_id is not None and await session.get(ThreadRecord, parent_thread_id) is None:
                 raise StoreIntegrityError("Parent Thread does not exist.", code="thread_parent_missing")
             record = ThreadRecord(

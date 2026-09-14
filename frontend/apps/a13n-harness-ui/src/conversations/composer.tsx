@@ -133,6 +133,7 @@ export async function submitDraft(
 }
 
 export function Composer({
+  autoFocus = false,
   threadId,
   activity,
   canRun,
@@ -146,6 +147,7 @@ export function Composer({
   profile: Profile;
   unauthorized: () => void;
   reconcile: () => void;
+  autoFocus?: boolean;
 }) {
   const draft = useDraft(threadId);
   const transport = useTransport();
@@ -399,6 +401,7 @@ export function Composer({
         </div>
       )}
       <ComposerEditor
+        autoFocus={autoFocus}
         draft={draft}
         profile={profile}
         presence={(value) => connection.current?.presence(value)}

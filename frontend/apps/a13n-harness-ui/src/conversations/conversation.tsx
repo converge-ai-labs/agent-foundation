@@ -340,12 +340,16 @@ function Conversation({
               </Button>
             )}
             {entries.map((entry) => (
-              <SavedEntry
+              <div
                 key={`${continuation}:${entry.position}`}
-                entry={entry}
-                toolGroups={toolGroups}
-                threadId={threadId}
-              />
+                data-presence-anchor={`entry:${continuation}:${entry.position}`}
+              >
+                <SavedEntry
+                  entry={entry}
+                  toolGroups={toolGroups}
+                  threadId={threadId}
+                />
+              </div>
             ))}
             {showLive && (
               <LiveOutput
@@ -394,6 +398,7 @@ function Conversation({
         )}
         {!thread.archived && (
           <Composer
+            autoFocus={search.get("compose") === "1"}
             threadId={threadId}
             activity={thread.root_activity}
             canRun={detail.data.available_actions?.includes("run") ?? false}
