@@ -476,7 +476,10 @@ async def preview_setup(
             "environment_profile": selection.environment_profile,
         }
         if selection.include_default_subagents is not None:
-            root["subagents"] = {"include": list(BUILTIN_SUBAGENT_NAMES) if selection.include_default_subagents else []}
+            subagents = root.setdefault("subagents", {})
+            if not isinstance(subagents, dict):
+                raise ConfigurationError("Configuration subagents must be a mapping.", code="configuration_invalid")
+            subagents["include"] = list(BUILTIN_SUBAGENT_NAMES) if selection.include_default_subagents else []
         files[path.name] = yaml.safe_dump(root, sort_keys=False, allow_unicode=True)
     candidate = dict(baseline)
     candidate.update({name: text.encode() for name, text in files.items()})

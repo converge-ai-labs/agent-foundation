@@ -14,7 +14,11 @@ Paths below are relative to that directory, normally `~/.a13n-harness-ui/`. Vali
 a13n-harness-ui config validate
 ```
 
-With a custom tree, pass the same `--config /path/to/a13n-harness-ui.yaml` before every subcommand. Validation checks configuration, not provider entitlement or a live MCP connection.
+With a custom tree, pass the same `--config /path/to/a13n-harness-ui.yaml` before every subcommand. Validation checks configuration, not provider entitlement, a live MCP connection, or whether every Project directory is currently available.
+
+Within supported configuration versions, unknown additive fields in configuration sections and resource metadata are preserved, with warnings that they are not applied. Check these warnings for typos. Known field types, references, authentication sources, MCP transports, and unsupported versions still fail validation. Guided updates preserve unrelated fields; replacing an entire file still replaces its contents. A newer field with meaningful behavior requires a version that understands it—preservation is not feature support.
+
+A missing Project directory does not make the whole configuration or saved history unreadable. Restore or update the directory before running a conversation that selects it; Harness UI will not silently switch that conversation to another directory or execution mode. Already released strict readers may still reject populated new fields, so this is not a guarantee that any older package can read any newer installation.
 
 ## Change the default Agent
 

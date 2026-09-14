@@ -120,14 +120,14 @@ sequenceDiagram
     participant DB as SQLite
 
     Loader->>Sources: scan and stable-read bounded files
-    Loader->>Loader: parse strict documents and resolve IDs
+    Loader->>Loader: validate known fields, retain additive fields, and resolve IDs
     Loader->>Catalogs: validate selected Capability and extension keys
     Loader->>Loader: validate Agent graphs, defaults, and Projects
     Loader->>Objects: publish normalized resource generation
     Loader->>DB: compare-and-select accepted generation digest
 ```
 
-The loader captures configuration directory membership and each file's identity, size, modification time, bytes, and digest. It also captures release-owned built-in Markdown sources and their exact digests, plus current Content Plugin metadata, editable directory paths, diagnostics, and usable canonical Markdown. It retries a bounded number of times when membership or a file changes during capture. The source-generation digest covers the normalization-format revision, ordered source-relative identities, exact source digests, and plugin diagnostics, not timestamps. Changing normalized serialization advances the normalization revision, so unchanged user files can be accepted after an upgrade without colliding with historical immutable objects. Per-file byte digests and existing historical generations remain unchanged. Normalized resource content has its own canonical digests, so presentation-only edits create a new source generation without changing behavior-derived identities such as an Environment profile digest.
+The loader captures configuration directory membership and each file's identity, size, modification time, bytes, and digest. It also captures release-owned built-in Markdown sources and their exact digests, plus current Content Plugin metadata, editable directory paths, diagnostics, and usable canonical Markdown. It retries a bounded number of times when membership or a file changes during capture. The source-generation digest covers the normalization-format revision, ordered source-relative identities, exact source digests, plugin diagnostics, and normalized Project root paths, not timestamps. Source-time path normalization can observe a changed symlink target without changed YAML bytes; the normalized roots therefore also participate in generation identity. Changing normalized serialization advances the normalization revision, so unchanged user files can be accepted after an upgrade without colliding with historical immutable objects. Per-file byte digests and existing historical generations remain unchanged. Normalized resource content has its own canonical digests, so presentation-only edits create a new source generation without changing behavior-derived identities such as an Environment profile digest.
 
 Acceptance is all-or-nothing. Publishing immutable content can leave harmless unreferenced objects, but SQLite selects a generation only after every selected resource, catalog key, graph, credential reference, and default validates. A failed candidate never removes or partially updates the previous accepted generation.
 
@@ -229,6 +229,12 @@ Model API-key authentication, MCP headers, MCP command environments, and Provide
 ## Compatibility
 
 The root `schema_version` governs tree layout and global fields. Canonical resources carry their own kind schema version. MCP `mcpServers` wrappers omit version/kind metadata and normalize to the same version-1 MCP resources. A format migration writes ordinary inspectable files through the same validated last-write-wins boundary. Existing content is never reinterpreted under a new version.
+
+Within a supported version, root configuration sections, resource envelopes, Project roots/defaults, Capability selections, tool-proxy groups, canonical subagent metadata, and retained generation/source envelopes accept additive JSON fields. Readers preserve those fields in normalized round trips without applying unknown behavior. Source loading logs unknown field locations and names, never their values, so a typo remains diagnosable without disabling the whole tree. Managed read-modify-write operations preserve unrelated known and unknown fields; explicit full-source replacement still replaces the submitted document.
+
+Known types, required fields, references, graph rules, and supported version/kind discriminators remain strict. Authentication sources, MCP transports/value sources, and Agent-versus-Markdown selectors are closed execution contracts, not additive metadata. Native Harness settings and tool-proxy configuration follow their owning schemas. Explicitly forbidden semantics, including obsolete question-tool policy names, authored Markdown `model`, and recursive Project defaults, remain errors. Unknown fields cannot grant a new credential source, transport, or execution authority. Changes that require older readers to enforce new semantics require an explicit incompatible version or discriminator transition, not an ignorable field.
+
+Writers omit semantically absent newly introduced optional fields where the historical shape allows it: empty Project `defaults` is omitted, while explicit empty selection lists remain present. This reduces avoidable incompatibility but cannot retrofit tolerant readers into already released strict packages; populated new features require a reader supporting those features. Historical format checks are separate from database structural compatibility and do not promise arbitrary old-wheel interoperability.
 
 ## Invariants
 

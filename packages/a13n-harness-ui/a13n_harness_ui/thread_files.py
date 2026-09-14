@@ -31,7 +31,8 @@ _SAFE_ID = re.compile(r"[A-Za-z0-9_-]{1,100}\Z")
 class ThreadAttachment(BaseModel):
     """A Thread-scoped handle; paths are resolved by the App, never by clients."""
 
-    model_config = ConfigDict(frozen=True, extra="forbid")
+    # Metadata is immutable on disk; tolerate additive display fields on read.
+    model_config = ConfigDict(frozen=True, extra="ignore")
     attachment_id: str
     name: str
     media_type: str
@@ -206,7 +207,10 @@ class ThreadFiles:
     def _stage(directory: Path, attachment: ThreadAttachment, data: bytes) -> None:
         with _directory(directory, ("tmp", "uploads", attachment.attachment_id), create=True) as target:
             _write_file(target, "content", data)
-            _write_file(target, "metadata.json", attachment.model_dump_json().encode("utf-8"))
+            # Only omit absent provenance itself, not required nullable fields
+            # inside captured provenance (for example an unborn Git HEAD).
+            metadata = attachment.model_dump_json(exclude={"source"} if attachment.source is None else set())
+            _write_file(target, "metadata.json", metadata.encode("utf-8"))
 
     def _read(self, thread_id: str, attachment_id: str) -> tuple[ThreadAttachment, bytes]:
         if not _SAFE_ID.fullmatch(attachment_id):
