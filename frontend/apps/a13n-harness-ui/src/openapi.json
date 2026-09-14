@@ -3991,7 +3991,9 @@
             "$ref": "#/components/schemas/ToolProxyConfig"
           }
         },
-        "additionalProperties": false,
+        "additionalProperties": {
+          "$ref": "#/components/schemas/JsonValue"
+        },
         "type": "object",
         "title": "AgentToolProxy"
       },
@@ -4020,7 +4022,9 @@
             "default": []
           }
         },
-        "additionalProperties": false,
+        "additionalProperties": {
+          "$ref": "#/components/schemas/JsonValue"
+        },
         "type": "object",
         "required": [
           "description"
@@ -7410,7 +7414,9 @@
             "title": "Mcp Servers"
           }
         },
-        "additionalProperties": false,
+        "additionalProperties": {
+          "$ref": "#/components/schemas/JsonValue"
+        },
         "type": "object",
         "title": "ProjectDefaults",
         "description": "One creation combination; omission falls back and empty lists select none."
@@ -9347,7 +9353,6 @@
             "title": "Source"
           }
         },
-        "additionalProperties": false,
         "type": "object",
         "required": [
           "attachment_id",
@@ -11029,7 +11034,9 @@
             "title": "Configuration"
           }
         },
-        "additionalProperties": false,
+        "additionalProperties": {
+          "$ref": "#/components/schemas/JsonValue"
+        },
         "type": "object",
         "required": [
           "capability"

@@ -69,7 +69,7 @@ export function CaptureContext({
     supportsLineRanges(
       ("diff" in source ? source.diff.text : source.file.text) ?? "",
     );
-  const capture = async () => {
+  const capture = async (selectedLines?: LineRange) => {
     const draft = threadId ? drafts.get(threadId) : undefined;
     if (!threadId || !draft) return;
     setPending(true);
@@ -87,7 +87,7 @@ export function CaptureContext({
         transport,
         threadId,
         source,
-        range ? lineRange(start, end) : undefined,
+        selectedLines ?? (range ? lineRange(start, end) : undefined),
       );
       if (draft.draftId !== incarnation || draft.replacement)
         throw new Error(
@@ -106,7 +106,7 @@ export function CaptureContext({
         .getMap("attachments")
         .set(crypto.randomUUID(), attachment.attachment_id);
       setMessage(
-        `Captured context added to ${threadId}. Preview it in that conversation's shared input before sending.`,
+        "Added to the conversation. Return to Chat to review it before sending.",
       );
     } catch (failure) {
       setError(failure);
@@ -140,13 +140,10 @@ export function CaptureContext({
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => {
-              setRange(true);
-              setStart(String(selection.start_line));
-              setEnd(String(selection.end_line));
-            }}
+            disabled={!threadId || disabled || pending}
+            onClick={() => void capture(selection)}
           >
-            Use editor selection
+            Add selection to prompt
           </Button>
         )}
       </div>
@@ -172,8 +169,8 @@ export function CaptureContext({
       )}
       <small>
         {threadId
-          ? `Capture destination: ${threadId}`
-          : "Open a root conversation to choose a capture destination."}
+          ? "Adds a saved copy to this conversation; it does not send a message."
+          : "Open a conversation to add file context."}
       </small>
       {disabled && (
         <small>

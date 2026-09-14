@@ -9,10 +9,10 @@ import {
   TabsPanel,
 } from "a13n-ui";
 import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 import { ApiError } from "@converge.ai/a13n";
-import { ArrowSquareOutIcon } from "@phosphor-icons/react";
+import { ArrowRightIcon, ArrowSquareOutIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -40,6 +40,7 @@ export function TraceDetail({ traceId }: { traceId: string }) {
     { t } = useTranslation();
   const [view, setView] = useState<Schema["TraceView"]>("full");
   const [order, setOrder] = useState("tree");
+  const sourceHintId = useId();
   const [searchParams] = useSearchParams();
   const viewControl = (
     <ChoiceField
@@ -139,23 +140,45 @@ export function TraceDetail({ traceId }: { traceId: string }) {
     <Page
       title={root.name}
       description={trace.id}
+      className={styles.detailPage}
       back={`${basePath}/traces`}
       actions={
         <>
-          <Link
-            to={`${basePath}/sessions/${correlation.session_id}/threads/${correlation.thread_id}/runs/${correlation.run_id}`}
+          <Button
+            variant="outline"
+            render={
+              <Link
+                to={`${basePath}/sessions/${correlation.session_id}/threads/${correlation.thread_id}/runs/${correlation.run_id}`}
+              />
+            }
           >
-            {t("Open run")}
-          </Link>
+            {t("View run")}
+            <ArrowRightIcon aria-hidden="true" />
+          </Button>
           {source && (
-            <a
-              className="inline-flex items-center gap-1"
-              href={source}
-              target="_blank"
-              rel="noopener noreferrer"
+            <Button
+              variant="outline"
+              render={
+                <a
+                  href={source}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  title={t("Opens in a new tab")}
+                  aria-describedby={sourceHintId}
+                />
+              }
             >
-              {t("Open trace backend")} <ArrowSquareOutIcon size={13} />
-            </a>
+              {t("View in {{provider}}", {
+                provider:
+                  trace.provider === "langfuse" ? "Langfuse" : "Logfire",
+              })}
+              <ArrowSquareOutIcon aria-hidden="true" />
+            </Button>
+          )}
+          {source && (
+            <span id={sourceHintId} className="sr-only">
+              {t("Opens in a new tab")}
+            </span>
           )}
         </>
       }
@@ -186,7 +209,10 @@ export function TraceDetail({ traceId }: { traceId: string }) {
         }
         className={styles.detailTabs}
       >
-        <TabsList size="sm">
+        <TabsList
+          size="sm"
+          className={`${styles.detailTabList} a13n-scrollbar`}
+        >
           <TabsTab value="observations">{t("Observations")}</TabsTab>
           <TabsTab value="content">{t("Input and output")}</TabsTab>
           <TabsTab value="metadata">{t("Metadata")}</TabsTab>

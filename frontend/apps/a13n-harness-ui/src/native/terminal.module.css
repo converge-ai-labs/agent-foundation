@@ -2,13 +2,13 @@
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  min-height: 240px;
+  position: relative;
+  min-height: 120px;
   min-width: 0;
   gap: 8px;
   border-top: 1px solid var(--a13n-border);
-  margin-top: 12px;
-  padding-top: 10px;
-  overflow: auto;
+  padding: 8px 16px 12px;
+  overflow: hidden;
 }
 .panel[hidden] {
   display: none;
@@ -32,15 +32,17 @@
   font-size: 13px;
   font-weight: 500;
 }
-.height {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--a13n-secondary);
+.resizeHandle {
+  position: absolute;
+  inset: 0 0 auto;
+  height: 5px;
+  cursor: ns-resize;
+  touch-action: none;
+  z-index: 1;
 }
-.height input {
-  width: 70px;
+.resizeHandle:hover,
+.resizeHandle:focus-visible {
+  background: var(--a13n-accent);
 }
 .sessionBar {
   flex-shrink: 0;
@@ -62,7 +64,7 @@
   flex-direction: column;
   flex: 1;
   gap: 6px;
-  min-height: 130px;
+  min-height: 0;
   min-width: 0;
 }
 .controlBar {
@@ -78,7 +80,7 @@
 }
 .viewport {
   flex: 1;
-  min-height: 80px;
+  min-height: 0;
   overflow: auto;
 }
 .emulator {
@@ -106,9 +108,9 @@
 }
 @media (max-width: 700px) {
   .panel {
-    height: calc(100dvh - 155px) !important;
+    flex: 1 1 0 !important;
   }
-  .height {
+  .resizeHandle {
     display: none;
   }
   .header {

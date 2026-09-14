@@ -1118,6 +1118,7 @@
   "Versions": "Versions",
   "Versions are immutable. Restoring one creates a new version.": "Versions are immutable. Restoring one creates a new version.",
   "View current version": "View current version",
+  "View in {{provider}}": "View in {{provider}}",
   "View recipe": "View recipe",
   "View run": "View run",
   "We'll send a recovery link if your email is eligible.": "We'll send a recovery link if your email is eligible.",

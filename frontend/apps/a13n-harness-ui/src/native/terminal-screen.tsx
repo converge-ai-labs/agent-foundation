@@ -10,13 +10,17 @@ import styles from "./terminal.module.css";
 export default function TerminalScreen({
   id,
   visible,
+  claimCreated,
   unauthorized,
 }: {
   id: string;
   visible: boolean;
+  claimCreated?: () => boolean;
   unauthorized: () => void;
 }) {
   const transport = useTransport();
+  const claim = useRef(claimCreated);
+  claim.current = claimCreated;
   const element = useRef<HTMLDivElement>(null);
   const connection = useRef<TerminalConnection | null>(null);
   const terminal = useRef<Terminal | null>(null);
@@ -81,6 +85,7 @@ export default function TerminalScreen({
       });
     };
     let lastLayout = "";
+    let controlled = false;
     const session = new TerminalConnection(
       id,
       {
@@ -90,6 +95,8 @@ export default function TerminalScreen({
       (next) => {
         setState(next);
         term.options.disableStdin = !session.controls;
+        if (session.controls && !controlled) term.focus();
+        controlled = session.controls;
         // A confirmed control/size change, not output volume, drives fitting.
         const layout = `${session.controls}:${next.frame?.terminal.rows}:${next.frame?.terminal.columns}`;
         if (layout !== lastLayout) {
@@ -110,7 +117,11 @@ export default function TerminalScreen({
     );
     const observer = new ResizeObserver(resize);
     observer.observe(host);
-    session.connect(window.location.origin, transport.key);
+    session.connect(
+      window.location.origin,
+      transport.key,
+      () => claim.current?.() ?? false,
+    );
     return () => {
       session.dispose();
       connection.current = null;
@@ -132,14 +143,22 @@ export default function TerminalScreen({
     <div className={styles.screen}>
       <div className={styles.controlBar}>
         <span role="status">
-          {state.connection} ·{" "}
-          {session?.controls ? "You control input" : "Read-only viewer"}
+          {state.connection === "Connecting"
+            ? "Connecting…"
+            : state.connection === "Detached"
+              ? "Disconnected"
+              : session?.controls
+                ? "You have control"
+                : "Viewing only"}
         </span>
         {view && (
-          <small>
-            {view.participants.length} attached · epoch {view.control_epoch} ·{" "}
-            {view.columns} × {view.rows} · {view.state}
-            {view.exit_code !== null ? ` (${view.exit_code})` : ""}
+          <small
+            title={`Session ${id} · ${view.columns} × ${view.rows} · control epoch ${view.control_epoch}`}
+          >
+            {view.participants.length} connected
+            {view.state === "exited"
+              ? ` · Exited (${view.exit_code ?? "unknown"})`
+              : ""}
           </small>
         )}
         {state.connection === "Detached" ? (
@@ -151,11 +170,11 @@ export default function TerminalScreen({
               session?.connect(window.location.origin, transport.key)
             }
           >
-            Reattach
+            Reconnect
           </Button>
         ) : (
           <Button size="sm" variant="ghost" onClick={() => session?.detach()}>
-            Detach
+            Disconnect
           </Button>
         )}
         <Button
@@ -180,12 +199,7 @@ export default function TerminalScreen({
                 : "Take control"}
         </Button>
       </div>
-      {view?.controller && !session?.controls && (
-        <small>
-          Controller: {view.controller}. Takeover affects the shared session,
-          not other viewers.
-        </small>
-      )}
+
       {state.message && (
         <p className={styles.message} role="status">
           {state.message}
@@ -198,11 +212,11 @@ export default function TerminalScreen({
           aria-label="Native terminal output and input"
         />
       </div>
-      <small>
-        Server / container · native OS user, independent of the Agent
-        Environment. Read-only size follows the controller; scroll horizontally
-        when needed. Retention: 1 MiB server bytes, 2,000 local scrollback
-        lines. Reattach never replays input.
+      <small title="Runs as the server's OS user, not in the agent's environment. Viewers share the controller's terminal size. Reconnecting does not replay input.">
+        Server terminal
+        {view?.controller && !session?.controls
+          ? " · Someone else has control"
+          : ""}
       </small>
     </div>
   );

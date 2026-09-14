@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from anyio import to_thread
+from anyio import CancelScope, to_thread
 from prompt_toolkit.application import Application
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.formatted_text import FormattedText
@@ -233,7 +233,15 @@ class LandingScreen:
                 self._task = None
 
     async def __aexit__(self, exc_type: object, exc: object, traceback: object) -> None:
-        await self.close()
+        task = self._task
+        try:
+            with CancelScope(shield=True):
+                await self.close()
+        except asyncio.CancelledError:
+            # run_chat has already observed this task's cancellation. Do not
+            # replace an App failure raised while unwinding its task groups.
+            if exc is None or task is None or not task.cancelled():
+                raise
 
 
 type Ask = Callable[[Question, Selection | None], Awaitable[str]]

@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
+from anyio import CancelScope
 from prompt_toolkit.application import Application
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.completion import CompleteEvent, Completer, Completion
@@ -1190,27 +1191,34 @@ class CliShell:
                     await self.app.run_async(set_exception_handler=False)
                 else:
                     await terminal_task
+        except BaseException:
+            # An App failure may leave its receipt unsettled. Stop the UI waiter
+            # so cleanup can reach the App, which still owns the actual Run.
+            if self.job is not None:
+                self.job.cancel()
+            raise
         finally:
             loop.set_exception_handler(previous_handler)
             self.closing = True
             self.close_history()
             self.close_resume()
-            await self.cancel()
-            if self._input_task is not None and not self._input_task.done():
-                self._input_task.cancel()
-                await asyncio.gather(self._input_task, return_exceptions=True)
-            if self.job is not None:
-                with suppress(asyncio.CancelledError):
-                    await self.job
-            if self._clipboard_task is not None:
-                self._clipboard_task.cancel()
-                await asyncio.gather(self._clipboard_task, return_exceptions=True)
-            flusher.cancel()
-            activity_refresher.cancel()
-            await asyncio.gather(flusher, activity_refresher, return_exceptions=True)
-            self.renderer.finish()
-            self.renderer.transcript.close()
-            self.backend = None
+            with CancelScope(shield=True):
+                await self.cancel()
+                if self._input_task is not None and not self._input_task.done():
+                    self._input_task.cancel()
+                    await asyncio.gather(self._input_task, return_exceptions=True)
+                if self.job is not None:
+                    with suppress(asyncio.CancelledError):
+                        await self.job
+                if self._clipboard_task is not None:
+                    self._clipboard_task.cancel()
+                    await asyncio.gather(self._clipboard_task, return_exceptions=True)
+                flusher.cancel()
+                activity_refresher.cancel()
+                await asyncio.gather(flusher, activity_refresher, return_exceptions=True)
+                self.renderer.finish()
+                self.renderer.transcript.close()
+                self.backend = None
 
     async def cancel(self) -> None:
         if (

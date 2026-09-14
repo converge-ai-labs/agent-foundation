@@ -35,8 +35,6 @@ it("opens an empty custom selection without enabling a resource and keeps the la
   expect(screen.getByRole("checkbox")).toBeTruthy();
   expect(screen.getByRole("status").textContent).toBe("[]");
   fireEvent.keyDown(screen.getByRole("combobox"), { key: "ArrowDown" });
-  await user.click(
-    await screen.findByRole("option", { name: "Default (inherit)" }),
-  );
+  await user.click(await screen.findByRole("option", { name: "Use default" }));
   expect(screen.getByRole("status").textContent).toBe("inherited");
 });

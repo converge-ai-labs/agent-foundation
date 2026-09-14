@@ -41,6 +41,7 @@
   "localChanges": [
     "Select and Combobox selection checks sit at the trailing edge, with rounded 32px option rows; downward chevrons and below-trigger positioning clarify selection.",
     "Fieldset legends and dialog, sheet, popover, and empty-state titles use medium font weight.",
+    "Field containers position screen-reader-only labels locally so fields inside scroll panels do not expand the document viewport.",
     "Search inputs include a leading icon; ComboboxInput supports an unstyled search row for composed pickers.",
     "Repository-relative imports and repository formatting.",
     "Sidebar accepts translated title and description for its mobile sheet.",

@@ -11,7 +11,6 @@ import { result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { ErrorNotice, TextField } from "../shell/ui";
 import { basename, joinPath, gitPath, FileBuffers } from "./buffer";
-import { FileView } from "./file-view";
 import { useGitStatus } from "./changes";
 import styles from "./native.module.css";
 
@@ -22,13 +21,11 @@ type DirectoryCursor = { offset: number; revision?: string };
 export function Files({
   directory,
   path,
-  threadId,
   open,
   refresh,
 }: {
   directory: string;
   path: string;
-  threadId?: string;
   open: (path: string) => void;
   refresh: () => void;
 }) {
@@ -236,15 +233,6 @@ export function Files({
             </Button>
           )}
         </>
-      )}
-      {path && (
-        <FileView
-          key={path}
-          path={path}
-          threadId={threadId}
-          refresh={refresh}
-          open={open}
-        />
       )}
       <ModalFrame
         open={!!operation}

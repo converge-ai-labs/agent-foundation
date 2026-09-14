@@ -52,7 +52,7 @@ export class TerminalConnection {
     this.state = { ...this.state, ...patch };
     if (!this.disposed) this.changed(this.state);
   }
-  connect(origin: string, key: string) {
+  connect(origin: string, key: string, claimCreated?: () => boolean) {
     if (this.disposed || this.socket || this.writing || this.queue.length)
       return;
     const url = new URL(
@@ -83,7 +83,7 @@ export class TerminalConnection {
           Frame | Schema<"ErrorEnvelope">;
         if ("error" in frame) {
           this.detach(
-            `${frame.error.message} Reattach to inspect current authority; input is never replayed.`,
+            `${frame.error.message} Reconnect to inspect current authority; input is never replayed.`,
           );
           return;
         }
@@ -107,11 +107,12 @@ export class TerminalConnection {
           throw new Error("Terminal output positions are not contiguous.");
         if (this.pendingBytes + bytes.length > OUTPUT_LIMIT) {
           this.detach(
-            "Output paused: this view could not keep up. Reattach after rendering; only retained bytes can be recovered.",
+            "Output paused: this view could not keep up. Reconnect after rendering; only retained bytes can be recovered.",
           );
           return;
         }
         this.received = frame.end;
+        const firstFrame = !this.state.frame;
         const confirmed =
           this.state.frame &&
           frame.terminal.control_epoch !==
@@ -121,9 +122,7 @@ export class TerminalConnection {
           connection: "Live",
           frame,
           pendingControl: confirmed ? false : this.state.pendingControl,
-          ...(confirmed
-            ? { message: "Control state confirmed by the server." }
-            : {}),
+          ...(confirmed ? { message: "" } : {}),
           ...(frame.gap
             ? {
                 message:
@@ -131,6 +130,10 @@ export class TerminalConnection {
               }
             : {}),
         });
+        // Creation is the user's explicit intent to type. Consume it once, after
+        // authentication, and never take input away from a controller who won first.
+        if (firstFrame && claimCreated?.() && !frame.terminal.controller)
+          this.control();
         if (bytes.length || frame.gap) {
           this.queue.push({ bytes, end: frame.end, gap: frame.gap });
           this.pendingBytes += bytes.length;
@@ -138,14 +141,14 @@ export class TerminalConnection {
         }
       } catch {
         this.detach(
-          "Invalid terminal output. Reattach to inspect; no input has been retried.",
+          "Invalid terminal output. Reconnect to inspect; no input has been retried.",
         );
       }
     };
     socket.onclose = (event) => {
       if (this.socket !== socket) return;
       this.detach(
-        "Disconnected. The shared process may still be running. Reattach as a read-only viewer.",
+        "Disconnected. The shared process may still be running. Reconnect as a read-only viewer.",
       );
       if (event.code === 4401) this.unauthorized();
     };
@@ -218,13 +221,13 @@ export class TerminalConnection {
         release,
       })
     ) {
-      this.detach("Control was not confirmed. Reattach to inspect.");
+      this.detach("Control was not confirmed. Reconnect to inspect.");
       return;
     }
     this.controlTimer = setTimeout(
       () =>
         this.detach(
-          "Control acknowledgement is uncertain. Reattach as a viewer; no control action is retried.",
+          "Control acknowledgement is uncertain. Reconnect as a viewer; no control action is retried.",
         ),
       10000,
     );

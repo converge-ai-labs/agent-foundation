@@ -123,20 +123,23 @@ class RootRunCoordinator:
     async def close(self, *, timeout_seconds: float) -> None:
         if timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
-        owned_task_group = self._task_group
-        if owned_task_group is not None:
-            owned_task_group.cancel_scope.shield = True
-        async with self._lock:
-            self._accepting = False
-            active = tuple(
-                self._operations[receipt_id]
-                for receipt_id in self._active_by_thread.values()
-                if receipt_id in self._operations
-            )
-            context = self._task_group_context
-            task_group = self._task_group
-        for operation in active:
-            await self._request_cancel(operation)
+        context = self._task_group_context
+        task_group = self._task_group
+        if task_group is not None:
+            task_group.cancel_scope.shield = True
+        active: tuple[_RootOperation, ...] = ()
+        # The group's own failure cancellation is not blocked by its shield.
+        # Leave this inner scope before exiting the manually entered task group.
+        with CancelScope(shield=True):
+            async with self._lock:
+                self._accepting = False
+                active = tuple(
+                    self._operations[receipt_id]
+                    for receipt_id in self._active_by_thread.values()
+                    if receipt_id in self._operations
+                )
+            for operation in active:
+                await self._request_cancel(operation)
         if context is None or task_group is None:
             return
         with move_on_after(timeout_seconds, shield=True) as grace:

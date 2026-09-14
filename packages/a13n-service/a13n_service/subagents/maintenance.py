@@ -2,16 +2,14 @@
 
 from functools import partial
 
-from anyio import Event, move_on_after
-
-from a13n_service.background import PeriodicTask, Sweep
+from a13n_service.background import PeriodicLoop, PeriodicTask, Sweep
 
 from .cancellation import ChildCancellationReconciler
 from .results import AsyncSubagentResultPublisher
 from .successors import AsyncSubagentSuccessorReconciler
 
 
-class SubagentMaintenance:
+class SubagentMaintenance(PeriodicLoop):
     def __init__(
         self,
         cancellation: ChildCancellationReconciler,
@@ -22,10 +20,8 @@ class SubagentMaintenance:
         batch_limit: int = 64,
         item_timeout_seconds: float = 30,
     ) -> None:
-        if poll_interval_seconds <= 0:
-            raise ValueError("subagent reconciliation interval must be positive")
+        super().__init__(self.reconcile_once, interval_seconds=poll_interval_seconds)
         self._cancellation = cancellation
-        self._interval = poll_interval_seconds
         self._tasks = tuple(
             PeriodicTask(
                 name,
@@ -45,8 +41,6 @@ class SubagentMaintenance:
                 ),
             )
         )
-        self._draining = Event()
-        self._stopped = Event()
 
     async def reconcile_once(self) -> None:
         for task in self._tasks:
@@ -55,21 +49,3 @@ class SubagentMaintenance:
     async def _cancel_children(self) -> Sweep:
         completed = await self._cancellation.reconcile_once()
         return Sweep(completed=completed)
-
-    def drain(self) -> None:
-        self._draining.set()
-
-    def is_draining(self) -> bool:
-        return self._draining.is_set()
-
-    async def wait_stopped(self) -> None:
-        await self._stopped.wait()
-
-    async def run(self) -> None:
-        try:
-            while not self.is_draining():
-                await self.reconcile_once()
-                with move_on_after(self._interval):
-                    await self._draining.wait()
-        finally:
-            self._stopped.set()

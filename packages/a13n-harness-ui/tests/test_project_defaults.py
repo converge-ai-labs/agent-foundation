@@ -178,7 +178,7 @@ async def test_old_project_files_still_resolve_and_new_normalization_changes_gen
     assert old_digest != current.source_digest
     # Historical normalized Project objects remain decodable without defaults.
     legacy = current.model_dump(mode="json")
-    legacy["projects"]["project-main"].pop("defaults")
+    assert "defaults" not in legacy["projects"]["project-main"]
     assert (
         LoadedHarnessUiConfiguration.model_validate_json(json.dumps(legacy))
         .projects["project-main"]

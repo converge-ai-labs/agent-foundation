@@ -8,7 +8,14 @@ import { result, type Schema } from "../transport/client";
 import { ErrorNotice, PageHeader, Panel, TextField } from "../shell/ui";
 import { SourceEditor } from "./editor";
 import { ResourceFields } from "./fields";
-import { resourceKinds, template, type ResourceKind } from "./documents";
+import {
+  readDocument,
+  resourceKinds,
+  template,
+  updateDocument,
+  type ResourceKind,
+} from "./documents";
+import { AgentFields } from "./agent-fields";
 import styles from "../shell/workbench.module.css";
 
 export type SourceDraft = {
@@ -20,7 +27,99 @@ export type SourceDraft = {
 // Deliberately memory-only. Kept above the auth gate so reauthentication does not discard edits.
 export const DraftContext = createContext<Map<string, SourceDraft>>(new Map());
 
-export function SourcesPage() {
+export function NewResourceButton({
+  kind,
+  label,
+  initial = {},
+}: {
+  kind: ResourceKind;
+  label?: string;
+  initial?: Record<string, unknown>;
+}) {
+  const drafts = useContext(DraftContext);
+  const navigate = useNavigate();
+  return (
+    <Button
+      onClick={() => {
+        const choice = resourceKinds.find((item) => item.value === kind)!;
+        const id = `${choice.prefix}-${crypto.randomUUID().slice(0, 8)}`;
+        const path = `${choice.directory}/${id}.${kind === "subagent" ? "md" : "yaml"}`;
+        let content = template(kind, id);
+        for (const [key, value] of Object.entries(initial))
+          content = updateDocument(content, [key], value);
+        drafts.set(path, {
+          content,
+          base: null,
+          digest: null,
+          replacement: true,
+        });
+        navigate(`/settings/source?path=${encodeURIComponent(path)}&new=1`);
+      }}
+    >
+      <Plus />
+      {label ??
+        `Add ${resourceKinds.find((item) => item.value === kind)!.label.toLowerCase()}`}
+    </Button>
+  );
+}
+
+export function DraftLinks({
+  kinds,
+  search = "",
+}: {
+  kinds?: ResourceKind[];
+  search?: string;
+}) {
+  const drafts = useContext(DraftContext);
+  const sources = useSources();
+  return (
+    <div className={styles.resourceList}>
+      {[...drafts.entries()]
+        .filter(
+          ([path, draft]) =>
+            draft.digest === null &&
+            !sources.data?.sources.some(
+              (source) => source.relative_path === path,
+            ) &&
+            (!kinds ||
+              kinds.includes(
+                (readDocument(draft.content)?.get("kind") ??
+                  (path.endsWith(".md") ? "subagent" : "")) as ResourceKind,
+              )) &&
+            `${path} ${draft.content}`
+              .toLowerCase()
+              .includes(search.toLowerCase()),
+        )
+        .map(([path, draft]) => (
+          <Link
+            key={path}
+            className={styles.resourceRow}
+            to={`/settings/source?path=${encodeURIComponent(path)}&new=1`}
+          >
+            <div>
+              <strong>
+                {String(readDocument(draft.content)?.get("name") ?? path)}
+              </strong>
+              <small>{path}</small>
+            </div>
+            <span>Unsaved draft</span>
+          </Link>
+        ))}
+    </div>
+  );
+}
+
+export function SourcesPage({
+  kinds,
+  title = "Advanced configuration",
+  description = "Manage configuration files and reusable settings. Running conversations keep their current configuration.",
+  headingLevel = 1,
+}: {
+  kinds?: ResourceKind[];
+  title?: string;
+  description?: string;
+  headingLevel?: 1 | 2;
+}) {
   const sources = useSources();
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
@@ -31,20 +130,37 @@ export function SourcesPage() {
   return (
     <>
       <PageHeader
-        title="Resources"
-        description="Manage the configuration used by new runs. Active runs keep their captured configuration."
+        title={title}
+        level={headingLevel}
+        description={description}
         actions={
-          <Button onClick={() => setCreating(true)}>
-            <Plus />
-            New resource
-          </Button>
+          kinds ? (
+            kinds.map((kind) => <NewResourceButton key={kind} kind={kind} />)
+          ) : (
+            <Button onClick={() => setCreating(true)}>
+              <Plus />
+              Add configuration
+            </Button>
+          )
         }
       />
       <ErrorNotice error={sources.error} retry={() => void sources.refetch()} />
-      <TextField label="Find resources" value={search} onChange={setSearch} />
+      <div className={styles.search}>
+        <TextField
+          type="search"
+          label={`Search ${title.toLowerCase()}`}
+          value={search}
+          onChange={setSearch}
+        />
+      </div>
       {sources.isPending && <p role="status">Loading resources…</p>}
+      <DraftLinks kinds={kinds} search={search} />
       <div className={styles.resourceList}>
         {sources.data?.sources
+          .filter(
+            (source) =>
+              !kinds || kinds.includes(source.resource_kind as ResourceKind),
+          )
           .filter((source) =>
             `${source.relative_path} ${source.resource_ids.join(" ")}`
               .toLowerCase()
@@ -85,8 +201,8 @@ export function SourcesPage() {
       <ModalFrame
         open={creating}
         onOpenChange={setCreating}
-        title="New resource"
-        description="Create a source document, then validate and publish it."
+        title="Add configuration"
+        description="Choose what to configure. Changes are checked before saving."
         closeLabel="Close"
         footer={
           <Button
@@ -122,7 +238,7 @@ export function SourcesPage() {
               setCreating(false);
             }}
           >
-            Create draft
+            Continue
           </Button>
         }
       >
@@ -158,7 +274,19 @@ export function SourcePage() {
     <SourceDocument key={path} path={path} isNew={params.get("new") === "1"} />
   );
 }
-function SourceDocument({ path, isNew }: { path: string; isNew: boolean }) {
+export function SourceDocument({
+  path,
+  isNew = false,
+  title,
+  capabilitiesOnly = false,
+  embedded = false,
+}: {
+  path: string;
+  isNew?: boolean;
+  title?: string;
+  capabilitiesOnly?: boolean;
+  embedded?: boolean;
+}) {
   const { client } = useTransport();
   const queries = useQueryClient();
   const drafts = useContext(DraftContext);
@@ -220,7 +348,7 @@ function SourceDocument({ path, isNew }: { path: string; isNew: boolean }) {
         }),
       ),
     onSuccess: () =>
-      setNotice("Candidate validated. Nothing has been published yet."),
+      setNotice("Configuration checked. Your changes are not saved yet."),
   });
   const save = useMutation({
     mutationFn: (content: string) =>
@@ -239,7 +367,7 @@ function SourceDocument({ path, isNew }: { path: string; isNew: boolean }) {
         replacement: false,
       });
       setNotice(
-        `Source ${publication.action}. Accepted generation ${publication.generation_digest.slice(0, 12)}. Active runs are unchanged.`,
+        "Changes saved. Running conversations keep their current configuration.",
       );
       void queries.invalidateQueries();
       if (isNew)
@@ -267,27 +395,52 @@ function SourceDocument({ path, isNew }: { path: string; isNew: boolean }) {
     (source.data?.content_available || isNew || draft.replacement);
   return (
     <>
-      <Link className={styles.back} to="/settings/resources">
-        <ArrowLeft />
-        All resources
-      </Link>
+      {!embedded && (
+        <Link className={styles.back} to="/settings">
+          <ArrowLeft />
+          Settings
+        </Link>
+      )}
       <PageHeader
-        title={path || "Resource"}
+        level={capabilitiesOnly ? 2 : 1}
+        title={
+          title ||
+          String(
+            readDocument(draft?.content ?? "")?.get("name") ||
+              path ||
+              "Configuration",
+          )
+        }
         description={
           dirty
             ? "Unsaved draft · retained in this tab while you navigate, not after a reload."
-            : "Accepted source · validation and publication operate on the complete configuration."
+            : "Saved configuration. Changes are checked before saving and apply to future runs."
         }
         actions={
           <>
-            {source.data?.writable && source.data.resource_kind !== "root" && (
+            {isNew && (
               <Button
-                variant="destructive-outline"
-                onClick={() => setDeleting(true)}
+                variant="ghost"
+                onClick={() => {
+                  if (window.confirm("Discard this unsaved configuration?")) {
+                    drafts.delete(path);
+                    navigate("/settings/resources");
+                  }
+                }}
               >
-                Delete source
+                Discard draft
               </Button>
             )}
+            {!capabilitiesOnly &&
+              source.data?.writable &&
+              source.data.resource_kind !== "root" && (
+                <Button
+                  variant="destructive-outline"
+                  onClick={() => setDeleting(true)}
+                >
+                  Delete configuration
+                </Button>
+              )}
             {canEdit && (
               <>
                 <Button
@@ -295,14 +448,14 @@ function SourceDocument({ path, isNew }: { path: string; isNew: boolean }) {
                   loading={validate.isPending}
                   onClick={() => validate.mutate(draft!.content)}
                 >
-                  Validate
+                  Check configuration
                 </Button>
                 <Button
                   loading={save.isPending}
                   disabled={!dirty}
                   onClick={() => save.mutate(draft!.content)}
                 >
-                  Publish
+                  Save changes
                 </Button>
               </>
             )}
@@ -320,21 +473,20 @@ function SourceDocument({ path, isNew }: { path: string; isNew: boolean }) {
       {external && (
         <div className={styles.notice}>
           <p>
-            The accepted source changed elsewhere. Your draft is retained.
-            Publishing is last-write-wins, not an atomic conflict check.
+            This configuration changed elsewhere. Your edits are preserved.
+            Saving will replace the current file.
           </p>
           <Button variant="outline" onClick={() => setReplacing(true)}>
-            Load accepted version
+            Reload saved version
           </Button>
         </div>
       )}
       {source.data && !source.data.content_available && !draft?.replacement && (
-        <Panel title="Source content is not available">
+        <Panel title="Saved configuration is hidden">
           <p>
-            This API intentionally does not return MCP source content. A
-            replacement affects the entire file, including{" "}
-            {source.data.resource_ids.join(", ")}. Existing secrets and unknown
-            fields cannot be recovered here.
+            Saved MCP configuration may contain secrets. Replacing it overwrites
+            the whole file, including {source.data.resource_ids.join(", ")}.
+            Existing secrets and unknown fields cannot be recovered here.
           </p>
           {writable && (
             <Button
@@ -348,22 +500,33 @@ function SourceDocument({ path, isNew }: { path: string; isNew: boolean }) {
                 })
               }
             >
-              Start explicit complete replacement
+              Replace configuration file
             </Button>
           )}
         </Panel>
       )}
       {canEdit && (
         <Panel>
-          <ResourceFields
-            source={draft!.content}
-            onChange={(content) => update({ ...draft!, content })}
-          />
+          {capabilitiesOnly ? (
+            <AgentFields
+              source={draft!.content}
+              onChange={(content) => update({ ...draft!, content })}
+              capabilitiesOnly
+            />
+          ) : (
+            <ResourceFields
+              source={draft!.content}
+              onChange={(content) => update({ ...draft!, content })}
+            />
+          )}
           <details
             className={styles.details}
-            open={draft!.replacement || path.endsWith(".md")}
+            open={
+              (!readDocument(draft!.content) && draft!.replacement) ||
+              path.endsWith(".md")
+            }
           >
-            <summary>Advanced source</summary>
+            <summary>Configuration file</summary>
             <p>
               Complete file replacement. Preserve unknown fields and use
               credential references, not literal keys.
@@ -383,7 +546,7 @@ function SourceDocument({ path, isNew }: { path: string; isNew: boolean }) {
       <ModalFrame
         open={deleting}
         onOpenChange={setDeleting}
-        title="Delete this source?"
+        title="Delete this configuration?"
         description={`This deletes ${path} and every resource defined in it. References must be removed first. Unsaved edits will be discarded.`}
         closeLabel="Cancel"
         footer={
@@ -392,7 +555,7 @@ function SourceDocument({ path, isNew }: { path: string; isNew: boolean }) {
             loading={remove.isPending}
             onClick={() => remove.mutate()}
           >
-            Delete source
+            Delete configuration
           </Button>
         }
       >
@@ -402,7 +565,7 @@ function SourceDocument({ path, isNew }: { path: string; isNew: boolean }) {
         open={replacing}
         onOpenChange={setReplacing}
         title="Discard this local draft?"
-        description="Load the accepted source. Your unsaved edits will be lost."
+        description="Reload the saved configuration. Your unsaved edits will be lost."
         closeLabel="Cancel"
         footer={
           <Button
@@ -417,7 +580,7 @@ function SourceDocument({ path, isNew }: { path: string; isNew: boolean }) {
               setReplacing(false);
             }}
           >
-            Load accepted version
+            Reload saved version
           </Button>
         }
       >

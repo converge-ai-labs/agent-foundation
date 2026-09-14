@@ -263,7 +263,7 @@ Inspect the relevant code and report evidence.
     ("root", "resources", "error_code"),
     [
         (
-            'schema_version: "1"\nunknown: true\n',
+            'schema_version: "1"\nprocess: {log_level: true}\n',
             {},
             "settings_invalid",
         ),

@@ -1,4 +1,4 @@
-"""Strict serialized contracts for the Harness UI configuration tree."""
+"""Configuration documents with additive fields and strict known contracts."""
 
 from __future__ import annotations
 
@@ -71,7 +71,15 @@ class StrictModel(BaseModel):
         return normalized
 
 
-class ProcessConfiguration(StrictModel):
+class ConfigurationModel(StrictModel):
+    """Retain additive JSON fields without interpreting them as execution policy."""
+
+    model_config = ConfigDict(extra="allow")
+    # Pydantic uses this narrower annotation to validate retained JSON extras.
+    __pydantic_extra__: dict[str, JsonValue] = Field(init=False)  # pyright: ignore[reportIncompatibleVariableOverride]
+
+
+class ProcessConfiguration(ConfigurationModel):
     pricing_auto_update: bool = True
     terminal_update_check: bool = True
     log_level: str = Field(default="INFO", min_length=1, max_length=32)
@@ -86,7 +94,7 @@ class ProcessConfiguration(StrictModel):
         return normalized
 
 
-class GlobalDefaults(StrictModel):
+class GlobalDefaults(ConfigurationModel):
     project: ResourceId | None = None
     agent: ResourceId | None = None
     environment_profile: ResourceId | None = None
@@ -102,7 +110,7 @@ class GlobalDefaults(StrictModel):
         return value
 
 
-class TerminalDisplayConfiguration(StrictModel):
+class TerminalDisplayConfiguration(ConfigurationModel):
     theme: Literal["auto", "dark", "light"] = "auto"
     mode: Literal["concise", "detailed"] = "concise"
     show_status: bool = True
@@ -110,15 +118,22 @@ class TerminalDisplayConfiguration(StrictModel):
     max_tool_argument_chars: int = Field(default=8192, ge=128, le=65536)
 
 
-class ToolsConfiguration(StrictModel):
+class ToolsConfiguration(ConfigurationModel):
     """Application-owned built-in tool switches and terminal question waiting policy."""
 
     enable_ask_user_question: bool = True
     ask_user_question_timeout_seconds: float = Field(default=120.0, gt=0, allow_inf_nan=False)
     enable_codeact: bool = True
 
+    @model_validator(mode="before")
+    @classmethod
+    def _no_obsolete_question_policy(cls, value: object) -> object:
+        if isinstance(value, dict) and {"enable_user_input", "user_input_timeout_seconds"} & value.keys():
+            raise ValueError("Obsolete question settings must be replaced with ask_user_question settings")
+        return value
 
-class SubagentsConfiguration(StrictModel):
+
+class SubagentsConfiguration(ConfigurationModel):
     """Named release-owned children automatically included in the root roster."""
 
     include: tuple[BuiltinSubagentName, ...] = ()
@@ -131,13 +146,13 @@ class SubagentsConfiguration(StrictModel):
         return value
 
 
-class InputConfiguration(StrictModel):
+class InputConfiguration(ConfigurationModel):
     """User-text delivery policy captured for each root Run."""
 
     long_text_threshold_chars: int | None = Field(default=8000, ge=1)
 
 
-class HarnessUiDocument(StrictModel):
+class HarnessUiDocument(ConfigurationModel):
     """Root ``a13n-harness-ui.yaml`` document."""
 
     schema_version: Literal["1"] = "1"
@@ -204,7 +219,7 @@ def _native_model_characteristics(value: object) -> object:
 type ModelCharacteristics = Annotated[HarnessModelCharacteristics, BeforeValidator(_native_model_characteristics)]
 
 
-class ModelResource(StrictModel):
+class ModelResource(ConfigurationModel):
     schema_version: Literal["1"]
     kind: Literal["model"]
     id: ResourceId
@@ -221,7 +236,7 @@ class ModelResource(StrictModel):
         return self
 
 
-class HarnessPluginResource(StrictModel):
+class HarnessPluginResource(ConfigurationModel):
     schema_version: Literal["1"]
     kind: Literal["harness_plugin"]
     id: ResourceId
@@ -235,7 +250,7 @@ class HarnessPluginResource(StrictModel):
         return self
 
 
-class EnvironmentProfileResource(StrictModel):
+class EnvironmentProfileResource(ConfigurationModel):
     schema_version: Literal["1"]
     kind: Literal["environment_profile"]
     id: ResourceId
@@ -254,7 +269,7 @@ class EnvironmentProfileResource(StrictModel):
         return self
 
 
-class EnvironmentRunExtensionResource(StrictModel):
+class EnvironmentRunExtensionResource(ConfigurationModel):
     schema_version: Literal["1"]
     kind: Literal["environment_run_extension"]
     id: ResourceId
@@ -326,7 +341,7 @@ class McpRemoteTransport(StrictModel):
 type McpTransport = McpCommandTransport | McpRemoteTransport
 
 
-class McpServerResource(StrictModel):
+class McpServerResource(ConfigurationModel):
     schema_version: Literal["1"]
     kind: Literal["mcp_server"]
     id: ResourceId
@@ -339,7 +354,7 @@ class McpServerResource(StrictModel):
         return self
 
 
-class CapabilitySelection(StrictModel):
+class CapabilitySelection(ConfigurationModel):
     capability: CatalogKey
     configuration: dict[str, JsonValue] = Field(default_factory=dict)
 
@@ -371,13 +386,13 @@ class _ToolProxyConfigurationError(ValueError):
     """Authored source/group diagnostic safe to expose without resource inputs."""
 
 
-class AgentToolProxyGroup(StrictModel):
+class AgentToolProxyGroup(ConfigurationModel):
     description: str = Field(min_length=1, max_length=512)
     mcp_servers: tuple[ResourceId, ...] = ()
     harness_plugins: tuple[ResourceId, ...] = ()
 
 
-class AgentToolProxy(StrictModel):
+class AgentToolProxy(ConfigurationModel):
     groups: dict[str, AgentToolProxyGroup] = Field(default_factory=dict)
     config: ToolProxyConfig = Field(default_factory=ToolProxyConfig)
 
@@ -424,7 +439,7 @@ class AgentToolProxy(StrictModel):
         )
 
 
-class AgentResource(StrictModel):
+class AgentResource(ConfigurationModel):
     schema_version: Literal["1"]
     kind: Literal["agent"]
     id: ResourceId
@@ -453,7 +468,7 @@ class AgentResource(StrictModel):
         return self
 
 
-class ProjectRoot(StrictModel):
+class ProjectRoot(ConfigurationModel):
     path: str = Field(min_length=1, max_length=4096)
 
     @field_validator("path")
@@ -461,13 +476,13 @@ class ProjectRoot(StrictModel):
     def _absolute_path(cls, value: str) -> str:
         if "\x00" in value:
             raise ValueError("Project root contains NUL")
-        expanded = Path(value).expanduser()
-        if not expanded.is_absolute():
+        if not Path(value).is_absolute():
             raise ValueError("Project roots must be absolute")
-        return str(expanded.resolve(strict=False))
+        # Decoding retained bytes must not consult the current Host filesystem.
+        return value
 
 
-class ProjectDefaults(StrictModel):
+class ProjectDefaults(ConfigurationModel):
     """One creation combination; omission falls back and empty lists select none."""
 
     agent: ResourceId | None = Field(default=None, exclude_if=lambda value: value is None)
@@ -478,22 +493,29 @@ class ProjectDefaults(StrictModel):
     )
     mcp_servers: tuple[ResourceId, ...] | None = Field(default=None, exclude_if=lambda value: value is None)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _no_recursive_project(cls, value: object) -> object:
+        if isinstance(value, dict) and "project" in value:
+            raise ValueError("Project defaults cannot select another Project")
+        return value
+
     @model_validator(mode="after")
     def _valid_selections(self) -> Self:
-        for name, value in self.model_dump().items():
+        for name, value in self.model_dump(include=set(type(self).model_fields)).items():
             if isinstance(value, tuple) and len(value) != len(set(value)):
                 raise ValueError(f"Project defaults.{name} must be unique and ordered")
         return self
 
 
-class ProjectResource(StrictModel):
+class ProjectResource(ConfigurationModel):
     schema_version: Literal["1"]
     kind: Literal["project"]
     id: ResourceId
     name: str = Field(min_length=1, max_length=256)
     position: int = Field(default=0)
     roots: tuple[ProjectRoot, ...] = Field(min_length=1, max_length=64)
-    defaults: ProjectDefaults = Field(default_factory=ProjectDefaults)
+    defaults: ProjectDefaults = Field(default_factory=ProjectDefaults, exclude_if=lambda value: not value.model_dump())
 
     @model_validator(mode="after")
     def _valid_resource(self) -> Self:
@@ -501,14 +523,10 @@ class ProjectResource(StrictModel):
         paths = tuple(item.path for item in self.roots)
         if len(paths) != len(set(paths)):
             raise ValueError("Project roots must be unique and ordered")
-        for path in paths:
-            candidate = Path(path)
-            if not candidate.exists() or not candidate.is_dir():
-                raise ValueError(f"Project root is not an existing directory: {path}")
         return self
 
 
-class CanonicalSubagent(StrictModel):
+class CanonicalSubagent(ConfigurationModel):
     """Normalized canonical Markdown child resource."""
 
     id: ResourceId
@@ -541,7 +559,7 @@ class CanonicalSubagent(StrictModel):
         return value
 
 
-class SourceDocument(StrictModel):
+class SourceDocument(ConfigurationModel):
     relative_path: str = Field(min_length=1, max_length=4096)
     source_digest: SourceDigest
     resource_kind: str
@@ -554,7 +572,7 @@ class SourceDocument(StrictModel):
         return (self.resource_id,) if self.resource_id is not None else self.resource_ids
 
 
-class LoadedHarnessUiConfiguration(StrictModel):
+class LoadedHarnessUiConfiguration(ConfigurationModel):
     """One complete graph-valid configuration-tree generation."""
 
     document: HarnessUiDocument

@@ -385,6 +385,74 @@ async def test_landing_chat_keeps_terminal_and_enables_composer_only_when_ready(
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("owner", ["root", "child"])
+@pytest.mark.parametrize("active_run", [False, True])
+async def test_chat_task_failure_preserves_error_after_terminal_cleanup(
+    tmp_path: Path, owner: str, active_run: bool
+) -> None:
+    import asyncio
+    from types import SimpleNamespace
+
+    from a13n_harness_ui.cli import CliRequest
+    from a13n_harness_ui.interactive.onboarding import LandingScreen
+    from a13n_harness_ui.interactive.shell import CliShell
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    async def empty():
+        return None
+
+    backend = SimpleNamespace(
+        thread_id=None, resumed_transcript=None, interaction=empty, skill_catalog=empty, cancel=empty
+    )
+    loop = asyncio.get_running_loop()
+    previous_handler = loop.get_exception_handler()
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+        screen = LandingScreen()
+        waiting = asyncio.Event()
+
+        async def wait_for_receipt() -> str:
+            waiting.set()
+            # An internal failure can prevent the terminal receipt being settled.
+            await asyncio.Future()
+            return "unreachable"
+
+        async with asyncio.timeout(3) as deadline:
+            with pytest.raises(ExceptionGroup) as caught:
+                async with (
+                    screen,
+                    open_harness_ui_app(HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))) as app,
+                ):
+                    shell = CliShell(CliRequest())
+
+                    async def fail() -> None:
+                        while not shell.ready:
+                            await asyncio.sleep(0)
+                        if active_run:
+                            shell.launch(wait_for_receipt(), kind="run")
+                            await waiting.wait()
+                        raise RuntimeError("owned chat task failed")
+
+                    coordinator = app._root_runs if owner == "root" else app._subagent_operator
+                    assert coordinator._task_group is not None
+                    coordinator._task_group.start_soon(fail)
+                    await screen.run_chat(shell, backend)
+        assert not deadline.expired()
+        expected, unexpected = caught.value.split(
+            lambda exc: isinstance(exc, RuntimeError) and str(exc) == "owned chat task failed"
+        )
+        assert expected is not None and unexpected is None
+        assert shell.job is None or shell.job.done()
+        assert not screen.application.is_running
+        assert screen._task is None
+        assert shell.backend is None
+        assert app._root_runs._task_group is None
+        assert app._subagent_operator._task_group is None
+    assert loop.get_exception_handler() is previous_handler
+
+
+@pytest.mark.anyio
 async def test_landing_busy_cancellation_releases_terminal() -> None:
     import asyncio
 

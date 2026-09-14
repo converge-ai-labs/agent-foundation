@@ -1,3 +1,16 @@
+.detailPage > header {
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+.detailPage > header > div:first-child {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.detailPage > header > div:last-child {
+  flex-shrink: 0;
+  max-width: 100%;
+}
 .metrics {
   display: flex;
   flex-wrap: wrap;
@@ -433,6 +446,11 @@
 .detailTabs {
   margin-top: 24px;
   gap: 20px;
+}
+.detailTabList {
+  max-width: 100%;
+  overflow-x: auto;
+  justify-content: flex-start;
 }
 .timelineScale {
   display: flex;

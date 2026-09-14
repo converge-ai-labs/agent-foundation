@@ -307,7 +307,7 @@ it("nonstandard source separators offer only explicit whole-source capture, for 
     { wrapper: f.Wrapper },
   );
   expect(screen.queryByLabelText("Choose line range")).toBeNull();
-  expect(screen.queryByText("Use editor selection")).toBeNull();
+  expect(screen.queryByText("Add selection to prompt")).toBeNull();
   expect(screen.getByText(/nonstandard line separators/)).toBeTruthy();
   fireEvent.click(screen.getByText("Add to prompt"));
   await waitFor(() => expect(f.post).toHaveBeenCalled());
@@ -335,7 +335,7 @@ it("nonstandard source separators offer only explicit whole-source capture, for 
     />,
   );
   expect(screen.queryByLabelText("Choose line range")).toBeNull();
-  expect(screen.queryByText("Use editor selection")).toBeNull();
+  expect(screen.queryByText("Add selection to prompt")).toBeNull();
 });
 
 it("raw replacement uses the inspected revision and does not replay an unknown write", async () => {
@@ -367,4 +367,38 @@ it("raw replacement uses the inspected revision and does not replay an unknown w
   expect(done).not.toHaveBeenCalled();
   fireEvent.click(screen.getByText("Confirm replacement"));
   expect(f.transport.fetch).toHaveBeenCalledOnce();
+});
+
+it("adds the exact editor selection in one deliberate action without sending a message", async () => {
+  const f = fixture();
+  f.post.mockResolvedValue({ data: { attachment } });
+  render(
+    <CaptureContext
+      source={{ file }}
+      threadId="thread-a"
+      selection={{ start_line: 2, end_line: 3 }}
+    />,
+    { wrapper: f.Wrapper },
+  );
+  expect(f.post).not.toHaveBeenCalled();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Add selection to prompt" }),
+  );
+  await waitFor(() =>
+    expect(values(f.a.doc).attachment_ids).toEqual([attachment.attachment_id]),
+  );
+  expect(f.post.mock.calls).toEqual([
+    [
+      "/api/threads/{thread_id}/host-file-captures",
+      {
+        params: { path: { thread_id: "thread-a" } },
+        body: {
+          path: "/code/file.txt",
+          expected_revision: "first",
+          start_line: 2,
+          end_line: 3,
+        },
+      },
+    ],
+  ]);
 });

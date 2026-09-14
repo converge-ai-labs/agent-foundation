@@ -146,7 +146,7 @@ export function BrowserApp() {
                   <main className={styles.access}>
                     <div className={styles.accessCard}>
                       <span className={styles.brandMark}>a13n</span>
-                      <h1>Connect to Harness UI</h1>
+                      <h1>Log in to Harness UI</h1>
                       <p>
                         Use the instance API key printed by your server.
                         Provider accounts and model keys are configured after
@@ -173,13 +173,13 @@ export function BrowserApp() {
                           onChange={setInput}
                         />
                         <Button type="submit" loading={connecting}>
-                          Connect
+                          Log in
                         </Button>
                       </form>
                       {drafts.current.size > 0 && (
                         <p>
-                          Local resource drafts are retained in this tab.
-                          Reconnect without reloading to resume editing.
+                          Your unsaved changes are kept in this tab. Log in
+                          again without reloading to continue editing.
                         </p>
                       )}
                     </div>

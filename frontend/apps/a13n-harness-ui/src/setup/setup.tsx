@@ -130,9 +130,9 @@ export function SetupPage() {
       <ErrorNotice error={setup.error || preview.error || apply.error} />
       {apply.error && (
         <div className={styles.notice}>
-          Publication may have changed files even though its response was lost
-          or rejected. Inspect Resources and preview again before publishing
-          another time. Your selections are retained.
+          Settings may have been saved even though the response was lost or
+          rejected. Inspect your saved configuration before trying again. Your
+          choices have been kept.
         </div>
       )}
       {setup.isPending && <p role="status">Discovering configuration…</p>}
@@ -271,7 +271,7 @@ export function SetupPage() {
           )}
         </div>
       </Panel>
-      <Panel title="4. Review & publish">
+      <Panel title="4. Review & save">
         <p>
           Review complete generated files. Existing authored resources are
           preserved unless this setup explicitly updates them.
@@ -288,20 +288,20 @@ export function SetupPage() {
             }
             onClick={() => preview.mutate(selection)}
           >
-            Preview files
+            Review changes
           </Button>
           <Button
             loading={apply.isPending}
             disabled={!previewCurrent}
             onClick={() => apply.mutate(previewed!)}
           >
-            Publish setup
+            Save setup
           </Button>
         </div>
         {preview.data && (
           <>
             {!previewCurrent && (
-              <p>Settings changed. Preview again before publishing.</p>
+              <p>Settings changed. Review them again before saving.</p>
             )}
             {previewCurrent &&
               environment === "environment-sandbox" &&
@@ -330,9 +330,7 @@ export function SetupPage() {
         {apply.data && (
           <div role="status" className={styles.notice}>
             <strong>
-              {apply.data.completed
-                ? "Setup files published"
-                : "Setup was not completed"}
+              {apply.data.completed ? "Setup saved" : "Setup was not completed"}
             </strong>
             <p>
               {apply.data.error_message ??

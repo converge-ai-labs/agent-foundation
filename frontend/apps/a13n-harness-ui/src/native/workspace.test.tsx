@@ -24,7 +24,13 @@ vi.mock("./files", () => ({
     </div>
   ),
 }));
+vi.mock("./file-view", () => ({
+  FileView: ({ path }: { path: string }) => <p>Editor {path}</p>,
+}));
 vi.mock("./changes", () => ({
+  DiffView: ({ selection }: { selection: { path: string } }) => (
+    <p>Patch {selection.path}</p>
+  ),
   Changes: ({
     path,
     selected,
@@ -102,8 +108,10 @@ function setup(
     const navigate = useNavigate();
     const location = useLocation();
     return (
-      <NativeWorkspace onFocus={focus} unauthorized={vi.fn()}>
-        <p data-testid="chat">Chat remains mounted {location.pathname}</p>
+      <>
+        <NativeWorkspace onFocus={focus} unauthorized={vi.fn()}>
+          <p data-testid="chat">Chat remains mounted {location.pathname}</p>
+        </NativeWorkspace>
         <button onClick={() => navigate("/threads/other")}>
           Another conversation
         </button>
@@ -123,7 +131,7 @@ function setup(
         >
           Open peer diff
         </button>
-      </NativeWorkspace>
+      </>
     );
   }
   render(
@@ -160,7 +168,7 @@ it("native deep links, file tabs and diff selection update personal focus withou
   );
   fireEvent.click(screen.getByRole("button", { name: "first.txt" }));
   await screen.findByText("Selected /native/first.txt");
-  fireEvent.pointerDown(screen.getByTestId("chat"));
+  fireEvent.click(screen.getByRole("button", { name: "Chat" }));
   await waitFor(() => expect(focus).toHaveBeenLastCalledWith(null));
   fireEvent.click(screen.getByRole("button", { name: "Changes" }));
   fireEvent.click(screen.getByRole("button", { name: "Select staged diff" }));
@@ -218,7 +226,7 @@ it("a peer diff supersedes a pending file read rather than mixing repository ide
   expect(
     screen.getByText("Repository /other-repository · Diff reviewed.txt"),
   ).toBeTruthy();
-  expect(screen.queryByText("Opening native path…")).toBeNull();
+  expect(screen.queryByText("Opening path…")).toBeNull();
 });
 it("toolbar collapse and confirmed process removal clear terminal page presence", async () => {
   const { focus } = setup("/threads/current?terminal=terminal-current");
@@ -248,7 +256,8 @@ it("narrow peer navigation reveals the requested native or configuration view, n
   await screen.findByRole("button", { name: "Terminal" });
   vi.stubGlobal("matchMedia", () => ({ matches: true }));
   fireEvent.click(screen.getByRole("button", { name: "Open peer diff" }));
-  await screen.findByText("Repository /other-repository · Diff reviewed.txt");
+  await screen.findByText("Patch reviewed.txt");
+  expect(screen.queryByLabelText("File explorer")).toBeNull();
   expect(
     screen
       .getByRole("button", { name: "Terminal" })
@@ -257,5 +266,117 @@ it("narrow peer navigation reveals the requested native or configuration view, n
   fireEvent.click(screen.getByRole("button", { name: "Open peer resource" }));
   await waitFor(() => expect(focus).toHaveBeenLastCalledWith(null));
   expect(screen.getByTestId("chat").textContent).toContain("/settings/source");
-  expect(screen.queryByLabelText("Native computer context")).toBeNull();
+  expect(screen.queryByLabelText("File explorer")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Files" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Terminal" })).toBeNull();
 });
+
+it("Settings supersedes a pending file open and returning to Chat cannot be stolen by its late response", async () => {
+  let finish!: (value: { data: { kind: string } }) => void;
+  const metadata = new Promise<{ data: { kind: string } }>((resolve) => {
+    finish = resolve;
+  });
+  const { get, focus } = setup(
+    "/threads/current?native=files&native_path=%2Fnative%2Fslow.txt",
+    true,
+    metadata,
+  );
+  await waitFor(() =>
+    expect(
+      get.mock.calls.some(([url]) => url === "/api/host/files/metadata"),
+    ).toBe(true),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Open peer resource" }));
+  expect(screen.queryByLabelText("Workbench views")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Another conversation" }));
+  finish({ data: { kind: "file" } });
+  await waitFor(() => expect(focus).toHaveBeenLastCalledWith(null));
+  expect(screen.queryByRole("button", { name: "slow.txt" })).toBeNull();
+  expect(screen.getByTestId("chat").parentElement?.hidden).toBe(false);
+});
+
+it("retains open file tabs through Settings and closing the explorer focuses the visible editor", async () => {
+  const { focus } = setup(
+    "/threads/current?native=files&native_path=%2Fnative%2Ffirst.txt",
+  );
+  await screen.findByText("Editor /native/first.txt");
+  fireEvent.click(screen.getByRole("button", { name: "Close file explorer" }));
+  await waitFor(() =>
+    expect(focus).toHaveBeenLastCalledWith({
+      kind: "file",
+      path: "/native/first.txt",
+    }),
+  );
+  expect(document.activeElement?.textContent).toContain(
+    "Editor /native/first.txt",
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Open peer resource" }));
+  expect(screen.queryByLabelText("Open files")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Another conversation" }));
+  fireEvent.click(await screen.findByRole("button", { name: "first.txt" }));
+  await screen.findByText("Editor /native/first.txt");
+});
+
+it("mobile Chat and conversation navigation reveal the conversation instead of leaving it behind Terminal", async () => {
+  setup("/threads/current?terminal=terminal-current");
+  await screen.findByRole("button", { name: "Terminal" });
+  vi.stubGlobal("matchMedia", () => ({ matches: true }));
+  fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+  expect(
+    screen
+      .getByRole("button", { name: "Terminal" })
+      .getAttribute("aria-pressed"),
+  ).toBe("false");
+  fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
+  fireEvent.click(screen.getByRole("button", { name: "Another conversation" }));
+  expect(
+    screen
+      .getByRole("button", { name: "Terminal" })
+      .getAttribute("aria-pressed"),
+  ).toBe("false");
+});
+
+it.each(["Chat", "diff"])(
+  "an explicit %s view supersedes a pending file open without a route change",
+  async (target) => {
+    let finish!: (value: { data: { kind: string } }) => void;
+    const metadata = new Promise<{ data: { kind: string } }>((resolve) => {
+      finish = resolve;
+    });
+    const { focus, get } = setup(
+      "/threads/current?native=files&native_path=%2Fnative%2Fslow.txt",
+      true,
+      metadata,
+    );
+    await waitFor(() =>
+      expect(
+        get.mock.calls.some(([url]) => url === "/api/host/files/metadata"),
+      ).toBe(true),
+    );
+    if (target === "Chat")
+      fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+    else {
+      fireEvent.click(screen.getByRole("button", { name: "Changes" }));
+      fireEvent.click(
+        screen.getByRole("button", { name: "Select staged diff" }),
+      );
+    }
+    finish({ data: { kind: "file" } });
+    await waitFor(() =>
+      expect(focus).toHaveBeenLastCalledWith(
+        target === "Chat"
+          ? null
+          : {
+              kind: "changes",
+              repository_root: "/native",
+              path: "second.txt",
+              comparison: "staged",
+            },
+      ),
+    );
+    expect(screen.queryByText("Editor /native/slow.txt")).toBeNull();
+    if (target === "Chat")
+      expect(screen.getByTestId("chat").parentElement?.hidden).toBe(false);
+    else expect(screen.getByText("Patch second.txt")).toBeTruthy();
+  },
+);

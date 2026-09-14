@@ -59,7 +59,7 @@ from a13n_harness_ui.surfaces import (
     ThreadMetadataMutation,
     ThreadMetadataPatch,
 )
-from anyio import Event, create_task_group, fail_after, sleep, sleep_forever
+from anyio import CancelScope, Event, create_task_group, fail_after, sleep, sleep_forever
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.exceptions import UnexpectedModelBehavior
 from pydantic_ai.messages import ModelMessage, ToolReturnPart
@@ -1361,6 +1361,47 @@ async def test_cancelled_application_lifetime_still_closes_owned_coordinators(tm
     assert app.state is AppState.closed
     assert app._root_runs._task_group is None
     assert app._subagent_operator._task_group is None
+
+
+@pytest.mark.parametrize("owner", ["root", "child"])
+async def test_owned_task_failure_preserves_error_and_closes_coordinators(tmp_path: Path, owner: str) -> None:
+    ready = Event()
+    storage_available_during_cleanup = False
+
+    async def fail() -> None:
+        await ready.wait()
+        raise RuntimeError("owned task failed")
+
+    async def sibling() -> None:
+        nonlocal storage_available_during_cleanup
+        try:
+            ready.set()
+            await sleep_forever()
+        finally:
+            with CancelScope(shield=True):
+                await sleep(0.01)
+                # Joining must finish before the App closes storage.
+                await app._store.object_count()
+                storage_available_during_cleanup = True
+
+    with pytest.raises(ExceptionGroup, match="unhandled errors") as caught:
+        async with open_harness_ui_app(_settings(tmp_path / "state")) as app:
+            coordinator = app._root_runs if owner == "root" else app._subagent_operator
+            assert coordinator._task_group is not None
+            coordinator._task_group.start_soon(sibling)
+            coordinator._task_group.start_soon(fail)
+            await sleep_forever()
+
+    expected, unexpected = caught.value.split(
+        lambda exc: isinstance(exc, RuntimeError) and str(exc) == "owned task failed"
+    )
+    assert expected is not None and unexpected is None
+    assert storage_available_during_cleanup
+    assert app.state is AppState.closed
+    assert app._root_runs._task_group is None
+    assert app._subagent_operator._task_group is None
+    # No leaked cancellation scope may poison the caller after cleanup.
+    await sleep(0)
 
 
 async def _candidate_error(path: Path):
