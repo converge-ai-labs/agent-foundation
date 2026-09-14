@@ -389,18 +389,18 @@ export function Discussion({
                     }
                     onClick={() => void publish(draft)}
                   >
-                    Publish comment
+                    Post comment
                   </Button>
                 )}
-                {draft.status === "pending" && <p role="status">Publishing…</p>}
+                {draft.status === "pending" && <p role="status">Posting…</p>}
                 {draft.status === "unknown" && (
                   <>
                     <p>
-                      The acknowledgement was lost. Reconcile this exact
-                      publication; no second identity will be allocated.
+                      We could not confirm whether your comment was posted.
+                      Check this comment again without creating a duplicate.
                     </p>
                     <Button onClick={() => void publish(draft)}>
-                      Reconcile publication
+                      Check comment status
                     </Button>
                   </>
                 )}

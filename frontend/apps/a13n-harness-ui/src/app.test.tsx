@@ -7,6 +7,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { BrowserApp } from "./app";
 import { onlineManager } from "@tanstack/react-query";
 
@@ -137,7 +138,7 @@ it("accepts a replacement key after authentication failure without replaying mut
   fireEvent.change(screen.getByLabelText("API key"), {
     target: { value: "new-key" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+  fireEvent.click(screen.getByRole("button", { name: "Log in" }));
   await screen.findByText("1.2.3rc2");
   expect(localStorage.getItem("a13n-harness-ui.api-key")).toBe("new-key");
 });
@@ -180,12 +181,12 @@ it("forgets the retained credential and closes protected views", async () => {
   );
   render(<BrowserApp />);
   await screen.findByText("1.2.3rc2");
-  fireEvent.click(screen.getByRole("button", { name: "Forget API key" }));
+  fireEvent.click(screen.getByRole("button", { name: "Log out" }));
   await screen.findByText(
     "Access expired. Enter the API key printed by this server.",
   );
   expect(localStorage.getItem("a13n-harness-ui.api-key")).toBeNull();
-  expect(screen.queryByRole("heading", { name: "Your workbench" })).toBeNull();
+  expect(screen.queryByRole("heading", { name: "Your workspace" })).toBeNull();
 });
 
 it("retains dirty source fields through navigation and external invalidation", async () => {
@@ -199,7 +200,7 @@ it("retains dirty source fields through navigation and external invalidation", a
   fireEvent.change(name, { target: { value: "My draft" } });
   fireEvent.click(screen.getByRole("link", { name: "Projects" }));
   await screen.findByRole("heading", { name: "Projects" });
-  fireEvent.click(screen.getByRole("link", { name: "Resources" }));
+  fireEvent.click(screen.getByRole("link", { name: "Advanced" }));
   fireEvent.click(await screen.findByRole("link", { name: /agent-assistant/ }));
   await waitFor(() =>
     expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe(
@@ -235,11 +236,11 @@ it("does not pretend unavailable MCP source is an editable empty document", asyn
   );
   render(<BrowserApp />);
   await screen.findByRole("heading", {
-    name: "Source content is not available",
+    name: "Saved configuration is hidden",
   });
-  expect(screen.queryByRole("button", { name: "Publish" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Save changes" })).toBeNull();
   expect(
-    screen.getByRole("button", { name: "Start explicit complete replacement" }),
+    screen.getByRole("button", { name: "Replace configuration file" }),
   ).toBeTruthy();
   expect(screen.getByText(/mcp-one, mcp-two/)).toBeTruthy();
 });
@@ -247,20 +248,24 @@ it("does not pretend unavailable MCP source is an editable empty document", asyn
 it("reopens an unpublished resource draft without treating it as a missing server source", async () => {
   window.history.replaceState(null, "", "/settings/resources");
   render(<BrowserApp />);
-  fireEvent.click(await screen.findByRole("button", { name: "New resource" }));
-  fireEvent.click(screen.getByRole("button", { name: "Create draft" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Add configuration" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   fireEvent.change(await screen.findByLabelText("Name"), {
     target: { value: "Unpublished model" },
   });
-  fireEvent.click(screen.getByRole("link", { name: "Resources" }));
-  fireEvent.click(await screen.findByRole("button", { name: "New resource" }));
-  fireEvent.click(screen.getByRole("button", { name: "Create draft" }));
+  fireEvent.click(screen.getByRole("link", { name: "Advanced" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Add configuration" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Continue" }));
   await waitFor(() =>
     expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe(
       "Unpublished model",
     ),
   );
-  expect(screen.getByRole("button", { name: "Publish" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Save changes" })).toBeTruthy();
   expect(window.location.search).toContain("new=1");
 });
 
@@ -292,29 +297,29 @@ it("submits only additional instructions and consumes setup preview before an un
     expect(
       (
         screen.getByRole("button", {
-          name: "Preview files",
+          name: "Review changes",
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(false),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Preview files" }));
+  fireEvent.click(screen.getByRole("button", { name: "Review changes" }));
   await waitFor(() =>
     expect(
       (
         screen.getByRole("button", {
-          name: "Publish setup",
+          name: "Save setup",
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(false),
   );
   expect(writes[0].instructions).toBe("");
-  fireEvent.click(screen.getByRole("button", { name: "Publish setup" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save setup" }));
   await screen.findByText("Connection lost");
   expect(
-    (screen.getByRole("button", { name: "Publish setup" }) as HTMLButtonElement)
+    (screen.getByRole("button", { name: "Save setup" }) as HTMLButtonElement)
       .disabled,
   ).toBe(true);
-  expect(screen.getByText(/Publication may have changed files/)).toBeTruthy();
+  expect(screen.getByText(/Settings may have been saved/)).toBeTruthy();
 });
 
 it("attempts offline publication immediately and does not queue it for reconnect", async () => {
@@ -340,7 +345,7 @@ it("attempts offline publication immediately and does not queue it for reconnect
   });
   try {
     onlineManager.setOnline(false);
-    fireEvent.click(screen.getByRole("button", { name: "Publish" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await screen.findByText("Offline request failed");
     expect(writes).toBe(1);
     onlineManager.setOnline(true);
@@ -395,7 +400,7 @@ it("keeps a dirty draft when summary invalidation discovers an external publicat
       'data: {"kind":"invalidation","resume_cursor":"epoch:2","event":{"kind":"configuration"}}\n\n',
     ),
   );
-  await screen.findByText(/The accepted source changed elsewhere/);
+  await screen.findByText(/This configuration changed elsewhere/);
   expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe(
     "Retained local name",
   );
@@ -419,16 +424,16 @@ it("retains source edits across rejected access and reauthentication", async () 
     target: { value: "Before access expired" },
   });
   expire = true;
-  fireEvent.click(screen.getByRole("button", { name: "Validate" }));
+  fireEvent.click(screen.getByRole("button", { name: "Check configuration" }));
   await screen.findByText(
     "Access expired. Enter the API key printed by this server.",
   );
-  expect(screen.getByText(/Local resource drafts are retained/)).toBeTruthy();
+  expect(screen.getByText(/unsaved/i)).toBeTruthy();
   expire = false;
   fireEvent.change(screen.getByLabelText("API key"), {
     target: { value: "replacement" },
   });
-  fireEvent.click(screen.getByRole("button", { name: "Connect" }));
+  fireEvent.click(screen.getByRole("button", { name: "Log in" }));
   expect(
     ((await screen.findByLabelText("Name")) as HTMLInputElement).value,
   ).toBe("Before access expired");
@@ -448,7 +453,7 @@ it("works without browser storage", async () => {
     });
   try {
     render(<BrowserApp />);
-    await screen.findByRole("heading", { name: "Your workbench" });
+    await screen.findByRole("heading", { name: "Your workspace" });
     fireEvent.click(
       screen.getByRole("button", { name: "Switch to dark theme" }),
     );
@@ -500,8 +505,10 @@ it("retains login across navigation, requires switch authorization and respects 
     }),
   );
   render(<BrowserApp />);
-  await screen.findByRole("heading", { name: "Provider accounts" });
-  fireEvent.click(screen.getAllByRole("button", { name: "Log in" })[0]);
+  await screen.findByRole("heading", { name: "Accounts & API keys" });
+  fireEvent.click(
+    screen.getAllByRole("button", { name: "Connect account" })[0],
+  );
   fireEvent.click(
     await screen.findByRole("button", { name: "Switch account…" }),
   );
@@ -513,7 +520,7 @@ it("retains login across navigation, requires switch authorization and respects 
   await screen.findByRole("button", { name: "Cancel login" });
   fireEvent.click(screen.getByRole("link", { name: "Projects" }));
   await screen.findByRole("heading", { name: "Projects" });
-  fireEvent.click(screen.getByRole("link", { name: "Provider accounts" }));
+  fireEvent.click(screen.getByRole("link", { name: "Accounts & API keys" }));
   fireEvent.click(await screen.findByRole("button", { name: "Cancel login" }));
   await screen.findByText("Login: succeeded");
   expect(starts[1].allow_account_switch).toBe(true);
@@ -547,7 +554,212 @@ it.each([
     );
     render(<BrowserApp />);
     await screen.findByText(message);
-    expect(screen.getByText("Advanced source")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Validate" })).toBeTruthy();
+    expect(screen.getByText("Configuration file")).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Check configuration" }),
+    ).toBeTruthy();
   },
 );
+
+it("adds a configurable capability to the chosen agent and preserves unrelated configuration on save", async () => {
+  window.history.replaceState(null, "", "/settings/capabilities");
+  const original =
+    source.content +
+    "capabilities:\n  - capability: existing\n    configuration: {keep: true}\ncustom_options: {retain: 42}\n";
+  let saved = "";
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (request: Request) => {
+      const path = decodeURIComponent(new URL(request.url).pathname);
+      if (path === "/api/selectors")
+        return json({
+          agents: [{ agent_id: "agent-assistant", name: "Assistant" }],
+          environments: [],
+          harness_plugins: [],
+          environment_run_extensions: [],
+          mcp_servers: [],
+        });
+      if (path === "/api/catalog")
+        return json([
+          { kind: "capability", key: "available", configurable: true },
+          { kind: "capability", key: "ambiguous", configurable: false },
+        ]);
+      if (path === "/api/configuration/sources/agents/assistant.yaml") {
+        if (request.method === "PUT") {
+          saved = (await request.json()).content;
+          return json({ source_digest: "saved" });
+        }
+        return json({ ...source, content: original });
+      }
+      return fixture(request);
+    }),
+  );
+  render(<BrowserApp />);
+  const user = userEvent.setup();
+  await user.click(
+    await screen.findByRole("combobox", { name: "Add capability" }),
+  );
+  expect(screen.queryByRole("option", { name: "ambiguous" })).toBeNull();
+  await user.click(await screen.findByRole("option", { name: "available" }));
+  expect(saved).toBe("");
+  expect(
+    screen.getByRole("button", { name: "Remove capability available" }),
+  ).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(saved).toContain("capability: available"));
+  expect(saved).toContain("keep: true");
+  expect(saved).toContain("retain: 42");
+  expect(saved).toContain("instructions: Original");
+});
+
+it("keeps malformed capability YAML repairable without crashing its focused settings page", async () => {
+  window.history.replaceState(null, "", "/settings/capabilities");
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (request: Request) => {
+      const path = decodeURIComponent(new URL(request.url).pathname);
+      if (path === "/api/selectors")
+        return json({
+          agents: [{ agent_id: "agent-assistant", name: "Assistant" }],
+          environments: [],
+          harness_plugins: [],
+          environment_run_extensions: [],
+          mcp_servers: [],
+        });
+      if (path === "/api/configuration/sources/agents/assistant.yaml")
+        return json({ ...source, content: "capabilities: [" });
+      return fixture(request);
+    }),
+  );
+  render(<BrowserApp />);
+  await screen.findByText(/Fix the YAML syntax/);
+  expect(screen.getByText("Configuration file")).toBeTruthy();
+});
+
+it("reopens a one-click agent draft from its own settings list without writing or fetching a nonexistent file", async () => {
+  window.history.replaceState(null, "", "/settings/agents");
+  const fetcher = vi.mocked(fetch);
+  render(<BrowserApp />);
+  fireEvent.click(await screen.findByRole("button", { name: "Add agent" }));
+  fireEvent.change(await screen.findByLabelText("Name"), {
+    target: { value: "Unfinished assistant" },
+  });
+  const draftPath = new URLSearchParams(window.location.search).get("path")!;
+  fireEvent.click(screen.getByRole("link", { name: "Agents & models" }));
+  fireEvent.click(
+    await screen.findByRole("link", {
+      name: /Unfinished assistant.*Unsaved draft/,
+    }),
+  );
+  expect(
+    ((await screen.findByLabelText("Name")) as HTMLInputElement).value,
+  ).toBe("Unfinished assistant");
+  expect(window.location.search).toContain("new=1");
+  expect(
+    fetcher.mock.calls.some(
+      ([request]) => (request as Request).method === "PUT",
+    ),
+  ).toBe(false);
+  expect(
+    fetcher.mock.calls.some(([request]) =>
+      decodeURIComponent((request as Request).url).includes(
+        `/sources/${draftPath}`,
+      ),
+    ),
+  ).toBe(false);
+});
+
+it("shows built-in environments as read-only and does not offer configuration for an unavailable provider", async () => {
+  window.history.replaceState(null, "", "/settings/environments");
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (request: Request) => {
+      const path = new URL(request.url).pathname;
+      if (path === "/api/selectors")
+        return json({
+          agents: [],
+          environments: [
+            {
+              profile_id: "environment-native",
+              name: "Full Control",
+              mode: "full-control",
+              release_owned: true,
+            },
+          ],
+          harness_plugins: [],
+          environment_run_extensions: [],
+          mcp_servers: [],
+        });
+      if (path === "/api/catalog")
+        return json([
+          {
+            kind: "environment_provider",
+            key: "unavailable-provider",
+            configurable: false,
+          },
+        ]);
+      return fixture(request);
+    }),
+  );
+  render(<BrowserApp />);
+  await screen.findByText("Built in");
+  await screen.findByText("Unavailable to configure");
+  expect(screen.queryByRole("link", { name: /Full Control/ })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Configure" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Terminal" })).toBeNull();
+});
+
+it("edits project defaults directly while preserving unknown project fields", async () => {
+  window.history.replaceState(null, "", "/projects/project-test");
+  const projectSource = {
+    ...source,
+    relative_path: "projects/test.yaml",
+    resource_kind: "project",
+    resource_ids: ["project-test"],
+    content:
+      'schema_version: "1"\nkind: project\nid: project-test\nname: Test project\nroots: [{path: /test}]\ndefaults: {}\ncustom_options: {retain: true}\n',
+  };
+  let saved = "";
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (request: Request) => {
+      const path = decodeURIComponent(new URL(request.url).pathname);
+      if (path === "/api/projects")
+        return json([
+          {
+            project_id: "project-test",
+            name: "Test project",
+            roots: ["/test"],
+          },
+        ]);
+      if (path === "/api/selectors")
+        return json({
+          agents: [{ agent_id: "agent-assistant", name: "Assistant" }],
+          environments: [],
+          harness_plugins: [],
+          environment_run_extensions: [],
+          mcp_servers: [],
+        });
+      if (path === "/api/configuration/sources")
+        return json({ generation_digest: "g", sources: [projectSource] });
+      if (path === "/api/configuration/sources/projects/test.yaml") {
+        if (request.method === "PUT") {
+          saved = (await request.json()).content;
+          return json({ source_digest: "saved" });
+        }
+        return json(projectSource);
+      }
+      return fixture(request);
+    }),
+  );
+  render(<BrowserApp />);
+  const user = userEvent.setup();
+  await user.click(
+    await screen.findByRole("combobox", { name: "Default agent" }),
+  );
+  await user.click(await screen.findByRole("option", { name: "Assistant" }));
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(saved).toContain("agent: agent-assistant"));
+  expect(saved).toContain("retain: true");
+  expect(saved).toContain("/test");
+});

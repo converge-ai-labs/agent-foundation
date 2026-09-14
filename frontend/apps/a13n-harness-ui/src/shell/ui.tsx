@@ -1,20 +1,24 @@
 import type { ReactNode } from "react";
-import { Button, FormField, Input } from "a13n-ui";
+import { Button, FormField, Input, SettingsSection } from "a13n-ui";
+import { WarningCircle } from "@phosphor-icons/react";
 import styles from "./workbench.module.css";
 
 export function PageHeader({
   title,
   description,
   actions,
+  level = 1,
 }: {
+  level?: 1 | 2;
   title: string;
   description: string;
   actions?: ReactNode;
 }) {
+  const Heading = level === 1 ? "h1" : "h2";
   return (
     <header className={styles.pageHeader}>
       <div>
-        <h1>{title}</h1>
+        <Heading>{title}</Heading>
         <p>{description}</p>
       </div>
       {actions && <div className={styles.actions}>{actions}</div>}
@@ -29,10 +33,9 @@ export function Panel({
   children: ReactNode;
 }) {
   return (
-    <section className={styles.panel}>
-      {title && <h2>{title}</h2>}
-      {children}
-    </section>
+    <SettingsSection title={title}>
+      <div className={styles.panelContent}>{children}</div>
+    </SettingsSection>
   );
 }
 export function ErrorNotice({
@@ -45,7 +48,10 @@ export function ErrorNotice({
   if (!error) return null;
   return (
     <div role="alert" className={styles.notice}>
-      <span>{error instanceof Error ? error.message : String(error)}</span>
+      <div className={styles.actions}>
+        <WarningCircle size={18} aria-hidden="true" />
+        <span>{error instanceof Error ? error.message : String(error)}</span>
+      </div>
       {retry && (
         <Button variant="outline" onClick={retry}>
           Retry

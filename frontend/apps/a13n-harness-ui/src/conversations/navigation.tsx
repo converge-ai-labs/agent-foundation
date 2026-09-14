@@ -39,7 +39,12 @@ export function ConversationNavigation() {
         <Plus />
         New conversation
       </Button>
-      <TextField label="Find conversations" value={query} onChange={setQuery} />
+      <TextField
+        type="search"
+        label="Find conversations"
+        value={query}
+        onChange={setQuery}
+      />
       <ChoiceField
         label="Project scope"
         value={scope}
@@ -52,7 +57,7 @@ export function ConversationNavigation() {
           })),
         ]}
       />
-      <div className={styles.threadGroups}>
+      <div className={`${styles.threadGroups} a13n-scrollbar`}>
         {Array.from(groups, ([id, group]) => (
           <section key={id ?? "projectless"}>
             <div className={styles.groupHeading}>

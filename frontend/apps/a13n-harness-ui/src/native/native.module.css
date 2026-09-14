@@ -9,7 +9,10 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  padding-bottom: 12px;
+  padding: 6px 16px;
+  min-height: 44px;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--a13n-border);
 }
 .workToolbar [aria-pressed="true"] {
   background: var(--a13n-surface);
@@ -19,25 +22,53 @@
   min-height: 0;
   min-width: 0;
   flex: 1;
-  gap: 24px;
+  overflow: hidden;
 }
-.page {
+.center {
   flex: 1;
   min-width: 0;
   min-height: 0;
-}
-.withPane .page {
-  overflow: auto;
-}
-.pane {
-  flex: 0 0 48%;
-  min-width: 0;
-  min-height: 0;
-  max-height: calc(100dvh - 145px);
   display: flex;
   flex-direction: column;
-  border-left: 1px solid var(--a13n-border);
-  padding-left: 20px;
+}
+.page,
+.editorPage {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: 16px 24px;
+  overflow: auto;
+}
+.editorPage {
+  display: flex;
+  flex-direction: column;
+}
+.page[hidden] {
+  display: none;
+}
+.documentPage {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  width: 100%;
+  max-width: 1120px;
+  margin-inline: auto;
+  padding: 24px;
+}
+.pane {
+  order: -1;
+  flex: 0 0 280px;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--a13n-border);
+  padding: 12px;
+  background: var(--a13n-surface);
+  overflow: auto;
+}
+.terminalDock {
+  display: contents;
 }
 .paneHeader,
 .fileHeader {
@@ -76,11 +107,12 @@
 .paneBody {
   overflow: auto;
   min-height: 0;
-  padding: 2px 2px 24px;
+  padding: 0 0 12px;
+  flex: 1;
 }
 .location {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   padding-bottom: 12px;
 }
 .address {
@@ -119,26 +151,24 @@
 .stack {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
   min-width: 0;
 }
 .actions {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-wrap: wrap;
 }
 .check {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   font-size: 11px;
   color: var(--a13n-secondary);
 }
 .fileList {
-  max-height: 250px;
   min-height: 48px;
-  overflow: auto;
 }
 .fileRow {
   display: flex;
@@ -203,11 +233,12 @@
   align-items: stretch;
 }
 .file {
+  flex: 1;
+  min-height: min-content;
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding-top: 16px;
-  border-top: 1px solid var(--a13n-border);
+  padding: 0;
   min-width: 0;
 }
 .fileHeader {
@@ -225,14 +256,20 @@
   display: block;
 }
 .editor {
+  flex: 1 1 0;
+  min-height: 160px;
   min-width: 0;
+  overflow: hidden;
+}
+.file > :not(.editor) {
+  flex-shrink: 0;
 }
 .notice {
   padding: 12px;
   background: var(--a13n-surface);
   border-radius: 6px;
   display: grid;
-  gap: 10px;
+  gap: 12px;
   font-size: 12px;
 }
 .notice details,
@@ -250,7 +287,7 @@
 }
 .capture {
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 .range {
   display: flex;
@@ -263,7 +300,7 @@
 .empty {
   padding: 18px 4px;
   display: grid;
-  gap: 10px;
+  gap: 12px;
 }
 .buffers {
   display: flex;
@@ -280,7 +317,7 @@
 }
 .repo {
   display: grid;
-  gap: 6px;
+  gap: 8px;
 }
 .changeGroup {
   display: grid;
@@ -296,28 +333,22 @@
   font-size: 11px;
 }
 @media (max-width: 1199px) {
-  .withPane .pageBeside {
+  .withPane .center {
     display: none;
   }
   .pane {
     flex: 1;
-    border-left: 0;
-    padding-left: 0;
-    max-height: calc(100dvh - 150px);
-  }
-  .layout {
-    gap: 0;
+    border-right: 0;
   }
 }
 @media (max-width: 760px) {
+  .page,
+  .editorPage,
+  .documentPage {
+    padding: 16px;
+  }
   .workToolbar {
-    padding-bottom: 8px;
-  }
-  .pane {
-    max-height: calc(100dvh - 150px);
-  }
-  .fileList {
-    max-height: 185px;
+    padding-inline: 8px;
   }
 }
 
@@ -332,24 +363,28 @@
 }
 .locationFields {
   display: grid;
-  gap: 10px;
+  gap: 12px;
   padding: 6px 0 10px;
 }
 
 .fileTabs {
   display: flex;
-  gap: 6px;
+  gap: 2px;
   overflow: auto;
   flex-shrink: 0;
-  padding-bottom: 8px;
+  padding: 4px 16px;
+  border-bottom: 1px solid var(--a13n-border);
 }
 .fileTabs > span {
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
 }
-@media (max-width: 1199px) {
+@media (max-width: 700px) {
   .withTerminal .layout {
+    display: none;
+  }
+  .withTerminal .fileTabs {
     display: none;
   }
 }

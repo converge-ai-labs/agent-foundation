@@ -2,14 +2,15 @@ import { useEffect, useState } from "react";
 import {
   Link,
   NavLink,
+  Navigate,
   Route,
   Routes,
   useLocation,
   useNavigate,
 } from "react-router";
-import { useQuery } from "@tanstack/react-query";
 import {
   Button,
+  Wordmark,
   ChoiceField,
   ModalFrame,
   Sheet,
@@ -22,7 +23,6 @@ import {
   Folder,
   SlidersHorizontal,
   PlugsConnected,
-  SquaresFour,
   Moon,
   Sun,
   List,
@@ -42,10 +42,12 @@ import { AccountsPage } from "../setup/accounts";
 import { SetupPage } from "../setup/setup";
 import { SourcesPage, SourcePage } from "../configuration/sources";
 import {
-  ProjectsPage,
-  ProjectPage,
-  ReadinessPreview,
-} from "../configuration/projects";
+  SettingsLayout,
+  GeneralSettings,
+  CapabilitiesPage,
+  EnvironmentsPage,
+} from "../configuration/settings";
+import { ProjectsPage, ProjectPage } from "../configuration/projects";
 import { ErrorNotice, PageHeader, Panel, TextField } from "./ui";
 import { useLiveWorkbench, type Profile } from "./presence";
 import styles from "./workbench.module.css";
@@ -132,20 +134,8 @@ export function Workbench({
     writePreference("color", next.color);
   };
   const links = [
-    { to: "/", label: "Workbench", icon: House },
-    { to: "/projects", label: "Projects", icon: Folder },
-    { to: "/settings/resources", label: "Resources", icon: SlidersHorizontal },
-    {
-      to: "/settings/accounts",
-      label: "Provider accounts",
-      icon: PlugsConnected,
-    },
-    {
-      to: "/settings/catalog",
-      label: "Implementation catalog",
-      icon: SquaresFour,
-    },
-    { to: "/setup", label: "Setup & readiness", icon: Gear },
+    { to: "/", label: "Overview", icon: House },
+    { to: "/settings", label: "Settings", icon: Gear },
   ];
   const navigation = (
     <>
@@ -175,10 +165,9 @@ export function Workbench({
         </a>
         <aside className={styles.sidebar} aria-label="Workbench navigation">
           <Link to="/" className={styles.brand}>
-            <span className={styles.brandMark}>a13n</span>
-            <strong>Harness UI</strong>
+            <Wordmark className={styles.brandMark} />
+            <span>Harness UI</span>
           </Link>
-          <div className={styles.sidebarCaption}>YOUR WORKSPACE</div>
           {navigation}
           <div className={styles.sidebarFooter}>
             <span className={styles.statusDot} />
@@ -232,14 +221,11 @@ export function Workbench({
                 {theme === "dark" ? <Sun /> : <Moon />}
               </Button>
               <Button variant="ghost" onClick={forget}>
-                Forget API key
+                Log out
               </Button>
             </div>
           </header>
-          <main
-            id="main-content"
-            className={`${styles.main} ${location.pathname.startsWith("/threads/") ? styles.conversationMain : ""}`}
-          >
+          <main id="main-content" className={styles.main}>
             {status.access === "dangerous_bypass" && (
               <div className={styles.notice}>
                 Instance authentication is disabled by the server's explicit
@@ -248,12 +234,11 @@ export function Workbench({
             )}
             {status.app?.candidate_error_message && (
               <div role="alert" className={styles.notice}>
-                <strong>Configuration candidate rejected</strong>
+                <strong>Configuration could not be updated</strong>
                 <p>{status.app.candidate_error_message}</p>
                 <p>
-                  The previous accepted generation remains active. Source
-                  inspection shows accepted content, not the invalid disk
-                  candidate.
+                  Your previous settings are still active. Open Settings to
+                  inspect the saved configuration and correct the changes.
                 </p>
               </div>
             )}
@@ -276,14 +261,50 @@ export function Workbench({
                     />
                   }
                 />
-                <Route path="/setup" element={<SetupPage />} />
-                <Route path="/projects" element={<ProjectsPage />} />
-                <Route path="/projects/:projectId" element={<ProjectPage />} />
-                <Route path="/settings" element={<SourcesPage />} />
-                <Route path="/settings/resources" element={<SourcesPage />} />
-                <Route path="/settings/source" element={<SourcePage />} />
-                <Route path="/settings/accounts" element={<AccountsPage />} />
-                <Route path="/settings/catalog" element={<CatalogPage />} />
+                <Route element={<SettingsLayout />}>
+                  <Route path="/setup" element={<SetupPage />} />
+                  <Route path="/projects" element={<ProjectsPage />} />
+                  <Route
+                    path="/projects/:projectId"
+                    element={<ProjectPage />}
+                  />
+                  <Route path="/settings" element={<GeneralSettings />} />
+                  <Route
+                    path="/settings/agents"
+                    element={
+                      <SourcesPage
+                        kinds={["agent", "model"]}
+                        title="Agents & models"
+                        description="Configure how your agents work and which models they use."
+                      />
+                    }
+                  />
+                  <Route
+                    path="/settings/capabilities"
+                    element={<CapabilitiesPage />}
+                  />
+                  <Route
+                    path="/settings/environments"
+                    element={<EnvironmentsPage />}
+                  />
+                  <Route
+                    path="/settings/connections"
+                    element={
+                      <SourcesPage
+                        kinds={["mcp_server"]}
+                        title="MCP connections"
+                        description="Connect tools and data sources, then choose which agents can use them."
+                      />
+                    }
+                  />
+                  <Route path="/settings/resources" element={<SourcesPage />} />
+                  <Route path="/settings/source" element={<SourcePage />} />
+                  <Route path="/settings/accounts" element={<AccountsPage />} />
+                  <Route
+                    path="/settings/catalog"
+                    element={<Navigate to="/settings/capabilities" replace />}
+                  />
+                </Route>
                 <Route
                   path="*"
                   element={
@@ -300,8 +321,8 @@ export function Workbench({
         <ModalFrame
           open={peopleOpen}
           onOpenChange={setPeopleOpen}
-          title="People on this instance"
-          description="Presence is per browser tab and resets when the server restarts. Display profiles are not authenticated identities or provider accounts."
+          title="People in this workspace"
+          description="See who is connected and what they are viewing. Your display name helps others recognize this tab."
           closeLabel="Close"
         >
           <div className={styles.stack}>
@@ -339,9 +360,7 @@ export function Workbench({
                     ? " (you)"
                     : ""}
                 </strong>
-                <span>
-                  {participant.foreground ? "Foreground" : "Background"}
-                </span>
+                <span>{participant.foreground ? "Active tab" : "Away"}</span>
                 <small>
                   {live.presence?.same_page_participant_ids?.includes(
                     participant.participant_id,
@@ -381,8 +400,8 @@ function HomePage() {
   return (
     <>
       <PageHeader
-        title="Your workbench"
-        description="Prepare your workspace, connect providers, and choose how your agents work."
+        title="Your workspace"
+        description="Open a conversation or start a new one from the sidebar."
         actions={
           <Button render={<Link to="/setup" />}>
             {setup.data?.needed ? "Set up your instance" : "Check readiness"}
@@ -404,7 +423,7 @@ function HomePage() {
           <strong>{projects.data?.length ?? "—"}</strong>
           <span>Projects</span>
           <strong>{sources.data?.sources.length ?? "—"}</strong>
-          <span>Sources</span>
+          <span>Configurations</span>
         </div>
       </div>
       {setup.data?.needed && (
@@ -420,20 +439,20 @@ function HomePage() {
         <Link to="/projects" className={styles.projectCard}>
           <Folder size={24} />
           <strong>Choose a Project</strong>
-          <p>Named host directories and defaults for new threads.</p>
+          <p>Project folders and defaults for new conversations.</p>
         </Link>
         <Link to="/settings/accounts" className={styles.projectCard}>
           <PlugsConnected size={24} />
           <strong>Connect providers</strong>
           <p>Subscription accounts and securely referenced model keys.</p>
         </Link>
-        <Link to="/settings/resources" className={styles.projectCard}>
+        <Link to="/settings" className={styles.projectCard}>
           <SlidersHorizontal size={24} />
-          <strong>Configure resources</strong>
+          <strong>Workspace settings</strong>
           <p>Models, agents, environments, MCP and shared defaults.</p>
         </Link>
       </div>
-      {!setup.data?.needed && <ReadinessPreview />}
+
       {status.data?.app.capability_warnings?.length ||
       status.data?.app.content_plugin_diagnostics?.length ? (
         <Panel title="Configuration diagnostics">
@@ -447,53 +466,7 @@ function HomePage() {
       ) : null}
       <p className={styles.muted}>
         Open a conversation from the sidebar or create one to start working.
-        Opening this workbench does not start a Run.
-      </p>
-    </>
-  );
-}
-function CatalogPage() {
-  const { client } = useTransport();
-  const [search, setSearch] = useState("");
-  const catalog = useQuery({
-    queryKey: ["catalog"],
-    queryFn: ({ signal }) => result(client.GET("/api/catalog", { signal })),
-  });
-  return (
-    <>
-      <PageHeader
-        title="Implementation catalog"
-        description="Installed implementations are available to configure, not automatically enabled for an agent."
-      />
-      <ErrorNotice error={catalog.error} retry={() => void catalog.refetch()} />
-      <TextField
-        label="Find implementations"
-        value={search}
-        onChange={setSearch}
-      />
-      <div className={styles.resourceList}>
-        {catalog.data
-          ?.filter((item) => `${item.kind} ${item.key}`.includes(search))
-          .map((item) => (
-            <div
-              className={styles.resourceRow}
-              key={`${item.kind}:${item.key}`}
-            >
-              <div>
-                <strong>{item.key}</strong>
-                <small>{item.kind.replaceAll("_", " ")}</small>
-              </div>
-              <span>{item.source}</span>
-              <small>
-                {item.distribution_name} {item.distribution_version}
-              </small>
-            </div>
-          ))}
-      </div>
-      <p>
-        Content-plugin installation is managed outside this HTTP surface. Its
-        diagnostics appear on the workbench; it is not a Harness plugin
-        resource.
+        Nothing is sent until you choose Send.
       </p>
     </>
   );

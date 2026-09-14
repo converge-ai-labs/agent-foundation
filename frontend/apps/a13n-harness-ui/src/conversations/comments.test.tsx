@@ -141,17 +141,15 @@ it("preserves a frozen publication after lost acknowledgement and reconciles the
     await screen.findByLabelText("Comment", { selector: "textarea" }),
     { target: { value: "Preserve my full comment." } },
   );
-  fireEvent.click(screen.getByRole("button", { name: "Publish comment" }));
-  await screen.findByRole("button", { name: "Reconcile publication" });
+  fireEvent.click(screen.getByRole("button", { name: "Post comment" }));
+  await screen.findByRole("button", { name: "Check comment status" });
   expect(
     screen
       .getByLabelText("Comment", { selector: "textarea" })
       .matches(":disabled"),
   ).toBe(true);
   const identity = drafts.get("thread-one")!.publication.comment_id;
-  fireEvent.click(
-    screen.getByRole("button", { name: "Reconcile publication" }),
-  );
+  fireEvent.click(screen.getByRole("button", { name: "Check comment status" }));
   await screen.findByRole("heading", { name: "Comment published" });
   expect(POST).toHaveBeenCalledTimes(2);
   expect(POST.mock.calls[0][1].body).toEqual(POST.mock.calls[1][1].body);
@@ -229,9 +227,9 @@ it("keeps unknown attribution frozen on access failure but recovers a verified s
     await screen.findByLabelText("Comment", { selector: "textarea" }),
     { target: { value: "Keep this private draft" } },
   );
-  fireEvent.click(screen.getByRole("button", { name: "Publish comment" }));
+  fireEvent.click(screen.getByRole("button", { name: "Post comment" }));
   fireEvent.click(
-    await screen.findByRole("button", { name: "Reconcile publication" }),
+    await screen.findByRole("button", { name: "Check comment status" }),
   );
   await screen.findByText("Access expired");
   expect(
@@ -240,7 +238,7 @@ it("keeps unknown attribution frozen on access failure but recovers a verified s
       .matches(":disabled"),
   ).toBe(true);
   fireEvent.click(
-    await screen.findByRole("button", { name: "Reconcile publication" }),
+    await screen.findByRole("button", { name: "Check comment status" }),
   );
   await screen.findByRole("button", { name: "Discard draft" });
   expect(

@@ -291,6 +291,7 @@ export function FileView({
             value={buffer.value}
             language="plain"
             label={`File text: ${path}`}
+            fill
             readOnly={symlink}
             onSelection={setSelection}
             onChange={(value) => {

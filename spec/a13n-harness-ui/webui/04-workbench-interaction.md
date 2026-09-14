@@ -6,7 +6,7 @@ This document owns the browser's default interaction flow, action placement, and
 
 The primary experience is doing work in a conversation. Configuration is available when needed, and code or a terminal can be opened alongside that work. The interface does not require users to understand resource inheritance or runtime internals before sending a prompt.
 
-The workbench uses the shared frontend design system with English interface text only. It has no language selector or translation runtime. Light and dark themes remain available; English-only interface text does not restrict the language of prompts, configuration content, names or comments.
+The workbench uses the shared frontend design system with English interface text only. Controls describe user actions, such as Log in, Log out, Save changes, Connect account, and Reconnect, rather than internal credential-retention or publication operations. It has no language selector or translation runtime. Light and dark themes remain available; English-only interface text does not restrict the language of prompts, configuration content, names or comments.
 
 ## Entry and Navigation
 
@@ -30,15 +30,17 @@ Same-page presence is an awareness indicator, not a blanket Edit permission or a
 
 ## Default Layout
 
-| Region       | Default interaction                                                                        |
-| ------------ | ------------------------------------------------------------------------------------------ |
-| Sidebar      | Projects and conversations; collapsible                                                    |
-| Main area    | Conversation, with the shared composer at its end                                          |
-| Context pane | Closed until a file, diff, configuration detail, or execution detail is opened             |
-| Bottom panel | Host Terminal, closed until explicitly opened                                              |
-| Header       | Project/Thread identity, compact effective Agent/Environment information, and participants |
+| Region       | Default interaction                                                                      |
+| ------------ | ---------------------------------------------------------------------------------------- |
+| Sidebar      | Projects and conversations, Overview, and one Settings entry; a drawer on narrow screens |
+| Main area    | Chat or the selected file/diff; Chat's composer remains with its conversation            |
+| Explorer     | Files or Changes on the left, closed until opened                                        |
+| Bottom panel | Resizable Host Terminal, closed until explicitly opened                                  |
+| Header       | Instance identity, connection status, participants, theme, and Log out                   |
 
-Files and Changes share the code context pane. Opening a file reveals it beside Chat on wide screens; file tabs support comparing several pieces of code without replacing the conversation. The terminal is independently resizable/collapsible. Closing a panel closes the view, not its server-side terminal session or Agent Run.
+The application frame stays within the viewport. Conversation history, code, explorer contents, and Settings content scroll within their own available space rather than growing the document. Files and Changes share the left explorer; selecting a file or comparison opens it in the central work area. Open-file tabs and Chat switch the central view without changing the selected Thread or replacing its shared draft. The terminal is independently resizable/collapsible. Closing a panel closes the view, not its server-side terminal session or Agent Run.
+
+Settings uses a dedicated content layout. It does not display Chat/Files/Changes/Terminal controls or native panes. Entering Settings detaches the selected terminal view without closing its session and retains private file/configuration drafts. Returning to the workbench lets the user reopen existing tabs and explicitly reconnect to terminal output.
 
 On narrow screens, these areas become switchable views rather than compressed simultaneous columns. Returning to Chat preserves the unsent draft and personal scroll. Desktop and narrow layouts expose the same operation outcomes and warnings.
 
@@ -64,7 +66,7 @@ A saved assistant text block offers Comment; a supported text selection offers C
 
 A Thread comment list shows published comments, author labels, creation times, and original output references. Inline markers are attached only to an established saved target. A comment whose source is not in the current history view remains in that list with an explicit original-output view, rather than being moved to a similar-looking response. The comment list and referenced-output view remain useful after later Runs and compaction. Opening an old referenced output never selects that checkpoint for continuation.
 
-Publish acknowledges a committed comment, distinct from the shared composer's Synchronized state. Publication failure or a stale target preserves the local comment text. A lost acknowledgement offers reconciliation of the same publication identity, not a second post. Newly published comments update the discussion without replacing the transcript, stealing focus, or clearing another input. Reload and reconnect refetch saved comments independently of presence and draft rejoin.
+Post comment acknowledges a committed comment, distinct from the shared composer's Synchronized state. Publication failure or a stale target preserves the local comment text. A lost acknowledgement offers reconciliation of the same publication identity, not a second post. Newly published comments update the discussion without replacing the transcript, stealing focus, or clearing another input. Reload and reconnect refetch saved comments independently of presence and draft rejoin.
 
 Comments are human discussion by default. An explicit Add feedback to prompt action captures the complete selected comment and its original assistant output into the shared composer's context selection for review; it does not immediately call the model. The composer presents an inspectable comment reference, while model input carries the actual captured text and presentation metadata. Existing Send and explicit steering controls retain execution authority. No comment-read or navigation action changes the shared prompt implicitly.
 
@@ -72,7 +74,11 @@ Comments are human discussion by default. An explicit Add feedback to prompt act
 
 Project settings has Roots, Agent, Environment, and Tools sections, plus an effective-configuration summary. Agent-owned Models and Capabilities are edited through their owning resource rather than duplicated as another Project schema. Compact conversation controls show current choices; advanced changes open configuration rather than filling the main composer with switches.
 
-The global configuration center manages reusable resources. Project settings selects from them. A selector distinguishes available, configured, and unusable resources, and links failures to concrete diagnostics. Installed package presence is not rendered as readiness.
+Settings groups General defaults, Agents & models, Capabilities, Environments, Projects, Accounts & API keys, MCP connections, and Advanced configuration. Setup and diagnostics remain accessible within Settings. Existing source and Project deep links remain usable.
+
+Capabilities selects an owning Agent and edits its existing capability list; selection stages a draft, and Save changes persists the complete source. Discovery distinguishes configurable from unavailable implementations. Reusable Harness plugin instances remain distinct from Agent capabilities and scope selections; there is no global plugin Enable mutation. Environments shows configured profiles, read-only built-in environments, and installed provider discovery. Configuring a provider creates an environment profile, not installation or readiness. Provider-specific adapter/settings remain editable through the existing configuration file. Project settings edits its existing roots/defaults source directly. No second configuration or draft store is introduced.
+
+Save changes includes validation; Check configuration is optional and does not save. New resource actions open a private editable draft directly, with unsaved drafts discoverable in their relevant lists. Installing server packages is outside browser configuration. Installed package presence is not rendered as readiness.
 
 Each inherited field shows its effective value and source. Users see Use default, Custom selection, and, for a collection, None rather than needing to infer the difference between omitted and empty YAML. Lists follow the [whole-list replacement rules](../01-configuration-and-resource-catalog.md#global-defaults); the UI does not silently union Project and Agent plugins.
 
@@ -84,7 +90,7 @@ Forms and advanced source editing share the resource validation boundary. Source
 
 ## Reading Code and Changes
 
-When native sharing is enabled, Files opens at the Project roots. Quick file selection, path breadcrumbs, and line selection support reading code. Clicking a file reads it; editing and saving are explicit. Dirty tabs and externally changed content are visible. Leaving a dirty editor offers Save, Keep open, or Discard local edits; the latter is not a Git discard operation.
+When native sharing is enabled, Files opens at the Project roots. Quick file selection, path breadcrumbs, and line selection support reading code. Clicking a file reads it; editing and saving are explicit. Unsaved and externally changed content are visible in the editor. Switching or closing a file view retains its private buffer; it does not save or discard it. Reloading or leaving the browser warns about unsaved file content. Explicitly choosing the inspected disk version discards local text, not Git changes.
 
 Changes groups staged, unstaged, and untracked content by repository. Selecting an entry opens the appropriate comparison, with a clear baseline and a route to the current file. Binary files and conflicts receive explicit presentation rather than misleading text diffs. Git-unavailable state retains ordinary Files and explains why Changes cannot be shown.
 
@@ -94,11 +100,11 @@ Repository changes made by people, terminal commands, or Agents refresh the rele
 
 ## Terminal Interaction
 
-Open Terminal shows an existing selected session or an explicit New terminal action. Starting a session displays its server/container location and initial directory. Terminal tabs have useful titles and an active input-controller indicator. Collapsing the panel does not stop sessions.
+Open Terminal shows an existing selected session or an explicit New terminal action. New terminal starts in the current native folder, or the configured navigation root when available; Choose folder exposes a different absolute starting location and optional Project association. Without a known folder, creation asks for it. Starting a session displays its server/container location and initial directory. Terminal tabs have useful titles and an active input-controller indicator. Collapsing the panel does not stop sessions.
 
-A participant viewing another person's terminal sees read-only output and a Take control action. Activating it transfers input control through the App, visibly updates both participants, and only enables keyboard input after confirmation of ownership. Losing control leaves the old viewer attached to output. It does not inject partially typed browser input. Viewers may open separate terminal sessions instead of taking over.
+The creating browser requests control once on the new terminal's first authenticated frame when it has no controller, then focuses input only after server confirmation. It does not take over from a participant who already acquired control, and reconnecting never repeats this creation intent. A participant viewing another person's terminal sees read-only output and a Take control or Take over input action. Activating it transfers input control through the App, visibly updates both participants, and only enables keyboard input after confirmation of ownership. Losing control leaves the old viewer attached to output. It does not inject partially typed browser input. Viewers may open separate terminal sessions instead of taking over.
 
-Disconnect shows a disconnected state rather than an apparently usable prompt. Reattach restores available output and discloses gaps; it never repeats keystrokes. Close terminal is distinct from closing its view and warns that it affects the shared process. Unsupported native PTY remains explicitly unavailable.
+Disconnect shows a disconnected state rather than an apparently usable prompt. Reconnect restores available output and discloses gaps; it never repeats keystrokes. End session is distinct from closing its view and warns that it affects the shared process. Unsupported native PTY remains explicitly unavailable.
 
 Terminal focus receives its native key bindings; browser-wide command shortcuts do not intercept shell control sequences. File-save shortcuts operate only in the file editor, not the shared prompt or terminal.
 

@@ -42,7 +42,7 @@ export function pageFocus(
     target: {
       kind: "workbench",
       section:
-        path === "/settings/catalog"
+        path === "/settings/catalog" || path === "/settings/capabilities"
           ? "catalog"
           : parts[0] === "settings" || parts[0] === "setup"
             ? "settings"

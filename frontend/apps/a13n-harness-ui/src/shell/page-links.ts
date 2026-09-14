@@ -28,8 +28,8 @@ export function pageLink(
       return target.section === "home"
         ? "/"
         : target.section === "catalog"
-          ? "/settings/catalog"
-          : "/settings/resources";
+          ? "/settings/capabilities"
+          : "/settings";
     case "file":
       query.set("native", "files");
       query.set("native_path", target.path);

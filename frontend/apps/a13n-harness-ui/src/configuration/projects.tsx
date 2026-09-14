@@ -14,6 +14,7 @@ import { ErrorNotice, PageHeader, Panel, TextField } from "../shell/ui";
 import { Preflight } from "../setup/setup";
 import styles from "../shell/workbench.module.css";
 import { SelectionField } from "./selection";
+import { DraftLinks, NewResourceButton, SourceDocument } from "./sources";
 
 export function ProjectsPage() {
   const projects = useProjects();
@@ -22,18 +23,22 @@ export function ProjectsPage() {
     <>
       <PageHeader
         title="Projects"
-        description="Named host directories with defaults for new threads. Existing threads keep their own selections."
-        actions={
-          <Button render={<Link to="/settings/resources" />}>
-            Manage resources
-          </Button>
-        }
+        description="Organize server folders and choose defaults for new conversations. Existing conversations keep their own selections."
+        actions={<NewResourceButton kind="project" label="Add project" />}
       />
       <ErrorNotice
         error={projects.error}
         retry={() => void projects.refetch()}
       />
-      <TextField label="Find projects" value={search} onChange={setSearch} />
+      <div className={styles.search}>
+        <TextField
+          type="search"
+          label="Find projects"
+          value={search}
+          onChange={setSearch}
+        />
+      </div>
+      <DraftLinks kinds={["project"]} search={search} />
       {projects.isPending && <p role="status">Loading projects…</p>}
       <div className={styles.cardGrid}>
         {projects.data
@@ -52,19 +57,19 @@ export function ProjectsPage() {
               <strong>{project.name}</strong>
               <small>{project.project_id}</small>
               {project.roots.map((root) => (
-                <code key={root}>{root}</code>
+                <span key={root}>{root}</span>
               ))}
-              <span>Inspect defaults and readiness</span>
+              <span>Project settings</span>
             </Link>
           ))}
       </div>
       {projects.data?.length === 0 && (
         <Panel title="Work with or without a Project">
           <p>
-            A Project is optional. Create one in Resources to name existing host
-            directories and choose defaults.
+            Projects are optional. Add one to group conversations around a
+            server folder and choose their default agent and environment.
           </p>
-          <Link to="/settings/resources">Create a Project resource</Link>
+          <NewResourceButton kind="project" label="Add your first project" />
         </Panel>
       )}
     </>
@@ -80,48 +85,38 @@ export function ProjectPage() {
   );
   return (
     <>
-      <PageHeader
-        title={project?.name ?? "Project"}
-        description="Inspect accepted defaults and check the next thread configuration without starting a run."
-        actions={
-          source && (
-            <Button
-              variant="outline"
-              render={
-                <Link
-                  to={`/settings/source?path=${encodeURIComponent(source.relative_path)}`}
-                />
-              }
-            >
-              Edit Project
-            </Button>
-          )
-        }
-      />
+      {source && (
+        <SourceDocument
+          key={source.relative_path}
+          path={source.relative_path}
+          title={project?.name ?? "Project settings"}
+          embedded
+        />
+      )}
       <ErrorNotice error={projects.error || sources.error} />
       {projects.isPending ? (
         <p>Loading Project…</p>
       ) : !project ? (
         <Panel title="Project unavailable">
           <p>
-            This Project is not in the accepted configuration. It may have been
+            This project is not in your saved configuration. It may have been
             removed or renamed.
           </p>
           <Link to="/projects">All Projects</Link>
         </Panel>
       ) : (
         <>
-          <Panel title="Host roots">
-            {project.roots.map((root) => (
-              <p key={root}>
-                <code>{root}</code>
-              </p>
-            ))}
-          </Panel>
-          <ReadinessPreview
-            projectId={project.project_id}
-            projectPath={project.roots[0]}
-          />
+          <p>
+            Defaults apply to new conversations. Changing project folders also
+            affects future runs in existing conversations.
+          </p>
+          <details className={styles.details}>
+            <summary>Preview saved defaults & check environment</summary>
+            <ReadinessPreview
+              projectId={project.project_id}
+              projectPath={project.roots[0]}
+            />
+          </details>
         </>
       )}
     </>
@@ -163,7 +158,7 @@ export function ReadinessPreview({
   const effectiveEnvironment = config?.environment_profile_id;
   const current = inspected === JSON.stringify(body);
   return (
-    <Panel title="New thread readiness">
+    <Panel title="New conversation settings">
       <div className={styles.stack}>
         <ErrorNotice error={selectors.error || preview.error} />
         <div className={styles.formGrid}>
@@ -172,7 +167,7 @@ export function ReadinessPreview({
             value={agent}
             onValueChange={setAgent}
             options={[
-              { value: "default", label: "Default (inherit)" },
+              { value: "default", label: "Use default" },
               ...(selectors.data?.agents.map((item) => ({
                 value: item.agent_id,
                 label: item.name,
@@ -184,7 +179,7 @@ export function ReadinessPreview({
             value={environment}
             onValueChange={setEnvironment}
             options={[
-              { value: "default", label: "Default (inherit)" },
+              { value: "default", label: "Use default" },
               ...(selectors.data?.environments.map((item) => ({
                 value: item.profile_id,
                 label: item.name,
@@ -226,7 +221,7 @@ export function ReadinessPreview({
           loading={preview.isPending}
           onClick={() => preview.mutate(body)}
         >
-          Inspect effective configuration
+          Preview settings
         </Button>
         {config && (
           <>
@@ -263,7 +258,7 @@ export function ReadinessPreview({
         )}
         <p>
           Readiness does not call a model or prove credentials are usable. Check
-          Provider accounts separately. Unsaved Project edits are not included
+          Accounts & API keys separately. Unsaved Project edits are not included
           in this preview.
         </p>
       </div>

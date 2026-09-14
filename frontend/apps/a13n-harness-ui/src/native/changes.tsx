@@ -79,13 +79,11 @@ export type DiffSelection = {
 };
 export function Changes({
   path,
-  threadId,
   openFile,
   selected,
   select,
 }: {
   path: string;
-  threadId?: string;
   openFile: (path: string) => void;
   selected: DiffSelection | null;
   select: (selection: DiffSelection | null) => void;
@@ -241,18 +239,10 @@ export function Changes({
           )}
         </>
       )}
-      {selected && (
-        <DiffView
-          key={`${selected.repository_path}:${selected.path}:${selected.comparison}`}
-          selection={selected}
-          threadId={threadId}
-          openFile={openFile}
-        />
-      )}
     </div>
   );
 }
-function DiffView({
+export function DiffView({
   selection,
   threadId,
   openFile,
@@ -308,13 +298,16 @@ function DiffView({
           )}
           {value.presentation === "text" && value.text != null ? (
             <>
-              <SourceEditor
-                value={value.text}
-                language="plain"
-                readOnly
-                label="Git patch (line numbers include headers)"
-                onSelection={setRange}
-              />
+              <div className={styles.editor}>
+                <SourceEditor
+                  value={value.text}
+                  language="plain"
+                  fill
+                  readOnly
+                  label="Git patch (line numbers include headers)"
+                  onSelection={setRange}
+                />
+              </div>
               <CaptureContext
                 key={value.revision}
                 source={{ diff: value }}

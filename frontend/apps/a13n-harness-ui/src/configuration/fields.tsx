@@ -1,4 +1,4 @@
-import { ChoiceField, FormField, Textarea } from "a13n-ui";
+import { ChoiceField, FormField, SettingsRow, Textarea } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
 import { useSelectors, useSources, useTransport } from "../transport/context";
 import { result } from "../transport/client";
@@ -71,16 +71,20 @@ export function ResourceFields({
     label: string,
     path: string[],
     options: { value: string; label: string }[],
-    emptyLabel = "Default (inherit)",
+    emptyLabel = "Use default",
   ) => (
-    <ChoiceField
-      label={label}
-      value={text(path) || "__default"}
-      onValueChange={(value) =>
-        set(path, value === "__default" ? undefined : value)
-      }
-      options={[{ value: "__default", label: emptyLabel }, ...options]}
-    />
+    <SettingsRow label={label}>
+      <ChoiceField
+        label={label}
+        hideLabel
+        className={styles.settingControl}
+        value={text(path) || "__default"}
+        onValueChange={(value) =>
+          set(path, value === "__default" ? undefined : value)
+        }
+        options={[{ value: "__default", label: emptyLabel }, ...options]}
+      />
+    </SettingsRow>
   );
   const list = (
     label: string,
@@ -184,7 +188,7 @@ export function ResourceFields({
                 options={[
                   {
                     value: "credential_ref",
-                    label: "Saved credential reference",
+                    label: "Saved API key",
                   },
                   { value: "env", label: "Server environment variable" },
                 ]}
@@ -199,9 +203,9 @@ export function ResourceFields({
               {text(["authentication", "env"])
                 ? field("Environment variable", ["authentication", "env"])
                 : field(
-                    "Credential reference",
+                    "Saved key name",
                     ["authentication", "credential_ref"],
-                    "Store the secret under Provider accounts, never in YAML.",
+                    "Store the secret in Accounts & API keys, never in YAML.",
                   )}
             </>
           )}
@@ -278,7 +282,9 @@ export function ResourceFields({
       ].includes(kind) && (
         <>
           <ChoiceField
-            label="Implementation"
+            label={
+              kind === "environment_profile" ? "Environment provider" : "Plugin"
+            }
             value={text([
               kind === "harness_plugin"
                 ? "plugin_key"
@@ -290,9 +296,9 @@ export function ResourceFields({
               .filter(
                 (item) =>
                   item.kind ===
-                  (kind === "environment_profile"
-                    ? "environment_provider"
-                    : kind),
+                    (kind === "environment_profile"
+                      ? "environment_provider"
+                      : kind) && item.configurable,
               )
               .map((item) => ({ value: item.key, label: item.key }))}
             onValueChange={(value) =>
@@ -315,8 +321,8 @@ export function ResourceFields({
             </>
           )}
           <p>
-            Implementation-specific configuration belongs in advanced YAML; the
-            catalog does not expose a universal settings schema.
+            Configure plugin-specific options in the configuration file below.
+            Provider and adapter settings vary by plugin.
           </p>
         </>
       )}

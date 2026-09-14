@@ -8,7 +8,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { TransportContext } from "../transport/context";
 import type { Schema, Transport } from "../transport/client";
 import TerminalScreen from "./terminal-screen";
@@ -149,7 +149,7 @@ it("controller controls stay disabled until acknowledgement; collapse detaches w
   emulator.input("no pending input");
   expect(socket.send).toHaveBeenCalledTimes(1);
   emit(socket, "participant-me", 1);
-  await screen.findByText(/You control input/);
+  await screen.findByText(/You have control/);
   emulator.input("echo once\r");
   expect(JSON.parse(socket.send.mock.calls.at(-1)![0])).toMatchObject({
     kind: "input",
@@ -174,7 +174,7 @@ it("controller controls stay disabled until acknowledgement; collapse detaches w
     <TerminalScreen id="terminal-one" visible unauthorized={unauthorized} />,
   );
   expect(Socket.all).toHaveLength(1);
-  fireEvent.click(screen.getByRole("button", { name: "Reattach" }));
+  fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
   expect(Socket.all).toHaveLength(2);
   expect(f.post).not.toHaveBeenCalled();
 });
@@ -195,13 +195,9 @@ it("creation uses the reviewed native cwd, uncertain create cannot be repeated, 
   const component = render(<TerminalPanel {...props} />, {
     wrapper: f.Wrapper,
   });
-  fireEvent.click(screen.getByRole("button", { name: "New terminal" }));
+  fireEvent.click(screen.getByRole("button", { name: "Choose folder…" }));
   expect(
-    (
-      screen.getByLabelText(
-        "Initial native working directory",
-      ) as HTMLInputElement
-    ).value,
+    (screen.getByLabelText("Starting folder") as HTMLInputElement).value,
   ).toBe("/native/start");
   fireEvent.click(screen.getByRole("button", { name: "Start terminal" }));
   await screen.findByText("Response lost");
@@ -217,15 +213,76 @@ it("creation uses the reviewed native cwd, uncertain create cannot be repeated, 
   expect(selected).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   component.rerender(<TerminalPanel {...props} selected="terminal-one" />);
-  fireEvent.click(await screen.findByRole("button", { name: "Close process" }));
+  fireEvent.click(await screen.findByRole("button", { name: "End session" }));
   expect(f.remove).not.toHaveBeenCalled();
   f.remove.mockResolvedValue({});
   fireEvent.click(
-    screen.getByRole("button", { name: "Close process for everyone" }),
+    screen.getByRole("button", { name: "End session for everyone" }),
   );
   await waitFor(() => expect(f.remove).toHaveBeenCalledTimes(1));
   expect(f.remove.mock.calls[0]).toEqual([
     "/api/host/terminals/{terminal_id}",
     { params: { path: { terminal_id: "terminal-one" } } },
   ]);
+});
+
+it("the creator claims input once after attachment, waits for acknowledgement and never reclaims on reconnect", async () => {
+  const f = setup();
+  f.post.mockResolvedValue({ data: view });
+  const unauthorized = vi.fn();
+  function Panel() {
+    const [selected, select] = useState("");
+    return (
+      <TerminalPanel
+        visible
+        directory="/native/start"
+        selected={selected}
+        select={select}
+        collapse={() => {}}
+        unauthorized={unauthorized}
+      />
+    );
+  }
+  render(<Panel />, { wrapper: f.Wrapper });
+  fireEvent.click(screen.getByRole("button", { name: "New terminal" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  await waitFor(() => expect(Socket.all).toHaveLength(1));
+  const socket = Socket.all[0];
+  expect(socket.send).not.toHaveBeenCalled();
+  emit(socket, null, 0);
+  await screen.findByRole("button", { name: "Confirming…" });
+  expect(JSON.parse(socket.send.mock.calls[0][0])).toEqual({
+    kind: "control",
+    control_epoch: 0,
+    release: false,
+  });
+  emulator.input("not yet");
+  expect(socket.send).toHaveBeenCalledTimes(1);
+  emit(socket, "participant-me", 1);
+  await screen.findByText("You have control");
+  fireEvent.click(screen.getByRole("button", { name: "Disconnect" }));
+  fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
+  const reconnected = Socket.all[1];
+  emit(reconnected, null, 2);
+  await screen.findByText("Viewing only");
+  expect(reconnected.send).not.toHaveBeenCalled();
+  expect(f.post).toHaveBeenCalledTimes(1);
+});
+
+it("a creator attachment does not take over from someone who already claimed the new session", async () => {
+  const f = setup();
+  const claimCreated = vi.fn(() => true);
+  render(
+    <TerminalScreen
+      id="terminal-one"
+      visible
+      claimCreated={claimCreated}
+      unauthorized={vi.fn()}
+    />,
+    { wrapper: f.Wrapper },
+  );
+  emit(Socket.all[0], "participant-other", 1);
+  await screen.findByRole("button", { name: "Take over input" });
+  expect(claimCreated).toHaveBeenCalledTimes(1);
+  expect(Socket.all[0].send).not.toHaveBeenCalled();
 });

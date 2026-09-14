@@ -150,14 +150,14 @@ function ProviderAccount({ provider }: { provider: "codex" | "grok" }) {
             disabled={active}
             onClick={() => start.mutate(false)}
           >
-            Log in
+            {account.data?.usable ? "Reconnect account" : "Connect account"}
           </Button>
           <Button variant="outline" onClick={() => void account.refetch()}>
-            Refresh account
+            Refresh status
           </Button>
           {account.data?.usable && (
             <Button variant="outline" onClick={() => setLogoutOpen(true)}>
-              Log out
+              Disconnect account
             </Button>
           )}
         </div>
@@ -279,7 +279,7 @@ export function CredentialKeys() {
       >
         <div className={styles.formGrid}>
           <TextField
-            label="Credential reference"
+            label="Saved key name"
             value={reference}
             onChange={setReference}
           />
@@ -340,7 +340,7 @@ export function AccountsPage() {
   return (
     <>
       <PageHeader
-        title="Provider accounts"
+        title="Accounts & API keys"
         description="Connect model providers without putting secrets in resource files."
       />
       <div className={styles.twoColumns}>

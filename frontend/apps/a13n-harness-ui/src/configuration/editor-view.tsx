@@ -12,12 +12,14 @@ export function SourceEditor({
   readOnly = false,
   language = "yaml",
   onSelection,
+  fill = false,
 }: {
   value: string;
   onChange?: (value: string) => void;
   label?: string;
   readOnly?: boolean;
   language?: "yaml" | "plain";
+  fill?: boolean;
   onSelection?: (
     range: { start_line: number; end_line: number } | undefined,
   ) => void;
@@ -73,10 +75,14 @@ export function SourceEditor({
         EditorView.theme({
           "&": {
             fontSize: "13px",
+            ...(fill ? { height: "100%" } : {}),
             backgroundColor: "var(--a13n-canvas)",
             color: "var(--a13n-text)",
           },
-          ".cm-content": { fontFamily: "var(--a13n-mono)", minHeight: "240px" },
+          ".cm-content": {
+            fontFamily: "var(--a13n-mono)",
+            minHeight: fill ? "100%" : "240px",
+          },
           ".cm-gutters": {
             backgroundColor: "var(--a13n-surface)",
             color: "var(--a13n-secondary)",
@@ -86,7 +92,10 @@ export function SourceEditor({
             backgroundColor: "var(--a13n-surface)",
           },
           ".cm-cursor": { borderLeftColor: "var(--a13n-text)" },
-          ".cm-scroller": { maxHeight: "560px", overflow: "auto" },
+          ".cm-scroller": {
+            maxHeight: fill ? "none" : "560px",
+            overflow: "auto",
+          },
         }),
       ],
     });
@@ -97,7 +106,7 @@ export function SourceEditor({
     };
     // External values are synchronized below without replacing editor state on typing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [label, readOnly, language]);
+  }, [label, readOnly, language, fill]);
   useEffect(() => {
     const view = editor.current;
     if (view && !view.state.toText(value).eq(view.state.doc))
@@ -106,5 +115,10 @@ export function SourceEditor({
         annotations: externalValue.of(true),
       });
   }, [value]);
-  return <div ref={host} />;
+  return (
+    <div
+      ref={host}
+      style={fill ? { height: "100%", minHeight: 0 } : undefined}
+    />
+  );
 }

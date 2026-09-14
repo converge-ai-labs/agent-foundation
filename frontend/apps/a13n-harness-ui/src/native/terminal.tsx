@@ -1,9 +1,9 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ChoiceField, ModalFrame } from "a13n-ui";
 import { X, Plus, ArrowClockwise } from "@phosphor-icons/react";
 import { useProjects, useTransport } from "../transport/context";
-import { result, type Schema } from "../transport/client";
+import { ApiError, result, type Schema } from "../transport/client";
 import { ErrorNotice, TextField } from "../shell/ui";
 import styles from "./terminal.module.css";
 
@@ -39,24 +39,44 @@ export function TerminalPanel({
   const [pending, setPending] = useState(false);
   const [attempted, setAttempted] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const [height, setHeight] = useState(40);
+  const [height, setHeight] = useState(35);
+  const created = useRef<string | null>(null);
+  const resizeStart = useRef<{
+    y: number;
+    height: number;
+    available: number;
+  } | null>(null);
   const refresh = () =>
     void queries.invalidateQueries({ queryKey: ["native"] });
   const active = sessions.data?.find((item) => item.terminal_id === selected);
-  const create = async () => {
+  const create = async (folder: string, projectId = project) => {
+    if (pending) return;
+    setCwd(folder);
     setAttempted(true);
     setPending(true);
     setError(null);
     try {
       const value = await result(
         client.POST("/api/host/terminals", {
-          body: { cwd, project_id: project || null },
+          body: { cwd: folder, project_id: projectId || null },
         }),
+      );
+      created.current = value.terminal_id;
+      queries.setQueryData<Schema<"TerminalView">[]>(
+        ["native", "terminals"],
+        (items = []) => [...items, value],
       );
       select(value.terminal_id);
       setCreating(false);
     } catch (failure) {
       setError(failure);
+      setCreating(true);
+      if (
+        failure instanceof ApiError &&
+        failure.status >= 400 &&
+        failure.status < 500
+      )
+        setAttempted(false);
     } finally {
       setPending(false);
       refresh();
@@ -83,26 +103,91 @@ export function TerminalPanel({
     <section
       hidden={!visible}
       className={styles.panel}
-      style={{ height: `${height}dvh` }}
+      style={{ flexBasis: `${height}%` }}
       aria-label="Shared native terminals"
     >
+      <div
+        className={styles.resizeHandle}
+        role="separator"
+        aria-label="Resize terminal"
+        aria-orientation="horizontal"
+        aria-valuemin={20}
+        aria-valuemax={70}
+        aria-valuenow={height}
+        tabIndex={0}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowUp" || event.key === "ArrowDown") {
+            event.preventDefault();
+            setHeight((value) =>
+              Math.max(
+                20,
+                Math.min(70, value + (event.key === "ArrowUp" ? 5 : -5)),
+              ),
+            );
+          }
+        }}
+        onPointerDown={(event) => {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          resizeStart.current = {
+            y: event.clientY,
+            height,
+            available:
+              event.currentTarget.closest("section")!.parentElement!
+                .parentElement!.clientHeight,
+          };
+        }}
+        onPointerMove={(event) => {
+          const start = resizeStart.current;
+          if (start && start.available)
+            setHeight(
+              Math.round(
+                Math.max(
+                  20,
+                  Math.min(
+                    70,
+                    start.height +
+                      ((start.y - event.clientY) / start.available) * 100,
+                  ),
+                ),
+              ),
+            );
+        }}
+        onPointerUp={() => {
+          resizeStart.current = null;
+        }}
+        onLostPointerCapture={() => {
+          resizeStart.current = null;
+        }}
+      />
       <header className={styles.header}>
         <strong>Terminal</strong>
         <div className={styles.actions}>
-          <label className={styles.height}>
-            Height
-            <input
-              aria-label="Terminal panel height"
-              type="range"
-              min={25}
-              max={75}
-              value={height}
-              onChange={(event) => setHeight(Number(event.target.value))}
-            />
-          </label>
           <Button
             size="sm"
             variant="ghost"
+            disabled={pending}
+            title={
+              directory ? `Start in ${directory}` : "Choose a starting folder"
+            }
+            onClick={() => {
+              setProject("");
+              const folder = directory || projects.data?.[0]?.roots[0] || "";
+              if (folder) void create(folder, "");
+              else {
+                setCwd("");
+                setError(null);
+                setAttempted(false);
+                setCreating(true);
+              }
+            }}
+          >
+            <Plus />
+            New terminal
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={pending}
             onClick={() => {
               setCwd(directory || projects.data?.[0]?.roots[0] || "");
               setProject("");
@@ -111,8 +196,7 @@ export function TerminalPanel({
               setCreating(true);
             }}
           >
-            <Plus />
-            New terminal
+            Choose folder…
           </Button>
           <Button
             size="icon"
@@ -137,7 +221,7 @@ export function TerminalPanel({
         retry={() => void sessions.refetch()}
       />
       <div className={styles.sessionBar}>
-        {sessions.data?.map((item) => (
+        {sessions.data?.map((item, index) => (
           <Button
             key={item.terminal_id}
             size="sm"
@@ -146,7 +230,12 @@ export function TerminalPanel({
             title={`${item.cwd} · ${item.terminal_id}`}
             onClick={() => select(item.terminal_id)}
           >
-            {item.terminal_id.slice(-8)} · {item.state}
+            {item.cwd.split(/[\\/]/).filter(Boolean).at(-1) || "Terminal"}
+            {sessions.data!.filter((session) => session.cwd === item.cwd)
+              .length > 1
+              ? ` · ${index + 1}`
+              : ""}
+            {item.state === "exited" ? " · Exited" : ""}
           </Button>
         ))}
       </div>
@@ -155,8 +244,8 @@ export function TerminalPanel({
           <div className={styles.identity}>
             <span>
               {active
-                ? `Initial cwd: ${active.cwd} · ${active.project_id ? `Project: ${active.project_id}` : "No Project"} · ${active.shell}`
-                : `Session: ${selected}. Refresh to check whether it still exists; it is never recreated automatically.`}
+                ? active.cwd
+                : "This terminal is no longer listed. Refresh to check its status."}
             </span>
             {active && (
               <Button
@@ -168,7 +257,7 @@ export function TerminalPanel({
                   setClosing(active);
                 }}
               >
-                Close process
+                End session
               </Button>
             )}
           </div>
@@ -177,6 +266,11 @@ export function TerminalPanel({
               key={selected}
               id={selected}
               visible={visible}
+              claimCreated={() => {
+                if (created.current !== selected) return false;
+                created.current = null;
+                return true;
+              }}
               unauthorized={unauthorized}
             />
           </Suspense>
@@ -184,14 +278,11 @@ export function TerminalPanel({
       ) : (
         <div className={styles.empty}>
           <h3>
-            {sessions.data?.length
-              ? "Select a session to observe"
-              : "No terminal selected"}
+            {sessions.data?.length ? "Choose a terminal" : "Open a terminal"}
           </h3>
           <p>
-            Start deliberately at an absolute server path, or reattach to an
-            existing session. Changing conversations does not retarget it.
-            Collapse and detach do not close processes; server restart does.
+            Start a shell in your project folder, or select an existing session.
+            Sessions run on the server and are shared with everyone connected.
           </p>
         </div>
       )}
@@ -203,13 +294,11 @@ export function TerminalPanel({
             setClosing(null);
           }
         }}
-        title={
-          closing ? "Close shared terminal process?" : "New native terminal"
-        }
+        title={closing ? "End this terminal session?" : "New terminal"}
         description={
           closing
             ? "This closes the session and its native jobs for everyone. Closing only the panel does not do this."
-            : "Starts an interactive shell as the server OS user, not in the Agent's selected Environment. The initial directory is not a live cwd probe."
+            : "Start a shell on the server. You will control it immediately; other people can join as viewers."
         }
         closeLabel="Cancel"
       >
@@ -233,11 +322,7 @@ export function TerminalPanel({
                 if (root) setCwd(root);
               }}
             />
-            <TextField
-              label="Initial native working directory"
-              value={cwd}
-              onChange={setCwd}
-            />
+            <TextField label="Starting folder" value={cwd} onChange={setCwd} />
           </div>
         )}
         <ErrorNotice error={error} />
@@ -250,12 +335,12 @@ export function TerminalPanel({
         )}
         <Button
           disabled={pending || attempted || (creating && !cwd)}
-          onClick={() => void (closing ? close() : create())}
+          onClick={() => void (closing ? close() : create(cwd))}
         >
           {pending
             ? "Waiting…"
             : closing
-              ? "Close process for everyone"
+              ? "End session for everyone"
               : "Start terminal"}
         </Button>
       </ModalFrame>

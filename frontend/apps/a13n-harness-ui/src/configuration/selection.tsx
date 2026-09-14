@@ -31,7 +31,7 @@ export function SelectionField({
         label={label}
         value={mode}
         options={[
-          { value: "default", label: "Default (inherit)" },
+          { value: "default", label: "Use default" },
           { value: "none", label: "None" },
           { value: "custom", label: "Custom selection" },
         ]}
