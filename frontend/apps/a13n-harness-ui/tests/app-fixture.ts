@@ -2,8 +2,14 @@ import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
 import { once } from "node:events";
 
-/** The returned path is synthetic native test data, never the repository cwd. */
-export async function startNativeApp() {
+/** The returned path is synthetic test data, never the repository cwd. */
+export function startNativeApp() {
+  return startApp("--native");
+}
+export function startSetupApp() {
+  return startApp("--setup");
+}
+async function startApp(mode: "--native" | "--setup") {
   const server = spawn(
     "uv",
     [
@@ -14,7 +20,7 @@ export async function startNativeApp() {
       "--no-default-groups",
       "python",
       "tests/protocol_server.py",
-      "--native",
+      mode,
     ],
     { stdio: ["pipe", "pipe", "pipe"] },
   );

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Link,
   NavLink,
@@ -16,7 +16,6 @@ import {
   Sheet,
   SheetPopup,
   SheetTitle,
-  SheetTrigger,
 } from "a13n-ui";
 import {
   House,
@@ -40,6 +39,7 @@ import {
 import { result, type Schema } from "../transport/client";
 import { AccountsPage } from "../setup/accounts";
 import { SetupPage } from "../setup/setup";
+import { readWizardDraft, wizardDismissed } from "../setup/wizard-state";
 import { SourcesPage, SourcePage } from "../configuration/sources";
 import {
   SettingsLayout,
@@ -84,6 +84,7 @@ export function Workbench({
   forget: () => void;
   unauthorized: () => void;
 }) {
+  const setup = useSetup();
   const statusQuery = useStatus();
   const status = statusQuery.data ?? initialStatus;
   const [theme, setTheme] = useState(() => readPreference("theme", "light"));
@@ -106,6 +107,7 @@ export function Workbench({
     setPeopleOpen(true);
   };
   const [menu, setMenu] = useState(false);
+  const mobileMenuButton = useRef<HTMLButtonElement>(null);
   const live = useLiveWorkbench(
     profile,
     !!status.features?.page_presence,
@@ -121,7 +123,19 @@ export function Workbench({
       : "",
   );
   useEffect(() => {
-    if (!restoreTarget) return;
+    if (
+      location.pathname === "/" &&
+      !location.search &&
+      setup.data?.fresh &&
+      setup.data.draft_scope &&
+      !wizardDismissed(setup.data.draft_scope)
+    ) {
+      setRestoreTarget("");
+      navigate("/setup", { replace: true });
+    }
+  }, [setup.data, location.pathname, location.search, navigate]);
+  useEffect(() => {
+    if (!restoreTarget || setup.isPending || setup.data?.fresh) return;
     if (location.pathname !== "/") {
       setRestoreTarget("");
       return;
@@ -146,7 +160,14 @@ export function Workbench({
       },
     );
     return () => abort.abort();
-  }, [client, restoreTarget, location.pathname, navigate]);
+  }, [
+    client,
+    restoreTarget,
+    location.pathname,
+    navigate,
+    setup.isPending,
+    setup.data?.fresh,
+  ]);
   useEffect(() => {
     setMenu(false);
   }, [location.pathname, location.search]);
@@ -210,22 +231,24 @@ export function Workbench({
     </>
   );
   return (
-    <Sheet open={menu} onOpenChange={setMenu}>
-      <div className={styles.shell}>
-        <a className={styles.skipLink} href="#main-content">
-          Skip to content
-        </a>
-        <aside className={styles.sidebar} aria-label="Workbench navigation">
-          <header className={styles.sidebarHeader}>
-            <Link to="/" className={styles.brand}>
-              <Wordmark className={styles.brandMark} />
-              <span>Harness UI</span>
-            </Link>
-            {themeToggle}
-          </header>
-          {navigation}
-        </aside>
+    <div className={styles.shell}>
+      <a className={styles.skipLink} href="#main-content">
+        Skip to content
+      </a>
+      <aside className={styles.sidebar} aria-label="Workbench navigation">
+        <header className={styles.sidebarHeader}>
+          <Link to="/" className={styles.brand}>
+            <Wordmark className={styles.brandMark} />
+            <span>Harness UI</span>
+          </Link>
+          {themeToggle}
+        </header>
+        {navigation}
+      </aside>
+      <Sheet open={menu} onOpenChange={setMenu}>
         <SheetPopup
+          id="workbench-navigation"
+          finalFocus={mobileMenuButton}
           side="left"
           className={styles.mobileNavigation}
           closeProps={{ "aria-label": "Close navigation" }}
@@ -236,243 +259,238 @@ export function Workbench({
           </header>
           {navigation}
         </SheetPopup>
-        <div className={styles.workspace}>
-          <main id="main-content" className={styles.main}>
-            {status.access === "dangerous_bypass" && (
-              <div className={styles.notice}>
-                Instance authentication is disabled by the server's explicit
-                dangerous bypass setting.
-              </div>
-            )}
-            {status.app?.candidate_error_message && (
-              <div role="alert" className={styles.notice}>
-                <strong>Configuration could not be updated</strong>
-                <p>{status.app.candidate_error_message}</p>
-                <p>
-                  Your previous settings are still active. Open Settings to
-                  inspect the saved configuration and correct the changes.
-                </p>
-              </div>
-            )}
-            <ErrorNotice
-              error={statusQuery.error}
-              retry={() => void statusQuery.refetch()}
-            />
-            <NativeWorkspace
-              profile={
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className={styles.profileButton}
-                  title={`${profile.display_name} · Edit collaboration name`}
-                  aria-label={`Your collaboration name: ${profile.display_name}`}
-                  onClick={openPeople}
-                >
-                  <span
-                    className={styles.profileAvatar}
-                    style={{ backgroundColor: profile.color }}
-                    aria-hidden="true"
-                  >
-                    {Array.from(profile.display_name)[0]?.toUpperCase()}
-                  </span>
-                  <span className={styles.profileName}>
-                    {profile.display_name}
-                  </span>
-                </Button>
-              }
-              navigation={
-                <SheetTrigger
-                  render={
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className={styles.mobileMenu}
-                    />
-                  }
-                  aria-label="Open navigation"
-                >
-                  <List />
-                </SheetTrigger>
-              }
-              onFocus={setNativeFocus}
-              unauthorized={unauthorized}
-            >
-              <Routes>
-                <Route path="/" element={<HomePage />} />
-                <Route
-                  path="/threads/:threadId"
-                  element={
-                    <ConversationPage
-                      profile={profile}
-                      unauthorized={unauthorized}
-                    />
-                  }
-                />
-                <Route element={<SettingsLayout />}>
-                  <Route path="/setup" element={<SetupPage />} />
-                  <Route path="/projects" element={<ProjectsPage />} />
-                  <Route
-                    path="/projects/:projectId"
-                    element={<ProjectPage />}
-                  />
-                  <Route path="/settings" element={<GeneralSettings />} />
-                  <Route
-                    path="/settings/agents"
-                    element={
-                      <SourcesPage
-                        kinds={["agent", "model"]}
-                        title="Agents & models"
-                        description="Configure how your agents work and which models they use."
-                      />
-                    }
-                  />
-                  <Route
-                    path="/settings/capabilities"
-                    element={<CapabilitiesPage />}
-                  />
-                  <Route
-                    path="/settings/environments"
-                    element={<EnvironmentsPage />}
-                  />
-                  <Route
-                    path="/settings/connections"
-                    element={
-                      <SourcesPage
-                        kinds={["mcp_server"]}
-                        title="MCP connections"
-                        description="Connect tools and data sources, then choose which agents can use them."
-                      />
-                    }
-                  />
-                  <Route path="/settings/resources" element={<SourcesPage />} />
-                  <Route path="/settings/source" element={<SourcePage />} />
-                  <Route path="/settings/accounts" element={<AccountsPage />} />
-                  <Route
-                    path="/settings/catalog"
-                    element={<Navigate to="/settings/capabilities" replace />}
-                  />
-                </Route>
-                <Route
-                  path="*"
-                  element={
-                    <Panel title="Page unavailable">
-                      <p>This page is not available in this build.</p>
-                      <Link to="/">Return to the workbench</Link>
-                    </Panel>
-                  }
-                />
-              </Routes>
-            </NativeWorkspace>
-          </main>
-        </div>
-        <ModalFrame
-          open={peopleOpen}
-          onOpenChange={setPeopleOpen}
-          title="People in this workspace"
-          description="See who is connected and what they are viewing. Your display name helps others recognize this tab."
-          closeLabel="Close"
-        >
-          <div className={styles.stack}>
-            <form
-              className={styles.profileForm}
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (
-                  !displayName.trim() ||
-                  Array.from(displayName.trim()).length > 80
-                )
-                  return;
-                updateProfile({ ...profile, display_name: displayName.trim() });
-                setPeopleOpen(false);
-              }}
-            >
-              <TextField
-                label="Your display name"
-                value={displayName}
-                onChange={setDisplayName}
-              />
+      </Sheet>
+      <div className={styles.workspace}>
+        <main id="main-content" className={styles.main}>
+          {status.access === "dangerous_bypass" && (
+            <div className={styles.notice}>
+              Instance authentication is disabled by the server's explicit
+              dangerous bypass setting.
+            </div>
+          )}
+          {status.app?.candidate_error_message && (
+            <div role="alert" className={styles.notice}>
+              <strong>Configuration could not be updated</strong>
+              <p>{status.app.candidate_error_message}</p>
+              <p>
+                Your previous settings are still active. Open Settings to
+                inspect the saved configuration and correct the changes.
+              </p>
+            </div>
+          )}
+          <ErrorNotice
+            error={statusQuery.error}
+            retry={() => void statusQuery.refetch()}
+          />
+          <NativeWorkspace
+            profile={
               <Button
-                type="submit"
-                variant="outline"
-                disabled={
-                  !displayName.trim() ||
-                  Array.from(displayName.trim()).length > 80
-                }
+                variant="ghost"
+                size="sm"
+                className={styles.profileButton}
+                title={`${profile.display_name} · Edit collaboration name`}
+                aria-label={`Your collaboration name: ${profile.display_name}`}
+                onClick={openPeople}
               >
-                Save name
+                <span
+                  className={styles.profileAvatar}
+                  style={{ backgroundColor: profile.color }}
+                  aria-hidden="true"
+                >
+                  {Array.from(profile.display_name)[0]?.toUpperCase()}
+                </span>
+                <span className={styles.profileName}>
+                  {profile.display_name}
+                </span>
               </Button>
-            </form>
-            <ChoiceField
-              label="Your color"
-              value={profile.color}
-              onValueChange={(color) => updateProfile({ ...profile, color })}
-              options={profileColors}
-            />
-            <p>Presence: {live.presenceState}</p>
-            <details>
-              <summary>Instance information</summary>
-              <p>
-                Version {status.version} · {status.app?.state ?? "Connected"}
-              </p>
-              <p>
-                {status.features?.host_files
-                  ? "Native computer sharing is enabled on the server."
-                  : "Native sharing is disabled by this server. Start without --no-share-computer to enable it."}
-              </p>
-              {status.features?.host_files && !status.features?.host_git && (
-                <p>
-                  Git is unavailable on this server. Files remains available.
-                </p>
-              )}
-              {status.features?.host_files &&
-                !status.features?.host_terminal && (
-                  <p>
-                    Native PTY is unavailable on this server; it requires POSIX
-                    support.
-                  </p>
-                )}
-            </details>
-            {live.presence?.participants.map((participant) => (
-              <div
-                className={styles.resourceRow}
-                key={participant.participant_id}
+            }
+            navigation={
+              <Button
+                ref={mobileMenuButton}
+                variant="ghost"
+                size="icon"
+                className={styles.mobileMenu}
+                aria-label="Open navigation"
+                aria-haspopup="dialog"
+                aria-expanded={menu}
+                aria-controls={menu ? "workbench-navigation" : undefined}
+                onClick={() => setMenu(true)}
               >
-                <strong>
-                  {participant.display_name || "Anonymous"}
-                  {participant.participant_id === live.presence?.participant_id
-                    ? " (you)"
-                    : ""}
-                </strong>
-                <span>{participant.foreground ? "Active tab" : "Away"}</span>
-                <small>
-                  {live.presence?.same_page_participant_ids?.includes(
-                    participant.participant_id,
-                  )
-                    ? "Same page"
-                    : participant.availability}
-                </small>
-                {participant.focus && (
-                  <small>{participant.focus.target.kind}</small>
-                )}
-                {participant.focus &&
-                  participant.availability === "available" &&
-                  pageLink(participant.focus, sources.data?.sources) && (
-                    <Link
-                      to={pageLink(participant.focus, sources.data?.sources)!}
-                      onClick={() => setPeopleOpen(false)}
-                    >
-                      Open page
-                    </Link>
-                  )}
-                {participant.unavailable_reason && (
-                  <small>{participant.unavailable_reason}</small>
-                )}
-              </div>
-            ))}
-          </div>
-        </ModalFrame>
+                <List />
+              </Button>
+            }
+            onFocus={setNativeFocus}
+            unauthorized={unauthorized}
+          >
+            <Routes>
+              <Route path="/" element={<HomePage />} />
+              <Route
+                path="/threads/:threadId"
+                element={
+                  <ConversationPage
+                    profile={profile}
+                    unauthorized={unauthorized}
+                  />
+                }
+              />
+              <Route element={<SettingsLayout />}>
+                <Route path="/setup" element={<SetupPage />} />
+                <Route path="/projects" element={<ProjectsPage />} />
+                <Route path="/projects/:projectId" element={<ProjectPage />} />
+                <Route path="/settings" element={<GeneralSettings />} />
+                <Route
+                  path="/settings/agents"
+                  element={
+                    <SourcesPage
+                      kinds={["agent", "model"]}
+                      title="Agents & models"
+                      description="Configure how your agents work and which models they use."
+                    />
+                  }
+                />
+                <Route
+                  path="/settings/capabilities"
+                  element={<CapabilitiesPage />}
+                />
+                <Route
+                  path="/settings/environments"
+                  element={<EnvironmentsPage />}
+                />
+                <Route
+                  path="/settings/connections"
+                  element={
+                    <SourcesPage
+                      kinds={["mcp_server"]}
+                      title="MCP connections"
+                      description="Connect tools and data sources, then choose which agents can use them."
+                    />
+                  }
+                />
+                <Route path="/settings/resources" element={<SourcesPage />} />
+                <Route path="/settings/source" element={<SourcePage />} />
+                <Route path="/settings/accounts" element={<AccountsPage />} />
+                <Route
+                  path="/settings/catalog"
+                  element={<Navigate to="/settings/capabilities" replace />}
+                />
+              </Route>
+              <Route
+                path="*"
+                element={
+                  <Panel title="Page unavailable">
+                    <p>This page is not available in this build.</p>
+                    <Link to="/">Return to the workbench</Link>
+                  </Panel>
+                }
+              />
+            </Routes>
+          </NativeWorkspace>
+        </main>
       </div>
-    </Sheet>
+      <ModalFrame
+        open={peopleOpen}
+        onOpenChange={setPeopleOpen}
+        title="People in this workspace"
+        description="See who is connected and what they are viewing. Your display name helps others recognize this tab."
+        closeLabel="Close"
+      >
+        <div className={styles.stack}>
+          <form
+            className={styles.profileForm}
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (
+                !displayName.trim() ||
+                Array.from(displayName.trim()).length > 80
+              )
+                return;
+              updateProfile({ ...profile, display_name: displayName.trim() });
+              setPeopleOpen(false);
+            }}
+          >
+            <TextField
+              label="Your display name"
+              value={displayName}
+              onChange={setDisplayName}
+            />
+            <Button
+              type="submit"
+              variant="outline"
+              disabled={
+                !displayName.trim() ||
+                Array.from(displayName.trim()).length > 80
+              }
+            >
+              Save name
+            </Button>
+          </form>
+          <ChoiceField
+            label="Your color"
+            value={profile.color}
+            onValueChange={(color) => updateProfile({ ...profile, color })}
+            options={profileColors}
+          />
+          <p>Presence: {live.presenceState}</p>
+          <details>
+            <summary>Instance information</summary>
+            <p>
+              Version {status.version} · {status.app?.state ?? "Connected"}
+            </p>
+            <p>
+              {status.features?.host_files
+                ? "Native computer sharing is enabled on the server."
+                : "Native sharing is disabled by this server. Start without --no-share-computer to enable it."}
+            </p>
+            {status.features?.host_files && !status.features?.host_git && (
+              <p>Git is unavailable on this server. Files remains available.</p>
+            )}
+            {status.features?.host_files && !status.features?.host_terminal && (
+              <p>
+                Native PTY is unavailable on this server; it requires POSIX
+                support.
+              </p>
+            )}
+          </details>
+          {live.presence?.participants.map((participant) => (
+            <div
+              className={styles.resourceRow}
+              key={participant.participant_id}
+            >
+              <strong>
+                {participant.display_name || "Anonymous"}
+                {participant.participant_id === live.presence?.participant_id
+                  ? " (you)"
+                  : ""}
+              </strong>
+              <span>{participant.foreground ? "Active tab" : "Away"}</span>
+              <small>
+                {live.presence?.same_page_participant_ids?.includes(
+                  participant.participant_id,
+                )
+                  ? "Same page"
+                  : participant.availability}
+              </small>
+              {participant.focus && (
+                <small>{participant.focus.target.kind}</small>
+              )}
+              {participant.focus &&
+                participant.availability === "available" &&
+                pageLink(participant.focus, sources.data?.sources) && (
+                  <Link
+                    to={pageLink(participant.focus, sources.data?.sources)!}
+                    onClick={() => setPeopleOpen(false)}
+                  >
+                    Open page
+                  </Link>
+                )}
+              {participant.unavailable_reason && (
+                <small>{participant.unavailable_reason}</small>
+              )}
+            </div>
+          ))}
+        </div>
+      </ModalFrame>
+    </div>
   );
 }
 function HomePage() {
@@ -509,13 +527,22 @@ function HomePage() {
           <span>Configurations</span>
         </div>
       </div>
-      {setup.data?.needed && (
-        <Panel title="Finish first-use setup">
+      {(setup.data?.needed ||
+        (setup.data?.draft_scope &&
+          readWizardDraft(setup.data.draft_scope))) && (
+        <Panel
+          title={
+            setup.data?.fresh
+              ? "Finish first-use setup"
+              : "Setup needs attention"
+          }
+        >
           <p>
-            No default agent is configured yet. Guided setup creates the initial
-            model, agent and environment selections without hand-writing YAML.
+            {setup.data?.fresh
+              ? "Connect a model and choose where it can work. You can start without a Project."
+              : "Review your saved setup or repair the existing configuration without replacing your resources."}
           </p>
-          <Link to="/setup">Start setup</Link>
+          <Link to="/setup">Continue setup</Link>
         </Panel>
       )}
       <div className={styles.cardGrid}>

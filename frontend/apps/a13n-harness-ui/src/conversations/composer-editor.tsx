@@ -20,6 +20,7 @@ export function ComposerEditor({
   submit,
   attachments,
   editor,
+  autoFocus = false,
 }: {
   draft: ThreadDraft;
   profile: Profile;
@@ -27,6 +28,7 @@ export function ComposerEditor({
   submit: () => void;
   attachments?: ComposerAttachmentView;
   editor?: { current: EditorView | null };
+  autoFocus?: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const send = useRef(submit);
@@ -136,6 +138,7 @@ export function ComposerEditor({
       ],
     });
     if (editor) editor.current = view;
+    if (autoFocus) view.focus();
     let disposed = false;
     let scheduled = false;
     const unsubscribe = draft.subscribe(() => {

@@ -62,10 +62,11 @@ class ThreadService:
         *,
         defaults: RootThreadDefaults | None = None,
         title: str | None = None,
+        thread_id: str | None = None,
     ) -> Thread:
         source = await self._required_configuration()
         configuration = resolve_thread_configuration(source, defaults)
-        baseline = HarnessState.new()
+        baseline = HarnessState.new(thread_id=thread_id)
         initial = await self._store.objects.publish_model(
             object_kind=ObjectKind.thread_initial_state,
             value=StoredThreadInitialState(harness_state=baseline, created_at=datetime.now(UTC)),
