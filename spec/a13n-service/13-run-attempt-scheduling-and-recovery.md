@@ -254,7 +254,7 @@ Immutable usage evidence for already incurred work may arrive later under its or
 
 The [Run outcome contract](12-run-persistence.md#run-acceptance-checkpoint-and-outcome-commit) owns state-candidate selection, Run sealing, and the complete cross-resource transaction. From the RunAttempt side, that same fenced commit terminalizes the selected Attempt, disables its lease, charges its known usage, clears the Run's current-attempt selection, and appends Attempt lifecycle facts. A waiting or completed Run outcome records the Attempt as `succeeded`; failed or cancelled outcomes record the applicable generation-terminal status.
 
-The [active-control contract](19-agent-control-active-execution.md#completion-and-control-races) owns Thread inbox preconditions and disposition, while the [queued-submission contract](20-agent-control-queued-submissions.md#completion-time-combined-handoff) owns a combined completed outcome and successor acceptance. Such a transaction can terminalize this Attempt, but it creates no Attempt for the successor Run; only a later ordinary claim does so.
+The [active-control contract](19-agent-control-active-execution.md#completion-and-control-races) owns Thread inbox preconditions and disposition. Source sealing terminalizes this Attempt independently of subsequent [queued consumption](20-agent-control-queued-submissions.md#post-completion-consumption). Accepting a queued successor creates no Attempt for it; only a later ordinary claim does so.
 
 ### Attempt Failure Decisions
 

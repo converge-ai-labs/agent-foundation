@@ -121,22 +121,15 @@ class RunCommands:
             return replay
 
         run_id = new_run_id()
-        prepared = await self._invocations.preparation.prepare(
+        prepared_input = await self._inputs.prepare(
+            self._invocations,
             actor=actor,
             agent_id=request.agent_id,
             agent_revision_id=request.agent_revision_id,
             expected_current_revision_id=request.expected_current_revision_id,
             config_override=request.config_override,
-        )
-        async with transaction(self._sessions) as database:
-            frozen = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)
-
-        accepted_input = await self._inputs.accept(
-            actor=actor,
-            workspace_id=workspace_id,
             submitted=request.input,
             environment=environment,
-            frozen=frozen,
             prepared_assets=prepared_assets,
         )
         session_id = request.session_id or new_session_id()
@@ -145,14 +138,14 @@ class RunCommands:
             now = self._clock()
             session = Session(
                 id=session_id,
-                organization_id=prepared.organization_id,
+                organization_id=prepared_input.invocation.organization_id,
                 workspace_id=workspace_id,
                 created_at=now,
                 updated_at=now,
             )
         else:
             await self._require_session(
-                organization_id=prepared.organization_id,
+                organization_id=prepared_input.invocation.organization_id,
                 workspace_id=workspace_id,
                 session_id=session_id,
             )
@@ -160,35 +153,33 @@ class RunCommands:
         thread_id = new_thread_id()
         now = self._clock()
         state = initialize_start_state(
-            RunStateSeed(
+            RunStateSeed.from_invocation(
                 run_id=run_id,
-                agent_id=frozen.agent_id,
-                agent_revision_id=frozen.agent_revision_id,
-                effective_agent_config=frozen.effective_config,
+                invocation=prepared_input.frozen,
+                input=prepared_input.input,
                 protocol_context=request.protocol_context,
-                secret_bindings=accepted_input.secret_bindings,
             ),
             thread_id=thread_id,
         )
         run = self._policy.create(
             now=now,
             id=run_id,
-            organization_id=prepared.organization_id,
+            organization_id=prepared_input.invocation.organization_id,
             authority_principal=actor.principal,
             session_id=session_id,
             thread_id=thread_id,
             parent_run_id=None,
             lineage_kind=RunLineageKind.root,
             request_fingerprint=evidence.fingerprint,
-            invocation=frozen,
-            input=accepted_input,
+            invocation=prepared_input.frozen,
+            input=prepared_input.input,
             origin=origin,
         )
         thread = Thread(
             id=thread_id,
             version=1,
             queue_version=0,
-            organization_id=prepared.organization_id,
+            organization_id=prepared_input.invocation.organization_id,
             session_id=session_id,
             role=ThreadRole.root,
             origin_kind=ThreadOriginKind.new,
@@ -201,7 +192,9 @@ class RunCommands:
         )
 
         async def validate_final(database: AsyncSession) -> None:
-            await validate_invocation(database, self._invocations, prepared=prepared, frozen=frozen)
+            await validate_invocation(
+                database, self._invocations, prepared=prepared_input.invocation, frozen=prepared_input.frozen
+            )
 
         try:
             return await self._acceptance.accept_new_thread(
@@ -229,7 +222,6 @@ class RunCommands:
         prepared_assets: Mapping[str, Asset] | None = None,
         origin: SubmissionOrigin = _USER_INPUT_ORIGIN,
     ) -> RunAcceptanceReceipt:
-        environment = request.environment
         require_idempotency_key(idempotency_key)
         evidence = RunCommandEvidence(
             self._sessions,
@@ -245,23 +237,45 @@ class RunCommands:
         if replay is not None:
             return replay
 
+        try:
+            return await self.accept_continuation(
+                actor=actor,
+                source_run_id=source_run_id,
+                request=request,
+                request_fingerprint=evidence.fingerprint,
+                inherit_parent_environment=inherit_parent_environment,
+                transaction_hook=partial(evidence.commit, now=self._clock()),
+                prepared_assets=prepared_assets,
+                origin=origin,
+            )
+        except RunAcceptanceError as error:
+            return await evidence.reconcile(error)
+
+    async def accept_continuation(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        source_run_id: str,
+        request_fingerprint: str,
+        request: ContinueRunCommand,
+        inherit_parent_environment: bool = True,
+        transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
+        prepared_assets: Mapping[str, Asset] | None = None,
+        origin: SubmissionOrigin = _USER_INPUT_ORIGIN,
+    ) -> RunAcceptanceReceipt:
+        """Accept prepared command intent; the calling entry point owns replay evidence."""
+        environment = request.environment
         source, thread = await self._load_continue_source(actor=actor, source_run_id=source_run_id)
         source_state = await self._states.read_run(source)
         run_id = new_run_id()
-        prepared = await self._invocations.preparation.prepare(
+        prepared_input = await self._inputs.prepare(
+            self._invocations,
             actor=actor,
             agent_id=request.agent_id or source.agent_id,
             agent_revision_id=request.agent_revision_id,
             expected_current_revision_id=request.expected_current_revision_id,
             config_override=request.config_override,
-        )
-        async with transaction(self._sessions) as database:
-            frozen = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)
-        accepted_input = await self._inputs.accept(
-            actor=actor,
-            workspace_id=actor.workspace_id,
             submitted=request.input,
-            frozen=frozen,
             environment=environment,
             inherited_environment_id=source.environment_id
             if inherit_parent_environment
@@ -273,13 +287,11 @@ class RunCommands:
         )
         now = self._clock()
         state = initialize_completed_continuation_state(
-            RunStateSeed(
+            RunStateSeed.from_invocation(
                 run_id=run_id,
-                agent_id=frozen.agent_id,
-                agent_revision_id=frozen.agent_revision_id,
-                effective_agent_config=frozen.effective_config,
+                invocation=prepared_input.frozen,
+                input=prepared_input.input,
                 protocol_context=request.protocol_context,
-                secret_bindings=accepted_input.secret_bindings,
             ),
             source_state.envelope,
         )
@@ -292,9 +304,9 @@ class RunCommands:
             thread_id=source.thread_id,
             parent_run_id=source.id,
             lineage_kind=RunLineageKind.continue_,
-            request_fingerprint=evidence.fingerprint,
-            invocation=frozen,
-            input=accepted_input,
+            request_fingerprint=request_fingerprint,
+            invocation=prepared_input.frozen,
+            input=prepared_input.input,
             origin=origin,
         )
 
@@ -309,28 +321,27 @@ class RunCommands:
                 )
             except AuthorizationError as error:
                 raise command_not_found() from error
-            await validate_invocation(database, self._invocations, prepared=prepared, frozen=frozen)
-
-        try:
-            return await self._acceptance.advance_thread(
-                run=run,
-                state=state,
-                expected_thread_version=request.expected_thread_version,
-                expected_current_run_id=thread.current_run_id,
-                expected_head_run_id=thread.head_run_id,
-                next_head_run_id=source.id,
-                hook_subscription=request.hook_subscription,
-                environment=requested_environment(
-                    environment,
-                    default=RetainedRunEnvironment(source.id, source.thread_id)
-                    if inherit_parent_environment
-                    else EnvironmentDefault.thread,
-                ),
-                final_validator=validate_final,
-                transaction_hook=partial(evidence.commit, now=self._clock()),
+            await validate_invocation(
+                database, self._invocations, prepared=prepared_input.invocation, frozen=prepared_input.frozen
             )
-        except RunAcceptanceError as error:
-            return await evidence.reconcile(error)
+
+        return await self._acceptance.advance_thread(
+            run=run,
+            state=state,
+            expected_thread_version=request.expected_thread_version,
+            expected_current_run_id=thread.current_run_id,
+            expected_head_run_id=thread.head_run_id,
+            next_head_run_id=source.id,
+            hook_subscription=request.hook_subscription,
+            environment=requested_environment(
+                environment,
+                default=RetainedRunEnvironment(source.id, source.thread_id)
+                if inherit_parent_environment
+                else EnvironmentDefault.thread,
+            ),
+            final_validator=validate_final,
+            transaction_hook=transaction_hook,
+        )
 
     async def continue_empty_thread(
         self,
@@ -343,7 +354,6 @@ class RunCommands:
         prepared_assets: Mapping[str, Asset] | None = None,
         origin: SubmissionOrigin = _USER_INPUT_ORIGIN,
     ) -> RunAcceptanceReceipt:
-        environment = request.environment
         require_idempotency_key(idempotency_key)
         evidence = RunCommandEvidence(
             self._sessions,
@@ -359,38 +369,56 @@ class RunCommands:
         if replay is not None:
             return replay
 
+        try:
+            return await self.accept_empty_thread(
+                actor=actor,
+                thread_id=thread_id,
+                request=request,
+                request_fingerprint=evidence.fingerprint,
+                transaction_hook=partial(evidence.commit, now=self._clock()),
+                prepared_assets=prepared_assets,
+                origin=origin,
+            )
+        except RunAcceptanceError as error:
+            return await evidence.reconcile(error)
+
+    async def accept_empty_thread(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        thread_id: str,
+        request_fingerprint: str,
+        request: ContinueRunCommand,
+        transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
+        prepared_assets: Mapping[str, Asset] | None = None,
+        origin: SubmissionOrigin = _USER_INPUT_ORIGIN,
+    ) -> RunAcceptanceReceipt:
+        """Accept prepared command intent; the calling entry point owns replay evidence."""
+        environment = request.environment
         source, thread = await self._load_empty_thread_source(
             actor=actor, thread_id=thread_id, agent_id=request.agent_id
         )
         target_agent_id = request.agent_id or (source.agent_id if source else None)
         assert target_agent_id is not None
         run_id = new_run_id()
-        prepared = await self._invocations.preparation.prepare(
+        prepared_input = await self._inputs.prepare(
+            self._invocations,
             actor=actor,
             agent_id=target_agent_id,
             agent_revision_id=request.agent_revision_id,
             expected_current_revision_id=request.expected_current_revision_id,
             config_override=request.config_override,
-        )
-        async with transaction(self._sessions) as database:
-            frozen = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)
-        accepted_input = await self._inputs.accept(
-            actor=actor,
-            workspace_id=actor.workspace_id,
             submitted=request.input,
-            frozen=frozen,
             environment=environment,
             inherited_environment_id=thread.default_environment_id,
             prepared_assets=prepared_assets,
         )
         state = initialize_empty_thread_state(
-            RunStateSeed(
+            RunStateSeed.from_invocation(
                 run_id=run_id,
-                agent_id=frozen.agent_id,
-                agent_revision_id=frozen.agent_revision_id,
-                effective_agent_config=frozen.effective_config,
+                invocation=prepared_input.frozen,
+                input=prepared_input.input,
                 protocol_context=request.protocol_context,
-                secret_bindings=accepted_input.secret_bindings,
             ),
             thread_id=thread.id,
         )
@@ -404,9 +432,9 @@ class RunCommands:
             thread_id=thread.id,
             parent_run_id=None,
             lineage_kind=RunLineageKind.root,
-            request_fingerprint=evidence.fingerprint,
-            invocation=frozen,
-            input=accepted_input,
+            request_fingerprint=request_fingerprint,
+            invocation=prepared_input.frozen,
+            input=prepared_input.input,
             origin=origin,
         )
 
@@ -421,23 +449,22 @@ class RunCommands:
                 )
             except AuthorizationError as error:
                 raise command_not_found() from error
-            await validate_invocation(database, self._invocations, prepared=prepared, frozen=frozen)
-
-        try:
-            return await self._acceptance.advance_thread(
-                run=run,
-                state=state,
-                expected_thread_version=request.expected_thread_version,
-                expected_current_run_id=thread.current_run_id,
-                expected_head_run_id=None,
-                next_head_run_id=None,
-                hook_subscription=request.hook_subscription,
-                environment=requested_environment(environment, default=EnvironmentDefault.thread),
-                final_validator=validate_final,
-                transaction_hook=partial(evidence.commit, now=self._clock()),
+            await validate_invocation(
+                database, self._invocations, prepared=prepared_input.invocation, frozen=prepared_input.frozen
             )
-        except RunAcceptanceError as error:
-            return await evidence.reconcile(error)
+
+        return await self._acceptance.advance_thread(
+            run=run,
+            state=state,
+            expected_thread_version=request.expected_thread_version,
+            expected_current_run_id=thread.current_run_id,
+            expected_head_run_id=None,
+            next_head_run_id=None,
+            hook_subscription=request.hook_subscription,
+            environment=requested_environment(environment, default=EnvironmentDefault.thread),
+            final_validator=validate_final,
+            transaction_hook=transaction_hook,
+        )
 
     async def fork(
         self,
@@ -509,13 +536,11 @@ class RunCommands:
             environment_access_ceiling=source.environment_access if environment is Omitted.UNSET else None,
         )
         state = initialize_fork_state(
-            RunStateSeed(
+            RunStateSeed.from_invocation(
                 run_id=new_run_id_value,
-                agent_id=frozen.agent_id,
-                agent_revision_id=frozen.agent_revision_id,
-                effective_agent_config=frozen.effective_config,
+                invocation=frozen,
+                input=accepted_input,
                 protocol_context=request.protocol_context,
-                secret_bindings=accepted_input.secret_bindings,
             ),
             source_state.envelope,
             thread_id=new_thread_id_value,

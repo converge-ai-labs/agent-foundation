@@ -27,9 +27,7 @@ from a13n_service.gateway.agui_replay import HostedAguiReplayStore
 from a13n_service.gateway.hosted_agui import HostedAguiTerminalProjector
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.ids import new_object_id
-from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
-from a13n_service.interactions.queue_completion import QueueCompletion
-from a13n_service.interactions.queue_handoff import CompletionQueueHandoffService
+from a13n_service.interactions.queue_drain import QueueDrain
 from a13n_service.interactions.scheduling import AttemptScheduler
 from a13n_service.interactions.worker import WorkerExecutionLoop
 from a13n_service.observability import ObservabilityRuntime
@@ -145,18 +143,12 @@ async def build_worker_runtime(
             private_cidrs=settings.webhooks.private_endpoint_cidrs,
         )
     )
-    queue_completion = QueueCompletion(
+    queue_drain = QueueDrain(
         shared.storage.sessions,
         build_input_commands(
             settings, shared, invocations, AssetCatalog(shared.storage.sessions, assets), inline_hooks
         ).queued,
-        CompletionQueueHandoffService(
-            shared.storage.sessions,
-            RunStateStore(shared.storage.objects),
-            RunPayloadStore(shared.storage.objects),
-            inline_hooks,
-            lifecycle=shared.lifecycle,
-        ),
+        item_timeout_seconds=settings.control.recovery_item_timeout_seconds,
     )
     execution_loop = WorkerExecutionLoop(
         shared.storage.sessions,
@@ -173,7 +165,7 @@ async def build_worker_runtime(
             assets=assets,
             asset_publication=asset_publication,
             observability=observability,
-            queue_completion=queue_completion,
+            queue_drain=queue_drain,
         ),
         build_id=settings.service.build_version,
         queue_name=settings.gateway.run_queue_name,

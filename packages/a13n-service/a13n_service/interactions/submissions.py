@@ -34,6 +34,7 @@ from a13n_service.interactions.control_domain import (
     QueuedSubmissionMutationReceipt,
     QueuedSubmissionState,
     ReorderQueuedSubmissionsRequest,
+    RunAcceptanceReceipt,
     ThreadQueueMutationReceipt,
     ThreadRunSubmissionIntent,
     ThreadRunSubmissionReceipt,
@@ -42,7 +43,7 @@ from a13n_service.interactions.control_domain import (
 )
 from a13n_service.interactions.control_models import QueuedSubmissionRecord
 from a13n_service.interactions.domain import Run, StrictModel, Thread
-from a13n_service.interactions.errors import InteractionCommandError
+from a13n_service.interactions.errors import InteractionCommandError, RunAcceptanceError, map_acceptance_error
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.interactions.queue import (
     QueuedSubmissionConflict,
@@ -90,26 +91,64 @@ class QueuedSubmissionService:
         request: ThreadRunSubmissionRequest,
         idempotency_key: str,
     ) -> ThreadRunSubmissionReceipt:
-        operation = "thread.submit"
-        replayed = await self._pre_replay(
-            actor=actor,
-            operation=operation,
-            scope_id=thread_id,
-            idempotency_key=idempotency_key,
-            request=request,
-            response_type=ThreadRunSubmissionReceipt,
-        )
+        async def replay() -> ThreadRunSubmissionReceipt | None:
+            return await self._pre_replay(
+                actor=actor,
+                operation="thread.submit",
+                scope_id=thread_id,
+                idempotency_key=idempotency_key,
+                request=request,
+                response_type=ThreadRunSubmissionReceipt,
+            )
+
+        replayed = await replay()
         if replayed is not None:
             return replayed
-        scope, thread, current, head, admission = await self._submission_admission(
-            actor=actor,
-            thread_id=thread_id,
-            request=request,
-        )
-        identity = command_identity(idempotency_key, request)
-        evidence_scope = _evidence_scope(actor, operation=operation, scope_id=thread_id)
+        try:
+            return await self._submit(
+                actor=actor,
+                thread_id=thread_id,
+                request=request,
+                identity=command_identity(idempotency_key, request),
+                evidence_scope=_evidence_scope(actor, operation="thread.submit", scope_id=thread_id),
+            )
+        except (InteractionCommandError, RunAcceptanceError, IntegrityError) as error:
+            if isinstance(error, IntegrityError) and not is_evidence_unique_race(error):
+                raise
+            # Another copy can commit after preflight, including before source eligibility checks.
+            replayed = await replay()
+            if replayed is not None:
+                return replayed
+            if isinstance(error, RunAcceptanceError):
+                raise map_acceptance_error(error) from error
+            raise
 
-        async def commit_run(database: AsyncSession, receipt) -> None:
+    async def _submit(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        thread_id: str,
+        request: ThreadRunSubmissionRequest,
+        identity: IdempotencyIdentity,
+        evidence_scope: EvidenceScope,
+    ) -> ThreadRunSubmissionReceipt:
+        scope, thread, current, head, admission = await self._submission_admission(
+            actor=actor, thread_id=thread_id, request=request
+        )
+        if admission is ThreadSubmissionAdmission.queued:
+            return await self._enqueue_thread_submission(
+                actor=actor,
+                scope=scope,
+                thread=thread,
+                request=request,
+                identity=identity,
+                evidence_scope=evidence_scope,
+            )
+
+        accepted_receipt: ThreadRunSubmissionReceipt | None = None
+
+        async def commit_run(database: AsyncSession, receipt: RunAcceptanceReceipt) -> None:
+            nonlocal accepted_receipt
             if admission in {ThreadSubmissionAdmission.continuation, ThreadSubmissionAdmission.root}:
                 live_queue = await database.scalar(
                     select(QueuedSubmissionRecord.id)
@@ -131,17 +170,15 @@ class QueuedSubmissionService:
             selected_thread = await database.get(ThreadRecord, thread.id)
             if selected_thread is None:
                 raise _not_found()
-            wrapped = ThreadRunSubmissionReceipt(
-                outcome="run_accepted",
-                run=receipt,
-                queue_version=selected_thread.queue_version,
+            accepted_receipt = ThreadRunSubmissionReceipt(
+                outcome="run_accepted", run=receipt, queue_version=selected_thread.queue_version
             )
             await self._record_receipt(
                 database,
                 scope=scope,
                 evidence_scope=evidence_scope,
                 identity=identity,
-                receipt=wrapped,
+                receipt=accepted_receipt,
             )
 
         continuation = ContinueRunCommand(
@@ -154,88 +191,52 @@ class QueuedSubmissionService:
             hook_subscription=request.hook_subscription,
             environment=request.environment if "environment" in request.model_fields_set else Omitted.UNSET,
         )
-        try:
-            if admission is ThreadSubmissionAdmission.continuation:
-                assert head is not None
-                receipt = await self._commands.runs.continue_from(
-                    actor=actor,
-                    source_run_id=head.id,
-                    idempotency_key=idempotency_key,
-                    request=continuation,
-                    inherit_parent_environment=False,
-                    transaction_hook=commit_run,
+        if admission is ThreadSubmissionAdmission.continuation:
+            assert head is not None
+            await self._commands.runs.accept_continuation(
+                actor=actor,
+                source_run_id=head.id,
+                request_fingerprint=identity.request_digest,
+                request=continuation,
+                inherit_parent_environment=False,
+                transaction_hook=commit_run,
+            )
+        elif admission is ThreadSubmissionAdmission.root:
+            await self._commands.runs.accept_empty_thread(
+                actor=actor,
+                thread_id=thread_id,
+                request_fingerprint=identity.request_digest,
+                request=continuation,
+                transaction_hook=commit_run,
+            )
+        elif admission is ThreadSubmissionAdmission.waiting_continue:
+            assert current is not None
+            if current.sealed_state is None or request.waiting_resolution is None:
+                raise InteractionCommandError(
+                    "run_waiting_state_invalid",
+                    "The current waiting Run has no complete sealed state.",
+                    category=ErrorCategory.conflict,
                 )
-                return ThreadRunSubmissionReceipt(
-                    outcome="run_accepted",
-                    run=receipt,
-                    queue_version=thread.queue_version,
-                )
-            if admission is ThreadSubmissionAdmission.root:
-                receipt = await self._commands.runs.continue_empty_thread(
-                    actor=actor,
-                    thread_id=thread_id,
-                    idempotency_key=idempotency_key,
-                    request=continuation,
-                    transaction_hook=commit_run,
-                )
-                return ThreadRunSubmissionReceipt(
-                    outcome="run_accepted",
-                    run=receipt,
-                    queue_version=thread.queue_version,
-                )
-            if admission is ThreadSubmissionAdmission.waiting_continue:
-                assert current is not None
-                if current.sealed_state is None or request.waiting_resolution is None:
-                    raise InteractionCommandError(
-                        "run_waiting_state_invalid",
-                        "The current waiting Run has no complete sealed state.",
-                        category=ErrorCategory.conflict,
-                    )
-                receipt = await self._commands.continuations.continue_waiting(
-                    actor=actor,
-                    run_id=current.id,
-                    idempotency_key=idempotency_key,
-                    request=WaitingContinueRunCommand(
-                        expected_thread_version=request.expected_thread_version,
-                        sealed_state_digest_sha256=request.waiting_resolution.sealed_state_digest_sha256,
-                        input=request.input,
-                        **request.model_dump(include={"hook_subscription"}, exclude_unset=True),
-                    ),
-                    transaction_hook=commit_run,
-                )
-                return ThreadRunSubmissionReceipt(
-                    outcome="run_accepted",
-                    run=receipt,
-                    queue_version=thread.queue_version,
-                )
-            if admission is ThreadSubmissionAdmission.queued:
-                return await self._enqueue_thread_submission(
-                    actor=actor,
-                    scope=scope,
-                    thread=thread,
-                    request=request,
-                    identity=identity,
-                    evidence_scope=evidence_scope,
-                )
-        except IntegrityError as error:
-            if not is_evidence_unique_race(error):
-                raise
-            async with short_session(self._sessions) as database:
-                replayed = await _load_receipt(
-                    database,
-                    evidence_scope=evidence_scope,
-                    identity=identity,
-                    response_type=ThreadRunSubmissionReceipt,
-                    now=self._clock(),
-                )
-            if replayed is not None:
-                return replayed
-            raise
-        raise InteractionCommandError(
-            "thread_submission_rejected",
-            "The Thread cannot accept or queue this submission.",
-            category=ErrorCategory.conflict,
-        )
+            await self._commands.continuations.accept_waiting_continue(
+                actor=actor,
+                run_id=current.id,
+                request_fingerprint=identity.request_digest,
+                request=WaitingContinueRunCommand(
+                    expected_thread_version=request.expected_thread_version,
+                    sealed_state_digest_sha256=request.waiting_resolution.sealed_state_digest_sha256,
+                    input=request.input,
+                    **request.model_dump(include={"hook_subscription"}, exclude_unset=True),
+                ),
+                transaction_hook=commit_run,
+            )
+        else:
+            raise InteractionCommandError(
+                "thread_submission_rejected",
+                "The Thread cannot accept or queue this submission.",
+                category=ErrorCategory.conflict,
+            )
+        assert accepted_receipt is not None
+        return accepted_receipt
 
     async def list(
         self,

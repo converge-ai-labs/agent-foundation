@@ -2,7 +2,7 @@
 
 from a13n_service.background import PeriodicTask
 from a13n_service.interactions.commands import InteractionCommands
-from a13n_service.interactions.queue_recovery import QueueRecovery
+from a13n_service.interactions.queue_drain import QueueDrain
 from a13n_service.process.background import BackgroundTask
 from a13n_service.process.runtime import SharedRuntime
 from a13n_service.settings import Settings
@@ -13,7 +13,7 @@ def build_recovery_tasks(
     shared: SharedRuntime,
     commands: InteractionCommands,
 ) -> tuple[BackgroundTask, ...]:
-    queue = QueueRecovery(
+    queue = QueueDrain(
         shared.storage.sessions,
         commands.queued,
         batch_limit=settings.control.recovery_batch_limit,

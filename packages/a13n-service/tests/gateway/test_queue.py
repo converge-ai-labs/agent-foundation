@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
+from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.interactions.control_domain import (
     ConsumeQueuedSubmissionRequest,
     InterruptRequest,
@@ -11,11 +14,13 @@ from a13n_service.interactions.control_domain import (
     UpdateQueuedSubmissionRequest,
     WaitingResolutionDefaults,
 )
+from a13n_service.interactions.errors import InteractionCommandError
 from a13n_service.interactions.models import RunRecord
 from a13n_service.interactions.queue import QueuedSubmissionStore
 from a13n_service.interactions.submissions import DeleteQueuedSubmissionRequest, QueuedSubmissionService
 from a13n_service.storage import short_session
 from a13n_service.storage.object_store import LocalObjectStore
+from anyio import Event
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -31,6 +36,7 @@ from tests.gateway.test_commands import (
 )
 from tests.hooks.support import seed_hook_actor_access
 from tests.interactions.conftest import NOW, WORKSPACE_ID
+from tests.interactions.conftest import postgres_interaction_sessions as postgres_interaction_sessions
 from tests.interactions.test_queue import _inline_hooks
 
 pytestmark = pytest.mark.anyio
@@ -387,3 +393,123 @@ async def test_reorder_replay_precedes_changed_queue_version(
 
     assert replayed == reordered
     assert replayed.queue_version == 3
+
+
+@pytest.mark.parametrize("branch", ["queued", "completed", "waiting", "root"])
+async def test_concurrent_thread_submission_owns_one_receipt_and_replays_after_queue_changes(
+    postgres_interaction_sessions, tmp_path, monkeypatch, branch
+):
+    sessions = postgres_interaction_sessions
+    await seed_hook_actor_access(sessions)
+    service, commands, objects, source = await _submission_setup(sessions, tmp_path)
+    waiting_resolution = None
+    if branch == "completed":
+        await _complete_run(sessions, objects, run_id=source.run_id)
+    elif branch == "waiting":
+        digest = await _wait_run(sessions, objects, run_id=source.run_id)
+        waiting_resolution = WaitingResolutionDefaults(sealed_state_digest_sha256=digest)
+    elif branch == "root":
+        await commands.active.interrupt(
+            actor=_actor(),
+            run_id=source.run_id,
+            idempotency_key="prepare-root",
+            request=InterruptRequest(expected_run_version=1, expected_thread_version=1),
+        )
+    request = ThreadRunSubmissionRequest(
+        expected_thread_version=1 if branch == "queued" else 2,
+        input=_request("submit once").input,
+        waiting_resolution=waiting_resolution,
+    )
+    async with short_session(sessions) as database:
+        original_evidence = set(await database.scalars(select(IdempotencyEvidenceRecord.id)))
+    admission = service._submission_admission
+    ready = Event()
+    arrivals = 0
+
+    async def overlapping_admission(**kwargs):
+        nonlocal arrivals
+        selected = await admission(**kwargs)
+        arrivals += 1
+        if arrivals == 2:
+            ready.set()
+        await ready.wait()
+        return selected
+
+    monkeypatch.setattr(service, "_submission_admission", overlapping_admission)
+
+    async def submit():
+        return await service.submit(
+            actor=_actor(), thread_id=source.thread_id, request=request, idempotency_key="same-thread-submit"
+        )
+
+    first, second = await asyncio.gather(submit(), submit())
+    assert first == second
+    async with short_session(sessions) as database:
+        evidence = list(await database.scalars(select(IdempotencyEvidenceRecord)))
+        added = [row for row in evidence if row.id not in original_evidence]
+        assert len(added) == 1
+        assert added[0].operation == "thread.submit"
+        assert added[0].scope_id == source.thread_id
+        assert added[0].receipt_json == first.model_dump(mode="json", by_alias=True)
+        assert len(list(await database.scalars(select(RunRecord)))) == (1 if branch == "queued" else 2)
+    monkeypatch.setattr(service, "_submission_admission", admission)
+    if first.queued_submission is not None:
+        await service.update(
+            actor=_actor(),
+            queued_submission_id=first.queued_submission.queued_submission_id,
+            request=UpdateQueuedSubmissionRequest(expected_version=1, submission=_intent("edited later")),
+            idempotency_key="edit-after-submit",
+        )
+    else:
+        assert first.run is not None
+        await service.enqueue(
+            actor=_actor(),
+            thread_id=source.thread_id,
+            expected_thread_version=first.run.thread_version,
+            submission=_intent("later queue item"),
+            idempotency_key="enqueue-after-submit",
+        )
+    # Replay returns the original queue generation and body, before reclassifying the current Thread.
+    assert await submit() == first
+    with pytest.raises(InteractionCommandError) as conflict:
+        await service.submit(
+            actor=_actor(),
+            thread_id=source.thread_id,
+            idempotency_key="same-thread-submit",
+            request=request.model_copy(update={"input": _request("different request").input}),
+        )
+    assert conflict.value.code == "idempotency_conflict"
+
+
+async def test_thread_submission_retry_after_lost_response_returns_original_receipt(
+    lifecycle_interaction_sessions, tmp_path, monkeypatch
+):
+    sessions = lifecycle_interaction_sessions
+    await seed_hook_actor_access(sessions)
+    service, _, objects, source = await _submission_setup(sessions, tmp_path)
+    await _complete_run(sessions, objects, run_id=source.run_id)
+    request = ThreadRunSubmissionRequest(expected_thread_version=2, input=_request("next").input)
+    accept = service._submit
+    committed = []
+
+    async def lose_response(**kwargs):
+        committed.append(await accept(**kwargs))
+        raise ConnectionError("response lost after COMMIT")
+
+    monkeypatch.setattr(service, "_submit", lose_response)
+    with pytest.raises(ConnectionError):
+        await service.submit(actor=_actor(), thread_id=source.thread_id, request=request, idempotency_key="lost")
+    replay = await service.submit(actor=_actor(), thread_id=source.thread_id, request=request, idempotency_key="lost")
+    assert committed == [replay]
+    async with short_session(sessions) as database:
+        assert len(list(await database.scalars(select(RunRecord)))) == 2
+        assert (
+            len(
+                list(
+                    await database.scalars(
+                        select(IdempotencyEvidenceRecord).where(IdempotencyEvidenceRecord.operation == "thread.submit")
+                    )
+                )
+            )
+            == 1
+        )

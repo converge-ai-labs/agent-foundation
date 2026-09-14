@@ -9,6 +9,7 @@ from typing import cast
 from a13n_harness import HarnessBuilder
 from a13n_harness.capabilities import SubagentCapability
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
+from a13n_logging import get_logger
 from anyio import fail_after
 
 from a13n_service.assets.objects import AssetObjectStore
@@ -18,13 +19,13 @@ from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.interactions.attempt_executor import RunAttemptExecutor
 from a13n_service.interactions.attempts import AttemptContext, AttemptExecutionService, read_attempt_authority
 from a13n_service.interactions.control_wakeups import AttemptControlWakeups
-from a13n_service.interactions.harness_results import AttemptOutcome, StoredHarnessOutcomeAdapter
+from a13n_service.interactions.harness_results import AttemptDisposition, AttemptOutcome, StoredHarnessOutcomeAdapter
 from a13n_service.interactions.harness_runtime import HarnessDriver
 from a13n_service.interactions.inbox import DatabaseThreadInboxReconciler, RedisThreadControlSignals, ThreadInboxStore
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord, SessionRecord
 from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
 from a13n_service.interactions.outcomes import RunOutcomeService
-from a13n_service.interactions.queue_completion import QueueCompletion
+from a13n_service.interactions.queue_drain import QueueDrain
 from a13n_service.interactions.run_control import RunAttemptControl
 from a13n_service.interactions.terminal_committer import DatabaseAttemptCommitter
 from a13n_service.interactions.worker import WorkerCapacitySlot
@@ -43,6 +44,8 @@ from a13n_service.storage import short_session
 from a13n_service.subagents.result_delivery import AsyncSubagentResultMaterializer
 from a13n_service.subagents.runtime import ServiceSubagents
 from a13n_service.temporal import utc_now
+
+logger = get_logger(__name__)
 
 _RECOVERY_REASONS: dict[str, RecoveryReason] = {
     "lease_expired": "lease_expired",
@@ -67,7 +70,7 @@ class WorkerAttempts:
         assets: AssetObjectStore,
         asset_publication: AssetRuntime,
         observability: ObservabilityRuntime | None = None,
-        queue_completion: QueueCompletion | None = None,
+        queue_drain: QueueDrain | None = None,
     ) -> None:
         self._shared = shared
         self._resources = execution
@@ -81,6 +84,7 @@ class WorkerAttempts:
         self._secrets = AgentSecretRuntime(shared.storage.sessions, shared.secret_protector)
         self._search = SearchRuntime(shared.storage.sessions, shared.secret_protector)
         self._observability = observability
+        self._queue_drain = queue_drain
         self._execution = AttemptExecutionService(shared.storage.sessions, lifecycle=shared.lifecycle)
         self._states = RunStateStore(shared.storage.objects)
         self._payloads = RunPayloadStore(shared.storage.objects)
@@ -88,9 +92,7 @@ class WorkerAttempts:
         outcomes = RunOutcomeService(
             shared.storage.sessions, self._payloads, lifecycle=shared.lifecycle, control_signals=self._signals
         )
-        self._committer = DatabaseAttemptCommitter(
-            shared.storage.sessions, outcomes, self._execution, queue_completion=queue_completion
-        )
+        self._committer = DatabaseAttemptCommitter(shared.storage.sessions, outcomes, self._execution)
         self._subagents = ServiceSubagents(
             shared.storage.sessions,
             self._states,
@@ -264,3 +266,19 @@ class WorkerAttempts:
                             cast(RunAttemptOutcome, finished_attempt.status),
                             failure_code=failure.code if failure is not None else None,
                         )
+
+        if (
+            self._queue_drain is not None
+            and isinstance(receipt, AttemptOutcome)
+            and receipt.disposition is AttemptDisposition.completed
+        ):
+            # The source is committed and its execution resources and monitors are closed.
+            # Queue preparation cannot extend its lease or change its terminal decision.
+            try:
+                with fail_after(min(5.0, context.reconciliation_timeout.total_seconds())):
+                    await self._queue_drain.consume_thread(organization_id=run.organization_id, thread_id=run.thread_id)
+            except Exception as error:
+                logger.warning(
+                    "queued_submission_drain_deferred",
+                    extra={"run_id": run.id, "thread_id": run.thread_id, "error_type": type(error).__name__},
+                )

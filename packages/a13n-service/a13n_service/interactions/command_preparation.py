@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.agents.domain import EffectiveAgentConfig
+from a13n_service.agents.domain import AgentRunOverride, EffectiveAgentConfig
 from a13n_service.agents.invocation_resolution import (
     AgentInvocationResolver,
     FrozenAgentInvocation,
@@ -29,11 +30,18 @@ from a13n_service.interactions.input import (
 )
 from a13n_service.secrets.agent_inputs import graph_secret_requirements, require_secret, validate_secret_bindings
 from a13n_service.secrets.domain import AgentSecretBinding
-from a13n_service.storage import short_session
+from a13n_service.storage import short_session, transaction
 
 from .environment_preview import input_environment_access
 from .errors import InteractionCommandError
 from .input import AcceptedAgentInput
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedCommandInput:
+    invocation: PreparedAgentInvocation
+    frozen: FrozenAgentInvocation
+    input: AcceptedAgentInput
 
 
 class CommandInput:
@@ -43,6 +51,47 @@ class CommandInput:
         self._sessions = sessions
         self._assets = assets
         self._endpoint_policy = endpoint_policy
+
+    async def prepare(
+        self,
+        invocations: AgentInvocationResolver,
+        *,
+        actor: AuthenticatedActor,
+        agent_id: str,
+        agent_revision_id: str | None,
+        expected_current_revision_id: str | None,
+        config_override: AgentRunOverride | None,
+        submitted: AgentInput,
+        environment: EnvironmentSelection | Omitted | None = Omitted.UNSET,
+        inherited_environment_id: str | Omitted | None = Omitted.UNSET,
+        environment_access_ceiling: str | None = None,
+        prepared_assets: Mapping[str, Asset] | None = None,
+    ) -> PreparedCommandInput:
+        """Freeze a selected invocation, then accept its input outside the transaction.
+
+        Callers select the authority and inheritance source and revalidate the
+        returned invocation and frozen configuration in the acceptance transaction.
+        """
+        prepared = await invocations.preparation.prepare(
+            actor=actor,
+            agent_id=agent_id,
+            agent_revision_id=agent_revision_id,
+            expected_current_revision_id=expected_current_revision_id,
+            config_override=config_override,
+        )
+        async with transaction(self._sessions) as database:
+            frozen = await invocations.freezing.freeze_in_transaction(database, prepared=prepared)
+        accepted = await self.accept(
+            actor=actor,
+            workspace_id=actor.workspace_id,
+            submitted=submitted,
+            frozen=frozen,
+            environment=environment,
+            inherited_environment_id=inherited_environment_id,
+            environment_access_ceiling=environment_access_ceiling,
+            prepared_assets=prepared_assets,
+        )
+        return PreparedCommandInput(prepared, frozen, accepted)
 
     async def accept(
         self,

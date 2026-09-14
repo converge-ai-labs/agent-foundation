@@ -1,30 +1,29 @@
-from dataclasses import replace
 from datetime import timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
 import pytest
 from a13n_service.hooks.domain import InlineHookSubscriptionInput, WebhookDestinationConfig
+from a13n_service.hooks.models import HookSubscriptionRecord
+from a13n_service.hooks.persistence import create_inline_hook_subscription
 from a13n_service.iam.models import UserRecord
 from a13n_service.interactions.attempts import AttemptExecutionService
 from a13n_service.interactions.control_models import QueuedSubmissionRecord
 from a13n_service.interactions.harness_results import AttemptDisposition
 from a13n_service.interactions.inbox import ThreadInboxStore
-from a13n_service.interactions.inbox_persistence import ThreadInboxConflict
+from a13n_service.interactions.inline_hooks import InlineHookAcceptance
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord, ThreadRecord
 from a13n_service.interactions.objects import RunPayloadStore
 from a13n_service.interactions.outcomes import RunOutcomeService
 from a13n_service.interactions.queue import QueuedSubmissionStore
-from a13n_service.interactions.queue_completion import QueueCompletion
-from a13n_service.interactions.queue_handoff import CompletionQueueHandoffService
-from a13n_service.interactions.queue_recovery import QueueRecovery
+from a13n_service.interactions.queue_drain import QueueDrain
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
 from a13n_service.interactions.terminal_committer import DatabaseAttemptCommitter
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.secrets.models import SecretRecord
 from a13n_service.settings import Settings
 from a13n_service.storage import short_session, transaction
-from anyio import create_task_group, fail_after, sleep, sleep_forever
+from anyio import Event, create_task_group, fail_after, sleep, sleep_forever
 from pydantic_ai.models.function import FunctionModel
 from sqlalchemy import func, select
 
@@ -103,51 +102,50 @@ async def _completion(sessions, objects, *, queued_hook=False):
         queued_submission_id="qsub_9595959595959595",
     )
     commands = _commands(sessions, objects, _Preparation(), _Freezing([_frozen()]))
-    handoffs = CompletionQueueHandoffService(
-        sessions, states, RunPayloadStore(objects), _inline_hooks(), clock=clock, lifecycle=test_lifecycle_writer()
-    )
-    completion = QueueCompletion(sessions, commands.queued, handoffs, clock=clock)
+    drain = QueueDrain(sessions, commands.queued, clock=clock)
     committer = DatabaseAttemptCommitter(
         sessions,
         RunOutcomeService(sessions, RunPayloadStore(objects), clock=clock, lifecycle=test_lifecycle_writer()),
         execution,
-        queue_completion=completion,
     )
-    return source, authority, stored, queued.queued_submission, commands, completion, committer
+    return source, authority, stored, queued.queued_submission, commands, drain, committer
 
 
 @pytest.mark.parametrize("lost_commit_response", [False, True])
-async def test_terminal_committer_completes_and_accepts_successor(
+async def test_source_completion_precedes_successor_preparation(
     interaction_sessions, interaction_object_store, monkeypatch, lost_commit_response
 ):
     sessions = interaction_sessions
-    source, authority, stored, queued, commands, completion, committer = await _completion(
+    source, authority, stored, queued, commands, drain, committer = await _completion(
         sessions, interaction_object_store
     )
-    if lost_commit_response:
-        prepare = completion.prepare
+    prepare = commands.queued.prepare_queued_run
 
-        async def prepare_with_lost_response(*args):
-            commit = await prepare(*args)
-            assert commit is not None
+    async def prepare_after_completion(**kwargs):
+        async with short_session(sessions) as database:
+            assert (await database.get(RunRecord, source.id)).status == "completed"
+            assert (await database.get(RunAttemptRecord, authority.run_attempt_id)).status == "succeeded"
+            assert await database.scalar(select(func.count()).select_from(RunRecord)) == 1
+        return await prepare(**kwargs)
 
-            async def lose_response():
-                await commit()
-                raise ConnectionError("COMMIT response lost")
-
-            return lose_response
-
-        monkeypatch.setattr(completion, "prepare", prepare_with_lost_response)
-
-    verified = await committer.verify_state_outcome(authority, stored)
-    # Object preparation alone publishes no relational completion or successor.
-    async with short_session(sessions) as database:
-        assert (await database.get(RunRecord, source.id)).status == "running"
-        assert await database.scalar(select(func.count()).select_from(RunRecord)) == 1
-
-    outcome = await committer.commit_verified_state_outcome(authority, verified)
+    monkeypatch.setattr(commands.queued, "prepare_queued_run", prepare_after_completion)
+    outcome = await committer.commit_verified_state_outcome(
+        authority, await committer.verify_state_outcome(authority, stored)
+    )
     assert outcome.disposition is AttemptDisposition.completed
-    assert outcome.thread_version == 3
+    assert outcome.thread_version == 2
+    if lost_commit_response:
+        consume = commands.queued.recover_queued
+
+        async def lose_response(**kwargs):
+            await consume(**kwargs)
+            raise ConnectionError("COMMIT response lost")
+
+        monkeypatch.setattr(commands.queued, "recover_queued", lose_response)
+        with pytest.raises(ConnectionError):
+            await drain.consume_thread(organization_id=ORGANIZATION_ID, thread_id=source.thread_id)
+    else:
+        assert await drain.consume_thread(organization_id=ORGANIZATION_ID, thread_id=source.thread_id)
     async with short_session(sessions) as database:
         run = await database.get(RunRecord, source.id)
         attempt = await database.get(RunAttemptRecord, authority.run_attempt_id)
@@ -165,22 +163,22 @@ async def test_terminal_committer_completes_and_accepts_successor(
             successor.id,
         )
         assert await database.scalar(select(func.count()).select_from(RunRecord)) == 2
-    assert (await QueueRecovery(sessions, commands.queued).scan()).completed == 0
+    assert (await QueueDrain(sessions, commands.queued).scan()).completed == 0
 
 
-async def test_steer_after_handoff_preparation_preserves_input_and_rejects_stale_completion(
+async def test_late_steer_blocks_completion_and_queue_consumption(
     relational_interaction_sessions, interaction_object_store
 ):
     sessions = relational_interaction_sessions
-    source, authority, stored, queued, _, completion, _ = await _completion(sessions, interaction_object_store)
-    commit = await completion.prepare(authority, stored)
-    assert commit is not None
+    source, authority, stored, queued, _, drain, committer = await _completion(sessions, interaction_object_store)
+    verified = await committer.verify_state_outcome(authority, stored)
     payload = _input("arrived after completion preparation")
     await ThreadInboxStore(sessions, clock=lambda: NOW + timedelta(seconds=5)).append_steer(
         organization_id=ORGANIZATION_ID, run_id=source.id, input=payload
     )
-    with pytest.raises(ThreadInboxConflict, match="pending input"):
-        await commit()
+    outcome = await committer.commit_verified_state_outcome(authority, verified)
+    assert outcome.disposition is AttemptDisposition.continuing
+    assert not await drain.consume_thread(organization_id=ORGANIZATION_ID, thread_id=source.thread_id)
     async with short_session(sessions) as database:
         thread = await database.get(ThreadRecord, source.thread_id)
         run = await database.get(RunRecord, source.id)
@@ -200,84 +198,96 @@ async def test_steer_after_handoff_preparation_preserves_input_and_rejects_stale
         assert await database.scalar(select(func.count()).select_from(RunRecord)) == 1
 
 
-@pytest.mark.parametrize("failure", ["dependency", "timeout", "commit_timeout"])
-async def test_preparation_failure_completes_source_and_recovery_consumes_queue(
+@pytest.mark.parametrize("failure", ["dependency", "timeout", "interruption"])
+async def test_drain_failure_preserves_completed_source_and_scanner_recovers(
     interaction_sessions, interaction_object_store, monkeypatch, failure
 ):
     sessions = interaction_sessions
-    source, authority, stored, queued, commands, completion, committer = await _completion(
-        sessions, interaction_object_store
-    )
+    source, authority, stored, queued, commands, _, committer = await _completion(sessions, interaction_object_store)
+    await committer.commit_verified_state_outcome(authority, await committer.verify_state_outcome(authority, stored))
     prepare = commands.queued.prepare_queued_run
+    drain = QueueDrain(sessions, commands.queued, item_timeout_seconds=0.05 if failure == "timeout" else 30)
     if failure == "timeout":
-        authority = replace(authority, reconciliation_timeout=timedelta(milliseconds=50))
-        monkeypatch.setattr(commands.queued, "prepare_queued_run", AsyncMock(side_effect=sleep_forever))
-    elif failure == "commit_timeout":
-        authority = replace(authority, reconciliation_timeout=timedelta(milliseconds=50))
-        monkeypatch.setattr(completion, "prepare", AsyncMock(return_value=sleep_forever))
-    else:
-        monkeypatch.setattr(
-            commands.queued, "prepare_queued_run", AsyncMock(side_effect=ConnectionError("dependency down"))
-        )
-    outcome = await committer.commit_verified_state_outcome(
-        authority, await committer.verify_state_outcome(authority, stored)
-    )
-    assert outcome.disposition is AttemptDisposition.completed
-    assert outcome.thread_version == 2
+
+        async def stall(**_kwargs):
+            await sleep_forever()
+
+        monkeypatch.setattr(commands.queued, "prepare_queued_run", stall)
+        assert not await drain.consume_thread(organization_id=ORGANIZATION_ID, thread_id=source.thread_id)
+    elif failure == "dependency":
+        monkeypatch.setattr(commands.queued, "prepare_queued_run", AsyncMock(side_effect=ConnectionError("down")))
+        with pytest.raises(ConnectionError):
+            await drain.consume_thread(organization_id=ORGANIZATION_ID, thread_id=source.thread_id)
+    # Interruption immediately after A commits requires no queue callback to have run.
     async with short_session(sessions) as database:
         assert (await database.get(RunRecord, source.id)).status == "completed"
         entry = await database.get(QueuedSubmissionRecord, queued.queued_submission_id)
         assert entry.position == 1 and entry.to_resource().state == "queued" and entry.failure_json is None
     monkeypatch.setattr(commands.queued, "prepare_queued_run", prepare)
-    assert (await QueueRecovery(sessions, commands.queued).scan()).completed == 1
+    assert (await QueueDrain(sessions, commands.queued).scan()).completed == 1
 
 
 @pytest.mark.parametrize("change", ["principal_disabled", "queue_version"])
-async def test_final_revalidation_rolls_back_handoff_and_preserves_recoverable_queue(
-    interaction_sessions, interaction_object_store, change
+async def test_drain_revalidates_prepared_intent_without_changing_completed_source(
+    interaction_sessions, interaction_object_store, monkeypatch, change
 ):
     sessions = interaction_sessions
-    source, authority, stored, queued, commands, _completion_service, committer = await _completion(
+    source, authority, stored, queued, commands, drain, committer = await _completion(
         sessions, interaction_object_store
     )
-    verified = await committer.verify_state_outcome(authority, stored)
-    async with transaction(sessions) as database:
-        if change == "principal_disabled":
-            (await database.get(UserRecord, USER_ID)).status = "disabled"
-        else:
-            (await database.get(ThreadRecord, source.thread_id)).queue_version += 1
-    outcome = await committer.commit_verified_state_outcome(authority, verified)
-    assert outcome.disposition is AttemptDisposition.completed
-    assert outcome.thread_version == 2
+    await committer.commit_verified_state_outcome(authority, await committer.verify_state_outcome(authority, stored))
+    prepare = commands.queued.prepare_queued_run
+
+    async def change_after_preparation(**kwargs):
+        prepared = await prepare(**kwargs)
+        async with transaction(sessions) as database:
+            if change == "principal_disabled":
+                (await database.get(UserRecord, USER_ID)).status = "disabled"
+            else:
+                (await database.get(ThreadRecord, source.thread_id)).queue_version += 1
+        return prepared
+
+    monkeypatch.setattr(commands.queued, "prepare_queued_run", change_after_preparation)
+    assert not await drain.consume_thread(organization_id=ORGANIZATION_ID, thread_id=source.thread_id)
     async with short_session(sessions) as database:
         entry = await database.get(QueuedSubmissionRecord, queued.queued_submission_id)
         assert entry.position == 1 and entry.consumed_run_id is None and entry.failure_json is None
+        assert (await database.get(RunRecord, source.id)).status == "completed"
         assert await database.scalar(select(func.count()).select_from(RunRecord)) == 1
     async with transaction(sessions) as database:
         (await database.get(UserRecord, USER_ID)).status = "active"
-    assert (await QueueRecovery(sessions, commands.queued).scan()).completed == 1
+    monkeypatch.setattr(commands.queued, "prepare_queued_run", prepare)
+    assert (await QueueDrain(sessions, commands.queued).scan()).completed == 1
 
 
 @pytest.mark.parametrize("deletion_proof_changes", [False, True])
-async def test_permanent_failure_requires_deletion_proof_at_combined_commit(
-    interaction_sessions, interaction_object_store, deletion_proof_changes
+async def test_permanent_failure_revalidates_deletion_proof_after_source_completed(
+    interaction_sessions, interaction_object_store, monkeypatch, deletion_proof_changes
 ):
     sessions = interaction_sessions
-    source, authority, stored, queued, _commands_service, _completion_service, committer = await _completion(
+    source, authority, stored, queued, commands, drain, committer = await _completion(
         sessions, interaction_object_store, queued_hook=True
     )
+    await committer.commit_verified_state_outcome(authority, await committer.verify_state_outcome(authority, stored))
     async with transaction(sessions) as database:
         secret = await database.get(SecretRecord, SECRET_ID)
         secret.deleted_at = NOW
         secret.ciphertext = secret.nonce = secret.encryption_key_id = None
-    verified = await committer.verify_state_outcome(authority, stored)
     if deletion_proof_changes:
-        async with transaction(sessions) as database:
-            secret = await database.get(SecretRecord, SECRET_ID)
-            secret.deleted_at = None
-            secret.ciphertext, secret.nonce, secret.encryption_key_id = b"ciphertext", b"3" * 12, "test-key"
-    outcome = await committer.commit_verified_state_outcome(authority, verified)
-    assert outcome.disposition is AttemptDisposition.completed
+        fail = commands.queued._acceptance.fail_queued_permanently
+
+        async def restore_before_commit(**kwargs):
+            async with transaction(sessions) as database:
+                secret = await database.get(SecretRecord, SECRET_ID)
+                secret.deleted_at = None
+                secret.ciphertext, secret.nonce, secret.encryption_key_id = b"ciphertext", b"3" * 12, "test-key"
+            return await fail(**kwargs)
+
+        monkeypatch.setattr(commands.queued._acceptance, "fail_queued_permanently", restore_before_commit)
+    assert (
+        await drain.consume_thread(organization_id=ORGANIZATION_ID, thread_id=source.thread_id)
+        is not deletion_proof_changes
+    )
     async with short_session(sessions) as database:
         assert (await database.get(RunRecord, source.id)).status == "completed"
         entry = await database.get(QueuedSubmissionRecord, queued.queued_submission_id)
@@ -312,6 +322,19 @@ async def test_worker_composition_consumes_queue_when_source_finishes(
 
     model_factory = Mock(spec=NativeModelFactory)
     model_factory.build.return_value = FunctionModel(stream_function=respond)
+    consume = QueueDrain.consume_thread
+    completion_seen = Event()
+
+    async def observe_completed(self, *, organization_id, thread_id):
+        if thread_id == source.thread_id and not completion_seen.is_set():
+            async with short_session(sessions) as database:
+                assert (await database.get(RunRecord, source.id)).status == "completed"
+                entry = await database.get(QueuedSubmissionRecord, queued.queued_submission.queued_submission_id)
+                assert entry.consumed_run_id is None
+            completion_seen.set()
+        return await consume(self, organization_id=organization_id, thread_id=thread_id)
+
+    monkeypatch.setattr(QueueDrain, "consume_thread", observe_completed)
     settings = Settings(worker={"concurrency": 1, "poll_interval_seconds": 0.01})
     invocations = SimpleNamespace(preparation=_Preparation(), freezing=_Freezing([_frozen()]))
     async with worker_runtime(
@@ -336,11 +359,53 @@ async def test_worker_composition_consumes_queue_when_source_finishes(
                             entry = await database.get(
                                 QueuedSubmissionRecord, queued.queued_submission.queued_submission_id
                             )
-                            assert entry.consumed_run_id is not None
+                            if entry.consumed_run_id is None:
+                                continue
                             successor = await database.get(RunRecord, entry.consumed_run_id)
                             assert successor.parent_run_id == source.id
                             assert successor.authority_principal_id == USER_ID
                             break
                     await sleep(0.01)
+                assert completion_seen.is_set()
                 await loop.drain()
                 await loop.wait_stopped()
+
+
+async def test_source_hook_capacity_is_released_before_queued_successor_acceptance(
+    interaction_sessions, interaction_object_store, monkeypatch
+):
+    sessions = interaction_sessions
+    source, authority, stored, queued, commands, drain, committer = await _completion(
+        sessions, interaction_object_store, queued_hook=True
+    )
+    monkeypatch.setattr("a13n_service.hooks.persistence.MAX_ACTIVE_HOOK_SUBSCRIPTIONS", 1)
+    async with transaction(sessions) as database:
+        source_hook = await create_inline_hook_subscription(
+            database,
+            organization_id=ORGANIZATION_ID,
+            workspace_id=WORKSPACE_ID,
+            session_id=source.session_id,
+            thread_id=source.thread_id,
+            run_id=source.id,
+            actor_type="user",
+            actor_id=USER_ID,
+            subscription=queued.submission.hook_subscription,
+            now=NOW,
+        )
+    await committer.commit_verified_state_outcome(authority, await committer.verify_state_outcome(authority, stored))
+    async with short_session(sessions) as database:
+        expired = await database.get(HookSubscriptionRecord, source_hook.id)
+        run = await database.get(RunRecord, source.id)
+        assert expired.expired_at == run.sealed_at
+    monkeypatch.setattr(
+        commands.queued._acceptance,
+        "_inline_hooks",
+        InlineHookAcceptance(sessions, _inline_hooks(_RecordingEndpoint())),
+    )
+    assert await drain.consume_thread(organization_id=ORGANIZATION_ID, thread_id=source.thread_id)
+    async with short_session(sessions) as database:
+        entry = await database.get(QueuedSubmissionRecord, queued.queued_submission_id)
+        hooks = list(
+            await database.scalars(select(HookSubscriptionRecord).where(HookSubscriptionRecord.expired_at.is_(None)))
+        )
+        assert len(hooks) == 1 and hooks[0].inline_run_id == entry.consumed_run_id

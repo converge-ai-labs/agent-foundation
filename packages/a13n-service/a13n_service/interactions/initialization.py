@@ -44,6 +44,24 @@ class RunStateSeed(StrictModel):
     protocol_context: ProtocolInputContext | None = None
     secret_bindings: tuple[AgentSecretBinding, ...] = ()
 
+    @classmethod
+    def from_invocation(
+        cls,
+        *,
+        run_id: str,
+        invocation: FrozenAgentInvocation,
+        input: AcceptedAgentInput,
+        protocol_context: ProtocolInputContext | None = None,
+    ) -> RunStateSeed:
+        return cls(
+            run_id=run_id,
+            agent_id=invocation.agent_id,
+            agent_revision_id=invocation.agent_revision_id,
+            effective_agent_config=invocation.effective_config,
+            protocol_context=protocol_context,
+            secret_bindings=input.secret_bindings,
+        )
+
 
 def initialize_start_state(seed: RunStateSeed, *, thread_id: ThreadId) -> RunCheckpoint:
     return _initial_envelope(seed, HarnessState.new(thread_id=thread_id), HostContinuationState())

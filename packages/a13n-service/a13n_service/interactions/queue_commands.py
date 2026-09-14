@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
+
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -42,10 +45,10 @@ from a13n_service.interactions.initialization import (
     initialize_completed_continuation_state,
     initialize_empty_thread_state,
 )
+from a13n_service.interactions.input import AcceptedAgentInput
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.interactions.objects import RunStateStore
 from a13n_service.interactions.origin import SubmissionOrigin
-from a13n_service.interactions.queue_preparation import PreparedQueuedRun
 from a13n_service.interactions.queue_validity import permanent_queue_failure
 from a13n_service.interactions.state import RunCheckpoint
 from a13n_service.storage import short_session, transaction
@@ -62,6 +65,14 @@ from .errors import InteractionCommandError, command_not_found, idempotency_conf
 from .initialization import NewRunPolicy
 
 _USER_INPUT_ORIGIN = SubmissionOrigin()
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedQueuedRun:
+    run: Run
+    state: RunCheckpoint
+    input: AcceptedAgentInput
+    validate: Callable[[AsyncSession], Awaitable[None]]
 
 
 class QueuedRunCommands:
@@ -241,31 +252,23 @@ class QueuedRunCommands:
         )
         target_agent_id = queued.submission.agent_id or (head.agent_id if head is not None else current.agent_id)
         run_id = new_run_id()
-        prepared = await self._invocations.preparation.prepare(
+        prepared_input = await self._inputs.prepare(
+            self._invocations,
             actor=retained_actor,
             agent_id=target_agent_id,
             agent_revision_id=queued.submission.agent_revision_id,
             expected_current_revision_id=queued.submission.expected_current_revision_id,
             config_override=queued.submission.config_override,
-        )
-        async with transaction(self._sessions) as database:
-            frozen = await self._invocations.freezing.freeze_in_transaction(database, prepared=prepared)
-        accepted_input = await self._inputs.accept(
-            actor=retained_actor,
-            workspace_id=actor.workspace_id,
             submitted=queued.submission.input,
-            frozen=frozen,
             environment=queued.submission.environment
             if "environment" in queued.submission.model_fields_set
             else Omitted.UNSET,
             inherited_environment_id=thread.default_environment_id,
         )
-        seed = RunStateSeed(
+        seed = RunStateSeed.from_invocation(
             run_id=run_id,
-            agent_id=frozen.agent_id,
-            agent_revision_id=frozen.agent_revision_id,
-            effective_agent_config=frozen.effective_config,
-            secret_bindings=accepted_input.secret_bindings,
+            invocation=prepared_input.frozen,
+            input=prepared_input.input,
         )
         if head is None:
             state = initialize_empty_thread_state(seed, thread_id=thread.id)
@@ -288,8 +291,8 @@ class QueuedRunCommands:
             parent_run_id=parent_run_id,
             lineage_kind=lineage_kind,
             request_fingerprint=request_fingerprint,
-            invocation=frozen,
-            input=accepted_input,
+            invocation=prepared_input.frozen,
+            input=prepared_input.input,
             origin=SubmissionOrigin(trigger_type="queued_submission"),
         )
 
@@ -312,9 +315,11 @@ class QueuedRunCommands:
                 )
             except AuthorizationError as error:
                 raise command_not_found() from error
-            await validate_invocation(database, self._invocations, prepared=prepared, frozen=frozen)
+            await validate_invocation(
+                database, self._invocations, prepared=prepared_input.invocation, frozen=prepared_input.frozen
+            )
 
-        return PreparedQueuedRun(run, state, accepted_input, validate_final)
+        return PreparedQueuedRun(run, state, prepared_input.input, validate_final)
 
     async def _queued_consumption_replay(
         self,

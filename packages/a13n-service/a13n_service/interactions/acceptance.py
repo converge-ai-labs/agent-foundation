@@ -19,7 +19,6 @@ from a13n_service.interactions.environment_acceptance import add_run_with_enviro
 from a13n_service.interactions.environment_selection import (
     EnvironmentDefault,
     EnvironmentIntent,
-    RetainedRunEnvironment,
     queued_environment_choice,
     requested_environment,
 )
@@ -305,7 +304,6 @@ class RunAcceptanceService:
         )
         candidate_payload = await self._verify_input_payload(run)
         validate_queued_run_input(run, candidate_payload, accepted_input)
-        await self._verify_retry_payload(run, candidate_payload)
         await self._publish_initial(run, state)
         now = self._clock()
         try:
@@ -333,17 +331,12 @@ class RunAcceptanceService:
                 )
                 session_record_value = await require_session(database, run)
                 choice = await queued_environment_choice(database, queued_submission_id)
-                environment = (
-                    RetainedRunEnvironment(current.id, current.thread_id, requested=choice)
-                    if run.input_kind is RunInputKind.waiting_continue
-                    else requested_environment(choice, default=EnvironmentDefault.thread)
-                )
                 run_record_value = await add_run_with_environment(
                     database,
                     run=run,
                     state=state,
                     workspace_id=session_record_value.workspace_id,
-                    intent=environment,
+                    intent=requested_environment(choice, default=EnvironmentDefault.thread),
                 )
                 await database.flush()
                 await bind_unbound_async_entries(

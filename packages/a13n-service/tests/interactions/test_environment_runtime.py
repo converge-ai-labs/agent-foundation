@@ -411,7 +411,8 @@ async def test_postgresql_environment_lease_fences_competing_workers(
 ):
     import asyncio
 
-    from a13n_service.environments.lifecycle import EnvironmentOperationBusy
+    from a13n_environment import EnvironmentProviderOutcomeCertainty
+    from a13n_service.environments.lifecycle import EnvironmentOperationBusy, LifecycleOutcome
 
     _, _, lifecycle = await recipe(postgres_interaction_sessions, tmp_path, "on_use")
     _, run, _ = await _accept_root(postgres_interaction_sessions, interaction_object_store)
@@ -422,8 +423,8 @@ async def test_postgresql_environment_lease_fences_competing_workers(
     async with short_session(postgres_interaction_sessions) as session:
         environment_id = (await session.get(RunRecord, run.id)).environment_id
     results = await asyncio.gather(
-        lifecycle.acquire(environment_id, "prepare", attempt=attempt),
-        lifecycle.acquire(environment_id, "prepare", attempt=attempt),
+        lifecycle.acquire_preparation(environment_id, attempt=attempt),
+        lifecycle.acquire_preparation(environment_id, attempt=attempt),
         return_exceptions=True,
     )
     assert sum(isinstance(result, EnvironmentOperationBusy) for result in results) == 1
@@ -431,10 +432,10 @@ async def test_postgresql_environment_lease_fences_competing_workers(
     async with transaction(postgres_interaction_sessions) as session:
         row = await session.get(EnvironmentRecord, environment_id)
         row.operation_expires_at = NOW
-    current = await lifecycle.acquire(environment_id, "prepare", attempt=attempt)
+    current = await lifecycle.acquire_preparation(environment_id, attempt=attempt)
     assert current.operation_id == old.operation_id and current.fence > old.fence
     with pytest.raises(RuntimeError, match="authority changed"):
-        await lifecycle.publish(old, None)
+        await lifecycle.publish(old, LifecycleOutcome(certainty=EnvironmentProviderOutcomeCertainty.KNOWN, state=None))
     result = await lifecycle.execute(current)
     await result.environment.close()
 
@@ -551,8 +552,7 @@ async def test_registered_external_environment_uses_connection_configuration(
     construct.assert_awaited_once()
     await lifecycle.maintain(external.id)
     construct.assert_awaited_once()
-    with pytest.raises(ValueError, match="externally owned"):
-        await lifecycle.acquire(external.id, "delete")
+    assert await lifecycle.acquire_maintenance(external.id) is None
 
 
 async def test_missing_managed_recipe_never_falls_back_to_external_configuration():

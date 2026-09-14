@@ -1,4 +1,4 @@
-"""Visit due Environments in bounded batches, independently of target operation leases."""
+"""Scan due Environments in bounded batches; lifecycle owns atomic maintenance claims."""
 
 from __future__ import annotations
 
@@ -6,15 +6,15 @@ import asyncio
 from datetime import datetime
 
 from a13n_logging import get_logger
-from sqlalchemy import or_, select, update
+from sqlalchemy import or_, select
 
-from a13n_service.storage import is_database_unavailable, short_session, transaction
+from a13n_service.storage import is_database_unavailable, short_session
 from a13n_service.temporal import assume_utc
 
 from .identity import local_backend_eligible
 from .lifecycle import EnvironmentLifecycle
 from .models import EnvironmentProviderRecord, EnvironmentRecord
-from .policy import DEFAULT_BATCH_SIZE, FAILURE_BACKOFF
+from .policy import DEFAULT_BATCH_SIZE
 
 logger = get_logger(__name__)
 
@@ -87,34 +87,12 @@ class EnvironmentMaintenanceLoop:
                 await queue.put(None)
 
     async def _visit(self, environment_id: str, cutoff: datetime) -> None:
-        reserved_until = assume_utc(self.lifecycle.clock()) + self.lifecycle.lease_duration
-        async with transaction(self.lifecycle.sessions) as session:
-            row = await session.scalar(
-                select(EnvironmentRecord)
-                .where(EnvironmentRecord.id == environment_id, EnvironmentRecord.next_maintenance_at <= cutoff)
-                .with_for_update(skip_locked=True)
-            )
-            if row is None:
-                return
-            row.next_maintenance_at = reserved_until
         try:
-            await self.lifecycle.maintain(environment_id)
+            await self.lifecycle.maintain(environment_id, cutoff=cutoff)
         except asyncio.CancelledError:
             raise
         except Exception:
             logger.exception("Environment maintenance failed", extra={"environment_id": environment_id})
-            # Successful maintenance always installs its own deadline. Only a
-            # failed visit without a pending operation needs a fallback retry.
-            async with transaction(self.lifecycle.sessions) as session:
-                await session.execute(
-                    update(EnvironmentRecord)
-                    .where(
-                        EnvironmentRecord.id == environment_id,
-                        EnvironmentRecord.next_maintenance_at == reserved_until,
-                        EnvironmentRecord.operation_id.is_(None),
-                    )
-                    .values(next_maintenance_at=assume_utc(self.lifecycle.clock()) + FAILURE_BACKOFF)
-                )
 
     async def run(self) -> None:
         try:
