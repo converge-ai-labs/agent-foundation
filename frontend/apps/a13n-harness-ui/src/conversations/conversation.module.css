@@ -8,9 +8,19 @@
 .navigation label {
   font-size: 12px;
 }
+.navigationFilters {
+  display: grid;
+  gap: 8px;
+}
 .threadGroups {
+  flex: 1;
   overflow: auto;
   min-height: 80px;
+}
+.threadSkeletons {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
 }
 .groupHeading {
   display: flex;
@@ -24,9 +34,38 @@
 .groupHeading > div {
   display: flex;
 }
-.groupHeading > span {
+.groupToggle {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 2px;
+  border-radius: 6px;
+  text-align: left;
+  cursor: pointer;
+}
+.groupToggle:focus-visible {
+  outline: 1px solid var(--ring);
+}
+.groupToggle > span {
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.groupToggle > svg {
+  flex-shrink: 0;
+  width: 12px;
+  transition: transform 0.15s;
+}
+.groupToggle[aria-expanded="true"] > svg {
+  transform: rotate(90deg);
+}
+.groupToggle:disabled {
+  cursor: default;
+}
+.groupActions {
+  flex-shrink: 0;
 }
 .threadRow {
   display: flex;
@@ -34,15 +73,35 @@
   border-radius: 6px;
 }
 .threadRow:hover,
-.threadRow:has(.selected),
 .threadRow:has([data-popup-open]) {
-  background: var(--a13n-surface);
+  background: var(--a13n-hover);
+}
+.threadRow:has(.selected) {
+  background: var(--a13n-elevated);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 4%);
+}
+.threadRow:has(.selected) strong {
+  font-weight: 500;
 }
 .threadActions {
   flex-shrink: 0;
   margin-inline-end: 4px;
   color: var(--a13n-secondary);
   background: transparent;
+}
+@media (hover: hover) and (pointer: fine) {
+  .threadActions,
+  .groupActions {
+    opacity: 0;
+  }
+  .threadRow:hover .threadActions,
+  .threadRow:focus-within .threadActions,
+  .threadRow:has(.selected) .threadActions,
+  .threadActions[data-popup-open],
+  .groupHeading:hover .groupActions,
+  .groupHeading:focus-within .groupActions {
+    opacity: 1;
+  }
 }
 .threadActions:hover,
 .threadActions[data-popup-open] {
@@ -86,6 +145,17 @@
 .threadLink small {
   display: block;
   color: var(--a13n-secondary);
+  font-size: 11px;
+  margin-top: 2px;
+}
+.threadWaiting {
+  color: var(--warning-foreground);
+}
+.threadRunning {
+  color: var(--info-foreground);
+}
+.threadFailed {
+  color: var(--destructive-foreground);
 }
 .emptyGroup {
   display: block;

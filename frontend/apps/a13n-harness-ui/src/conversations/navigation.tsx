@@ -1,9 +1,16 @@
-import { useState } from "react";
-import { Link, NavLink, useNavigate } from "react-router";
+import { useEffect, useState } from "react";
+import { Link, NavLink, useMatch, useNavigate } from "react-router";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
   Button,
-  ChoiceField,
+  Checkbox,
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsiblePanel,
+  FormField,
+  Input,
+  SearchPicker,
+  Skeleton,
   ModalFrame,
   Menu,
   MenuTrigger,
@@ -12,6 +19,12 @@ import {
 } from "a13n-ui";
 import {
   Plus,
+  CaretRight,
+  FolderSimple,
+  WarningCircle,
+  CircleNotch,
+  Question,
+  Archive,
   ChatCircle,
   Gear,
   DotsThree,
@@ -23,6 +36,7 @@ import { useProjects, useSelectors, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice, TextField } from "../shell/ui";
 import { useThreads } from "./queries";
+import { ResourceChoice } from "../configuration/resource-choice";
 import styles from "./conversation.module.css";
 
 export function ConversationNavigation() {
@@ -31,6 +45,8 @@ export function ConversationNavigation() {
   const [query, setQuery] = useState("");
   const [archived, setArchived] = useState(false);
   const [scope, setScope] = useState("");
+  const [collapsed, setCollapsed] = useState<Set<string | null>>(new Set());
+  const match = useMatch("/threads/:threadId");
   const [creating, setCreating] = useState<string | null | undefined>(
     undefined,
   );
@@ -50,122 +66,174 @@ export function ConversationNavigation() {
       });
     groups.get(id)!.rows.push(row);
   }
+  const activeThread = rows.find(
+    (row) => row.thread.thread_id === match?.params.threadId,
+  );
+  const activeProject = activeThread?.thread.configuration.project_id ?? null;
+  useEffect(() => {
+    if (match)
+      setCollapsed((current) => {
+        const next = new Set(current);
+        next.delete(activeProject);
+        return next;
+      });
+  }, [match?.params.threadId, activeProject]);
   return (
     <div className={styles.navigation}>
       <Button variant="outline" onClick={() => setCreating(null)}>
         <Plus />
         New conversation
       </Button>
-      <TextField
-        type="search"
-        label="Find conversations"
-        value={query}
-        onChange={setQuery}
-      />
-      <ChoiceField
-        label="Project scope"
-        value={scope}
-        onValueChange={setScope}
-        options={[
-          { value: "", label: "All Projects" },
-          ...(projects.data ?? []).map((project) => ({
-            value: project.project_id,
-            label: project.name,
-          })),
-        ]}
-      />
+      <div className={styles.navigationFilters}>
+        <FormField label="Find conversations" hideLabel>
+          <Input
+            type="search"
+            placeholder="Find conversations…"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </FormField>
+        <SearchPicker
+          label="Project scope"
+          placeholder="All Projects"
+          emptyMessage="No matching projects."
+          value={scope}
+          onValueChange={setScope}
+          groups={[
+            {
+              label: "Projects",
+              options: [
+                { value: "", label: "All Projects", icon: <FolderSimple /> },
+                ...(projects.data ?? []).map((project) => ({
+                  value: project.project_id,
+                  label: project.name,
+                  keywords: [project.project_id],
+                  icon: <FolderSimple />,
+                })),
+              ],
+            },
+          ]}
+        />
+      </div>
       <div className={`${styles.threadGroups} a13n-scrollbar`}>
-        {Array.from(groups, ([id, group]) => (
-          <section key={id ?? "projectless"}>
-            <div className={styles.groupHeading}>
-              <span>{group.name}</span>
-              <div>
-                {id && (
+        {Array.from(groups)
+          .filter(([, group]) => !query || group.rows.length)
+          .map(([id, group]) => (
+            <Collapsible
+              key={id ?? "projectless"}
+              open={!!query || !collapsed.has(id)}
+              onOpenChange={(open) =>
+                setCollapsed((current) => {
+                  const next = new Set(current);
+                  if (open) next.delete(id);
+                  else next.add(id);
+                  return next;
+                })
+              }
+            >
+              <div className={styles.groupHeading}>
+                <CollapsibleTrigger
+                  className={styles.groupToggle}
+                  title={group.name}
+                  aria-label={`Conversations in ${group.name}`}
+                  disabled={!!query}
+                >
+                  <CaretRight />
+                  <span>{group.name}</span>
+                </CollapsibleTrigger>
+                <div className={styles.groupActions}>
+                  {id && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Settings for ${group.name}`}
+                      render={
+                        <Link to={`/projects/${encodeURIComponent(id)}`} />
+                      }
+                    >
+                      <Gear />
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="icon"
-                    aria-label={`Settings for ${group.name}`}
-                    render={<Link to={`/projects/${encodeURIComponent(id)}`} />}
+                    aria-label={`New conversation in ${group.name}`}
+                    onClick={() => setCreating(id)}
                   >
-                    <Gear />
+                    <Plus />
                   </Button>
-                )}
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  aria-label={`New conversation in ${group.name}`}
-                  onClick={() => setCreating(id)}
-                >
-                  <Plus />
-                </Button>
+                </div>
               </div>
-            </div>
-            {group.rows.map((row) => (
-              <div key={row.thread.thread_id} className={styles.threadRow}>
-                <NavLink
-                  to={`/threads/${encodeURIComponent(row.thread.thread_id)}`}
-                  className={({ isActive }) =>
-                    `${styles.threadLink} ${isActive ? styles.selected : ""}`
-                  }
-                >
-                  <ChatCircle />
-                  <span>
-                    <strong>
-                      {row.thread.title ||
-                        row.thread.excerpt?.first_input ||
-                        "Untitled conversation"}
-                    </strong>
-                    <small>
-                      {row.pending_decision
-                        ? "Needs your answer"
-                        : row.thread.root_activity.state !== "inactive"
-                          ? row.thread.root_activity.state
-                          : row.latest_operation?.status === "failed"
-                            ? "Failed"
-                            : row.thread.archived
-                              ? "Archived"
-                              : ""}
-                    </small>
-                  </span>
-                </NavLink>
-                <Menu>
-                  <MenuTrigger
-                    render={<Button variant="ghost" size="icon-sm" />}
-                    className={styles.threadActions}
-                    aria-label={`Actions for ${row.thread.title || "Untitled conversation"}`}
-                  >
-                    <DotsThree />
-                  </MenuTrigger>
-                  <MenuPopup align="start" side="right">
-                    {(
-                      [
-                        ["rename", "Rename conversation", PencilSimple],
-                        ["share", "Share conversation", ShareNetwork],
-                        ["comments", "Comments", ChatCircle],
-                        ["details", "Conversation details", SlidersHorizontal],
-                      ] as const
-                    ).map(([action, label, Icon]) => (
-                      <MenuItem
-                        key={action}
-                        onClick={() =>
-                          navigate(
-                            `/threads/${encodeURIComponent(row.thread.thread_id)}?dialog=${action}`,
-                          )
-                        }
+              <CollapsiblePanel>
+                {group.rows.map((row) => (
+                  <div key={row.thread.thread_id} className={styles.threadRow}>
+                    <NavLink
+                      to={`/threads/${encodeURIComponent(row.thread.thread_id)}`}
+                      className={({ isActive }) =>
+                        `${styles.threadLink} ${isActive ? styles.selected : ""}`
+                      }
+                    >
+                      <ThreadStateIcon row={row} />
+                      <span>
+                        <strong
+                          title={
+                            row.thread.title ||
+                            row.thread.excerpt?.first_input ||
+                            "Untitled conversation"
+                          }
+                        >
+                          {row.thread.title ||
+                            row.thread.excerpt?.first_input ||
+                            "Untitled conversation"}
+                        </strong>
+                        {threadState(row) && <small>{threadState(row)}</small>}
+                      </span>
+                    </NavLink>
+                    <Menu>
+                      <MenuTrigger
+                        render={<Button variant="ghost" size="icon-sm" />}
+                        className={styles.threadActions}
+                        aria-label={`Actions for ${row.thread.title || "Untitled conversation"}`}
                       >
-                        <Icon />
-                        {label}
-                      </MenuItem>
-                    ))}
-                  </MenuPopup>
-                </Menu>
-              </div>
-            ))}
-            {!group.rows.length && !query && !list.isPending && (
-              <small className={styles.emptyGroup}>No conversations yet</small>
-            )}
-          </section>
-        ))}
+                        <DotsThree />
+                      </MenuTrigger>
+                      <MenuPopup align="start" side="right">
+                        {(
+                          [
+                            ["rename", "Rename conversation", PencilSimple],
+                            ["share", "Share conversation", ShareNetwork],
+                            ["comments", "Comments", ChatCircle],
+                            [
+                              "details",
+                              "Conversation details",
+                              SlidersHorizontal,
+                            ],
+                          ] as const
+                        ).map(([action, label, Icon]) => (
+                          <MenuItem
+                            key={action}
+                            onClick={() =>
+                              navigate(
+                                `/threads/${encodeURIComponent(row.thread.thread_id)}?dialog=${action}`,
+                              )
+                            }
+                          >
+                            <Icon />
+                            {label}
+                          </MenuItem>
+                        ))}
+                      </MenuPopup>
+                    </Menu>
+                  </div>
+                ))}
+                {!group.rows.length && !query && list.isSuccess && (
+                  <small className={styles.emptyGroup}>
+                    No conversations yet
+                  </small>
+                )}
+              </CollapsiblePanel>
+            </Collapsible>
+          ))}
         {list.hasNextPage && (
           <Button
             variant="ghost"
@@ -175,18 +243,25 @@ export function ConversationNavigation() {
             Load more conversations
           </Button>
         )}
-        {list.isPending && <p role="status">Loading conversations…</p>}
-        {!list.isPending && !rows.length && query && (
+        {list.isPending && (
+          <div
+            role="status"
+            aria-label="Loading conversations"
+            aria-busy="true"
+            className={styles.threadSkeletons}
+          >
+            {[0, 1, 2, 3].map((item) => (
+              <Skeleton key={item} className="h-8 w-full" />
+            ))}
+          </div>
+        )}
+        {list.isSuccess && !rows.length && query && (
           <p>No matching conversations.</p>
         )}
         <ErrorNotice error={list.error} retry={() => void list.refetch()} />
       </div>
       <label className={styles.archiveFilter}>
-        <input
-          type="checkbox"
-          checked={archived}
-          onChange={(event) => setArchived(event.target.checked)}
-        />
+        <Checkbox checked={archived} onCheckedChange={setArchived} />
         Include archived
       </label>
       {creating !== undefined && (
@@ -196,6 +271,29 @@ export function ConversationNavigation() {
         />
       )}
     </div>
+  );
+}
+
+function threadState(row: Schema<"ThreadActivityView">) {
+  if (row.pending_decision) return "Needs your answer";
+  if (row.thread.root_activity.state === "preparing") return "Preparing";
+  if (row.thread.root_activity.state === "running") return "Running";
+  if (row.latest_operation?.status === "failed") return "Failed";
+  if (row.thread.archived) return "Archived";
+  return "";
+}
+
+function ThreadStateIcon({ row }: { row: Schema<"ThreadActivityView"> }) {
+  if (row.pending_decision)
+    return <Question className={styles.threadWaiting} aria-hidden="true" />;
+  if (row.thread.root_activity.state !== "inactive")
+    return <CircleNotch className={styles.threadRunning} aria-hidden="true" />;
+  if (row.latest_operation?.status === "failed")
+    return <WarningCircle className={styles.threadFailed} aria-hidden="true" />;
+  return row.thread.archived ? (
+    <Archive aria-hidden="true" />
+  ) : (
+    <ChatCircle aria-hidden="true" />
   );
 }
 
@@ -269,7 +367,7 @@ export function NewConversation({
           value={title}
           onChange={(value) => setTitle(value.slice(0, 200))}
         />
-        <ChoiceField
+        <ResourceChoice
           label="Project"
           value={project}
           onValueChange={setProject}
@@ -281,7 +379,7 @@ export function NewConversation({
             })),
           ]}
         />
-        <ChoiceField
+        <ResourceChoice
           label="Agent"
           value={agent}
           onValueChange={setAgent}
@@ -293,7 +391,7 @@ export function NewConversation({
             })),
           ]}
         />
-        <ChoiceField
+        <ResourceChoice
           label="Environment"
           value={environment}
           onValueChange={setEnvironment}

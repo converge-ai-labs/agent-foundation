@@ -969,3 +969,30 @@ it("previews collaboration colors and remembers a random initial color and later
     random.mockRestore();
   }
 });
+
+it("keeps destructive configuration actions secondary and requires named confirmation", async () => {
+  window.history.replaceState(
+    null,
+    "",
+    "/settings/source?path=agents%2Fassistant.yaml",
+  );
+  render(<BrowserApp />);
+  const user = userEvent.setup();
+  await user.click(
+    await screen.findByRole("button", { name: "More configuration actions" }),
+  );
+  await user.click(
+    await screen.findByRole("menuitem", { name: "Delete configuration" }),
+  );
+  const dialog = await screen.findByRole("dialog", {
+    name: "Delete this configuration?",
+  });
+  expect(dialog.textContent).toContain("agents/assistant.yaml");
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(
+    vi
+      .mocked(fetch)
+      .mock.calls.some(([request]) => (request as Request).method === "DELETE"),
+  ).toBe(false);
+});
