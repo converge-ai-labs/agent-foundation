@@ -15,6 +15,8 @@ from .role_rules import validate_binding
 
 
 class WorkspaceAction(StrEnum):
+    memory_read = "memory.read"
+    memory_write = "memory.write"
     agent_read = "agent.read"
     agent_create = "agent.create"
     agent_update = "agent.update"
@@ -111,6 +113,7 @@ _READ_ACTIONS = frozenset(
         WorkspaceAction.notification_subscribe,
         WorkspaceAction.usage_read,
         WorkspaceAction.trace_read,
+        WorkspaceAction.memory_read,
         WorkspaceAction.hook_subscription_read,
         WorkspaceAction.queued_submission_read,
         WorkspaceAction.a2a_push_configuration_read,
@@ -125,6 +128,7 @@ _RUNNER_ACTIONS = _READ_ACTIONS | frozenset(
     {
         WorkspaceAction.application_account_use,
         WorkspaceAction.agent_invoke,
+        WorkspaceAction.memory_write,
         WorkspaceAction.asset_create,
         WorkspaceAction.asset_use,
         WorkspaceAction.environment_use,
@@ -213,6 +217,7 @@ _DIRECT_AGENT_VIEWER_ACTIONS = frozenset(
         WorkspaceAction.lifecycle_event_read,
         WorkspaceAction.notification_subscribe,
         WorkspaceAction.trace_read,
+        WorkspaceAction.memory_read,
         WorkspaceAction.a2a_push_configuration_read,
     }
 )
@@ -220,6 +225,7 @@ _DIRECT_AGENT_VIEWER_ACTIONS = frozenset(
 _DIRECT_AGENT_RUNNER_ACTIONS = _DIRECT_AGENT_VIEWER_ACTIONS | frozenset(
     {
         WorkspaceAction.agent_invoke,
+        WorkspaceAction.memory_write,
         WorkspaceAction.run_continue,
         WorkspaceAction.run_fork,
         WorkspaceAction.run_retry,

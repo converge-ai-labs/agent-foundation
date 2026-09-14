@@ -1049,6 +1049,60 @@
       "title": "MCPServerSettings",
       "type": "object"
     },
+    "MemorySettings": {
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "default": "none",
+          "enum": [
+            "none",
+            "platform",
+            "oss"
+          ],
+          "title": "Provider",
+          "type": "string"
+        },
+        "base_url": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base Url"
+        },
+        "api_key": {
+          "anyOf": [
+            {
+              "format": "password",
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string",
+              "writeOnly": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Api Key"
+        },
+        "timeout_seconds": {
+          "default": 30,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Timeout Seconds",
+          "type": "number"
+        }
+      },
+      "title": "MemorySettings",
+      "type": "object"
+    },
     "MigrationSettings": {
       "additionalProperties": false,
       "properties": {
@@ -1793,6 +1847,9 @@
     },
     "models": {
       "$ref": "#/$defs/ModelsSettings"
+    },
+    "memory": {
+      "$ref": "#/$defs/MemorySettings"
     },
     "webhooks": {
       "$ref": "#/$defs/WebhooksSettings"

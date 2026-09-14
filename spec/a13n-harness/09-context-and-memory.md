@@ -371,7 +371,7 @@ After successful nested generation and replacement-history construction, compact
 
 ## Mem0 Integration
 
-`Mem0Capability` is the first-party long-term-memory integration. `mem0ai` is a default `a13n-harness` dependency, and the Capability uses its native `AsyncMemoryClient` rather than defining a competing provider abstraction. The Capability remains opt-in in an Agent definition; package installation or environment configuration alone enables no behavior.
+`Mem0Capability` is the first-party long-term-memory integration. OSS is the primary backend, using the native Mem0 server API; Platform has a separate native `AsyncMemoryClient` adapter. The shared `Mem0Backend` contract contains only bounded search, list, and explicit add. It does not emulate the Platform wire protocol or own memory storage. The Capability remains opt-in in an Agent definition; package installation or backend configuration alone enables no behavior.
 
 ```python
 class Mem0Scope(StrEnum):
@@ -384,7 +384,8 @@ class Mem0Capability(AbstractModelContextCapability):
     def __init__(
         self,
         *,
-        client: AsyncMemoryClient | None = None,
+        backend: Mem0Backend,
+        scope_ids: Mapping[Mem0Scope, str] | None = None,
         scope: Mem0Scope | None = None,
         toolset: bool = True,
         auto_recall: bool = True,
@@ -395,7 +396,7 @@ class Mem0Capability(AbstractModelContextCapability):
     ) -> None: ...
 ```
 
-An externally supplied client is borrowed and never closed by the Harness. Without one, every logical Run constructs one run-owned client from `MEM0_API_KEY` and optional `MEM0_BASE_URL`; the run-owned path suppresses the SDK's eager synchronous remote validation so authentication and provider availability are established only by a bounded asynchronous recall or tool operation. Logical-Run cleanup closes the SDK client. The SDK default base URL applies when `MEM0_BASE_URL` is absent. No client, credential, endpoint, or SDK response enters `HarnessState`.
+The backend is required and borrowed. The Host owns its transport lifetime, credentials, endpoint, and authorization; no environment-variable fallback or Run-owned client exists. `open_mem0_oss` and `open_mem0_platform` are host-lifetime context managers. Platform construction defers eager synchronous validation to bounded asynchronous operations. The Capability never closes the backend, and no backend, credential, endpoint, or native response enters `HarnessState`.
 
 The Capability resolves scope only from trusted current context:
 
@@ -405,13 +406,15 @@ The Capability resolves scope only from trusted current context:
 | `agent`  | the `agent_id` Identity claim | `agent_id`        |
 | `user`   | the `user_id` Identity claim  | `user_id`         |
 
-A configured `scope` is fixed for recall and tools; a missing required claim fails before model or memory-provider work. With `scope=None`, recall searches the union of all currently available scopes through one `OR` filter, while model tools accept one `thread`, `agent`, or `user` selector and resolve its value in trusted code. The model never supplies an entity ID. Thread is always available; agent and user are available only when their corresponding claims are present.
+A configured `scope` is fixed for recall and tools; a missing required claim fails before model or memory-provider work. With `scope=None`, recall searches the union of all currently available scopes, while model tools accept one `thread`, `agent`, or `user` selector and resolve its value in trusted code. The model never supplies an entity ID. Without `scope_ids`, thread is always available; agent and user require their corresponding claims. A Host-supplied `scope_ids` mapping replaces this derivation with explicit trusted namespace bindings and can omit unavailable scopes.
+
+OSS searches at most three scopes concurrently using native direct entity filters, deduplicates by memory ID using the highest finite score, sorts by descending score then ID, and applies the total limit. One deadline bounds the entire union; failure cancels siblings and never returns successful partial recall. Platform uses its native union filter. Listing uses native continuation: OSS requires the pinned PGVector keyset-pagination extension, not a truncated full-list response or a Service-side mirror.
 
 Pydantic `for_run()` receives the final prompt after `RunInputFactory` and Harness semantic-input middleware. The first native attempt extracts bounded text from that prompt, performs at most one automatic search for the logical Harness Run, and records the immutable result on the fresh run replacement retained by `AgentContext`; later internal `ModelAttempt` values reuse it. Exact deferred or provider-suspended continuation without new semantic input performs no recall. A successful non-empty result becomes one bounded untrusted `INPUT_PREAMBLE` block through the model-context coordinator. It never becomes authoritative input or restored memory authority, can remain in active history as a record of what the model observed, and is not projected on tool-result requests.
 
 `recall_timeout` bounds provider wait. Timeout, authentication or provider failure, malformed response, empty query, and no result produce bounded observations. With `recall_required=False`, they omit the block and execution continues; with `recall_required=True`, timeout, authentication or provider failure, or malformed response terminates before model work. Cancellation always propagates.
 
-When `toolset=True`, the Capability composes exactly one of two Toolsets. A fixed-scope Toolset exposes `memory_search`, `memory_list`, and `memory_add` without a scope argument. An unbound Toolset exposes the same names with a `Mem0Scope` selector. Search and list are managed read tools, while add is a managed write tool and stores explicit bounded text with `infer=False`. Provider failures become bounded typed tool failures. Raw entity IDs, update, delete, batch, history, event polling, and entity administration are not model-visible.
+When `toolset=True`, the Capability composes exactly one of two Toolsets. A fixed-scope Toolset exposes `memory_search`, `memory_list`, and `memory_add` without a scope argument. An unbound Toolset exposes the same names with a `Mem0Scope` selector. Search and list are managed read tools, while add is a managed write tool and stores explicit bounded text with `infer=False`. Provider failures become bounded typed tool failures. A write requires a completed single `ADD` result; acceptance or queuing is not persistence. Unconfirmed writes return `mem0_write_unconfirmed`, instruct reconciliation, and never suggest automatic retry. Raw entity IDs, update, delete, batch, history, event polling, and entity administration are not model-visible.
 
 Automatic recall emits bounded context lifecycle events and one `memory_recall` Harness operation observation. The operation span and metric contain only the closed operation kind; events may include configured scope kinds, outcome, and result count. Pydantic owns model-visible memory-tool spans and the managed invocation boundary owns their events. Harness-authored observations contain no query, memory text, entity value, endpoint, credential, SDK response body, or raw exception.
 

@@ -57,6 +57,23 @@ setup_correlation_secret = "local-public-test-correlation-key-not-a-real-secret"
 # The local profile permits private and proxy-routed model endpoints for development.
 private_endpoint_cidrs = ["0.0.0.0/0", "::/0"]
 
+[memory]
+# make setup / make dev starts the checkout-owned Mem0 OSS server.
+# This selects the backend, not Agent behavior: set config.memory on an Agent
+# revision to enable recall and memory tools. See dev/mem0/README.md.
+provider = "oss"
+base_url = "http://127.0.0.1:18888"
+api_key = "local-mem0-api-key"
+# The default OSS stack uses deterministic 128-dimensional development embeddings.
+# Set MEM0_OSS_EMBEDDING_{BASE_URL,MODEL,API_KEY,DIMENSIONS} for real embeddings.
+# Explicit memory writes use infer=false; they do not call an LLM or extract a
+# transcript. LLM configuration is independent: MEM0_OSS_LLM_{BASE_URL,MODEL,API_KEY}.
+# Real keys belong in local environment variables, never in this committed file.
+# Switching to Platform only changes this section (provider = "platform") and
+# its API key; OSS model settings are not used by Platform.
+# Set provider = "none" to opt out; existing memories are retained.
+timeout_seconds = 30
+
 [pricing]
 auto_update = false
 

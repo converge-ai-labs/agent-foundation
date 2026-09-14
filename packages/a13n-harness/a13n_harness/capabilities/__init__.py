@@ -142,13 +142,13 @@ from .working_state import (
 )
 
 if TYPE_CHECKING:
-    from .mem0 import MEM0_API_KEY_ENV, MEM0_BASE_URL_ENV, Mem0Capability, Mem0Scope
+    from .mem0 import Mem0Capability, Mem0Scope
 
 
 def __getattr__(name: str) -> object:
     # Importing any capability must not initialize an unused memory SDK and its
     # vector-store integrations. Preserve the public re-exports on explicit use.
-    if name in {"MEM0_API_KEY_ENV", "MEM0_BASE_URL_ENV", "Mem0Capability", "Mem0Scope"}:
+    if name in {"Mem0Capability", "Mem0Scope"}:
         value = vars(import_module(".mem0", __name__))[name]
         globals()[name] = value
         return value
@@ -157,8 +157,6 @@ def __getattr__(name: str) -> object:
 
 __all__ = [
     "MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS",
-    "MEM0_API_KEY_ENV",
-    "MEM0_BASE_URL_ENV",
     "WEB_SCRAPE_BACKEND_ENV",
     "WEB_SCRAPE_BACKEND_PRIORITY_ENV",
     "WEB_SCRAPE_MODE_ENV",

@@ -10,6 +10,7 @@ from a13n_service.configuration.sources import load_settings
 from dev.service import __main__ as commands
 from dev.service.environment import LOCAL_CONFIG, Environment
 from dev.service.langfuse import Langfuse
+from dev.service.mem0 import Mem0
 
 
 def local_environment(tmp_path, **overrides):
@@ -36,13 +37,14 @@ def test_setup_is_repeatable_preserves_state_and_never_resets(tmp_path, monkeypa
     monkeypatch.setattr(commands, "ensure_docker", lambda: events.append("docker"))
     monkeypatch.setattr(Environment, "compose", lambda self, *args: events.append(args))
     monkeypatch.setattr(Langfuse, "start", lambda self: events.append("langfuse"))
+    monkeypatch.setattr(Mem0, "start", lambda self: events.append("mem0"))
     monkeypatch.setattr(
         commands, "DatabaseMigrator", lambda *args: SimpleNamespace(upgrade=lambda: events.append("migrate"))
     )
     monkeypatch.setattr(commands, "reset", lambda *args: pytest.fail("setup must never reset or seed"))
     for _ in range(2):
         commands.setup(environment, Langfuse(environment), LOCAL_CONFIG)
-    assert events == ["docker", ("up", "-d", "--wait"), "langfuse", "migrate"] * 2
+    assert events == ["docker", ("up", "-d", "--wait"), "langfuse", "mem0", "migrate"] * 2
     assert retained.read_text() == "preserve data"
     assert "Service and Console have not been started" in capsys.readouterr().out
 
@@ -115,8 +117,9 @@ def test_stop_includes_existing_langfuse_after_opt_out(tmp_path, monkeypatch):
     monkeypatch.setattr(Environment, "require_stopped", lambda self: events.append("require-stopped"))
     monkeypatch.setattr(Environment, "compose", lambda self, *args: events.append(("service", args)))
     monkeypatch.setattr(Langfuse, "compose", lambda self, *args: events.append(("langfuse", args)))
+    monkeypatch.setattr(Mem0, "compose", lambda self, *args: events.append(("mem0", args)))
     commands.main()
-    assert events == ["require-stopped", ("service", ("stop",)), ("langfuse", ("stop",))]
+    assert events == ["require-stopped", ("service", ("stop",)), ("langfuse", ("stop",)), ("mem0", ("stop",))]
 
 
 def test_port_check_allows_immediate_restart_after_closed_connection(tmp_path, monkeypatch):
@@ -164,6 +167,7 @@ def test_logfire_local_commands_skip_langfuse_and_keep_selected_export(tmp_path,
     monkeypatch.setattr(Langfuse, "compose", lambda *args: pytest.fail("must not operate Langfuse"))
     monkeypatch.setattr(Langfuse, "warn_about_legacy_stack", lambda *args: pytest.fail("must not inspect Langfuse"))
     monkeypatch.setattr(Langfuse, "check_credentials", lambda *args: pytest.fail("must not contact Langfuse"))
+    monkeypatch.setattr(Mem0, "start", lambda self: None)
     events = []
     monkeypatch.setattr(commands, "ensure_docker", lambda: events.append("docker"))
     monkeypatch.setattr(Environment, "compose", lambda self, *args: events.append(args))

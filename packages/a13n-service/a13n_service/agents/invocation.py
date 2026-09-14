@@ -7,6 +7,7 @@ from typing import Literal
 from a13n_harness.tools import ToolPermissions
 from pydantic import Field, model_validator
 
+from a13n_service.memory.domain import MemorySelection
 from a13n_service.search.domain import SearchSelection
 
 from .domain import (
@@ -34,6 +35,7 @@ from .errors import invalid_run_override
 class MergedAgentRunConfig(StrictModel):
     """Typed non-secret config after applying one Run override to a Revision."""
 
+    memory: MemorySelection | None = Field(default=None, exclude_if=lambda value: value is None)
     search: SearchSelection | None = Field(default=None, exclude_if=lambda value: value is None)
     permissions: ToolPermissions | None = Field(default=None, exclude_if=lambda value: value is None)
     reviewer: AgentReviewer | None = Field(default=None, exclude_if=lambda value: value is None)
@@ -237,6 +239,7 @@ def merge_agent_run_override(
         retries=retries,
         secret_requirements=base.secret_requirements,
         asset_publication=base.asset_publication,
+        memory=override.memory if "memory" in fields else base.memory,
         search=override.search if "search" in fields else base.search,
         permissions=override.permissions if "permissions" in fields else base.permissions,
         reviewer=override.reviewer if "reviewer" in fields else base.reviewer,

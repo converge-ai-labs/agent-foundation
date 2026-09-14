@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import asyncio
 import json
 from collections.abc import AsyncIterator
 from typing import Any
 
-import httpx
 import pytest
 from a13n_harness import (
     AgentIdentityRef,
@@ -20,6 +18,7 @@ from a13n_harness import (
 )
 from a13n_harness.capabilities import Mem0Capability, Mem0Scope
 from a13n_harness.capabilities import mem0 as mem0_module
+from a13n_harness.capabilities.mem0_backends import Mem0PlatformBackend
 from mem0 import AsyncMemoryClient
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
@@ -73,7 +72,7 @@ class _FakeMem0Client(AsyncMemoryClient):
     async def add(self, messages, options=None, **kwargs):
         del options
         self.add_calls.append((messages, kwargs))
-        return {"results": []}
+        return {"results": [{"id": "memory-1", "event": "ADD", "memory": messages}]}
 
 
 def _bindings() -> RunBindings:
@@ -122,7 +121,7 @@ async def test_auto_recall_is_once_per_logical_run_and_persists_input_overlays()
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
-        capabilities=(Mem0Capability(client=client, toolset=False),),
+        capabilities=(Mem0Capability(backend=Mem0PlatformBackend(client), toolset=False),),
         model_recovery=ModelRecoveryPolicy(
             enabled=True,
             max_attempts=2,
@@ -210,7 +209,7 @@ async def test_toolset_schema_is_fixed_or_model_selectable(
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
-        capabilities=(Mem0Capability(client=client, scope=scope, auto_recall=False),),
+        capabilities=(Mem0Capability(backend=Mem0PlatformBackend(client), scope=scope, auto_recall=False),),
     )
     result = await executable.run("hello", bindings=_bindings())
 
@@ -261,7 +260,7 @@ async def test_fixed_scope_tools_resolve_ids_in_trusted_code_and_add_without_inf
         model=FunctionModel(stream_function=stream),
         capabilities=(
             Mem0Capability(
-                client=client,
+                backend=Mem0PlatformBackend(client),
                 scope=Mem0Scope.USER,
                 auto_recall=False,
             ),
@@ -273,176 +272,6 @@ async def test_fixed_scope_tools_resolve_ids_in_trusted_code_and_add_without_inf
     assert client.search_calls == [("preference", {"filters": {"user_id": "user-1"}, "top_k": 3})]
     assert client.list_calls == [{"filters": {"user_id": "user-1"}, "page": 1, "page_size": 4}]
     assert client.add_calls == [("The user prefers green tea.", {"filters": {"user_id": "user-1"}, "infer": False})]
-
-
-async def test_owned_client_is_entered_and_closed_for_each_logical_run(monkeypatch: pytest.MonkeyPatch) -> None:
-    clients: list[_FakeMem0Client] = []
-
-    async def create_client() -> AsyncMemoryClient:
-        client = _FakeMem0Client()
-        clients.append(client)
-        return client
-
-    monkeypatch.setattr(mem0_module, "_create_owned_client", create_client)
-
-    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
-        del messages, info
-        yield "done"
-
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=FunctionModel(stream_function=stream),
-        capabilities=(Mem0Capability(auto_recall=False),),
-    )
-    for _ in range(2):
-        result = await executable.run("hello", bindings=_bindings())
-        assert result.output_or_raise() == "done"
-
-    assert len(clients) == 2
-    assert [(client.entered, client.exited) for client in clients] == [(1, 1), (1, 1)]
-
-
-async def test_owned_client_uses_environment_without_eager_remote_validation(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    def fail_eager_validation(client: AsyncMemoryClient) -> None:
-        del client
-        raise AssertionError("the upstream synchronous ping must not run")
-
-    monkeypatch.setenv("MEM0_API_KEY", "test-key")
-    monkeypatch.setenv("MEM0_BASE_URL", "https://mem0.example.test")
-    monkeypatch.setattr(AsyncMemoryClient, "_validate_api_key", fail_eager_validation)
-
-    created = await mem0_module._create_owned_client()
-    try:
-        assert isinstance(created, AsyncMemoryClient)
-        assert created.api_key == "test-key"
-        assert created.host == "https://mem0.example.test"
-    finally:
-        await created.__aexit__(None, None, None)
-
-
-async def test_owned_client_supported_requests_never_include_deferred_project_values(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    requests: list[tuple[str, dict[str, str], object]] = []
-
-    def handle(request: httpx.Request) -> httpx.Response:
-        requests.append(
-            (
-                request.url.path,
-                dict(request.url.params),
-                json.loads(request.content),
-            )
-        )
-        if request.url.path.endswith("/search/"):
-            return httpx.Response(200, json={"results": [{"memory": "found"}]})
-        if request.url.path.endswith("/memories/") and request.method == "POST" and request.url.params:
-            return httpx.Response(200, json={"results": [{"memory": "listed"}]})
-        return httpx.Response(200, json={"results": []})
-
-    monkeypatch.setenv("MEM0_API_KEY", "test-key")
-    monkeypatch.setenv("MEM0_BASE_URL", "https://mem0.example.test")
-    client = await mem0_module._create_owned_client()
-    await client.async_client.aclose()
-    client.async_client = httpx.AsyncClient(
-        base_url=client.host,
-        transport=httpx.MockTransport(handle),
-    )
-    try:
-        await client.search("query", filters={"user_id": "user-1"}, top_k=3)
-        await client.get_all(filters={"user_id": "user-1"}, page=1, page_size=4)
-        await client.add("memory", filters={"user_id": "user-1"}, infer=False)
-    finally:
-        await client.__aexit__(None, None, None)
-
-    assert requests == [
-        (
-            "/v3/memories/search/",
-            {},
-            {"query": "query", "filters": {"user_id": "user-1"}, "top_k": 3},
-        ),
-        (
-            "/v3/memories/",
-            {"page": "1", "page_size": "4"},
-            {"filters": {"user_id": "user-1"}},
-        ),
-        (
-            "/v3/memories/add/",
-            {},
-            {
-                "messages": [{"role": "user", "content": "memory"}],
-                "filters": {"user_id": "user-1"},
-                "infer": False,
-            },
-        ),
-    ]
-    assert "deferred" not in json.dumps(requests)
-
-
-async def test_owned_client_construction_closes_late_result_on_cancellation(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    client = _FakeMem0Client()
-    client.exit_error = RuntimeError("provider secret")
-    started = asyncio.Event()
-    release = asyncio.Event()
-
-    async def to_thread(function, /, *args, **kwargs):
-        assert function is mem0_module._RunOwnedAsyncMemoryClient
-        assert args == ()
-        assert kwargs == {"api_key": "test-key", "host": None}
-        started.set()
-        await release.wait()
-        return client
-
-    monkeypatch.setenv("MEM0_API_KEY", "test-key")
-    monkeypatch.delenv("MEM0_BASE_URL", raising=False)
-    monkeypatch.setattr(asyncio, "to_thread", to_thread)
-
-    construction = asyncio.create_task(mem0_module._create_owned_client())
-    await started.wait()
-    construction.cancel()
-    release.set()
-
-    with pytest.raises(asyncio.CancelledError) as exc_info:
-        await construction
-    assert client.exited == 1
-    assert exc_info.value.__notes__ == ["Run-owned Mem0 client cleanup also failed with RuntimeError."]
-    assert "provider secret" not in str(exc_info.value.__notes__)
-
-
-async def test_owned_client_is_closed_when_required_recall_fails(monkeypatch: pytest.MonkeyPatch) -> None:
-    client = _FakeMem0Client()
-    client.search_error = RuntimeError("provider secret")
-
-    async def create_client() -> AsyncMemoryClient:
-        return client
-
-    monkeypatch.setattr(mem0_module, "_create_owned_client", create_client)
-
-    async def stream(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
-        del messages, info
-        yield "unreachable"
-
-    executable = HarnessBuilder().build(
-        AgentSpec(),
-        output_type=str,
-        model=FunctionModel(stream_function=stream),
-        capabilities=(
-            Mem0Capability(
-                toolset=False,
-                recall_required=True,
-            ),
-        ),
-    )
-
-    with pytest.raises(RunError) as exc_info:
-        await executable.run("hello", bindings=_bindings())
-
-    assert exc_info.value.code == "mem0_recall_failed"
-    assert (client.entered, client.exited) == (1, 1)
 
 
 async def test_invalid_unicode_recall_fails_open_before_overlay_projection() -> None:
@@ -460,7 +289,7 @@ async def test_invalid_unicode_recall_fails_open_before_overlay_projection() -> 
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
-        capabilities=(Mem0Capability(client=client, toolset=False),),
+        capabilities=(Mem0Capability(backend=Mem0PlatformBackend(client), toolset=False),),
     )
     events: list[HarnessExtensionEvent] = []
     result = None
@@ -502,7 +331,7 @@ async def test_optional_recall_failure_is_observed_while_required_recall_fails()
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
-        capabilities=(Mem0Capability(client=optional_client, toolset=False),),
+        capabilities=(Mem0Capability(backend=Mem0PlatformBackend(optional_client), toolset=False),),
     )
     optional_events: list[HarnessExtensionEvent] = []
     optional_result = None
@@ -526,7 +355,7 @@ async def test_optional_recall_failure_is_observed_while_required_recall_fails()
         model=FunctionModel(stream_function=stream),
         capabilities=(
             Mem0Capability(
-                client=required_client,
+                backend=Mem0PlatformBackend(required_client),
                 toolset=False,
                 recall_required=True,
             ),

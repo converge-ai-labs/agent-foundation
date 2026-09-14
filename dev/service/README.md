@@ -2,6 +2,10 @@
 
 This directory owns the local Service environment: its explicit TOML configuration, PostgreSQL and Redis containers, local Langfuse, state reset tooling, and fictional sample content. It does not depend on Console. Console, SDKs, the service CLI and direct API clients can all use the resulting Service.
 
+## Memory backend
+
+The default configuration also starts checkout-owned [Mem0 OSS](../mem0/README.md) on port 18888. It uses native PGVector persistence with deterministic local embeddings, not real semantic inference. Agent memory remains opt-in through `config.memory`; no frontend change is required. Use `make mem0-up`, `make mem0-down`, and `make mem0-logs` independently. Service reset and shutdown preserve Mem0 volumes; real model setup and dimension changes are documented in the Mem0 guide.
+
 ## Daily workflow
 
 These local tools support macOS and Linux. From the repository root, with Docker running:

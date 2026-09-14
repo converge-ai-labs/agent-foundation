@@ -189,6 +189,7 @@ class AgentInvocationFreezer:
             "retries": prepared.merged.retries,
             "secret_requirements": prepared.merged.secret_requirements,
             "asset_publication": prepared.merged.asset_publication,
+            "memory": prepared.merged.memory,
             "search": prepared.merged.search,
             "protocol": prepared.merged.protocol,
         }

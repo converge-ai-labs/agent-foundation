@@ -170,6 +170,7 @@ class ProtocolConfig:
 class AgentConfig:
     subagent_mode: Literal["inline", "async"] = "inline"
     model: AgentModel
+    memory: MemorySelection | None
     search: SearchSelection | None
     permissions: ToolPermissions | None
     reviewer: AgentReviewer | None
@@ -192,6 +193,8 @@ The [`PluginSelection` contract](36-installed-harness-plugins.md#configuration-a
 `permissions` selects the shared Harness `ToolPermissions` modes and stable-ID rules. Unconfigured tools default to `allow` without review; supplying `reviewer` or its risk rules alone does not opt tools into review. Select effective permission `review` for the desired tools. `reviewer` is optional `AgentReviewer`, using the shared `ToolReviewConfig` fields but constraining `model` to a managed immutable Model ID, not a provider route or executable import. Its `risk_threshold` (default `extra_high`), `on_flagged` (default `deny`), and single-best-selector `rules` configure shared risk policy; optional `instruction`, `shell_instruction`, `model_settings`, `timeout_seconds`, and `on_error` configure the default reviewer. These fields are frozen and reconstructed together with the reviewer Model snapshot. The Harness owns [permission and review semantics](../a13n-harness/07-tool-execution.md#tool-permissions-and-review); these settings do not widen Service IAM or Environment ceilings.
 
 Revision creation validates reviewer Model eligibility and settings without resolving credentials. The authored Model ID already freezes the stable reference; no separate reviewer Revision field is needed. Run acceptance resolves and freezes `resolved_reviewer_model` with the complete Model execution snapshot and merged Model-default/reviewer settings for every selected graph node. The worker reconstructs the reviewer from that accepted snapshot using the same managed Run Model resolver and current authentication path as the main Model. A missing required reviewer snapshot rejects reconstruction rather than falling back to ambient model inference. Main and reviewer may share a Model ID while retaining independent request settings. Optional absent fields remain absent from serialized legacy configurations and their digests.
+
+`memory` opts each Agent graph node into [long-term memory](42-memory.md). Absence or null disables memory. Its bounded behavior is immutable Revision content, not a backend endpoint or credential. Run override absence inherits, null disables, and an object replaces the whole selection; child nodes retain their own selection.
 
 `search` selects one first-party search account and bounded parameters under [Search Provider Management](41-search-provider-management.md#agent-selection). Absence or null disables this feature. The selection is Agent Revision content and is retained in each accepted graph node; the Provider owns live credentials and availability. Service composes the search capability directly, without requiring a Connector or installed-plugin selection.
 
@@ -266,6 +269,7 @@ class RetryOverride:
 
 class AgentRunOverride:
     model: ModelOverride | None
+    memory: MemorySelection | None
     search: SearchSelection | None  # May be absent.
     permissions: ToolPermissions | None  # May be absent.
     reviewer: AgentReviewer | None  # May be absent.
@@ -302,6 +306,7 @@ class EffectiveAgentConfig:
     schema_version: str
     model: EffectiveAgentModel
     resolved_reviewer_model: EffectiveAgentModel | None
+    memory: MemorySelection | None
     search: SearchSelection | None
     permissions: ToolPermissions | None
     reviewer: AgentReviewer | None

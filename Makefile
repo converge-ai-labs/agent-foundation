@@ -222,7 +222,17 @@ live-test-check: sync ## Validate live-test support without contacting services
 	@uv run --locked mdformat --check --number dev/live_tests/README.md dev/live_tests/performance/REPORTING.md
 	@uv run --locked python -m pytest dev/live_tests -q
 
-dev-down: ## Stop local Service and Langfuse infrastructure, preserving all data
+.PHONY: mem0-up mem0-down mem0-logs
+mem0-up: sync ## Start and verify the local Mem0 OSS server using SERVICE_CONFIG
+	@$(SERVICE_DEV) mem0 up
+
+mem0-down: sync ## Stop local Mem0 OSS while preserving memories
+	@$(SERVICE_DEV) mem0 down
+
+mem0-logs: sync ## Inspect local Mem0 OSS startup and provider errors
+	@$(SERVICE_DEV) mem0 logs
+
+dev-down: ## Stop local Service, Mem0 OSS and Langfuse infrastructure, preserving all data
 	@$(SERVICE_DEV) stop
 
 .PHONY: langfuse-up langfuse-down langfuse-test langfuse-reset

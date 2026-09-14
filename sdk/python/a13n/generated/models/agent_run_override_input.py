@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from ..models.agent_run_override_input_subagents_type_0 import AgentRunOverrideInputSubagentsType0
     from ..models.client_tool_definition import ClientToolDefinition
     from ..models.connection_tool_selection import ConnectionToolSelection
+    from ..models.memory_selection import MemorySelection
     from ..models.model_override import ModelOverride
     from ..models.output_spec import OutputSpec
     from ..models.plugin_selection import PluginSelection
@@ -31,6 +32,7 @@ class AgentRunOverrideInput:
         client_tools (list[ClientToolDefinition] | None | Unset):
         connection_tools (list[ConnectionToolSelection] | None | Unset):
         instructions (None | str | Unset):
+        memory (MemorySelection | None | Unset):
         model (ModelOverride | None | Unset):
         output_spec (None | OutputSpec | Unset):
         permissions (None | ToolPermissions | Unset):
@@ -45,6 +47,7 @@ class AgentRunOverrideInput:
     client_tools: list[ClientToolDefinition] | Unset | None = UNSET
     connection_tools: list[ConnectionToolSelection] | Unset | None = UNSET
     instructions: str | Unset | None = UNSET
+    memory: MemorySelection | Unset | None = UNSET
     model: ModelOverride | Unset | None = UNSET
     output_spec: OutputSpec | Unset | None = UNSET
     permissions: ToolPermissions | Unset | None = UNSET
@@ -60,6 +63,7 @@ class AgentRunOverrideInput:
         from ..models.agent_run_override_input_subagents_type_0 import (
             AgentRunOverrideInputSubagentsType0,
         )
+        from ..models.memory_selection import MemorySelection
         from ..models.model_override import ModelOverride
         from ..models.output_spec import OutputSpec
         from ..models.retry_override import RetryOverride
@@ -95,6 +99,14 @@ class AgentRunOverrideInput:
             instructions = UNSET
         else:
             instructions = self.instructions
+
+        memory: dict[str, Any] | Unset | None
+        if isinstance(self.memory, Unset):
+            memory = UNSET
+        elif isinstance(self.memory, MemorySelection):
+            memory = self.memory.to_dict()
+        else:
+            memory = self.memory
 
         model: dict[str, Any] | Unset | None
         if isinstance(self.model, Unset):
@@ -185,6 +197,8 @@ class AgentRunOverrideInput:
             field_dict["connection_tools"] = connection_tools
         if instructions is not UNSET:
             field_dict["instructions"] = instructions
+        if memory is not UNSET:
+            field_dict["memory"] = memory
         if model is not UNSET:
             field_dict["model"] = model
         if output_spec is not UNSET:
@@ -214,6 +228,7 @@ class AgentRunOverrideInput:
         )
         from ..models.client_tool_definition import ClientToolDefinition
         from ..models.connection_tool_selection import ConnectionToolSelection
+        from ..models.memory_selection import MemorySelection
         from ..models.model_override import ModelOverride
         from ..models.output_spec import OutputSpec
         from ..models.plugin_selection import PluginSelection
@@ -276,6 +291,23 @@ class AgentRunOverrideInput:
             return cast(str | Unset | None, data)
 
         instructions = _parse_instructions(d.pop("instructions", UNSET))
+
+        def _parse_memory(data: object) -> MemorySelection | Unset | None:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                memory_type_0 = MemorySelection.from_dict(data)
+
+                return memory_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(MemorySelection | Unset | None, data)
+
+        memory = _parse_memory(d.pop("memory", UNSET))
 
         def _parse_model(data: object) -> ModelOverride | Unset | None:
             if data is None:
@@ -444,6 +476,7 @@ class AgentRunOverrideInput:
             client_tools=client_tools,
             connection_tools=connection_tools,
             instructions=instructions,
+            memory=memory,
             model=model,
             output_spec=output_spec,
             permissions=permissions,

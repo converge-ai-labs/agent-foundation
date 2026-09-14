@@ -33,6 +33,14 @@ pub struct AgentConfigInput {
     #[serde(rename = "instructions", skip_serializing_if = "Option::is_none")]
     pub instructions: Option<String>,
 
+    #[serde(
+        rename = "memory",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub memory: Option<Option<Box<models::MemorySelection>>>,
+
     #[serde(rename = "model")]
     pub model: Box<models::AgentModel>,
 
@@ -110,6 +118,7 @@ impl AgentConfigInput {
             connection_tools: None,
             input_adapter: Box::new(input_adapter),
             instructions: None,
+            memory: None,
             model: Box::new(model),
             output_spec: None,
             permissions: None,

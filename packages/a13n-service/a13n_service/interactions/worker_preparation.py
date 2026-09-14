@@ -33,6 +33,8 @@ from a13n_service.assets.runtime import AssetRuntime
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.environments.runtime import prepare_run_environment, validate_run_environment
+from a13n_service.memory.runtime import graph_uses_memory, memory_capability
+from a13n_service.memory.service import MemoryService
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.provider_runtime import LiveProviderResolver
 from a13n_service.models.runtime import SnapshotRunModelResolver
@@ -90,10 +92,12 @@ class WorkerAttemptPreparer:
         subagent_capability: Callable[[], SubagentCapability],
         secrets: AgentSecretRuntime | None = None,
         search: SearchRuntime | None = None,
+        memory: MemoryService | None = None,
     ) -> None:
         self._subagent_capability = subagent_capability
         self._secrets = secrets
         self._search = search
+        self._memory = memory
         self._bound_secrets: BoundAgentSecrets | None = None
         self._environments = environments
         self._external_tools = external_tools
@@ -130,6 +134,9 @@ class WorkerAttemptPreparer:
             run_attempt_id=context.run_attempt_id,
             environment_id=self._run.environment_id,
         )
+        if graph_uses_memory(config):
+            if self._memory is None or self._memory.backend is None:
+                raise RunError("Memory is unavailable.", code="mem0_configuration_invalid")
         if self._search is not None:
             await self._search.validate(
                 run=self._run,
@@ -213,6 +220,20 @@ class WorkerAttemptPreparer:
             selected = resources.for_definition(context)
             if not context.is_root:
                 selected = (InlineRunControlCapability(self._control, agent_id=context.agent_id), *selected)
+            if context.config.memory is not None:
+                if self._memory is None:
+                    raise RuntimeError("Memory runtime is unavailable")
+                selected = (
+                    *selected,
+                    memory_capability(
+                        self._memory,
+                        run=run,
+                        workspace_id=self._workspace_id,
+                        agent_id=context.agent_id,
+                        selection=context.config.memory,
+                        current_context=lambda: self._control.current_context,
+                    ),
+                )
             protocol_context = self._control.current_state.envelope.protocol_context
             if context.is_root and protocol_context is not None:
                 selected = (*selected, ProtocolContextCapability(protocol_context))

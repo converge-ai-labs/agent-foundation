@@ -31,6 +31,7 @@ from a13n_service.digests import Sha256Digest
 from a13n_service.iam.domain import ActorRef
 from a13n_service.ids import ObjectId, new_object_id
 from a13n_service.labels import Labels
+from a13n_service.memory.domain import MemorySelection
 from a13n_service.models.domain import ModelExecutionSnapshot, ModelKey
 from a13n_service.models.settings import validate_settings_bounds
 from a13n_service.resource_keys import ResourceKey
@@ -225,6 +226,7 @@ class AgentReviewer(ToolReviewConfig):
 
 
 class AgentConfig(StrictModel):
+    memory: MemorySelection | None = Field(default=None, exclude_if=lambda value: value is None)
     search: SearchSelection | None = Field(default=None, exclude_if=lambda value: value is None)
     permissions: ToolPermissions | None = Field(default=None, exclude_if=lambda value: value is None)
     reviewer: AgentReviewer | None = Field(default=None, exclude_if=lambda value: value is None)
@@ -282,6 +284,7 @@ class RetryOverride(StrictModel):
 
 
 class AgentRunOverride(StrictModel):
+    memory: MemorySelection | None = None
     search: SearchSelection | None = None
     permissions: ToolPermissions | None = None
     reviewer: AgentReviewer | None = None
@@ -347,6 +350,7 @@ class ChildAgentExecution(StrictModel):
 
 class EffectiveAgentConfig(_ResolvedContent[EffectiveAgentModel]):
     resolved_reviewer_model: EffectiveAgentModel | None = Field(default=None, exclude_if=lambda value: value is None)
+    memory: MemorySelection | None = Field(default=None, exclude_if=lambda value: value is None)
     search: SearchSelection | None = Field(default=None, exclude_if=lambda value: value is None)
     permissions: ToolPermissions | None = Field(default=None, exclude_if=lambda value: value is None)
     reviewer: AgentReviewer | None = Field(default=None, exclude_if=lambda value: value is None)

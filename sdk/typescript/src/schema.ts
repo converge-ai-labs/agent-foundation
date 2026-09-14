@@ -2801,6 +2801,60 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/workspaces/{workspace}/memories": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Memories */
+    get: operations["get_workspaces_workspace_memories"];
+    put?: never;
+    /** Add Memory */
+    post: operations["post_workspaces_workspace_memories"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace}/memories/search": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Search Memories */
+    post: operations["post_workspaces_workspace_memories_search"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace}/memories/{memory_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Memory */
+    get: operations["get_workspaces_workspace_memories_memory_id"];
+    /** Update Memory */
+    put: operations["put_workspaces_workspace_memories_memory_id"];
+    post?: never;
+    /** Delete Memory */
+    delete: operations["delete_workspaces_workspace_memories_memory_id"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/workspaces/{workspace}/model-providers": {
     parameters: {
       query?: never;
@@ -3537,6 +3591,7 @@ export interface components {
        * @default
        */
       instructions?: string;
+      memory?: components["schemas"]["MemorySelection"] | null;
       model: components["schemas"]["AgentModel"];
       output_spec?: components["schemas"]["OutputSpec"] | null;
       permissions?: components["schemas"]["ToolPermissions"] | null;
@@ -3590,6 +3645,7 @@ export interface components {
        * @default
        */
       instructions?: string;
+      memory?: components["schemas"]["MemorySelection"] | null;
       model: components["schemas"]["AgentModel"];
       output_spec?: components["schemas"]["OutputSpec"] | null;
       permissions?: components["schemas"]["ToolPermissions"] | null;
@@ -3754,6 +3810,7 @@ export interface components {
         components["schemas"]["ConnectionToolSelection"][] | null;
       /** Instructions */
       instructions?: string | null;
+      memory?: components["schemas"]["MemorySelection"] | null;
       model?: components["schemas"]["ModelOverride"] | null;
       output_spec?: components["schemas"]["OutputSpec"] | null;
       permissions?: components["schemas"]["ToolPermissions"] | null;
@@ -3778,6 +3835,7 @@ export interface components {
         components["schemas"]["ConnectionToolSelection"][] | null;
       /** Instructions */
       instructions?: string | null;
+      memory?: components["schemas"]["MemorySelection"] | null;
       model?: components["schemas"]["ModelOverride"] | null;
       output_spec?: components["schemas"]["OutputSpec"] | null;
       permissions?: components["schemas"]["ToolPermissions"] | null;
@@ -6032,6 +6090,79 @@ export interface components {
     MCPToolCollection: {
       /** Items */
       items: components["schemas"]["MCPTool"][];
+    };
+    /**
+     * Mem0Scope
+     * @description Trusted Harness identity boundary used for Mem0 records.
+     * @enum {string}
+     */
+    Mem0Scope: "thread" | "agent" | "user";
+    /** Memory */
+    Memory: {
+      /** Id */
+      id: string;
+      /** Memory */
+      memory: string;
+      /** Score */
+      score?: number | null;
+    };
+    /** MemoryCollection */
+    MemoryCollection: {
+      /** Items */
+      items: components["schemas"]["Memory"][];
+      /** Next Cursor */
+      next_cursor?: string | null;
+    };
+    /** MemorySearch */
+    MemorySearch: {
+      /**
+       * Limit
+       * @default 20
+       */
+      limit?: number;
+      /** Query */
+      query: string;
+      /** Threshold */
+      threshold?: number | null;
+    };
+    /**
+     * MemorySelection
+     * @description Opt-in Agent behavior; backend credentials and subject IDs are host-owned.
+     */
+    MemorySelection: {
+      /**
+       * Auto Recall
+       * @default true
+       */
+      auto_recall?: boolean;
+      /**
+       * Recall Limit
+       * @default 5
+       */
+      recall_limit?: number;
+      /**
+       * Recall Required
+       * @default false
+       */
+      recall_required?: boolean;
+      /** Recall Threshold */
+      recall_threshold?: number | null;
+      /**
+       * Recall Timeout
+       * @default 2
+       */
+      recall_timeout?: number;
+      scope?: components["schemas"]["Mem0Scope"] | null;
+      /**
+       * Toolset
+       * @default true
+       */
+      toolset?: boolean;
+    };
+    /** MemoryWrite */
+    MemoryWrite: {
+      /** Text */
+      text: string;
     };
     /** Model */
     Model: {
@@ -19251,6 +19382,303 @@ export interface operations {
         content: {
           "application/json": components["schemas"]["Page_User_"];
         };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_workspaces_workspace_memories: {
+    parameters: {
+      query: {
+        limit?: number;
+        cursor?: string | null;
+        scope: components["schemas"]["Mem0Scope"];
+        subject_id?: string | null;
+      };
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryCollection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_workspaces_workspace_memories: {
+    parameters: {
+      query: {
+        scope: components["schemas"]["Mem0Scope"];
+        subject_id?: string | null;
+      };
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MemoryWrite"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Memory"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_workspaces_workspace_memories_search: {
+    parameters: {
+      query: {
+        scope: components["schemas"]["Mem0Scope"];
+        subject_id?: string | null;
+      };
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MemorySearch"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryCollection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_workspaces_workspace_memories_memory_id: {
+    parameters: {
+      query: {
+        scope: components["schemas"]["Mem0Scope"];
+        subject_id?: string | null;
+      };
+      header?: never;
+      path: {
+        memory_id: string;
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Memory"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  put_workspaces_workspace_memories_memory_id: {
+    parameters: {
+      query: {
+        scope: components["schemas"]["Mem0Scope"];
+        subject_id?: string | null;
+      };
+      header?: never;
+      path: {
+        memory_id: string;
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MemoryWrite"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Memory"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  delete_workspaces_workspace_memories_memory_id: {
+    parameters: {
+      query: {
+        scope: components["schemas"]["Mem0Scope"];
+        subject_id?: string | null;
+      };
+      header?: never;
+      path: {
+        memory_id: string;
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content?: never;
       };
       /** @description Invalid request. */
       400: {

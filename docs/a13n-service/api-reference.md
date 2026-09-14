@@ -2821,6 +2821,121 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
+## memory
+
+### `GET /api/v1/workspaces/{workspace}/memories`
+
+List Memories.
+
+| Parameter    | Location | Required | Type / schema  | Constraints and default            |
+| ------------ | -------- | -------- | -------------- | ---------------------------------- |
+| `workspace`  | path     | true     | string         | —                                  |
+| `limit`      | query    | false    | integer        | minimum=1; maximum=100; default=50 |
+| `cursor`     | query    | false    | string or null | —                                  |
+| `scope`      | query    | true     | Mem0Scope      | —                                  |
+| `subject_id` | query    | false    | string or null | —                                  |
+
+Responses:
+
+- **200** — Successful Response (`application/json: MemoryCollection`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/workspaces/{workspace}/memories`
+
+Add Memory.
+
+| Parameter    | Location | Required | Type / schema  | Constraints and default |
+| ------------ | -------- | -------- | -------------- | ----------------------- |
+| `workspace`  | path     | true     | string         | —                       |
+| `scope`      | query    | true     | Mem0Scope      | —                       |
+| `subject_id` | query    | false    | string or null | —                       |
+
+Request body: required.
+
+- `application/json`: `MemoryWrite`.
+
+Responses:
+
+- **201** — Successful Response (`application/json: Memory`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/workspaces/{workspace}/memories/search`
+
+Search Memories.
+
+| Parameter    | Location | Required | Type / schema  | Constraints and default |
+| ------------ | -------- | -------- | -------------- | ----------------------- |
+| `workspace`  | path     | true     | string         | —                       |
+| `scope`      | query    | true     | Mem0Scope      | —                       |
+| `subject_id` | query    | false    | string or null | —                       |
+
+Request body: required.
+
+- `application/json`: `MemorySearch`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: MemoryCollection`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `DELETE /api/v1/workspaces/{workspace}/memories/{memory_id}`
+
+Delete Memory.
+
+| Parameter    | Location | Required | Type / schema  | Constraints and default    |
+| ------------ | -------- | -------- | -------------- | -------------------------- |
+| `memory_id`  | path     | true     | string         | minLength=1; maxLength=512 |
+| `workspace`  | path     | true     | string         | —                          |
+| `scope`      | query    | true     | Mem0Scope      | —                          |
+| `subject_id` | query    | false    | string or null | —                          |
+
+Responses:
+
+- **204** — Successful Response.
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/workspaces/{workspace}/memories/{memory_id}`
+
+Get Memory.
+
+| Parameter    | Location | Required | Type / schema  | Constraints and default    |
+| ------------ | -------- | -------- | -------------- | -------------------------- |
+| `memory_id`  | path     | true     | string         | minLength=1; maxLength=512 |
+| `workspace`  | path     | true     | string         | —                          |
+| `scope`      | query    | true     | Mem0Scope      | —                          |
+| `subject_id` | query    | false    | string or null | —                          |
+
+Responses:
+
+- **200** — Successful Response (`application/json: Memory`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `PUT /api/v1/workspaces/{workspace}/memories/{memory_id}`
+
+Update Memory.
+
+| Parameter    | Location | Required | Type / schema  | Constraints and default    |
+| ------------ | -------- | -------- | -------------- | -------------------------- |
+| `memory_id`  | path     | true     | string         | minLength=1; maxLength=512 |
+| `workspace`  | path     | true     | string         | —                          |
+| `scope`      | query    | true     | Mem0Scope      | —                          |
+| `subject_id` | query    | false    | string or null | —                          |
+
+Request body: required.
+
+- `application/json`: `MemoryWrite`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: Memory`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
 ## model-management
 
 ### `GET /api/v1/model-provider-types`

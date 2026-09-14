@@ -170,15 +170,15 @@ class Mem0Toolset:
             await self._binding.add(text, scope=scope)
             return {"ok": True, "added": True}
         except TimeoutError:
-            return _failure("mem0_timeout", retry_hint="retry")
+            return _failure("mem0_write_unconfirmed")
         except RunError as exc:
             return cast(
                 dict[str, JsonValue], tool_failure(exc.code, str(exc), details=exc.details, retry_hint=exc.retry_hint)
             )
         except (TypeError, ValueError):
-            return _failure("mem0_response_invalid")
+            return _failure("mem0_write_unconfirmed")
         except Exception:
-            return _failure("mem0_add_failed", retry_hint="retry")
+            return _failure("mem0_write_unconfirmed")
 
 
 def _memory_result(memories) -> dict[str, JsonValue]:
@@ -209,7 +209,7 @@ def _failure(code: str, *, retry_hint: str | None = None) -> dict[str, JsonValue
         "mem0_scope_unavailable": "The requested memory scope is unavailable.",
         "mem0_search_failed": "The memory search failed; check the configured provider.",
         "mem0_list_failed": "The memory list operation failed; check the configured provider.",
-        "mem0_add_failed": "The memory write failed; inspect current memory before repeating the write.",
+        "mem0_write_unconfirmed": "The memory write could not be confirmed. Inspect current memory before repeating the write.",
     }.get(code, "The memory operation could not complete.")
     return cast(dict[str, JsonValue], tool_failure(code, message, retry_hint=retry_hint))
 
