@@ -6,6 +6,7 @@ import {
   File,
   Link as LinkIcon,
   DotsThree,
+  CaretRight,
 } from "@phosphor-icons/react";
 import { result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
@@ -182,6 +183,9 @@ export function Files({
                           ? `${entry.size.toLocaleString()} B`
                           : entry.kind}
                     </small>
+                    {entry.kind === "directory" && (
+                      <CaretRight size={14} aria-hidden="true" />
+                    )}
                   </button>
                   <details className={styles.entryActions}>
                     <summary aria-label={`Actions for ${basename(entry.path)}`}>

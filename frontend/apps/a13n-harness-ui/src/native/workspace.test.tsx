@@ -7,13 +7,14 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, useNavigate, useLocation } from "react-router";
 import { TransportContext } from "../transport/context";
 import type { Transport } from "../transport/client";
 import { NativeWorkspace } from "./workspace";
-import { FileBuffers } from "./buffer";
+import { FileBuffers, joinPath } from "./buffer";
 
 vi.mock("./files", () => ({
   Files: ({
@@ -30,6 +31,9 @@ vi.mock("./files", () => ({
       <p>Selected {path}</p>
       <button onClick={() => open("/native/second.txt")}>
         Open second file
+      </button>
+      <button onClick={() => open(joinPath(directory, "nested"))}>
+        Open child folder
       </button>
     </div>
   ),
@@ -121,13 +125,16 @@ function setup(
   metadata?: Promise<{ data: { kind: string } }>,
   currentProject: string | null = "project-one",
   otherProject: string | null = currentProject,
+  currentRoots: string[] = ["/native"],
 ) {
   vi.stubGlobal("matchMedia", () => ({ matches: false }));
   const focus = vi.fn();
   const get = vi.fn(
     async (
       url: string,
-      options?: { params?: { path?: { thread_id?: string } } },
+      options?: {
+        params?: { path?: { thread_id?: string }; query?: { path?: string } };
+      },
     ) =>
       url === "/api/host/files/metadata" && metadata
         ? metadata
@@ -151,7 +158,7 @@ function setup(
                       {
                         project_id: "project-one",
                         name: "Current project",
-                        roots: ["/native"],
+                        roots: currentRoots,
                       },
                       {
                         project_id: "project-two",
@@ -171,7 +178,11 @@ function setup(
                           },
                         },
                       }
-                    : { kind: "file" },
+                    : {
+                        kind: options?.params?.query?.path?.endsWith(".txt")
+                          ? "file"
+                          : "directory",
+                      },
           },
   );
   const transport = { client: { GET: get } } as unknown as Transport;
@@ -241,7 +252,9 @@ it("native deep links, file tabs and diff selection update personal focus withou
       path: "/native/first.txt",
     }),
   );
-  fireEvent.click(screen.getByRole("button", { name: "Back to explorer" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: /Back to (files|changes)/ }),
+  );
   fireEvent.click(screen.getByRole("button", { name: "Open second file" }));
   await screen.findByText("Editor /native/second.txt");
   await waitFor(() =>
@@ -556,7 +569,9 @@ it.each(["directory", "file", "repository", "diff"])(
       await screen.findByText(
         target === "file" ? "Editor /native/first.txt" : "Patch first.txt",
       );
-      fireEvent.click(screen.getByRole("button", { name: "Back to explorer" }));
+      fireEvent.click(
+        screen.getByRole("button", { name: /Back to (files|changes)/ }),
+      );
     }
     await screen.findByText(
       target === "directory" || target === "file"
@@ -582,3 +597,138 @@ it.each([
     ).toBe(false);
   },
 );
+
+it.each(["/native", "C:\\native", "\\\\server\\share\\native"])(
+  "folder navigation shows the current location, goes up, and returns to the Project root: %s",
+  async (root) => {
+    const first = joinPath(root, "nested");
+    const second = joinPath(first, "nested");
+    const { focus } = setup(
+      "/threads/current",
+      true,
+      undefined,
+      "project-one",
+      "project-one",
+      [root],
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Files" }));
+    await screen.findByText(`Folder ${root}`);
+    expect(
+      screen
+        .getByRole("button", { name: "Up one level" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Open child folder" }));
+    await screen.findByText(`Folder ${first}`);
+    fireEvent.click(screen.getByRole("button", { name: "Open child folder" }));
+    await screen.findByText(`Folder ${second}`);
+    const trail = screen.getByRole("navigation", { name: "Current folder" });
+    expect(
+      trail.querySelector('[aria-current="location"]')?.getAttribute("title"),
+    ).toBe(second);
+    fireEvent.click(screen.getByRole("button", { name: "Up one level" }));
+    await screen.findByText(`Folder ${first}`);
+    fireEvent.click(
+      within(trail).getByRole("button", { name: "Current project" }),
+    );
+    await screen.findByText(`Folder ${root}`);
+    expect(
+      screen
+        .getByRole("button", { name: "Up one level" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    await waitFor(() =>
+      expect(focus).toHaveBeenLastCalledWith({ kind: "file", path: root }),
+    );
+  },
+);
+
+it("file views retain folder navigation and a named return to the containing folder without losing the file tab", async () => {
+  setup(
+    "/threads/current?native=files&native_path=%2Fnative%2Fsrc%2Ffirst.txt",
+  );
+  await screen.findByText("Editor /native/src/first.txt");
+  const trail = screen.getByRole("navigation", { name: "Current folder" });
+  expect(
+    within(trail)
+      .getByRole("button", { name: "src" })
+      .getAttribute("aria-current"),
+  ).toBe("location");
+  fireEvent.click(screen.getByRole("button", { name: "Back to files" }));
+  await screen.findByText("Folder /native/src");
+  fireEvent.click(screen.getByRole("button", { name: "first.txt" }));
+  await screen.findByText("Editor /native/src/first.txt");
+  fireEvent.click(
+    within(trail).getByRole("button", { name: "Current project" }),
+  );
+  await screen.findByText("Folder /native");
+  fireEvent.click(screen.getByRole("button", { name: "first.txt" }));
+  await screen.findByText("Editor /native/src/first.txt");
+});
+
+it("a failed parent open keeps the actual location and a late child response cannot undo successful Up navigation", async () => {
+  const { get } = setup(
+    "/threads/current?native=files&native_path=%2Fnative%2Fsrc",
+  );
+  await screen.findByText("Folder /native/src");
+  get.mockRejectedValueOnce(new Error("Folder unavailable"));
+  fireEvent.click(screen.getByRole("button", { name: "Up one level" }));
+  await screen.findByText("Folder unavailable");
+  expect(screen.getByText("Folder /native/src")).toBeTruthy();
+  let finish!: (value: { data: { kind: string } }) => void;
+  get.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Open child folder" }));
+  await screen.findByText("Opening path…");
+  fireEvent.click(screen.getByRole("button", { name: "Up one level" }));
+  await screen.findByText("Folder /native");
+  finish({ data: { kind: "directory" } });
+  await waitFor(() => expect(screen.queryByText("Opening path…")).toBeNull());
+  expect(screen.getByText("Folder /native")).toBeTruthy();
+});
+
+it("explicit external native links keep usable ancestry rather than an empty Project breadcrumb", async () => {
+  setup("/threads/current?native=files&native_path=%2Fexternal%2Ffolder");
+  await screen.findByText("Folder /external/folder");
+  const trail = screen.getByRole("navigation", { name: "Current folder" });
+  expect(
+    within(trail).queryByRole("button", { name: "Current project" }),
+  ).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Up one level" }));
+  await screen.findByText("Folder /external");
+  fireEvent.click(within(trail).getByRole("button", { name: "/" }));
+  await screen.findByText("Folder /");
+  expect(
+    screen
+      .getByRole("button", { name: "Up one level" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+});
+
+it("switching configured roots from a file view returns to the selected folder instead of leaving a stale editor", async () => {
+  setup(
+    "/threads/current?native=files&native_path=%2Fnative%2Ffirst.txt",
+    true,
+    undefined,
+    "project-one",
+    "project-one",
+    ["/native", "/second-root"],
+  );
+  await screen.findByText("Editor /native/first.txt");
+  fireEvent.click(
+    within(
+      screen.getByRole("navigation", { name: "Project folders" }),
+    ).getByRole("button", { name: "second-root" }),
+  );
+  await screen.findByText("Folder /second-root");
+  expect(screen.queryByText("Editor /native/first.txt")).toBeNull();
+  expect(
+    screen
+      .getByRole("button", { name: "Up one level" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+});

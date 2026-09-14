@@ -9,6 +9,8 @@ import {
   ArrowClockwise,
   TerminalWindow,
   ArrowLeft,
+  ArrowUp,
+  CaretRight,
   ArrowsOutSimple,
   ArrowsInSimple,
   LinkSimple,
@@ -78,6 +80,7 @@ export function NativeWorkspace({
   const pageElement = useRef<HTMLDivElement>(null);
   const paneElement = useRef<HTMLElement>(null);
   const editorElement = useRef<HTMLDivElement>(null);
+  const folderTrail = useRef<HTMLElement>(null);
   const [paneLink, setPaneLink] = useState("");
   const [pane, setPane] = useState<"files" | "changes" | null>(null);
   const [directory, setDirectory] = useState("");
@@ -89,9 +92,23 @@ export function NativeWorkspace({
   const [selected, select] = useState<DiffSelection | null>(null);
   const openingRequest = useRef<AbortController | null>(null);
   const appliedProject = useRef<string | null>(null);
+  const fileRoot =
+    project?.roots.includes(root) && withinRoot(directory, root)
+      ? root
+      : project?.roots.find((folder) => withinRoot(directory, folder));
+  const parentDirectory = parentPath(directory);
+  const canGoUp =
+    !!directory && directory !== fileRoot && parentDirectory !== directory;
+  const directoryTrail = breadcrumbs(directory).filter(
+    (part) => !fileRoot || withinRoot(part, fileRoot),
+  );
   const refresh = () => {
     void queries.invalidateQueries({ queryKey: ["native"] });
   };
+  useEffect(() => {
+    const trail = folderTrail.current;
+    if (trail) trail.scrollTop = trail.scrollHeight;
+  }, [directory, pane, view]);
   useEffect(() => {
     if (projectLoading) return;
     const context = `${projectId ?? ""}:${projectRoot}`;
@@ -414,12 +431,11 @@ export function NativeWorkspace({
           >
             <header className={styles.paneHeader}>
               <div className={styles.panelTools}>
-                {view !== "page" && (
+                {view !== "page" ? (
                   <Button
                     variant="ghost"
-                    size="icon"
-                    aria-label="Back to explorer"
-                    title="Back to explorer"
+                    size="sm"
+                    title={pane === "files" ? directory : root}
                     onClick={() => {
                       cancelOpening();
                       setView("page");
@@ -427,9 +443,11 @@ export function NativeWorkspace({
                     }}
                   >
                     <ArrowLeft />
+                    {pane === "files" ? "Back to files" : "Back to changes"}
                   </Button>
+                ) : (
+                  <strong>{pane === "files" ? "Files" : "Changes"}</strong>
                 )}
-                <strong>{pane === "files" ? "Files" : "Changes"}</strong>
               </div>
               <div className={styles.actions}>
                 <Button
@@ -535,6 +553,94 @@ export function NativeWorkspace({
                 {opening && <p role="status">Opening path…</p>}
               </div>
             )}
+            {!projectLoading &&
+              directory &&
+              (pane === "files" || view === "page") && (
+                <div className={styles.location}>
+                  {pane === "changes" && (
+                    <strong title={root}>{project?.name}</strong>
+                  )}
+                  {project && project.roots.length > 1 && (
+                    <nav
+                      className={styles.projectFolders}
+                      aria-label="Project folders"
+                    >
+                      {project.roots.map((folder) => (
+                        <Button
+                          key={folder}
+                          size="sm"
+                          variant="ghost"
+                          title={folder}
+                          aria-pressed={root === folder}
+                          onClick={() => {
+                            cancelOpening();
+                            setRoot(folder);
+                            setDirectory(folder);
+                            setView("page");
+                            setFocusedArea("explorer");
+                            select(null);
+                            setError(null);
+                          }}
+                        >
+                          <Folder />
+                          {basename(folder)}
+                        </Button>
+                      ))}
+                    </nav>
+                  )}
+                  {pane === "files" && (
+                    <div className={styles.folderNavigation}>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        aria-label="Up one level"
+                        title={
+                          canGoUp
+                            ? `Up to ${parentDirectory}`
+                            : fileRoot
+                              ? "At the project root"
+                              : "At the filesystem root"
+                        }
+                        disabled={!canGoUp}
+                        onClick={() => void open(parentDirectory)}
+                      >
+                        <ArrowUp />
+                        Up
+                      </Button>
+                      <nav
+                        ref={folderTrail}
+                        className={styles.breadcrumbs}
+                        aria-label="Current folder"
+                      >
+                        <ol>
+                          {directoryTrail.map((part, index) => (
+                            <li key={part}>
+                              {index > 0 && <CaretRight aria-hidden="true" />}
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                title={part}
+                                aria-current={
+                                  part === directory ? "location" : undefined
+                                }
+                                onClick={() => void open(part)}
+                              >
+                                {index === 0 && <Folder aria-hidden="true" />}
+                                <span>
+                                  {part === fileRoot &&
+                                  project?.roots.length === 1
+                                    ? project.name
+                                    : basename(part)}
+                                </span>
+                              </Button>
+                            </li>
+                          ))}
+                        </ol>
+                      </nav>
+                    </div>
+                  )}
+                </div>
+              )}
             {view !== "page" && (
               <div
                 ref={editorElement}
@@ -591,51 +697,6 @@ export function NativeWorkspace({
                 </div>
               ) : (
                 <>
-                  <div className={styles.location}>
-                    <strong title={root}>{project?.name}</strong>
-                    {project && project.roots.length > 1 && (
-                      <nav
-                        className={styles.breadcrumbs}
-                        aria-label="Project folders"
-                      >
-                        {project.roots.map((folder) => (
-                          <button
-                            key={folder}
-                            title={folder}
-                            aria-pressed={root === folder}
-                            onClick={() => {
-                              cancelOpening();
-                              setRoot(folder);
-                              setDirectory(folder);
-                              select(null);
-                              setError(null);
-                            }}
-                          >
-                            {basename(folder)}
-                          </button>
-                        ))}
-                      </nav>
-                    )}
-                    {pane === "files" && (
-                      <nav
-                        className={styles.breadcrumbs}
-                        aria-label="Native path breadcrumbs"
-                      >
-                        {breadcrumbs(directory)
-                          .filter((part) => withinRoot(part, root))
-                          .map((part) => (
-                            <button
-                              type="button"
-                              key={part}
-                              title={part}
-                              onClick={() => void open(part)}
-                            >
-                              {basename(part)}
-                            </button>
-                          ))}
-                      </nav>
-                    )}
-                  </div>
                   <div className={`${styles.paneBody} a13n-scrollbar`}>
                     {pane === "files" ? (
                       <Files

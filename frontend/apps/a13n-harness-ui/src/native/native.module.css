@@ -143,8 +143,26 @@
 }
 .location {
   display: grid;
-  gap: 12px;
-  padding-bottom: 12px;
+  gap: 8px;
+  padding: 8px 0 12px;
+  flex-shrink: 0;
+}
+.folderNavigation {
+  display: flex;
+  align-items: start;
+  gap: 8px;
+  min-width: 0;
+}
+.folderNavigation > button {
+  flex-shrink: 0;
+}
+.projectFolders {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.projectFolders [aria-pressed="true"] {
+  background: var(--a13n-surface);
 }
 .address {
   display: flex;
@@ -156,28 +174,46 @@
   min-width: 0;
 }
 .breadcrumbs {
+  min-width: 0;
+  max-height: 96px;
+  overflow: auto;
+}
+.breadcrumbs ol {
   display: flex;
   flex-wrap: wrap;
   gap: 2px;
-  max-height: 64px;
-  overflow: auto;
+  padding: 0;
+  margin: 0;
+  list-style: none;
+}
+.breadcrumbs li {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  max-width: 100%;
+}
+.breadcrumbs li > svg {
+  width: 12px;
+  height: 12px;
+  color: var(--a13n-secondary);
+  flex-shrink: 0;
 }
 .breadcrumbs button {
+  display: inline-flex;
+  max-width: 180px;
+  min-width: 0;
   color: var(--a13n-secondary);
-  font-size: 11px;
-  border: 0;
-  background: none;
-  padding: 3px;
-  cursor: pointer;
-  overflow-wrap: anywhere;
+  font-size: 12px;
+  padding-inline: 6px;
 }
-.breadcrumbs button:not(:last-child)::after {
-  content: "/";
-  padding-left: 6px;
-  color: var(--a13n-border);
+.breadcrumbs button span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.breadcrumbs button:hover {
+.breadcrumbs button[aria-current] {
   color: var(--a13n-text);
+  background: var(--a13n-surface);
 }
 .stack {
   display: flex;
