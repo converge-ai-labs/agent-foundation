@@ -377,7 +377,9 @@ export function ModelForm({
               (!catalog.data?.items.length && !catalog.isPending)) && (
               <Button
                 type="button"
-                variant="outline"
+                variant="ghost"
+                size="sm"
+                className={modelStyles.catalogFallback}
                 onClick={() => setManual(true)}
               >
                 {t("Enter model ID")}
