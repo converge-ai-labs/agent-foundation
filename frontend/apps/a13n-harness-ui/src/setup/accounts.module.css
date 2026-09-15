@@ -1,0 +1,129 @@
+.accountStatus {
+  margin: 0;
+  font-size: 13px;
+}
+.advanced {
+  font-size: 13px;
+  color: var(--a13n-text-supporting);
+}
+.advanced summary {
+  width: fit-content;
+  cursor: pointer;
+}
+.advanced[open] > summary {
+  margin-bottom: 16px;
+}
+.login {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 20px;
+  min-width: 0;
+  padding: 20px;
+  border-radius: 10px;
+  background: var(--a13n-surface);
+}
+.loginHeader {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+.loginHeader h3 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+}
+.loginStatus {
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.loginSteps {
+  display: grid;
+  gap: 20px;
+  margin: 0;
+  padding-left: 20px;
+  list-style: decimal;
+  font-size: 13px;
+}
+.loginSteps li {
+  min-width: 0;
+  padding-left: 4px;
+}
+.loginSteps li::marker {
+  color: var(--a13n-secondary);
+  font-weight: 500;
+}
+.verificationLink {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 8px;
+  color: var(--info-foreground);
+  font-size: 14px;
+  font-weight: 500;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+  border-radius: 3px;
+}
+.verificationLink > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.verificationLink svg {
+  flex-shrink: 0;
+}
+.verificationLink:hover {
+  text-decoration-thickness: 2px;
+}
+.verificationLink:focus-visible {
+  outline: 2px solid var(--info-foreground);
+  outline-offset: 4px;
+}
+.deviceCodeRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px 20px;
+  margin-top: 8px;
+}
+.deviceCode {
+  min-width: 0;
+  padding: 10px 14px;
+  border: 1px dashed var(--a13n-input-border);
+  border-radius: 6px;
+  background: var(--a13n-canvas);
+  color: var(--a13n-text);
+  font-size: 24px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.12em;
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.login > button {
+  align-self: flex-start;
+}
+.login p,
+.help {
+  margin: 0;
+  color: var(--a13n-text-supporting);
+  font-size: 12px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.loginSteps p {
+  margin-top: 8px;
+}
+@media (max-width: 600px) {
+  .login {
+    padding: 16px;
+  }
+  .deviceCode {
+    font-size: 20px;
+  }
+}

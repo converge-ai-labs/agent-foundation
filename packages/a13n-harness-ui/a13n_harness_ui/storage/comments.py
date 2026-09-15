@@ -11,13 +11,14 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_harness_ui.errors import StoreConflictError, ThreadError
 from a13n_harness_ui.output_comment_models import (
     ChildOutputLocation,
+    CommentEdit,
     CommentPublication,
     OutputComment,
     SavedOutputTarget,
 )
 
 from .database import short_session, transaction
-from .models import ChildExecutionRecord, OutputCommentRecord, ThreadRecord
+from .models import ChildExecutionRecord, OutputCommentRecord, OutputCommentTombstoneRecord, ThreadRecord
 from .objects import ObjectKind, ObjectRef
 
 
@@ -27,7 +28,13 @@ def target_key(target: SavedOutputTarget) -> str:
 
 def _value(row: OutputCommentRecord) -> OutputComment:
     publication = CommentPublication.model_validate_json(row.publication_json)
-    return OutputComment(**publication.model_dump(), root_thread_id=row.root_thread_id, created_at=row.created_at)
+    return OutputComment(
+        **publication.model_dump(),
+        root_thread_id=row.root_thread_id,
+        created_at=row.created_at,
+        version=row.version,
+        updated_at=row.updated_at,
+    )
 
 
 def _reconcile(row: OutputCommentRecord, root_thread_id: str, publication: CommentPublication) -> OutputComment:
@@ -50,8 +57,52 @@ class OutputCommentRepository:
 
     async def reconcile(self, root_thread_id: str, publication: CommentPublication) -> OutputComment | None:
         async with short_session(self._sessions) as session:
+            if await session.get(OutputCommentTombstoneRecord, publication.comment_id) is not None:
+                raise StoreConflictError(
+                    "This comment was deleted and cannot be republished.", code="comment_deleted_conflict"
+                )
             row = await session.get(OutputCommentRecord, publication.comment_id)
             return _reconcile(row, root_thread_id, publication) if row is not None else None
+
+    async def edit(self, root_thread_id: str, comment_id: str, edit: CommentEdit) -> OutputComment:
+        async with transaction(self._sessions) as session:
+            row = await session.get(OutputCommentRecord, comment_id)
+            if row is None or row.root_thread_id != root_thread_id:
+                raise ThreadError("Comment does not exist in this Thread.", code="comment_missing")
+            publication = CommentPublication.model_validate_json(row.publication_json)
+            # A lost acknowledgement can reconcile exactly the immediately following version.
+            if row.version == edit.expected_version + 1 and publication.body == edit.body:
+                return _value(row)
+            if row.version != edit.expected_version:
+                raise StoreConflictError(
+                    "This comment changed. Reload it before saving your edit.", code="comment_version_conflict"
+                )
+            row.publication_json = publication.model_copy(update={"body": edit.body}).model_dump_json()
+            row.version += 1
+            row.updated_at = datetime.now(UTC)
+            await session.flush()
+            result = _value(row)
+        return result
+
+    async def delete(self, root_thread_id: str, comment_id: str, *, expected_version: int) -> None:
+        async with transaction(self._sessions) as session:
+            tombstone = await session.get(OutputCommentTombstoneRecord, comment_id)
+            if tombstone is not None and tombstone.root_thread_id == root_thread_id:
+                return
+            row = await session.get(OutputCommentRecord, comment_id)
+            if row is None or row.root_thread_id != root_thread_id:
+                raise ThreadError("Comment does not exist in this Thread.", code="comment_missing")
+            if row.version != expected_version:
+                raise StoreConflictError(
+                    "This comment changed. Reload it before deleting.", code="comment_version_conflict"
+                )
+            session.add(
+                OutputCommentTombstoneRecord(
+                    comment_id=comment_id, root_thread_id=root_thread_id, deleted_at=datetime.now(UTC)
+                )
+            )
+            # Older readers see no row rather than an invalid publication payload.
+            await session.delete(row)
 
     async def retained_source(self, root_thread_id: str, target: SavedOutputTarget) -> ObjectRef | None:
         async with short_session(self._sessions) as session:
@@ -75,6 +126,10 @@ class OutputCommentRepository:
 
     async def publish(self, root_thread_id: str, publication: CommentPublication, source: ObjectRef) -> OutputComment:
         async with transaction(self._sessions) as session:
+            if await session.get(OutputCommentTombstoneRecord, publication.comment_id) is not None:
+                raise StoreConflictError(
+                    "This comment was deleted and cannot be republished.", code="comment_deleted_conflict"
+                )
             existing = await session.get(OutputCommentRecord, publication.comment_id)
             if existing is not None:
                 return _reconcile(existing, root_thread_id, publication)
@@ -128,7 +183,13 @@ class OutputCommentRepository:
         return result
 
     async def list(
-        self, root_thread_id: str, *, target: SavedOutputTarget | None, after: tuple[datetime, str] | None, limit: int
+        self,
+        root_thread_id: str,
+        *,
+        target: SavedOutputTarget | None,
+        after: tuple[datetime, str] | None,
+        limit: int,
+        newest_first: bool = False,
     ) -> tuple[OutputComment, ...]:
         statement = select(OutputCommentRecord).where(OutputCommentRecord.root_thread_id == root_thread_id)
         if target is not None:
@@ -137,11 +198,21 @@ class OutputCommentRepository:
             timestamp, identity = after
             statement = statement.where(
                 or_(
-                    OutputCommentRecord.created_at > timestamp,
-                    and_(OutputCommentRecord.created_at == timestamp, OutputCommentRecord.comment_id > identity),
+                    OutputCommentRecord.created_at < timestamp
+                    if newest_first
+                    else OutputCommentRecord.created_at > timestamp,
+                    and_(
+                        OutputCommentRecord.created_at == timestamp,
+                        OutputCommentRecord.comment_id < identity
+                        if newest_first
+                        else OutputCommentRecord.comment_id > identity,
+                    ),
                 )
             )
-        statement = statement.order_by(OutputCommentRecord.created_at, OutputCommentRecord.comment_id).limit(limit)
+        statement = statement.order_by(
+            OutputCommentRecord.created_at.desc() if newest_first else OutputCommentRecord.created_at,
+            OutputCommentRecord.comment_id.desc() if newest_first else OutputCommentRecord.comment_id,
+        ).limit(limit)
         async with short_session(self._sessions) as session:
             return tuple(_value(row) for row in (await session.execute(statement)).scalars())
 

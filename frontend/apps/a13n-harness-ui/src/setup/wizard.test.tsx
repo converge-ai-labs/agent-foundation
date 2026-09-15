@@ -390,7 +390,7 @@ it("resumes the server's active device login without starting another authorizat
   mount();
   await screen.findByText("ABCD-1234");
   expect(
-    screen.getByRole("link", { name: "Open provider verification" }),
+    screen.getByRole("link", { name: /https:\/\/example\.com\/device/ }),
   ).toBeTruthy();
   expect(
     calls.filter((c) => c.path === "/api/auth/logins" && c.method === "POST"),

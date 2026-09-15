@@ -14,6 +14,7 @@ import { Plus, ArrowLeft, DotsThree, Trash } from "@phosphor-icons/react";
 import { useSources, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice, PageHeader, Panel, TextField } from "../shell/ui";
+import { ConfirmAction } from "../shell/confirm-action";
 import { SourceEditor } from "./editor";
 import { ResourceFields } from "./fields";
 import {
@@ -432,17 +433,18 @@ export function SourceDocument({
         actions={
           <>
             {isNew && (
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  if (window.confirm("Discard this unsaved configuration?")) {
-                    drafts.delete(path);
-                    navigate("/settings/resources");
-                  }
+              <ConfirmAction
+                key={path}
+                trigger={<Button variant="ghost">Discard draft</Button>}
+                title="Discard this unsaved configuration?"
+                description={`Your unsaved configuration for ${path} will be lost.`}
+                confirmLabel="Discard draft"
+                destructive
+                onConfirm={() => {
+                  drafts.delete(path);
+                  navigate("/settings/resources");
                 }}
-              >
-                Discard draft
-              </Button>
+              />
             )}
             {canEdit && (
               <>

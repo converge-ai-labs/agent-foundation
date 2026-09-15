@@ -47,7 +47,13 @@ from .commands import CommandRegistry, Invocation
 from .composer import ComposerWindow, wrapped_height
 from .diagnostics import exception_report, pending_task_warning
 from .history import HistoryBrowser
-from .inline_attachments import AttachmentBuffer, AttachmentClipboard, AttachmentProcessor, InlineAttachments
+from .inline_attachments import (
+    AttachmentBuffer,
+    AttachmentClipboard,
+    AttachmentInsertion,
+    AttachmentProcessor,
+    InlineAttachments,
+)
 from .local_shell import run_local_shell, validate_local_shell_support
 from .pastes import PendingPastes
 from .questions import QuestionCard
@@ -119,6 +125,7 @@ class CliShell:
         self._submitted_draft: Document | None = None
         self._sending_draft: Document | None = None
         self._clipboard_task: asyncio.Task[None] | None = None
+        self._pending_attachments: dict[str, AttachmentInsertion] = {}
         self._last_interrupt = float("-inf")
         self.view = TranscriptControl(self.renderer.transcript)
         self.composer = TextArea(
@@ -801,26 +808,19 @@ class CliShell:
                 event.current_buffer.text = self.inline.display(text)
                 event.current_buffer.append_to_history()
             event.current_buffer.reset()
-            # Reset clears undo history. Only saved/recoverable drafts can now
-            # refer to folded payloads; edits and undo retain them until here.
-            self.pastes.retain(
-                tuple(
-                    document.text
-                    for document in (self._saved_draft, self._recoverable, self._submitted_draft, self._sending_draft)
-                    if document is not None
-                )
+            # Reset clears undo history, but saved drafts and pending insertions
+            # can still restore selected attachments or folded text.
+            retained_drafts = tuple(
+                document.text
+                for document in (self._saved_draft, self._recoverable, self._submitted_draft, self._sending_draft)
+                if document is not None
+            ) + tuple(
+                text
+                for insertion in self._pending_attachments.values()
+                for text in (insertion.before.text, insertion.after.text)
             )
-            self.inline.retain(
-                (
-                    text,
-                    *self.clipboard.texts,
-                    *(
-                        doc.text
-                        for doc in (self._saved_draft, self._recoverable, self._submitted_draft, self._sending_draft)
-                        if doc
-                    ),
-                )
-            )
+            self.pastes.retain(retained_drafts)
+            self.inline.retain((text, *self.clipboard.texts, *retained_drafts))
             if self._input_task is not None and not self._input_task.done():
                 self.app.create_background_task(self.handle(text, steering_receipt=steering_receipt))
             else:
@@ -953,8 +953,8 @@ class CliShell:
                 return
             buffer.delete(self.pastes.deletion(buffer.text, buffer.cursor_position, backward=False))
 
-        @keys.add("c-v")
-        @keys.add("escape", "v")
+        @keys.add("c-v", save_before=lambda event: False)
+        @keys.add("escape", "v", save_before=lambda event: False)
         def paste_image(event: KeyPressEvent) -> None:
             self.start_clipboard()
 
@@ -1457,27 +1457,29 @@ class CliShell:
             tokens += token
         buffer.insert_attachment(tokens)
 
-    def _begin_attachment(self) -> tuple[str, int] | None:
+    def _begin_attachment(self) -> tuple[AttachmentInsertion, int] | None:
         if self.interaction is not None or self.selection is not None:
             self.emit("Attachments belong to conversation drafts. Finish or cancel this interaction first.")
             return None
         buffer = self.composer.buffer
         assert isinstance(buffer, AttachmentBuffer)
         try:
-            if len(self.inline.tokens(buffer.text)) >= 8:
-                raise ValueError("An input supports up to eight attachments.")
             token = self.inline.reserve()
-            buffer.insert_attachment(token)
-            return token, self._draft_generation
+            insertion = buffer.insert_attachment(token)
+            self._pending_attachments[token] = insertion
+            return insertion, self._draft_generation
         except ValueError as exc:
             self.emit(str(exc))
             return None
 
-    async def acquire_images(self, path: str | None = None, *, anchor: tuple[str, int] | None = None) -> None:
+    async def acquire_images(
+        self, path: str | None = None, *, anchor: tuple[AttachmentInsertion, int] | None = None
+    ) -> None:
         anchor = anchor or self._begin_attachment()
         if anchor is None:
             return
-        token, generation = anchor
+        insertion, generation = anchor
+        token = insertion.token
         entry = self.inline.values[token]
         try:
             incoming = await asyncio.to_thread(
@@ -1487,6 +1489,21 @@ class CliShell:
                     else clipboard_images()
                 )
             )
+            if not incoming:
+                buffer = self.composer.buffer
+                assert isinstance(buffer, AttachmentBuffer)
+                buffer.discard_insertion(insertion)
+                self.clipboard.discard_insertion(insertion)
+                if self._saved_draft is not None:
+                    self._saved_draft = insertion.revert(self._saved_draft)
+                if self._recoverable is not None:
+                    self._recoverable = insertion.revert(self._recoverable)
+                if self._submitted_draft is not None:
+                    self._submitted_draft = insertion.revert(self._submitted_draft)
+                if self._sending_draft is not None:
+                    self._sending_draft = insertion.revert(self._sending_draft)
+                self.inline.values.pop(token, None)
+                return
             if generation != self._draft_generation or self.closing:
                 raise ValueError("Image paste discarded because its draft changed. Paste again to attach here.")
             if token not in self.composer.text:
@@ -1509,6 +1526,7 @@ class CliShell:
             entry.error = str(exc)
             self.emit(f"File not attached: {exc}")
         finally:
+            self._pending_attachments.pop(token, None)
             self.app.invalidate()
 
     def start_clipboard(self) -> None:

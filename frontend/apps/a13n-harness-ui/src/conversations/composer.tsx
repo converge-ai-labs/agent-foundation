@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
+  type ReactNode,
 } from "react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
 import {
@@ -31,9 +32,11 @@ import {
   type Transport,
 } from "../transport/client";
 import type { Profile } from "../shell/presence";
+import { ConfirmAction } from "../shell/confirm-action";
 import { ThreadDraft, values, type DraftCapture } from "./draft";
 import { ComposerEditor } from "./composer-editor";
 import styles from "./conversation.module.css";
+import { commentReference, CommentReferenceContent } from "./comment-reference";
 
 export const ComposerDrafts = createContext(new Map<string, ThreadDraft>());
 export function useDraft(threadId: string) {
@@ -45,6 +48,45 @@ export function useDraft(threadId: string) {
   }
   useSyncExternalStore(draft.subscribe, draft.getSnapshot);
   return draft;
+}
+
+export function waitForSynchronization(
+  draft: ThreadDraft,
+  signal: AbortSignal,
+) {
+  signal.throwIfAborted();
+  if (draft.synchronized) return Promise.resolve();
+  return new Promise<void>((resolve, reject) => {
+    const finish = (error?: Error) => {
+      clearTimeout(timer);
+      unsubscribe();
+      signal.removeEventListener("abort", abort);
+      if (error) reject(error);
+      else resolve();
+    };
+    const abort = () =>
+      finish(new Error("Preparation cancelled. Your input is retained."));
+    const unsubscribe = draft.subscribe(() => {
+      if (draft.synchronized) finish();
+      else if (draft.error || draft.replacement)
+        finish(
+          new Error(
+            draft.error ||
+              "The shared draft changed. Review your input before sending.",
+          ),
+        );
+    });
+    const timer = setTimeout(
+      () =>
+        finish(
+          new Error(
+            "Could not synchronize yet. Your input is retained; send again when connected.",
+          ),
+        ),
+      15000,
+    );
+    signal.addEventListener("abort", abort, { once: true });
+  });
 }
 
 export async function submitDraft(
@@ -140,7 +182,13 @@ export async function submitDraft(
 }
 
 export function Composer({
+  referenceAdded = 0,
   autoFocus = false,
+  local = false,
+  prepareThread,
+  onPreparing,
+  onSubmitted,
+  controls,
   threadId,
   activity,
   canRun,
@@ -154,14 +202,36 @@ export function Composer({
   profile: Profile;
   unauthorized: () => void;
   reconcile: () => void;
+  referenceAdded?: number;
   autoFocus?: boolean;
+  local?: boolean;
+  prepareThread?: () => Promise<void>;
+  onPreparing?: (preparing: boolean) => void;
+  onSubmitted?: () => void;
+  controls?: ReactNode;
 }) {
   const draft = useDraft(threadId);
+  const [preparing, setPreparing] = useState(false);
+  const preparation = useRef<AbortController | null>(null);
+  useEffect(() => () => preparation.current?.abort(), [threadId]);
   const transport = useTransport();
   const queries = useQueryClient();
   const connection = useRef<ReturnType<ThreadDraft["connect"]> | null>(null);
   const upload = useRef<HTMLInputElement>(null);
   const editor = useRef<EditorView | null>(null);
+  useEffect(() => {
+    if (!referenceAdded) return;
+    const frame = requestAnimationFrame(() => {
+      const view = editor.current;
+      if (!view) return;
+      view.dispatch({
+        selection: { anchor: view.state.doc.length },
+        scrollIntoView: true,
+      });
+      view.focus();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [referenceAdded]);
   const previewRequest = useRef<AbortController | null>(null);
   useEffect(() => () => previewRequest.current?.abort(), [transport, threadId]);
   const [error, setError] = useState("");
@@ -178,13 +248,17 @@ export function Composer({
     text: string;
     url?: string;
     source?: Schema<"ThreadAttachment">["source"];
+    comment?: Schema<"ThreadAttachment">["comment"];
     image?: boolean;
   } | null>(null);
   const selections = attachmentSelections(draft.doc);
-  const uploading = selections.some(({ id }) => id === "pending");
+  const uploading = selections.some(
+    ({ key, id }) =>
+      id === "pending" && draft.uploads.get(key)?.status !== "staged",
+  );
   const attachments = useQueries({
     queries: selections.map(({ id }) => ({
-      enabled: isReadyAttachment(id),
+      enabled: !local && isReadyAttachment(id),
       queryKey: ["thread", threadId, "attachment", id],
       queryFn: ({ signal }: { signal: AbortSignal }) =>
         result(
@@ -200,13 +274,14 @@ export function Composer({
     })),
   });
   useEffect(() => {
+    if (local) return;
     const current = draft.connect(transport, threadId, unauthorized);
     connection.current = current;
     return () => {
       current.close();
       connection.current = null;
     };
-  }, [draft, transport, threadId, unauthorized]);
+  }, [draft, transport, threadId, unauthorized, local]);
   useEffect(
     () => () => {
       if (preview?.url) URL.revokeObjectURL(preview.url);
@@ -217,11 +292,20 @@ export function Composer({
   const pending = draft.submission.kind === "pending";
   const unknown = draft.submission.kind === "unknown";
   const input = values(draft.doc);
-  const missing = attachments.some((attachment) => !attachment.data);
-  const valid =
-    !!(input.prompt.trim() || input.attachment_ids.length) && !missing;
+  const missing = selections.some(({ key, id }, index) =>
+    prepareThread && draft.uploads.get(key)?.status === "staged"
+      ? false
+      : !isReadyAttachment(id) || !attachments[index].data,
+  );
+  const valid = !!(input.prompt.trim() || selections.length) && !missing;
   const canSend =
-    canRun && !busy && draft.synchronized && !pending && !unknown && valid;
+    canRun &&
+    !busy &&
+    (local || draft.synchronized) &&
+    !preparing &&
+    !pending &&
+    !unknown &&
+    valid;
   const submit = async (action: "send" | "steer") => {
     if (action === "send" && !canSend) return;
     if (
@@ -233,14 +317,46 @@ export function Composer({
         !activity.available_actions?.includes("steer"))
     )
       return;
-    await submitDraft(
-      draft,
-      transport,
-      threadId,
-      action,
-      activity.receipt_id ?? undefined,
-    );
-    reconcile();
+    if (preparation.current) return;
+    const controller = new AbortController();
+    preparation.current = controller;
+    try {
+      if (prepareThread) {
+        setPreparing(true);
+        onPreparing?.(true);
+        setError("");
+        await prepareThread();
+        controller.signal.throwIfAborted();
+        await Promise.all(
+          attachmentSelections(draft.doc).flatMap(({ key }) => {
+            const item = draft.uploads.get(key);
+            return item?.status === "staged" ? [uploadOne(key, item.file)] : [];
+          }),
+        );
+        await waitForSynchronization(draft, controller.signal);
+      }
+      controller.signal.throwIfAborted();
+      await submitDraft(
+        draft,
+        transport,
+        threadId,
+        action,
+        activity.receipt_id ?? undefined,
+      );
+      reconcile();
+      if (!controller.signal.aborted) onSubmitted?.();
+    } catch (failure) {
+      if (!controller.signal.aborted)
+        setError(
+          failure instanceof Error
+            ? failure.message
+            : "Could not prepare the conversation. Your input is retained.",
+        );
+    } finally {
+      preparation.current = null;
+      setPreparing(false);
+      onPreparing?.(false);
+    }
   };
   async function uploadOne(key: string, file: File) {
     setError("");
@@ -291,7 +407,7 @@ export function Composer({
     at = editor.current?.state.selection.main.head ??
       draft.doc.getText("text").length,
   ) {
-    if (!files.length) return;
+    if (!files.length || preparation.current) return;
     setError("");
     try {
       if (attachmentSelections(draft.doc).length + files.length > 8)
@@ -316,7 +432,7 @@ export function Composer({
       // Reserve every position synchronously, before any upload can finish.
       const pending = files.map((file) => {
         const key = draft.addAttachment("pending", at);
-        draft.uploads.set(key, { file, status: "pending" });
+        draft.uploads.set(key, { file, status: local ? "staged" : "pending" });
         at += attachmentToken(key).length;
         return { key, file };
       });
@@ -325,7 +441,9 @@ export function Composer({
         scrollIntoView: true,
       });
       editor.current?.focus();
-      await Promise.all(pending.map(({ key, file }) => uploadOne(key, file)));
+      if (!local)
+        await Promise.all(pending.map(({ key, file }) => uploadOne(key, file)));
+      else draft.notify();
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Upload failed.");
     } finally {
@@ -365,6 +483,7 @@ export function Composer({
         text,
         url: URL.createObjectURL(blob),
         source: attachment?.source,
+        comment: attachment?.comment,
         image: attachment?.media_type.startsWith("image/"),
       });
     } catch (failure) {
@@ -374,12 +493,19 @@ export function Composer({
       );
     }
   }
+  const comment = commentReference(preview);
   return (
     <section
       className={styles.composer}
       aria-label={busy ? "Next message" : "Message composer"}
     >
-      {!synchronized &&
+      {attachments.some((attachment) => commentReference(attachment.data)) && (
+        <p role="status" className={styles.composerConnection}>
+          Comment added to your message. Review it below, then send when ready.
+        </p>
+      )}
+      {!local &&
+        !synchronized &&
         !draft.replacement &&
         (draft.status !== "Connected" || syncDelayed) && (
           <p role="status" className={styles.composerConnection}>
@@ -397,48 +523,54 @@ export function Composer({
           <Button variant="outline" onClick={() => draft.joinReplacement(true)}>
             Add local input to the new draft
           </Button>
-          <Button
-            variant="ghost"
-            onClick={() => {
-              if (
-                window.confirm(
-                  "Discard this tab's old input and join the new shared draft?",
-                )
-              )
-                draft.joinReplacement(false);
-            }}
-          >
-            Discard old input and rejoin
-          </Button>
+          <ConfirmAction
+            key={draft.replacement.draft_id}
+            trigger={
+              <Button variant="ghost">Discard old input and rejoin</Button>
+            }
+            title="Discard old input?"
+            description="Discard this tab's old input and join the new shared draft?"
+            confirmLabel="Discard and rejoin"
+            destructive
+            onConfirm={() => draft.joinReplacement(false)}
+          />
         </div>
       )}
-      <ComposerEditor
-        autoFocus={autoFocus}
-        draft={draft}
-        profile={profile}
-        presence={(value) => connection.current?.presence(value)}
-        submit={() => void submit("send")}
-        editor={editor}
-        attachments={{
-          transport,
-          threadId,
-          metadata: new Map(
-            attachments.flatMap((item) =>
-              item.data ? [[item.data.attachment_id, item.data] as const] : [],
+      <div inert={preparing}>
+        <ComposerEditor
+          autoFocus={autoFocus}
+          draft={draft}
+          profile={profile}
+          presence={(value) => connection.current?.presence(value)}
+          submit={() => void submit("send")}
+          editor={editor}
+          attachments={{
+            transport,
+            threadId,
+            metadata: new Map(
+              attachments.flatMap((item) =>
+                item.data
+                  ? [[item.data.attachment_id, item.data] as const]
+                  : [],
+              ),
             ),
-          ),
-          preview: (id, attachment) => void showAttachment(id, attachment),
-          upload: (files, at) => void uploadFiles(files, at),
-          retry: (key) => {
-            const item = draft.uploads.get(key);
-            if (item?.status === "failed") void uploadOne(key, item.file);
-            else if (!item)
-              setError(
-                "This upload is unavailable in this tab. Remove it and attach the file again.",
-              );
-          },
-        }}
-      />
+            preview: (id, attachment) => void showAttachment(id, attachment),
+            upload: (files, at) => void uploadFiles(files, at),
+            retry: (key) => {
+              const item = draft.uploads.get(key);
+              if (
+                !local &&
+                (item?.status === "failed" || item?.status === "staged")
+              )
+                void uploadOne(key, item.file);
+              else if (!item)
+                setError(
+                  "This upload is unavailable in this tab. Remove it and attach the file again.",
+                );
+            },
+          }}
+        />
+      </div>
       {selections.some((selection) => selection.from === undefined) && (
         <ul className={styles.attachments}>
           {selections.map(({ key, id, from }, index) =>
@@ -507,21 +639,18 @@ export function Composer({
               <Button variant="outline" onClick={reconcile}>
                 Refresh operation and history
               </Button>
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      "The previous input may already have been accepted. Enable a deliberate new submission only after reviewing the conversation?",
-                    )
-                  ) {
-                    draft.submission = { kind: "idle" };
-                    draft.notify();
-                  }
+              <ConfirmAction
+                trigger={
+                  <Button variant="ghost">I reviewed the outcome</Button>
+                }
+                title="Enable a new submission?"
+                description="The previous input may already have been accepted. Enable a deliberate new submission only after reviewing the conversation."
+                confirmLabel="Enable submission"
+                onConfirm={() => {
+                  draft.submission = { kind: "idle" };
+                  draft.notify();
                 }}
-              >
-                I reviewed the outcome
-              </Button>
+              />
             </>
           )}
         </div>
@@ -543,6 +672,7 @@ export function Composer({
             aria-label="Attach files"
             title="Attach files"
             loading={uploading}
+            disabled={preparing}
             onClick={() => upload.current?.click()}
           >
             <Paperclip />
@@ -563,8 +693,9 @@ export function Composer({
               <p>Enter for a new line · Ctrl/⌘+Enter to send.</p>
               <p>Paste or drop files to attach them.</p>
               <p>
-                Drafts are shared with people in this conversation. They are not
-                saved across server restarts.
+                {local
+                  ? "This input is private to this tab until you send. Files are uploaded when you send. Closing or reloading this tab discards it."
+                  : "Drafts are shared with people in this conversation. They are not saved across server restarts."}
               </p>
               <p>
                 While the agent is working, keep drafting here or use Send as
@@ -577,6 +708,7 @@ export function Composer({
           )}
         </div>
         <div>
+          {controls}
           {busy && activity.available_actions?.includes("steer") && (
             <Button
               variant="outline"
@@ -590,11 +722,11 @@ export function Composer({
             size="sm"
             title="Send message · Ctrl/⌘+Enter"
             disabled={!canSend}
-            loading={pending}
+            loading={pending || preparing}
             onClick={() => void submit("send")}
           >
             <ArrowUp />
-            {pending ? "Submitting" : "Send"}
+            {preparing ? "Preparing" : pending ? "Submitting" : "Send"}
           </Button>
         </div>
       </div>
@@ -606,11 +738,15 @@ export function Composer({
             setPreview(null);
           }
         }}
-        title={preview?.name ?? "Attachment"}
-        description="These are the retained bytes selected for input, not the current file on the server."
+        title={comment ? "Comment reference" : (preview?.name ?? "Attachment")}
+        description={
+          comment
+            ? "Review the comment and response included in your message."
+            : "These are the retained bytes selected for input, not the current file on the server."
+        }
         closeLabel="Close"
       >
-        {preview?.source && (
+        {preview?.source && !comment && (
           <div className={styles.summary}>
             {"path" in preview.source && (
               <p>Server native capture · {preview.source.path}</p>
@@ -633,7 +769,9 @@ export function Composer({
             </p>
           </div>
         )}
-        {preview?.image && preview.url ? (
+        {comment && preview ? (
+          <CommentReferenceContent source={comment} text={preview.text} />
+        ) : preview?.image && preview.url ? (
           <img
             className={styles.attachmentPreview}
             src={preview.url}

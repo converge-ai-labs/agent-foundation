@@ -5,6 +5,7 @@ import { ApiError, result } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { SourceEditor } from "../configuration/editor";
 import { ErrorNotice } from "../shell/ui";
+import { ConfirmAction } from "../shell/confirm-action";
 import {
   basename,
   FileBuffer,
@@ -230,52 +231,65 @@ export function FileView({
             )}
           </details>
           <div className={styles.actions}>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={read.isFetching || !!read.error}
-              onClick={() => {
-                if (
-                  window.confirm(
-                    "Replace your local text with this inspected disk version? Download local text first if you need a copy.",
-                  )
-                ) {
-                  buffer.adopt(false);
-                  setSelection(undefined);
-                  setError(null);
-                  setMessage("");
-                  render();
-                }
-              }}
-            >
-              Use disk version
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={
-                read.isFetching ||
-                !!read.error ||
-                buffer.observed.presentation !== "text" ||
-                buffer.observed.resolved_path !== path
+            <ConfirmAction
+              key={`disk:${path}:${buffer.observed.entry.revision}`}
+              trigger={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={read.isFetching || !!read.error}
+                >
+                  Use disk version
+                </Button>
               }
-              onClick={() => {
-                if (
-                  window.confirm(
-                    "Keep your local text and use the inspected disk revision for the next explicit save? That save will replace this disk content.",
-                  )
-                ) {
-                  buffer.adopt(true);
-                  setError(null);
-                  setMessage(
-                    "Local text retained. Save explicitly to replace the inspected disk version.",
-                  );
-                  render();
-                }
+              title="Replace your local text?"
+              description="Replace your local text with this inspected disk version? Download local text first if you need a copy."
+              confirmLabel="Use disk version"
+              destructive
+              onConfirm={() => {
+                if (read.isFetching || read.error) return;
+                buffer.adopt(false);
+                setSelection(undefined);
+                setError(null);
+                setMessage("");
+                render();
               }}
-            >
-              Keep local text
-            </Button>
+            />
+            <ConfirmAction
+              key={`local:${path}:${buffer.observed.entry.revision}`}
+              trigger={
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={
+                    read.isFetching ||
+                    !!read.error ||
+                    buffer.observed.presentation !== "text" ||
+                    buffer.observed.resolved_path !== path
+                  }
+                >
+                  Keep local text
+                </Button>
+              }
+              title="Keep your local text?"
+              description="Keep your local text and use the inspected disk revision for the next explicit save? That save will replace this disk content."
+              confirmLabel="Keep local text"
+              onConfirm={() => {
+                if (
+                  read.isFetching ||
+                  read.error ||
+                  buffer.observed.presentation !== "text" ||
+                  buffer.observed.resolved_path !== path
+                )
+                  return;
+                buffer.adopt(true);
+                setError(null);
+                setMessage(
+                  "Local text retained. Save explicitly to replace the inspected disk version.",
+                );
+                render();
+              }}
+            />
           </div>
         </div>
       )}

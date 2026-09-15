@@ -6,7 +6,9 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TransportContext } from "../transport/context";
 import { ApiError, type Schema, type Transport } from "../transport/client";
@@ -93,6 +95,8 @@ it("maps cross-Markdown source spans but rejects decoded approximations and supp
 function setup(
   POST: ReturnType<typeof vi.fn>,
   records: Schema<"OutputComment">[] = [],
+  PATCH = vi.fn(),
+  DELETE = vi.fn(),
 ) {
   const drafts = new Map<string, CommentDraft>();
   const composer = new ThreadDraft();
@@ -101,18 +105,32 @@ function setup(
   const queries = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  const GET = vi.fn(async () => ({
-    data: { comments: records, next_cursor: null },
-  }));
+  const GET = vi.fn(
+    async (
+      path: string,
+      options: { params: { path: { comment_id?: string } } },
+    ) => ({
+      data: path.endsWith("/{comment_id}")
+        ? records.find(
+            (record) => record.comment_id === options.params.path.comment_id,
+          )
+        : {
+            comments: records.slice(0, 20),
+            next_cursor: records.length >= 20 ? "next-page" : null,
+          },
+    }),
+  );
+  const onReferenceAdded = vi.fn();
   const tree = () => (
     <QueryClientProvider client={queries}>
       <TransportContext
-        value={{ client: { GET, POST } } as unknown as Transport}
+        value={{ client: { GET, POST, PATCH, DELETE } } as unknown as Transport}
       >
         <ComposerDrafts value={new Map([["thread-one", composer]])}>
           <CommentDrafts value={drafts}>
             <Discussion
               threadId="thread-one"
+              onReferenceAdded={onReferenceAdded}
               profile={{ display_name: "Reader", color: "#123456" }}
             >
               <CommentListButton />
@@ -123,8 +141,56 @@ function setup(
       </TransportContext>
     </QueryClientProvider>
   );
-  return { ...render(tree()), tree, drafts, composer, GET };
+  return { ...render(tree()), tree, drafts, composer, GET, onReferenceAdded };
 }
+it("retains a private comment when discard is cancelled and deletes only after confirmation", async () => {
+  const { drafts } = setup(vi.fn());
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Add comment" }));
+  fireEvent.change(
+    await screen.findByLabelText("Comment", { selector: "textarea" }),
+    { target: { value: "Keep my private comment" } },
+  );
+  await user.click(screen.getByRole("button", { name: "Discard draft" }));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Discard this private comment draft?",
+  });
+  await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  expect(drafts.get("thread-one")?.publication.body).toBe(
+    "Keep my private comment",
+  );
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("dialog", {
+        name: "Discard this private comment draft?",
+      }),
+    ).toBeNull(),
+  );
+  await user.click(screen.getByRole("button", { name: "Discard draft" }));
+  await user.click(
+    within(
+      await screen.findByRole("dialog", {
+        name: "Discard this private comment draft?",
+      }),
+    ).getByRole("button", { name: "Discard draft" }),
+  );
+  expect(drafts.has("thread-one")).toBe(false);
+});
+
+it("discards an empty private comment without asking for confirmation", async () => {
+  const { drafts } = setup(vi.fn());
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Add comment" }));
+  await screen.findByLabelText("Comment", { selector: "textarea" });
+  await user.click(screen.getByRole("button", { name: "Discard draft" }));
+  expect(drafts.has("thread-one")).toBe(false);
+  expect(
+    screen.queryByRole("dialog", {
+      name: "Discard this private comment draft?",
+    }),
+  ).toBeNull();
+});
+
 it("preserves a frozen publication after lost acknowledgement and reconciles the same identity", async () => {
   const POST = vi
     .fn()
@@ -137,7 +203,7 @@ it("preserves a frozen publication after lost acknowledgement and reconciles the
       },
     }));
   const { drafts, composer } = setup(POST);
-  fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add comment" }));
   fireEvent.change(
     await screen.findByLabelText("Comment", { selector: "textarea" }),
     { target: { value: "Preserve my full comment." } },
@@ -151,7 +217,7 @@ it("preserves a frozen publication after lost acknowledgement and reconciles the
   ).toBe(true);
   const identity = drafts.get("thread-one")!.publication.comment_id;
   fireEvent.click(screen.getByRole("button", { name: "Check comment status" }));
-  await screen.findByRole("heading", { name: "Comment published" });
+  await screen.findByText("Comment posted. Not sent to the agent.");
   expect(POST).toHaveBeenCalledTimes(2);
   expect(POST.mock.calls[0][1].body).toEqual(POST.mock.calls[1][1].body);
   expect(POST.mock.calls[1][1].body.comment_id).toBe(identity);
@@ -182,8 +248,10 @@ it("retains a private draft across navigation and adds only an explicit captured
     },
   };
   const POST = vi.fn(async (_path: string) => ({ data: attachment }));
-  const { tree, rerender, drafts, composer } = setup(POST, [comment]);
-  fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+  const { tree, rerender, drafts, composer, onReferenceAdded } = setup(POST, [
+    comment,
+  ]);
+  fireEvent.click(screen.getByRole("button", { name: "Add comment" }));
   fireEvent.change(
     await screen.findByLabelText("Comment", { selector: "textarea" }),
     { target: { value: "Unpublished private draft" } },
@@ -200,7 +268,7 @@ it("retains a private draft across navigation and adds only an explicit captured
   ).toBe("Unpublished private draft");
   expect(POST).not.toHaveBeenCalled();
   fireEvent.click(
-    await screen.findByRole("button", { name: "Add feedback to prompt" }),
+    await screen.findByRole("button", { name: "Add to message" }),
   );
   await waitFor(() =>
     expect(values(composer.doc).attachment_ids).toEqual([
@@ -212,6 +280,10 @@ it("retains a private draft across navigation and adds only an explicit captured
     "Unpublished private draft",
   );
   expect(POST.mock.calls[0][0]).toContain("/capture");
+  expect(onReferenceAdded).toHaveBeenCalledOnce();
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name: "Comments" })).toBeNull(),
+  );
 });
 
 it("keeps unknown attribution frozen on access failure but recovers a verified stale uncommitted target", async () => {
@@ -223,7 +295,7 @@ it("keeps unknown attribution frozen on access failure but recovers a verified s
       new ApiError("The original target changed", 409, "comment_target_stale"),
     );
   const { drafts } = setup(POST);
-  fireEvent.click(screen.getByRole("button", { name: "Comment" }));
+  fireEvent.click(screen.getByRole("button", { name: "Add comment" }));
   fireEvent.change(
     await screen.findByLabelText("Comment", { selector: "textarea" }),
     { target: { value: "Keep this private draft" } },
@@ -257,7 +329,7 @@ it("keeps unknown attribution frozen on access failure but recovers a verified s
 it("translates an exact original-output window selection without switching continuation", async () => {
   const comment: Schema<"OutputComment"> = {
     comment_id: "comment-1234567890123456",
-    target,
+    target: { ...target, source_id: "b".repeat(64) },
     author: { display_name: "Reader" },
     body: "Original output",
     root_thread_id: "thread-one",
@@ -274,9 +346,7 @@ it("translates an exact original-output window selection without switching conti
   }));
   const { drafts } = setup(POST, [comment]);
   fireEvent.click(screen.getByRole("button", { name: "Comments" }));
-  fireEvent.click(
-    await screen.findByRole("button", { name: "View original output" }),
-  );
+  fireEvent.click(await screen.findByRole("button", { name: "View response" }));
   const pre = await screen.findByText("😀 second window", { selector: "pre" });
   select(pre.firstChild!, 0, pre.firstChild!, 2);
   fireEvent.mouseUp(pre);
@@ -285,7 +355,7 @@ it("translates an exact original-output window selection without switching conti
       name: "Comment on original selection",
     }),
   );
-  await screen.findByRole("heading", { name: "Private comment draft" });
+  await screen.findByRole("heading", { name: "New comment" });
   expect(drafts.get("thread-one")!.publication.selection).toEqual({
     start: 65536,
     end: 65537,
@@ -370,7 +440,7 @@ it("opens a text selection's private editor inline and publishes only after expl
     target: { value: "Inline private feedback" },
   });
   fireEvent.click(screen.getByRole("button", { name: "Post comment" }));
-  await screen.findByRole("heading", { name: "Comment published" });
+  await screen.findByText("Comment posted. Not sent to the agent.");
   expect(POST.mock.calls[0][1].body.selection).toEqual({
     start: 6,
     end: 11,
@@ -474,4 +544,277 @@ it("shows a quiet pre-checkpoint child state and refreshes the saved output afte
   expect(
     screen.getByText("No retained saved text is available yet."),
   ).toBeTruthy();
+});
+
+const savedComment = (): Schema<"OutputComment"> => ({
+  comment_id: "comment-edit-1234567890",
+  target,
+  author: { display_name: "Reader" },
+  body: "Review this response",
+  selection: { start: 6, end: 11, quote: "saved" },
+  root_thread_id: "thread-one",
+  created_at: "2026-09-14T00:00:00Z",
+  version: 1,
+});
+
+it("edits only the body, renders the saved comment immediately, and never captures implicitly", async () => {
+  const records = [savedComment()];
+  const POST = vi.fn();
+  const PATCH = vi.fn(async (_path, { body }) => {
+    records[0] = {
+      ...records[0],
+      body: body.body,
+      version: 2,
+      updated_at: "2026-09-15T00:00:00Z",
+    };
+    return { data: records[0] };
+  });
+  const { drafts, composer } = setup(POST, records, PATCH);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Comments" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Comment actions" }),
+  );
+  await user.click(
+    await screen.findByRole("menuitem", { name: "Edit comment" }),
+  );
+  fireEvent.change(
+    await screen.findByLabelText("Comment", { selector: "textarea" }),
+    { target: { value: "Updated feedback" } },
+  );
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await screen.findByText("Updated feedback");
+  expect(PATCH.mock.calls[0][1].body).toEqual({
+    body: "Updated feedback",
+    expected_version: 1,
+  });
+  expect(drafts.size).toBe(0);
+  expect(screen.queryByRole("button", { name: "Done" })).toBeNull();
+  expect(POST).not.toHaveBeenCalled();
+  expect(values(composer.doc).attachment_ids).toEqual([]);
+});
+
+it("retries an uncertain edit with the same version and frozen body", async () => {
+  const records = [savedComment()];
+  const PATCH = vi
+    .fn()
+    .mockRejectedValueOnce(new Error("Response lost"))
+    .mockImplementation(async (_path, { body }) => {
+      records[0] = { ...records[0], body: body.body, version: 2 };
+      return { data: records[0] };
+    });
+  setup(vi.fn(), records, PATCH);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Comments" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Comment actions" }),
+  );
+  await user.click(
+    await screen.findByRole("menuitem", { name: "Edit comment" }),
+  );
+  fireEvent.change(
+    await screen.findByLabelText("Comment", { selector: "textarea" }),
+    { target: { value: "Retry safely" } },
+  );
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await screen.findByRole("button", { name: "Check comment status" });
+  expect(
+    (
+      screen.getByLabelText("Comment", {
+        selector: "textarea",
+      }) as HTMLTextAreaElement
+    ).disabled,
+  ).toBe(true);
+  await user.click(
+    screen.getByRole("button", { name: "Check comment status" }),
+  );
+  await screen.findByText("Retry safely");
+  expect(PATCH.mock.calls[0][1].body).toEqual(PATCH.mock.calls[1][1].body);
+});
+
+it("confirms deletion, removes its highlight, and leaves an existing composer reference alone", async () => {
+  const records = [savedComment()];
+  const DELETE = vi.fn(async (_path: string, _options: unknown) => {
+    records.splice(0);
+    return { data: undefined };
+  });
+  const { composer } = setup(vi.fn(), records, vi.fn(), DELETE);
+  composer.addAttachment("attachment-previous-capture");
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Comments" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Comment actions" }),
+  );
+  await user.click(
+    await screen.findByRole("menuitem", { name: "Delete comment…" }),
+  );
+  const dialog = await screen.findByRole("dialog", {
+    name: "Delete this comment?",
+  });
+  expect(DELETE).not.toHaveBeenCalled();
+  await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+  expect(DELETE).not.toHaveBeenCalled();
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("dialog", { name: "Delete this comment?" }),
+    ).toBeNull(),
+  );
+  await user.click(screen.getByRole("button", { name: "Comment actions" }));
+  await user.click(
+    await screen.findByRole("menuitem", { name: "Delete comment…" }),
+  );
+  await user.click(
+    within(
+      await screen.findByRole("dialog", { name: "Delete this comment?" }),
+    ).getByRole("button", { name: "Delete comment" }),
+  );
+  await screen.findByText(
+    "Comment deleted. Existing message references are unchanged.",
+  );
+  await waitFor(() =>
+    expect(
+      screen.queryByRole("button", {
+        name: "Read comments on highlighted text",
+      }),
+    ).toBeNull(),
+  );
+  expect(DELETE.mock.calls[0][1]).toMatchObject({
+    params: { query: { expected_version: 1 } },
+  });
+  expect(values(composer.doc).attachment_ids).toEqual([
+    "attachment-previous-capture",
+  ]);
+});
+
+it("keeps capture failures in discussion without touching the draft or transferring focus", async () => {
+  const POST = vi
+    .fn()
+    .mockRejectedValue(
+      new ApiError("The comment changed", 409, "comment_version_conflict"),
+    );
+  const { composer, onReferenceAdded } = setup(POST, [savedComment()]);
+  fireEvent.click(screen.getByRole("button", { name: "Comments" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Add to message" }),
+  );
+  await screen.findByText("The comment changed");
+  expect(screen.getByRole("dialog", { name: "Comments" })).toBeTruthy();
+  expect(values(composer.doc)).toEqual({
+    prompt: "My own prompt",
+    attachment_ids: [],
+  });
+  expect(onReferenceAdded).not.toHaveBeenCalled();
+  expect(POST.mock.calls[0][1].params.query).toEqual({ expected_version: 1 });
+});
+
+it("narrows an activated highlight to exactly its matching comments", async () => {
+  setup(vi.fn(), [
+    savedComment(),
+    {
+      ...savedComment(),
+      comment_id: "comment-other",
+      body: "Another passage",
+      selection: { start: 12, end: 18, quote: "source" },
+    },
+  ]);
+  const highlights = await screen.findAllByRole("button", {
+    name: "Read comments on highlighted text",
+  });
+  fireEvent.keyDown(highlights[0], { key: "Enter" });
+  await screen.findByText("Review this response");
+  expect(screen.queryByText("Another passage")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "All comments" }));
+  await screen.findByText("Another passage");
+});
+
+it("reviews the latest version on conflict while preserving the user's edit for explicit save", async () => {
+  const records = [savedComment()];
+  const PATCH = vi
+    .fn()
+    .mockImplementationOnce(async () => {
+      records[0] = {
+        ...records[0],
+        version: 2,
+        body: "A collaborator's revision",
+      };
+      throw new ApiError(
+        "This comment changed",
+        409,
+        "comment_version_conflict",
+      );
+    })
+    .mockImplementation(async (_path, { body }) => {
+      records[0] = { ...records[0], version: 3, body: body.body };
+      return { data: records[0] };
+    });
+  const { drafts } = setup(vi.fn(), records, PATCH);
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Comments" }));
+  await user.click(
+    await screen.findByRole("button", { name: "Comment actions" }),
+  );
+  await user.click(
+    await screen.findByRole("menuitem", { name: "Edit comment" }),
+  );
+  fireEvent.change(
+    await screen.findByLabelText("Comment", { selector: "textarea" }),
+    { target: { value: "My careful edit" } },
+  );
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await screen.findByText("A collaborator's revision");
+  expect(
+    (screen.getByRole("button", { name: "Save changes" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  expect(drafts.get("thread-one")?.publication.body).toBe("My careful edit");
+  await user.click(
+    screen.getByRole("button", { name: "Continue with my edit" }),
+  );
+  expect(PATCH).toHaveBeenCalledOnce();
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await screen.findByText("My careful edit");
+  expect(PATCH.mock.calls[1][1].body).toEqual({
+    body: "My careful edit",
+    expected_version: 2,
+  });
+});
+
+it("keeps the nearby source anchor and shows a new publication on a full first page", async () => {
+  const records = Array.from({ length: 20 }, (_, index) => ({
+    ...savedComment(),
+    comment_id: `comment-${index}`,
+    body: `Previous comment ${index}`,
+    selection: null,
+  }));
+  const POST = vi.fn(async (_path, { body }) => {
+    const saved = {
+      ...body,
+      version: 1,
+      created_at: "2026-09-15T00:00:00Z",
+      root_thread_id: "thread-one",
+    };
+    records.unshift(saved);
+    return { data: saved };
+  });
+  const { GET } = setup(POST, records);
+  const user = userEvent.setup();
+  const source = await screen.findByRole("button", { name: "View comments" });
+  await user.click(source);
+  const dialog = await screen.findByRole("dialog", { name: "Comments" });
+  await user.click(within(dialog).getByRole("button", { name: "Add comment" }));
+  fireEvent.change(screen.getByLabelText("Comment", { selector: "textarea" }), {
+    target: { value: "Newest feedback" },
+  });
+  await user.click(screen.getByRole("button", { name: "Post comment" }));
+  await screen.findByText("Newest feedback");
+  expect(GET).toHaveBeenCalledWith(
+    "/api/threads/{thread_id}/comments",
+    expect.objectContaining({
+      params: expect.objectContaining({
+        query: expect.objectContaining({ newest_first: true }),
+      }),
+    }),
+  );
+  await user.click(screen.getByRole("button", { name: "Close comments" }));
+  await waitFor(() => expect(document.activeElement).toBe(source));
 });

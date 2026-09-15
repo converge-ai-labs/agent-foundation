@@ -132,6 +132,8 @@ A root operation progresses from `preparing` to `running`, then to `completed`, 
 
 Cancellation is accepted against the exact receipt during both preparation and Harness execution. During preparation it cancels the App-owned operation scope; once a stream exists it also requests cancellation from that exact stream. Steering is available only while the receipt names the current running stream. A stale receipt can neither steer nor cancel a later Run on the same Thread. Wait observes the operation's state transition and has no effect on execution.
 
+Steering without explicit Skill references does not load a Skill catalog or revalidate the accepted configuration generation. A catalog already pinned to the active Run is returned and used for Skill-reference validation without first reading current configuration. Project renames and an unreadable newer shared generation therefore do not block these live controls; plain steering remains independent of catalog availability. Empty Skill-reference validation is a no-op on every App surface. These rules do not bypass exact-receipt checks, attachment validation, or the stored-state checks required for a new Run.
+
 For an admitted prompt or deferred response, the App:
 
 01. loads the root Thread, optional patch, required expected configuration version for a non-empty patch, and selected continuation;

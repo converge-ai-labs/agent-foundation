@@ -17,29 +17,12 @@ import {
   SheetPopup,
   SheetTitle,
 } from "a13n-ui";
-import {
-  House,
-  Folder,
-  SlidersHorizontal,
-  PlugsConnected,
-  Moon,
-  Sun,
-  List,
-  Users,
-  ArrowRight,
-  Gear,
-} from "@phosphor-icons/react";
-import {
-  useProjects,
-  useSetup,
-  useSources,
-  useStatus,
-  useTransport,
-} from "../transport/context";
-import { result, type Schema } from "../transport/client";
+import { House, Moon, Sun, List, Users, Gear } from "@phosphor-icons/react";
+import { useSetup, useSources, useStatus } from "../transport/context";
+import type { Schema } from "../transport/client";
 import { AccountsPage } from "../setup/accounts";
 import { SetupPage } from "../setup/setup";
-import { readWizardDraft, wizardDismissed } from "../setup/wizard-state";
+import { wizardDismissed } from "../setup/wizard-state";
 import { SourcesPage, SourcePage } from "../configuration/sources";
 import {
   SettingsLayout,
@@ -48,12 +31,13 @@ import {
   EnvironmentsPage,
 } from "../configuration/settings";
 import { ProjectsPage, ProjectPage } from "../configuration/projects";
-import { ErrorNotice, PageHeader, Panel, TextField } from "./ui";
+import { ErrorNotice, Panel, TextField } from "./ui";
 import { useLiveWorkbench, type Profile } from "./presence";
 import { SharedPointers } from "./shared-pointers";
 import styles from "./workbench.module.css";
 import { ConversationNavigation } from "../conversations/navigation";
 import { ConversationPage } from "../conversations/conversation";
+import { NewConversationPage } from "../conversations/new-conversation";
 import { NativeWorkspace } from "../native/workspace";
 
 import { pageLink } from "./page-links";
@@ -120,12 +104,6 @@ export function Workbench({
   const disconnected = live.summary === "Reconnecting";
   const location = useLocation();
   const navigate = useNavigate();
-  const { client } = useTransport();
-  const [restoreTarget, setRestoreTarget] = useState(() =>
-    location.pathname === "/" && !location.search
-      ? readPreference("last-thread", "")
-      : "",
-  );
   useEffect(() => {
     if (
       location.pathname === "/" &&
@@ -134,44 +112,9 @@ export function Workbench({
       setup.data.draft_scope &&
       !wizardDismissed(setup.data.draft_scope)
     ) {
-      setRestoreTarget("");
       navigate("/setup", { replace: true });
     }
   }, [setup.data, location.pathname, location.search, navigate]);
-  useEffect(() => {
-    if (!restoreTarget || setup.isPending || setup.data?.fresh) return;
-    if (location.pathname !== "/") {
-      setRestoreTarget("");
-      return;
-    }
-    const abort = new AbortController();
-    void result(
-      client.GET("/api/threads/{thread_id}", {
-        params: { path: { thread_id: restoreTarget } },
-        signal: abort.signal,
-      }),
-    ).then(
-      (detail) => {
-        if (abort.signal.aborted) return;
-        setRestoreTarget("");
-        if (!detail.thread.archived && !detail.thread.parent_thread_id)
-          navigate(`/threads/${encodeURIComponent(restoreTarget)}`, {
-            replace: true,
-          });
-      },
-      () => {
-        if (!abort.signal.aborted) setRestoreTarget("");
-      },
-    );
-    return () => abort.abort();
-  }, [
-    client,
-    restoreTarget,
-    location.pathname,
-    navigate,
-    setup.isPending,
-    setup.data?.fresh,
-  ]);
   useEffect(() => {
     setMenu(false);
   }, [location.pathname, location.search]);
@@ -185,7 +128,7 @@ export function Workbench({
   }, [profile]);
   const updateProfile = (next: Profile) => setProfile(next);
   const links = [
-    { to: "/", label: "Overview", icon: House },
+    { to: "/", label: "Home", icon: House },
     { to: "/settings", label: "Settings", icon: Gear },
   ];
   const themeToggle = (
@@ -337,7 +280,24 @@ export function Workbench({
             unauthorized={unauthorized}
           >
             <Routes>
-              <Route path="/" element={<HomePage />} />
+              <Route
+                path="/"
+                element={
+                  <NewConversationPage
+                    profile={profile}
+                    unauthorized={unauthorized}
+                  />
+                }
+              />
+              <Route
+                path="/new/:draftId"
+                element={
+                  <NewConversationPage
+                    profile={profile}
+                    unauthorized={unauthorized}
+                  />
+                }
+              />
               <Route
                 path="/threads/:threadId"
                 element={
@@ -514,93 +474,5 @@ export function Workbench({
     <ConnectionNoticeContext.Provider value={disconnected}>
       {content}
     </ConnectionNoticeContext.Provider>
-  );
-}
-function HomePage() {
-  const setup = useSetup();
-  const projects = useProjects();
-  const sources = useSources();
-  const status = useStatus();
-  return (
-    <>
-      <PageHeader
-        title="Your workspace"
-        description="Open a conversation or start a new one from the sidebar."
-        actions={
-          <Button render={<Link to="/setup" />}>
-            {setup.data?.needed ? "Set up your instance" : "Check readiness"}
-            <ArrowRight />
-          </Button>
-        }
-      />
-      <ErrorNotice error={setup.error || projects.error || sources.error} />
-      <div className={styles.hero}>
-        <div>
-          <span className={styles.eyebrow}>HARNESS UI</span>
-          <h2>A workspace for your agents.</h2>
-          <p>
-            Configuration stays on your server. Collaborators share the same
-            instance; your navigation and display preferences stay yours.
-          </p>
-        </div>
-        <div className={styles.heroStats}>
-          <strong>{projects.data?.length ?? "—"}</strong>
-          <span>Projects</span>
-          <strong>{sources.data?.sources.length ?? "—"}</strong>
-          <span>Configurations</span>
-        </div>
-      </div>
-      {(setup.data?.needed ||
-        (setup.data?.draft_scope &&
-          readWizardDraft(setup.data.draft_scope))) && (
-        <Panel
-          title={
-            setup.data?.fresh
-              ? "Finish first-use setup"
-              : "Setup needs attention"
-          }
-        >
-          <p>
-            {setup.data?.fresh
-              ? "Connect a model and choose where it can work. You can start without a Project."
-              : "Review your saved setup or repair the existing configuration without replacing your resources."}
-          </p>
-          <Link to="/setup">Continue setup</Link>
-        </Panel>
-      )}
-      <div className={styles.cardGrid}>
-        <Link to="/projects" className={styles.projectCard}>
-          <Folder size={24} />
-          <strong>Choose a Project</strong>
-          <p>Project folders and defaults for new conversations.</p>
-        </Link>
-        <Link to="/settings/accounts" className={styles.projectCard}>
-          <PlugsConnected size={24} />
-          <strong>Connect providers</strong>
-          <p>Subscription accounts and securely referenced model keys.</p>
-        </Link>
-        <Link to="/settings" className={styles.projectCard}>
-          <SlidersHorizontal size={24} />
-          <strong>Workspace settings</strong>
-          <p>Models, agents, environments, MCP and shared defaults.</p>
-        </Link>
-      </div>
-
-      {status.data?.app.capability_warnings?.length ||
-      status.data?.app.content_plugin_diagnostics?.length ? (
-        <Panel title="Configuration diagnostics">
-          {[
-            ...(status.data?.app.capability_warnings ?? []),
-            ...(status.data?.app.content_plugin_diagnostics ?? []),
-          ].map((message) => (
-            <p key={message}>{message}</p>
-          ))}
-        </Panel>
-      ) : null}
-      <p className={styles.muted}>
-        Open a conversation from the sidebar or create one to start working.
-        Nothing is sent until you choose Send.
-      </p>
-    </>
   );
 }
