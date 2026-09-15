@@ -104,9 +104,11 @@ Record detail exposes **Share**. Sharing does not require creating or joining a 
 
 The source detail shows recipients and **Manage sharing**. Management can change the audience or withdraw the publication; these are access-policy operations. Published text and provenance are immutable. Changed information requires a new memory and a separately confirmed new publication, with an authorized correction association where applicable. There is no overwrite, edit, or synchronize-original action. Withdrawing an earlier publication is explicit rather than an automatic side effect of publishing another.
 
-A publication is independently retained, immutable content, not a live grant to its source. Read access does not grant deletion or resharing authority, and no role can edit a saved publication through Bot Memory. Publication identity, protected source/correction associations, confirmation, and visibility activation need an implementation contract; a provider ID or arbitrary metadata field alone is insufficient.
+A publication stores separately approved, immutable content, not a live grant to its source. Its availability remains subject to mandatory withdrawal when the source is deleted. Read access does not grant deletion or resharing authority, and no role can edit a saved publication through Bot Memory. Publication identity, protected source/correction associations, confirmation, and visibility activation need an implementation contract; a provider ID or arbitrary metadata field alone is insufficient.
 
-Publication from direct conversations is excluded. Source deletion previews derived publications. The deletion flow defaults to withdrawing them too; retaining them requires an explicit choice. Multi-object deletion must report partial/unknown outcomes rather than claim an unsupported atomic operation.
+Publication from direct conversations is excluded. Source deletion previews all derived publications and requires withdrawing them together. There is no option to retain an active publication after deleting its source. The confirmation explains that recipients will lose access to all of these copies; this mandatory consequence applies to every supported deletion entry point, not only the Console.
+
+Deletion is complete only after source deletion and withdrawal of every derived publication are confirmed. Multi-object operations must report partial/unknown outcomes rather than claim an unsupported atomic operation. Concurrent publication cannot leave an active copy of a deleted source or reactivate one after withdrawal. The owning implementation contract must enforce this lifecycle boundary. Withdrawal prevents subsequent retrieval of the copies; physical cleanup and content already delivered in conversations retain their separate completion boundaries.
 
 ## 6. Continuing Sharing Between Groups
 
@@ -242,7 +244,7 @@ Revocation or withdrawal prevents subsequent authorized retrieval through that g
 11. Removing a group ends mutual reading/contribution through that policy; other valid grants remain visible with their access reasons.
 12. Forged metadata, changed Account IDs, external user IDs, direct links, cached results, and source links cannot bypass authorization.
 13. Optional recall failure does not fabricate memory or block ordinary execution. Uncertain writes/publications do not claim success or trigger blind retries.
-14. Disabling memory preserves content. Deletion/withdrawal exposes partial outcomes and explains already-delivered-content limits.
+14. Disabling memory preserves content. Deleting a source requires withdrawal of all derived publications, with no keep-copy option. Completion requires confirmation of both source deletion and all withdrawals; partial/unknown outcomes remain visible. Concurrent publication cannot leave or reactivate an accessible copy of a deleted source. Already-delivered-content limits remain explicit.
 15. Before automatic organization ships, test duplicate completion, cancellation, uncertain writes, append-only corrections, attempted automatic updates, and deleted-source resurrection under its separately adopted lifecycle contract.
 16. An authorized deletion removes a record from subsequent retrieval after confirmed completion; an uncertain deletion does not claim success. Ordinary non-Bot Memory update behavior remains unchanged.
 
