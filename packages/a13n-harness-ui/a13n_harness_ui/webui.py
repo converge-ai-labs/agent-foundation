@@ -125,7 +125,7 @@ from a13n_harness_ui.thread_files import (
     ComposerInput,
     ThreadAttachment,
 )
-from a13n_harness_ui.webui_lifecycle import EventStreamResponse, RequestLog, WebUIServer
+from a13n_harness_ui.webui_lifecycle import ErrorResponse, EventStreamResponse, RequestLog, WebUIServer
 
 API_VERSION = "1"
 _MAX_BODY = 1024 * 1024
@@ -285,11 +285,7 @@ class ErrorEnvelope(SurfaceModel):
 
 
 def _error(code: str, message: str, status: int) -> JSONResponse:
-    return JSONResponse(
-        ErrorEnvelope(error=ErrorBody(code=code, message=message)).model_dump(),
-        status_code=status,
-        headers={"Cache-Control": "no-store"},
-    )
+    return ErrorResponse(code=code, message=message, status_code=status)
 
 
 class AccessBoundary:

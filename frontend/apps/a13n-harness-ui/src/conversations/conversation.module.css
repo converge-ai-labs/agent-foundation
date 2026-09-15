@@ -276,9 +276,11 @@
 .userMessage {
   color: var(--a13n-text);
   margin: 12px 0 24px auto;
-  padding: 14px 18px;
+  padding: 12px 16px;
   background: var(--a13n-surface);
-  border-radius: 12px;
+  border-radius: 16px 16px 4px 16px;
+  width: fit-content;
+  min-width: 100px;
   max-width: 90%;
 }
 .assistantMessage {
@@ -297,6 +299,9 @@
 }
 .markdown p {
   margin: 0 0 12px;
+}
+.userMessage .markdown > :last-child {
+  margin-bottom: 0;
 }
 .markdown ul,
 .markdown ol {
@@ -423,9 +428,6 @@
 .detailText > button {
   margin-top: 6px;
 }
-.composerHint summary {
-  cursor: pointer;
-}
 .rawSource {
   font-size: 12px;
   color: var(--a13n-secondary);
@@ -439,24 +441,29 @@
   width: 100%;
   margin: 0 auto;
   border: 1px solid var(--a13n-border);
-  border-radius: 12px;
-  padding: 8px 12px;
+  border-radius: 16px;
+  padding: 8px 12px 10px;
   background: var(--a13n-canvas);
 }
 .composer:focus-within {
   border-color: var(--ring);
 }
-.composerHeading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+.composerConnection {
+  margin: 4px 4px 0;
   font-size: 12px;
+  color: var(--a13n-secondary);
 }
-.composerHeading strong {
-  font-weight: 500;
+.composerHelp {
+  width: min(340px, calc(100vw - 32px));
+  font-size: 13px;
+  line-height: 1.6;
 }
-.composerHeading span {
+.composerHelp p {
+  margin: 8px 0 0;
+  color: var(--a13n-secondary);
+}
+.composerContext {
+  font-size: 12px;
   color: var(--a13n-secondary);
 }
 .composerActions {
@@ -468,13 +475,14 @@
 }
 .composerActions > div {
   display: flex;
-  gap: 8px;
+  align-items: center;
+  gap: 6px;
 }
-.composerHint {
-  display: block;
+.composerActions > div:first-child {
   color: var(--a13n-secondary);
-  font-size: 11px;
-  margin-top: 8px;
+}
+.composerActions > div:last-child {
+  margin-left: auto;
 }
 .attachments {
   list-style: none;
@@ -565,8 +573,8 @@
   .composer {
     padding: 10px;
   }
-  .composerHeading {
-    align-items: flex-start;
+  .composerContext {
+    display: none;
   }
   .composerActions {
     flex-wrap: wrap;

@@ -16,6 +16,7 @@ import { ErrorNotice, TextField } from "../shell/ui";
 import type { Profile } from "../shell/presence";
 import { readPreference, writePreference } from "../shell/preferences";
 import { Composer, useDraft } from "./composer";
+import { ComposerStatus } from "./composer-status";
 import { Decisions } from "./decisions";
 import { ConversationDetails } from "./details";
 import { WorkInspector } from "./work-inspector";
@@ -425,6 +426,7 @@ function Conversation({
             reconcile={reconcile}
           />
         )}
+        {!thread.archived && <ComposerStatus threadId={threadId} />}
         <ModalFrame
           open={dialog === "share"}
           onOpenChange={(open) => {

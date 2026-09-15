@@ -16,7 +16,9 @@ WebUI enables native file browsing, editing, transfer, creation, move, deletion,
 
 ## Server logs and shutdown
 
-The foreground server reports startup, successful readiness, API response status and cleanup progress using the configured `log_level` and `log_format` (`pretty` or `json`). The default `INFO` level shows normal API activity; static assets and successful health probes are `DEBUG`. API records identify route templates, status and time to response headers, not request bodies, access keys, query values or native file paths. A printed login URL precedes startup; **WebUI ready** confirms the listener started successfully.
+The foreground server reports startup, successful readiness, API response status and cleanup progress using the configured `log_level` and `log_format` (`pretty` or `json`). The default `INFO` level shows normal API activity; static assets and successful health probes are `DEBUG`. API records identify route templates, status and time to response headers, not request bodies, access keys, query values or native file paths. Warnings also include the application error code, a safe fixed reason when known, and available generated Thread/receipt/Run identifiers. For example, `thread_history_continuation_changed` (transcript 400) and `thread_continuation_conflict` (tasks 409) both mean the selected saved continuation changed before that read; refresh the conversation. Other failures retain their own codes. Dynamic error text is kept in the API response rather than copied into logs.
+
+A printed login URL precedes startup; **WebUI ready** confirms the listener started successfully.
 
 Press **Ctrl+C** once, or send **SIGTERM**, to stop. The server reports **Stopping WebUI**, ends browser event streams before draining HTTP connections, closes WebSockets, and lets the App clean up its terminal sessions, active Runs and storage. **WebUI stopped** confirms normal cleanup completed. Browser disconnection alone does not stop Runs or terminal sessions. The connection-drain timeout is a fallback, not a hard deadline for trusted Python cleanup. Slow shutdown continues to report elapsed waiting time; `DEBUG` adds the App cleanup stages (admitted operations, terminal sessions, root/child Runs and subscriptions). Raising the log level to `WARNING` intentionally hides ordinary progress.
 
@@ -46,7 +48,9 @@ After login, a persistent **Enable task notifications** prompt offers browser no
 
 **Settings → Notifications** lets you enable or disable desktop notifications, inspect browser permission, and send a test notification. Preferences apply immediately to this browser. Disabling notifications does not revoke browser permission, change another collaborator's preferences, or disable in-app task notices.
 
-For conversations opened in this browser, notices show completion, failure, or requests for your input with actual reply/question/failure previews. They do not call a model to generate a separate summary. Desktop notifications can expose this preview on your desktop or lock screen. A focused foreground page shows the in-app notice without an additional desktop alert. **Open conversation**, or clicking a desktop notification, returns to the matching conversation.
+For conversations opened in this browser, notices show completion, failure, or requests for your input with actual reply/question/failure previews. They do not call a model to generate a separate summary. Desktop notifications can expose this preview on your desktop or lock screen. When enabled and allowed, desktop alerts are attempted in both foreground and background pages. **Open conversation**, or clicking a desktop notification, returns to the matching conversation.
+
+If permission is allowed but no banner appears on macOS, use **Send test notification**, then check **System Settings → Notifications** for the browser or website and whether **Focus** is silencing alerts. Test feedback distinguishes requesting a notification from the browser reporting it shown or failed; neither site permission nor a browser shown event proves a visible macOS banner.
 
 Keep WebUI open to receive live notifications. This is not closed-page Web Push; browser suspension and operating-system notification settings may prevent timely delivery. Reopening WebUI does not replay old completions, and browser disconnection does not cancel the agent's work.
 

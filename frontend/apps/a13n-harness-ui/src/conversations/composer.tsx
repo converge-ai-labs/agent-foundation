@@ -7,8 +7,15 @@ import {
   useSyncExternalStore,
 } from "react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
-import { Button, ModalFrame } from "a13n-ui";
-import { Paperclip, ArrowUp, X } from "@phosphor-icons/react";
+import {
+  Button,
+  ModalFrame,
+  Popover,
+  PopoverTrigger,
+  PopoverPopup,
+  PopoverTitle,
+} from "a13n-ui";
+import { Paperclip, ArrowUp, Question, X } from "@phosphor-icons/react";
 import type { EditorView } from "@codemirror/view";
 import {
   attachmentSelections,
@@ -158,6 +165,14 @@ export function Composer({
   const previewRequest = useRef<AbortController | null>(null);
   useEffect(() => () => previewRequest.current?.abort(), [transport, threadId]);
   const [error, setError] = useState("");
+  const [syncDelayed, setSyncDelayed] = useState(false);
+  const synchronized = draft.synchronized;
+  useEffect(() => {
+    setSyncDelayed(false);
+    if (synchronized || draft.status !== "Connected") return;
+    const timer = setTimeout(() => setSyncDelayed(true), 700);
+    return () => clearTimeout(timer);
+  }, [synchronized, draft.status]);
   const [preview, setPreview] = useState<{
     name: string;
     text: string;
@@ -364,21 +379,15 @@ export function Composer({
       className={styles.composer}
       aria-label={busy ? "Next message" : "Message composer"}
     >
-      <div className={styles.composerHeading}>
-        <strong>{busy ? "Next message" : "Message"}</strong>
-        <span
-          role="status"
-          title="Shared draft synchronization is not a durable save."
-        >
-          {draft.replacement
-            ? "Server restarted"
-            : draft.synchronized
-              ? "Synchronized"
-              : draft.status === "Connected"
-                ? "Synchronizing edits"
-                : `${draft.status} · local edits retained`}
-        </span>
-      </div>
+      {!synchronized &&
+        !draft.replacement &&
+        (draft.status !== "Connected" || syncDelayed) && (
+          <p role="status" className={styles.composerConnection}>
+            {draft.status === "Connected"
+              ? "Syncing edits…"
+              : `${draft.status} · your edits are still in this tab`}
+          </p>
+        )}
       {draft.replacement && (
         <div role="alert" className={styles.warning}>
           <p>
@@ -482,37 +491,41 @@ export function Composer({
           {error || draft.error}
         </p>
       )}
-      {draft.submission.kind !== "idle" &&
-        draft.submission.kind !== "pending" && (
-          <div role="status" className={styles.receipt}>
-            <p>{draft.submission.message}</p>
-            {"receipt" in draft.submission && draft.submission.receipt && (
-              <small>Operation: {draft.submission.receipt}</small>
+      {(draft.submission.kind === "rejected" || unknown) && (
+        <div role="alert" className={styles.warning}>
+          <p>{"message" in draft.submission && draft.submission.message}</p>
+          {unknown &&
+            "receipt" in draft.submission &&
+            draft.submission.receipt && (
+              <details>
+                <summary>Submission details</summary>
+                <small>Operation: {draft.submission.receipt}</small>
+              </details>
             )}
-            {unknown && (
-              <>
-                <Button variant="outline" onClick={reconcile}>
-                  Refresh operation and history
-                </Button>
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    if (
-                      window.confirm(
-                        "The previous input may already have been accepted. Enable a deliberate new submission only after reviewing the conversation?",
-                      )
-                    ) {
-                      draft.submission = { kind: "idle" };
-                      draft.notify();
-                    }
-                  }}
-                >
-                  I reviewed the outcome
-                </Button>
-              </>
-            )}
-          </div>
-        )}
+          {unknown && (
+            <>
+              <Button variant="outline" onClick={reconcile}>
+                Refresh operation and history
+              </Button>
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  if (
+                    window.confirm(
+                      "The previous input may already have been accepted. Enable a deliberate new submission only after reviewing the conversation?",
+                    )
+                  ) {
+                    draft.submission = { kind: "idle" };
+                    draft.notify();
+                  }
+                }}
+              >
+                I reviewed the outcome
+              </Button>
+            </>
+          )}
+        </div>
+      )}
       <div className={styles.composerActions}>
         <div>
           <input
@@ -526,12 +539,42 @@ export function Composer({
           />
           <Button
             variant="ghost"
-            size="sm"
+            size="icon-sm"
+            aria-label="Attach files"
+            title="Attach files"
             loading={uploading}
             onClick={() => upload.current?.click()}
           >
-            <Paperclip /> Attach files
+            <Paperclip />
           </Button>
+          <Popover>
+            <PopoverTrigger
+              render={<Button variant="ghost" size="icon-sm" />}
+              aria-label="Composer help"
+            >
+              <Question />
+            </PopoverTrigger>
+            <PopoverPopup
+              side="top"
+              align="start"
+              className={styles.composerHelp}
+            >
+              <PopoverTitle>Writing a message</PopoverTitle>
+              <p>Enter for a new line · Ctrl/⌘+Enter to send.</p>
+              <p>Paste or drop files to attach them.</p>
+              <p>
+                Drafts are shared with people in this conversation. They are not
+                saved across server restarts.
+              </p>
+              <p>
+                While the agent is working, keep drafting here or use Send as
+                instruction. A next message is not queued automatically.
+              </p>
+            </PopoverPopup>
+          </Popover>
+          {busy && (
+            <span className={styles.composerContext}>Draft next message</span>
+          )}
         </div>
         <div>
           {busy && activity.available_actions?.includes("steer") && (
@@ -545,6 +588,7 @@ export function Composer({
           )}
           <Button
             size="sm"
+            title="Send message · Ctrl/⌘+Enter"
             disabled={!canSend}
             loading={pending}
             onClick={() => void submit("send")}
@@ -554,16 +598,6 @@ export function Composer({
           </Button>
         </div>
       </div>
-      <details className={styles.composerHint}>
-        <summary>Enter for a new line · Ctrl/⌘+Enter to send</summary>
-        Drafts are synchronized in this instance, not saved across server
-        restarts.
-      </details>
-      {busy && (
-        <small className={styles.composerHint}>
-          Next message is not queued.
-        </small>
-      )}
       <ModalFrame
         open={!!preview}
         onOpenChange={(open) => {

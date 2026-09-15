@@ -1,0 +1,60 @@
+.bar {
+  width: 100%;
+  max-width: 860px;
+  margin: 4px auto 0;
+  flex-shrink: 0;
+  min-width: 0;
+}
+.metrics {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  max-width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--a13n-secondary);
+  font: inherit;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  text-align: left;
+}
+.metrics:hover,
+.metrics[data-popup-open] {
+  background: var(--a13n-surface);
+}
+.metrics:focus-visible {
+  outline: 1px solid var(--ring);
+}
+.metrics > span {
+  white-space: nowrap;
+}
+.metrics strong {
+  margin-left: 3px;
+  font-weight: 400;
+  color: var(--a13n-text);
+}
+.stale {
+  color: var(--warning-foreground);
+}
+.popup {
+  width: min(380px, calc(100vw - 24px));
+  font-size: 13px;
+  line-height: 1.6;
+}
+.popup dt {
+  margin-top: 12px;
+  font-weight: 500;
+}
+.popup dd {
+  margin: 3px 0 0;
+  color: var(--a13n-secondary);
+}
+@media (max-width: 400px) {
+  .metrics {
+    gap: 4px 10px;
+  }
+}

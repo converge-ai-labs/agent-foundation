@@ -271,3 +271,75 @@ def test_signal_closes_live_browser_streams_and_owned_run_and_pty(tmp_path: Path
             process.communicate(timeout=5)
         if terminal_pid and psutil.pid_exists(terminal_pid):
             os.killpg(terminal_pid, signal.SIGKILL)
+
+
+@pytest.mark.anyio
+async def test_projection_errors_log_safe_reasons_and_thread_identity(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    from a13n_harness_ui.app import open_harness_ui_app
+    from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
+    from a13n_harness_ui.webui import create_webui
+
+    _write_configuration(tmp_path)
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
+    server = create_webui(
+        lambda: open_harness_ui_app(settings, configuration_path=tmp_path / "a13n-harness-ui.yaml"),
+        api_key="private-test-key",
+    )
+    async with server.router.lifespan_context(server):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=server),
+            base_url="http://127.0.0.1",
+            headers={"Authorization": "Bearer private-test-key"},
+        ) as client:
+            thread = (await client.post("/api/threads", json={})).json()
+            thread_id = thread["thread_id"]
+            for endpoint, status, code, reason in (
+                ("transcript", 400, "thread_history_continuation_changed", "Saved history changed"),
+                ("tasks", 409, "thread_continuation_conflict", "selected continuation changed"),
+            ):
+                caplog.clear()
+                with caplog.at_level(logging.WARNING, logger="a13n_harness_ui.webui"):
+                    response = await client.get(
+                        f"/api/threads/{thread_id}/{endpoint}",
+                        params={"expected_continuation_id": "private-stale-continuation"},
+                    )
+                assert response.status_code == status
+                assert response.json()["error"]["code"] == code
+                records = [record for record in caplog.records if record.name == "a13n_harness_ui.webui"]
+                assert len(records) == 1
+                assert records[0].error_code == code
+                assert records[0].thread_id == thread_id
+                assert reason in records[0].getMessage()
+                assert "private" not in caplog.text
+
+
+@pytest.mark.anyio
+async def test_error_diagnostics_do_not_log_dynamic_messages_or_arbitrary_route_values(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    from a13n_harness_ui.webui import _error
+
+    async def endpoint(request):
+        pass
+
+    async def app(scope, receive, send):
+        scope["route"] = Route("/api/threads/{thread_id}/transcript", endpoint)
+        scope["path_params"] = {"thread_id": "/private/folder", "path": "/private/config"}
+        await _error("configuration_invalid", "private-secret and /private/folder", 400)(scope, receive, send)
+
+    async def receive():
+        return {"type": "http.request", "body": b"private request"}
+
+    messages = []
+
+    async def send(message):
+        messages.append(message)
+
+    with caplog.at_level(logging.WARNING, logger="a13n_harness_ui.webui"):
+        await RequestLog(app)({"type": "http", "method": "GET", "path": "/private/folder"}, receive, send)
+    assert "configuration_invalid" in caplog.text
+    assert "private" not in caplog.text
+    # The response body remains available to its authenticated caller, unmodified.
+    assert b"private-secret" in messages[-1]["body"]

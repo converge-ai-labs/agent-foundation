@@ -184,7 +184,7 @@ export function InputContent({
   const seen = new Set<string>();
   return (
     <div className={styles.userMessage}>
-      <header>Input</header>
+      <header>User</header>
       {visible.map((part, index) => {
         const attachment = inputAttachment(part.metadata);
         if (attachment && threadId) {
