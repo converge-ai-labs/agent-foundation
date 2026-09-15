@@ -35,7 +35,7 @@ Memory follows the group rather than its selected Agent. Renaming a group, rotat
 
 A Bot is a view of one Application Account, as defined by Bots Integration. Memory introduces no independent `bot_id`. Logical group identity includes the a13n Workspace, Account, and external conversation ID; accepted Organization and Memory Provider namespace boundaries remain in force. The Service and neutral backend contracts own group subject representation; a group is not encoded as a fabricated Agent or User.
 
-The sharing boundary is one Bot and its external installation. Cross-Bot, cross-platform, cross-tenant, and cross-a13n-Workspace sharing are outside this contract. A Bot page shows its selected platform/installation branch; illustrations containing both Slack and Feishu describe the reusable navigation pattern, not a new multi-account Bot identity.
+The sharing boundary is one Bot and its external installation. Cross-Bot, cross-platform, cross-tenant, and cross-a13n-Workspace sharing are outside this contract. A Bot page shows only its selected platform/installation branch. Slack and Feishu use the same navigation pattern without introducing a multi-account Bot identity.
 
 Re-creating a target for the same Account/group can reconnect retained memory only after current authorization and explicit re-enablement. Replacing an Account or Memory Provider does not silently inherit or migrate its predecessor's memory.
 
@@ -113,9 +113,7 @@ A Bot invocation must not automatically union the Agent's ordinary agent/user me
 
 ## 5. Sharing Selected Records
 
-![Share a selected memory record](assets/bot-memory/02-share-record.webp)
-
-Figure 2: Review the publication text and select recipient groups before confirming. Implement the dialog over the common browser in Figure 1; the dimmed background in this image does not introduce additional navigation or filters.
+The publication dialog opens over the memory browser. Review the publication text and select recipient groups before confirming; opening the dialog preserves browser navigation and filters.
 
 Record detail exposes **Share**. Sharing does not require creating or joining a shared collection.
 
@@ -135,9 +133,7 @@ Deletion is complete only after source deletion and withdrawal of every derived 
 
 ## 6. Continuing Sharing Between Groups
 
-![Configure continuing group sharing](assets/bot-memory/03-group-sharing.webp)
-
-Figure 3: Configure participants, content kinds, history, and future enrollment with an audience preview. The illustrated form is an unsaved example selection, not the initial defaults; **Review confirmation** opens the final confirmation before applying a policy.
+Sharing settings configures participants, content kinds, history, and future enrollment with an audience preview. **Review confirmation** opens the final confirmation before applying a policy.
 
 **Sharing settings** configures continuous read access to source records. Unlike selected publication, this policy grants access to qualifying source records in their owning groups. New records become available under the policy without per-record publication; existing records are never edited. Deletion and authorization changes affect availability, not historical text.
 
@@ -183,19 +179,15 @@ Legacy records without metadata are not automatically attached to a group or sha
 
 ## 8. Frontend and Request Behavior
 
-### Prototype reference
+### Shared browser shell
 
-The four embedded prototypes are development references for layout, information hierarchy, and the main interaction paths. The tracked WebP assets are lossless encodings of the generated images. Images are illustrative example data, not screenshots of implemented functionality or permission evidence. Use the written contract for behavior, supported fields, and authorization; use Figure 1 for the common browser shell across screens. Keep shared tabs and controls in consistent positions even where individual generated images differ. The common Memory toolbar retains Memory settings and Sharing settings, including when a prototype concentrates on the index pane.
-
-The examples show Slack under the one-Account-per-Bot model. Feishu reuses the same interactions with enterprise/group labels. Implementation also covers the responsive, accessibility, localization, and non-success states specified below; the prototypes do not replace those requirements.
+All memory interactions reuse the same Bot detail shell and consistent tabs, filters, and controls. The Memory toolbar exposes Memory settings and Sharing settings. Feishu uses enterprise/group labels within the same interaction model as Slack. Responsive, accessibility, localization, and non-success states follow the requirements below.
 
 ### 8.1 Three-pane browser
 
 Administrator entry: **Integrations -> Bots -> Bot detail -> Memory**. Group detail links to the same view with its exact scope selected.
 
-![Browse local group memory](assets/bot-memory/01-memory-browser.webp)
-
-Figure 1: Select a group, open its `MEMORY.md` index, and follow a logical document link to read content on demand. The index detail has no document Delete, Share, or Edit actions; immutable document details retain authorized Delete and Share actions. Date/kind filters apply to documents and do not hide the scope index.
+Select a group, open its `MEMORY.md` index, and follow a logical document link to read content on demand. The index detail has no document Delete, Share, or Edit actions; immutable document details retain authorized Delete and Share actions. Date/kind filters apply to documents and do not hide the scope index.
 
 ```text
 Memory scope                  Documents                        Selected: MEMORY.md
@@ -216,9 +208,7 @@ The right pane renders either the selected index with clickable authorized docum
 
 ### Receiving shared memory
 
-![Read memory shared with the receiving group](assets/bot-memory/04-received-memory.webp)
-
-Figure 4: A receiving reader sees approved publications separately from source groups available through continuing policies. Record detail explains the access reason and immutable-content rule. No Edit action exists; shared-read authority alone also exposes no Delete or Share action and grants no access to private source evidence. Keep **Local memory** before **Shared with this group** in the common tab order, matching Figure 1.
+A receiving reader sees approved publications separately from source groups available through continuing policies. Record detail explains the access reason and immutable-content rule. No Edit action exists; shared-read authority alone also exposes no Delete or Share action and grants no access to private source evidence. Keep **Local memory** before **Shared with this group** in the common tab order.
 
 ### 8.2 Lazy loading and bounded results
 

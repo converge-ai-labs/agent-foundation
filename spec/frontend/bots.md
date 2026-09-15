@@ -123,7 +123,7 @@ The heading shows local name, platform, external installation identity, administ
 - Memory embeds the Bot Memory contract's three-pane scope tree, logical document list with `MEMORY.md`, and index/document detail browser, with date/type filters and separate sharing settings. Index links open authorized documents on demand, independent of Mem0 or file-based storage. Saved-document details allow authorized Delete and Share actions, with no Edit action; changes and corrections create new documents. The derived index updates as content/access changes and has no ordinary document mutation actions. Before that feature exists, do not render a working-looking empty memory store or an enabled memory toggle.
 - Settings shows inherited Account defaults, reception scope, and links to write-only credential maintenance. Account availability is edited through the canonical Account operation.
 
-Development reference: the [Memory frontend specification and embedded prototypes](bot-memory.md#8-frontend-and-request-behavior) show the three-pane browser and receiving-group view. [Selected-record sharing](bot-memory.md#5-sharing-selected-records) and [group-sharing settings](bot-memory.md#6-continuing-sharing-between-groups) embed their corresponding interaction prototypes. Reuse the same Bot shell; these images introduce no independent Bot identity or backend capability.
+The [Memory frontend specification](bot-memory.md#8-frontend-and-request-behavior) defines the three-pane browser and receiving-group view. [Selected-record sharing](bot-memory.md#5-sharing-selected-records) and [group-sharing settings](bot-memory.md#6-continuing-sharing-between-groups) define their corresponding interactions. All reuse the same Bot shell.
 
 ### 4.6 Channel or group-chat detail
 

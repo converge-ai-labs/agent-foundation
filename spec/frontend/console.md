@@ -24,7 +24,7 @@ A Personal API Key belongs to its User and is bounded to one Workspace. Its crea
 
 ## Bots
 
-[Bots Integration](bots.md) owns the Slack/Feishu customer-owned application journey under Integrations, alongside Application Accounts and Connections. Bot pages reuse Application Account identity and credentials. [Bot Memory](bot-memory.md) owns the three-pane record browser, selected-content sharing, and continuing group-sharing settings, including the prototype references. Memory has no separate primary sidebar item. Controls and routes that require unavailable Service capabilities remain unavailable with an explanation rather than presenting simulated working state.
+[Bots Integration](bots.md) owns the Slack/Feishu customer-owned application journey under Integrations, alongside Application Accounts and Connections. Bot pages reuse Application Account identity and credentials. [Bot Memory](bot-memory.md) owns the three-pane record browser, selected-content sharing, and continuing group-sharing settings. Memory has no separate primary sidebar item. Controls and routes that require unavailable Service capabilities remain unavailable with an explanation rather than presenting simulated working state.
 
 ## Connections
 
