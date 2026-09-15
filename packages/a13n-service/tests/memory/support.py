@@ -2,7 +2,7 @@
 
 from contextlib import asynccontextmanager
 
-from a13n_harness.memory import MemoryBackend
+from a13n_harness.memory import MemoryBackend, MemoryDocumentBackend
 from a13n_harness.memory_plugins import Mem0Credential, MemoryBackendCatalog, MemoryBackendPlugin
 from a13n_service.memory.domain import CreateMemoryProviderRequest
 from a13n_service.memory.providers import MemoryProviderService
@@ -23,6 +23,7 @@ class BorrowedMemoryPlugin(MemoryBackendPlugin[EmptyConfiguration, Mem0Credentia
     credential_model = Mem0Credential
 
     def __init__(self, backend: MemoryBackend):
+        self.supports_documents = isinstance(backend, MemoryDocumentBackend)
         self.backend = backend
         self.credentials = []
         self.opened = 0

@@ -58,7 +58,9 @@ async def provision() -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", choices=("init", "bootstrap", "setup", "control", "worker", "authenticated-control"))
+    parser.add_argument(
+        "command", choices=("init", "bootstrap", "setup", "control", "worker", "connectivity", "authenticated-control")
+    )
     args = parser.parse_args()
     if args.command == "init":
         anyio.run(initialize)

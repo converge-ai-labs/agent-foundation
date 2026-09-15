@@ -178,3 +178,7 @@ Known Connector provider refusals return a typed tool outcome with `kind="failed
 5. Deferred loading uses Harness capability loading and does not change authorization.
 6. Each external action rechecks existing Attempt and resource authority and uses current eligible credentials.
 7. Typed native receipts establish correlation; uncertain external effects remain uncertain.
+
+### Bot Reply Evidence
+
+Slack and Feishu inbound reply invocations retain [Bot reply observations](01a-application-accounts.md#bot-reply-observations) before dispatch and before hiding a successful provider receipt from model-visible output. These observations preserve external outcome evidence independently of the enclosing Run's completion. They neither expand native target authority nor retry an uncertain external effect.

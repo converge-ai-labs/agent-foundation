@@ -73,6 +73,26 @@ const ConnectionsPage = lazy(() =>
     default: module.ConnectionsPage,
   })),
 );
+const BotsPage = lazy(() =>
+  import("./features/bots/page").then((module) => ({
+    default: module.BotsPage,
+  })),
+);
+const BotConnect = lazy(() =>
+  import("./features/bots/connect").then((module) => ({
+    default: module.BotConnect,
+  })),
+);
+const BotDetail = lazy(() =>
+  import("./features/bots/page").then((module) => ({
+    default: module.BotDetail,
+  })),
+);
+const BotGroupDetail = lazy(() =>
+  import("./features/bots/group").then((module) => ({
+    default: module.BotGroupDetail,
+  })),
+);
 const ApplicationAccountsPage = lazy(() =>
   import("./features/application-accounts/page").then((module) => ({
     default: module.ApplicationAccountsPage,
@@ -235,6 +255,16 @@ function AppContent() {
                       <Route
                         path="traces/:traceId"
                         element={<TraceDetailPage />}
+                      />
+                      <Route path="bots" element={<BotsPage />} />
+                      <Route path="bots/connect" element={<BotConnect />} />
+                      <Route
+                        path="bots/:accountId/channels/:targetId/:groupTab?"
+                        element={<BotGroupDetail />}
+                      />
+                      <Route
+                        path="bots/:accountId/:botTab?"
+                        element={<BotDetail />}
                       />
                       <Route
                         path="application-accounts"

@@ -129,12 +129,33 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
         )
     }
     assert connectivity_paths
-    assert all(
-        operation.get("tags") == ["connectivity-management"]
-        for operations in connectivity_paths.values()
-        for operation in operations.values()
-        if isinstance(operation, dict)
-    )
+    bot_collection = document["paths"]["/api/v1/workspaces/{workspace}/bots"]["get"]
+    assert bot_collection["tags"] == ["bots"]
+    assert {"platform", "condition", "search", "limit", "cursor"} <= {
+        parameter["name"] for parameter in bot_collection["parameters"]
+    }
+    account_prefix = "/api/v1/application-accounts/{account_id}"
+    assert {
+        f"{account_prefix}/bot/setup",
+        f"{account_prefix}/bot/summary",
+        f"{account_prefix}/bot/activate",
+        f"{account_prefix}/bot/checks",
+        f"{account_prefix}/bot/conversations",
+        f"{account_prefix}/bot/threads",
+        f"{account_prefix}/bot/replies",
+        f"{account_prefix}/memory-scopes",
+        f"{account_prefix}/memory-sharing-policies",
+    } <= connectivity_paths.keys()
+    for path, operations in connectivity_paths.items():
+        if path.startswith(f"{account_prefix}/bot/"):
+            tag = "bots"
+        elif path.startswith((f"{account_prefix}/memory-scopes", f"{account_prefix}/memory-sharing-policies")):
+            tag = "bot-memory"
+        else:
+            tag = "connectivity-management"
+        assert all(
+            operation.get("tags") == [tag] for operation in operations.values() if isinstance(operation, dict)
+        ), path
     for name in ("CreateAccountRequest", "ReplaceAccountCredentialsRequest"):
         assert schemas[name]["properties"]["credentials"]["writeOnly"]
     assert {"target_kind", "external_target_id"} <= set(schemas["TargetConfig"]["required"])

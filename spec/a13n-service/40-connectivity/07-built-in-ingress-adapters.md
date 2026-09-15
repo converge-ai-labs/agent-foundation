@@ -28,6 +28,8 @@ The supported input events are:
 - `message` in `im` conversations; and
 - `message` in public channels, private channels, or multi-person direct messages only when the Account installation has the required event subscription and the selected reception interaction mode permits `chat` or `discussion`.
 
+Slack `app_mention` events may omit `channel_type`; these normalize as channel traffic. Ordinary `message` events require an explicit supported conversation kind. This routing classification does not establish public/private audience or grant memory access; current provider verification owns that authority.
+
 The adapter ignores its verified `bot_user_id`, messages with a `bot_id`, the `bot_message` subtype, edited or deleted message subtypes, message bodies containing no content after the exact App mention is removed, and every unsupported event or subtype. Ignored events are acknowledged without admission.
 
 Safe normalization exposes bounded user and conversation IDs, display labels when already present, conversation kind, timestamp, thread relationship, mention facts, and text with the App mention removed. It does not fetch profile or history data during receipt. Stable references are:

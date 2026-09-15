@@ -20,11 +20,12 @@ from sqlalchemy.orm import Mapped, mapped_column
 from a13n_service.credentials import ResourceCredential
 from a13n_service.database import Base
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
+from a13n_service.memory.bots.domain import MemorySettings
 from a13n_service.names import CASEFOLDED_NAME_MAX_LENGTH
 from a13n_service.temporal import assume_utc
 
 from .domain import Account, AccountStatus
-from .reception import InputBatchingPolicy
+from .reception import InputBatchingPolicy, ReceptionScope
 
 
 class AccountRecord(ResourceCredential[str], Base):
@@ -49,6 +50,7 @@ class AccountRecord(ResourceCredential[str], Base):
             "NOT receive_enabled OR (default_agent_id IS NOT NULL AND execution_service_account_id IS NOT NULL)",
             name="receiver_configured",
         ),
+        CheckConstraint("reception_scope IN ('all_accessible', 'configured_targets')", name="reception_scope_valid"),
         CheckConstraint("status IN ('active', 'disabled')", name="status_valid"),
         CheckConstraint("version >= 1", name="version_positive"),
         CheckConstraint("credential_generation >= 1", name="credential_generation_positive"),
@@ -74,6 +76,10 @@ class AccountRecord(ResourceCredential[str], Base):
         Index("ix_application_accounts_provider_status", "provider_key", "status", "id"),
     )
 
+    memory_json: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True))
+    reception_scope: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="all_accessible", server_default="all_accessible"
+    )
     receive_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=text("false"))
     default_agent_id: Mapped[str | None] = mapped_column(String(72))
     execution_service_account_id: Mapped[str | None] = mapped_column(
@@ -100,6 +106,8 @@ class AccountRecord(ResourceCredential[str], Base):
 
     def to_resource(self) -> Account:
         return Account(
+            memory=MemorySettings.model_validate(self.memory_json) if self.memory_json is not None else None,
+            reception_scope=ReceptionScope(self.reception_scope),
             receive_enabled=self.receive_enabled,
             default_agent_id=self.default_agent_id,
             execution_service_account_id=self.execution_service_account_id,

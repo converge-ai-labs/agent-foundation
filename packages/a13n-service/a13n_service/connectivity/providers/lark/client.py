@@ -10,9 +10,11 @@ from uuid import NAMESPACE_URL, uuid5
 import httpx2
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
+from a13n_service.connectivity.bots.observations import ConversationInfo, ConversationPage, InstallationInfo
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.http import EndpointValidator
 
+from . import inspection
 from .actions import (
     LarkActionBinding,
     LarkAutoReplyArguments,
@@ -176,6 +178,28 @@ class LarkNativeClient:
             raise LarkApiError("invalid_provider_response") from error
         page_token, has_more = _pagination(data)
         return LarkMessagePage(items=items, page_token=page_token, has_more=has_more)
+
+    async def inspect_installation(self) -> InstallationInfo:
+        bot = await self._request("GET", "/open-apis/bot/v3/info")
+        tenant = await self._request("GET", "/open-apis/tenant/v2/tenant/query")
+        return inspection.installation(bot, tenant, app_id=self._token_provider.app_id)
+
+    async def inspect_conversation(self, chat_id: str) -> ConversationInfo:
+        if not 1 <= len(chat_id) <= 512:
+            raise LarkApiError("invalid_arguments")
+        path = f"/open-apis/im/v1/chats/{quote(chat_id, safe='')}"
+        detail = await self._request("GET", path)
+        membership = await self._request("GET", f"{path}/members/is_in_chat")
+        return inspection.conversation(detail, membership, chat_id=chat_id)
+
+    async def list_conversations(self, *, limit: int = 100, cursor: str | None = None) -> ConversationPage:
+        if not 1 <= limit <= 100 or (cursor is not None and not 1 <= len(cursor) <= 2048):
+            raise LarkApiError("invalid_arguments")
+        params = {"page_size": str(limit)}
+        if cursor is not None:
+            params["page_token"] = cursor
+        response = await self._request("GET", "/open-apis/im/v1/chats", params=params)
+        return inspection.conversations(response, limit=limit)
 
     async def _request(
         self,

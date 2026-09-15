@@ -17,6 +17,7 @@ from .account_status import AccountStatus
 from .account_target import AccountTarget
 from .account_target_provider_policy_type_0 import AccountTargetProviderPolicyType0
 from .account_target_target_kind import AccountTargetTargetKind
+from .activate_bot_request import ActivateBotRequest
 from .activity_message import ActivityMessage
 from .activity_message_content import ActivityMessageContent
 from .agent import Agent
@@ -71,6 +72,22 @@ from .base_model_candidate_collection import BaseModelCandidateCollection
 from .binary_content import BinaryContent
 from .binary_content_delivery import BinaryContentDelivery
 from .binary_input_content import BinaryInputContent
+from .bot_check import BotCheck
+from .bot_check_history import BotCheckHistory
+from .bot_check_request import BotCheckRequest
+from .bot_collection import BotCollection
+from .bot_reply_collection import BotReplyCollection
+from .bot_reply_observation import BotReplyObservation
+from .bot_reply_observation_provider_key import BotReplyObservationProviderKey
+from .bot_reply_observation_status import BotReplyObservationStatus
+from .bot_setup import BotSetup
+from .bot_summary import BotSummary
+from .bot_summary_setup_condition import BotSummarySetupCondition
+from .bot_summary_test_stage_type_0 import BotSummaryTestStageType0
+from .bot_test import BotTest
+from .bot_test_history import BotTestHistory
+from .bot_thread import BotThread
+from .bot_thread_collection import BotThreadCollection
 from .change_password_request import ChangePasswordRequest
 from .change_role_request import ChangeRoleRequest
 from .change_role_request_role import ChangeRoleRequestRole
@@ -91,6 +108,7 @@ from .complete_email_change_request import CompleteEmailChangeRequest
 from .complete_password_reset_request import CompletePasswordResetRequest
 from .complete_pending_resolution import CompletePendingResolution
 from .configure_mcpo_auth_client_request import ConfigureMCPOAuthClientRequest
+from .configure_scope import ConfigureScope
 from .connection import Connection
 from .connection_check import ConnectionCheck
 from .connection_check_scope import ConnectionCheckScope
@@ -132,6 +150,10 @@ from .content import Content
 from .context import Context
 from .continue_run_request import ContinueRunRequest
 from .continue_run_request_labels import ContinueRunRequestLabels
+from .conversation_candidate import ConversationCandidate
+from .conversation_info import ConversationInfo
+from .conversation_info_audience import ConversationInfoAudience
+from .conversation_page import ConversationPage
 from .create_account_request import CreateAccountRequest
 from .create_account_request_credentials import CreateAccountRequestCredentials
 from .create_account_request_provider_config import CreateAccountRequestProviderConfig
@@ -143,10 +165,13 @@ from .create_authorization_request import CreateAuthorizationRequest
 from .create_authorization_request_credentials_type_0 import CreateAuthorizationRequestCredentialsType0
 from .create_authorization_request_method import CreateAuthorizationRequestMethod
 from .create_authorization_request_options import CreateAuthorizationRequestOptions
+from .create_bot_test import CreateBotTest
 from .create_connection_request import CreateConnectionRequest
 from .create_connector_provider_request import CreateConnectorProviderRequest
 from .create_connector_provider_request_configuration import CreateConnectorProviderRequestConfiguration
 from .create_connector_provider_request_credentials import CreateConnectorProviderRequestCredentials
+from .create_document import CreateDocument
+from .create_document_kind import CreateDocumentKind
 from .create_hook_subscription_request import CreateHookSubscriptionRequest
 from .create_invitation_request import CreateInvitationRequest
 from .create_key_request import CreateKeyRequest
@@ -189,7 +214,16 @@ from .delegation_context_policy_history import DelegationContextPolicyHistory
 from .delegation_context_policy_task_state import DelegationContextPolicyTaskState
 from .delete_queued_submission_request import DeleteQueuedSubmissionRequest
 from .developer_message import DeveloperMessage
+from .document import Document
+from .document_access_reason import DocumentAccessReason
+from .document_access_reason_kind import DocumentAccessReasonKind
+from .document_collection import DocumentCollection
+from .document_entry import DocumentEntry
+from .document_entry_kind import DocumentEntryKind
+from .document_entry_state import DocumentEntryState
 from .document_input_content import DocumentInputContent
+from .document_kind import DocumentKind
+from .document_state import DocumentState
 from .duplicate_agent_request import DuplicateAgentRequest
 from .duplicate_agent_request_labels import DuplicateAgentRequestLabels
 from .email_change_request import EmailChangeRequest
@@ -230,7 +264,12 @@ from .fork_run_request import ForkRunRequest
 from .fork_run_request_labels import ForkRunRequestLabels
 from .fork_run_request_thread_labels import ForkRunRequestThreadLabels
 from .function_call import FunctionCall
+from .get_application_accounts_account_id_memory_scopes_scope_id_documents_kind_type_0 import (
+    GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsKindType0,
+)
 from .get_auth_csrf_response_browser_proof_api_v1_auth_csrf_get import GetAuthCsrfResponseBrowserProofApiV1AuthCsrfGet
+from .get_workspaces_workspace_bots_condition_type_0 import GetWorkspacesWorkspaceBotsConditionType0
+from .get_workspaces_workspace_bots_platform_type_0 import GetWorkspacesWorkspaceBotsPlatformType0
 from .get_workspaces_workspace_models_scope_type_0 import GetWorkspacesWorkspaceModelsScopeType0
 from .get_workspaces_workspace_skills_source_kind_type_0 import GetWorkspacesWorkspaceSkillsSourceKindType0
 from .git_hub_revision_source import GitHubRevisionSource
@@ -252,6 +291,7 @@ from .input_batching_policy import InputBatchingPolicy
 from .input_content_data_source import InputContentDataSource
 from .input_content_url_source import InputContentUrlSource
 from .input_override import InputOverride
+from .installation_info import InstallationInfo
 from .instrumentation_scope import InstrumentationScope
 from .instrumentation_scope_attributes_type_0 import InstrumentationScopeAttributesType0
 from .interrupt_receipt import InterruptReceipt
@@ -266,6 +306,7 @@ from .item_collection import ItemCollection
 from .item_resource import ItemResource
 from .labels_body import LabelsBody
 from .labels_body_labels import LabelsBodyLabels
+from .lark_reply_receipt import LarkReplyReceipt
 from .launch_authorization_request import LaunchAuthorizationRequest
 from .lifecycle_entity_type import LifecycleEntityType
 from .lifecycle_event import LifecycleEvent
@@ -308,6 +349,7 @@ from .mcpo_auth_setup_action_type import MCPOAuthSetupActionType
 from .mcpo_auth_setup_request import MCPOAuthSetupRequest
 from .memory import Memory
 from .memory_collection import MemoryCollection
+from .memory_index import MemoryIndex
 from .memory_pagination import MemoryPagination
 from .memory_provider import MemoryProvider
 from .memory_provider_collection import MemoryProviderCollection
@@ -321,7 +363,11 @@ from .memory_provider_reference_collection import MemoryProviderReferenceCollect
 from .memory_scope import MemoryScope
 from .memory_search import MemorySearch
 from .memory_selection import MemorySelection
+from .memory_settings import MemorySettings
 from .memory_write import MemoryWrite
+from .messaging_policy import MessagingPolicy
+from .messaging_policy_interaction_mode import MessagingPolicyInteractionMode
+from .messaging_policy_reply_mode import MessagingPolicyReplyMode
 from .model import Model
 from .model_candidate import ModelCandidate
 from .model_candidate_parameter_support import ModelCandidateParameterSupport
@@ -409,6 +455,9 @@ from .protocol_config_context_schema_type_0 import ProtocolConfigContextSchemaTy
 from .protocol_config_input_data_schema_type_0 import ProtocolConfigInputDataSchemaType0
 from .protocol_config_state_schema_type_0 import ProtocolConfigStateSchemaType0
 from .protocol_limits import ProtocolLimits
+from .publication_access import PublicationAccess
+from .publication_audience import PublicationAudience
+from .publish_document import PublishDocument
 from .queued_submission import QueuedSubmission
 from .queued_submission_collection import QueuedSubmissionCollection
 from .queued_submission_consumption_receipt import QueuedSubmissionConsumptionReceipt
@@ -418,6 +467,7 @@ from .queued_submission_mutation_receipt import QueuedSubmissionMutationReceipt
 from .queued_submission_state import QueuedSubmissionState
 from .reasoning_message import ReasoningMessage
 from .receive_authorization_request import ReceiveAuthorizationRequest
+from .reception_scope import ReceptionScope
 from .register_environment_request import RegisterEnvironmentRequest
 from .register_environment_request_configuration import RegisterEnvironmentRequestConfiguration
 from .register_environment_request_labels import RegisterEnvironmentRequestLabels
@@ -431,6 +481,8 @@ from .replace_connector_provider_credentials_request_credentials import (
 )
 from .replace_credential_request import ReplaceCredentialRequest
 from .replace_credential_request_credential_type_0 import ReplaceCredentialRequestCredentialType0
+from .replace_sharing_policy import ReplaceSharingPolicy
+from .replace_sharing_policy_kinds_item import ReplaceSharingPolicyKindsItem
 from .replace_target_request import ReplaceTargetRequest
 from .replace_target_request_provider_policy_type_0 import ReplaceTargetRequestProviderPolicyType0
 from .replace_target_request_target_kind import ReplaceTargetRequestTargetKind
@@ -468,6 +520,10 @@ from .run_stream_event_payload import RunStreamEventPayload
 from .safe_failure import SafeFailure
 from .safe_failure_details import SafeFailureDetails
 from .safe_failure_retry_hint import SafeFailureRetryHint
+from .scope import Scope
+from .scope_audience import ScopeAudience
+from .scope_collection import ScopeCollection
+from .search_documents import SearchDocuments
 from .search_in import SearchIn
 from .secret_requirement import SecretRequirement
 from .security_event import SecurityEvent
@@ -478,6 +534,12 @@ from .session_resource import SessionResource
 from .session_resource_labels import SessionResourceLabels
 from .set_role_request import SetRoleRequest
 from .set_role_request_role import SetRoleRequestRole
+from .sharing_participant import SharingParticipant
+from .sharing_policy import SharingPolicy
+from .sharing_policy_collection import SharingPolicyCollection
+from .sharing_policy_input import SharingPolicyInput
+from .sharing_policy_input_kinds_item import SharingPolicyInputKindsItem
+from .sharing_policy_kinds_item import SharingPolicyKindsItem
 from .skill import Skill
 from .skill_agent_reference import SkillAgentReference
 from .skill_agent_reference_collection import SkillAgentReferenceCollection
@@ -494,6 +556,7 @@ from .skill_revision import SkillRevision
 from .skill_revision_collection import SkillRevisionCollection
 from .skill_selection import SkillSelection
 from .skill_upload_receipt import SkillUploadReceipt
+from .slack_reply_receipt import SlackReplyReceipt
 from .start_run_request import StartRunRequest
 from .start_run_request_labels import StartRunRequestLabels
 from .start_run_request_session_labels import StartRunRequestSessionLabels
@@ -617,6 +680,7 @@ from .web_provider_reference import WebProviderReference
 from .web_provider_reference_collection import WebProviderReferenceCollection
 from .web_provider_test_result import WebProviderTestResult
 from .webhook_destination_config import WebhookDestinationConfig
+from .withdraw_publication import WithdrawPublication
 from .workspace import Workspace
 from .workspace_event_page import WorkspaceEventPage
 from .workspace_secret_credential import WorkspaceSecretCredential
@@ -641,6 +705,7 @@ __all__ = (
     "AccountTarget",
     "AccountTargetProviderPolicyType0",
     "AccountTargetTargetKind",
+    "ActivateBotRequest",
     "ActivityMessage",
     "ActivityMessageContent",
     "Agent",
@@ -695,6 +760,22 @@ __all__ = (
     "BinaryContent",
     "BinaryContentDelivery",
     "BinaryInputContent",
+    "BotCheck",
+    "BotCheckHistory",
+    "BotCheckRequest",
+    "BotCollection",
+    "BotReplyCollection",
+    "BotReplyObservation",
+    "BotReplyObservationProviderKey",
+    "BotReplyObservationStatus",
+    "BotSetup",
+    "BotSummary",
+    "BotSummarySetupCondition",
+    "BotSummaryTestStageType0",
+    "BotTest",
+    "BotTestHistory",
+    "BotThread",
+    "BotThreadCollection",
     "ChangePasswordRequest",
     "ChangeRoleRequest",
     "ChangeRoleRequestRole",
@@ -715,6 +796,7 @@ __all__ = (
     "CompletePasswordResetRequest",
     "CompletePendingResolution",
     "ConfigureMCPOAuthClientRequest",
+    "ConfigureScope",
     "Connection",
     "ConnectionCheck",
     "ConnectionCheckScope",
@@ -756,6 +838,10 @@ __all__ = (
     "Context",
     "ContinueRunRequest",
     "ContinueRunRequestLabels",
+    "ConversationCandidate",
+    "ConversationInfo",
+    "ConversationInfoAudience",
+    "ConversationPage",
     "CreateAccountRequest",
     "CreateAccountRequestCredentials",
     "CreateAccountRequestProviderConfig",
@@ -767,10 +853,13 @@ __all__ = (
     "CreateAuthorizationRequestCredentialsType0",
     "CreateAuthorizationRequestMethod",
     "CreateAuthorizationRequestOptions",
+    "CreateBotTest",
     "CreateConnectionRequest",
     "CreateConnectorProviderRequest",
     "CreateConnectorProviderRequestConfiguration",
     "CreateConnectorProviderRequestCredentials",
+    "CreateDocument",
+    "CreateDocumentKind",
     "CreateHookSubscriptionRequest",
     "CreateInvitationRequest",
     "CreateKeyRequest",
@@ -813,7 +902,16 @@ __all__ = (
     "DelegationContextPolicyTaskState",
     "DeleteQueuedSubmissionRequest",
     "DeveloperMessage",
+    "Document",
+    "DocumentAccessReason",
+    "DocumentAccessReasonKind",
+    "DocumentCollection",
+    "DocumentEntry",
+    "DocumentEntryKind",
+    "DocumentEntryState",
     "DocumentInputContent",
+    "DocumentKind",
+    "DocumentState",
     "DuplicateAgentRequest",
     "DuplicateAgentRequestLabels",
     "EmailChangeRequest",
@@ -850,7 +948,10 @@ __all__ = (
     "ForkRunRequestLabels",
     "ForkRunRequestThreadLabels",
     "FunctionCall",
+    "GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsKindType0",
     "GetAuthCsrfResponseBrowserProofApiV1AuthCsrfGet",
+    "GetWorkspacesWorkspaceBotsConditionType0",
+    "GetWorkspacesWorkspaceBotsPlatformType0",
     "GetWorkspacesWorkspaceModelsScopeType0",
     "GetWorkspacesWorkspaceSkillsSourceKindType0",
     "GitHubRevisionSource",
@@ -872,6 +973,7 @@ __all__ = (
     "InputContentDataSource",
     "InputContentUrlSource",
     "InputOverride",
+    "InstallationInfo",
     "InstrumentationScope",
     "InstrumentationScopeAttributesType0",
     "InterruptReceipt",
@@ -886,6 +988,7 @@ __all__ = (
     "ItemResource",
     "LabelsBody",
     "LabelsBodyLabels",
+    "LarkReplyReceipt",
     "LaunchAuthorizationRequest",
     "LifecycleEntityType",
     "LifecycleEvent",
@@ -924,6 +1027,7 @@ __all__ = (
     "MCPToolOutputSchemaType0",
     "Memory",
     "MemoryCollection",
+    "MemoryIndex",
     "MemoryPagination",
     "MemoryProvider",
     "MemoryProviderCollection",
@@ -937,7 +1041,11 @@ __all__ = (
     "MemoryScope",
     "MemorySearch",
     "MemorySelection",
+    "MemorySettings",
     "MemoryWrite",
+    "MessagingPolicy",
+    "MessagingPolicyInteractionMode",
+    "MessagingPolicyReplyMode",
     "Model",
     "ModelCandidate",
     "ModelCandidateParameterSupport",
@@ -1021,6 +1129,9 @@ __all__ = (
     "ProtocolConfigInputDataSchemaType0",
     "ProtocolConfigStateSchemaType0",
     "ProtocolLimits",
+    "PublicationAccess",
+    "PublicationAudience",
+    "PublishDocument",
     "QueuedSubmission",
     "QueuedSubmissionCollection",
     "QueuedSubmissionConsumptionReceipt",
@@ -1030,6 +1141,7 @@ __all__ = (
     "QueuedSubmissionState",
     "ReasoningMessage",
     "ReceiveAuthorizationRequest",
+    "ReceptionScope",
     "RegisterEnvironmentRequest",
     "RegisterEnvironmentRequestConfiguration",
     "RegisterEnvironmentRequestLabels",
@@ -1041,6 +1153,8 @@ __all__ = (
     "ReplaceConnectorProviderCredentialsRequestCredentials",
     "ReplaceCredentialRequest",
     "ReplaceCredentialRequestCredentialType0",
+    "ReplaceSharingPolicy",
+    "ReplaceSharingPolicyKindsItem",
     "ReplaceTargetRequest",
     "ReplaceTargetRequestProviderPolicyType0",
     "ReplaceTargetRequestTargetKind",
@@ -1078,6 +1192,10 @@ __all__ = (
     "SafeFailure",
     "SafeFailureDetails",
     "SafeFailureRetryHint",
+    "Scope",
+    "ScopeAudience",
+    "ScopeCollection",
+    "SearchDocuments",
     "SearchIn",
     "SecretRequirement",
     "SecurityEvent",
@@ -1088,6 +1206,12 @@ __all__ = (
     "SessionResourceLabels",
     "SetRoleRequest",
     "SetRoleRequestRole",
+    "SharingParticipant",
+    "SharingPolicy",
+    "SharingPolicyCollection",
+    "SharingPolicyInput",
+    "SharingPolicyInputKindsItem",
+    "SharingPolicyKindsItem",
     "Skill",
     "SkillAgentReference",
     "SkillAgentReferenceCollection",
@@ -1104,6 +1228,7 @@ __all__ = (
     "SkillRevisionCollection",
     "SkillSelection",
     "SkillUploadReceipt",
+    "SlackReplyReceipt",
     "StartRunRequest",
     "StartRunRequestLabels",
     "StartRunRequestSessionLabels",
@@ -1227,6 +1352,7 @@ __all__ = (
     "WebProviderReferenceCollection",
     "WebProviderTestResult",
     "WebhookDestinationConfig",
+    "WithdrawPublication",
     "Workspace",
     "WorkspaceEventPage",
     "WorkspaceSecretCredential",

@@ -8,7 +8,8 @@ import {
 } from "a13n-ui";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { ApiError } from "@converge.ai/a13n";
 
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -37,8 +38,12 @@ export function AccountForm({
   onSuccess,
   onCancel,
   reload,
+  bot = false,
+  setupProvider,
 }: {
   initial?: Schema["Account"];
+  bot?: boolean;
+  setupProvider?: "slack" | "lark";
   onSuccess: (account: Schema["Account"]) => void;
   onCancel: () => void;
   reload?: () => Promise<void>;
@@ -55,10 +60,15 @@ export function AccountForm({
     [provider, setProvider] = useState(
       initial
         ? `${initial.provider_key}@${initial.provider_config_version}`
-        : "",
+        : setupProvider
+          ? `${setupProvider}@${setupProvider}_http_v1`
+          : "",
     ),
     [configuration, setConfiguration] = useState<Record<string, unknown>>(
-      initial?.provider_config ?? {},
+      initial?.provider_config ??
+        (setupProvider === "lark"
+          ? { brand: "feishu", open_api_origin: "https://open.feishu.cn" }
+          : {}),
     ),
     [credentials, setCredentials] = useState<Record<string, unknown>>({}),
     [policy, setPolicy] = useState<Record<string, unknown>>(
@@ -72,10 +82,12 @@ export function AccountForm({
     [batching, setBatching] = useState<Schema["InputBatchingPolicy"] | null>(
       initial?.input_batching ?? null,
     );
+  const setupCommand = useRef<string | null>(null);
   const definition = definitions.data?.items.find(
     (item) => `${item.provider_key}@${item.config_version}` === provider,
   );
   const save = useMutation({
+    gcTime: 0,
     mutationFn: async () => {
       if (!definition) throw new Error(t("Select an account provider."));
       validateSettings(definition.configuration_schema, configuration);
@@ -84,7 +96,12 @@ export function AccountForm({
       const common = {
         name,
         provider_config: jsonObject(JSON.stringify(configuration)),
-        receive_enabled: receive,
+        receive_enabled: setupProvider ? false : receive,
+        reception_scope:
+          basis?.reception_scope ??
+          (bot || setupProvider
+            ? ("configured_targets" as const)
+            : ("all_accessible" as const)),
         default_agent_id: agentId || null,
         execution_service_account_id: serviceAccountId || null,
         input_batching: batching,
@@ -106,18 +123,64 @@ export function AccountForm({
         provider_config_version: definition.config_version,
         credentials: stringValues(credentials),
       };
+      const digest = setupProvider
+        ? Array.from(
+            new Uint8Array(
+              await crypto.subtle.digest(
+                "SHA-256",
+                new TextEncoder().encode(
+                  JSON.stringify(body, (_name, value: unknown) =>
+                    value !== null &&
+                    typeof value === "object" &&
+                    !Array.isArray(value)
+                      ? Object.fromEntries(
+                          Object.entries(value).sort(([a], [b]) =>
+                            a.localeCompare(b),
+                          ),
+                        )
+                      : value,
+                  ),
+                ),
+              ),
+            ),
+          )
+            .map((byte) => byte.toString(16).padStart(2, "0"))
+            .join("")
+        : null;
+      if (digest && setupCommand.current && setupCommand.current !== digest)
+        throw new Error(
+          t(
+            "The previous save is unconfirmed. Re-enter the same credentials and retry the unchanged setup to recover its result.",
+          ),
+        );
+      if (digest) setupCommand.current = digest;
       return client.http
         .POST("/api/v1/workspaces/{workspace}/application-accounts", {
           params: {
             path: { workspace: workspace.id },
-            header: commandHeaders(workspace.id, key.forBody(body)),
+            header: commandHeaders(workspace.id, key.forBody(digest ?? body)),
           },
           body,
         })
         .then(data);
     },
+    onError: (error) => {
+      if (
+        setupProvider &&
+        error instanceof ApiError &&
+        error.status < 500 &&
+        error.status !== 409
+      )
+        setupCommand.current = null;
+    },
+    onSettled: () => {
+      if (setupProvider) setCredentials({});
+    },
     onSuccess: (result) => {
+      setCredentials({});
+      key.reset();
       void cache.invalidateQueries({ queryKey: ["application-accounts"] });
+      void cache.invalidateQueries({ queryKey: ["bots"] });
       onSuccess(result);
     },
   });
@@ -148,7 +211,7 @@ export function AccountForm({
         placeholder={t("Select account provider")}
         value={provider}
         className="min-w-0"
-        readOnly={!!basis}
+        readOnly={!!basis || !!setupProvider}
         required
         onValueChange={(value) => {
           setProvider(value);
@@ -158,20 +221,41 @@ export function AccountForm({
         }}
         label={t("Provider")}
         options={
-          definitions.data?.items.map((item) => ({
-            value: `${item.provider_key}@${item.config_version}`,
-            label:
-              accountProviderLabels[
-                `${item.provider_key}@${item.config_version}`
-              ] ?? `${item.provider_key} · ${item.config_version}`,
-          })) ?? []
+          definitions.data?.items
+            .filter(
+              (item) => !bot || ["slack", "lark"].includes(item.provider_key),
+            )
+            .map((item) => ({
+              value: `${item.provider_key}@${item.config_version}`,
+              label:
+                (setupProvider === "lark" ? t("Feishu") : undefined) ??
+                accountProviderLabels[
+                  `${item.provider_key}@${item.config_version}`
+                ] ??
+                `${item.provider_key} · ${item.config_version}`,
+            })) ?? []
         }
       />
       {definition && (
         <>
           <SchemaFields
             key={provider}
-            schema={definition.configuration_schema}
+            schema={
+              setupProvider === "lark"
+                ? {
+                    ...definition.configuration_schema,
+                    properties: Object.fromEntries(
+                      Object.entries(
+                        (definition.configuration_schema.properties ??
+                          {}) as Record<string, unknown>,
+                      ).filter(
+                        ([field]) =>
+                          !["brand", "open_api_origin"].includes(field),
+                      ),
+                    ),
+                  }
+                : definition.configuration_schema
+            }
             value={configuration}
             onChange={setConfiguration}
           />
@@ -188,54 +272,57 @@ export function AccountForm({
               </DisclosureSection>
             </>
           )}
-          <DisclosureSection title={t("Reception")} defaultOpen={receive}>
-            <Label className="flex items-center gap-2">
-              <Switch checked={receive} onCheckedChange={setReceive} />
-              {t("Receive events")}
-            </Label>
-            <ChoiceField
-              placeholder={t("Select agent")}
-              value={agentId || "none"}
-              className="min-w-0"
-              required={receive}
-              onValueChange={(value) =>
-                setAgentId(value === "none" ? "" : value)
-              }
-              label={t("Default agent")}
-              options={[
-                { value: "none", label: t("No default agent") },
-                ...(options.agents.data?.map((item) => ({
-                  value: item.id,
-                  label: item.name,
-                })) ?? []),
-              ]}
-            />
-            <ChoiceField
-              placeholder={t("Select service account")}
-              value={serviceAccountId || "none"}
-              className="min-w-0"
-              required={receive}
-              onValueChange={(value) =>
-                setServiceAccountId(value === "none" ? "" : value)
-              }
-              label={t("Execution service account")}
-              options={[
-                { value: "none", label: t("No execution identity") },
-                ...(options.accounts.data
-                  ?.filter((item) => item.status === "active")
-                  .map((item) => ({ value: item.id, label: item.name })) ?? []),
-              ]}
-            />
-            <BatchingFields value={batching} onChange={setBatching} />
-            <DisclosureSection title={<>{t("Provider reception policy")}</>}>
-              <SchemaFields
-                key={`${provider}-policy`}
-                schema={definition.reception_policy_schema}
-                value={policy}
-                onChange={setPolicy}
+          {!setupProvider && (
+            <DisclosureSection title={t("Reception")} defaultOpen={receive}>
+              <Label className="flex items-center gap-2">
+                <Switch checked={receive} onCheckedChange={setReceive} />
+                {t("Receive events")}
+              </Label>
+              <ChoiceField
+                placeholder={t("Select agent")}
+                value={agentId || "none"}
+                className="min-w-0"
+                required={receive}
+                onValueChange={(value) =>
+                  setAgentId(value === "none" ? "" : value)
+                }
+                label={t("Default agent")}
+                options={[
+                  { value: "none", label: t("No default agent") },
+                  ...(options.agents.data?.map((item) => ({
+                    value: item.id,
+                    label: item.name,
+                  })) ?? []),
+                ]}
               />
+              <ChoiceField
+                placeholder={t("Select service account")}
+                value={serviceAccountId || "none"}
+                className="min-w-0"
+                required={receive}
+                onValueChange={(value) =>
+                  setServiceAccountId(value === "none" ? "" : value)
+                }
+                label={t("Execution service account")}
+                options={[
+                  { value: "none", label: t("No execution identity") },
+                  ...(options.accounts.data
+                    ?.filter((item) => item.status === "active")
+                    .map((item) => ({ value: item.id, label: item.name })) ??
+                    []),
+                ]}
+              />
+              <BatchingFields value={batching} onChange={setBatching} />
+              <DisclosureSection title={<>{t("Provider reception policy")}</>}>
+                <SchemaFields
+                  key={`${provider}-policy`}
+                  schema={definition.reception_policy_schema}
+                  value={policy}
+                  onChange={setPolicy}
+                />
+              </DisclosureSection>
             </DisclosureSection>
-          </DisclosureSection>
+          )}
         </>
       )}
       <ErrorNotice
@@ -245,7 +332,13 @@ export function AccountForm({
       <FormActions
         onCancel={onCancel}
         pending={save.isPending}
-        label={t(basis ? "Save changes" : "Create account")}
+        label={t(
+          basis
+            ? "Save changes"
+            : setupProvider
+              ? "Save and verify"
+              : "Create account",
+        )}
       />
     </form>
   );

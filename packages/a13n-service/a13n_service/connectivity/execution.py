@@ -201,7 +201,7 @@ class ExternalToolRuntime:
             if current != accepted:
                 raise ValueError("external_tool_scope_changed")
 
-        async with self._capabilities(accepted, guard) as capabilities:
+        async with self._capabilities(accepted, guard, current_context()) as capabilities:
             yield capabilities
 
     @asynccontextmanager
@@ -225,7 +225,7 @@ class ExternalToolRuntime:
                 raise ValueError("external_tool_scope_changed")
 
         accepted = replace(parent, selections=selections, native_tool_contexts=())
-        async with self._capabilities(accepted, guard) as capabilities:
+        async with self._capabilities(accepted, guard, current_context()) as capabilities:
             yield capabilities
 
     @asynccontextmanager
@@ -233,6 +233,7 @@ class ExternalToolRuntime:
         self,
         accepted: AttemptToolScope,
         guard: ScopeGuard,
+        attempt: AttemptContext,
     ) -> AsyncIterator[tuple[MCP[AgentContext], ...]]:
         capabilities: list[MCP[AgentContext]] = []
         async with AsyncExitStack() as stack:
@@ -247,7 +248,14 @@ class ExternalToolRuntime:
                     capabilities.append(capability)
             for context in accepted.native_tool_contexts:
                 capability = await native_capability(
-                    self._sessions, self._protector, accepted, context, guard, self._endpoints, self._http
+                    self._sessions,
+                    self._protector,
+                    accepted,
+                    context,
+                    guard,
+                    self._endpoints,
+                    self._http,
+                    attempt=attempt,
                 )
                 if capability is not None:
                     capabilities.append(capability)

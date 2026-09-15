@@ -35,6 +35,7 @@ from a13n_service.assets.runtime import AssetRuntime
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.environments.runtime import prepare_run_environment, validate_run_environment
+from a13n_service.memory.bots.runtime import bot_memory_capability
 from a13n_service.memory.runtime import graph_uses_memory, memory_capability, validate_memory_providers
 from a13n_service.memory.service import MemoryService
 from a13n_service.models.model_factory import NativeModelFactory
@@ -136,7 +137,7 @@ class WorkerAttemptPreparer:
             run_attempt_id=context.run_attempt_id,
             environment_id=self._run.environment_id,
         )
-        if graph_uses_memory(config):
+        if self._run.bot_memory is None and graph_uses_memory(config):
             if self._memory is None:
                 raise RunError("Memory is unavailable.", code="memory_provider_unavailable")
             await validate_memory_providers(
@@ -228,7 +229,20 @@ class WorkerAttemptPreparer:
             selected = resources.for_definition(context)
             if not context.is_root:
                 selected = (InlineRunControlCapability(self._control, agent_id=context.agent_id), *selected)
-            if context.config.memory is not None:
+            if run.bot_memory is not None:
+                if self._memory is None:
+                    if run.bot_memory.use_memory or run.bot_memory.save_on_request:
+                        raise RunError("Memory is unavailable.", code="memory_provider_unavailable")
+                else:
+                    bot_memory = bot_memory_capability(
+                        self._memory,
+                        run=run,
+                        agent_id=context.agent_id,
+                        current_context=lambda: self._control.current_context,
+                    )
+                    if bot_memory is not None:
+                        selected = (*selected, bot_memory)
+            elif context.config.memory is not None:
                 if self._memory is None:
                     raise RuntimeError("Memory runtime is unavailable")
                 selected = (

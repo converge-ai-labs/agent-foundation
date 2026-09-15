@@ -14,6 +14,7 @@ from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.accounts.queries import require_account
 from a13n_service.connectivity.adapters import IngressAdapter, JsonObject
+from a13n_service.connectivity.bots.setup_tests import record_test_admission, record_test_ignored, test_marker
 from a13n_service.connectivity.composition import AdapterRegistry
 from a13n_service.connectivity.errors import NativeError
 from a13n_service.connectivity.management import canonical_json
@@ -165,6 +166,17 @@ class IngressEventService:
                 return await _receipt(session, duplicate, duplicate=True)
             routing = await resolve_routing(session, adapter=adapter, account=account, event=event)
             if isinstance(routing, IrrelevantRouting):
+                if test_marker(event.text) is not None:
+                    kind, identifier = adapter.event_target(event)
+                    await record_test_ignored(
+                        session,
+                        account=account,
+                        event=event,
+                        target_kind=kind,
+                        external_target_id=identifier,
+                        reason_code=routing.reason_code,
+                        now=now,
+                    )
                 return IrrelevantAdmissionReceipt(reason_code=routing.reason_code)
             value = event.model_dump(mode="json", exclude={"external_event_id"})
             size = len(canonical_json(value).encode())
@@ -208,6 +220,16 @@ class IngressEventService:
             )
             session.add(record)
             await session.flush()
+            await record_test_admission(
+                session,
+                account=account,
+                configuration=routing.configuration,
+                event=event,
+                admission_id=record.id,
+                batch_id=batch.id,
+                binding_id=binding.id,
+                now=now,
+            )
             return DurableAdmissionReceipt(admission_id=record.id, status="pending", duplicate=False)
 
     async def _require_capacity(self, session: AsyncSession, account: AccountRecord, size: int) -> None:

@@ -52,6 +52,14 @@ pub struct Account {
     )]
     pub input_batching: Option<Option<Box<models::InputBatchingPolicy>>>,
 
+    #[serde(
+        rename = "memory",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub memory: Option<Option<Box<models::MemorySettings>>>,
+
     #[serde(rename = "name")]
     pub name: String,
 
@@ -77,6 +85,9 @@ pub struct Account {
 
     #[serde(rename = "receive_enabled", skip_serializing_if = "Option::is_none")]
     pub receive_enabled: Option<bool>,
+
+    #[serde(rename = "reception_scope", skip_serializing_if = "Option::is_none")]
+    pub reception_scope: Option<models::ReceptionScope>,
 
     #[serde(rename = "status")]
     pub status: models::AccountStatus,
@@ -117,6 +128,7 @@ impl Account {
             execution_service_account_id: None,
             id,
             input_batching: None,
+            memory: None,
             name,
             organization_id,
             provider_config,
@@ -124,6 +136,7 @@ impl Account {
             provider_key,
             provider_policy: None,
             receive_enabled: None,
+            reception_scope: None,
             status,
             updated_at,
             version,

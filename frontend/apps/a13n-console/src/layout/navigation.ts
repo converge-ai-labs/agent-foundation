@@ -8,6 +8,7 @@ import {
   MonitorIcon,
   PlugIcon,
   PuzzlePieceIcon,
+  RobotIcon,
 } from "@phosphor-icons/react";
 export const navigationGroups: {
   label: string;
@@ -39,6 +40,7 @@ export const navigationGroups: {
   {
     label: "Integrations",
     entries: [
+      ["bots", "Bots", RobotIcon],
       ["application-accounts", "Application accounts", PlugsConnectedIcon],
       ["connections", "Connections", PlugIcon],
     ],

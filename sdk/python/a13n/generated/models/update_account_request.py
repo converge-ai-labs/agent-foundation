@@ -5,10 +5,12 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from attrs import define as _attrs_define
 
+from ..models.reception_scope import ReceptionScope
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
     from ..models.input_batching_policy import InputBatchingPolicy
+    from ..models.memory_settings import MemorySettings
     from ..models.update_account_request_provider_config_type_0 import UpdateAccountRequestProviderConfigType0
     from ..models.update_account_request_provider_policy_type_0 import UpdateAccountRequestProviderPolicyType0
 
@@ -24,23 +26,28 @@ class UpdateAccountRequest:
         default_agent_id (None | str | Unset):
         execution_service_account_id (None | str | Unset):
         input_batching (InputBatchingPolicy | None | Unset):
+        memory (MemorySettings | None | Unset):
         name (None | str | Unset):
         provider_config (None | Unset | UpdateAccountRequestProviderConfigType0):
         provider_policy (None | Unset | UpdateAccountRequestProviderPolicyType0):
         receive_enabled (bool | None | Unset):
+        reception_scope (None | ReceptionScope | Unset):
     """
 
     expected_version: int
     default_agent_id: str | Unset | None = UNSET
     execution_service_account_id: str | Unset | None = UNSET
     input_batching: InputBatchingPolicy | Unset | None = UNSET
+    memory: MemorySettings | Unset | None = UNSET
     name: str | Unset | None = UNSET
     provider_config: Unset | UpdateAccountRequestProviderConfigType0 | None = UNSET
     provider_policy: Unset | UpdateAccountRequestProviderPolicyType0 | None = UNSET
     receive_enabled: bool | Unset | None = UNSET
+    reception_scope: ReceptionScope | Unset | None = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.input_batching_policy import InputBatchingPolicy
+        from ..models.memory_settings import MemorySettings
         from ..models.update_account_request_provider_config_type_0 import (
             UpdateAccountRequestProviderConfigType0,
         )
@@ -70,6 +77,14 @@ class UpdateAccountRequest:
         else:
             input_batching = self.input_batching
 
+        memory: dict[str, Any] | Unset | None
+        if isinstance(self.memory, Unset):
+            memory = UNSET
+        elif isinstance(self.memory, MemorySettings):
+            memory = self.memory.to_dict()
+        else:
+            memory = self.memory
+
         name: str | Unset | None
         if isinstance(self.name, Unset):
             name = UNSET
@@ -98,6 +113,14 @@ class UpdateAccountRequest:
         else:
             receive_enabled = self.receive_enabled
 
+        reception_scope: str | Unset | None
+        if isinstance(self.reception_scope, Unset):
+            reception_scope = UNSET
+        elif isinstance(self.reception_scope, ReceptionScope):
+            reception_scope = self.reception_scope.value
+        else:
+            reception_scope = self.reception_scope
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update(
@@ -111,6 +134,8 @@ class UpdateAccountRequest:
             field_dict["execution_service_account_id"] = execution_service_account_id
         if input_batching is not UNSET:
             field_dict["input_batching"] = input_batching
+        if memory is not UNSET:
+            field_dict["memory"] = memory
         if name is not UNSET:
             field_dict["name"] = name
         if provider_config is not UNSET:
@@ -119,12 +144,15 @@ class UpdateAccountRequest:
             field_dict["provider_policy"] = provider_policy
         if receive_enabled is not UNSET:
             field_dict["receive_enabled"] = receive_enabled
+        if reception_scope is not UNSET:
+            field_dict["reception_scope"] = reception_scope
 
         return field_dict
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         from ..models.input_batching_policy import InputBatchingPolicy
+        from ..models.memory_settings import MemorySettings
         from ..models.update_account_request_provider_config_type_0 import (
             UpdateAccountRequestProviderConfigType0,
         )
@@ -169,6 +197,23 @@ class UpdateAccountRequest:
             return cast(InputBatchingPolicy | Unset | None, data)
 
         input_batching = _parse_input_batching(d.pop("input_batching", UNSET))
+
+        def _parse_memory(data: object) -> MemorySettings | Unset | None:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                memory_type_0 = MemorySettings.from_dict(data)
+
+                return memory_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(MemorySettings | Unset | None, data)
+
+        memory = _parse_memory(d.pop("memory", UNSET))
 
         def _parse_name(data: object) -> str | Unset | None:
             if data is None:
@@ -222,15 +267,34 @@ class UpdateAccountRequest:
 
         receive_enabled = _parse_receive_enabled(d.pop("receive_enabled", UNSET))
 
+        def _parse_reception_scope(data: object) -> ReceptionScope | Unset | None:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, str):
+                    raise TypeError()
+                reception_scope_type_0 = ReceptionScope(data)
+
+                return reception_scope_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(ReceptionScope | Unset | None, data)
+
+        reception_scope = _parse_reception_scope(d.pop("reception_scope", UNSET))
+
         update_account_request = cls(
             expected_version=expected_version,
             default_agent_id=default_agent_id,
             execution_service_account_id=execution_service_account_id,
             input_batching=input_batching,
+            memory=memory,
             name=name,
             provider_config=provider_config,
             provider_policy=provider_policy,
             receive_enabled=receive_enabled,
+            reception_scope=reception_scope,
         )
 
         return update_account_request

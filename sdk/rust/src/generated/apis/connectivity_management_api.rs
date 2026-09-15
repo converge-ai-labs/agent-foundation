@@ -1277,6 +1277,7 @@ pub async fn get_workspaces_workspace_application_accounts(
     workspace: &str,
     limit: Option<i32>,
     cursor: Option<&str>,
+    bots_only: Option<bool>,
 ) -> Result<
     Response<models::AccountCollection>,
     Error<GetWorkspacesWorkspaceApplicationAccountsError>,
@@ -1285,6 +1286,7 @@ pub async fn get_workspaces_workspace_application_accounts(
     let p_path_workspace = workspace;
     let p_query_limit = limit;
     let p_query_cursor = cursor;
+    let p_query_bots_only = bots_only;
 
     let uri_str = format!(
         "{}/api/v1/workspaces/{workspace}/application-accounts",
@@ -1298,6 +1300,9 @@ pub async fn get_workspaces_workspace_application_accounts(
     }
     if let Some(ref param_value) = p_query_cursor {
         req_builder = req_builder.query(&[("cursor", &param_value.to_string())]);
+    }
+    if let Some(ref param_value) = p_query_bots_only {
+        req_builder = req_builder.query(&[("bots_only", &param_value.to_string())]);
     }
     if let Some(ref user_agent) = configuration.user_agent {
         req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());

@@ -12,9 +12,11 @@ from urllib.parse import quote
 import httpx2
 from mem0 import AsyncMemoryClient
 from mem0.exceptions import MemoryNotFoundError
+from pydantic import JsonValue
 
 from a13n_harness.memory import (
-    MemoryBackend,
+    MemoryDocumentBackend,
+    MemoryDocumentScope,
     MemoryPage,
     MemoryPagination,
     MemoryPaginationUnsupported,
@@ -31,7 +33,7 @@ _FIELDS = {MemoryScope.THREAD: "run_id", MemoryScope.AGENT: "agent_id", MemorySc
 
 
 def _filter(subject: MemorySubject) -> dict[str, str]:
-    return {_FIELDS[subject.scope]: subject.value}
+    return {"run_id" if subject.scope is MemoryDocumentScope.CONVERSATION else _FIELDS[subject.scope]: subject.value}
 
 
 def _record(raw: object) -> MemoryRecord:
@@ -40,13 +42,22 @@ def _record(raw: object) -> MemoryRecord:
     memory_id, text = raw.get("id"), raw.get("memory")
     if not isinstance(memory_id, str) or not isinstance(text, str):
         raise ValueError("Invalid Mem0 identifier or text")
+    metadata = raw.get("metadata") or {}
+    if not isinstance(metadata, Mapping):
+        raise ValueError("Invalid Mem0 metadata")
+    conversation = metadata.get("a13n_scope") == "conversation"
     return MemoryRecord(
         id=memory_id,
         text=text,
         subjects=tuple(
-            MemorySubject(scope, raw[field]) for scope, field in _FIELDS.items() if raw.get(field) is not None
+            MemorySubject(
+                MemoryDocumentScope.CONVERSATION if scope is MemoryScope.THREAD and conversation else scope, raw[field]
+            )
+            for scope, field in _FIELDS.items()
+            if raw.get(field) is not None
         ),
         score=raw.get("score"),
+        metadata=dict(metadata),
     )
 
 
@@ -88,11 +99,13 @@ def _list_limit(limit: int) -> None:
         raise ValueError("List limit must be between 1 and 1000")
 
 
-class _Mem0Backend(MemoryBackend):
+class _Mem0Backend(MemoryDocumentBackend):
     """Shared confirmation rules, with native transport details private to adapters."""
 
     @abstractmethod
-    async def _add(self, text: str, subject: MemorySubject) -> object: ...
+    async def _add(
+        self, text: str, subject: MemorySubject, metadata: Mapping[str, JsonValue] | None = None
+    ) -> object: ...
 
     @abstractmethod
     async def _get(self, memory_id: str) -> object: ...
@@ -117,6 +130,23 @@ class _Mem0Backend(MemoryBackend):
             record = await self.get(memory_id, subject=subject)
             if record.text != text:
                 raise ValueError("Explicit memory text was not persisted")
+            return record
+        except Exception as error:
+            raise MemoryWriteUnconfirmed("Inspect current memory before repeating the write") from error
+
+    async def add_document(
+        self, text: str, *, subject: MemorySubject, metadata: Mapping[str, JsonValue]
+    ) -> MemoryRecord:
+        validate_memory_text(text)
+        if subject.scope is not MemoryDocumentScope.CONVERSATION:
+            raise ValueError("Document storage requires a conversation subject")
+        expected = dict(metadata)
+        expected["a13n_scope"] = "conversation"
+        try:
+            memory_id = _added_id(await self._add(text, subject, expected))
+            record = await self.get(memory_id, subject=subject)
+            if record.text != text or dict(record.metadata) != expected:
+                raise ValueError("Document content or metadata was not persisted exactly")
             return record
         except Exception as error:
             raise MemoryWriteUnconfirmed("Inspect current memory before repeating the write") from error
@@ -162,6 +192,20 @@ class Mem0PlatformBackend(_Mem0Backend):
             options["threshold"] = threshold
         return _records(await self.client.search(query, **options), subjects, limit)
 
+    async def search_documents(
+        self, query: str, *, subject: MemorySubject, record_keys: tuple[str, ...], limit: int
+    ) -> tuple[MemoryRecord, ...]:
+        _search_options((subject,), limit, None)
+        if not record_keys:
+            return ()
+        if len(record_keys) > 1000 or any(not key or len(key) > 128 for key in record_keys):
+            raise ValueError("Document search key budget exceeded")
+        filters = {**_filter(subject), "record_key": {"in": list(record_keys)}}
+        records = _records(await self.client.search(query, filters=filters, top_k=limit), (subject,), limit)
+        if any(record.metadata.get("record_key") not in record_keys for record in records):
+            raise ValueError("Provider returned a document outside the authorized key set")
+        return records
+
     async def list(self, subject: MemorySubject, *, limit: int, cursor: str | None = None) -> MemoryPage:
         _list_limit(limit)
         page = 1
@@ -176,8 +220,11 @@ class Mem0PlatformBackend(_Mem0Backend):
         # Never follow remote URLs (which may contain secrets or target another host).
         return MemoryPage(records, MemoryPagination(str(page + 1) if response.get("next") else None))
 
-    async def _add(self, text: str, subject: MemorySubject) -> object:
-        return await self.client.add(text, filters=_filter(subject), infer=False)
+    async def _add(self, text: str, subject: MemorySubject, metadata: Mapping[str, JsonValue] | None = None) -> object:
+        options: dict[str, Any] = {"filters": _filter(subject), "infer": False}
+        if metadata is not None:
+            options["metadata"] = dict(metadata)
+        return await self.client.add(text, **options)
 
     async def _get(self, memory_id: str) -> object:
         try:
@@ -226,6 +273,22 @@ class Mem0OSSBackend(_Mem0Backend):
                     records[item.id] = item
         return tuple(sorted(records.values(), key=lambda item: (-(item.score or 0), item.id))[:limit])
 
+    async def search_documents(
+        self, query: str, *, subject: MemorySubject, record_keys: tuple[str, ...], limit: int
+    ) -> tuple[MemoryRecord, ...]:
+        _search_options((subject,), limit, None)
+        if not record_keys:
+            return ()
+        if len(record_keys) > 1000 or any(not key or len(key) > 128 for key in record_keys):
+            raise ValueError("Document search key budget exceeded")
+        filters = {**_filter(subject), "record_key": {"in": list(record_keys)}}
+        response = await self.client.post("search", json={"query": query, "filters": filters, "top_k": limit})
+        response.raise_for_status()
+        records = _records(response.json(), (subject,), limit)
+        if any(record.metadata.get("record_key") not in record_keys for record in records):
+            raise ValueError("Provider returned a document outside the authorized key set")
+        return records
+
     async def list(self, subject: MemorySubject, *, limit: int, cursor: str | None = None) -> MemoryPage:
         _list_limit(limit)
         if cursor is not None:
@@ -234,10 +297,15 @@ class Mem0OSSBackend(_Mem0Backend):
         response.raise_for_status()
         return MemoryPage(_records(response.json(), (subject,), limit))
 
-    async def _add(self, text: str, subject: MemorySubject) -> object:
+    async def _add(self, text: str, subject: MemorySubject, metadata: Mapping[str, JsonValue] | None = None) -> object:
         response = await self.client.post(
             "memories",
-            json={"messages": [{"role": "user", "content": text}], **_filter(subject), "infer": False},
+            json={
+                "messages": [{"role": "user", "content": text}],
+                **_filter(subject),
+                "infer": False,
+                **({"metadata": dict(metadata)} if metadata is not None else {}),
+            },
         )
         response.raise_for_status()
         return response.json()

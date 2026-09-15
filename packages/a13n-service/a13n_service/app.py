@@ -16,6 +16,8 @@ from a13n_service.api import api_error_response, install_api_conventions
 from a13n_service.assets.router import router as asset_router
 from a13n_service.connectivity.accounts.router import router as account_router
 from a13n_service.connectivity.accounts.target_router import router as target_router
+from a13n_service.connectivity.bots.router import collection_router as bot_collection_router
+from a13n_service.connectivity.bots.router import router as bot_router
 from a13n_service.connectivity.connections.browser import router as authorization_browser_router
 from a13n_service.connectivity.connections.router import router as connection_router
 from a13n_service.connectivity.connectors.router import router as connector_router
@@ -33,6 +35,7 @@ from a13n_service.iam.http.profile_router import router as profile_router
 from a13n_service.iam.http.recovery_router import router as recovery_router
 from a13n_service.interactions.threads import router as thread_router
 from a13n_service.lifecycle.router import router as lifecycle_router
+from a13n_service.memory.bots.router import router as bot_memory_router
 from a13n_service.memory.provider_router import router as memory_provider_router
 from a13n_service.memory.router import router as memory_router
 from a13n_service.models.providers import ProviderRegistry
@@ -198,12 +201,15 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
         app.include_router(model_router)
         app.include_router(web_router)
         app.include_router(memory_router)
+        app.include_router(bot_memory_router)
         app.include_router(memory_provider_router)
         app.include_router(skill_router)
         app.include_router(trace_query_router)
         # Match /targets before the Account lifecycle /{action} route.
         app.include_router(target_router)
         app.include_router(account_router)
+        app.include_router(bot_router)
+        app.include_router(bot_collection_router)
         app.include_router(connector_router)
         app.include_router(mcp_router)
         app.include_router(connection_router)

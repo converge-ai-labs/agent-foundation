@@ -62,16 +62,18 @@ Observe
 
 Browser routes follow the existing Workspace key boundary:
 
-| Route suffix below `/workspace/{workspaceKey}` | Page                                            |
-| ---------------------------------------------- | ----------------------------------------------- |
-| `/bots`                                        | Bot collection                                  |
-| `/bots/connect`                                | Customer-owned application onboarding           |
-| `/bots/{accountId}`                            | Overview                                        |
-| `/bots/{accountId}/channels`                   | Channels or group chats                         |
-| `/bots/{accountId}/channels/{targetId}`        | Exact target configuration                      |
-| `/bots/{accountId}/conversations`              | Authorized projection of existing conversations |
-| `/bots/{accountId}/memory`                     | Scoped memory browser                           |
-| `/bots/{accountId}/settings`                   | Reception defaults and linked Account settings  |
+| Route suffix below `/workspace/{workspaceKey}`        | Page                                            |
+| ----------------------------------------------------- | ----------------------------------------------- |
+| `/bots`                                               | Bot collection                                  |
+| `/bots/connect`                                       | Customer-owned application onboarding           |
+| `/bots/{accountId}`                                   | Overview                                        |
+| `/bots/{accountId}/channels`                          | Channels or group chats                         |
+| `/bots/{accountId}/channels/{targetId}`               | Exact target configuration                      |
+| `/bots/{accountId}/channels/{targetId}/conversations` | Exact target conversation history               |
+| `/bots/{accountId}/channels/{targetId}/memory`        | Exact target memory browser                     |
+| `/bots/{accountId}/conversations`                     | Authorized projection of existing conversations |
+| `/bots/{accountId}/memory`                            | Scoped memory browser                           |
+| `/bots/{accountId}/settings`                          | Reception defaults and linked Account settings  |
 
 These browser routes do not declare corresponding new HTTP API resources. Session and Agent detail links reuse their canonical routes. There is no standalone Memory sidebar item in this product boundary.
 
@@ -93,7 +95,7 @@ The wizard has five stages: **Platform and account → Connect → Verify → Ag
 2. Follow the provider-specific instructions below. Required credentials use write-only fields. Provider identity is resolved or verified by trusted API responses and authenticated events where possible; manual identifiers are an advanced fallback, not trusted proof of identity.
 3. Save the Account with reception disabled. Display its exact HTTP event endpoint, explain how to configure provider verification, and track verification independently from saving credentials. Challenge validation works before production reception is enabled.
 4. Select an existing same-Workspace Agent and an eligible execution Service Account. Explain that the latter controls the permissions under which incoming messages execute. No browser login or external sender supplies Service authority. New Agent creation is a linked flow that preserves the non-secret wizard draft.
-5. Configure one pilot channel/chat, explicitly activate reception, and ask the user to send the displayed test message. The UI explains that this invokes an Agent and may consume model usage. Observe event receipt, Run acceptance, and actual provider reply separately. Ending or closing the wizard does not cancel accepted work.
+5. Configure one pilot channel/chat, explicitly activate reception, and ask the user to send the displayed test message. The UI explains that this invokes an Agent and may consume model usage. Prepare a uniquely marked test without sending a message, then observe authenticated event receipt, Run/Steer acceptance, and an actual provider-confirmed reply containing that marker separately. Refresh reads observations only; a lost preparation acknowledgement retries the same command, and expired or stale tests require a newly prepared message. Ending or closing the wizard does not cancel accepted work.
 
 New Bot setup uses explicitly configured targets only as its initial reception scope. The pilot target is therefore the only admitted target until the operator enables others. An explicit **All accessible conversations** setting can retain current Account-default routing behavior. Service must enforce this admission control before the Console can offer it; missing-target fallback alone cannot enforce it. Existing Accounts retain their current behavior until explicitly changed.
 
