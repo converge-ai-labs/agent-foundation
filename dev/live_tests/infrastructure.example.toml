@@ -1,0 +1,9 @@
+# Explicit loopback TEST infrastructure. PostgreSQL credentials need CREATEDB.
+# Copy beneath dev/live_tests/.state/ and replace these fictional credentials.
+# The admin database and existing buckets/Redis keys are never cleared.
+postgres_admin_url = "postgresql://live:live-local-password@127.0.0.1:5432/postgres"
+redis_url = "redis://127.0.0.1:6379/0"
+object_endpoint_url = "http://127.0.0.1:9000"
+object_region = "us-east-1"
+aws_access_key_id = "live-local-access"
+aws_secret_access_key = "live-local-secret"

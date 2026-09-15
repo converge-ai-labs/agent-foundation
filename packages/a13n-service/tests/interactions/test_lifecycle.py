@@ -453,10 +453,12 @@ async def test_terminal_projection_interrupts_open_items_before_stream_close(
     assert snapshot.items[0].last_stream_id == interrupted.stream_id
 
 
+@pytest.mark.parametrize("claim_limit", [1, 16])
 async def test_background_projector_drains_successive_claim_batches(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
     redis_client: Redis,
+    claim_limit: int,
 ) -> None:
     await _seed_run(interaction_sessions)
     async with transaction(interaction_sessions) as database:
@@ -476,8 +478,10 @@ async def test_background_projector_drains_successive_claim_batches(
         stream,
         RunReplayStore(interaction_object_store),
         worker_id="projection-worker-1",
-        poll_interval_seconds=0.01,
-        claim_limit=1,
+        # Pending facts in one Run must drain without waiting for the idle timer,
+        # even though ordering permits only one claim per Run in each sweep.
+        poll_interval_seconds=60,
+        claim_limit=claim_limit,
         clock=lambda: NOW,
     )
 

@@ -163,7 +163,7 @@ live-test-local: sync ## Run first-round HTTP journeys with owned Docker depende
 	@uv run --locked python -m dev.live_tests.isolated $(LIVE_TEST_ARGS)
 
 .PHONY: live-test-ci live-test-ci-environment-build
-live-test-ci: sync ## Run a reviewed account-free suite manually (suite=core|functional|control|fork-queue|run-faults|environment-native|environment-service)
+live-test-ci: sync ## Run reviewed live journeys (suite=smoke|core|functional|control|fork-queue|run-faults|environment-native|environment-service; LIVE_TEST_ARGS selects infrastructure)
 	@uv run --locked python -m dev.live_tests.ci $(suite) $(LIVE_TEST_ARGS)
 
 live-test-ci-environment-build: image-sandbox ## Build the native daemon and fixture images for the manual Environment matrices

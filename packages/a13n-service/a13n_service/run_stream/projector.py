@@ -96,7 +96,9 @@ class LifecycleRunStreamProjector:
                     extra={"event": "run_stream_projection_sweep_failed", "worker_id": self._worker_id},
                 )
                 claimed = 0
-            if claimed < self._claim_limit:
+            # Run ordering can leave a partial batch while later facts are ready.
+            # Drain those facts before waiting for new work.
+            if claimed == 0:
                 await anyio.sleep(self._poll_interval_seconds)
 
     async def project_once(self, *, limit: int = 16) -> int:

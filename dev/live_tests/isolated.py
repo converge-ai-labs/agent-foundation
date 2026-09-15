@@ -1,9 +1,11 @@
 """Run first-round HTTP journeys in an owned, disposable local installation."""
 
+import argparse
 import asyncio
+import os
 import signal
-import sys
 
+from .infrastructure.dependencies import add_infrastructure_arguments, infrastructure_environment
 from .infrastructure.round_two_lab import REPOSITORY, open_lab, private_json
 
 
@@ -33,4 +35,11 @@ async def run(arguments, *, files=None):
 
 
 if __name__ == "__main__":
-    raise SystemExit(asyncio.run(run(sys.argv[1:])))
+    parser = argparse.ArgumentParser(description=__doc__)
+    add_infrastructure_arguments(parser)
+    options, arguments = parser.parse_known_args()
+    try:
+        os.environ.update(infrastructure_environment(options))
+    except ValueError as error:
+        parser.error(str(error))
+    raise SystemExit(asyncio.run(run(arguments)))

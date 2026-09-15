@@ -10,6 +10,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from .infrastructure.dependencies import add_infrastructure_arguments, infrastructure_environment
+
 REPOSITORY = Path(__file__).resolve().parents[2]
 TEST_ROOT = REPOSITORY / "dev" / "live_tests"
 
@@ -317,6 +319,53 @@ SUITES = {
 }
 
 
+# These state-compatible groups are the only journeys allowed to share a lab.
+SMOKE_GROUPS = {
+    "core": (
+        *cases("harness_integration/test_01_basic_run.py", "test_basic_run"),
+        *cases("harness_integration/test_02_continuation.py", "test_continuation_preserves_context"),
+        *cases("harness_integration/test_03_tools_environment.py", "test_environment_tool_writes_and_reads_file"),
+        *cases(
+            "protocol/test_04_protocol_streams.py",
+            "test_native_event_contracts",
+            "test_hosted_and_native_event_contracts",
+            "test_hosted_disconnect_reconnect_and_cancel",
+            "test_hosted_waiting_and_feedback_contract",
+            "test_hosted_invalid_input_and_conflicting_reuse_do_not_accept_runs",
+        ),
+        *cases("protocol/test_04_stream_reconnect.py", "test_stream_disconnect_does_not_cancel_run"),
+        *cases("control/test_05_idempotency.py", "test_start_is_idempotent"),
+        *cases("control/test_07_interrupt.py", "test_interrupt_active_execution"),
+        *cases("control/test_08_approval.py", "test_approval_feedback"),
+    ),
+    "round-two": (
+        *cases(
+            "control/test_13_queue_retry_fork.py",
+            "test_busy_thread_consumes_queued_submissions_in_order",
+            "test_retry_creates_new_run_with_original_intent",
+            "test_fork_retains_history_in_a_new_thread",
+        ),
+        *cases("iam/test_16_workspace_isolation.py", "test_other_workspace_cannot_read_stream_or_control_run"),
+    ),
+    "management": (
+        *cases(
+            "harness_integration/test_18_plugin_execution.py",
+            "test_installed_plugin_configuration_controls_real_effect",
+            "test_worker_rejects_invalid_plugin_selection",
+        ),
+        *cases(
+            "harness_integration/test_26_output_and_client_tools.py",
+            "test_structured_output_enforces_schema_and_retry_budget",
+            "test_client_tool_feedback_rejects_invalid_duplicate_and_stale_results",
+        ),
+    ),
+}
+SUITES["smoke"] = Suite(
+    tuple(selection for group in SMOKE_GROUPS.values() for selection in group),
+    ("--live", "--live-round-two", "--live-management", "--live-shared-labs"),
+)
+
+
 def parse_shard(value):
     try:
         index, count = map(int, value.split("/"))
@@ -327,10 +376,11 @@ def parse_shard(value):
     return index, count
 
 
-def selections(suite, shard):
+def selections(suite, shard, *, smoke_group=None):
     index, count = shard
     modules = {}
-    for selection in SUITES[suite].selections:
+    selected = SMOKE_GROUPS[smoke_group] if smoke_group is not None else SUITES[suite].selections
+    for selection in selected:
         modules.setdefault(selection.split("::", 1)[0], []).append(selection)
     # Keep module-scoped backends in one job even when selecting individual cases.
     return tuple(selection for group in list(modules.values())[index - 1 :: count] for selection in group)
@@ -339,12 +389,21 @@ def selections(suite, shard):
 def parser():
     command = argparse.ArgumentParser(description=__doc__)
     command.add_argument("suite", choices=SUITES)
+    command.add_argument("--smoke-group", choices=SMOKE_GROUPS, help="Run one shared lab group from the smoke suite")
+    command.add_argument(
+        "--workers",
+        type=int,
+        choices=range(1, 5),
+        default=1,
+        help="Pytest workers (2-4 require smoke --smoke-group=core; each owns a separate lab)",
+    )
     command.add_argument("--shard", type=parse_shard, default=(1, 1), help="Disjoint file/node selections, e.g. 1/3")
     command.add_argument("--collect-only", action="store_true", help="List cases without starting any infrastructure")
     command.add_argument("-k", "--keyword", default="", help="Further restrict this suite using a pytest expression")
     command.add_argument("-x", "--exitfirst", action="store_true")
     command.add_argument("--junitxml", type=Path)
     command.add_argument("--basetemp", type=Path)
+    add_infrastructure_arguments(command)
     return command
 
 
@@ -353,7 +412,7 @@ def pytest_arguments(options):
     arguments = [
         *suite.gates,
         "-n",
-        "0",
+        str(options.workers) if options.workers > 1 and not options.collect_only else "0",
         "-q" if options.collect_only else "-v",
         "-ra",
         "--tb=short",
@@ -364,6 +423,8 @@ def pytest_arguments(options):
         "log_cli_level=INFO",
         "--log-disable=httpx2",
     ]
+    if options.workers > 1 and not options.collect_only:
+        arguments.extend(("--dist=load", "--max-worker-restart=0"))
     keywords = [value for value in (suite.keyword, options.keyword) if value]
     if keywords:
         arguments.extend(("-k", " and ".join(f"({value})" for value in keywords)))
@@ -392,16 +453,29 @@ def clean_environment():
 def main(arguments=None):
     command = parser()
     options = command.parse_args(arguments)
-    files = [str(TEST_ROOT / selection) for selection in selections(options.suite, options.shard)]
+    if options.smoke_group is not None and options.suite != "smoke":
+        command.error("--smoke-group requires suite=smoke")
+    if options.workers > 1 and (options.suite != "smoke" or options.smoke_group != "core"):
+        command.error("--workers > 1 requires suite=smoke --smoke-group=core")
+    try:
+        infrastructure = infrastructure_environment(options)
+    except ValueError as error:
+        command.error(str(error))
+    files = [
+        str(TEST_ROOT / selection)
+        for selection in selections(options.suite, options.shard, smoke_group=options.smoke_group)
+    ]
     if not files:
         command.error("This shard has no selections; reduce the shard count")
     arguments = pytest_arguments(options)
     environment = clean_environment()
+    environment.update(infrastructure)
     if options.basetemp and not options.collect_only:
         # pytest creates basetemp itself, but requires its parent to exist.
         options.basetemp.resolve().parent.mkdir(parents=True, exist_ok=True)
     print(
-        f"Live suite: {options.suite} shard {options.shard[0]}/{options.shard[1]}; "
+        f"Live suite: {options.suite} group={options.smoke_group or 'all'} "
+        f"shard {options.shard[0]}/{options.shard[1]} workers={options.workers}; "
         f"{len(files)} explicit selections; external accounts disabled",
         flush=True,
     )
