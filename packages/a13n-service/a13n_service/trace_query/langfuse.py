@@ -39,6 +39,7 @@ from .decoding import (
     usage as _usage,
 )
 from .domain import (
+    OBSERVATION_METADATA_PREFIX,
     InstrumentationScope,
     ModelIdentity,
     Observation,
@@ -68,7 +69,14 @@ _MAX_METADATA_ENTRIES = 512
 class LangfuseTraceQueryProvider:
     """Read one bounded native page; never walk a whole trace internally."""
 
-    def __init__(self, client: httpx2.AsyncClient, *, base_url: str, public_key: str, secret_key: str) -> None:
+    def __init__(
+        self,
+        client: httpx2.AsyncClient,
+        *,
+        base_url: str,
+        public_key: str,
+        secret_key: str,
+    ) -> None:
         self._client = client
         self._base_url = _validate_base_url(base_url)
         if not public_key or not secret_key:
@@ -88,16 +96,25 @@ class LangfuseTraceQueryProvider:
         filters = _base_filters() + _scope_filters(query.organization_id, query.workspace_id)
         filters.extend(
             (
-                _filter("datetime", "startTime", ">=", _format_datetime(query.from_started_at)),
+                _filter(
+                    "datetime",
+                    "startTime",
+                    ">=",
+                    _format_datetime(query.from_started_at),
+                ),
                 _filter("datetime", "startTime", "<", _format_datetime(query.to_started_at)),
             )
         )
+        if query.session_id is not None:
+            filters.append(_metadata_filter("a13n.observation.session.id", query.session_id))
         if query.thread_id is not None:
             filters.append(_filter("string", "sessionId", "=", query.thread_id))
         if query.run_id is not None:
             filters.append(_metadata_filter("a13n.service.run.id", query.run_id))
         if query.run_attempt_id is not None:
             filters.append(_metadata_filter("a13n.run_attempt.id", query.run_attempt_id))
+        for key, value in query.metadata:
+            filters.append(_metadata_value_filter(f"{OBSERVATION_METADATA_PREFIX}{key}", value))
         if query.query is not None:
             if query.search_in not in self.capabilities.search_in:
                 raise TraceQueryProviderError("filter_unsupported")
@@ -105,7 +122,8 @@ class LangfuseTraceQueryProvider:
         rows, cursor = await self._page(query.view, query.limit, filters, cursor=query.cursor)
         traces = tuple(self._trace(row, query.view) for row in rows)
         return TraceCollection(
-            items=tuple(trace for trace in traces if _matches_query_correlation(trace, query)), next_cursor=cursor
+            items=tuple(trace for trace in traces if _matches_query_correlation(trace, query)),
+            next_cursor=cursor,
         )
 
     async def get_trace(self, query: ProviderTraceRead) -> Trace | None:
@@ -127,14 +145,19 @@ class LangfuseTraceQueryProvider:
 
     async def list_observations(self, query: ProviderTraceRead) -> ObservationCollection:
         rows, cursor = await self._page(
-            query.view, query.limit, _history_filters(query), trace_id=query.trace_id, cursor=query.cursor
+            query.view,
+            query.limit,
+            _history_filters(query),
+            trace_id=query.trace_id,
+            cursor=query.cursor,
         )
         # Children need not repeat Service root attributes. The trace identity
         # associates them with the independently authorized scoped root.
         if any(row.get("traceId") != query.trace_id for row in rows):
             raise TraceQueryProviderError("malformed")
         return ObservationCollection(
-            items=tuple(_observation(row, view=query.view) for row in rows), next_cursor=cursor
+            items=tuple(_observation(row, view=query.view) for row in rows),
+            next_cursor=cursor,
         )
 
     async def _page(
@@ -148,7 +171,7 @@ class LangfuseTraceQueryProvider:
     ) -> tuple[list[Mapping[str, Any]], str | None]:
         payload = await self._get_observations(
             {
-                "fields": _FIELD_GROUPS if view is TraceView.full else _COMPACT_FIELD_GROUPS,
+                "fields": (_FIELD_GROUPS if view is TraceView.full else _COMPACT_FIELD_GROUPS),
                 "expandMetadata": _EXPANDED_METADATA_KEYS,
                 "limit": str(limit),
                 "filter": json.dumps(filters, separators=(",", ":")),
@@ -166,7 +189,10 @@ class LangfuseTraceQueryProvider:
     async def _get_observations(self, params: Mapping[str, str]) -> Mapping[str, Any]:
         try:
             async with self._client.stream(
-                "GET", f"{self._base_url}{_OBSERVATIONS_PATH}", params=params, auth=self._auth
+                "GET",
+                f"{self._base_url}{_OBSERVATIONS_PATH}",
+                params=params,
+                auth=self._auth,
             ) as response:
                 if response.status_code == 404:
                     raise TraceQueryProviderError("version_unsupported")
@@ -236,25 +262,33 @@ def _observation(item: Mapping[str, Any], *, view: TraceView) -> Observation:
             ended_at=_optional_datetime(item.get("endTime"), "endTime"),
             status=None,
             level=level.lower() if level is not None else None,
-            status_message=_optional_text(item.get("statusMessage"), "statusMessage")
-            if item.get("statusMessage")
-            else None,
-            model=ModelIdentity(requested=requested, response=response)
-            if requested is not None or response is not None
-            else None,
+            status_message=(
+                _optional_text(item.get("statusMessage"), "statusMessage") if item.get("statusMessage") else None
+            ),
+            model=(
+                ModelIdentity(requested=requested, response=response)
+                if requested is not None or response is not None
+                else None
+            ),
             usage=_usage(item.get("usageDetails")),
             cost_usd=_decimal(item.get("totalCost")),
-            input=_io_value(item.get("input"), attributes.get("input.mime_type")) if view is TraceView.full else None,
-            output=_io_value(item.get("output"), attributes.get("output.mime_type"))
-            if view is TraceView.full
-            else None,
+            input=(_io_value(item.get("input"), attributes.get("input.mime_type")) if view is TraceView.full else None),
+            output=(
+                _io_value(item.get("output"), attributes.get("output.mime_type")) if view is TraceView.full else None
+            ),
             attributes=attributes,
             resource_attributes=_metadata_namespace(metadata, "resourceAttributes") or None,
-            scope=InstrumentationScope.model_validate(
-                {"name": scope.get("name"), "version": scope.get("version"), "attributes": scope.get("attributes")}
-            )
-            if scope
-            else None,
+            scope=(
+                InstrumentationScope.model_validate(
+                    {
+                        "name": scope.get("name"),
+                        "version": scope.get("version"),
+                        "attributes": scope.get("attributes"),
+                    }
+                )
+                if scope
+                else None
+            ),
             events=None,
             links=None,
         )
@@ -264,7 +298,10 @@ def _observation(item: Mapping[str, Any], *, view: TraceView) -> Observation:
 
 
 def _base_filters() -> list[dict[str, Any]]:
-    return [_filter("string", "name", "=", _ROOT_NAME), _filter("boolean", "isRootObservation", "=", True)]
+    return [
+        _filter("string", "name", "=", _ROOT_NAME),
+        _filter("boolean", "isRootObservation", "=", True),
+    ]
 
 
 def _scope_filters(organization_id: str, workspace_id: str) -> list[dict[str, Any]]:
@@ -286,7 +323,19 @@ def _filter(kind: str, column: str, operator: str, value: object) -> dict[str, A
 
 
 def _metadata_filter(key: str, value: str) -> dict[str, Any]:
-    return {"type": "stringObject", "column": "metadata", "key": f"attributes.{key}", "operator": "=", "value": value}
+    return {
+        "type": "stringObject",
+        "column": "metadata",
+        "key": f"attributes.{key}",
+        "operator": "=",
+        "value": value,
+    }
+
+
+def _metadata_value_filter(key: str, value: str) -> dict[str, Any]:
+    # Langfuse stores observation metadata values as strings; a typed
+    # number/boolean filter would silently miss string-encoded scalars.
+    return _metadata_filter(key, value)
 
 
 def _matches_query_correlation(trace: Trace, query: ProviderTraceQuery) -> bool:
@@ -294,6 +343,7 @@ def _matches_query_correlation(trace: Trace, query: ProviderTraceQuery) -> bool:
     return (
         correlation.organization_id == query.organization_id
         and correlation.workspace_id == query.workspace_id
+        and (query.session_id is None or correlation.session_id == query.session_id)
         and (query.thread_id is None or correlation.thread_id == query.thread_id)
         and (query.run_id is None or correlation.run_id == query.run_id)
         and (query.run_attempt_id is None or correlation.run_attempt_id == query.run_attempt_id)

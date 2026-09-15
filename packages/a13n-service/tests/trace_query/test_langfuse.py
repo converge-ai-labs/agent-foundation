@@ -114,9 +114,11 @@ async def test_list_uses_v2_root_filters_and_normalizes_correlation() -> None:
             query(
                 query="hello world",
                 search_in=SearchIn.input,
+                session_id="session-1",
                 thread_id="thread-1",
                 run_id="run-1",
                 run_attempt_id="attempt-1",
+                metadata=(("scenario", "review"), ("attempt", "2")),
             )
         )
 
@@ -147,8 +149,11 @@ async def test_list_uses_v2_root_filters_and_normalizes_correlation() -> None:
     assert {(item.get("key"), item["value"]) for item in filters if item["column"] == "metadata"} == {
         ("attributes.a13n.organization.id", "org-1"),
         ("attributes.a13n.workspace.id", "ws-1"),
+        ("attributes.a13n.observation.session.id", "session-1"),
         ("attributes.a13n.service.run.id", "run-1"),
         ("attributes.a13n.run_attempt.id", "attempt-1"),
+        ("attributes.a13n.observation.metadata.scenario", "review"),
+        ("attributes.a13n.observation.metadata.attempt", "2"),
     }
 
 
@@ -230,7 +235,10 @@ async def test_exact_root_and_observation_pages_share_model_and_projection() -> 
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
         provider = LangfuseTraceQueryProvider(
-            client, base_url="https://langfuse.example.com", public_key="pk-test", secret_key="sk-test"
+            client,
+            base_url="https://langfuse.example.com",
+            public_key="pk-test",
+            secret_key="sk-test",
         )
         trace = await provider.get_trace(read_query())
         full = await provider.list_observations(read_query())
@@ -261,7 +269,10 @@ async def test_missing_root_is_absent_and_combined_search_fails_explicitly() -> 
         transport=httpx2.MockTransport(lambda _: httpx2.Response(200, json={"data": [], "meta": {"cursor": None}}))
     ) as client:
         provider = LangfuseTraceQueryProvider(
-            client, base_url="https://langfuse.example.com", public_key="pk-test", secret_key="sk-test"
+            client,
+            base_url="https://langfuse.example.com",
+            public_key="pk-test",
+            secret_key="sk-test",
         )
         assert await provider.get_trace(read_query()) is None
         with pytest.raises(TraceQueryProviderError) as raised:
@@ -307,7 +318,10 @@ async def test_list_rejects_a_provider_page_larger_than_requested() -> None:
         transport=httpx2.MockTransport(
             lambda _request: httpx2.Response(
                 200,
-                json={"data": [root(), root(trace_id="trace-2")], "meta": {"cursor": None}},
+                json={
+                    "data": [root(), root(trace_id="trace-2")],
+                    "meta": {"cursor": None},
+                },
             )
         )
     ) as client:

@@ -7578,9 +7578,11 @@ type GetWorkspacesWorkspaceTracesParams struct {
 	Cursor       *string    `form:"cursor,omitempty" json:"cursor,omitempty"`
 	Query        *string    `form:"query,omitempty" json:"query,omitempty"`
 	SearchIn     *SearchIn  `form:"search_in,omitempty" json:"search_in,omitempty"`
+	SessionId    *string    `form:"session_id,omitempty" json:"session_id,omitempty"`
 	ThreadId     *string    `form:"thread_id,omitempty" json:"thread_id,omitempty"`
 	RunId        *string    `form:"run_id,omitempty" json:"run_id,omitempty"`
 	RunAttemptId *string    `form:"run_attempt_id,omitempty" json:"run_attempt_id,omitempty"`
+	Metadata     *[]string  `form:"metadata,omitempty" json:"metadata,omitempty"`
 	View         *TraceView `form:"view,omitempty" json:"view,omitempty"`
 }
 
@@ -37021,6 +37023,18 @@ func NewGetWorkspacesWorkspaceTracesRequest(server string, workspace string, par
 
 		}
 
+		if params.SessionId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "session_id", *params.SessionId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if params.ThreadId != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "thread_id", *params.ThreadId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
@@ -37048,6 +37062,18 @@ func NewGetWorkspacesWorkspaceTracesRequest(server string, workspace string, par
 		if params.RunAttemptId != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "run_attempt_id", *params.RunAttemptId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Metadata != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "metadata", *params.Metadata, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {

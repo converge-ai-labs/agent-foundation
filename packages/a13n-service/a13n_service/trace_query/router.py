@@ -12,7 +12,14 @@ from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.iam.http.resource_dependencies import WorkspaceId
 from a13n_service.request_runtime import get_control_runtime
 
-from .domain import ObservationCollection, SearchIn, Trace, TraceCollection, TraceQueryDescriptor, TraceView
+from .domain import (
+    ObservationCollection,
+    SearchIn,
+    Trace,
+    TraceCollection,
+    TraceQueryDescriptor,
+    TraceView,
+)
 from .errors import TraceQueryError
 from .service import TraceQueryService
 
@@ -24,7 +31,9 @@ def _traces(request: Request) -> TraceQueryService:
     control = get_control_runtime(request)
     if control is None:
         raise TraceQueryError(
-            "trace_query_unavailable", "Trace Query is unavailable.", category=ErrorCategory.unavailable
+            "trace_query_unavailable",
+            "Trace Query is unavailable.",
+            category=ErrorCategory.unavailable,
         )
     return control.trace_queries
 
@@ -40,9 +49,11 @@ async def list_traces(
     cursor: Annotated[str | None, Query(max_length=8192)] = None,
     query: Annotated[str | None, Query(max_length=512)] = None,
     search_in: SearchIn | None = None,
+    session_id: Annotated[str | None, Query(max_length=1024)] = None,
     thread_id: Annotated[str | None, Query(max_length=1024)] = None,
     run_id: Annotated[str | None, Query(max_length=1024)] = None,
     run_attempt_id: Annotated[str | None, Query(max_length=1024)] = None,
+    metadata: Annotated[list[str] | None, Query(max_length=8)] = None,
     view: TraceView = TraceView.compact,
 ) -> TraceCollection:
     return await _traces(request).list(
@@ -54,9 +65,11 @@ async def list_traces(
         cursor=cursor,
         query=query,
         search_in=search_in,
+        session_id=session_id,
         thread_id=thread_id,
         run_id=run_id,
         run_attempt_id=run_attempt_id,
+        metadata=metadata or (),
         view=view,
     )
 
@@ -77,7 +90,10 @@ async def get_trace(
     )
 
 
-@router.get("/workspaces/{workspace}/traces/{trace_id}/observations", response_model=ObservationCollection)
+@router.get(
+    "/workspaces/{workspace}/traces/{trace_id}/observations",
+    response_model=ObservationCollection,
+)
 async def list_trace_observations(
     request: Request,
     actor: Actor,
