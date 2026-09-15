@@ -299,6 +299,7 @@ from .mcpo_auth_setup_request import MCPOAuthSetupRequest
 from .mem_0_scope import Mem0Scope
 from .memory import Memory
 from .memory_collection import MemoryCollection
+from .memory_pagination import MemoryPagination
 from .memory_search import MemorySearch
 from .memory_selection import MemorySelection
 from .memory_write import MemoryWrite
@@ -867,6 +868,7 @@ __all__ = (
     "Mem0Scope",
     "Memory",
     "MemoryCollection",
+    "MemoryPagination",
     "MemorySearch",
     "MemorySelection",
     "MemoryWrite",

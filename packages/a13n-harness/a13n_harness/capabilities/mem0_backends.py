@@ -20,6 +20,10 @@ class Mem0RecordNotFound(LookupError):
     """The selected native backend has no memory with this identifier."""
 
 
+class Mem0PaginationUnsupported(ValueError):
+    """The native backend provides bounded lists, not cursor traversal."""
+
+
 @dataclass(frozen=True, slots=True)
 class Mem0Subject:
     """One trusted, provider-visible subject, not a model-supplied filter."""
@@ -97,7 +101,8 @@ class Mem0PlatformBackend(Mem0Backend):
             if not cursor.isascii() or not cursor.isdecimal() or not 1 <= int(cursor) <= 1_000_000:
                 raise ValueError("Invalid Platform memory cursor")
             page = int(cursor)
-        response = await self.client.get_all(filters=subject.filter(), page=page, page_size=limit)
+        # Platform pages have a native 200-record ceiling; limit is an upper bound.
+        response = await self.client.get_all(filters=subject.filter(), page=page, page_size=min(limit, 200))
         if not isinstance(response, Mapping):
             raise ValueError("Invalid Platform memory page")
         # Do not follow backend URLs (which may contain credentials or a different host).
@@ -122,7 +127,7 @@ class Mem0PlatformBackend(Mem0Backend):
 class Mem0OSSBackend(Mem0Backend):
     """Borrow an HTTP client configured for the native OSS server and its API key.
 
-    Listing uses the pinned OSS PGVector keyset-pagination extension.
+    Listing uses public GET /memories. It is bounded and has no continuation.
     """
 
     def __init__(self, client: httpx2.AsyncClient) -> None:
@@ -164,10 +169,9 @@ class Mem0OSSBackend(Mem0Backend):
         return {"results": sorted(records.values(), key=lambda item: (-item["score"], item["id"]))[:limit]}
 
     async def list(self, subject: Mem0Subject, *, limit: int, cursor: str | None = None) -> object:
-        params: dict[str, str | int] = {**subject.filter(), "top_k": limit}
         if cursor is not None:
-            params["cursor"] = cursor
-        response = await self.client.get("memories/page", params=params)
+            raise Mem0PaginationUnsupported("The OSS memory API does not support pagination")
+        response = await self.client.get("memories", params={**subject.filter(), "top_k": limit})
         response.raise_for_status()
         return response.json()
 

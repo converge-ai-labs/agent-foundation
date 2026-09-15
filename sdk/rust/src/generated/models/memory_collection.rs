@@ -15,21 +15,22 @@ use serde::{Deserialize, Serialize};
 pub struct MemoryCollection {
     #[serde(rename = "items")]
     pub items: Vec<models::Memory>,
+    /// Native pagination when available. Null means a bounded result, not a complete collection.
 
     #[serde(
-        rename = "next_cursor",
+        rename = "pagination",
         default,
         with = "::serde_with::rust::double_option",
         skip_serializing_if = "Option::is_none"
     )]
-    pub next_cursor: Option<Option<String>>,
+    pub pagination: Option<Option<Box<models::MemoryPagination>>>,
 }
 
 impl MemoryCollection {
     pub fn new(items: Vec<models::Memory>) -> MemoryCollection {
         MemoryCollection {
             items,
-            next_cursor: None,
+            pagination: None,
         }
     }
 }

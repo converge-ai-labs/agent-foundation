@@ -4,7 +4,7 @@ Service provides tenant-scoped Mem0 memory without a second copy in its database
 
 ## Configure the backend
 
-For OSS, deploy the pinned native image and PGVector pagination extension from `dev/mem0/` in the repository. Configure the same endpoint and credentials on Control and Worker:
+For OSS, connect an existing native Mem0 server providing `GET /memories` with `top_k`, `POST /search`, and memory CRUD. No upstream patch, custom route, replacement image, or database access is required. The repository's local development image pins unmodified upstream sources; it is not required for production. Configure the same endpoint and credentials on Control and Worker:
 
 ```toml
 [memory]
@@ -58,7 +58,17 @@ The Native API uses `/api/v1/workspaces/{workspace}/memories` with `scope` in th
 
 All operations require current authorization. Viewer can read; Runner can write. Direct Agent grants cover that Agent and its current Threads, not the User's Workspace-wide memory. Provider IDs alone grant no access. Records expose only `id`, `memory`, and nullable `score`.
 
-Lists return `items` and `next_cursor`. Pass the cursor with the same scope and page size; stop only at null, not at an empty page. OSS pages use native UUID keyset order without a fixed total limit. Expired rows can produce empty pages with continuation. Concurrent inserts before the cursor are visible on a new traversal, not a guaranteed snapshot.
+Lists load at most `limit` records (1–1,000; default 1,000). The response contains `items` and `pagination`:
+
+- **OSS:** `pagination` is null. Native `GET /memories?top_k=1000` loads a bounded subset, not the first page of an available traversal. A cursor is rejected. Neither a short nor an empty result proves that no other records exist, especially with native expiry filtering.
+- **Platform:** `pagination` is an object containing `next_cursor`. Requests respect the native 200-record page ceiling even when a larger limit is requested. Pass the cursor with the same scope and limit; null `next_cursor` within the object marks the final native page.
+- **Search:** `pagination` is null on both backends. It retrieves relevant stored memories independently of the management list and is not a full export API.
+
+A frontend can display 20-record local pages from the OSS response, matching the upstream Dashboard approach. These pages only slice the already-loaded data; label counts as "loaded memories", never a complete total. Display a hint such as:
+
+> Showing up to 1,000 loaded memories. More may exist; search for relevant memories.
+
+Use the requested limit instead of 1,000 when the caller selects a smaller bound. This is a data-completeness hint, not a backend readiness or development-status message. The bound does not limit how many memories the provider stores or searches. This backend integration does not add frontend implementation.
 
 Create and update verify exact text by reading it back. Delete verifies absence. A timeout or failed verification can leave a committed change: `memory_write_unconfirmed` means inspect the record before repeating, not retry automatically. No idempotency key or background reconciliation is provided for memory writes.
 

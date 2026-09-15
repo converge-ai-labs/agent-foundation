@@ -42,18 +42,13 @@ services:
       ADMIN_API_KEY: "${MEM0_LOCAL_API_KEY:-local-mem0-api-key}"
       JWT_SECRET: public-local-mem0-jwt-secret-not-for-production
       MEM0_TELEMETRY: "false"
-      MEM0_OSS_LLM_BASE_URL: "${MEM0_OSS_LLM_BASE_URL:-http://embeddings:18081/v1}"
-      MEM0_OSS_LLM_MODEL: "${MEM0_OSS_LLM_MODEL:-local-unused}"
-      MEM0_OSS_LLM_API_KEY: "${MEM0_OSS_LLM_API_KEY:-local-fixture-key}"
-      MEM0_OSS_EMBEDDING_BASE_URL: "${MEM0_OSS_EMBEDDING_BASE_URL:-http://embeddings:18081/v1}"
-      MEM0_OSS_EMBEDDING_MODEL: "${MEM0_OSS_EMBEDDING_MODEL:-local-hash-128}"
-      MEM0_OSS_EMBEDDING_API_KEY: "${MEM0_OSS_EMBEDDING_API_KEY:-local-fixture-key}"
-      MEM0_OSS_EMBEDDING_DIMENSIONS: "${MEM0_OSS_EMBEDDING_DIMENSIONS:-128}"
-      MEM0_OSS_EMBEDDING_SEND_DIMENSIONS: "${MEM0_OSS_EMBEDDING_SEND_DIMENSIONS:-false}"
+      # Satisfy native first-start client construction. The dev helper configures
+      # actual model endpoints through POST /configure after the OpenAPI endpoint is ready.
+      OPENAI_API_KEY: local-unused-bootstrap-key
     volumes:
       - history:/app/history
     healthcheck:
-      test: [CMD, python, -c, "import os, urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/memories/page?user_id=health&top_k=1', headers={'X-API-Key': os.environ['ADMIN_API_KEY']}), timeout=3)"]
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=3)"]
       interval: 5s
       timeout: 5s
       retries: 36

@@ -4,7 +4,7 @@ This directory owns the local Service environment: its explicit TOML configurati
 
 ## Memory backend
 
-The default configuration also starts checkout-owned [Mem0 OSS](../mem0/README.md) on port 18888. It uses native PGVector persistence with deterministic local embeddings, not real semantic inference. Agent memory remains opt-in through `config.memory`; no frontend change is required. Use `make mem0-up`, `make mem0-down`, and `make mem0-logs` independently. Service reset and shutdown preserve Mem0 volumes; real model setup and dimension changes are documented in the Mem0 guide.
+The default configuration also starts checkout-owned [Mem0 OSS](../mem0/README.md) on port 18888. It uses unmodified upstream sources, configured through the native API, with PGVector persistence and deterministic local embeddings rather than real semantic inference. Existing OSS deployments require no patch. Lists load a bounded subset of up to 1,000 records; clients may page that subset locally with a completeness hint. Agent memory remains opt-in through `config.memory`; no frontend change is required. Use `make mem0-up`, `make mem0-down`, and `make mem0-logs` independently. Service reset and shutdown preserve Mem0 volumes; real model setup and dimension changes are documented in the Mem0 guide.
 
 ## Daily workflow
 

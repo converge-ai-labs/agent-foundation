@@ -79,3 +79,57 @@ def test_external_backends_are_not_managed(tmp_path, monkeypatch, config):
     monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: pytest.fail("must not start Docker"))
     assert not memory.enabled
     memory.start()
+
+
+def test_local_configuration_uses_only_native_api_and_separate_model_keys():
+    import json
+
+    import httpx2
+
+    from dev.mem0.configuration import configure
+
+    calls = []
+
+    def handle(request):
+        calls.append((request.method, request.url.path))
+        assert request.headers["X-API-Key"] == "local-admin"
+        if request.url.path == "/configure":
+            config = json.loads(request.content)
+            assert config["embedder"]["config"] == {
+                "model": "real-embedding",
+                "api_key": "embedding-only",
+                "openai_base_url": "https://embedding.example/v1",
+                "embedding_dims": 1536,
+            }
+            assert config["llm"]["config"]["api_key"] == "llm-only"
+            assert config["vector_store"]["config"]["embedding_model_dims"] == 1536
+            assert config["vector_store"]["config"]["collection_name"] == "new_model_collection"
+            return httpx2.Response(200, json={"message": "configured"})
+        assert request.url.path == "/memories" and request.url.params["top_k"] == "1"
+        return httpx2.Response(200, json={"results": []})
+
+    with httpx2.Client(
+        base_url="http://local/", headers={"X-API-Key": "local-admin"}, transport=httpx2.MockTransport(handle)
+    ) as client:
+        configure(
+            client,
+            {
+                "MEM0_OSS_EMBEDDING_BASE_URL": "https://embedding.example/v1",
+                "MEM0_OSS_EMBEDDING_MODEL": "real-embedding",
+                "MEM0_OSS_EMBEDDING_API_KEY": "embedding-only",
+                "MEM0_OSS_EMBEDDING_DIMENSIONS": "1536",
+                "MEM0_OSS_EMBEDDING_SEND_DIMENSIONS": "true",
+                "MEM0_OSS_LLM_API_KEY": "llm-only",
+                "MEM0_OSS_COLLECTION": "new_model_collection",
+            },
+        )
+    assert calls == [("POST", "/configure"), ("GET", "/memories")]
+
+
+def test_dev_image_never_changes_upstream_source_or_adds_routes():
+    from dev.service.environment import ROOT
+
+    dockerfile = (ROOT / "dev/mem0/Dockerfile").read_text()
+    assert "patch " not in dockerfile and "COPY " not in dockerfile
+    assert "apply_overlay" not in dockerfile
+    assert not list((ROOT / "dev/mem0").glob("**/*.patch"))

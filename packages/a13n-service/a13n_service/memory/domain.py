@@ -54,7 +54,17 @@ class Memory(BaseModel):
     score: float | None = Field(default=None, allow_inf_nan=False)
 
 
+class MemoryPagination(BaseModel):
+    """Native traversal; a null cursor means the final page of that traversal."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    next_cursor: str | None
+
+
 class MemoryCollection(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     items: tuple[Memory, ...]
-    next_cursor: str | None = None
+    pagination: MemoryPagination | None = Field(
+        default=None,
+        description="Native pagination when available. Null means a bounded result, not a complete collection.",
+    )

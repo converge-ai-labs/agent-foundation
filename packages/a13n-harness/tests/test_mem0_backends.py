@@ -6,6 +6,7 @@ import httpx2
 import pytest
 from a13n_harness.capabilities.mem0_backends import (
     Mem0OSSBackend,
+    Mem0PaginationUnsupported,
     Mem0Subject,
     added_memory_id,
     open_mem0_oss,
@@ -22,20 +23,22 @@ SUBJECTS = (
 )
 
 
-async def test_oss_uses_native_wire_shapes_and_real_page_cursor():
+async def test_oss_uses_only_native_wire_shapes_and_bounded_listing():
     calls = []
 
     def handle(request):
         body = json.loads(request.content) if request.content else None
         calls.append((request.method, request.url.path, dict(request.url.params), body))
-        return httpx2.Response(200, json={"results": [], "next_cursor": "next-native-page"})
+        return httpx2.Response(200, json={"results": []})
 
     async with httpx2.AsyncClient(base_url="http://oss/", transport=httpx2.MockTransport(handle)) as client:
         backend = Mem0OSSBackend(client)
         await backend.search("query", subjects=(SUBJECTS[0],), limit=7, threshold=0.4)
         await backend.add("  Exact text  ", subject=SUBJECTS[0])
-        page = await backend.list(SUBJECTS[0], limit=3, cursor="previous-native-page")
-        assert page["next_cursor"] == "next-native-page"
+        result = await backend.list(SUBJECTS[0], limit=1000)
+        assert result == {"results": []}
+        with pytest.raises(Mem0PaginationUnsupported):
+            await backend.list(SUBJECTS[0], limit=1000, cursor="invented-page")
         assert calls == [
             (
                 "POST",
@@ -49,7 +52,7 @@ async def test_oss_uses_native_wire_shapes_and_real_page_cursor():
                 {},
                 {"messages": [{"role": "user", "content": "  Exact text  "}], "run_id": "thread-1", "infer": False},
             ),
-            ("GET", "/memories/page", {"run_id": "thread-1", "top_k": "3", "cursor": "previous-native-page"}, None),
+            ("GET", "/memories", {"run_id": "thread-1", "top_k": "1000"}, None),
         ]
 
 
@@ -158,6 +161,7 @@ async def test_platform_native_sdk_contract_without_constructor_network_io(monke
         page = await backend.list(SUBJECTS[0], limit=2, cursor="2")
         assert page["next_cursor"] == "3"
         await backend.add("memory", subject=SUBJECTS[0])
+        await backend.list(SUBJECTS[0], limit=1000)
     assert sdk.async_client.is_closed
     assert calls == [
         (
@@ -173,6 +177,7 @@ async def test_platform_native_sdk_contract_without_constructor_network_io(monke
             {},
             {"messages": [{"role": "user", "content": "memory"}], "filters": {"run_id": "thread-1"}, "infer": False},
         ),
+        ("POST", "/v3/memories/", {"page": "1", "page_size": "200"}, {"filters": {"run_id": "thread-1"}}),
     ]
     assert "deferred" not in json.dumps(calls)
 

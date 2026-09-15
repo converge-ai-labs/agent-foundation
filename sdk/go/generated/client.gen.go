@@ -4546,8 +4546,15 @@ type Memory struct {
 
 // MemoryCollection defines model for MemoryCollection.
 type MemoryCollection struct {
-	Items      []Memory                  `json:"items"`
-	NextCursor nullable.Nullable[string] `json:"next_cursor,omitempty"`
+	Items []Memory `json:"items"`
+
+	// Pagination Native pagination when available. Null means a bounded result, not a complete collection.
+	Pagination nullable.Nullable[MemoryPagination] `json:"pagination,omitempty"`
+}
+
+// MemoryPagination Native traversal; a null cursor means the final page of that traversal.
+type MemoryPagination struct {
+	NextCursor nullable.Nullable[string] `json:"next_cursor"`
 }
 
 // MemorySearch defines model for MemorySearch.
@@ -7030,6 +7037,7 @@ type GetWorkspacesWorkspaceMembersParams struct {
 
 // GetWorkspacesWorkspaceMemoriesParams defines parameters for GetWorkspacesWorkspaceMemories.
 type GetWorkspacesWorkspaceMemoriesParams struct {
+	// Limit Maximum loaded records, not a total count.
 	Limit     *int      `form:"limit,omitempty" json:"limit,omitempty"`
 	Cursor    *string   `form:"cursor,omitempty" json:"cursor,omitempty"`
 	Scope     Mem0Scope `form:"scope" json:"scope"`

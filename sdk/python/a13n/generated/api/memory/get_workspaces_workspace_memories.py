@@ -96,7 +96,7 @@ def sync_detailed(
 
     Args:
         workspace (str):
-        limit (int | Unset):
+        limit (int | Unset): Maximum loaded records, not a total count.
         cursor (None | str | Unset):
         scope (Mem0Scope): Trusted Harness identity boundary used for Mem0 records.
         subject_id (None | str | Unset):
@@ -137,7 +137,7 @@ def sync(
 
     Args:
         workspace (str):
-        limit (int | Unset):
+        limit (int | Unset): Maximum loaded records, not a total count.
         cursor (None | str | Unset):
         scope (Mem0Scope): Trusted Harness identity boundary used for Mem0 records.
         subject_id (None | str | Unset):
@@ -173,7 +173,7 @@ async def asyncio_detailed(
 
     Args:
         workspace (str):
-        limit (int | Unset):
+        limit (int | Unset): Maximum loaded records, not a total count.
         cursor (None | str | Unset):
         scope (Mem0Scope): Trusted Harness identity boundary used for Mem0 records.
         subject_id (None | str | Unset):
@@ -212,7 +212,7 @@ async def asyncio(
 
     Args:
         workspace (str):
-        limit (int | Unset):
+        limit (int | Unset): Maximum loaded records, not a total count.
         cursor (None | str | Unset):
         scope (Mem0Scope): Trusted Harness identity boundary used for Mem0 records.
         subject_id (None | str | Unset):

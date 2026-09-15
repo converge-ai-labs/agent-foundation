@@ -6110,8 +6110,16 @@ export interface components {
     MemoryCollection: {
       /** Items */
       items: components["schemas"]["Memory"][];
+      /** @description Native pagination when available. Null means a bounded result, not a complete collection. */
+      pagination?: components["schemas"]["MemoryPagination"] | null;
+    };
+    /**
+     * MemoryPagination
+     * @description Native traversal; a null cursor means the final page of that traversal.
+     */
+    MemoryPagination: {
       /** Next Cursor */
-      next_cursor?: string | null;
+      next_cursor: string | null;
     };
     /** MemorySearch */
     MemorySearch: {
@@ -19409,6 +19417,7 @@ export interface operations {
   get_workspaces_workspace_memories: {
     parameters: {
       query: {
+        /** @description Maximum loaded records, not a total count. */
         limit?: number;
         cursor?: string | null;
         scope: components["schemas"]["Mem0Scope"];

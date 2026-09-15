@@ -9,6 +9,7 @@ from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
     from ..models.memory import Memory
+    from ..models.memory_pagination import MemoryPagination
 
 
 T = TypeVar("T", bound="MemoryCollection")
@@ -19,23 +20,28 @@ class MemoryCollection:
     """
     Attributes:
         items (list[Memory]):
-        next_cursor (None | str | Unset):
+        pagination (MemoryPagination | None | Unset): Native pagination when available. Null means a bounded result, not
+            a complete collection.
     """
 
     items: list[Memory]
-    next_cursor: str | Unset | None = UNSET
+    pagination: MemoryPagination | Unset | None = UNSET
 
     def to_dict(self) -> dict[str, Any]:
+        from ..models.memory_pagination import MemoryPagination
+
         items = []
         for items_item_data in self.items:
             items_item = items_item_data.to_dict()
             items.append(items_item)
 
-        next_cursor: str | Unset | None
-        if isinstance(self.next_cursor, Unset):
-            next_cursor = UNSET
+        pagination: dict[str, Any] | Unset | None
+        if isinstance(self.pagination, Unset):
+            pagination = UNSET
+        elif isinstance(self.pagination, MemoryPagination):
+            pagination = self.pagination.to_dict()
         else:
-            next_cursor = self.next_cursor
+            pagination = self.pagination
 
         field_dict: dict[str, Any] = {}
 
@@ -44,14 +50,15 @@ class MemoryCollection:
                 "items": items,
             }
         )
-        if next_cursor is not UNSET:
-            field_dict["next_cursor"] = next_cursor
+        if pagination is not UNSET:
+            field_dict["pagination"] = pagination
 
         return field_dict
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         from ..models.memory import Memory
+        from ..models.memory_pagination import MemoryPagination
 
         d = dict(src_dict)
         items = []
@@ -61,18 +68,26 @@ class MemoryCollection:
 
             items.append(items_item)
 
-        def _parse_next_cursor(data: object) -> str | Unset | None:
+        def _parse_pagination(data: object) -> MemoryPagination | Unset | None:
             if data is None:
                 return data
             if isinstance(data, Unset):
                 return data
-            return cast(str | Unset | None, data)
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                pagination_type_0 = MemoryPagination.from_dict(data)
 
-        next_cursor = _parse_next_cursor(d.pop("next_cursor", UNSET))
+                return pagination_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(MemoryPagination | Unset | None, data)
+
+        pagination = _parse_pagination(d.pop("pagination", UNSET))
 
         memory_collection = cls(
             items=items,
-            next_cursor=next_cursor,
+            pagination=pagination,
         )
 
         return memory_collection

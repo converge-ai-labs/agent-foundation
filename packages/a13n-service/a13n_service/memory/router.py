@@ -46,7 +46,7 @@ async def list_memories(
     actor: Actor,
     workspace_id: WorkspaceId,
     scope: Scope,
-    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    limit: Annotated[int, Query(ge=1, le=1000, description="Maximum loaded records, not a total count.")] = 1000,
     cursor: Annotated[str | None, Query(max_length=2048)] = None,
 ) -> MemoryCollection:
     return await _memory(request).list(

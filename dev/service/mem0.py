@@ -7,9 +7,9 @@ from urllib.parse import urlsplit
 
 import httpx2
 
-from .environment import ROOT, Environment
+from dev.mem0.configuration import FIXTURE_URL, configure
 
-FIXTURE_URL = "http://embeddings:18081/v1"
+from .environment import ROOT, Environment
 
 
 @dataclass(frozen=True)
@@ -104,16 +104,17 @@ class Mem0:
         settings = self.environment.settings.memory
         assert settings.api_key is not None and settings.base_url is not None
         try:
-            with httpx2.Client(trust_env=False, follow_redirects=False, timeout=5) as client:
-                response = client.get(
-                    settings.base_url.rstrip("/") + "/memories/page",
-                    headers={"X-API-Key": settings.api_key.get_secret_value()},
-                    params={"user_id": "a13n-dev-startup-check", "top_k": 1},
-                )
-                response.raise_for_status()
+            with httpx2.Client(
+                base_url=settings.base_url.rstrip("/") + "/",
+                headers={"X-API-Key": settings.api_key.get_secret_value()},
+                trust_env=False,
+                follow_redirects=False,
+                timeout=30,
+            ) as client:
+                configure(client, os.environ)
         except httpx2.HTTPError:
             raise RuntimeError(
-                "Mem0 authentication or pagination check failed. Check memory.api_key and the OSS container logs; existing memories have not been reset."
+                "Mem0 configuration or authentication check failed. Check memory.api_key, model settings and the OSS container logs; no reset was requested."
             ) from None
         print(f"Mem0 OSS: http://127.0.0.1:{self.port}")
         if os.environ.get("MEM0_OSS_EMBEDDING_BASE_URL", FIXTURE_URL) == FIXTURE_URL:

@@ -58,7 +58,9 @@ setup_correlation_secret = "local-public-test-correlation-key-not-a-real-secret"
 private_endpoint_cidrs = ["0.0.0.0/0", "::/0"]
 
 [memory]
-# make setup / make dev starts the checkout-owned Mem0 OSS server.
+# make setup / make dev starts unmodified OSS and configures it via its native API.
+# Existing external OSS deployments need no patch or replacement image.
+# Management listing loads up to 1,000 records; it is not full-collection pagination.
 # This selects the backend, not Agent behavior: set config.memory on an Agent
 # revision to enable recall and memory tools. See dev/mem0/README.md.
 provider = "oss"

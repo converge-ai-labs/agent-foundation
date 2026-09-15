@@ -45,7 +45,7 @@ For context lifecycle features, callers supply Harness-managed policy through th
 
 ## Mem0 Long-Term Memory
 
-Memory is opt-in. OSS is the primary backend: open a native transport at Host startup and pass it to `Mem0Capability`. The [Service memory guide](../a13n-service/memory.md) covers hosted authorization and deployment. The OSS endpoint must include the pinned PGVector pagination extension described in the repository's `dev/mem0/README.md`.
+Memory is opt-in. OSS is the primary backend: open a native transport at Host startup and pass it to `Mem0Capability`. The [Service memory guide](../a13n-service/memory.md) covers hosted authorization and deployment. The OSS adapter calls public native endpoints on an existing deployment; no source patch or special server image is required. Its list operation is bounded, not paginated.
 
 ```python
 from a13n_harness.capabilities import Mem0Capability, Mem0Scope
@@ -62,7 +62,7 @@ A fixed scope exposes `memory_search`, `memory_list`, and `memory_add` without a
 
 The first eligible input in each logical run performs at most one bounded recall. Recalled records enter only as an untrusted input preamble. They can remain in history as a record of what the model observed, not as restored memory authority. Internal model recovery reuses the same result. `memory_add` stores exactly the supplied bounded text with Mem0 inference disabled; update and delete are not model-visible.
 
-There is no implicit environment configuration or Run-owned client. Hosts can pass trusted `scope_ids` to replace claim-derived values with their own tenant-isolated IDs. OSS performs bounded concurrent per-scope searches and combines the results; a failed scope never yields successful partial recall. Listing uses native cursor pages.
+There is no implicit environment configuration or Run-owned client. Hosts can pass trusted `scope_ids` to replace claim-derived values with their own tenant-isolated IDs. OSS performs bounded concurrent per-scope searches and combines the results; a failed scope never yields successful partial recall. OSS listing uses native `GET /memories` with a result limit and no cursor; Platform supports native cursor pages. Neither tool results nor a short OSS list prove that the full memory collection was loaded.
 
 Platform is an independent adapter, not an OSS compatibility mode:
 

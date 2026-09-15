@@ -2,7 +2,7 @@
 
 ## Design Position
 
-Service exposes authorized long-term memory backed by Mem0. OSS is the primary supported backend, using its native server and PGVector storage. Platform is a separate native SDK adapter. Service owns authorization, trusted namespaces, Agent selection, and safe API projections; Mem0 owns records, embeddings, and native history. Service maintains no memory table, search index, replicated content, or provider job queue.
+Service exposes authorized long-term memory backed by Mem0. OSS is the primary supported backend, using the existing deployment's public native server API and operator-owned storage. Platform is a separate native SDK adapter. Service owns authorization, trusted namespaces, Agent selection, and safe API projections; Mem0 owns records, embeddings, and native history. Service maintains no memory table, search index, replicated content, or provider job queue.
 
 [Harness memory](../a13n-harness/09-context-and-memory.md#mem0-long-term-memory) owns recall and model tools. [Agent Management](28-agent-management.md) owns immutable selections and Run overrides; [IAM](33-identity-and-access-management.md) owns grants. Process configuration owns deployment secrets, not Agent resources.
 
@@ -10,7 +10,7 @@ Service exposes authorized long-term memory backed by Mem0. OSS is the primary s
 
 `memory.provider` selects `none` (default), `oss`, or `platform`. Enabled backends require `api_key`; OSS also requires `base_url`. `timeout_seconds` bounds one management operation's backend I/O, including verification, and defaults to 30 seconds. Control and Worker each open one process-lifetime transport and close it on shutdown; Connectivity opens none. The library Capability borrows its backend. No Run reconstructs an SDK client or reads ambient Mem0 credentials.
 
-The supported OSS image pins the native server source and Mem0 core and adds PGVector keyset pagination. It is not a Platform protocol gateway. Other deployments must provide the same native pagination contract. Deployment changes select a backend, not an automatic data migration or fallback. Switching backend or embedding model requires operator-owned data migration.
+Integration composes public native operations. It requires no upstream source patch, replacement server image, custom route, or direct storage access. The development image pins unmodified upstream server/core sources for repeatable validation; existing deployments providing the same public API can be used directly. The adapter does not add capabilities missing from the upstream server. Deployment changes select a backend, not an automatic data migration or fallback. Switching backend or embedding model requires operator-owned data migration.
 
 ## Subjects and Authority
 
@@ -46,18 +46,22 @@ Each accepted root and child definition retains its own selection. A Run overrid
 
 All routes use `/api/v1/workspaces/{workspace}/memories`. Query parameter `scope` is required. `thread` and `agent` require `subject_id`; `user` forbids it and uses the authenticated User. Resource identifiers are immutable Service IDs, not aliases. The path memory ID remains an opaque native provider identifier.
 
-| Method and suffix     | Input                                                 | Result                      |
-| --------------------- | ----------------------------------------------------- | --------------------------- |
-| GET collection        | `limit` 1–100 (default 50), optional `cursor`         | `MemoryCollection`          |
-| POST collection       | `{ "text": string }`                                  | 201 `Memory`                |
-| POST `/search`        | `{ "query": string, "limit": 20, "threshold": null }` | `MemoryCollection`          |
-| GET `/{memory_id}`    | Subject query                                         | `Memory`                    |
-| PUT `/{memory_id}`    | `{ "text": string }`                                  | `Memory`                    |
-| DELETE `/{memory_id}` | Subject query                                         | 204 after confirmed absence |
+| Method and suffix     | Input                                                     | Result                      |
+| --------------------- | --------------------------------------------------------- | --------------------------- |
+| GET collection        | `limit` 1–1,000 (default 1,000), optional native `cursor` | `MemoryCollection`          |
+| POST collection       | `{ "text": string }`                                      | 201 `Memory`                |
+| POST `/search`        | `{ "query": string, "limit": 20, "threshold": null }`     | `MemoryCollection`          |
+| GET `/{memory_id}`    | Subject query                                             | `Memory`                    |
+| PUT `/{memory_id}`    | `{ "text": string }`                                      | `Memory`                    |
+| DELETE `/{memory_id}` | Subject query                                             | 204 after confirmed absence |
 
-Text is 1–8,000 characters, stored verbatim with inference disabled. Search query is 1–16,000 characters, limit is 1–100, and threshold is optional in [0, 1]. `Memory` contains `id`, `memory`, and nullable finite `score`; no credentials, provider payload, namespace values, or configuration diagnostics are projected. `MemoryCollection` contains `items` and nullable `next_cursor`.
+Text is 1–8,000 characters, stored verbatim with inference disabled. Search query is 1–16,000 characters, limit is 1–100, and threshold is optional in [0, 1]. `Memory` contains `id`, `memory`, and nullable finite `score`; no credentials, provider payload, namespace values, or configuration diagnostics are projected. `MemoryCollection` contains `items` and nullable `pagination`. Null `pagination` identifies a bounded result with no traversal or completeness guarantee. A pagination object contains `next_cursor`; null within that object means the final native page. This distinguishes unavailable traversal from exhausted traversal without provider or development-status fields.
 
-The cursor envelope is bound to subject, backend kind, and page size. A mismatched cursor is invalid. OSS pages traverse native UUID IDs ascending using an exclusive keyset cursor and at most `limit + 1` storage rows. Expired rows are hidden after selection; an empty page can still have a continuation. Clients must stop only when `next_cursor` is null. Pages are not snapshots: concurrent inserts before the cursor become visible after restarting traversal. There is no 1,000-row cutoff or offset over a truncated response. Platform uses its native page/page-size continuation and never follows returned URLs.
+OSS listing calls native `GET /memories` once with trusted subject filters and `top_k=limit`, loading at most 1,000 records by default. It returns `pagination=null` and rejects supplied cursors; no private pagination endpoint or fabricated offset exists. Results retain native ordering and expiry filtering. A short or empty list does not prove exhaustion: the native provider can cap or filter its candidate set. The 1,000-row management bound is not a storage or recall limit. Automatic recall searches the provider independently, not this loaded subset.
+
+A client may paginate the already-loaded subset locally, but must describe counts as loaded records rather than a complete total, and must display a bounded-list hint. For example: "Showing up to 1,000 loaded memories. More may exist; search for relevant memories." Local pages are display slices, not server continuation or a complete export. Search is relevance-ranked and is not a substitute for full export either.
+
+Platform preserves native page/page-size traversal, with each request capped at its 200-record page ceiling. The cursor envelope is bound to subject, backend kind, and requested limit; a mismatch is invalid. Clients follow `pagination.next_cursor` only when a pagination object exists. Returned provider URLs are never followed. Search returns bounded results with `pagination=null` on both backends.
 
 ## Completion and Failures
 

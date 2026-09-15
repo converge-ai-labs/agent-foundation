@@ -1,6 +1,6 @@
 # Local Mem0 OSS
 
-OSS is the primary memory backend. This directory builds the native Mem0 server from commit `c7ee362aff94a369af70f13f2b4f853f6793ff4c` with core `mem0ai==2.0.19`, separate PGVector storage and native history, plus a small keyset-pagination extension. It is not a Platform-compatible gateway, Service database mirror, or fake persistence service.
+OSS is the primary memory backend. This directory builds **unmodified** native Mem0 server sources from commit `c7ee362aff94a369af70f13f2b4f853f6793ff4c` with core `mem0ai==2.0.19`, separate PGVector storage and native history. It adds no source patch, private route, Platform gateway, or Service memory mirror. Existing OSS deployments providing the public API can be connected directly; this development image is not an integration requirement.
 
 ## Start
 
@@ -13,7 +13,7 @@ make mem0-down   # Stop containers; preserve volumes
 
 `dev/service/local.toml` selects OSS at `http://127.0.0.1:18888` with the public fixture key `local-mem0-api-key`. The helper derives the Compose project, API key and host port from the selected `SERVICE_CONFIG`, not ambient `MEM0_LOCAL_*` variables or `.env`. Only a local `127.0.0.1` OSS endpoint is managed; external OSS and Platform are operator-owned. PostgreSQL and the embedding fixture have no host ports. The Mem0 process is non-root.
 
-The default embedding endpoint is a deterministic, hashed-word, 128-dimensional fixture. It validates storage, HTTP contracts, CRUD, scope isolation, and pagination without paid credentials. **It does not validate semantic embedding quality or real LLM inference.** The separate Service scripted model is not a memory model. Explicit writes use `infer=false`, so neither writes nor retrieval require chat completion. The fixture rejects chat requests instead of pretending to perform extraction.
+The default embedding endpoint is a deterministic, hashed-word, 128-dimensional fixture. It validates storage, HTTP contracts, CRUD, scope isolation, and bounded listing without paid credentials. **It does not validate semantic embedding quality or real LLM inference.** The separate Service scripted model is not a memory model. Explicit writes use `infer=false`, so neither writes nor retrieval require chat completion. The fixture rejects chat requests instead of pretending to perform extraction.
 
 Service running does not enable Agent memory. Set the selected Agent revision's `config.memory` explicitly as shown in the [Service guide](../../docs/a13n-service/memory.md). This work adds no Console page or UI switch.
 
@@ -42,9 +42,9 @@ export MEM0_OSS_LLM_API_KEY="$PRIVATE_LLM_KEY"
 
 These settings configure the native server for operator-owned inference workflows. Service memory writes remain explicit and inference-disabled; configuring an LLM does not enable terminal transcript extraction.
 
-Changing embedding model or dimensions does not re-embed existing records. Startup checks the existing collection's vector size and refuses a mismatch without deleting data. Restore the old configuration or choose a new collection and migrate explicitly. Even equal-dimensional models can use incompatible vector spaces: choose a new collection when changing the model. `make dev-reset` resets Service-owned storage, not Mem0 volumes. There is no memory reset command.
+Changing embedding model or dimensions does not re-embed existing records. Configuration goes through native `POST /configure`; the helper does not inspect or modify the database. A mismatched existing collection can fail on native reads or writes. Restore the old configuration or choose a new `MEM0_OSS_COLLECTION` and migrate explicitly. Startup is not a guarantee that existing vectors match the selected model. Even equal-dimensional models can use incompatible vector spaces: choose a new collection when changing the model. `make dev-reset` resets Service-owned storage, not Mem0 volumes. There is no memory reset command.
 
-The three keys have distinct owners: `memory.api_key` authenticates Service to Mem0; `MEM0_OSS_EMBEDDING_API_KEY` and `MEM0_OSS_LLM_API_KEY` authenticate Mem0 to its model endpoints. Check `make mem0-logs` for native connectivity or dimension errors. Local startup verifies authentication and pagination, not semantic quality. Development diagnostics stay in startup logs and this guide, never product response schemas.
+The three keys have distinct owners: `memory.api_key` authenticates Service to Mem0; `MEM0_OSS_EMBEDDING_API_KEY` and `MEM0_OSS_LLM_API_KEY` authenticate Mem0 to its model endpoints. Check `make mem0-logs` for native connectivity or dimension errors. Local startup applies model settings through native `POST /configure` and verifies authenticated `GET /memories`, not semantic quality. Development diagnostics stay in startup logs and this guide, never product response schemas.
 
 ## API walkthrough
 
@@ -68,11 +68,26 @@ curl --fail-with-body -H "Authorization: Bearer $SERVICE_TOKEN" \
 
 For an Agent use `scope=agent&subject_id=$AGENT_ID`; for a Thread use `scope=thread&subject_id=$THREAD_ID`. User scope forbids `subject_id`. Viewer is read-only; Runner can write. Add/update preserve nonblank text exactly. Do not automatically repeat `memory_write_unconfirmed`: a timed-out write may have committed.
 
-## Pagination extension
+## Native listing and client-side pages
 
-The upstream pinned server's unpaginated list is not sufficient for management APIs. `patches/pgvector-pagination.patch` adds `PGVector.list_page`, using the native filter builder, UUID ascending keysets, and `LIMIT top_k + 1`. `pagination.py` exposes authenticated `GET /memories/page` before the dynamic ID route. Other operations retain the upstream API, including `POST /search`; Platform DTOs are not involved.
+The adapter calls public `GET /memories` with a trusted subject and `top_k`. Service loads at most 1,000 records by default and returns `pagination=null`: a bounded set, not a complete collection or a native page cursor. Records beyond that subset remain stored and searchable. A short or empty result does not prove completeness because native storage and expiry filters can limit results.
 
-The patch is deliberately small and upstreamable. Build applies it with zero fuzz and guarded source replacements so source drift fails visibly. An upstream upgrade must rerun native integration tests rather than silently keep a compatibility fallback. Expiry filtering can yield empty pages with continuation; stop only at null `next_cursor`. Pagination is not a snapshot under concurrent inserts.
+Clients may slice these loaded records into local display pages. Show a hint such as "Showing up to 1,000 loaded memories. More may exist; search for relevant memories." Label counts as loaded records rather than total memories. Do not offer a next server page, a guaranteed total, or a full-export claim. Platform preserves its native pagination separately; it does not define the OSS contract. See [Service memory](../../docs/a13n-service/memory.md) for the response shape. No frontend code is added here.
+
+The upstream Dashboard follows this same bounded approach: [PR #5753](https://github.com/mem0ai/mem0/pull/5753) adds `top_k=1000` loading with client-side pages. [Issue #3751](https://github.com/mem0ai/mem0/issues/3751) discusses missing OSS traversal. Neither is a reason to patch the user's deployment.
+
+## Standalone Compose
+
+The dev helper performs both startup and native configuration. When running Compose directly for disposable integration tests, perform the same two steps:
+
+```bash
+MEM0_LOCAL_PORT=18889 docker compose --env-file /dev/null \
+  --project-name a13n-mem0-test --file dev/mem0/compose.yaml \
+  up -d --build --wait
+uv run --locked python -m dev.mem0.configuration --base-url http://127.0.0.1:18889
+```
+
+Run this configuration command only against your checkout-owned test instance: it changes the explicitly selected endpoint. It uses `MEM0_LOCAL_API_KEY` (default public fixture key) and `MEM0_OSS_*` model settings from the invoking shell, and persists configuration through Mem0's native API. The Service adapter never configures the backend; the dev helper skips external operator-owned backends. The Compose health check only checks the OpenAPI endpoint; configure before writing memories. No patched initialization path exists.
 
 ## Validation
 
@@ -84,7 +99,7 @@ uv run --locked pytest packages/a13n-service/tests/memory
 uv run --locked pytest dev/service/tests
 ```
 
-For real native OSS tests, start a disposable instance or use the local stack, then explicitly opt in. Tests create records and delete only their own IDs; the pagination test writes more than 1,000 records. Do not point this at production.
+For real native OSS tests, start a disposable instance or use the local stack, then explicitly opt in. Tests create records and delete only their own IDs; the bounded-list test writes more than 1,000 records and confirms only 1,000 are loaded without claiming completion. Do not point this at production.
 
 ```bash
 TEST_MEM0_OSS_URL=http://127.0.0.1:18888 \
@@ -92,4 +107,4 @@ TEST_MEM0_OSS_API_KEY=local-mem0-api-key \
 uv run --locked pytest packages/a13n-service/tests/memory/test_oss_integration.py -q
 ```
 
-This exercises real Service HTTP authorization, native CRUD/search, PGVector pagination and expired pages. Platform validation uses the installed native SDK with mocked HTTP transport only; no live Platform key is required. Run Harness and Service test paths separately because their test packages use the same import namespace.
+This exercises real Service HTTP authorization, native CRUD/search, the 1,000-record list bound and native expiry filtering. Platform validation uses the installed native SDK with mocked HTTP transport only; no live Platform key is required. Run Harness and Service test paths separately because their test packages use the same import namespace.

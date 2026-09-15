@@ -8189,6 +8189,28 @@
             "title": "Items",
             "type": "array"
           },
+          "pagination": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemoryPagination"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Native pagination when available. Null means a bounded result, not a complete collection."
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "MemoryCollection",
+        "type": "object"
+      },
+      "MemoryPagination": {
+        "additionalProperties": false,
+        "description": "Native traversal; a null cursor means the final page of that traversal.",
+        "properties": {
           "next_cursor": {
             "anyOf": [
               {
@@ -8202,9 +8224,9 @@
           }
         },
         "required": [
-          "items"
+          "next_cursor"
         ],
-        "title": "MemoryCollection",
+        "title": "MemoryPagination",
         "type": "object"
       },
       "MemorySearch": {
@@ -39481,12 +39503,14 @@
             }
           },
           {
+            "description": "Maximum loaded records, not a total count.",
             "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
-              "default": 50,
-              "maximum": 100,
+              "default": 1000,
+              "description": "Maximum loaded records, not a total count.",
+              "maximum": 1000,
               "minimum": 1,
               "title": "Limit",
               "type": "integer"

@@ -364,6 +364,8 @@ pub mod memory;
 pub use self::memory::Memory;
 pub mod memory_collection;
 pub use self::memory_collection::MemoryCollection;
+pub mod memory_pagination;
+pub use self::memory_pagination::MemoryPagination;
 pub mod memory_search;
 pub use self::memory_search::MemorySearch;
 pub mod memory_selection;

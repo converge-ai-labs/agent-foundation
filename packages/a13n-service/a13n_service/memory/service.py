@@ -8,6 +8,7 @@ from contextlib import asynccontextmanager
 
 from a13n_harness.capabilities.mem0_backends import (
     Mem0OSSBackend,
+    Mem0PaginationUnsupported,
     Mem0PlatformBackend,
     Mem0RecordNotFound,
     Mem0Subject,
@@ -18,7 +19,7 @@ from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.collection_cursors import decode_collection_cursor, encode_collection_cursor
 from a13n_service.iam import AuthenticatedActor
 
-from .domain import Memory, MemoryCollection, MemoryScope, MemorySearch
+from .domain import Memory, MemoryCollection, MemoryPagination, MemoryScope, MemorySearch
 from .scopes import MemoryAuthorizer
 
 NativeBackend = Mem0OSSBackend | Mem0PlatformBackend
@@ -49,6 +50,12 @@ async def memory_io(timeout: float, *, write: bool = False) -> AsyncIterator[Non
             raise failure(
                 "memory_write_unconfirmed",
                 "The memory change could not be confirmed. Check the memory before retrying.",
+            ) from error
+        if isinstance(error, Mem0PaginationUnsupported):
+            raise failure(
+                "memory_pagination_unsupported",
+                "This memory backend supports bounded lists, not cursor traversal.",
+                ErrorCategory.invalid_request,
             ) from error
         if isinstance(error, Mem0RecordNotFound):
             raise failure("memory_not_found", "Memory not found.", ErrorCategory.not_found) from error
@@ -88,7 +95,7 @@ class MemoryService:
         actor: AuthenticatedActor,
         workspace_id: str,
         selection: MemoryScope,
-        limit: int = 50,
+        limit: int = 1000,
         cursor: str | None = None,
     ) -> MemoryCollection:
         subject = await self.authorizer.authorize(actor=actor, workspace_id=workspace_id, selection=selection)
@@ -114,12 +121,14 @@ class MemoryService:
             next_cursor = raw.get("next_cursor")
             if next_cursor is not None and (not isinstance(next_cursor, str) or next_cursor == native_cursor):
                 raise ValueError("Invalid memory continuation")
-            return MemoryCollection(
-                items=tuple(project_memory(item) for item in raw["results"]),
-                next_cursor=encode_collection_cursor({"cursor": next_cursor}, scope=scope, kind="memories")
-                if next_cursor
-                else None,
-            )
+            pagination = None
+            if "next_cursor" in raw:
+                pagination = MemoryPagination(
+                    next_cursor=encode_collection_cursor({"cursor": next_cursor}, scope=scope, kind="memories")
+                    if next_cursor
+                    else None,
+                )
+            return MemoryCollection(items=tuple(project_memory(item) for item in raw["results"]), pagination=pagination)
 
     async def search(
         self, *, actor: AuthenticatedActor, workspace_id: str, selection: MemoryScope, query: MemorySearch

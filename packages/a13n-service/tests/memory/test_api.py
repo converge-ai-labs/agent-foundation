@@ -42,7 +42,7 @@ def native_transport(records, calls, response_type):
             return response_type(
                 200, json={"results": [{"id": memory_id, "event": "ADD", "memory": records[memory_id]["memory"]}]}
             )
-        if path in {"/memories/page", "/v3/memories/", "/search", "/v3/memories/search/"}:
+        if path in {"/memories", "/v3/memories/", "/search", "/v3/memories/search/"}:
             scope = body.get("filters") or {
                 key: request.url.params[key] for key in ("run_id", "agent_id", "user_id") if key in request.url.params
             }
@@ -52,20 +52,12 @@ def native_transport(records, calls, response_type):
             if search:
                 for value in selected:
                     value["score"] = 0.9
-            offset = (
-                (int(request.url.params.get("page", "1")) - 1) * limit
-                if platform
-                else int(request.url.params.get("cursor", "0"))
-            )
+            offset = (int(request.url.params.get("page", "1")) - 1) * limit if platform else 0
             more = offset + limit < len(selected) and not search
-            return response_type(
-                200,
-                json={
-                    "results": selected[offset : offset + limit],
-                    "next": "https://not-followed.invalid/" if more else None,
-                    "next_cursor": str(offset + limit) if more else None,
-                },
-            )
+            result = {"results": selected[offset : offset + limit]}
+            if platform:
+                result["next"] = "https://not-followed.invalid/" if more else None
+            return response_type(200, json=result)
         memory_id = path.rstrip("/").split("/")[-1]
         if memory_id not in records:
             return response_type(404, json={"detail": "not found"})
@@ -123,14 +115,22 @@ async def test_full_native_api_lifecycle_and_scope_isolation(
             await client.post(path, params=params, json={"text": "Second memory"})
             page = await client.get(path, params={**params, "limit": 1})
             assert page.status_code == 200, page.text
-            assert len(page.json()["items"]) == 1 and page.json()["next_cursor"]
-            next_page = await client.get(path, params={**params, "limit": 1, "cursor": page.json()["next_cursor"]})
-            assert next_page.status_code == 200, next_page.text
-            assert len(next_page.json()["items"]) == 1 and next_page.json()["next_cursor"] is None
-            assert page.json()["items"][0]["id"] != next_page.json()["items"][0]["id"]
-            assert (
-                await client.get(path, params={**params, "limit": 2, "cursor": page.json()["next_cursor"]})
-            ).status_code == 400
+            assert len(page.json()["items"]) == 1
+            if provider == "platform":
+                cursor = page.json()["pagination"]["next_cursor"]
+                assert cursor
+                next_page = await client.get(path, params={**params, "limit": 1, "cursor": cursor})
+                assert next_page.status_code == 200, next_page.text
+                assert len(next_page.json()["items"]) == 1
+                assert next_page.json()["pagination"] == {"next_cursor": None}
+                assert page.json()["items"][0]["id"] != next_page.json()["items"][0]["id"]
+                assert (await client.get(path, params={**params, "limit": 2, "cursor": cursor})).status_code == 400
+            else:
+                assert page.json()["pagination"] is None
+                # No cursor, total count, or claim that this one-record subset is exhaustive.
+                assert set(page.json()) == {"items", "pagination"}
+                assert (await client.get(path, params=params)).json()["pagination"] is None
+                assert (await client.get(path, params={**params, "cursor": "invented"})).status_code == 400
             search = await client.post(path + "/search", params=params, json={"query": "text"})
             assert search.status_code == 200 and len(search.json()["items"]) == 2, search.text
             assert (await client.get(path + "/" + memory_id, params=params)).json()["memory"] == created.json()[
@@ -177,3 +177,48 @@ def test_namespace_covers_organization_workspace_subject_and_kind():
     assert base != memory_subject("other", WORKSPACE_ID, Mem0Scope.USER, USER_ID)
     assert base != memory_subject(ORG_ID, WORKSPACE_ID, Mem0Scope.AGENT, USER_ID)
     assert base != memory_subject(ORG_ID, WORKSPACE_ID, Mem0Scope.USER, "other")
+
+
+async def test_oss_default_loads_1000_for_client_paging_without_completeness_claim(
+    memory_sessions, service_sqlite_database, tmp_path
+):
+    from a13n_service.collection_cursors import encode_collection_cursor
+
+    subject = memory_subject(ORG_ID, WORKSPACE_ID, Mem0Scope.USER, USER_ID)
+    records = {str(index): {"id": str(index), "memory": f"record {index}", **subject.filter()} for index in range(1005)}
+    calls = []
+    transport = native_transport(records, calls, httpx2.Response)
+
+    def handle(request):
+        assert request.method == "GET" and request.url.path == "/memories"
+        assert request.url.params["top_k"] == "1000"
+        assert "cursor" not in request.url.params
+        return transport(request)
+
+    async def authenticate(_request):
+        return actor()
+
+    app = create_app(
+        settings(tmp_path, service_sqlite_database), components=Components(request_authenticator=authenticate)
+    )
+    async with httpx2.AsyncClient(base_url="http://mem0/", transport=httpx2.MockTransport(handle)) as remote:
+        async with app.router.lifespan_context(app):
+            app.state.runtime.shared.memories.backend = Mem0OSSBackend(remote)
+            async with httpx2.AsyncClient(
+                transport=httpx2.ASGITransport(app=app), base_url="http://testserver"
+            ) as client:
+                path = f"/api/v1/workspaces/{WORKSPACE_ID}/memories"
+                response = await client.get(path, params={"scope": "user"})
+                assert response.status_code == 200, response.text
+                assert len(response.json()["items"]) == 1000
+                assert response.json()["pagination"] is None
+                assert set(response.json()) == {"items", "pagination"}
+                cursor = encode_collection_cursor(
+                    {"cursor": "invented"},
+                    scope={"subject": subject.filter(), "limit": 1000, "backend": "Mem0OSSBackend"},
+                    kind="memories",
+                )
+                rejected = await client.get(path, params={"scope": "user", "cursor": cursor})
+                assert rejected.status_code == 400
+                assert rejected.json()["error"]["code"] == "memory_pagination_unsupported"
+                assert len(calls) == 1
