@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from typing import TYPE_CHECKING
 
 from a13n_environment import EnvironmentProviderCatalog
 from a13n_harness.memory_plugins import MemoryBackendCatalog
@@ -24,6 +25,9 @@ from a13n_service.skills.sources import GitHubCredentialResolver
 from a13n_service.trace_query.provider import TraceQueryProviderRegistry
 from a13n_service.trace_query.service import TraceAccessAuthorizer
 
+if TYPE_CHECKING:
+    from a13n_service.models.catalog import ModelCatalog
+
 
 @dataclass(frozen=True, slots=True)
 class Components:
@@ -33,6 +37,7 @@ class Components:
     agent_resolver: AgentResolver | None = None
     agent_invocation_resolver: AgentInvocationResolver | None = None
     model_connection_tester: ModelConnectionTester | None = None
+    model_catalog: ModelCatalog | None = None
     environment_provider_catalog: EnvironmentProviderCatalog | None = None
     memory_backend_catalog: MemoryBackendCatalog | None = None
     skill_github_acquirer: GitHubSkillAcquirer | None = None

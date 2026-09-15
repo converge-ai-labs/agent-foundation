@@ -43,7 +43,7 @@ def agent_config(name: str, **values) -> dict:
     toolsets.update(values.pop("toolsets", {}))
     return {
         "toolsets": toolsets,
-        "model": {"model_key": "local-scripted", "characteristics": {"context_window": 32768}},
+        "model": {"model_key": "local-scripted", "characteristics": {"context_window_tokens": 32768}},
         "instructions": "Review fictional project materials using the scripted local development model.",
         "input_adapter": {"adapter_key": "native", "config": {}},
         "protocol": {"schema_version": "1", "public_name": name, "output_modes": ["text"], "limits": {}},

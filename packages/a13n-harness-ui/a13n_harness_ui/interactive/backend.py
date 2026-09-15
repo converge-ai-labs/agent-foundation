@@ -185,7 +185,7 @@ class SessionBackend:
             else model.settings.get("thinking", "default")
         )
         self.status.context_window = (
-            None if model.model_characteristics is None else model.model_characteristics.context_window
+            None if model.model_characteristics is None else model.model_characteristics.context_window_tokens
         )
         return True
 

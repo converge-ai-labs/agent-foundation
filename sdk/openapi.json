@@ -1060,7 +1060,7 @@
         "additionalProperties": false,
         "properties": {
           "characteristics": {
-            "$ref": "#/components/schemas/HarnessModelCharacteristics"
+            "$ref": "#/components/schemas/AgentModelCharacteristics"
           },
           "model_key": {
             "title": "Model Key",
@@ -1078,6 +1078,47 @@
           "model_key"
         ],
         "title": "AgentModel",
+        "type": "object"
+      },
+      "AgentModelCharacteristics": {
+        "additionalProperties": false,
+        "description": "Agent-owned context policy layered over Model declarations.",
+        "properties": {
+          "compact_threshold": {
+            "default": 0.9,
+            "exclusiveMinimum": 0.0,
+            "maximum": 1.0,
+            "title": "Compact Threshold",
+            "type": "number"
+          },
+          "context_window_tokens": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Window Tokens"
+          },
+          "proactive_context_management_threshold": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": 0.65,
+            "title": "Proactive Context Management Threshold"
+          }
+        },
+        "title": "AgentModelCharacteristics",
         "type": "object"
       },
       "AgentReviewer": {
@@ -2313,6 +2354,65 @@
           "url"
         ],
         "title": "AuthorizationRedirect",
+        "type": "object"
+      },
+      "BaseModelCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "base_model": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Base Model",
+            "type": "string"
+          },
+          "inferred_model_api": {
+            "anyOf": [
+              {
+                "maxLength": 96,
+                "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Inferred Model Api"
+          },
+          "model_api_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Api Label"
+          }
+        },
+        "required": [
+          "base_model",
+          "inferred_model_api",
+          "model_api_label"
+        ],
+        "title": "BaseModelCandidate",
+        "type": "object"
+      },
+      "BaseModelCandidateCollection": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BaseModelCandidate"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "BaseModelCandidateCollection",
         "type": "object"
       },
       "BinaryContent": {
@@ -4559,6 +4659,22 @@
       "CreateModelRequest": {
         "additionalProperties": false,
         "properties": {
+          "base_model": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Model"
+          },
+          "declarations": {
+            "$ref": "#/components/schemas/ModelDeclarations"
+          },
           "description": {
             "anyOf": [
               {
@@ -4581,10 +4697,17 @@
             "type": "string"
           },
           "model_api": {
-            "maxLength": 96,
-            "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$",
-            "title": "Model Api",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 96,
+                "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Api"
           },
           "name": {
             "maxLength": 128,
@@ -4616,8 +4739,7 @@
           "key",
           "provider_id",
           "name",
-          "upstream_model",
-          "model_api"
+          "upstream_model"
         ],
         "title": "CreateModelRequest",
         "type": "object"
@@ -5159,35 +5281,6 @@
           "expected_version"
         ],
         "title": "DeleteQueuedSubmissionRequest",
-        "type": "object"
-      },
-      "DescribeModelRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "model_api": {
-            "anyOf": [
-              {
-                "maxLength": 96,
-                "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Model Api"
-          },
-          "upstream_model": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "Upstream Model",
-            "type": "string"
-          }
-        },
-        "required": [
-          "upstream_model"
-        ],
-        "title": "DescribeModelRequest",
         "type": "object"
       },
       "DeveloperMessage": {
@@ -6355,55 +6448,6 @@
           }
         },
         "title": "HTTPValidationError",
-        "type": "object"
-      },
-      "HarnessModelCharacteristics": {
-        "additionalProperties": false,
-        "description": "Resolved Harness characteristics of the active Agent model.",
-        "properties": {
-          "capabilities": {
-            "items": {
-              "$ref": "#/components/schemas/ModelCapability"
-            },
-            "title": "Capabilities",
-            "type": "array",
-            "uniqueItems": true
-          },
-          "compact_threshold": {
-            "default": 0.9,
-            "exclusiveMinimum": 0.0,
-            "maximum": 1.0,
-            "title": "Compact Threshold",
-            "type": "number"
-          },
-          "context_window": {
-            "anyOf": [
-              {
-                "exclusiveMinimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Context Window"
-          },
-          "proactive_context_management_threshold": {
-            "anyOf": [
-              {
-                "maximum": 1.0,
-                "minimum": 0.0,
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": 0.65,
-            "title": "Proactive Context Management Threshold"
-          }
-        },
-        "title": "HarnessModelCharacteristics",
         "type": "object"
       },
       "HookSubscription": {
@@ -8599,6 +8643,17 @@
       "Model": {
         "additionalProperties": false,
         "properties": {
+          "base_model": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Model"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -8606,6 +8661,9 @@
           },
           "created_by": {
             "$ref": "#/components/schemas/PrincipalRef"
+          },
+          "declarations": {
+            "$ref": "#/components/schemas/ModelDeclarations"
           },
           "description": {
             "anyOf": [
@@ -8725,6 +8783,9 @@
           "limits": {
             "$ref": "#/components/schemas/ModelLimits"
           },
+          "native_profile": {
+            "$ref": "#/components/schemas/ModelProfile"
+          },
           "parameter_support": {
             "additionalProperties": {
               "enum": [
@@ -8774,6 +8835,131 @@
         ],
         "title": "ModelCapability",
         "type": "string"
+      },
+      "ModelCatalogMatch": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/ModelCatalogSuggestion"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "source": {
+            "enum": [
+              "none",
+              "explicit",
+              "exact",
+              "normalized",
+              "name_tokens",
+              "ambiguous"
+            ],
+            "title": "Source",
+            "type": "string"
+          }
+        },
+        "required": [
+          "source"
+        ],
+        "title": "ModelCatalogMatch",
+        "type": "object"
+      },
+      "ModelCatalogSuggestion": {
+        "additionalProperties": false,
+        "properties": {
+          "base_model": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Base Model",
+            "type": "string"
+          },
+          "declarations": {
+            "$ref": "#/components/schemas/ModelDeclarations"
+          },
+          "model_api": {
+            "anyOf": [
+              {
+                "maxLength": 96,
+                "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Api"
+          },
+          "model_api_label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Api Label"
+          }
+        },
+        "required": [
+          "base_model",
+          "model_api",
+          "model_api_label",
+          "declarations"
+        ],
+        "title": "ModelCatalogSuggestion",
+        "type": "object"
+      },
+      "ModelCatalogSuggestionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "base_model": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Model"
+          },
+          "model_api": {
+            "anyOf": [
+              {
+                "maxLength": 96,
+                "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Api"
+          },
+          "provider_id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Provider Id",
+            "type": "string"
+          },
+          "upstream_model": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Upstream Model",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider_id",
+          "upstream_model"
+        ],
+        "title": "ModelCatalogSuggestionRequest",
+        "type": "object"
       },
       "ModelCollection": {
         "additionalProperties": false,
@@ -8840,69 +9026,80 @@
         "title": "ModelConnectionTestResult",
         "type": "object"
       },
-      "ModelDescription": {
+      "ModelDeclarations": {
         "additionalProperties": false,
+        "description": "Harness-facing facts and authoring choices declared for one saved Model.",
         "properties": {
-          "display_name": {
+          "capabilities": {
+            "items": {
+              "$ref": "#/components/schemas/ModelCapability"
+            },
+            "title": "Capabilities",
+            "type": "array",
+            "uniqueItems": true
+          },
+          "context_window_tokens": {
             "anyOf": [
               {
-                "maxLength": 128,
-                "minLength": 1,
-                "type": "string"
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Display Name"
+            "title": "Context Window Tokens"
           },
-          "limits": {
-            "$ref": "#/components/schemas/ModelLimits"
+          "max_output_tokens": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Output Tokens"
           },
-          "parameter_support": {
-            "additionalProperties": {
+          "pricing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelPricing"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "structured_output": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Structured Output"
+          },
+          "thinking_efforts": {
+            "default": [],
+            "items": {
               "enum": [
-                "supported",
-                "unsupported",
-                "unknown"
+                "minimal",
+                "low",
+                "medium",
+                "high",
+                "xhigh"
               ],
               "type": "string"
             },
-            "title": "Parameter Support",
-            "type": "object"
-          },
-          "profile": {
-            "$ref": "#/components/schemas/ModelProfile"
-          },
-          "settings_schema": {
-            "additionalProperties": true,
-            "title": "Settings Schema",
-            "type": "object"
-          },
-          "suggested_model_api": {
-            "title": "Suggested Model Api",
-            "type": "string"
-          },
-          "suggested_settings": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/JsonValue"
-            },
-            "title": "Suggested Settings",
-            "type": "object"
-          },
-          "upstream_model": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "Upstream Model",
-            "type": "string"
+            "title": "Thinking Efforts",
+            "type": "array"
           }
         },
-        "required": [
-          "upstream_model",
-          "suggested_model_api",
-          "settings_schema"
-        ],
-        "title": "ModelDescription",
+        "title": "ModelDeclarations",
         "type": "object"
       },
       "ModelDiscovery": {
@@ -8914,19 +9111,10 @@
             },
             "title": "Items",
             "type": "array"
-          },
-          "settings_schemas": {
-            "additionalProperties": {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            "title": "Settings Schemas",
-            "type": "object"
           }
         },
         "required": [
-          "items",
-          "settings_schemas"
+          "items"
         ],
         "title": "ModelDiscovery",
         "type": "object"
@@ -9001,7 +9189,7 @@
           "characteristics": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/HarnessModelCharacteristics"
+                "$ref": "#/components/schemas/AgentModelCharacteristics"
               },
               {
                 "type": "null"
@@ -9037,9 +9225,65 @@
         "title": "ModelOverride",
         "type": "object"
       },
+      "ModelPricing": {
+        "additionalProperties": false,
+        "description": "Editable USD prices per million tokens.",
+        "properties": {
+          "cache_read": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Read"
+          },
+          "cache_write": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Write"
+          },
+          "input": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input"
+          },
+          "output": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output"
+          }
+        },
+        "title": "ModelPricing",
+        "type": "object"
+      },
       "ModelProfile": {
         "additionalProperties": false,
-        "description": "Read-only Provider capability information returned by discovery and description.",
+        "description": "Read-only Provider capability information returned by discovery.",
         "properties": {
           "input_modalities": {
             "anyOf": [
@@ -9283,6 +9527,21 @@
             "title": "Display Name",
             "type": "string"
           },
+          "model_api_labels": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "title": "Model Api Labels",
+            "type": "object"
+          },
+          "settings_schemas": {
+            "additionalProperties": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Settings Schemas",
+            "type": "object"
+          },
           "supported_model_apis": {
             "items": {
               "type": "string"
@@ -9306,6 +9565,8 @@
           "credential_schema",
           "supported_model_apis",
           "default_model_api",
+          "model_api_labels",
+          "settings_schemas",
           "supports_model_discovery"
         ],
         "title": "ModelProviderDefinition",
@@ -11118,7 +11379,7 @@
         "additionalProperties": false,
         "properties": {
           "characteristics": {
-            "$ref": "#/components/schemas/HarnessModelCharacteristics"
+            "$ref": "#/components/schemas/AgentModelCharacteristics"
           },
           "model_id": {
             "maxLength": 72,
@@ -16186,6 +16447,29 @@
       "UpdateModelRequest": {
         "additionalProperties": false,
         "properties": {
+          "base_model": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Model"
+          },
+          "declarations": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ModelDeclarations"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "description": {
             "anyOf": [
               {
@@ -19550,6 +19834,64 @@
         "summary": "Complete Password Reset",
         "tags": [
           "identity-recovery"
+        ]
+      }
+    },
+    "/api/v1/base-models": {
+      "get": {
+        "operationId": "get_base_models",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BaseModelCandidateCollection"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "List Base Models",
+        "tags": [
+          "model-management"
         ]
       }
     },
@@ -27122,6 +27464,102 @@
         ]
       }
     },
+    "/api/v1/organizations/{organization}/model-catalog/suggestions": {
+      "post": {
+        "operationId": "post_organizations_organization_model_catalog_suggestions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization",
+            "required": true,
+            "schema": {
+              "title": "Organization",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelCatalogSuggestionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelCatalogMatch"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Suggest Organization Model Declarations",
+        "tags": [
+          "model-management"
+        ]
+      }
+    },
     "/api/v1/organizations/{organization}/model-providers": {
       "get": {
         "operationId": "get_organizations_organization_model_providers",
@@ -27584,111 +28022,6 @@
           }
         ],
         "summary": "Organization Update Model Provider",
-        "tags": [
-          "model-management"
-        ]
-      }
-    },
-    "/api/v1/organizations/{organization}/model-providers/{provider_id}/describe-model": {
-      "post": {
-        "operationId": "post_organizations_organization_model_providers_provider_id_describe_model",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "provider_id",
-            "required": true,
-            "schema": {
-              "title": "Provider Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "organization",
-            "required": true,
-            "schema": {
-              "title": "Organization",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DescribeModelRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ModelDescription"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid request.",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Service error.",
-            "headers": {
-              "Retry-After": {
-                "schema": {
-                  "type": "string"
-                }
-              },
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "SessionAuth": []
-          }
-        ],
-        "summary": "Organization Describe Provider Model",
         "tags": [
           "model-management"
         ]
@@ -42225,6 +42558,102 @@
         ]
       }
     },
+    "/api/v1/workspaces/{workspace}/model-catalog/suggestions": {
+      "post": {
+        "operationId": "post_workspaces_workspace_model_catalog_suggestions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelCatalogSuggestionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelCatalogMatch"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Suggest Workspace Model Declarations",
+        "tags": [
+          "model-management"
+        ]
+      }
+    },
     "/api/v1/workspaces/{workspace}/model-providers": {
       "get": {
         "operationId": "get_workspaces_workspace_model_providers",
@@ -42687,111 +43116,6 @@
           }
         ],
         "summary": "Update Model Provider",
-        "tags": [
-          "model-management"
-        ]
-      }
-    },
-    "/api/v1/workspaces/{workspace}/model-providers/{provider_id}/describe-model": {
-      "post": {
-        "operationId": "post_workspaces_workspace_model_providers_provider_id_describe_model",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "provider_id",
-            "required": true,
-            "schema": {
-              "title": "Provider Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "workspace",
-            "required": true,
-            "schema": {
-              "title": "Workspace",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DescribeModelRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ModelDescription"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid request.",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Service error.",
-            "headers": {
-              "Retry-After": {
-                "schema": {
-                  "type": "string"
-                }
-              },
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "SessionAuth": []
-          }
-        ],
-        "summary": "Describe Provider Model",
         "tags": [
           "model-management"
         ]

@@ -5,25 +5,23 @@ from urllib.parse import quote
 import httpx2 as httpx
 
 from ...client import AuthenticatedClient, Client
-from ...models.describe_model_request import DescribeModelRequest
 from ...models.error_response import ErrorResponse
-from ...models.model_description import ModelDescription
+from ...models.model_catalog_match import ModelCatalogMatch
+from ...models.model_catalog_suggestion_request import ModelCatalogSuggestionRequest
 from ...types import Response
 
 
 def build_request(
-    organization: str,
-    provider_id: str,
+    workspace: str,
     *,
-    body: DescribeModelRequest,
+    body: ModelCatalogSuggestionRequest,
 ) -> dict[str, Any]:
     headers: dict[str, Any] = {}
 
     _kwargs: dict[str, Any] = {
         "method": "post",
-        "url": "/api/v1/organizations/{organization}/model-providers/{provider_id}/describe-model".format(
-            organization=quote(str(organization), safe=""),
-            provider_id=quote(str(provider_id), safe=""),
+        "url": "/api/v1/workspaces/{workspace}/model-catalog/suggestions".format(
+            workspace=quote(str(workspace), safe=""),
         ),
     }
 
@@ -37,9 +35,9 @@ def build_request(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> ErrorResponse | ModelDescription:
+) -> ErrorResponse | ModelCatalogMatch:
     if response.status_code == 200:
-        response_200 = ModelDescription.from_dict(response.json())
+        response_200 = ModelCatalogMatch.from_dict(response.json())
 
         return response_200
 
@@ -55,7 +53,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[ErrorResponse | ModelDescription]:
+) -> Response[ErrorResponse | ModelCatalogMatch]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -65,30 +63,27 @@ def _build_response(
 
 
 def sync_detailed(
-    organization: str,
-    provider_id: str,
+    workspace: str,
     *,
     client: AuthenticatedClient,
-    body: DescribeModelRequest,
-) -> Response[ErrorResponse | ModelDescription]:
-    """Organization Describe Provider Model
+    body: ModelCatalogSuggestionRequest,
+) -> Response[ErrorResponse | ModelCatalogMatch]:
+    """Suggest Workspace Model Declarations
 
     Args:
-        organization (str):
-        provider_id (str):
-        body (DescribeModelRequest):
+        workspace (str):
+        body (ModelCatalogSuggestionRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[ErrorResponse | ModelDescription]
+        Response[ErrorResponse | ModelCatalogMatch]
     """
 
     kwargs = build_request(
-        organization=organization,
-        provider_id=provider_id,
+        workspace=workspace,
         body=body,
     )
 
@@ -100,60 +95,54 @@ def sync_detailed(
 
 
 def sync(
-    organization: str,
-    provider_id: str,
+    workspace: str,
     *,
     client: AuthenticatedClient,
-    body: DescribeModelRequest,
-) -> ErrorResponse | ModelDescription | None:
-    """Organization Describe Provider Model
+    body: ModelCatalogSuggestionRequest,
+) -> ErrorResponse | ModelCatalogMatch | None:
+    """Suggest Workspace Model Declarations
 
     Args:
-        organization (str):
-        provider_id (str):
-        body (DescribeModelRequest):
+        workspace (str):
+        body (ModelCatalogSuggestionRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        ErrorResponse | ModelDescription
+        ErrorResponse | ModelCatalogMatch
     """
 
     return sync_detailed(
-        organization=organization,
-        provider_id=provider_id,
+        workspace=workspace,
         client=client,
         body=body,
     ).parsed
 
 
 async def asyncio_detailed(
-    organization: str,
-    provider_id: str,
+    workspace: str,
     *,
     client: AuthenticatedClient,
-    body: DescribeModelRequest,
-) -> Response[ErrorResponse | ModelDescription]:
-    """Organization Describe Provider Model
+    body: ModelCatalogSuggestionRequest,
+) -> Response[ErrorResponse | ModelCatalogMatch]:
+    """Suggest Workspace Model Declarations
 
     Args:
-        organization (str):
-        provider_id (str):
-        body (DescribeModelRequest):
+        workspace (str):
+        body (ModelCatalogSuggestionRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[ErrorResponse | ModelDescription]
+        Response[ErrorResponse | ModelCatalogMatch]
     """
 
     kwargs = build_request(
-        organization=organization,
-        provider_id=provider_id,
+        workspace=workspace,
         body=body,
     )
 
@@ -163,31 +152,28 @@ async def asyncio_detailed(
 
 
 async def asyncio(
-    organization: str,
-    provider_id: str,
+    workspace: str,
     *,
     client: AuthenticatedClient,
-    body: DescribeModelRequest,
-) -> ErrorResponse | ModelDescription | None:
-    """Organization Describe Provider Model
+    body: ModelCatalogSuggestionRequest,
+) -> ErrorResponse | ModelCatalogMatch | None:
+    """Suggest Workspace Model Declarations
 
     Args:
-        organization (str):
-        provider_id (str):
-        body (DescribeModelRequest):
+        workspace (str):
+        body (ModelCatalogSuggestionRequest):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        ErrorResponse | ModelDescription
+        ErrorResponse | ModelCatalogMatch
     """
 
     return (
         await asyncio_detailed(
-            organization=organization,
-            provider_id=provider_id,
+            workspace=workspace,
             client=client,
             body=body,
         )

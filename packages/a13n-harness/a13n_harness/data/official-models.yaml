@@ -2,17 +2,17 @@ schema_version: 1
 models:
   anthropic:claude-fable-5-1:
     characteristics:
-      context_window: 1000000
+      context_window_tokens: 1000000
       capabilities: [image_understanding]
     source_url: https://platform.claude.com/docs/en/models/fable-5-1/overview
   anthropic:claude-sonnet-5:
     characteristics:
-      context_window: 1000000
+      context_window_tokens: 1000000
       capabilities: [image_understanding]
     source_url: https://platform.claude.com/docs/en/about-claude/models/overview
   anthropic:claude-opus-5:
     characteristics:
-      context_window: 1000000
+      context_window_tokens: 1000000
       capabilities: [image_understanding]
     source_url: https://platform.claude.com/docs/en/about-claude/models/overview
   anthropic:claude-sonnet-4-6:
@@ -49,7 +49,7 @@ models:
     source_url: https://developers.openai.com/api/docs/models/gpt-5.6-luna
   openai:gpt-5.5:
     characteristics:
-      context_window: 1050000
+      context_window_tokens: 1050000
       capabilities: [image_understanding]
     source_url: https://developers.openai.com/api/docs/models/gpt-5.5
   openai:gpt-5.4:
@@ -62,17 +62,17 @@ models:
     source_url: https://developers.openai.com/api/docs/models/gpt-5.4-mini
   google-gla:gemini-3.5-flash:
     characteristics:
-      context_window: 1048576
+      context_window_tokens: 1048576
       capabilities: [image_understanding, audio_understanding, video_understanding]
     source_url: https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash
   google-gla:gemini-3.6-flash:
     characteristics:
-      context_window: 1048576
+      context_window_tokens: 1048576
       capabilities: [image_understanding, audio_understanding, video_understanding]
     source_url: https://ai.google.dev/gemini-api/docs/models/gemini-3.6-flash
   google-gla:gemini-3.5-flash-lite:
     characteristics:
-      context_window: 1048576
+      context_window_tokens: 1048576
       capabilities: [image_understanding, audio_understanding, video_understanding]
     source_url: https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite
   google-gla:gemini-3.1-pro-preview:
@@ -125,11 +125,11 @@ models:
     source_url: https://docs.z.ai/guides/llm/glm-4.5
   deepseek:deepseek-v4-flash:
     characteristics:
-      context_window: 1000000
+      context_window_tokens: 1000000
     source_url: https://api-docs.deepseek.com/quick_start/pricing
   deepseek:deepseek-v4-pro:
     characteristics:
-      context_window: 1000000
+      context_window_tokens: 1000000
     source_url: https://api-docs.deepseek.com/quick_start/pricing
   deepseek:deepseek-v4-flash-vision-exp:
     characteristics:

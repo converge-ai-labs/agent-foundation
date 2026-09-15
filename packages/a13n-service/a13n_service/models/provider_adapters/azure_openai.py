@@ -117,4 +117,5 @@ INTEGRATION = ProviderIntegration(
     endpoint_configuration_field="resource_endpoint",
     reserved_headers=("authorization", "api-key"),
     model_discovery=openai_style_discovery(_request),
+    model_profile=AzureProvider.model_profile,
 )

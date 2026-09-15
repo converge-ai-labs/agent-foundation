@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct AgentModel {
     #[serde(rename = "characteristics", skip_serializing_if = "Option::is_none")]
-    pub characteristics: Option<Box<models::HarnessModelCharacteristics>>,
+    pub characteristics: Option<Box<models::AgentModelCharacteristics>>,
 
     #[serde(rename = "model_key")]
     pub model_key: String,

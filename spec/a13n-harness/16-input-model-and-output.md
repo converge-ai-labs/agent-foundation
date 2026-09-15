@@ -136,7 +136,7 @@ Resolution follows these rules:
 3. With a `RunModelResolver`, the resolver calls the async callable directly and requires a native `Model`; an invalid value or exception becomes `ModelResolutionError`.
 4. Without a resolver, the thin Capability calls Harness `infer_model()` with the builder's optional `gateway_provider_factory`. This makes Harness compatibility aliases and `gateway@` routing the default string path rather than delegating to a separate Pydantic inference call.
 
-Resolution precedence is concrete Model, then fresh `RunModelResolver`, then Harness `infer_model()`. The Harness has no second provider profile, provider settings, registry, or route envelope. Harness-owned `AgentSpec.model_characteristics` contains explicit lifecycle and behavior characteristics, including native media-understanding capabilities. Its `context_window` is the sole deliberate overlap with `ModelProfile` and is projected after any of the three resolution paths; no other provider profile field is copied or inferred. A hosted worker that requires fail-closed logical aliases supplies a binding whose own trusted configuration returns an allowed Model or raises. The builder-level gateway factory is construction policy shared by every recursively built child; current-run credentials or authorization remain in `RunModelResolver`.
+Resolution precedence is concrete Model, then fresh `RunModelResolver`, then Harness `infer_model()`. The Harness has no second provider profile, provider settings, registry, or route envelope. Harness-owned `AgentSpec.model_characteristics` contains explicit lifecycle and behavior characteristics, including native media-understanding capabilities. Its `context_window_tokens` is the sole deliberate overlap with native `ModelProfile.context_window` and is projected after any of the three resolution paths; no other provider profile field is copied or inferred. A hosted worker that requires fail-closed logical aliases supplies a binding whose own trusted configuration returns an allowed Model or raises. The builder-level gateway factory is construction policy shared by every recursively built child; current-run credentials or authorization remain in `RunModelResolver`.
 
 `RunBindings` supplies a fresh resolver for each logical Harness run. The same resolver and `AgentContext` are shared by all internal recovery attempts. Pydantic's `ModelResolutionContext` carries the effective Agent dependencies and native resolution semantics. Freshness applies to current-run authority, credentials, policy, and affinity; the callable may reference a Host-owned concurrency-safe provider client whose lifecycle is broader than the run.
 
@@ -179,10 +179,10 @@ Pydantic AI retains the complete layering:
 - native Model/provider settings merge under upstream rules;
 - `Model.profile` and provider adapters own provider compatibility and rendering facts;
 - Harness `AgentSpec.model_characteristics` owns explicit Harness lifecycle and feature characteristics that must be stable across providers, including native image, video, and audio understanding;
-- the Harness projects only an explicit `model_characteristics.context_window` onto the final Model's native profile so all Capabilities observe one effective window;
+- the Harness projects only an explicit `model_characteristics.context_window_tokens` onto the final Model's native `context_window` profile fact so all Capabilities observe one effective window;
 - Capabilities own reusable Agent-loop behavior.
 
-The projection is a narrow native Model wrapper applied consistently to a concrete definition Model, a `RunModelResolver` result, or a Harness-inferred Model. It preserves the wrapped provider profile and behavior and overrides only `context_window`. An explicit Harness value wins over a conflicting provider profile because it is managed definition policy; without that value, the original native profile is unchanged. The resulting `Model.context_window` and `Model.profile.context_window` agree, allowing external Pydantic AI Capabilities and first-party Harness Capabilities to share the upstream abstraction. This is interoperability projection, not a claim that the selected provider route supports a larger window; authoring remains responsible for selecting a compatible route.
+The projection is a narrow native Model wrapper applied consistently to a concrete definition Model, a `RunModelResolver` result, or a Harness-inferred Model. It preserves the wrapped provider profile and behavior and maps only Harness `context_window_tokens` to native `context_window`. An explicit Harness value wins over a conflicting provider profile because it is managed definition policy; without that value, the original native profile is unchanged. The resulting `Model.context_window` and `Model.profile.context_window` agree, allowing external Pydantic AI Capabilities and first-party Harness Capabilities to share the upstream abstraction. This is interoperability projection, not a claim that the selected provider route supports a larger window; authoring remains responsible for selecting a compatible route.
 
 For common authoring choices, the Harness exports two parallel synchronous input convenience layers. They preserve the existing separation between Harness lifecycle characteristics and native provider request settings:
 
@@ -237,9 +237,9 @@ The release-pinned default characteristics catalog is deliberately small:
 
 | Alias                    | Concrete `HarnessModelCharacteristics` effect |
 | ------------------------ | --------------------------------------------- |
-| `anthropic:context-200k` | `context_window=200_000`                      |
-| `anthropic:context-400k` | `context_window=400_000`                      |
-| `anthropic:context-1m`   | `context_window=1_000_000`                    |
+| `anthropic:context-200k` | `context_window_tokens=200_000`               |
+| `anthropic:context-400k` | `context_window_tokens=400_000`               |
+| `anthropic:context-1m`   | `context_window_tokens=1_000_000`             |
 
 These context values are Harness lifecycle budgets used for proactive summarization and automatic compaction policy. The resolved value is projected into the effective native profile, but it does not select a provider context variant, add a beta header, change native `ModelSettings`, or widen the selected model's actual capability. The authoring integration remains responsible for choosing a compatible model and provider route.
 

@@ -6,7 +6,7 @@ Models and Model Providers can belong to an Organization or a Workspace. Organiz
 
 Continue selecting models with a bare `model_key`. A key cannot be duplicated between an Organization and any of its Workspaces, or within one scope. Separate Workspaces may reuse a key. Conflicting creates return `409 model_key_conflict`, including concurrent creates.
 
-Use the public HTTP API on a control-plane or all-in-one a13n Service. The examples below use placeholders for Workspace and resource IDs. Authenticate each request with a Service credential authorized for that Workspace; Provider credentials belong in the write-only `credential` and `extra_headers` fields. Workspace Viewer can read configuration and request model descriptions. Workspace Builder or Admin can create, edit, discover, and test Models.
+Use the public HTTP API on a control-plane or all-in-one a13n Service. The examples below use placeholders for Workspace and resource IDs. Authenticate each request with a Service credential authorized for that Workspace; Provider credentials belong in the write-only `credential` and `extra_headers` fields. Workspace Viewer can read configuration. Workspace Builder or Admin can create, edit, discover, and test Models.
 
 ## Create a Provider
 
@@ -17,7 +17,7 @@ GET /api/v1/model-provider-types
 Authorization: Bearer <foundation-token>
 ```
 
-Each definition includes `configuration_schema`, `credential_schema`, `supported_model_apis`, `default_model_api`, and `supports_model_discovery`. Choose a registered type and follow its schemas. For example, OpenRouter uses an empty configuration object and a separate API key:
+Each definition includes `configuration_schema`, `credential_schema`, `supported_model_apis`, `default_model_api`, `model_api_labels`, `supports_model_discovery`, and a `settings_schemas` map keyed by calling API. Choose a registered type and follow its schemas. Use `model_api_labels` for UI text while retaining the stable API keys in requests. For example, OpenRouter uses an empty configuration object and a separate API key:
 
 ```http
 POST /api/v1/workspaces/<workspace-id>/model-providers
@@ -94,26 +94,34 @@ POST /api/v1/workspaces/<workspace-id>/model-providers/<provider-id>/discover-mo
 Authorization: Bearer <foundation-token>
 ```
 
-The response contains one complete `items` array, ordered by upstream ID and deduplicated, plus a `settings_schemas` map keyed by calling API. Each item contains suggested configuration and metadata without repeating the schema. Use `settings_schemas[item.suggested_model_api]` to render its parameters; the map also includes the Provider's other supported APIs. Search and paginate these results in your client; repeat the request to refresh. Discovery accepts no `limit` or `cursor`, and returns no `next_cursor`.
+The response contains one complete `items` array, ordered by upstream ID and deduplicated. Each item contains suggested configuration and advisory metadata without embedding a schema. Use the selected Provider type's `settings_schemas[item.suggested_model_api]` to render its parameters. Search and paginate these results in your client; repeat the request to refresh. Discovery accepts no `limit` or `cursor`, and returns no `next_cursor`.
 
 Discovery creates no Models. A successful empty list, an upstream failure, and `model_discovery_unsupported` are different outcomes. The service follows upstream pages internally, with limits of 100 pages, 4 MiB per upstream response, 10,000 unique models, and 32 MiB of discovery output. Exceeding a bound returns an error, never a silently truncated catalog.
 
-You can also describe any upstream ID directly, including a deployment or a newly released model absent from discovery:
+Discovery is optional authoring assistance, not a permitted-model list. You can manually create any upstream ID, including a deployment or a newly released model absent from discovery. Choose one of the Provider type's supported APIs and its corresponding static settings schema. A Model test, rather than catalog metadata, checks whether the saved ID and credential work.
+
+For manual IDs, first inspect the base models supplied by the installed Pydantic AI version:
 
 ```http
-POST /api/v1/workspaces/<workspace-id>/model-providers/<provider-id>/describe-model
+GET /api/v1/base-models
+Authorization: Bearer <foundation-token>
+```
+
+Each item contains the exact `base_model` name accepted on Model create, its inferred calling API when one is known, and a human-readable API label. A base model is an authoring reference: it supplies native profile behavior and may identify catalog declarations, but it never replaces the `upstream_model` sent to your Provider.
+
+Ask the Service to match an upstream or relay name to that installed directory and return editable defaults:
+
+```http
+POST /api/v1/workspaces/<workspace-id>/model-catalog/suggestions
 Authorization: Bearer <foundation-token>
 Content-Type: application/json
 
-{
-  "upstream_model": "vendor/model-id",
-  "model_api": "openrouter.chat_completions"
-}
+{"provider_id": "<provider-id>", "upstream_model": "my-gpt-5"}
 ```
 
-Omit `model_api` to use the suggested binding, or supply one of the Provider's allowed APIs. Each description includes `suggested_model_api`, `suggested_settings`, `profile`, `limits`, `settings_schema`, and `parameter_support`. Remote metadata failures still allow a local schema with unknown capability information. Description performs no inference and does not prove that the upstream ID or credential works.
+Matching uses only installed Pydantic AI names: exact names, separator-normalized names, then the longest complete name-token sequence. Numeric boundaries prevent names such as `gpt-5` from matching `gpt-51`. Identity matching happens before API selection, so a uniquely known identity is still returned with a null API when the Provider cannot infer a compatible one; creation then requires an explicit API. Declared equivalent namespaces collapse to one identity: OpenAI Responses and Chat variants use the Provider's ordered default API or an explicit API, while Google and Google Cloud variants share their common API. A native Provider retains its own equivalent namespace; a custom endpoint uses the canonical variant. Equal matches for genuinely distinct model identities remain ambiguous, and an exact `base_model` preserves the selected Pydantic AI name. The response source is `explicit`, `exact`, `normalized`, `name_tokens`, `ambiguous`, or `none` and includes every equally ranked distinct candidate when ambiguous.
 
-Descriptions are suggestions. They never update saved Models or become a list of permitted upstream IDs. Manual creation works without discovery or description.
+After a base model is resolved, the cached models.dev catalog may enrich it with declarations. It never performs a second identity match. Actual-provider catalog entries may contribute that channel's price; custom endpoints use provider-independent facts and never borrow another channel's quote. Each single-flight refresh has a whole-operation deadline in addition to HTTP timeouts. Timeout or catalog failure returns the last-good snapshot, or empty declarations before the first success, and schedules retry from completion without blocking manual creation.
 
 ## Save and test a Model
 
@@ -128,15 +136,26 @@ Content-Type: application/json
   "key": "primary",
   "provider_id": "<provider-id>",
   "name": "Primary Model",
-  "upstream_model": "vendor/model-id",
+  "upstream_model": "openai/gpt-5",
+  "base_model": "openai-chat:gpt-5",
   "model_api": "openrouter.chat_completions",
-  "settings": {"temperature": 0.3, "max_tokens": 1024}
+  "settings": {"temperature": 0.3, "max_tokens": 1024},
+  "declarations": {
+    "thinking_efforts": ["low", "medium", "high"],
+    "capabilities": ["image_understanding"],
+    "context_window_tokens": 128000,
+    "max_output_tokens": 32000,
+    "structured_output": true,
+    "pricing": {"input": 1.25, "output": 10, "cache_read": 0.125, "cache_write": null}
+  }
 }
 ```
 
-Replace `vendor/model-id` with the exact invocation ID accepted by your endpoint. `settings` defaults to `{}`. To restrict OpenRouter's downstream providers for this same model, set native `openrouter_provider` settings, for example `{"only": ["<downstream-provider-id>"]}`. Use identifiers accepted by OpenRouter; Service does not select a different model or calling API as a fallback.
+Replace `openai/gpt-5` with the exact invocation ID accepted by your endpoint. `base_model` must be one exact entry from `GET /api/v1/base-models`. If it is omitted, create applies the same installed-directory inference used by the suggestion route; one unique match is saved and supplies `model_api` when that field is omitted. An ambiguous or absent match requires an explicit `model_api`. Explicit `base_model: null` suppresses inference. An explicit `model_api` always wins, including when it selects a different protocol from the base model. OpenAI Responses and Chat variants route the known GPT identity through the final OpenAI implementation; a reference from another native family remains useful for declarations but its incompatible native profile is not copied.
 
-`profile` and `limits` appear only in discovery and description results as read-only Provider information. They are not Model create or update fields. For example, a discovered output limit of 32,000 describes upstream capacity; set `settings.max_tokens` to 8,000 to request a smaller output budget.
+`settings` defaults to `{}`. Declarations have complete response defaults: empty effort choices and capabilities, null capacities and structured-output support, and null pricing. On create, a unique resolved base model supplies only omitted declaration fields from the cache; explicit empty arrays, nulls, false, zeros, and individual pricing fields win. These values remain editable and are never refreshed into a saved Model. To restrict OpenRouter's downstream providers for this same model, set native `openrouter_provider` settings, for example `{"only": ["<downstream-provider-id>"]}`. Use identifiers accepted by OpenRouter; Service does not select a different model or calling API as a fallback.
+
+`profile` and `limits` appear only in discovery results as read-only Provider information. Catalog defaults copied into declarations remain advisory authoring facts. In particular, `max_output_tokens` describes capacity and never sends or maximizes `settings.max_tokens`; set `settings.max_tokens` separately to request a smaller output budget.
 
 Test the saved configuration:
 
@@ -165,11 +184,11 @@ Content-Type: application/json
 {"settings": {}}
 ```
 
-Omitting `settings` preserves existing defaults. Changing the upstream ID or API validates the resulting configuration and never silently removes incompatible settings. Refreshing a description also leaves saved values unchanged. Disable a Model or Provider with `{"enabled": false}`; disabling a Provider blocks every dependent Model at the next outbound request.
+Omitting `settings` or `declarations` preserves that existing field. Changing the upstream ID or API validates the resulting configuration and never silently removes incompatible settings. Disable a Model or Provider with `{"enabled": false}`; disabling a Provider blocks every dependent Model at the next outbound request.
 
 ## Parameters and overrides
 
-The returned JSON Schema describes the serializable native parameters for the selected API, including provider-specific settings. Missing parameter help text does not prevent configuration or execution. Unknown top-level keys, invalid value shapes, and explicitly supplied protected fields for model identity, credentials, endpoints, messages, tool declarations, or output schemas are rejected. `parameter_support` is advisory: unknown support permits manual configuration, and local validation does not guarantee upstream acceptance.
+The Provider type's JSON Schema describes the serializable native parameters for the selected API, including provider-specific settings. Missing parameter help text does not prevent configuration or execution. Unknown top-level keys, invalid value shapes, and explicitly supplied protected fields for model identity, credentials, endpoints, messages, tool declarations, or output schemas are rejected. A discovery candidate's `parameter_support` is advisory: unknown support permits manual configuration, and local validation does not guarantee upstream acceptance.
 
 Use `extra_body` only when the schema exposes it. Bedrock Converse uses `bedrock_additional_model_requests_fields`; Google Generate Content has no arbitrary-body field in this binding. These fields allow arbitrary upstream extensions. You are responsible for whether those extensions work, including their precedence when they overlap native settings; Service does not guess vendor-specific types or reject those overlaps. It protects only the calling API's explicit request-control paths and Provider-owned connection fields. For example, `extra_body.tool_choice` cannot override Harness tool control, and Responses protects `text.format` while permitting `text.verbosity`. Unrelated nested data with the same field names remains allowed. Settings are limited to 64 KiB of UTF-8 JSON and 16 container levels, including after merging. Parameter errors include a safe field path without echoing the submitted value.
 
@@ -183,6 +202,8 @@ In Agent configuration, the `model` field selects the Workspace key and optional
 
 This is a fragment of Agent configuration; the other required Agent fields still apply. There is no separate `model_api` selection on the Agent or Run. At Run acceptance, the service merges Model defaults, Agent settings, and Run overrides in that order. Each later top-level key replaces the earlier value completely, including objects such as `openrouter_provider`.
 
+Unified `thinking`, native reasoning settings, and relevant reasoning fields inside an escape-hatch body are alternatives for the same semantic choice. A later layer that supplies one removes conflicting alternatives inherited from earlier layers while preserving unrelated settings and nested extension data. Supplying contradictory alternatives within one layer is rejected with a safe field path. The native model integration still owns effort translation and request construction.
+
 For Model defaults `{"temperature": 0.3, "max_tokens": 1024}` and Agent settings `{"temperature": 0.2}`:
 
 | Run `config_override.model`          | Effective settings                         |
@@ -192,7 +213,9 @@ For Model defaults `{"temperature": 0.3, "max_tokens": 1024}` and Agent settings
 | `{"settings": null}`                 | `{"temperature": 0.3, "max_tokens": 1024}` |
 | `{"settings": {"temperature": 0.5}}` | `{"temperature": 0.5, "max_tokens": 1024}` |
 
-Selecting another Model key uses its defaults and revalidates the inherited Agent settings. Accepted Runs retain their API, upstream ID, and merged settings across replacement attempts. Later Model edits affect new Runs. Provider credentials and connection configuration are resolved afresh for each outbound request, including within an existing Run.
+Selecting another Model key uses its defaults and revalidates the inherited Agent settings. Accepted Runs retain their API, upstream ID, base-model reference, and merged settings across replacement attempts. Later Model edits affect new Runs. Provider credentials and connection configuration are resolved afresh for each outbound request, including within an existing Run. When the saved base model has a profile-compatible final implementation—including an OpenAI GPT reference used through Responses or Chat Completions—each fresh request model uses the full Pydantic AI profile selected by that exact base-model name. This retains family and provider additions such as DeepSeek's OpenAI-compatible thinking wire behavior while preserving the saved upstream ID and current Provider endpoint and authentication. Cross-protocol references do not contribute a profile.
+
+Model declarations also compose at acceptance. The Model supplies media capabilities and its base context window; Agent configuration may override context-window and context-management thresholds but cannot invent media support. The same composition applies to the primary Model, reviewer Model, and every nested Agent. Accepted Runs retain the resulting complete Harness characteristics even if the Model is edited later.
 
 ## Request retries
 

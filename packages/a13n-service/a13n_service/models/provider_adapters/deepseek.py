@@ -29,4 +29,5 @@ INTEGRATION = ProviderIntegration(
     build_provider=_build_provider,
     endpoint="https://api.deepseek.com",
     model_discovery=openai_style_discovery(bearer_models_request),
+    model_profile=DeepSeekProvider.model_profile,
 )

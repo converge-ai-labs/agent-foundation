@@ -14,7 +14,7 @@ def agent_config(model_key="live-fixture", **values):
     toolsets.update(values.pop("toolsets", {}))
     return {
         "toolsets": toolsets,
-        "model": {"model_key": model_key, "characteristics": {"context_window": 32768}},
+        "model": {"model_key": model_key, "characteristics": {"context_window_tokens": 32768}},
         "instructions": "Execute the live-test scenario and preserve full conversation history.",
         "input_adapter": {"adapter_key": "native", "config": {}},
         "protocol": {"schema_version": "1", "public_name": "Live test", "output_modes": ["text"], "limits": {}},

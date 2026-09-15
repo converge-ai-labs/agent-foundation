@@ -140,9 +140,9 @@ class ModelSettingsAliasCatalog(Mapping[str, ModelSettingsAlias]):
         return ModelSettingsAliasCatalog(merged)
 
 
-def _context_window(tokens: int) -> ModelCharacteristicsTransform:
+def _context_window_tokens(tokens: int) -> ModelCharacteristicsTransform:
     def transform(characteristics: HarnessModelCharacteristics) -> HarnessModelCharacteristics:
-        return characteristics.model_copy(update={"context_window": tokens})
+        return characteristics.model_copy(update={"context_window_tokens": tokens})
 
     return transform
 
@@ -176,17 +176,17 @@ def get_model_characteristics_alias_catalog() -> ModelCharacteristicsAliasCatalo
         "anthropic:context-200k": ModelCharacteristicsAlias(
             key="anthropic:context-200k",
             provider="anthropic",
-            transform=_context_window(200_000),
+            transform=_context_window_tokens(200_000),
         ),
         "anthropic:context-400k": ModelCharacteristicsAlias(
             key="anthropic:context-400k",
             provider="anthropic",
-            transform=_context_window(400_000),
+            transform=_context_window_tokens(400_000),
         ),
         "anthropic:context-1m": ModelCharacteristicsAlias(
             key="anthropic:context-1m",
             provider="anthropic",
-            transform=_context_window(1_000_000),
+            transform=_context_window_tokens(1_000_000),
         ),
     }
     return ModelCharacteristicsAliasCatalog(entries)

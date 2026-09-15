@@ -123,7 +123,7 @@ These roots are boundaries, not a requirement that every capability become a sub
 ## Specification Conventions
 
 - Python-like schemas are conceptual unless explicitly declared as API or storage formats.
-- An `AgentRevision` is immutable; changing materialized Agent content, selected Model key, concrete Harness model characteristics, Agent-authored model settings, or another managed-resource reference creates another Revision. Each Model owns its single calling API and request defaults. Editing a Model affects the next accepted Run that selects it; an already accepted Run retains its Model execution snapshot and effective settings. Editing a Model Provider affects the next outbound request under the live Provider-resolution contract.
+- An `AgentRevision` is immutable; changing materialized Agent content, selected Model key, Agent context policy, Agent-authored model settings, or another managed-resource reference creates another Revision. Each Model owns its single calling API, request defaults, and typed declarations. Editing a Model affects the next accepted Run that selects it; an already accepted Run retains its Model execution snapshot, effective settings, and composed Harness characteristics. Editing a Model Provider affects the next outbound request under the live Provider-resolution contract.
 - `Ref` values identify entities or revisions and grant no authority.
 - Process-local objects are reconstructed and never become durable payloads.
 - Domain schemas, repositories, queue messages, and events live in their owning domain rather than the generic storage substrate.

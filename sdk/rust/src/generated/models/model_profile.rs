@@ -11,7 +11,7 @@
 use crate::generated::models;
 use serde::{Deserialize, Serialize};
 
-/// ModelProfile : Read-only Provider capability information returned by discovery and description.
+/// ModelProfile : Read-only Provider capability information returned by discovery.
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ModelProfile {
     #[serde(
@@ -80,7 +80,7 @@ pub struct ModelProfile {
 }
 
 impl ModelProfile {
-    /// Read-only Provider capability information returned by discovery and description.
+    /// Read-only Provider capability information returned by discovery.
     pub fn new() -> ModelProfile {
         ModelProfile {
             input_modalities: None,

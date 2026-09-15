@@ -6,12 +6,12 @@ from typing import Any, TypeVar
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
-T = TypeVar("T", bound="ModelDescriptionSettingsSchema")
+T = TypeVar("T", bound="ModelProviderDefinitionModelApiLabels")
 
 
 @_attrs_define(repr=False)
-class ModelDescriptionSettingsSchema:
-    additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
+class ModelProviderDefinitionModelApiLabels:
+    additional_properties: dict[str, str] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
 
@@ -23,19 +23,19 @@ class ModelDescriptionSettingsSchema:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         d = dict(src_dict)
-        model_description_settings_schema = cls()
+        model_provider_definition_model_api_labels = cls()
 
-        model_description_settings_schema.additional_properties = d
-        return model_description_settings_schema
+        model_provider_definition_model_api_labels.additional_properties = d
+        return model_provider_definition_model_api_labels
 
     @property
     def additional_keys(self) -> list[str]:
         return list(self.additional_properties.keys())
 
-    def __getitem__(self, key: str) -> Any:
+    def __getitem__(self, key: str) -> str:
         return self.additional_properties[key]
 
-    def __setitem__(self, key: str, value: Any) -> None:
+    def __setitem__(self, key: str, value: str) -> None:
         self.additional_properties[key] = value
 
     def __delitem__(self, key: str) -> None:

@@ -355,7 +355,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                 : {}),
             },
             model_characteristics: {
-              context_window: draft.apiContext ?? options.context_window,
+              context_window_tokens: draft.apiContext ?? options.context_window,
               proactive_context_management_threshold: 0.65,
               compact_threshold: 0.9,
             },

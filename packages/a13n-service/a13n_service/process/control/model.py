@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+from contextlib import AsyncExitStack
 from dataclasses import dataclass
 
+import httpx2
+
+from a13n_service.models.catalog import ModelsDevCatalog
 from a13n_service.models.connection_test import NativeModelConnectionTester
 from a13n_service.models.provider_operations import NativeProviderOperations
 from a13n_service.models.provider_service import ModelProviderService
@@ -20,11 +24,12 @@ class _ModelBundle:
     providers: ModelProviderService
 
 
-def build_model_bundle(
+async def build_model_bundle(
     settings: Settings,
     components: Components,
     shared: SharedRuntime,
     execution: ExecutionResources,
+    stack: AsyncExitStack,
 ) -> _ModelBundle:
     """Construct Model and Model Provider APIs."""
 
@@ -38,12 +43,19 @@ def build_model_bundle(
         registry=execution.model_provider_registry,
         http_client=execution.model_http_client,
     )
+    catalog = components.model_catalog
+    if catalog is None:
+        catalog_http_client = await stack.enter_async_context(
+            httpx2.AsyncClient(follow_redirects=False, trust_env=False, timeout=10.0)
+        )
+        catalog = ModelsDevCatalog(catalog_http_client)
     return _ModelBundle(
         models=ModelService(
             shared.storage.sessions,
             execution.model_provider_registry,
             connection_tester=connection_tester,
             connection_test_timeout_seconds=settings.models.connection_test_timeout_seconds,
+            catalog=catalog,
         ),
         providers=ModelProviderService(
             shared.storage.sessions,

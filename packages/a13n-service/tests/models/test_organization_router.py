@@ -5,6 +5,7 @@ import pytest
 from a13n_environment import build_environment_provider_catalog
 from a13n_service.app import Components, create_app
 from a13n_service.iam import AuthenticatedActor
+from a13n_service.models.domain import ModelDeclarations
 from fastapi import Request
 
 from ..connectivity.connector_helpers import FakeConnectorBackend, fake_registry
@@ -15,8 +16,11 @@ from .test_router import settings
 pytestmark = pytest.mark.anyio
 
 
-async def test_five_configuration_resources_support_org_collections(model_sessions, service_sqlite_database, tmp_path):
+async def test_five_configuration_resources_support_org_collections(
+    model_sessions, service_sqlite_database, tmp_path, model_catalog
+):
     admin = await organization_admin(model_sessions, actor())
+    model_catalog.results[("openai", "openai:gpt-5")] = ModelDeclarations(max_output_tokens=8192)
 
     async def authenticate(request: Request) -> AuthenticatedActor:
         return admin if request.headers.get("test-scope") == "organization" else actor()
@@ -27,6 +31,7 @@ async def test_five_configuration_resources_support_org_collections(model_sessio
             request_authenticator=authenticate,
             connector_provider_registry=fake_registry(FakeConnectorBackend()),
             environment_provider_catalog=build_environment_provider_catalog(builtin_keys=("a13n.direct-local",)),
+            model_catalog=model_catalog,
         ),
     )
     org_path = f"/api/v1/organizations/{ORG_ID}"
@@ -40,6 +45,14 @@ async def test_five_configuration_resources_support_org_collections(model_sessio
                 json={"type": "openai", "name": "Organization OpenAI", "credential": "sk-test"},
             )
             assert provider.status_code == 201, provider.text
+            for path, request_headers in ((org_path, headers), (workspace_path, {})):
+                suggestion = await client.post(
+                    f"{path}/model-catalog/suggestions",
+                    headers=request_headers,
+                    json={"provider_id": provider.json()["id"], "upstream_model": "gpt-5"},
+                )
+                assert suggestion.status_code == 200, suggestion.text
+                assert suggestion.json()["items"][0]["declarations"]["max_output_tokens"] == 8192
             model = await client.post(
                 f"{org_path}/models",
                 headers=headers,
@@ -47,11 +60,12 @@ async def test_five_configuration_resources_support_org_collections(model_sessio
                     "provider_id": provider.json()["id"],
                     "name": "Coding",
                     "key": "coding",
-                    "upstream_model": "gpt-test",
-                    "model_api": "openai.responses",
+                    "upstream_model": "gpt-5",
                 },
             )
             assert model.status_code == 201, model.text
+            assert model.json()["base_model"] == "openai:gpt-5"
+            assert model.json()["model_api"] == "openai.responses"
             environment_provider = await client.post(
                 f"{org_path}/environment-providers",
                 headers=headers,

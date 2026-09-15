@@ -171,6 +171,7 @@ class AgentInvocationPreparer:
                         merged.model.model_key if merged.model.model_key != revision.config.model.model_key else None
                     ),
                     settings=merged.model.settings,
+                    settings_override=merged.model_settings_override,
                 )
                 reviewer_model = (
                     await self._model_selector.prepare(

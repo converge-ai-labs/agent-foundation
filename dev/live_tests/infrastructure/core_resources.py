@@ -74,7 +74,7 @@ async def provision(client: LiveClient, *, on_created: Callable[[dict], None] | 
         },
     )
     agent_config = {
-        "model": {"model_key": "live-fixture", "characteristics": {"context_window": 32768}},
+        "model": {"model_key": "live-fixture", "characteristics": {"context_window_tokens": 32768}},
         "instructions": "Execute the local live-test scenario. Preserve the full conversation history.",
         "input_adapter": {"adapter_key": "native", "config": {}},
         "protocol": {"schema_version": "1", "public_name": "Live test", "output_modes": ["text"], "limits": {}},

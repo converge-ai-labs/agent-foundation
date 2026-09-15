@@ -244,7 +244,7 @@ def test_setup_access_selection_and_back_preserve_no_secret_defaults() -> None:
         "authentication": {"kind": "api_key", "credential_ref": "work"},
         "model_configuration": {"base_url": "https://api.openai.com/v1"},
         "model_characteristics": {
-            "context_window": 350000,
+            "context_window_tokens": 350000,
             "proactive_context_management_threshold": 0.65,
             "compact_threshold": 0.90,
         },

@@ -642,7 +642,7 @@ def _resolve_model_characteristics_capabilities(
                     )
                     resolved.append(HandoffCapability(configuration))
                     continue
-                if model_characteristics.context_window is not None:
+                if model_characteristics.context_window_tokens is not None:
                     reminder_tokens = model_characteristics.summary_reminder_tokens
                     assert reminder_tokens is not None
                     configuration = configuration.model_copy(
@@ -879,7 +879,9 @@ class HarnessBuilder:
         model_characteristics = (
             definition.agent.model_characteristics if isinstance(definition.agent, HarnessAgentSpec) else None
         )
-        profile_context_window = model_characteristics.context_window if model_characteristics is not None else None
+        profile_context_window = (
+            model_characteristics.context_window_tokens if model_characteristics is not None else None
+        )
         selected_model_costs = _model_cost_capabilities(definition.capabilities)
         if len(selected_model_costs) > 1:
             raise DefinitionError(

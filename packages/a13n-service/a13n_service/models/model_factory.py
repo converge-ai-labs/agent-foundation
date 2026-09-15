@@ -11,6 +11,7 @@ from pydantic_ai.models import Model as PydanticModel
 
 from a13n_service.endpoint_policy import EndpointPolicyError
 
+from .base_models import compatible_model_profile
 from .domain import ModelExecutionSnapshot
 from .model_apis import BUILT_IN_MODEL_APIS
 from .provider_adapters.types import RuntimeProvider
@@ -57,7 +58,8 @@ class NativeModelFactory:
         )
         try:
             await self._endpoint_policy.validate(str(native_provider.base_url), resolve_dns=True)
-            return binding.build(snapshot.upstream_model, native_provider)
+            profile = compatible_model_profile(snapshot.base_model, snapshot.model_api)
+            return binding.build(snapshot.upstream_model, native_provider, profile=profile)
         except BaseException as error:
             with CancelScope(shield=True):
                 await native_provider.__aexit__(type(error), error, error.__traceback__)

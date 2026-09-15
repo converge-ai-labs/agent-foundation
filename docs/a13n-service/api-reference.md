@@ -3177,6 +3177,15 @@ Responses:
 
 ## model-management
 
+### `GET /api/v1/base-models`
+
+List Base Models.
+
+Responses:
+
+- **200** — Successful Response (`application/json: BaseModelCandidateCollection`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
 ### `GET /api/v1/model-provider-types`
 
 List Model Provider Types.
@@ -3184,6 +3193,24 @@ List Model Provider Types.
 Responses:
 
 - **200** — Successful Response (`application/json: ModelProviderDefinitionCollection`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/organizations/{organization}/model-catalog/suggestions`
+
+Suggest Organization Model Declarations.
+
+| Parameter      | Location | Required | Type / schema | Constraints and default |
+| -------------- | -------- | -------- | ------------- | ----------------------- |
+| `organization` | path     | true     | string        | —                       |
+
+Request body: required.
+
+- `application/json`: `ModelCatalogSuggestionRequest`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: ModelCatalogMatch`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
 ### `GET /api/v1/organizations/{organization}/model-providers`
@@ -3255,25 +3282,6 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: ModelProvider`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `POST /api/v1/organizations/{organization}/model-providers/{provider_id}/describe-model`
-
-Organization Describe Provider Model.
-
-| Parameter      | Location | Required | Type / schema | Constraints and default |
-| -------------- | -------- | -------- | ------------- | ----------------------- |
-| `provider_id`  | path     | true     | string        | —                       |
-| `organization` | path     | true     | string        | —                       |
-
-Request body: required.
-
-- `application/json`: `DescribeModelRequest`.
-
-Responses:
-
-- **200** — Successful Response (`application/json: ModelDescription`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
@@ -3398,6 +3406,24 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
+### `POST /api/v1/workspaces/{workspace}/model-catalog/suggestions`
+
+Suggest Workspace Model Declarations.
+
+| Parameter   | Location | Required | Type / schema | Constraints and default |
+| ----------- | -------- | -------- | ------------- | ----------------------- |
+| `workspace` | path     | true     | string        | —                       |
+
+Request body: required.
+
+- `application/json`: `ModelCatalogSuggestionRequest`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: ModelCatalogMatch`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
 ### `GET /api/v1/workspaces/{workspace}/model-providers`
 
 List Model Providers.
@@ -3467,25 +3493,6 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: ModelProvider`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `POST /api/v1/workspaces/{workspace}/model-providers/{provider_id}/describe-model`
-
-Describe Provider Model.
-
-| Parameter     | Location | Required | Type / schema | Constraints and default |
-| ------------- | -------- | -------- | ------------- | ----------------------- |
-| `provider_id` | path     | true     | string        | —                       |
-| `workspace`   | path     | true     | string        | —                       |
-
-Request body: required.
-
-- `application/json`: `DescribeModelRequest`.
-
-Responses:
-
-- **200** — Successful Response (`application/json: ModelDescription`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 

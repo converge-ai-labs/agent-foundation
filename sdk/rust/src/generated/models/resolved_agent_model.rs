@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ResolvedAgentModel {
     #[serde(rename = "characteristics")]
-    pub characteristics: Box<models::HarnessModelCharacteristics>,
+    pub characteristics: Box<models::AgentModelCharacteristics>,
 
     #[serde(rename = "model_id")]
     pub model_id: String,
@@ -28,7 +28,7 @@ pub struct ResolvedAgentModel {
 
 impl ResolvedAgentModel {
     pub fn new(
-        characteristics: models::HarnessModelCharacteristics,
+        characteristics: models::AgentModelCharacteristics,
         model_id: String,
         model_key: String,
         settings: std::collections::HashMap<String, serde_json::Value>,

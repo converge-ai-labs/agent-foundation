@@ -45,7 +45,7 @@ class SetupApiKeyModel(StrictModel):
     settings: dict[str, JsonValue] = Field(default_factory=dict)
     model_configuration: dict[str, JsonValue] = Field(default_factory=dict)
     model_characteristics: ModelCharacteristics = Field(
-        default_factory=lambda: HarnessModelCharacteristics(context_window=350000)
+        default_factory=lambda: HarnessModelCharacteristics(context_window_tokens=350000)
     )
 
 
@@ -172,7 +172,7 @@ def _templates(selection: SetupSelection, *, existing_model: dict[str, object] |
             "model_characteristics": _model_characteristics(
                 f"{'openai-codex' if codex else 'grok'}:{model}",
                 HarnessModelCharacteristics(
-                    context_window=selection.codex_context_window,
+                    context_window_tokens=selection.codex_context_window,
                     proactive_context_management_threshold=selection.proactive_context_management_threshold,
                     compact_threshold=selection.compact_threshold,
                 )

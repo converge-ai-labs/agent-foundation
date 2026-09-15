@@ -12,7 +12,15 @@ use crate::generated::models;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
-pub struct DescribeModelRequest {
+pub struct ModelCatalogSuggestionRequest {
+    #[serde(
+        rename = "base_model",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub base_model: Option<Option<String>>,
+
     #[serde(
         rename = "model_api",
         default,
@@ -21,14 +29,19 @@ pub struct DescribeModelRequest {
     )]
     pub model_api: Option<Option<String>>,
 
+    #[serde(rename = "provider_id")]
+    pub provider_id: String,
+
     #[serde(rename = "upstream_model")]
     pub upstream_model: String,
 }
 
-impl DescribeModelRequest {
-    pub fn new(upstream_model: String) -> DescribeModelRequest {
-        DescribeModelRequest {
+impl ModelCatalogSuggestionRequest {
+    pub fn new(provider_id: String, upstream_model: String) -> ModelCatalogSuggestionRequest {
+        ModelCatalogSuggestionRequest {
+            base_model: None,
             model_api: None,
+            provider_id,
             upstream_model,
         }
     }
