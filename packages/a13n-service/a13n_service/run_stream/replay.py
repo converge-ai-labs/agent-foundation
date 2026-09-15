@@ -2,15 +2,24 @@
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Mapping
 from itertools import pairwise
+from operator import eq
 from typing import Literal
 
 from pydantic import JsonValue, TypeAdapter
 
 from a13n_service.storage import ObjectConflict, ObjectInfo, ObjectNotFound, ObjectStore, ObjectStoreError
-from a13n_service.storage.codec import DurableObjectCodecError, canonical_model_bytes, decode_canonical_model
+from a13n_service.storage.codec import (
+    COMPRESSED_JSON_CONTENT_TYPE,
+    COMPRESSED_JSON_ENCODING,
+    DurableObjectCodecError,
+    DurableObjectSizeError,
+    compressed_size_limit,
+    decode_compressed_model,
+    encode_compressed_model,
+    run_codec,
+)
 
 from .domain import (
     CompleteRunStream,
@@ -23,7 +32,7 @@ from .domain import (
 )
 from .redis import run_stream_key_digest_sha256
 
-RUN_REPLAY_CONTENT_TYPE = "application/vnd.converge.run-replay+json"
+RUN_REPLAY_CONTENT_TYPE = COMPRESSED_JSON_CONTENT_TYPE
 _SNAPSHOT_ADAPTER = TypeAdapter(RunReplaySnapshot)
 _JSON_VALUE_ADAPTER = TypeAdapter(JsonValue)
 
@@ -47,6 +56,7 @@ class RunReplayStore:
         self._max_events = max_events
         self._max_items = max_items
         self._max_bytes = max_bytes
+        self._max_encoded_bytes = compressed_size_limit(max_bytes)
 
     async def publish(
         self,
@@ -54,6 +64,74 @@ class RunReplayStore:
         run_id: str,
         source: CompleteRunStream,
     ) -> RunReplaySnapshot:
+        snapshot = await run_codec(self._snapshot, organization_id, run_id, source)
+        try:
+            body, digest = await encode_compressed_model(snapshot, max_bytes=self._max_bytes)
+        except DurableObjectSizeError as error:
+            raise RetainedReplayUnavailable("retained replay exceeds its decoded size bound") from error
+        except DurableObjectCodecError as error:
+            raise RunReplayIntegrityError("retained replay cannot be encoded") from error
+        key = run_replay_key(organization_id, run_id)
+        metadata = {
+            "storage-encoding": COMPRESSED_JSON_ENCODING,
+            "schema-version": "1",
+            "run-id": run_id,
+            "digest-sha256": digest,
+        }
+        try:
+            info = await self._objects.put(
+                key,
+                body,
+                content_type=RUN_REPLAY_CONTENT_TYPE,
+                metadata=metadata,
+                if_none_match=True,
+            )
+        except ObjectConflict as error:
+            existing = await self.read(organization_id, run_id)
+            if not await run_codec(eq, existing, snapshot):
+                raise RunReplayIntegrityError("existing retained replay does not match the complete source") from error
+            return existing
+        _verify_info(info, key=key, body=body, metadata=metadata)
+        return snapshot
+
+    async def read(
+        self,
+        organization_id: str,
+        run_id: str,
+        *,
+        expected_thread_id: str | None = None,
+    ) -> RunReplaySnapshot:
+        key = run_replay_key(organization_id, run_id)
+        try:
+            body, info = await _read_object(self._objects, key, max_bytes=self._max_encoded_bytes)
+        except ObjectNotFound as error:
+            raise RetainedReplayUnavailable("retained Run replay is unavailable") from error
+        except ObjectStoreError as error:
+            raise RunReplayIntegrityError("retained Run replay could not be read") from error
+        digest = info.metadata.get("digest-sha256", "")
+        metadata = {
+            "storage-encoding": COMPRESSED_JSON_ENCODING,
+            "schema-version": "1",
+            "run-id": run_id,
+            "digest-sha256": digest,
+        }
+        _verify_info(info, key=key, body=body, metadata=metadata)
+        try:
+            snapshot = await decode_compressed_model(
+                body, _SNAPSHOT_ADAPTER, max_bytes=self._max_bytes, digest_sha256=digest
+            )
+        except DurableObjectSizeError as error:
+            raise RetainedReplayUnavailable("retained replay exceeds its decoded size bound") from error
+        except DurableObjectCodecError as error:
+            raise RunReplayIntegrityError("retained replay body is invalid") from error
+        if snapshot.run_id != run_id or (expected_thread_id is not None and snapshot.thread_id != expected_thread_id):
+            raise RunReplayIntegrityError("retained replay body belongs to another Run")
+        if snapshot.stream_key_digest_sha256 != run_stream_key_digest_sha256(organization_id, run_id):
+            raise RunReplayIntegrityError("retained replay Stream identity is invalid")
+        await run_codec(self._validate_snapshot, snapshot)
+        return snapshot
+
+    def _snapshot(self, organization_id: str, run_id: str, source: CompleteRunStream) -> RunReplaySnapshot:
         if not source.entries or len(source.entries) > self._max_events:
             raise RetainedReplayUnavailable("Run Stream event count is outside the retained replay bounds")
         first = source.entries[0].event
@@ -78,56 +156,13 @@ class RunReplayStore:
             ),
             items=items,
         )
-        _validate_snapshot_body(snapshot)
-        body = canonical_model_bytes(snapshot)
-        if len(body) > self._max_bytes:
-            raise RetainedReplayUnavailable("retained replay exceeds its encoded size bound")
-        digest = hashlib.sha256(body).hexdigest()
-        key = run_replay_key(organization_id, run_id)
-        metadata = {"schema-version": "1", "run-id": run_id, "digest-sha256": digest}
-        try:
-            info = await self._objects.put(
-                key,
-                body,
-                content_type=RUN_REPLAY_CONTENT_TYPE,
-                metadata=metadata,
-                if_none_match=True,
-            )
-        except ObjectConflict as error:
-            existing = await self.read(organization_id, run_id)
-            if existing != snapshot:
-                raise RunReplayIntegrityError("existing retained replay does not match the complete source") from error
-            return existing
-        _verify_info(info, key=key, body=body, metadata=metadata)
+        self._validate_snapshot(snapshot)
         return snapshot
 
-    async def read(
-        self,
-        organization_id: str,
-        run_id: str,
-        *,
-        expected_thread_id: str | None = None,
-    ) -> RunReplaySnapshot:
-        key = run_replay_key(organization_id, run_id)
-        try:
-            body, info = await _read_object(self._objects, key, max_bytes=self._max_bytes)
-        except ObjectNotFound as error:
-            raise RetainedReplayUnavailable("retained Run replay is unavailable") from error
-        except ObjectStoreError as error:
-            raise RunReplayIntegrityError("retained Run replay could not be read") from error
-        digest = hashlib.sha256(body).hexdigest()
-        metadata = {"schema-version": "1", "run-id": run_id, "digest-sha256": digest}
-        _verify_info(info, key=key, body=body, metadata=metadata)
-        try:
-            snapshot = decode_canonical_model(body, _SNAPSHOT_ADAPTER)
-        except DurableObjectCodecError as error:
-            raise RunReplayIntegrityError("retained replay body is invalid") from error
-        if snapshot.run_id != run_id or (expected_thread_id is not None and snapshot.thread_id != expected_thread_id):
-            raise RunReplayIntegrityError("retained replay body belongs to another Run")
-        if snapshot.stream_key_digest_sha256 != run_stream_key_digest_sha256(organization_id, run_id):
-            raise RunReplayIntegrityError("retained replay Stream identity is invalid")
+    def _validate_snapshot(self, snapshot: RunReplaySnapshot) -> None:
+        if len(snapshot.events) > self._max_events or len(snapshot.items) > self._max_items:
+            raise RetainedReplayUnavailable("retained replay exceeds its event or Item count bound")
         _validate_snapshot_body(snapshot)
-        return snapshot
 
 
 def run_replay_key(organization_id: str, run_id: str) -> str:

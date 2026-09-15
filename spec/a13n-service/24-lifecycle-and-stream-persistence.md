@@ -210,11 +210,9 @@ Agent Stream Protocol projection assigns stable Item IDs and emits their changes
 organizations/{organization_id}/runs/{run_id}/replay/version-{schema_version}.json
 ```
 
-For version `1`, this resolves to `organizations/{organization_id}/runs/{run_id}/replay/version-1.json`; the version segment names the snapshot schema, not a replay sequence or Run state version.
+The version segment identifies the snapshot schema. `RunReplaySnapshot` uses the [compressed JSON codec](03-storage.md#compressed-json-objects), with `schema-version=1` and `run-id` added to the shared encoding metadata. Reads validate the snapshot's Run and Thread identity, source positions, and derived Item projection.
 
-`RunReplaySnapshot` follows the common [Run object serialization rules](12-run-persistence.md#other-object-storage-schemas). Its content type is `application/vnd.converge.run-replay+json`. Object metadata records `schema-version=1`, `run-id`, and the lowercase SHA-256 digest of the canonical stored bytes; object stat supplies the exact byte size. These values are validated before decoding.
-
-The object body is this serialized schema:
+The decoded canonical JSON has this schema:
 
 ```python
 class RetainedRunStreamEvent:
@@ -245,7 +243,9 @@ class RunReplaySnapshot:
     items: tuple[RetainedItem, ...]
 ```
 
-Snapshot publication is create-only. An existing object is accepted only after its digest metadata and complete body validate. A snapshot exists only for a closed, complete, nonempty stream within the configured event-count, Item-count, payload-size, and encoded-size bounds. An incomplete, trimmed, empty, or oversized source reports retained replay as unavailable; version `1` has no partial snapshot or chunk manifest.
+Snapshot publication is create-only. On conflict, the publisher validates the existing object and accepts it only if its decoded snapshot equals the intended snapshot; otherwise publication fails. Published snapshots are immutable.
+
+A snapshot requires a closed, complete, nonempty stream within event-count, Item-count, payload-size, and decoded-byte bounds; canonical JSON is limited to 16 MiB by default. Incomplete, trimmed, empty, oversized, or invalid sources report retained replay as unavailable. Version `1` stores one complete snapshot.
 
 `events` preserves each recovery event's identity and position relative to subsequent observations. Recovery does not create an Item or trigger a per-recovery snapshot. `items` remains the post-Run aggregation of Item observations; an Item without a completion result is `interrupted`. Version `1` does not require an interruption reason or exact recovery-boundary attribution on each Item.
 
@@ -267,7 +267,7 @@ The service derives the object key only after an organization-authorized Run loo
 
 ## Compatibility and Trade-offs
 
-Lifecycle payload versions, Redis presentation-event versions, Thread control signal versions, replay snapshot versions, and Item projection versions are independent. Unknown required versions fail explicitly in their own reader; they do not change Run or attempt interpretation.
+Lifecycle payload versions, Redis presentation-event versions, Thread control signal versions, replay snapshot versions, Item projection versions, and compressed storage encoding versions are independent. Unknown required versions fail explicitly in their own reader; they do not change Run or attempt interpretation.
 
 The distinction between the Workspace `seq` cursor and resource-local `resource_seq`, including the latter's per-resource contiguity, is a wire compatibility contract. A deployment cannot renumber retained resource events, reuse a resource sequence, or reinterpret `entity_version` as the recovery cursor.
 

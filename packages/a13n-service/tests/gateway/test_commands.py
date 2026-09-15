@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 import rfc8785
+import zstandard
 from a13n_service.agents.invocation_resolution import FrozenAgentInvocation
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.endpoint_policy import EndpointPolicy
@@ -634,9 +635,9 @@ async def test_parent_consumers_reject_self_consistent_state_that_differs_from_s
         await _complete_run(sessions, objects, run_id=source.run_id)
     states = RunStateStore(objects)
     original = await states.read(ORGANIZATION_ID, source.run_id)
-    payload = json.loads(original.body)
+    payload = json.loads(zstandard.ZstdDecompressor().decompress(original.body))
     payload["checkpoint_seq"] += 1
-    body = rfc8785.dumps(payload)
+    body = zstandard.ZstdCompressor(level=1, write_checksum=True).compress(rfc8785.dumps(payload))
     await objects.put(
         original.info.key,
         body,

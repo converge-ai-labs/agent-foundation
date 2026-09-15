@@ -188,6 +188,10 @@ When `a13n.service.artifact` projects an [Asset](32-asset-management.md), the ho
 
 Service retains a Hosted AG-UI projection with stable event identities and a bounded cursor independently from `HarnessAguiObserver.snapshot()`. Reconnect replays that projection and crosses to live delivery without skipping an event. `HarnessAguiObserver.resume()` can reconstruct one fresh observer from exact source history for one Harness Run; it is never the client replay mechanism and never spans Worker-created Harness Runs.
 
+Retained delivery is one immutable snapshot per Hosted binding at `organizations/{organization_id}/gateway/hosted-agui/{binding_id}/replay/version-1.json`. It uses the [compressed JSON codec](03-storage.md#compressed-json-objects), with `schema-version=1`, `binding-id`, and `run-id` added to the shared encoding metadata. Reads validate the snapshot schema and binding and Run identity within configured event and decoded-byte limits.
+
+Publication is create-only. On conflict, the publisher validates the existing snapshot and accepts it only if its decoded value equals the intended delivery. Missing, invalid, or oversized snapshots cannot supply replay and follow the gap behavior below.
+
 Live and retained source projection preserve recovery event identity and relative position under Hosted delivery cursors. Reconnect includes the boundary only when it follows the supplied cursor; a cursor past it never causes a fresh recovery event. A missing or trimmed boundary follows the same explicit gap rules as other missing source history, rather than being silently omitted from purportedly complete replay.
 
 If the requested Hosted cursor is outside retained history, attachment fails before SSE with a bounded conflict when known. A gap discovered after streaming starts emits `a13n.service.replay_gap` and closes. The client reads current Service state or starts another supported reconciliation flow; it never continues from an arbitrary surviving event.

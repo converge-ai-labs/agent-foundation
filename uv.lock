@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -298,6 +298,7 @@ dependencies = [
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "starlette" },
     { name = "uvicorn" },
+    { name = "zstandard" },
 ]
 
 [package.metadata]
@@ -344,6 +345,7 @@ requires-dist = [
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.41,<3" },
     { name = "starlette", specifier = ">=0.52,<2" },
     { name = "uvicorn", specifier = ">=0.35,<1" },
+    { name = "zstandard", specifier = ">=0.25,<0.26" },
 ]
 
 [[package]]
