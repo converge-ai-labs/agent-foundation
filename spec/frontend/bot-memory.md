@@ -4,7 +4,7 @@
 
 Bot Memory presents a provider-independent memory index and immutable memory documents for collaborative conversations, with explicit publication and continuing group-sharing controls. [Bots Integration](bots.md) owns the Account-backed Bot and platform onboarding. This contract owns the product model, browsing, sharing interactions, and the requirements those interactions place on backend integration. [Service Long-Term Memory](../a13n-service/42-memory.md) owns Providers, current content APIs, authorization dispatch, and operation completion.
 
-The product model does not imply that the current backend supplies every required operation. Authorized index enumeration, logical document reads, metadata, group subjects, publication authority, and date traversal must be supported and validated before dependent controls are enabled. This document declares no wire schema or new persistence owner.
+The product model does not imply that the current backend supplies every required operation. Authorized index enumeration, logical document reads, metadata, group subjects, publication authority, and date traversal must be supported and validated before dependent controls are enabled. This document declares no wire schema; Service owns the lightweight directory under its [directory and index contract](../a13n-service/42-memory.md#bot-memory-directory-and-index).
 
 ## 1. Product Outcome and Backend Boundary
 
@@ -12,7 +12,7 @@ People can inspect what a Bot remembers for a Slack channel or Feishu group, bro
 
 The three-pane browser presents scope navigation, logical memory documents including a `MEMORY.md` index, and selected content. The same product and Agent-facing operations apply whether storage uses Mem0, a file-based backend, or another Provider. A logical `.md` path identifies authorized content; it does not imply a host filesystem path. A saved document is the content unit and may hold a complete topic note rather than one atomic fact. A daily heading groups documents without automatically concatenating them into a daily file.
 
-The current [Service Memory contract](../a13n-service/42-memory.md) provides managed Memory Providers, authorization, Agent selection, and CRUD/search through the neutral Harness MemoryBackend. Its built-in adapters are Mem0 OSS and Mem0 Platform. Backends own content; Service stores Provider resources rather than a memory-content mirror.
+The current [Service Memory contract](../a13n-service/42-memory.md) provides managed Memory Providers, authorization, Agent selection, and CRUD/search through the neutral Harness MemoryBackend. Its built-in adapters are Mem0 OSS and Mem0 Platform. Backends own document bodies; Service owns Provider resources and a lightweight Bot document directory without a memory-body mirror.
 
 Current adapters write exact text with inference disabled and supply only trusted thread/agent/user subject fields. Requests, the backend contract, and responses do not expose custom metadata. Current scopes do not represent groups or publication audiences. These product capabilities require coordinated backend, Service, SDK, and Console support; frontend filtering alone cannot implement them.
 
@@ -74,7 +74,7 @@ Deletion is permitted under the owning scope's delete authority and uses confirm
 
 ### Memory Index and On-Demand Reading
 
-Each authorized memory scope exposes a logical `MEMORY.md` navigation entry. It contains short document titles, concise descriptions, and stable logical references rather than full bodies. The Agent starts from a compact authorized index and reads only the documents or bounded content ranges needed for the task. Search remains available when the index does not reveal the required material. The Console and Agent use the same logical identities and authorization rules; Console selection state does not determine Agent recall. Index text and document bodies are untrusted model context, never instructions or restored authority.
+Each authorized memory scope exposes a logical `MEMORY.md` navigation entry. It contains short document titles, concise descriptions, and stable logical references rather than full bodies. When memory reading is enabled, the host supplies a compact authorized index as actual model-visible context at the start of the Bot invocation. The Agent reads only the documents or bounded content ranges needed for the task. Search remains available when the index does not reveal the required material. The Console and Agent use the same logical identities and authorization rules; Console selection state does not determine Agent recall. Index text and document bodies are untrusted model context, never instructions or restored authority.
 
 ```text
 Engineering memory
@@ -177,7 +177,7 @@ Organization, Workspace, Provider, conversation ownership, and audience checks r
 
 Harness and Service currently expose no custom metadata. Evaluate both adapters separately: Mem0's general metadata support does not prove that the deployed native OSS HTTP server can create and return every required field, filter records safely, and enforce the required creation/read/deletion semantics. [Mem0 metadata filtering](https://docs.mem0.ai/open-source/features/metadata-filtering) is a capability reference, not proof that this integration exists.
 
-Preserve backend-owned document bodies without a second Service memory-content table or replicated body store. Service owns policy; document locators, index-entry metadata, and provenance/publication associations require an explicit storage and consistency contract. `MEMORY.md` is a logical navigation projection that may be materialized or rendered from authorized metadata; accepting it does not prescribe a PostgreSQL directory or a physical filesystem. A file-based backend must define durable storage, concurrent access, and isolation before enablement; a disposable Sandbox directory alone is insufficient.
+Service persists a lightweight directory containing document references, titles, concise navigation descriptions, group ownership, kind, dates, and protected provenance/publication associations. Bodies remain in the selected Provider. The [Service directory contract](../a13n-service/42-memory.md#bot-memory-directory-and-index) owns consistency and availability. `MEMORY.md` is generated from authorized directory entries; paging and sharing management use the directory without loading all Provider bodies. The directory does not introduce a physical file store or a second memory-body store. A file-based backend must define durable storage, concurrent access, and isolation before enablement; a disposable Sandbox directory alone is insufficient.
 
 Legacy records without metadata are not automatically attached to a group or shared. Missing metadata is not evidence of an empty collection. Backfill/import and Provider replacement require explicit scope and data handling decisions.
 
@@ -191,7 +191,7 @@ The examples show Slack under the one-Account-per-Bot model. Feishu reuses the s
 
 ### 8.1 Three-pane browser
 
-Entry: **Integrations -> Bots -> Bot detail -> Memory**. Group detail links to the same view with its exact scope selected.
+Administrator entry: **Integrations -> Bots -> Bot detail -> Memory**. Group detail links to the same view with its exact scope selected.
 
 ![Browse local group memory](assets/bot-memory/01-memory-browser.webp)
 
@@ -234,15 +234,15 @@ Figure 4: A receiving reader sees approved publications separately from source g
 
 Grouping documents and rendering index entries are presentation work. Opening a group, date, or index does not invoke an LLM to summarize every body. Navigation descriptions come from supported metadata; creating substantive summaries is a separate authorized memory-write workflow and never happens implicitly during browsing.
 
-Current OSS lists are bounded without native continuation/completeness guarantees. Search top-k is not complete date enumeration. Local paging states loaded counts rather than claiming a total, export, or complete day. Complete date browsing and metadata filters require native API validation; missing support is disclosed rather than emulated by unbounded scans.
+Current OSS lists are bounded without native continuation/completeness guarantees. Search top-k is not complete date enumeration. Local paging states loaded counts rather than claiming a total, export, or complete day. Bot group/date browsing uses the Service directory for admitted documents with truthful continuation; native content/filter capabilities still require validation. Missing support is disclosed rather than emulated by unbounded scans.
 
 Short-lived data caching and duplicate-request coalescing are optional, not authorization caches. Keys bind the principal/access context, Workspace, Account, Provider, query/source scope, sharing-policy state, and filters. Each request follows canonical authorization. Content changes invalidate affected views; permission/sharing changes prevent reuse under revoked access. Clients clear protected views after loss of access. Revocation is not delayed until cache expiry.
 
-No persisted daily counts, background scan of every group, or second full-content search index is initially required. Logical `MEMORY.md` navigation is distinct from a storage catalog. Whether a metadata-only catalog supplies complete enumeration remains an owning storage decision, with explicit synchronization/reconciliation and pagination guarantees; rendering a Markdown index alone does not solve native enumeration limits.
+No persisted daily counts, background scan of every group, or second full-content search index is initially required. Logical `MEMORY.md` navigation is distinct from a storage catalog. The Service directory supplies bounded traversal of admitted Bot documents under its consistency contract; rendering Markdown alone does not solve native enumeration limits or import legacy records.
 
 ## 9. Authority, Completion, and Failures
 
-Reading, creation, deletion, publication, and sharing administration are distinct permissions. Saved-document editing is not an available permission. Host-maintained index regeneration is derived navigation maintenance, not permission to rewrite memory bodies or change their audiences. Safe Account reads or Agent invocation rights do not grant private memory access. Sharing administration requires Workspace administrator or explicitly delegated scoped authority under the owning IAM contract. Account metadata visibility alone never grants this authority; exact actions and role bindings belong to IAM. Console authority and authenticated external audience eligibility are enforced server-side.
+Reading, creation, deletion, publication, and sharing administration are distinct permissions. Saved-document editing is not an available permission. Host-maintained index regeneration is derived navigation maintenance, not permission to rewrite memory bodies or change their audiences. Safe Account reads or Agent invocation rights do not grant private memory access. The first release restricts all Web memory management, including directory/index browsing, search, detail, creation, deletion, publication, and sharing settings, to effective a13n Workspace administrators under [IAM](../a13n-service/33-identity-and-access-management.md#bot-memory-management). Non-admins cannot open the management view or obtain its data through direct API calls; delegated access is not offered. Administrators are trusted to manage connected private-group memory without personal platform membership checks. Setup makes this boundary clear. This does not change runtime group isolation or require group participants to be administrators. Console authority and authenticated external audience eligibility are enforced server-side.
 
 A group/topic with narrower visibility cannot read or contribute to a broader scope unless the adapter establishes compatible audience authority. Bot removal, Account disablement, or unknown audience eligibility blocks affected runtime access. Public/private transitions never automatically publish old records. Recall is optional for execution; authorization is mandatory. Unavailable memory is not presented as retrieved evidence or an empty store.
 

@@ -185,6 +185,8 @@ The Bot Memory contract owns group-local memory, a bounded `MEMORY.md` index, im
 
 Memory follows the exact conversation across target Agent changes. Execution must use trusted conversation memory rather than automatically adding the Agent's ordinary agent/user memories. The Account references one Memory Provider, inherited by its groups; several Accounts may share a Provider without sharing memory. Credentials remain on the Provider resource. The [Account-owned selection rules](bot-memory.md#account-owned-memory-provider-selection) define product behavior; root/child/recovery integration requires the corresponding Service contract extension. Metadata, source/date fields, and complete date listing are not available merely because the backend is Mem0; verified backend and API changes are required.
 
+The Memory management tab and its data are restricted to effective a13n Workspace administrators. Setup explains that administrators can manage retained private-group memory without personal platform membership checks. This does not grant cross-group runtime recall. Service stores the lightweight document directory; document bodies remain in the selected Provider.
+
 Bots remains usable with memory disabled or not installed. Adding Memory does not change event deduplication, Thread correlation, native reply authority, or Connector authorization.
 
 ## 8. Acceptance Scenarios
