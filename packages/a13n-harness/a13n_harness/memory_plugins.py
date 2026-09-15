@@ -67,7 +67,7 @@ class Mem0Credential(BaseModel):
         return value
 
 
-class Mem0OSSPlugin(MemoryBackendPlugin[Mem0OSSConfiguration, Mem0Credential]):
+class Mem0OSSBackendPlugin(MemoryBackendPlugin[Mem0OSSConfiguration, Mem0Credential]):
     key = "a13n.mem0-oss"
     display_name = "Mem0 OSS"
     configuration_model = Mem0OSSConfiguration
@@ -81,7 +81,7 @@ class Mem0OSSPlugin(MemoryBackendPlugin[Mem0OSSConfiguration, Mem0Credential]):
         return open_mem0_oss(base_url=configuration.base_url, api_key=credential.api_key.get_secret_value())
 
 
-class Mem0PlatformPlugin(MemoryBackendPlugin[Mem0PlatformConfiguration, Mem0Credential]):
+class Mem0PlatformBackendPlugin(MemoryBackendPlugin[Mem0PlatformConfiguration, Mem0Credential]):
     key = "a13n.mem0-platform"
     display_name = "Mem0 Platform"
     configuration_model = Mem0PlatformConfiguration
@@ -140,7 +140,10 @@ def build_memory_backend_catalog(
     explicit_plugins: Iterable[MemoryBackendPlugin[Any, Any]] = (),
 ) -> MemoryBackendCatalog:
     """Load only explicitly selected entry points, rejecting every key collision."""
-    builtins = {Mem0OSSPlugin.key: Mem0OSSPlugin, Mem0PlatformPlugin.key: Mem0PlatformPlugin}
+    builtins = {
+        Mem0OSSBackendPlugin.key: Mem0OSSBackendPlugin,
+        Mem0PlatformBackendPlugin.key: Mem0PlatformBackendPlugin,
+    }
     builtin_keys = tuple(_key(key) for key in builtin_keys)
     extension_keys = tuple(_key(key) for key in extension_keys)
     explicit = MemoryBackendCatalog(explicit_plugins)

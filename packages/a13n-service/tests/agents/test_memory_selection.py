@@ -1,5 +1,5 @@
 import pytest
-from a13n_harness.memory_plugins import Mem0OSSPlugin, MemoryBackendCatalog
+from a13n_harness.memory_plugins import Mem0OSSBackendPlugin, MemoryBackendCatalog
 from a13n_service.agents.application import AgentManagement
 from a13n_service.agents.domain import AgentConfig, AgentRunOverride, CreateAgentRequest
 from a13n_service.agents.errors import AgentError
@@ -25,7 +25,7 @@ MEMORY_PROVIDER_ID = "memprov_1234567890abcdef"
 
 @pytest.fixture
 async def memory_agents(agent_sessions):
-    catalog = MemoryBackendCatalog((Mem0OSSPlugin(),))
+    catalog = MemoryBackendCatalog((Mem0OSSBackendPlugin(),))
     providers = MemoryProviderService(agent_sessions, protector(), catalog)
     provider = await providers.create(
         actor=actor(),

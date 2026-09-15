@@ -5,8 +5,8 @@ import pytest
 from a13n_harness.memory_plugins import (
     MEMORY_BACKEND_ENTRY_POINT_GROUP,
     Mem0Credential,
+    Mem0OSSBackendPlugin,
     Mem0OSSConfiguration,
-    Mem0OSSPlugin,
     MemoryBackendCatalog,
     MemoryBackendPlugin,
     build_memory_backend_catalog,
@@ -62,7 +62,7 @@ def test_catalog_is_explicit_and_does_not_import_unselected_targets(monkeypatch)
     "kwargs",
     [
         {"builtin_keys": ("a13n.mem0-oss", "a13n.mem0-oss")},
-        {"builtin_keys": ("a13n.mem0-oss",), "explicit_plugins": (Mem0OSSPlugin(),)},
+        {"builtin_keys": ("a13n.mem0-oss",), "explicit_plugins": (Mem0OSSBackendPlugin(),)},
         {"extension_keys": ("test.memory",), "explicit_plugins": (_Plugin(),)},
         {"explicit_plugins": (_Plugin(), _Plugin())},
         {"builtin_keys": ("not.available",)},

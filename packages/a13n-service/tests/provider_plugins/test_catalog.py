@@ -309,9 +309,9 @@ async def test_web_runtime_cleanup_log_excludes_external_error_details(caplog: p
 
 
 def test_memory_registration_reuses_shared_plugin_and_rejects_builtin_collision(monkeypatch):
-    from a13n_harness.memory_plugins import Mem0OSSPlugin, MemoryBackendCatalog
+    from a13n_harness.memory_plugins import Mem0OSSBackendPlugin, MemoryBackendCatalog
 
-    class CustomMemoryPlugin(Mem0OSSPlugin):
+    class CustomMemoryPlugin(Mem0OSSBackendPlugin):
         key = "custom.memory"
         display_name = "Custom Memory"
 
@@ -329,7 +329,7 @@ def test_memory_registration_reuses_shared_plugin_and_rejects_builtin_collision(
 
     @compatible
     def collision(registry):
-        registry.memory.register(Mem0OSSPlugin())
+        registry.memory.register(Mem0OSSBackendPlugin())
 
     install(monkeypatch, EntryPoint("collision", collision))
     with pytest.raises(ProviderPluginError, match="ValueError"):

@@ -10,7 +10,7 @@ from a13n_harness.capabilities.web import (
     WebSearchResponse,
     WebSearchResult,
 )
-from a13n_harness.memory_plugins import Mem0OSSPlugin
+from a13n_harness.memory_plugins import Mem0OSSBackendPlugin
 from a13n_service.provider_plugins import (
     ProviderConfiguration,
     ProviderIntegration,
@@ -96,7 +96,7 @@ def _build_model_provider(provider: RuntimeProvider, http_client, model_api: str
     )
 
 
-class AcmeMemoryPlugin(Mem0OSSPlugin):
+class AcmeMemoryPlugin(Mem0OSSBackendPlugin):
     """Reuse the native OSS adapter and schemas in both Harness and Service."""
 
     key = "acme.memory"

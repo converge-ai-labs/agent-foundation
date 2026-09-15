@@ -4,7 +4,7 @@ from dataclasses import replace
 import httpx2
 import pytest
 from a13n_harness.capabilities.mem0_backends import Mem0OSSBackend
-from a13n_harness.memory_plugins import Mem0OSSPlugin, MemoryBackendCatalog
+from a13n_harness.memory_plugins import Mem0OSSBackendPlugin, MemoryBackendCatalog
 from a13n_service.etags import resource_etag
 from a13n_service.iam import AuthorizationError
 from a13n_service.iam.models import RoleBindingRecord
@@ -32,7 +32,7 @@ def request(name="Memory"):
 
 
 def providers(sessions):
-    return MemoryProviderService(sessions, protector(), MemoryBackendCatalog((Mem0OSSPlugin(),)))
+    return MemoryProviderService(sessions, protector(), MemoryBackendCatalog((Mem0OSSBackendPlugin(),)))
 
 
 async def test_provider_schema_encryption_etags_and_immutable_target(memory_sessions):

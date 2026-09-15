@@ -15,7 +15,9 @@ Web runtimes raise `WebProviderResponseError` only after receiving an explicit r
 
 ## Memory: the same plugin in Service and embedded Harness
 
-`AcmeMemoryPlugin` subclasses `Mem0OSSPlugin` only to give the deployment its own key, `acme.memory`. `register()` passes that object directly to `registry.memory.register()`. There is no second Service factory or behavior plugin. An embedded host can put the same object in `MemoryBackendCatalog((AcmeMemoryPlugin(),))` and own its `open(configuration, credential)` context manager. Configuration and credential validation are pure; backend construction and cleanup belong to the operation's host.
+The public extension point is the provider-neutral `MemoryBackendPlugin`, and storage implements `MemoryBackend`. Neither contract copies Mem0 request payloads or exposes its SDK to custom Agent behavior. Implement these contracts directly for another storage service; `MemoryCapability` and the hosted resource API stay unchanged.
+
+This example deliberately reuses one concrete adapter: `AcmeMemoryPlugin` subclasses `Mem0OSSBackendPlugin` only to give the deployment its own key, `acme.memory`. `register()` passes that object directly to `registry.memory.register()`. There is no second Service factory or behavior plugin. An embedded host can put the same object in `MemoryBackendCatalog((AcmeMemoryPlugin(),))` and own its `open(configuration, credential)` context manager. Configuration and credential validation are pure; backend construction and cleanup belong to the operation's host.
 
 After installing and selecting `acme`, create a Workspace Memory Provider through `POST /api/v1/workspaces/{workspace}/memory-providers`:
 
