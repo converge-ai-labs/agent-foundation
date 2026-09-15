@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import Field, model_validator
 
 from a13n_service.memory.domain import MemorySelection
+from a13n_service.models.settings import JsonObject
 
 from .domain import (
     AgentConfig,
@@ -38,6 +39,7 @@ class MergedAgentRunConfig(StrictModel):
     reviewer: AgentReviewer | None = Field(default=None, exclude_if=lambda value: value is None)
     subagent_mode: Literal["inline", "async"] = "inline"
     model: AgentModel
+    model_settings_override: JsonObject | None = Field(default=None, exclude=True)
     instructions: str
     input_adapter: InputAdapterConfig
     plugins: tuple[PluginSelection, ...] = Field(default=(), max_length=128)
@@ -74,6 +76,7 @@ def merge_agent_run_override(
 
     fields = override.model_fields_set
     model = base.model
+    model_settings_override = None
     if "model" in fields:
         if override.model is None:
             raise invalid_run_override("model", "null_not_allowed")
@@ -86,7 +89,10 @@ def merge_agent_run_override(
         )
         settings = base.model.settings
         if "settings" in model_fields:
-            settings = {} if override.model.settings is None else {**settings, **override.model.settings}
+            if override.model.settings is None:
+                settings = {}
+            else:
+                model_settings_override = override.model.settings
         characteristics = _required_patch_value(
             override.model.characteristics,
             present="characteristics" in model_fields,
@@ -230,6 +236,7 @@ def merge_agent_run_override(
     return MergedAgentRunConfig(
         subagent_mode=base.subagent_mode,
         model=model,
+        model_settings_override=model_settings_override,
         instructions=instructions,
         input_adapter=base.input_adapter,
         plugins=plugins,

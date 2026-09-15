@@ -431,3 +431,95 @@ async def test_terminal_steering_retains_uploads_and_delivers_native_images(
             assert data == (image.getvalue() if metadata.name == "steer.png" else b"\x00" * (65 * 1024))
         with pytest.raises(ValueError, match="not accepted"):
             await backend.steer(ComposerInput(parts), receipt_id=receipt)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("with_project", [False, True])
+@pytest.mark.parametrize("canonical_paths", [False, True])
+async def test_root_and_child_tool_results_use_their_own_thread_scratch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, with_project: bool, canonical_paths: bool
+) -> None:
+    import json
+
+    import yaml
+    from a13n_harness.toolsets.output import create_tool_output_disclosure
+    from a13n_harness_ui.extensions.environment_adapters import NativeProjectAdapter
+    from a13n_harness_ui.model_runtime import HarnessUiModelResolver
+    from a13n_harness_ui.surfaces import RootOperationStatus
+    from pydantic_ai.messages import ToolReturnPart
+    from pydantic_ai.models.function import DeltaToolCall
+
+    from .test_app import _write_configuration
+
+    monkeypatch.setattr(NativeProjectAdapter, "preserves_host_paths", property(lambda self: canonical_paths))
+    path = _write_configuration(tmp_path)
+    if not with_project:
+        path.write_text(path.read_text().replace("  project: project-main\n", ""))
+    agent_path = tmp_path / "agents/assistant.yaml"
+    parent = yaml.safe_load(agent_path.read_text())
+    parent["subagents"] = [{"agent": "agent-worker"}]
+    agent_path.write_text(yaml.safe_dump(parent))
+    (tmp_path / "agents/worker.yaml").write_text(
+        yaml.safe_dump(
+            {"schema_version": "1", "kind": "agent", "id": "agent-worker", "name": "Worker", "model": "model-primary"}
+        )
+    )
+    observed: dict[str, list[Path]] = {}
+    payload = {"content": "large result\n" * 2000}
+
+    async def stream_model(messages, info):
+        if "delegate" not in {tool.name for tool in info.function_tools}:
+            yield "Child completed."
+            return
+        returned = {
+            part.tool_name
+            for message in messages
+            if isinstance(message, ModelRequest)
+            for part in message.parts
+            if isinstance(part, ToolReturnPart)
+        }
+        if "delegate" not in returned:
+            name, args = "delegate", {"subagent_name": "agent-worker", "prompt": "Produce a result"}
+        elif "wait_subagent" not in returned:
+            name, args = "wait_subagent", {"timeout_seconds": 10}
+        else:
+            yield "Root completed."
+            return
+        yield {0: DeltaToolCall(name=name, json_args=json.dumps(args), tool_call_id=f"call-{name}")}
+
+    async def resolve(self, context, model_id):
+        deps = context.deps
+        scratch = tmp_path / "data/threads" / deps.thread_id / "tmp"
+        expected_directory = (
+            (scratch / "tool-results").as_posix() if canonical_paths else "/environment/thread-files/tmp/tool-results"
+        )
+        assert deps.tool_result_directory == expected_directory
+        assert deps.environment.snapshot.default_mount == ("workspace" if with_project else "thread-files")
+        sentinel = scratch / "keep.txt"
+        sentinel.write_text("ordinary scratch")
+        disclosure = await create_tool_output_disclosure(deps, payload, content_complete=True)
+        assert disclosure["output_file_path"] is not None
+        output_path = disclosure["output_file_path"]
+        assert output_path.startswith(expected_directory + "/run-")
+        saved = scratch / "tool-results" / output_path.removeprefix(expected_directory + "/")
+        assert json.loads(await deps.environment.files.read_bytes(output_path)) == payload
+        observed.setdefault(deps.thread_id, []).append(saved)
+        return FunctionModel(stream_function=stream_model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"))
+    async with open_harness_ui_app(settings, configuration_path=path) as app:
+        thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Delegate once")
+        with fail_after(30):
+            operation = await app.wait_root_operation(receipt.receipt_id)
+        assert operation.status is RootOperationStatus.completed, operation.failure
+        assert operation.outcome is not None and operation.outcome.execution.output == "Root completed."
+        assert thread.thread_id in observed and len(observed) == 2
+        for thread_id, saved in observed.items():
+            scratch = tmp_path / "data/threads" / thread_id / "tmp"
+            assert all(not item.exists() for item in saved)
+            assert list((scratch / "tool-results").iterdir()) == []
+            assert (scratch / "keep.txt").read_text() == "ordinary scratch"
+    assert not (tmp_path / "workspace/.a13n").exists()
+    assert not list((tmp_path / "data/threads").glob("*/.a13n"))

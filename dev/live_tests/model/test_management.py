@@ -7,7 +7,7 @@ import pytest
 pytestmark = pytest.mark.anyio
 
 
-async def test_provider_catalog_description_model_test_and_run(model_lab):
+async def test_provider_catalog_static_schema_manual_model_test_and_run(model_lab):
     journey = model_lab
     case = await journey.model(settings={"temperature": 0.3, "max_tokens": 128})
     provider_path = journey.base + "/model-providers/" + case["provider"]["id"]
@@ -20,21 +20,28 @@ async def test_provider_catalog_description_model_test_and_run(model_lab):
     assert len(journey.requests(case)) == 1, "Provider test must read only one catalog page"
     catalog = await journey.post(provider_path + "/discover-models", {}, expected=200)
     assert [item["upstream_model"] for item in catalog["items"]] == ["fixture-a", "fixture-z", "manual-model"]
-    assert set(catalog["settings_schemas"]) == {"openai.responses", "openai.chat_completions"}
+    assert "settings_schemas" not in catalog
     assert "next_cursor" not in catalog
     assert len(journey.requests(case)) == 3
-    description = await journey.post(
-        provider_path + "/describe-model",
+    definitions = await journey.live.collection("/api/v1/model-provider-types")
+    definition = next(item for item in definitions if item["type"] == "openai")
+    assert set(definition["settings_schemas"]) == {"openai.responses", "openai.chat_completions"}
+    assert definition["settings_schemas"]["openai.chat_completions"]
+    manual = await journey.post(
+        journey.base + "/models",
         {
+            "key": "not-discovered",
+            "provider_id": case["provider"]["id"],
+            "name": "Not Discovered",
             "upstream_model": "not-in-the-catalog",
             "model_api": "openai.chat_completions",
         },
-        expected=200,
+        expected=201,
     )
-    assert description["settings_schema"] and description["suggested_model_api"] == "openai.chat_completions"
-    assert not journey.requests(case, inference=True), "Description and discovery cannot perform inference"
+    assert manual["upstream_model"] == "not-in-the-catalog"
+    assert not journey.requests(case, inference=True), "Discovery and manual creation cannot perform inference"
     models = await journey.live.collection(journey.base + "/models")
-    assert not any(item["upstream_model"] == "not-in-the-catalog" for item in models)
+    assert any(item["id"] == manual["id"] for item in models)
     assert await journey.live.request("GET", model_path) == before
     tested = await journey.post(model_path + "/test", {}, expected=200)
     assert tested["success"] and tested["code"] == "connection_succeeded"
@@ -54,8 +61,6 @@ async def test_failed_discovery_keeps_manual_model_usable(model_lab, catalog_sta
     path = journey.base + "/model-providers/" + case["provider"]["id"]
     response = await journey.live.http.post(path + "/discover-models")
     assert response.status_code == 502 and response.json()["error"]["code"] == "provider_discovery_failed"
-    description = await journey.post(path + "/describe-model", {"upstream_model": "manual-model"}, expected=200)
-    assert description["settings_schema"]
     assert (await journey.invoke(case))["output_text"] == case["answer"]
 
 

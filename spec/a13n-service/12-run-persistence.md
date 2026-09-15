@@ -248,7 +248,7 @@ Every Run can own zero or more immutable `RunAttempt` values over its lifetime, 
 
 `waiting` is a sealed Run outcome. It contains a bounded `pending` summary; the frozen Run state contains the authoritative deferred requests and effective client-tool surface. Authenticated Feedback or explicit waiting Continue is the accepted input of a new Run whose `parent_run_id` names the waiting Run and whose state is initialized from that waiting state. Pending Thread-inbox delivery remains outside that input and binds to the successor under its separate FIFO.
 
-`sealed_state` is absent while the Run is active. A `waiting` or `completed` sealing transaction always records the exact digest, size, schema versions, and checkpoint sequence of the state object frozen with the Run. A Worker-originated `failed` Run can record a complete state prepared under its fence or leave `sealed_state` null. An interrupt-driven `cancelled` Run always leaves it null because interrupt performs no object I/O. After any seal, no later object value is authoritative; only a recorded `sealed_state` selects bytes as part of the Run outcome. When a sealed state is present, its fields identify the exact terminal bytes without introducing a second base or result object. `committed_by_run_attempt_id` is null only when a relational fail-closed decision seals a Run without an attempt-originated state change.
+`sealed_state` is absent while the Run is active. A `waiting` or `completed` sealing transaction records the compressed body's SHA-256, size, content type, schema versions, and checkpoint sequence. A Worker-originated `failed` Run can record a complete state prepared under its fence or leave `sealed_state` null. An interrupt-driven `cancelled` Run always leaves it null because interrupt performs no object I/O. After any seal, no later object value is authoritative; only a recorded `sealed_state` selects bytes as part of the Run outcome. Sealed bytes are immutable: waiting feedback matches their recorded digest, and parent initialization verifies the seal before deriving a new Run-owned checkpoint. `committed_by_run_attempt_id` is null only when a relational fail-closed decision seals a Run without an attempt-originated state change.
 
 ### Run Lifecycle
 
@@ -378,20 +378,18 @@ The accepted access paths are:
 
 ## Object Storage Schemas
 
-All JSON objects serialize as UTF-8 RFC 8785 canonical JSON after typed values are converted to declared JSON strings. Digests and sizes cover those exact bytes. Non-finite numbers and duplicate object keys are invalid.
+Run persistence stores complete typed values in the following representations. [Storage](03-storage.md#compressed-json-objects) owns the compressed JSON codec and its integrity and resource bounds.
 
-Service Run persistence uses these serialized object types:
+| Object type          | Representation                   | Content type                                | Owner                                       |
+| -------------------- | -------------------------------- | ------------------------------------------- | ------------------------------------------- |
+| `RunCheckpoint`      | Compressed canonical JSON        | `application/zstd`                          | One conditionally replaced Run state object |
+| `RunPayloadEnvelope` | Uncompressed UTF-8 RFC 8785 JSON | `application/vnd.converge.run-payload+json` | Immutable oversized Run input or output     |
 
-| Object type          | Content type                                | Owner                                                   |
-| -------------------- | ------------------------------------------- | ------------------------------------------------------- |
-| `RunCheckpoint`      | `application/vnd.converge.run-state+json`   | One deterministic, conditionally replaced Run state key |
-| `RunPayloadEnvelope` | `application/vnd.converge.run-payload+json` | Immutable oversized Run input or output                 |
-
-[Lifecycle and Stream Persistence](24-lifecycle-and-stream-persistence.md) separately owns `RunReplaySnapshot`.
+Run payload digests and sizes cover the canonical JSON bytes; duplicate keys and non-finite numbers are invalid. [Lifecycle and Stream Persistence](24-lifecycle-and-stream-persistence.md) owns retained Run replay.
 
 ### Run State Object
 
-Each accepted Run owns one `RunCheckpoint`. It combines Harness portable state with Host continuation required to resume the same Run or initialize a new Run from a selected parent. It contains data and correlation, never current authority.
+Each accepted Run owns one `RunCheckpoint`. It combines Harness portable state with Host continuation required to resume the same Run or initialize a new Run from a selected parent. It contains data and correlation, never current authority. Its canonical JSON size is bounded, with a default limit of 256 MiB.
 
 ```python
 type RunStateCheckpointKind = Literal[
@@ -558,11 +556,11 @@ Each accepted Run owns one complete state object at a deterministic key, stable 
 organizations/{organization_id}/runs/{run_id}/state.json
 ```
 
-The content type is `application/vnd.converge.run-state+json`. Object metadata records `schema-version`, `run-id`, `thread-id`, `checkpoint-seq`, `writer-fence`, and the lowercase SHA-256 digest of the canonical body. Object stat supplies exact byte size and the opaque current object version.
+State metadata adds `schema-version`, `run-id`, `thread-id`, `checkpoint-seq`, and `writer-fence` to the shared encoding metadata. Object stat supplies the encoded size and current publication version.
 
 Acceptance publishes the initial object create-only. A current attempt does not write until it has conditionally claimed the current object version for its monotonic Run fence. Every state replacement then supplies the exact object version returned by the claim or previous successful write. The replacement is visible as the complete new object or not visible at all.
 
-Writer claim preserves the complete canonical state body, including `checkpoint_seq`, `last_checkpoint_run_attempt_id`, and `last_checkpoint_fence`. It advances the object metadata's `writer-fence` to the new Attempt fence and produces a fresh opaque object version even when the logical body is unchanged. Claim transfers write ownership without recording new Agent progress. Plugin preparation may subsequently fill the absent prepared configuration without recording Agent progress. Only a Harness checkpoint advances the checkpoint sequence and body provenance.
+Writer claim republishes the exact stored body, advancing only metadata `writer-fence` and the opaque object version. It preserves the digest, size, checkpoint sequence, and provenance. Plugin preparation can then fill absent prepared configuration. Only a Harness checkpoint advances the checkpoint sequence and records new Agent progress.
 
 Before each write, Service verifies that the Run remains unsealed and that the attempt ID, fence, lease, organization, and Run state version are current. It holds no database transaction across object I/O. Expected-version replacement serializes the object writes: after a newer attempt claims the key, an older attempt's known object version can no longer overwrite it. A conflict causes a fresh read of Run and object authority; it is never retried as an unconditional put.
 
@@ -592,7 +590,7 @@ An Attempt claims the state object during preparation, before Harness entry or a
 
 Before the initial cycle and each retry, the executor revalidates current RunAttempt authority in PostgreSQL. No claim write proceeds while authority is unconfirmed. After a CAS conflict it reads the complete state body, metadata and matching object version and repeats the ordinary integrity, identity and compatibility validation. It never attaches a freshly read version token to stale state bytes. A writer fence greater than the Attempt's fence rejects admission. The complete object whose claim is confirmed, rather than the first object read, supplies the recovery state and next write token. [Recovery Preparation](13-run-attempt-scheduling-and-recovery.md#recovery-preparation) owns reevaluation of state-dependent preparation before execution or terminal commit.
 
-A timeout or lost response is an unknown write outcome. Before another claim write, the executor reconciles the exact object body, metadata, digest, writer fence and version. Evidence that its own claim already succeeded completes the claim without another publication. If success cannot be established, only the ordinary validated read-and-CAS path can retry; it never issues an unconditional put or treats another writer's object as its own successful receipt.
+A timeout or lost response leaves the write outcome unknown. The executor reconciles the submitted encoded body, metadata, digest, writer fence, and version before another claim write. A confirmed claim completes without republication. Otherwise, retries use the validated read-and-CAS path; they never issue an unconditional put or accept another writer's publication as their receipt.
 
 Each storage request and reconciliation read has a finite timeout, and retry cycles use bounded cancellation-aware backoff. The complete sequence has a finite total deadline distinct from one request timeout. Requests and backoff remain within the latest confirmed lease authority and any earlier recovery or drain deadline, leaving time for fenced failure finalization. The executor's existing lease monitor runs throughout state reads, writer claim, reconciliation and retry waits under the [Harness integration contract](14-harness-runtime-integration.md#runattempt-executor-lifetime). A renewal failure or earlier authority deadline preempts unused retries; renewal does not extend the total claim-retry deadline.
 
@@ -728,18 +726,19 @@ Run checkpoint and Host continuation use schema version `1`. The initial relatio
 
 The compatibility axes remain independent:
 
-| Version                                      | Owner                                       |
-| -------------------------------------------- | ------------------------------------------- |
-| Run domain object version                    | Service Run mutation contract               |
-| Run authority Principal kind and identity    | Service IAM and Run acceptance              |
-| Relational schema revision                   | a13n Service migration history              |
-| `RunCheckpoint.schema_version`               | Service Run state contract                  |
-| Run payload object schema version            | Service Run payload contract                |
-| `HarnessState.schema_version`                | Agent Harness                               |
-| Capability state version                     | Owning Capability                           |
-| Environment configuration and state versions | Environment Provider and Template contracts |
-| Agent definition revision                    | Service immutable Agent domain              |
-| Model execution snapshot schema              | Service Model Management domain             |
+| Version                                      | Owner                                            |
+| -------------------------------------------- | ------------------------------------------------ |
+| Run domain object version                    | Service Run mutation contract                    |
+| Run authority Principal kind and identity    | Service IAM and Run acceptance                   |
+| Relational schema revision                   | a13n Service migration history                   |
+| `RunCheckpoint.schema_version`               | Service Run state contract                       |
+| Compressed object storage encoding           | [Storage](03-storage.md#compressed-json-objects) |
+| Run payload object schema version            | Service Run payload contract                     |
+| `HarnessState.schema_version`                | Agent Harness                                    |
+| Capability state version                     | Owning Capability                                |
+| Environment configuration and state versions | Environment Provider and Template contracts      |
+| Agent definition revision                    | Service immutable Agent domain                   |
+| Model execution snapshot schema              | Service Model Management domain                  |
 
 An unknown required state, payload, Harness, Capability, Environment configuration/state, or plugin configuration or state version fails explicitly unless its owner supplies a compatible reader or migration. A sealed parent state is never rewritten for compatibility with a new Run; initialization reads and transforms it into the new Run-owned state. An active Run migration, when supported, is another fenced conditional replacement of the same key.
 

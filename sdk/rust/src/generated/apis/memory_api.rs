@@ -13,76 +13,82 @@ use crate::generated::{apis::ResponseContent, models};
 use reqwest;
 use serde::{Deserialize, Serialize, de::Error as _};
 
-/// struct for typed errors of method [`delete_workspaces_workspace_memories_memory_id`]
+/// struct for typed errors of method [`delete_workspaces_workspace_memory_providers_provider_id_memories_memory_id`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum DeleteWorkspacesWorkspaceMemoriesMemoryIdError {
+pub enum DeleteWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryIdError {
     Status400(models::ErrorResponse),
     DefaultResponse(models::ErrorResponse),
     UnknownValue(serde_json::Value),
 }
 
-/// struct for typed errors of method [`get_workspaces_workspace_memories`]
+/// struct for typed errors of method [`get_workspaces_workspace_memory_providers_provider_id_memories`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum GetWorkspacesWorkspaceMemoriesError {
+pub enum GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesError {
     Status400(models::ErrorResponse),
     DefaultResponse(models::ErrorResponse),
     UnknownValue(serde_json::Value),
 }
 
-/// struct for typed errors of method [`get_workspaces_workspace_memories_memory_id`]
+/// struct for typed errors of method [`get_workspaces_workspace_memory_providers_provider_id_memories_memory_id`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum GetWorkspacesWorkspaceMemoriesMemoryIdError {
+pub enum GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryIdError {
     Status400(models::ErrorResponse),
     DefaultResponse(models::ErrorResponse),
     UnknownValue(serde_json::Value),
 }
 
-/// struct for typed errors of method [`post_workspaces_workspace_memories`]
+/// struct for typed errors of method [`post_workspaces_workspace_memory_providers_provider_id_memories`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum PostWorkspacesWorkspaceMemoriesError {
+pub enum PostWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesError {
     Status400(models::ErrorResponse),
     DefaultResponse(models::ErrorResponse),
     UnknownValue(serde_json::Value),
 }
 
-/// struct for typed errors of method [`post_workspaces_workspace_memories_search`]
+/// struct for typed errors of method [`post_workspaces_workspace_memory_providers_provider_id_memories_search`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum PostWorkspacesWorkspaceMemoriesSearchError {
+pub enum PostWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesSearchError {
     Status400(models::ErrorResponse),
     DefaultResponse(models::ErrorResponse),
     UnknownValue(serde_json::Value),
 }
 
-/// struct for typed errors of method [`put_workspaces_workspace_memories_memory_id`]
+/// struct for typed errors of method [`put_workspaces_workspace_memory_providers_provider_id_memories_memory_id`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum PutWorkspacesWorkspaceMemoriesMemoryIdError {
+pub enum PutWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryIdError {
     Status400(models::ErrorResponse),
     DefaultResponse(models::ErrorResponse),
     UnknownValue(serde_json::Value),
 }
 
-pub async fn delete_workspaces_workspace_memories_memory_id(
+pub async fn delete_workspaces_workspace_memory_providers_provider_id_memories_memory_id(
     configuration: &configuration::Configuration,
+    provider_id: &str,
     memory_id: &str,
     workspace: &str,
-    scope: models::Mem0Scope,
+    scope: models::MemoryScope,
     subject_id: Option<&str>,
-) -> Result<Response<()>, Error<DeleteWorkspacesWorkspaceMemoriesMemoryIdError>> {
+) -> Result<
+    Response<()>,
+    Error<DeleteWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryIdError>,
+> {
     // add a prefix to parameters to efficiently prevent name collisions
+    let p_path_provider_id = provider_id;
     let p_path_memory_id = memory_id;
     let p_path_workspace = workspace;
     let p_query_scope = scope;
     let p_query_subject_id = subject_id;
 
     let uri_str = format!(
-        "{}/api/v1/workspaces/{workspace}/memories/{memory_id}",
+        "{}/api/v1/workspaces/{workspace}/memory-providers/{provider_id}/memories/{memory_id}",
         configuration.base_path,
+        provider_id = crate::generated::apis::urlencode(p_path_provider_id),
         memory_id = crate::generated::apis::urlencode(p_path_memory_id),
         workspace = crate::generated::apis::urlencode(p_path_workspace)
     );
@@ -115,8 +121,9 @@ pub async fn delete_workspaces_workspace_memories_memory_id(
         })
     } else {
         let content = resp.text().await?;
-        let entity: Option<DeleteWorkspacesWorkspaceMemoriesMemoryIdError> =
-            serde_json::from_str(&content).ok();
+        let entity: Option<
+            DeleteWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryIdError,
+        > = serde_json::from_str(&content).ok();
         Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,
@@ -126,15 +133,20 @@ pub async fn delete_workspaces_workspace_memories_memory_id(
     }
 }
 
-pub async fn get_workspaces_workspace_memories(
+pub async fn get_workspaces_workspace_memory_providers_provider_id_memories(
     configuration: &configuration::Configuration,
+    provider_id: &str,
     workspace: &str,
-    scope: models::Mem0Scope,
+    scope: models::MemoryScope,
     limit: Option<i32>,
     cursor: Option<&str>,
     subject_id: Option<&str>,
-) -> Result<Response<models::MemoryCollection>, Error<GetWorkspacesWorkspaceMemoriesError>> {
+) -> Result<
+    Response<models::MemoryCollection>,
+    Error<GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesError>,
+> {
     // add a prefix to parameters to efficiently prevent name collisions
+    let p_path_provider_id = provider_id;
     let p_path_workspace = workspace;
     let p_query_scope = scope;
     let p_query_limit = limit;
@@ -142,8 +154,9 @@ pub async fn get_workspaces_workspace_memories(
     let p_query_subject_id = subject_id;
 
     let uri_str = format!(
-        "{}/api/v1/workspaces/{workspace}/memories",
+        "{}/api/v1/workspaces/{workspace}/memory-providers/{provider_id}/memories",
         configuration.base_path,
+        provider_id = crate::generated::apis::urlencode(p_path_provider_id),
         workspace = crate::generated::apis::urlencode(p_path_workspace)
     );
     let mut req_builder = configuration.client.request(reqwest::Method::GET, &uri_str);
@@ -200,7 +213,7 @@ pub async fn get_workspaces_workspace_memories(
         }
     } else {
         let content = resp.text().await?;
-        let entity: Option<GetWorkspacesWorkspaceMemoriesError> =
+        let entity: Option<GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesError> =
             serde_json::from_str(&content).ok();
         Err(Error::ResponseError(Box::new(ResponseContent {
             status,
@@ -211,22 +224,28 @@ pub async fn get_workspaces_workspace_memories(
     }
 }
 
-pub async fn get_workspaces_workspace_memories_memory_id(
+pub async fn get_workspaces_workspace_memory_providers_provider_id_memories_memory_id(
     configuration: &configuration::Configuration,
+    provider_id: &str,
     memory_id: &str,
     workspace: &str,
-    scope: models::Mem0Scope,
+    scope: models::MemoryScope,
     subject_id: Option<&str>,
-) -> Result<Response<models::Memory>, Error<GetWorkspacesWorkspaceMemoriesMemoryIdError>> {
+) -> Result<
+    Response<models::Memory>,
+    Error<GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryIdError>,
+> {
     // add a prefix to parameters to efficiently prevent name collisions
+    let p_path_provider_id = provider_id;
     let p_path_memory_id = memory_id;
     let p_path_workspace = workspace;
     let p_query_scope = scope;
     let p_query_subject_id = subject_id;
 
     let uri_str = format!(
-        "{}/api/v1/workspaces/{workspace}/memories/{memory_id}",
+        "{}/api/v1/workspaces/{workspace}/memory-providers/{provider_id}/memories/{memory_id}",
         configuration.base_path,
+        provider_id = crate::generated::apis::urlencode(p_path_provider_id),
         memory_id = crate::generated::apis::urlencode(p_path_memory_id),
         workspace = crate::generated::apis::urlencode(p_path_workspace)
     );
@@ -278,7 +297,7 @@ pub async fn get_workspaces_workspace_memories_memory_id(
         }
     } else {
         let content = resp.text().await?;
-        let entity: Option<GetWorkspacesWorkspaceMemoriesMemoryIdError> =
+        let entity: Option<GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryIdError> =
             serde_json::from_str(&content).ok();
         Err(Error::ResponseError(Box::new(ResponseContent {
             status,
@@ -289,22 +308,28 @@ pub async fn get_workspaces_workspace_memories_memory_id(
     }
 }
 
-pub async fn post_workspaces_workspace_memories(
+pub async fn post_workspaces_workspace_memory_providers_provider_id_memories(
     configuration: &configuration::Configuration,
+    provider_id: &str,
     workspace: &str,
-    scope: models::Mem0Scope,
+    scope: models::MemoryScope,
     memory_write: models::MemoryWrite,
     subject_id: Option<&str>,
-) -> Result<Response<models::Memory>, Error<PostWorkspacesWorkspaceMemoriesError>> {
+) -> Result<
+    Response<models::Memory>,
+    Error<PostWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesError>,
+> {
     // add a prefix to parameters to efficiently prevent name collisions
+    let p_path_provider_id = provider_id;
     let p_path_workspace = workspace;
     let p_query_scope = scope;
     let p_body_memory_write = memory_write;
     let p_query_subject_id = subject_id;
 
     let uri_str = format!(
-        "{}/api/v1/workspaces/{workspace}/memories",
+        "{}/api/v1/workspaces/{workspace}/memory-providers/{provider_id}/memories",
         configuration.base_path,
+        provider_id = crate::generated::apis::urlencode(p_path_provider_id),
         workspace = crate::generated::apis::urlencode(p_path_workspace)
     );
     let mut req_builder = configuration
@@ -358,7 +383,7 @@ pub async fn post_workspaces_workspace_memories(
         }
     } else {
         let content = resp.text().await?;
-        let entity: Option<PostWorkspacesWorkspaceMemoriesError> =
+        let entity: Option<PostWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesError> =
             serde_json::from_str(&content).ok();
         Err(Error::ResponseError(Box::new(ResponseContent {
             status,
@@ -369,22 +394,28 @@ pub async fn post_workspaces_workspace_memories(
     }
 }
 
-pub async fn post_workspaces_workspace_memories_search(
+pub async fn post_workspaces_workspace_memory_providers_provider_id_memories_search(
     configuration: &configuration::Configuration,
+    provider_id: &str,
     workspace: &str,
-    scope: models::Mem0Scope,
+    scope: models::MemoryScope,
     memory_search: models::MemorySearch,
     subject_id: Option<&str>,
-) -> Result<Response<models::MemoryCollection>, Error<PostWorkspacesWorkspaceMemoriesSearchError>> {
+) -> Result<
+    Response<models::MemoryCollection>,
+    Error<PostWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesSearchError>,
+> {
     // add a prefix to parameters to efficiently prevent name collisions
+    let p_path_provider_id = provider_id;
     let p_path_workspace = workspace;
     let p_query_scope = scope;
     let p_body_memory_search = memory_search;
     let p_query_subject_id = subject_id;
 
     let uri_str = format!(
-        "{}/api/v1/workspaces/{workspace}/memories/search",
+        "{}/api/v1/workspaces/{workspace}/memory-providers/{provider_id}/memories/search",
         configuration.base_path,
+        provider_id = crate::generated::apis::urlencode(p_path_provider_id),
         workspace = crate::generated::apis::urlencode(p_path_workspace)
     );
     let mut req_builder = configuration
@@ -438,7 +469,7 @@ pub async fn post_workspaces_workspace_memories_search(
         }
     } else {
         let content = resp.text().await?;
-        let entity: Option<PostWorkspacesWorkspaceMemoriesSearchError> =
+        let entity: Option<PostWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesSearchError> =
             serde_json::from_str(&content).ok();
         Err(Error::ResponseError(Box::new(ResponseContent {
             status,
@@ -449,15 +480,20 @@ pub async fn post_workspaces_workspace_memories_search(
     }
 }
 
-pub async fn put_workspaces_workspace_memories_memory_id(
+pub async fn put_workspaces_workspace_memory_providers_provider_id_memories_memory_id(
     configuration: &configuration::Configuration,
+    provider_id: &str,
     memory_id: &str,
     workspace: &str,
-    scope: models::Mem0Scope,
+    scope: models::MemoryScope,
     memory_write: models::MemoryWrite,
     subject_id: Option<&str>,
-) -> Result<Response<models::Memory>, Error<PutWorkspacesWorkspaceMemoriesMemoryIdError>> {
+) -> Result<
+    Response<models::Memory>,
+    Error<PutWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryIdError>,
+> {
     // add a prefix to parameters to efficiently prevent name collisions
+    let p_path_provider_id = provider_id;
     let p_path_memory_id = memory_id;
     let p_path_workspace = workspace;
     let p_query_scope = scope;
@@ -465,8 +501,9 @@ pub async fn put_workspaces_workspace_memories_memory_id(
     let p_query_subject_id = subject_id;
 
     let uri_str = format!(
-        "{}/api/v1/workspaces/{workspace}/memories/{memory_id}",
+        "{}/api/v1/workspaces/{workspace}/memory-providers/{provider_id}/memories/{memory_id}",
         configuration.base_path,
+        provider_id = crate::generated::apis::urlencode(p_path_provider_id),
         memory_id = crate::generated::apis::urlencode(p_path_memory_id),
         workspace = crate::generated::apis::urlencode(p_path_workspace)
     );
@@ -519,7 +556,7 @@ pub async fn put_workspaces_workspace_memories_memory_id(
         }
     } else {
         let content = resp.text().await?;
-        let entity: Option<PutWorkspacesWorkspaceMemoriesMemoryIdError> =
+        let entity: Option<PutWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryIdError> =
             serde_json::from_str(&content).ok();
         Err(Error::ResponseError(Box::new(ResponseContent {
             status,

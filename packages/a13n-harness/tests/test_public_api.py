@@ -109,7 +109,6 @@ def test_feature_facades_export_documented_families() -> None:
         "CodeActConfig",
         "CompactionCapability",
         "DocumentsCapability",
-        "DocumentsRunCapability",
         "FileContextCapability",
         "FileSkillSource",
         "HandoffCapability",
@@ -120,7 +119,6 @@ def test_feature_facades_export_documented_families() -> None:
         "InlineSubagentState",
         "MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS",
         "MediaCapability",
-        "MediaRunCapability",
         "RuntimeContextCapability",
         "AgentToolReviewer",
         "ToolReviewer",
@@ -151,9 +149,8 @@ def test_feature_facades_export_documented_families() -> None:
         "SubagentToolCallStatus",
         "SubagentWaitRequest",
         "SubagentWaitResult",
-        "SkillSelectionRunCapability",
         "SkillsCapability",
-        "TaskStateRunCapability",
+        "TaskStateBinding",
         "ToolProxyCapability",
         "ToolProxyConfig",
         "ToolProxyGroup",
@@ -167,7 +164,7 @@ def test_feature_facades_export_documented_families() -> None:
         "WEB_SEARCH_MODE_ENV",
         "WebCapability",
         "WebConfiguration",
-        "WebRunCapability",
+        "WebBinding",
         "WebScrapeBackendBinding",
         "WebScrapeConfiguration",
         "WebSearchBackendBinding",
@@ -304,7 +301,6 @@ def test_environment_and_managed_tool_import_routes_are_public() -> None:
     expected_tools = {
         "ClientToolDefinition",
         "ClientToolsCapability",
-        "ClientToolsRunCapability",
         "ClientToolsSpec",
         "ClientToolsetDefinition",
         "InvocationPolicyCapability",
@@ -342,3 +338,18 @@ def test_environment_and_managed_tool_import_routes_are_public() -> None:
     assert expected_tools <= set(tools.__all__)
     assert "InvocationAuthorizationCapability" not in tools.__all__
     assert "InvocationAuthorizationToolset" not in tools.__all__
+
+
+def test_memory_has_one_public_capability_and_independent_backend_contract():
+    from a13n_harness.capabilities.memory import MemoryCapability
+    from a13n_harness.memory import MemoryBackend, MemoryScope
+    from a13n_harness.memory_plugins import MemoryBackendCatalog, MemoryBackendPlugin
+
+    assert capabilities.MemoryCapability is MemoryCapability
+    assert capabilities.MemoryScope is MemoryScope
+    assert MemoryCapability.id == "a13n.memory"
+    assert not hasattr(capabilities, "Mem0Capability")
+    assert not hasattr(capabilities, "MemoryRunCapability")
+    assert MemoryBackend.__abstractmethods__ == {"search", "list", "add", "get", "update", "delete"}
+    assert MemoryBackendPlugin is not harness.AbstractHarnessPlugin
+    assert MemoryBackendCatalog() == {}

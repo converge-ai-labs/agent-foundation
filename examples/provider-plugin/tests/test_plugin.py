@@ -3,6 +3,8 @@ from __future__ import annotations
 import httpx2
 import pytest
 from a13n_harness.capabilities.web import WebScrapeRequest, WebSearchRequest
+from a13n_harness.memory import MemoryBackend
+from a13n_harness.memory_plugins import MemoryBackendCatalog
 from a13n_service.app import create_app
 from a13n_service.models.provider_adapters.types import RuntimeProvider
 from a13n_service.provider_plugins import load_provider_catalogs
@@ -71,3 +73,22 @@ async def test_installed_entry_point_dispatches_web_and_builds_native_model_prov
             assert str(provider.base_url).startswith("https://models.example.com/v1")
         finally:
             await provider.__aexit__(None, None, None)
+
+
+@pytest.mark.anyio
+async def test_installed_memory_plugin_reuses_harness_contract_without_opening_transport() -> None:
+    from acme_provider.plugin import AcmeMemoryPlugin
+
+    service_catalog = MemoryBackendCatalog(load_provider_catalogs(("acme",)).memory)
+    plugin = service_catalog["acme.memory"]
+    assert isinstance(plugin, AcmeMemoryPlugin)
+    standalone_catalog = MemoryBackendCatalog((plugin,))
+    assert standalone_catalog[plugin.key] is plugin
+    configuration = plugin.configuration_model.model_validate({"base_url": "http://127.0.0.1:18888"})
+    credential = plugin.credential_model.model_validate({"api_key": "test-token"})
+    assert "test-token" not in repr(credential)
+    # Opening the native adapter is inert: no server or vendor account is needed.
+    async with plugin.open(configuration, credential) as backend:
+        assert isinstance(backend, MemoryBackend)
+    with pytest.raises(ValueError):
+        plugin.configuration_model.model_validate({"base_url": "file:///tmp/memory"})

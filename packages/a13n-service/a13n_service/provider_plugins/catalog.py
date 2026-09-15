@@ -7,9 +7,11 @@ import json
 import re
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from typing import Any
 from urllib.parse import urlsplit
 
 from a13n_environment import EnvironmentProvider
+from a13n_harness.memory_plugins import MemoryBackendCatalog, MemoryBackendPlugin
 from pydantic import BaseModel
 
 from a13n_service.models.provider_adapters.base import ProviderIntegration
@@ -55,6 +57,7 @@ class ProviderCatalogs:
     connector: tuple[ConnectorProviderRegistration, ...]
     web: tuple[WebProviderRegistration, ...]
     plugins: tuple[LoadedProviderPlugin, ...]
+    memory: tuple[MemoryBackendPlugin[Any, Any], ...] = ()
 
 
 def load_provider_catalogs(enabled: Iterable[str]) -> ProviderCatalogs:
@@ -121,6 +124,7 @@ def load_provider_catalogs(enabled: Iterable[str]) -> ProviderCatalogs:
         connector=registry.connector.values(),
         web=registry.web.values(),
         plugins=tuple(loaded),
+        memory=registry.memory.values(),
     )
 
 
@@ -132,6 +136,11 @@ def _metadata_text(distribution: importlib.metadata.Distribution | None, key: st
 
 
 def _validate(registry: ProviderPluginRegistry) -> None:
+    MemoryBackendCatalog(registry.memory.values())
+    for plugin in registry.memory.values():
+        _validate_display_name("Memory", plugin.key, plugin.display_name)
+        _validate_schema("Memory", plugin.key, plugin.configuration_model)
+        _validate_schema("Memory credential", plugin.key, plugin.credential_model)
     for provider in registry.environment.values():
         if provider.key in _ENVIRONMENT_BUILTINS:
             raise ProviderPluginError(f"Environment Provider {provider.key!r} uses a reserved built-in key")

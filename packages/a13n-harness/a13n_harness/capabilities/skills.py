@@ -50,7 +50,6 @@ from a13n_harness.observation import (
 from a13n_harness.tools.metadata import HARNESS_TOOL_METADATA_KEY, normalize_harness_tool_metadata
 
 SKILLS_CAPABILITY_ID = "a13n.skills"
-SKILL_SELECTION_RUN_CAPABILITY_ID = "a13n.skills.selection.run"
 _SKILL_FILE_NAME = "SKILL.md"
 _SKILL_READ_CONCURRENCY = 8
 _DEFAULT_ENVIRONMENT_SKILL_ROOT = "/workspace/.agents/skills"
@@ -436,24 +435,6 @@ class SkillsPolicy(BaseModel):
 
     conflict: Literal["error", "prefer_earlier", "prefer_later"] = "prefer_later"
     max_skills: int = Field(default=512, gt=0, le=_MAX_SKILL_SELECTION)
-
-
-@dataclass(kw_only=True)
-class SkillSelectionRunCapability(AbstractCapability[AgentContext]):
-    """Fresh Host override selecting exact skill names for one logical run."""
-
-    id: str | None = SKILL_SELECTION_RUN_CAPABILITY_ID
-    names: frozenset[str] = frozenset()
-
-    def __post_init__(self) -> None:
-        if self.id != SKILL_SELECTION_RUN_CAPABILITY_ID:
-            raise ValueError(f"SkillSelectionRunCapability.id must be {SKILL_SELECTION_RUN_CAPABILITY_ID!r}")
-        if not isinstance(self.names, frozenset) or not all(isinstance(name, str) for name in self.names):
-            raise TypeError("SkillSelectionRunCapability.names must be a frozenset of strings")
-        if len(self.names) > _MAX_SKILL_SELECTION:
-            raise ValueError("SkillSelectionRunCapability.names contains too many skill names")
-        for name in self.names:
-            _validate_identifier(name, "selection name")
 
 
 class SkillManager:
@@ -885,14 +866,16 @@ class _SkillsRunCapability(SkillsCapability):
 
 
 def _resolve_skill_selection(ctx: RunContext[AgentContext]) -> frozenset[str] | None:
-    names = ctx.deps._skill_selection_names
-    if names is None:
-        return None
-    if SKILL_SELECTION_RUN_CAPABILITY_ID not in ctx.deps._capability_provenance.run_ids:
-        raise DefinitionError(
-            "SkillSelectionRunCapability must originate from RunBindings.", code="capability_scope_invalid"
-        )
-    return names
+    return ctx.deps.skill_selection
+
+
+def _validate_skill_selection(names: frozenset[str]) -> None:
+    if not isinstance(names, frozenset) or not all(isinstance(name, str) for name in names):
+        raise TypeError("skill_selection must be a frozenset of strings")
+    if len(names) > _MAX_SKILL_SELECTION:
+        raise ValueError("skill_selection contains too many skill names")
+    for name in names:
+        _validate_identifier(name, "selection name")
 
 
 def _validate_identifier(value: str, field_name: str) -> str:
@@ -1108,7 +1091,6 @@ __all__ = [
     "SkillCatalogItem",
     "SkillManager",
     "SkillMaterializer",
-    "SkillSelectionRunCapability",
     "SkillSource",
     "SkillsCapability",
     "SkillsPolicy",

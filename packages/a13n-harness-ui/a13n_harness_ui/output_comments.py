@@ -9,6 +9,7 @@ from pydantic_ai.messages import ModelResponse, TextPart
 from a13n_harness_ui.errors import StoreConflictError, ThreadError
 from a13n_harness_ui.output_comment_models import (
     ChildOutputLocation,
+    CommentEdit,
     CommentModel,
     CommentPage,
     CommentPublication,
@@ -27,6 +28,7 @@ from a13n_harness_ui.thread_projection import _decode_cursor, _encode_cursor
 class _CommentCursor(CommentModel):
     root_thread_id: str
     target_key: str | None
+    newest_first: bool = False
     created_at: datetime
     comment_id: str
 
@@ -56,6 +58,16 @@ class OutputComments:
             raise ThreadError("Comment selection does not match saved output.", code="comment_selection_invalid")
         return await self._store.comments.publish(root_thread_id, publication, source)
 
+    async def edit(self, root_thread_id: str, comment_id: str, edit: CommentEdit) -> OutputComment:
+        await self._store.comments.require_root(root_thread_id)
+        return await self._store.comments.edit(root_thread_id, comment_id, edit)
+
+    async def delete(self, root_thread_id: str, comment_id: str, *, expected_version: int) -> None:
+        await self._store.comments.require_root(root_thread_id)
+        if expected_version < 1:
+            raise ThreadError("Comment version must be positive.", code="comment_version_invalid")
+        await self._store.comments.delete(root_thread_id, comment_id, expected_version=expected_version)
+
     async def get(self, root_thread_id: str, comment_id: str) -> OutputComment:
         await self._store.comments.require_root(root_thread_id)
         comment = await self._store.comments.get(root_thread_id, comment_id)
@@ -70,6 +82,7 @@ class OutputComments:
         target: SavedOutputTarget | None = None,
         cursor: str | None = None,
         limit: int = 20,
+        newest_first: bool = False,
     ) -> CommentPage:
         await self._store.comments.require_root(root_thread_id)
         if not 1 <= limit <= 100:
@@ -78,10 +91,16 @@ class OutputComments:
         after = None
         if cursor is not None:
             decoded = _decode_cursor(cursor, _CommentCursor, code="comment_cursor_invalid")
-            if decoded.root_thread_id != root_thread_id or decoded.target_key != key:
+            if (
+                decoded.root_thread_id != root_thread_id
+                or decoded.target_key != key
+                or decoded.newest_first != newest_first
+            ):
                 raise ThreadError("Comment cursor belongs to another query.", code="comment_cursor_mismatch")
             after = (decoded.created_at, decoded.comment_id)
-        records = await self._store.comments.list(root_thread_id, target=target, after=after, limit=limit + 1)
+        records = await self._store.comments.list(
+            root_thread_id, target=target, after=after, limit=limit + 1, newest_first=newest_first
+        )
         visible = records[:limit]
         next_cursor = None
         if len(records) > limit:
@@ -90,6 +109,7 @@ class OutputComments:
                 _CommentCursor(
                     root_thread_id=root_thread_id,
                     target_key=key,
+                    newest_first=newest_first,
                     created_at=last.created_at,
                     comment_id=last.comment_id,
                 )

@@ -174,6 +174,35 @@ async def test_object_read_rejects_corruption_truncation_and_trailing_data(tmp_p
     assert missing_error.value.code == "object_unreadable"
 
 
+async def test_payload_validation_logs_identity_and_bounded_fields_without_private_values(tmp_path, caplog):
+    from pydantic import ConfigDict, create_model
+
+    entry = create_model("DiagnosticEntry", context_window_tokens=(int, ...))
+    payload_type = create_model(
+        "DiagnosticPayload", __config__=ConfigDict(extra="forbid"), models=(dict[str, entry], ...)
+    )
+    store, _ = _object_store(tmp_path)
+    envelope = await store.publish(
+        object_kind=ObjectKind.configuration_generation,
+        object_schema_version="1",
+        payload={"models": {f"private-key-{i}": {"context_window_tokens": "/private/config"} for i in range(12)}},
+    )
+    with pytest.raises(ObjectIntegrityError) as error:
+        await store.read_model(envelope.ref, payload_type)
+    assert error.value.code == "object_payload_incompatible"
+    record = next(record for record in caplog.records if record.name == "a13n_harness_ui.storage.objects")
+    assert record.object_kind == "configuration-generation"
+    assert record.object_schema_version == "1"
+    assert record.object_digest == envelope.logical_digest
+    assert record.payload_model == "DiagnosticPayload"
+    assert record.validation_error_count == 12
+    assert len(record.validation_errors) == 8
+    assert record.validation_errors[0] == {"location": "models.*.context_window_tokens", "type": "int_type"}
+    assert "private" not in repr(record.__dict__)
+    assert "private" not in repr(error.value.details)
+    assert await store.read(envelope.ref) == envelope
+
+
 async def test_object_read_checks_declared_size_before_decompression(tmp_path: Path) -> None:
     writer, layout = _object_store(tmp_path, max_object_bytes=4096)
     envelope = await writer.publish(

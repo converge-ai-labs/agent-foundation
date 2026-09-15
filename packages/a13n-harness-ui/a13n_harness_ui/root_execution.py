@@ -35,7 +35,7 @@ from pydantic_ai import ToolDenied, ToolFailed
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.tools import DeferredToolApprovalResult, DeferredToolRequests, ToolApproved
 
-from a13n_harness_ui.capability_runtime import production_run_capabilities
+from a13n_harness_ui.capability_runtime import production_run_bindings
 from a13n_harness_ui.composition import (
     AgentReconstructor,
     CompositionAcceptanceService,
@@ -228,9 +228,10 @@ class RootRunExecutor:
             bindings = RunBindings(
                 instance=instance,
                 environment=environment.runtime,
+                tool_result_directory=environment.tool_result_directory,
                 model_resolver=reconstructed.model_resolver,
-                capabilities=production_run_capabilities(reconstructed.definition_capability_ids),
             )
+            bindings = production_run_bindings(bindings, reconstructed.definition_capability_ids)
             record_phase_result(
                 preparation_span,
                 status="completed",

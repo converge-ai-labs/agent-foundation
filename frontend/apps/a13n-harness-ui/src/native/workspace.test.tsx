@@ -786,3 +786,16 @@ it("does not offer tool-to-host lookup when sharing is disabled", async () => {
   await screen.findByText("Edit");
   expect(screen.queryByRole("button", { name: "Open on host" })).toBeNull();
 });
+
+it.each(["/?project=project-one", "/new/thread_local?project=project-one"])(
+  "uses the selected local Project for Files, Changes and Terminal on %s",
+  async (path) => {
+    setup(path);
+    fireEvent.click(await screen.findByRole("button", { name: "Files" }));
+    await screen.findByText("Folder /native");
+    fireEvent.click(screen.getByRole("button", { name: "Changes" }));
+    await screen.findByText("Repository /native · Diff");
+    fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
+    await screen.findByText("Terminal context project-one · /native");
+  },
+);

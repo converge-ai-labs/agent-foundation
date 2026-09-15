@@ -82,10 +82,18 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
+class AgentModelCharacteristics(StrictModel):
+    """Agent-owned context policy layered over Model declarations."""
+
+    context_window_tokens: int | None = Field(default=None, gt=0)
+    proactive_context_management_threshold: float | None = Field(default=0.65, ge=0.0, le=1.0)
+    compact_threshold: float = Field(default=0.90, gt=0.0, le=1.0)
+
+
 class AgentModel(StrictModel):
     model_key: ModelKey
     settings: Annotated[JsonObject, AfterValidator(validate_settings_bounds)] = Field(default_factory=dict)
-    characteristics: HarnessModelCharacteristics = Field(default_factory=HarnessModelCharacteristics)
+    characteristics: AgentModelCharacteristics = Field(default_factory=AgentModelCharacteristics)
 
 
 class PluginSelection(StrictModel):
@@ -260,7 +268,7 @@ class AgentConfig(StrictModel):
 class ModelOverride(StrictModel):
     model_key: ModelKey | None = None
     settings: Annotated[JsonObject, AfterValidator(validate_settings_bounds)] | None = None
-    characteristics: HarnessModelCharacteristics | None = None
+    characteristics: AgentModelCharacteristics | None = None
 
 
 class SubagentOverride(StrictModel):
@@ -299,7 +307,7 @@ class ResolvedAgentModel(StrictModel):
     model_id: ObjectId
     model_key: ModelKey
     settings: Annotated[JsonObject, AfterValidator(validate_settings_bounds)]
-    characteristics: HarnessModelCharacteristics
+    characteristics: AgentModelCharacteristics
 
 
 class EffectiveAgentModel(StrictModel):

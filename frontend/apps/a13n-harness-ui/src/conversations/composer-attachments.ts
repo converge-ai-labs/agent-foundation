@@ -16,6 +16,7 @@ import type { Schema, Transport } from "../transport/client";
 import type { ThreadDraft } from "./draft";
 import { inlinePattern, isReadyAttachment } from "./inline-attachments";
 import { retainedImage } from "./attachment-thumbnail";
+import { commentReference } from "./comment-reference";
 import styles from "./conversation.module.css";
 
 export type ComposerAttachmentView = {
@@ -74,7 +75,23 @@ class AttachmentWidget extends WidgetType {
       open.append(image);
     }
     const label = document.createElement("span");
-    label.textContent = this.name;
+    const source = commentReference(attachment);
+    if (source) {
+      chip.classList.add(styles.inlineComment);
+      const heading = document.createElement("small");
+      heading.textContent = source.author
+        ? `Comment · ${source.author}`
+        : "Comment reference";
+      const excerpt = document.createElement("span");
+      excerpt.textContent = source.preview ?? this.name;
+      label.append(heading, excerpt);
+      if (source.quote) {
+        const quote = document.createElement("small");
+        quote.className = styles.inlineCommentQuote;
+        quote.textContent = `“${source.quote}”`;
+        label.append(quote);
+      }
+    } else label.textContent = this.name;
     open.append(label);
     open.title = this.name;
     open.setAttribute("aria-label", this.name);
@@ -109,7 +126,7 @@ export function composerAttachments(
     const id = draft.doc.getMap<string>("attachments").get(key);
     return isReadyAttachment(id)
       ? (context().metadata.get(id)?.name ?? "Attachment")
-      : `${draft.uploads.get(key)?.file.name ?? "Attachment"} · ${id === "failed" ? "upload failed — retry" : "not ready"}`;
+      : `${draft.uploads.get(key)?.file.name ?? "Attachment"} · ${id === "failed" ? "upload failed — retry" : draft.uploads.get(key)?.status === "staged" ? "ready to upload" : "not ready"}`;
   };
   const displayText = (text: string) =>
     text.replace(inlinePattern, (_match, key: string) => `[${label(key)}]`);
@@ -165,7 +182,7 @@ export function composerAttachments(
     event.clipboardData.setData("text/plain", displayText(text));
     event.clipboardData.setData(
       clipboardType,
-      JSON.stringify({ draft: draft.draftId, text }),
+      JSON.stringify({ draft: draft.draftId ?? draft.doc.guid, text }),
     );
     event.preventDefault();
     if (cut) view.dispatch({ changes: { from, to }, userEvent: "delete.cut" });
@@ -223,7 +240,7 @@ export function composerAttachments(
               typeof value === "object" &&
               value !== null &&
               "draft" in value &&
-              value.draft === draft.draftId &&
+              value.draft === (draft.draftId ?? draft.doc.guid) &&
               "text" in value &&
               typeof value.text === "string" &&
               [...value.text.matchAll(inlinePattern)].every((match) =>

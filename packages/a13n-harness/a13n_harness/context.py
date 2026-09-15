@@ -16,12 +16,16 @@ from pydantic import JsonValue
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import ModelMessage
 
+from a13n_harness.environment._mount_path import parse_mount_path
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
 from a13n_harness.observation import HarnessObservationContext
 from a13n_harness.state import AgentContextState, HarnessState
 
 if TYPE_CHECKING:
+    from a13n_harness.capabilities.media import MediaReader
     from a13n_harness.capabilities.steering import SteeringBridge
+    from a13n_harness.capabilities.web import WebBinding
+    from a13n_harness.capabilities.working_state import TaskStateBinding
     from a13n_harness.environment.models import EnvironmentPath
     from a13n_harness.environment.providers import BoundEnvironment as Environment
     from a13n_harness.environment.providers import EnvironmentRuntime, FileScopeSelection
@@ -38,8 +42,11 @@ if TYPE_CHECKING:
     from a13n_harness.recovery import ToolRecoveryPlan
     from a13n_harness.spec import HarnessModelCharacteristics
     from a13n_harness.tools.approval import ToolApprovalContext
+    from a13n_harness.tools.client import ClientToolsetDefinition
     from a13n_harness.tools.deferred import DeferredToolResume
     from a13n_harness.tools.permission_gate import PermissionCheck
+    from a13n_harness.toolsets.documents import DocumentConverter
+    from a13n_harness.toolsets.file_media import MediaUnderstandingProvider
     from a13n_harness.usage import ProviderUsage, ProviderUsageRecord, RunUsageLedger, UsageRecord
 
 
@@ -78,7 +85,7 @@ def _copy_subagent_declaration(declaration: SubagentDefinition) -> SubagentDefin
         context=declaration.context,
         identity=declaration.identity,
         usage_limits=declaration.usage_limits,
-        run_capability_factory=declaration.run_capability_factory,
+        run_bindings_factory=declaration.run_bindings_factory,
     )
 
 
@@ -128,9 +135,17 @@ class RunBindings:
     model_resolver: RunModelResolver | None = None
     toolset_instructions: bool | None = None
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
+    web: WebBinding | None = None
+    media_reader: MediaReader | None = None
+    document_converter: DocumentConverter | None = None
+    file_media_understanding: MediaUnderstandingProvider | None = None
+    skill_selection: frozenset[str] | None = None
+    task_state: TaskStateBinding | None = None
+    client_toolsets: tuple[ClientToolsetDefinition, ...] | None = None
     metadata: Mapping[str, JsonValue] = field(default_factory=dict)
     model_context: ModelContextMiddleware | None = None
     observation: HarnessObservationContext | None = None
+    tool_result_directory: str | None = None
     _inherited_model_cost: AbstractModelCostCapability | None = field(
         default=None,
         repr=False,
@@ -138,10 +153,40 @@ class RunBindings:
     )
 
     def __post_init__(self) -> None:
+        if self.tool_result_directory is not None:
+            try:
+                parse_mount_path(self.tool_result_directory)
+            except ValueError as exc:
+                raise ValueError("tool_result_directory must be a canonical absolute Environment path") from exc
         if self.toolset_instructions is not None and not isinstance(self.toolset_instructions, bool):
             raise TypeError("toolset_instructions must be a boolean or None")
         if self.observation is not None and not isinstance(self.observation, HarnessObservationContext):
             raise TypeError("observation must be a HarnessObservationContext or None")
+        from a13n_harness.capabilities.media import MediaReader
+        from a13n_harness.capabilities.skills import _validate_skill_selection
+        from a13n_harness.capabilities.web import WebBinding
+        from a13n_harness.capabilities.working_state import TaskStateBinding
+        from a13n_harness.tools.client import ClientToolsetDefinition, _validate_toolsets
+        from a13n_harness.toolsets.documents import DocumentConverter
+        from a13n_harness.toolsets.file_media import MediaUnderstandingProvider
+
+        for name, value, expected in (
+            ("web", self.web, WebBinding),
+            ("media_reader", self.media_reader, MediaReader),
+            ("document_converter", self.document_converter, DocumentConverter),
+            ("file_media_understanding", self.file_media_understanding, MediaUnderstandingProvider),
+            ("task_state", self.task_state, TaskStateBinding),
+        ):
+            if value is not None and not isinstance(value, expected):
+                raise TypeError(f"RunBindings.{name} must implement {expected.__name__}")
+        if self.skill_selection is not None:
+            _validate_skill_selection(self.skill_selection)
+        if self.client_toolsets is not None:
+            toolsets = tuple(deepcopy(self.client_toolsets))
+            if not all(isinstance(item, ClientToolsetDefinition) for item in toolsets):
+                raise TypeError("RunBindings.client_toolsets must contain ClientToolsetDefinition values")
+            _validate_toolsets(toolsets)
+            object.__setattr__(self, "client_toolsets", toolsets)
         object.__setattr__(self, "capabilities", tuple(self.capabilities))
         object.__setattr__(self, "metadata", MappingProxyType(deepcopy(dict(self.metadata))))
 
@@ -155,8 +200,16 @@ class RunBindings:
         toolset_instructions: bool | None = None,
         model_context: ModelContextMiddleware | None = None,
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
+        web: WebBinding | None = None,
+        media_reader: MediaReader | None = None,
+        document_converter: DocumentConverter | None = None,
+        file_media_understanding: MediaUnderstandingProvider | None = None,
+        skill_selection: frozenset[str] | None = None,
+        task_state: TaskStateBinding | None = None,
+        client_toolsets: tuple[ClientToolsetDefinition, ...] | None = None,
         metadata: Mapping[str, JsonValue] | None = None,
         observation: HarnessObservationContext | None = None,
+        tool_result_directory: str | None = None,
     ) -> RunBindings:
         """Create fresh trusted bindings for one embedded run."""
         instance_id = str(uuid4())
@@ -170,6 +223,14 @@ class RunBindings:
             toolset_instructions=toolset_instructions,
             model_context=model_context,
             capabilities=tuple(capabilities),
+            web=web,
+            media_reader=media_reader,
+            document_converter=document_converter,
+            file_media_understanding=file_media_understanding,
+            skill_selection=skill_selection,
+            task_state=task_state,
+            client_toolsets=client_toolsets,
+            tool_result_directory=tool_result_directory,
             metadata=metadata or {},
             observation=observation,
         )
@@ -297,7 +358,13 @@ class AgentContext:
         compare=False,
     )
     _started_at_monotonic: float = field(default_factory=monotonic, repr=False, compare=False)
-    _skill_selection_names: frozenset[str] | None = field(default=None, repr=False, compare=False)
+    web: WebBinding | None = None
+    media_reader: MediaReader | None = None
+    document_converter: DocumentConverter | None = None
+    file_media_understanding: MediaUnderstandingProvider | None = None
+    skill_selection: frozenset[str] | None = None
+    task_state: TaskStateBinding | None = None
+    client_toolsets: tuple[ClientToolsetDefinition, ...] | None = None
     skill_paths: RunSkillPaths = field(default_factory=RunSkillPaths, compare=False)
     tool_metadata: ToolRuntimeMetadata = field(default_factory=ToolRuntimeMetadata, compare=False)
     _capability_provenance: _CapabilityProvenance = field(default_factory=_CapabilityProvenance, repr=False)
@@ -315,6 +382,7 @@ class AgentContext:
         repr=False,
         compare=False,
     )
+    tool_result_directory: str | None = None
     _tool_result_spill_store: _ToolResultSpillStore | None = field(
         default=None,
         repr=False,
@@ -467,7 +535,8 @@ class _ToolResultSpillStore:
     def __init__(self, context: AgentContext) -> None:
         run_digest = hashlib.sha256(context.run_id.encode("utf-8")).hexdigest()[:12]
         self._environment = context.environment
-        self._directory_suffix = f".a13n/tmp/tool-results/run-{run_digest}"
+        self._directory = context.tool_result_directory
+        self._run_directory_prefix = f"run-{run_digest}"
         self._directories: dict[tuple[str, str], tuple[FileScopeSelection, str]] = {}
         self._next_sequence = 1
         self._closed = False
@@ -480,7 +549,7 @@ class _ToolResultSpillStore:
             if self._closed:
                 return None
             try:
-                directory = self._default_directory()
+                directory = self._new_directory()
                 if directory is None:
                     return None
                 selection = await self._environment.resolve_files(directory)
@@ -508,15 +577,16 @@ class _ToolResultSpillStore:
                 return None
             return path
 
-    def _default_directory(self) -> str | None:
-        snapshot = self._environment.snapshot
-        if snapshot.default_mount is None:
-            return None
-        mount = next((item for item in snapshot.mounts if item.name == snapshot.default_mount), None)
-        if mount is None:
-            return None
-        root = mount.mount_path or f"/environment/{mount.name}"
-        return f"{root.rstrip('/')}/{self._directory_suffix}-{uuid4().hex[:12]}"
+    def _new_directory(self) -> str | None:
+        parent = self._directory
+        if parent is None:
+            snapshot = self._environment.snapshot
+            mount = next((item for item in snapshot.mounts if item.name == snapshot.default_mount), None)
+            if mount is None:
+                return None
+            root = mount.mount_path or f"/environment/{mount.name}"
+            parent = f"{root.rstrip('/')}/.a13n/tmp/tool-results"
+        return f"{parent.rstrip('/')}/{self._run_directory_prefix}-{uuid4().hex[:12]}"
 
     async def close(self) -> None:
         async with self._lock:

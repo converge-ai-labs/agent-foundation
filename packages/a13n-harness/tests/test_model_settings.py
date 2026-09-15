@@ -49,7 +49,7 @@ def test_context_aliases_compose_and_concrete_fields_override_last() -> None:
     )
 
     assert characteristics == HarnessModelCharacteristics(
-        context_window=1_000_000,
+        context_window_tokens=1_000_000,
         proactive_context_management_threshold=0.65,
         compact_threshold=0.8,
     )
@@ -63,12 +63,12 @@ def test_context_alias_does_not_change_provider_request_settings() -> None:
     settings = resolve_model_settings("gateway@anthropic:claude-sonnet-5")
 
     assert characteristics is not None
-    assert characteristics.context_window == 400_000
+    assert characteristics.context_window_tokens == 400_000
     assert settings == {}
 
 
 def test_characteristics_resolution_preserves_unknown_and_accepts_concrete_input() -> None:
-    overrides = HarnessModelCharacteristics(context_window=123_456)
+    overrides = HarnessModelCharacteristics(context_window_tokens=123_456)
 
     assert resolve_model_characteristics("logical:primary") is None
     assert resolve_model_characteristics("logical:primary", overrides=overrides) == overrides
@@ -96,7 +96,7 @@ def test_custom_characteristics_alias_catalog_is_immutable_and_composable() -> N
     )
 
     assert characteristics == HarnessModelCharacteristics(
-        context_window=200_000,
+        context_window_tokens=200_000,
         proactive_context_management_threshold=0.65,
         compact_threshold=0.75,
     )

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
@@ -22,22 +22,7 @@ from a13n_harness.toolsets.documents import (
 )
 
 DOCUMENTS_CAPABILITY_ID = "a13n.documents"
-DOCUMENTS_RUN_CAPABILITY_ID = "a13n.documents.run"
 _DOCUMENT_TOOLSET_ID = "a13n-document-tools"
-
-
-@dataclass(kw_only=True)
-class DocumentsRunCapability(AbstractCapability[AgentContext]):
-    """Fresh run attachment carrying document conversion authority."""
-
-    id: str | None = DOCUMENTS_RUN_CAPABILITY_ID
-    converter: DocumentConverter = field()
-
-    def __post_init__(self) -> None:
-        if self.id != DOCUMENTS_RUN_CAPABILITY_ID:
-            raise ValueError(f"DocumentsRunCapability.id must be {DOCUMENTS_RUN_CAPABILITY_ID!r}")
-        if not isinstance(self.converter, DocumentConverter):
-            raise TypeError("converter must implement DocumentConverter")
 
 
 @dataclass(init=False)
@@ -69,7 +54,6 @@ class _DocumentsActiveCapability(DocumentsCapability):
     def __init__(self, configuration: DocumentsConfiguration, *, context: AgentContext) -> None:
         super().__init__(configuration)
         self._context = context
-        self._converter: DocumentConverter | None = None
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
         if ctx.deps is not self._context:
@@ -100,22 +84,12 @@ class _DocumentsActiveCapability(DocumentsCapability):
             raise DefinitionError(
                 "The finalized Documents owner has an incompatible identity.", code="capability_scope_invalid"
             )
-        attachment = ctx.capabilities.get(DOCUMENTS_RUN_CAPABILITY_ID)
-        if type(attachment) is not DocumentsRunCapability:
+        provider = ctx.deps.document_converter
+        if provider is None:
             raise DefinitionError(
-                "DocumentsCapability requires one fresh DocumentsRunCapability.", code="documents_binding_missing"
+                "DocumentsCapability requires RunBindings.document_converter.", code="documents_binding_missing"
             )
-        if DOCUMENTS_RUN_CAPABILITY_ID not in ctx.deps._capability_provenance.run_ids:
-            raise DefinitionError(
-                "DocumentsRunCapability must originate from RunBindings.", code="capability_scope_invalid"
-            )
-        if self._converter is None:
-            self._converter = attachment.converter
-        elif self._converter is not attachment.converter:
-            raise DefinitionError(
-                "Document converter identity changed within one run.", code="capability_scope_invalid"
-            )
-        return self._converter
+        return provider
 
 
 __all__ = [
@@ -127,5 +101,4 @@ __all__ = [
     "DocumentKind",
     "DocumentsCapability",
     "DocumentsConfiguration",
-    "DocumentsRunCapability",
 ]

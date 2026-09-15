@@ -5,19 +5,19 @@ import json
 import httpx2
 import pytest
 from a13n_harness import AgentDefinition, AgentSpec, HarnessBuilder
-from a13n_harness.capabilities.mem0 import Mem0Scope
 from a13n_harness.capabilities.mem0_backends import Mem0OSSBackend
 from a13n_harness.errors import RunError
+from a13n_harness.memory import MemoryScope as ScopeKind
 from a13n_service.agents.models import AgentRecord
 from a13n_service.interactions.models import RunAttemptRecord
 from a13n_service.memory.domain import MemoryScope, MemorySelection
 from a13n_service.memory.runtime import memory_capability
-from a13n_service.memory.scopes import MemoryAuthorizer, memory_subject
-from a13n_service.memory.service import MemoryService
+from a13n_service.memory.scopes import memory_subject
 from a13n_service.storage import transaction
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
 from tests.hooks.support import hook_actor
+from tests.memory.support import memory_service
 from tests.memory.test_api import native_transport
 
 from .conftest import NOW, ORGANIZATION_ID, WORKSPACE_ID
@@ -35,18 +35,24 @@ async def test_auto_recall_tools_and_next_run_keep_service_thread_namespace(
     async with httpx2.AsyncClient(
         base_url="http://oss/", transport=httpx2.MockTransport(native_transport(records, calls, httpx2.Response))
     ) as client:
-        service = MemoryService(Mem0OSSBackend(client), MemoryAuthorizer(interaction_sessions))
-        subject = memory_subject(ORGANIZATION_ID, WORKSPACE_ID, Mem0Scope.THREAD, run.thread_id)
+        service, provider, _ = await memory_service(
+            interaction_sessions, Mem0OSSBackend(client), principal=hook_actor(), workspace_id=WORKSPACE_ID
+        )
+        subject = memory_subject(ORGANIZATION_ID, WORKSPACE_ID, provider.id, ScopeKind.THREAD, run.thread_id)
         selection = MemoryScope(scope="thread", subject_id=run.thread_id)
         await service.add(
-            actor=hook_actor(), workspace_id=WORKSPACE_ID, selection=selection, text="Remembered evidence"
+            actor=hook_actor(),
+            workspace_id=WORKSPACE_ID,
+            provider_id=provider.id,
+            selection=selection,
+            text="Remembered evidence",
         )
         capability = memory_capability(
             service,
             run=run,
             workspace_id=WORKSPACE_ID,
             agent_id=run.agent_id,
-            selection=MemorySelection(scope="thread"),
+            selection=MemorySelection(provider_id=provider.id, scope="thread"),
             current_context=lambda: context,
         )
         assert capability.auto_recall is True
@@ -107,13 +113,15 @@ async def test_child_agent_scope_is_independent_and_disabled_agent_fails_before_
     async with httpx2.AsyncClient(
         base_url="http://oss/", transport=httpx2.MockTransport(native_transport(records, calls, httpx2.Response))
     ) as client:
-        service = MemoryService(Mem0OSSBackend(client), MemoryAuthorizer(interaction_sessions))
+        service, provider, _ = await memory_service(
+            interaction_sessions, Mem0OSSBackend(client), principal=hook_actor(), workspace_id=WORKSPACE_ID
+        )
         root = memory_capability(
             service,
             run=run,
             workspace_id=WORKSPACE_ID,
             agent_id=run.agent_id,
-            selection=MemorySelection(scope="agent"),
+            selection=MemorySelection(provider_id=provider.id, scope="agent"),
             current_context=lambda: context,
         )
         child = memory_capability(
@@ -121,18 +129,18 @@ async def test_child_agent_scope_is_independent_and_disabled_agent_fails_before_
             run=run,
             workspace_id=WORKSPACE_ID,
             agent_id=child_id,
-            selection=MemorySelection(scope="agent"),
+            selection=MemorySelection(provider_id=provider.id, scope="agent"),
             current_context=lambda: context,
         )
-        assert root.scope_ids[Mem0Scope.THREAD] == child.scope_ids[Mem0Scope.THREAD]
-        assert root.scope_ids[Mem0Scope.AGENT] != child.scope_ids[Mem0Scope.AGENT]
-        root_subject = memory_subject(ORGANIZATION_ID, WORKSPACE_ID, Mem0Scope.AGENT, run.agent_id)
-        child_subject = memory_subject(ORGANIZATION_ID, WORKSPACE_ID, Mem0Scope.AGENT, child_id)
+        assert root.scope_ids[ScopeKind.THREAD] == child.scope_ids[ScopeKind.THREAD]
+        assert root.scope_ids[ScopeKind.AGENT] != child.scope_ids[ScopeKind.AGENT]
+        root_subject = memory_subject(ORGANIZATION_ID, WORKSPACE_ID, provider.id, ScopeKind.AGENT, run.agent_id)
+        child_subject = memory_subject(ORGANIZATION_ID, WORKSPACE_ID, provider.id, ScopeKind.AGENT, child_id)
         # Workspace authority includes both Agents, but the binding never accepts a parent's subject as the child's.
         with pytest.raises(RunError, match="scope"):
             await child.backend.add("wrong owner", subject=root_subject)
         await child.backend.add("child memory", subject=child_subject)
-        assert not (await root.backend.list(root_subject, limit=5))["results"]
+        assert not (await root.backend.list(root_subject, limit=5)).items
         async with transaction(interaction_sessions) as session:
             child_record = await session.get(AgentRecord, child_id)
             child_record.enabled = False

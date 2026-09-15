@@ -23,18 +23,16 @@ from a13n_harness.capabilities import (
     DocumentConversionResult,
     DocumentsCapability,
     DocumentsConfiguration,
-    DocumentsRunCapability,
     MediaCapability,
     MediaConfiguration,
     MediaReadRequest,
     MediaResource,
-    MediaRunCapability,
+    WebBinding,
     WebCapability,
     WebConfiguration,
     WebProviderError,
     WebRequest,
     WebResponse,
-    WebRunCapability,
     WebScrapeRequest,
     WebScrapeResult,
     WebSearchConfiguration,
@@ -330,12 +328,7 @@ async def test_media_capability_returns_native_binary_with_run_scoped_reader() -
 
     result = await executable.run(
         "Inspect media",
-        bindings=RunBindings.embedded(
-            capabilities=(
-                _policy(),
-                MediaRunCapability(reader=reader),
-            )
-        ),
+        bindings=RunBindings.embedded(capabilities=(_policy(),), media_reader=reader),
     )
 
     assert result.output_or_raise() == "done"
@@ -373,7 +366,7 @@ async def test_media_capability_enforces_kind_specific_actual_byte_limit() -> No
 
     result = await executable.run(
         "Inspect media",
-        bindings=RunBindings.embedded(capabilities=(_policy(), MediaRunCapability(reader=reader))),
+        bindings=RunBindings.embedded(capabilities=(_policy(),), media_reader=reader),
     )
 
     assert result.output_or_raise() == "done"
@@ -408,7 +401,7 @@ async def test_media_capability_rejects_credential_provider_url_before_model_his
 
     result = await executable.run(
         "Inspect media",
-        bindings=RunBindings.embedded(capabilities=(_policy(), MediaRunCapability(reader=reader))),
+        bindings=RunBindings.embedded(capabilities=(_policy(),), media_reader=reader),
     )
 
     assert result.output_or_raise() == "done"
@@ -463,7 +456,8 @@ async def test_documents_capability_publishes_one_complete_environment_tree(tmp_
         "Convert",
         bindings=RunBindings.embedded(
             environment=_binding(tmp_path),
-            capabilities=(_policy(), DocumentsRunCapability(converter=converter)),
+            capabilities=(_policy(),),
+            document_converter=converter,
         ),
     )
 
@@ -541,7 +535,8 @@ async def test_pdf_page_ranges_publish_to_distinct_agent_usable_exports(tmp_path
         "Convert ranges",
         bindings=RunBindings.embedded(
             environment=_binding(tmp_path),
-            capabilities=(_policy(), DocumentsRunCapability(converter=converter)),
+            capabilities=(_policy(),),
+            document_converter=converter,
         ),
     )
 
@@ -581,7 +576,8 @@ async def test_documents_capability_removes_partial_staging_tree(tmp_path: Path)
         "Convert",
         bindings=RunBindings.embedded(
             environment=_binding(tmp_path),
-            capabilities=(_policy(), DocumentsRunCapability(converter=converter)),
+            capabilities=(_policy(),),
+            document_converter=converter,
         ),
     )
 
@@ -645,10 +641,8 @@ async def test_documents_retains_operation_scope_through_conversion_and_publicat
         "Convert",
         bindings=RunBindings.embedded(
             environment=binding,
-            capabilities=(
-                InvocationPolicyCapability(evaluator=CapturePolicy(), max_dispatch_retries=0),
-                DocumentsRunCapability(converter=RefreshingConverter()),
-            ),
+            capabilities=(InvocationPolicyCapability(evaluator=CapturePolicy(), max_dispatch_retries=0),),
+            document_converter=RefreshingConverter(),
         ),
     )
 
@@ -708,10 +702,8 @@ async def test_web_download_retains_operation_scope_through_request_and_writing(
         "Download",
         bindings=RunBindings.embedded(
             environment=binding,
-            capabilities=(
-                InvocationPolicyCapability(evaluator=CapturePolicy(), max_dispatch_retries=0),
-                WebRunCapability(client=RefreshingClient(), policy=_WebPolicy()),
-            ),
+            capabilities=(InvocationPolicyCapability(evaluator=CapturePolicy(), max_dispatch_retries=0),),
+            web=WebBinding(client=RefreshingClient(), policy=_WebPolicy()),
         ),
     )
 
@@ -755,15 +747,13 @@ async def test_web_capability_composes_search_and_scrape_providers() -> None:
     result = await executable.run(
         "Search",
         bindings=RunBindings.embedded(
-            capabilities=(
-                _policy(),
-                WebRunCapability(
-                    client=client,
-                    policy=policy,
-                    search_provider=search,
-                    scrape_provider=scrape,
-                ),
-            )
+            capabilities=(_policy(),),
+            web=WebBinding(
+                client=client,
+                policy=policy,
+                search_provider=search,
+                scrape_provider=scrape,
+            ),
         ),
     )
 
@@ -795,14 +785,12 @@ async def test_web_search_strips_credential_aliases_from_model_history(credentia
     result = await executable.run(
         "Search",
         bindings=RunBindings.embedded(
-            capabilities=(
-                _policy(),
-                WebRunCapability(
-                    client=_WebClient(()),
-                    policy=_WebPolicy(),
-                    search_provider=search,
-                ),
-            )
+            capabilities=(_policy(),),
+            web=WebBinding(
+                client=_WebClient(()),
+                policy=_WebPolicy(),
+                search_provider=search,
+            ),
         ),
     )
 
@@ -859,7 +847,8 @@ async def test_web_fetch_rechecks_final_url_and_rejects_binary_content() -> None
     result = await executable.run(
         "Fetch",
         bindings=RunBindings.embedded(
-            capabilities=(_policy(), WebRunCapability(client=client, policy=policy)),
+            capabilities=(_policy(),),
+            web=WebBinding(client=client, policy=policy),
         ),
     )
 
@@ -908,7 +897,8 @@ async def test_web_download_enforces_stream_limit_and_removes_partial_file(tmp_p
         "Download",
         bindings=RunBindings.embedded(
             environment=_binding(tmp_path),
-            capabilities=(_policy(), WebRunCapability(client=client, policy=policy)),
+            capabilities=(_policy(),),
+            web=WebBinding(client=client, policy=policy),
         ),
     )
 
@@ -959,7 +949,8 @@ async def test_web_download_isolates_batch_failures_and_uses_response_media_type
         "Download",
         bindings=RunBindings.embedded(
             environment=_binding(tmp_path),
-            capabilities=(_policy(), WebRunCapability(client=client, policy=_WebPolicy())),
+            capabilities=(_policy(),),
+            web=WebBinding(client=client, policy=_WebPolicy()),
         ),
     )
 
@@ -1001,7 +992,8 @@ async def test_web_fetch_body_deadline_is_finite() -> None:
     result = await executable.run(
         "Fetch",
         bindings=RunBindings.embedded(
-            capabilities=(_policy(), WebRunCapability(client=client, policy=_WebPolicy())),
+            capabilities=(_policy(),),
+            web=WebBinding(client=client, policy=_WebPolicy()),
         ),
     )
 
@@ -1061,11 +1053,8 @@ async def test_content_tool_approval_is_independent_of_backing_identity(
         if is_download
         else DocumentsCapability()
     )
-    attachment = (
-        WebRunCapability(client=client, policy=_WebPolicy())
-        if is_download
-        else DocumentsRunCapability(converter=converter)
-    )
+    web = WebBinding(client=client, policy=_WebPolicy()) if is_download else None
+    document_converter = None if is_download else converter
     captured = []
 
     class ApprovalPolicy:
@@ -1093,7 +1082,9 @@ async def test_content_tool_approval_is_independent_of_backing_identity(
         "Run the tool",
         bindings=RunBindings.embedded(
             environment=_binding(original),
-            capabilities=(InvocationPolicyCapability(evaluator=ApprovalPolicy()), attachment),
+            capabilities=(InvocationPolicyCapability(evaluator=ApprovalPolicy()),),
+            web=web,
+            document_converter=document_converter,
         ),
     )
     requests = first.deferred
@@ -1109,7 +1100,9 @@ async def test_content_tool_approval_is_independent_of_backing_identity(
         deferred_resume=DeferredToolResume(requests, requests.build_results(approve_all=True)),
         bindings=RunBindings.embedded(
             environment=_binding(replacement if change == "backing" else original),
-            capabilities=(InvocationPolicyCapability(evaluator=ResumePolicy()), attachment),
+            capabilities=(InvocationPolicyCapability(evaluator=ResumePolicy()),),
+            web=web,
+            document_converter=document_converter,
         ),
     )
     assert resumed.output_or_raise() == "done"
@@ -1199,12 +1192,9 @@ async def test_content_dispatch_uses_current_route_after_policy_wait(tmp_path: P
         "Execute",
         bindings=RunBindings.embedded(
             environment=binding,
-            capabilities=(
-                InvocationPolicyCapability(evaluator=ChangeOnAuthorize(), max_dispatch_retries=0),
-                WebRunCapability(client=client, policy=_WebPolicy())
-                if download
-                else DocumentsRunCapability(converter=converter),
-            ),
+            capabilities=(InvocationPolicyCapability(evaluator=ChangeOnAuthorize(), max_dispatch_retries=0),),
+            web=WebBinding(client=client, policy=_WebPolicy()) if download else None,
+            document_converter=None if download else converter,
         ),
     )
     assert result.output_or_raise() == "done"

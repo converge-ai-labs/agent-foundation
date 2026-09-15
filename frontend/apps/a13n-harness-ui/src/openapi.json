@@ -1917,6 +1917,16 @@
               ],
               "title": "Target"
             }
+          },
+          {
+            "name": "newest_first",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Newest First"
+            }
           }
         ],
         "responses": {
@@ -1989,6 +1999,111 @@
             }
           }
         }
+      },
+      "patch": {
+        "summary": "Edit Comment",
+        "operationId": "edit_comment_api_threads__thread_id__comments__comment_id__patch",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Comment Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OutputComment"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CommentEdit"
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete Comment",
+        "operationId": "delete_comment_api_threads__thread_id__comments__comment_id__delete",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          },
+          {
+            "name": "comment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Comment Id"
+            }
+          },
+          {
+            "name": "expected_version",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "title": "Expected Version"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/threads/{thread_id}/comments/{comment_id}/capture": {
@@ -2012,6 +2127,23 @@
             "schema": {
               "type": "string",
               "title": "Comment Id"
+            }
+          },
+          {
+            "name": "expected_version",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expected Version"
             }
           }
         ],
@@ -5263,6 +5395,55 @@
         ],
         "title": "CommentPage"
       },
+      "CommentReferencePreview": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version",
+            "default": 1
+          },
+          "author": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author"
+          },
+          "preview": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 240
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preview"
+          },
+          "quote": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 240
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quote"
+          }
+        },
+        "type": "object",
+        "title": "CommentReferencePreview",
+        "description": "Additive attachment display metadata; the captured bytes own full content."
+      },
       "CommentSelection": {
         "additionalProperties": false,
         "properties": {
@@ -6906,7 +7087,7 @@
             "uniqueItems": true,
             "title": "Capabilities"
           },
-          "context_window": {
+          "context_window_tokens": {
             "anyOf": [
               {
                 "type": "integer",
@@ -6916,7 +7097,7 @@
                 "type": "null"
               }
             ],
-            "title": "Context Window"
+            "title": "Context Window Tokens"
           },
           "proactive_context_management_threshold": {
             "anyOf": [
@@ -7338,6 +7519,12 @@
       },
       "OutputComment": {
         "properties": {
+          "body": {
+            "type": "string",
+            "maxLength": 16384,
+            "minLength": 1,
+            "title": "Body"
+          },
           "comment_id": {
             "type": "string",
             "pattern": "^comment-[A-Za-z0-9_-]{16,64}$",
@@ -7359,12 +7546,6 @@
           "author": {
             "$ref": "#/components/schemas/CommentAuthor"
           },
-          "body": {
-            "type": "string",
-            "maxLength": 16384,
-            "minLength": 1,
-            "title": "Body"
-          },
           "root_thread_id": {
             "type": "string",
             "maxLength": 80,
@@ -7375,15 +7556,33 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version",
+            "default": 1
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
+          "body",
           "comment_id",
           "target",
           "author",
-          "body",
           "root_thread_id",
           "created_at"
         ],
@@ -10150,6 +10349,16 @@
               }
             ],
             "title": "Source"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CommentReferencePreview"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -12250,6 +12459,12 @@
       "CommentPublication": {
         "additionalProperties": false,
         "properties": {
+          "body": {
+            "maxLength": 16384,
+            "minLength": 1,
+            "title": "Body",
+            "type": "string"
+          },
           "comment_id": {
             "pattern": "^comment-[A-Za-z0-9_-]{16,64}$",
             "title": "Comment Id",
@@ -12270,21 +12485,37 @@
           },
           "author": {
             "$ref": "#/components/schemas/CommentAuthor"
-          },
+          }
+        },
+        "required": [
+          "body",
+          "comment_id",
+          "target",
+          "author"
+        ],
+        "title": "CommentPublication",
+        "type": "object"
+      },
+      "CommentEdit": {
+        "additionalProperties": false,
+        "properties": {
           "body": {
             "maxLength": 16384,
             "minLength": 1,
             "title": "Body",
             "type": "string"
+          },
+          "expected_version": {
+            "minimum": 1,
+            "title": "Expected Version",
+            "type": "integer"
           }
         },
         "required": [
-          "comment_id",
-          "target",
-          "author",
-          "body"
+          "body",
+          "expected_version"
         ],
-        "title": "CommentPublication",
+        "title": "CommentEdit",
         "type": "object"
       },
       "ProjectDefaultsApply": {

@@ -17,14 +17,16 @@ func (CreateConnectorProviderRequest) String() string { return "CreateConnectorP
 func (CreateConnectorProviderRequest) GoString() string {
 	return "CreateConnectorProviderRequest { .. }"
 }
-func (CreateModelProviderRequest) String() string   { return "CreateModelProviderRequest { .. }" }
-func (CreateModelProviderRequest) GoString() string { return "CreateModelProviderRequest { .. }" }
-func (CreateWebProviderRequest) String() string     { return "CreateWebProviderRequest { .. }" }
-func (CreateWebProviderRequest) GoString() string   { return "CreateWebProviderRequest { .. }" }
-func (EmailChangeRequest) String() string           { return "EmailChangeRequest { .. }" }
-func (EmailChangeRequest) GoString() string         { return "EmailChangeRequest { .. }" }
-func (LoginRequest) String() string                 { return "LoginRequest { .. }" }
-func (LoginRequest) GoString() string               { return "LoginRequest { .. }" }
+func (CreateMemoryProviderRequest) String() string   { return "CreateMemoryProviderRequest { .. }" }
+func (CreateMemoryProviderRequest) GoString() string { return "CreateMemoryProviderRequest { .. }" }
+func (CreateModelProviderRequest) String() string    { return "CreateModelProviderRequest { .. }" }
+func (CreateModelProviderRequest) GoString() string  { return "CreateModelProviderRequest { .. }" }
+func (CreateWebProviderRequest) String() string      { return "CreateWebProviderRequest { .. }" }
+func (CreateWebProviderRequest) GoString() string    { return "CreateWebProviderRequest { .. }" }
+func (EmailChangeRequest) String() string            { return "EmailChangeRequest { .. }" }
+func (EmailChangeRequest) GoString() string          { return "EmailChangeRequest { .. }" }
+func (LoginRequest) String() string                  { return "LoginRequest { .. }" }
+func (LoginRequest) GoString() string                { return "LoginRequest { .. }" }
 func (ReplaceAccountCredentialsRequest) String() string {
 	return "ReplaceAccountCredentialsRequest { .. }"
 }
@@ -41,9 +43,11 @@ func (UpdateConnectorProviderRequest) String() string { return "UpdateConnectorP
 func (UpdateConnectorProviderRequest) GoString() string {
 	return "UpdateConnectorProviderRequest { .. }"
 }
-func (UpdateModelProviderRequest) String() string   { return "UpdateModelProviderRequest { .. }" }
-func (UpdateModelProviderRequest) GoString() string { return "UpdateModelProviderRequest { .. }" }
-func (UpdateProviderRequest) String() string        { return "UpdateProviderRequest { .. }" }
-func (UpdateProviderRequest) GoString() string      { return "UpdateProviderRequest { .. }" }
-func (UpdateWebProviderRequest) String() string     { return "UpdateWebProviderRequest { .. }" }
-func (UpdateWebProviderRequest) GoString() string   { return "UpdateWebProviderRequest { .. }" }
+func (UpdateMemoryProviderRequest) String() string   { return "UpdateMemoryProviderRequest { .. }" }
+func (UpdateMemoryProviderRequest) GoString() string { return "UpdateMemoryProviderRequest { .. }" }
+func (UpdateModelProviderRequest) String() string    { return "UpdateModelProviderRequest { .. }" }
+func (UpdateModelProviderRequest) GoString() string  { return "UpdateModelProviderRequest { .. }" }
+func (UpdateProviderRequest) String() string         { return "UpdateProviderRequest { .. }" }
+func (UpdateProviderRequest) GoString() string       { return "UpdateProviderRequest { .. }" }
+func (UpdateWebProviderRequest) String() string      { return "UpdateWebProviderRequest { .. }" }
+func (UpdateWebProviderRequest) GoString() string    { return "UpdateWebProviderRequest { .. }" }

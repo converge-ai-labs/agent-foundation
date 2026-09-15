@@ -67,7 +67,7 @@ def test_official_model_catalog_contains_only_provider_qualified_direct_models()
         "google-gla:gemini-3.6-flash",
         "openai:gpt-5.5",
     }
-    assert catalog["openai:gpt-5.5"].characteristics.context_window == 1_050_000
+    assert catalog["openai:gpt-5.5"].characteristics.context_window_tokens == 1_050_000
     assert all(entry.key.count(":") == 1 for entry in catalog.entries)
     assert {entry.key.partition(":")[0] for entry in catalog.entries} <= {
         "anthropic",
@@ -106,7 +106,7 @@ def test_fable_5_1_catalog_uses_official_context_and_pricing() -> None:
     pricing = get_default_pricing_catalog()["anthropic:claude-fable-5-1"]
     prices = {component.price_key: component.price for component in pricing.rules[0].prices}
 
-    assert official.characteristics.context_window == 1_000_000
+    assert official.characteristics.context_window_tokens == 1_000_000
     assert pricing.context_window == 1_000_000
     assert pricing.source_revision == "official-2026-09-02"
     assert prices == {

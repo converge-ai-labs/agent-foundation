@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
+from functools import partial
 from typing import Literal
 
 from a13n_logging import get_logger
@@ -12,12 +13,23 @@ from pydantic import TypeAdapter
 from a13n_service.agents.domain import PreparedAgentPlugins
 from a13n_service.digests import digest_request
 from a13n_service.storage import ObjectConflict, ObjectInfo, ObjectNotFound, ObjectStore, ObjectStoreUnavailable
-from a13n_service.storage.codec import DurableObjectCodecError, canonical_model_bytes, decode_canonical_model
+from a13n_service.storage.codec import (
+    COMPRESSED_JSON_CONTENT_TYPE,
+    COMPRESSED_JSON_ENCODING,
+    DurableObjectCodecError,
+    DurableObjectSizeError,
+    canonical_model_bytes,
+    compressed_size_limit,
+    decode_canonical_model,
+    decode_compressed_model,
+    encode_compressed_model,
+    run_codec,
+)
 
 from .domain import Run, RunPayloadObjectRef, RunStatus
 from .state import RunCheckpoint, RunPayloadEnvelope, validate_state_successor
 
-RUN_STATE_CONTENT_TYPE = "application/vnd.converge.run-state+json"
+RUN_STATE_CONTENT_TYPE = COMPRESSED_JSON_CONTENT_TYPE
 RUN_PAYLOAD_CONTENT_TYPE = "application/vnd.converge.run-payload+json"
 DEFAULT_MAX_STATE_BYTES = 256 * 1024 * 1024
 DEFAULT_MAX_PAYLOAD_BYTES = 256 * 1024 * 1024
@@ -55,13 +67,12 @@ class RunStateStore:
             raise ValueError("max_state_bytes must be positive")
         self._objects = objects
         self._max_state_bytes = max_state_bytes
+        self._max_encoded_bytes = compressed_size_limit(max_state_bytes)
 
     async def create(self, organization_id: str, envelope: RunCheckpoint) -> StoredRunState:
         if envelope.checkpoint_kind != "initial":
             raise ValueError("Run state creation requires an initial envelope")
-        body = canonical_model_bytes(envelope)
-        self._require_bounded(body)
-        digest = hashlib.sha256(body).hexdigest()
+        body, digest = await self._encode_state(envelope)
         key = run_state_key(organization_id, envelope.run_id)
         try:
             info = await self._put_state(
@@ -82,7 +93,7 @@ class RunStateStore:
         """Read exact Run-owned bytes and verify any relationally selected seal."""
 
         state = await self.read(run.organization_id, run.id, expected_thread_id=run.thread_id)
-        validate_run_state_reference(run, state)
+        await run_codec(validate_run_state_reference, run, state)
         return state
 
     async def read(
@@ -93,13 +104,17 @@ class RunStateStore:
         expected_thread_id: str | None = None,
     ) -> StoredRunState:
         key = run_state_key(organization_id, run_id)
-        body, info = await _read_object(self._objects, key, max_bytes=self._max_state_bytes)
+        body, info = await _read_object(self._objects, key, max_bytes=self._max_encoded_bytes)
         _verify_info(info, key=key, body=body, content_type=RUN_STATE_CONTENT_TYPE)
+        if info.metadata.get("storage-encoding") != COMPRESSED_JSON_ENCODING:
+            raise RunObjectIntegrityError("Run state storage encoding is unsupported")
+        digest = info.metadata.get("digest-sha256", "")
         try:
-            envelope = decode_canonical_model(body, _STATE_ADAPTER)
+            envelope = await decode_compressed_model(
+                body, _STATE_ADAPTER, max_bytes=self._max_state_bytes, digest_sha256=digest
+            )
         except DurableObjectCodecError as error:
             raise RunObjectIntegrityError("Run state body is invalid") from error
-        digest = hashlib.sha256(body).hexdigest()
         writer_fence = _verify_state_metadata(info, envelope=envelope, digest=digest)
         if envelope.run_id != run_id:
             raise RunObjectIntegrityError("Run state identity does not match its deterministic key")
@@ -114,7 +129,9 @@ class RunStateStore:
             raise StaleStateWriter("Attempt number is older than the state writer fence")
         if attempt_number == state.writer_fence:
             return state
-        return await self._replace_state(state, state.envelope, writer_fence=attempt_number)
+        return await self._publish_state(
+            state, state.envelope, state.body, state.digest_sha256, writer_fence=attempt_number
+        )
 
     async def prepare_plugins(
         self,
@@ -145,11 +162,14 @@ class RunStateStore:
     ) -> StoredRunState:
         if attempt_number < state.writer_fence:
             raise StaleStateWriter("Attempt number is older than the state writer fence")
-        validate_state_successor(
-            state.envelope,
-            successor,
-            run_attempt_id=run_attempt_id,
-            attempt_number=attempt_number,
+        await run_codec(
+            partial(
+                validate_state_successor,
+                state.envelope,
+                successor,
+                run_attempt_id=run_attempt_id,
+                attempt_number=attempt_number,
+            )
         )
         return await self._replace_state(state, successor, writer_fence=attempt_number)
 
@@ -160,9 +180,18 @@ class RunStateStore:
         *,
         writer_fence: int,
     ) -> StoredRunState:
-        body = canonical_model_bytes(successor)
-        self._require_bounded(body)
-        digest = hashlib.sha256(body).hexdigest()
+        body, digest = await self._encode_state(successor)
+        return await self._publish_state(state, successor, body, digest, writer_fence=writer_fence)
+
+    async def _publish_state(
+        self,
+        state: StoredRunState,
+        successor: RunCheckpoint,
+        body: bytes,
+        digest: str,
+        *,
+        writer_fence: int,
+    ) -> StoredRunState:
         try:
             info = await self._put_state(
                 state.info.key,
@@ -205,7 +234,7 @@ class RunStateStore:
             # using its old token, or accept another writer's bytes as our receipt.
             try:
                 observed = await self._objects.stat(key)
-                actual, info = await _read_object(self._objects, key, max_bytes=self._max_state_bytes)
+                actual, info = await _read_object(self._objects, key, max_bytes=self._max_encoded_bytes)
             except (ObjectNotFound, ObjectStoreUnavailable, TimeoutError) as read_error:
                 raise error from read_error
             if info.version != observed.version:
@@ -223,9 +252,13 @@ class RunStateStore:
             logger.info("run_state_write_reconciled", extra={"run_id": envelope.run_id, "writer_fence": writer_fence})
             return info
 
-    def _require_bounded(self, body: bytes) -> None:
-        if len(body) > self._max_state_bytes:
-            raise RunObjectError("Run state exceeds the configured size limit")
+    async def _encode_state(self, envelope: RunCheckpoint) -> tuple[bytes, str]:
+        try:
+            return await encode_compressed_model(envelope, max_bytes=self._max_state_bytes)
+        except DurableObjectSizeError as error:
+            raise RunObjectError("Run state exceeds the configured size limit") from error
+        except DurableObjectCodecError as error:
+            raise RunObjectError("Run state cannot be encoded") from error
 
 
 class RunPayloadStore:
@@ -405,6 +438,7 @@ def validate_run_state_reference(run: Run, state: StoredRunState) -> None:
 
 def _state_metadata(envelope: RunCheckpoint, digest: str, *, writer_fence: int) -> dict[str, str]:
     return {
+        "storage-encoding": COMPRESSED_JSON_ENCODING,
         "schema-version": envelope.schema_version,
         "run-id": envelope.run_id,
         "thread-id": envelope.thread_id,

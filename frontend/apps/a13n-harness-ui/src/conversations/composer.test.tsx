@@ -230,3 +230,69 @@ it.each(["accepted", "rejected", "unknown"] as const)(
     query.clear();
   },
 );
+
+it("keeps accepted receipts and healthy sync quiet while preserving errors and help", async () => {
+  const draft = new ThreadDraft();
+  vi.spyOn(draft, "connect").mockReturnValue({ presence() {}, close() {} });
+  draft.receive({
+    draft_id: "draft-one",
+    participant_id: "p-one",
+    participants: {},
+    update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+  });
+  draft.submission = {
+    kind: "accepted",
+    receipt: "receipt-hidden",
+    message: "Input accepted. Execution may still be preparing.",
+  };
+  const query = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  render(
+    <QueryClientProvider client={query}>
+      <TransportContext
+        value={{ client: { GET: vi.fn() } } as unknown as Transport}
+      >
+        <ComposerDrafts value={new Map([["thread-one", draft]])}>
+          <Composer
+            threadId="thread-one"
+            activity={{ state: "inactive" }}
+            canRun
+            profile={{ display_name: "Alice", color: "#2563eb" }}
+            unauthorized={() => {}}
+            reconcile={() => {}}
+          />
+        </ComposerDrafts>
+      </TransportContext>
+    </QueryClientProvider>,
+  );
+  expect(screen.queryByText(/Input accepted/)).toBeNull();
+  expect(screen.queryByText(/receipt-hidden/)).toBeNull();
+  expect(screen.queryByText("Synchronized")).toBeNull();
+  expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Attach files" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Composer help" }));
+  expect(await screen.findByText(/Enter for a new line/)).toBeTruthy();
+  act(() => {
+    draft.submission = { kind: "rejected", message: "Draft retained" };
+    draft.notify();
+  });
+  expect(screen.getByRole("alert").textContent).toContain("Draft retained");
+  act(() => {
+    draft.submission = {
+      kind: "unknown",
+      action: "send",
+      message: "Outcome unknown",
+    };
+    draft.notify();
+  });
+  expect(
+    screen.getByRole("button", { name: "Refresh operation and history" }),
+  ).toBeTruthy();
+  expect(
+    (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  cleanup();
+  query.clear();
+});

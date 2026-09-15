@@ -39,7 +39,7 @@ class SubagentDefinition:
     context: DelegationContextPolicy = DelegationContextPolicy()
     identity: SubagentIdentityPolicy = SubagentIdentityPolicy()
     usage_limits: UsageLimits | None = None
-    run_capability_factory: Callable[[], Sequence[AbstractCapability[AgentContext]]] | None = None
+    run_bindings_factory: Callable[[RunBindings], RunBindings] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,7 +55,7 @@ class SubagentCollection(Mapping[str, BuiltSubagent]):
 
 Harness validates the finite recursive definition graph and builds children before their parent. Each child owns its complete Model, prompt, output contract, Capabilities, plugins, recovery policy, Environment requirements, and nested children. Every parent `AgentContext` receives the exact immutable immediate collection from its executable.
 
-`run_capability_factory` is an optional trusted, process-local factory for fresh inline-child Run attachment Capabilities. Harness invokes it once for each child invocation, including a resumed continuation, and validates its returned values through the ordinary `RunBindings` ownership and collision checks. The factory owns no entered resources; request-scoped collaborators must close their resources within their operation. It is never serialized into State, grants no additional authority, and does not inherit a parent's Web or other provider attachment. Hosts reconstruct the factory from their accepted child configuration. Async child execution binds its resources through its own Host Run.
+`run_bindings_factory` is an optional trusted, process-local function from baseline child `RunBindings` to completed child `RunBindings`. Harness invokes it once for each child invocation, including a resumed continuation. The returned value must preserve the baseline child instance, borrowed Environment, and inherited invocation-policy Capability. The baseline carries inherited policy, model resolution, metadata, and the tool result directory for its borrowed Environment, but not the parent's feature providers, skill selection, or client tool overrides. Each child still owns and cleans its own Run-private spill leaves. Explicit task-state sharing supplies a borrowed cell and rejects a conflicting factory `task_state`. The factory owns no entered resources; the Host owns collaborator cleanup. The callable is never serialized into State and grants no additional authority. Hosts reconstruct it from their accepted child configuration. Async child execution binds its resources through its own Host Run.
 
 The collection contains no current Identity, credential, State, Environment adapter, entered facade, scheduler, task, execution mode, backend selector, or Host record. A child executable is reusable process-local build output and is never serialized as durable payload. A distributed Host persists its own reconstructable definition reference and rebuilds the exact trusted definition on the selected worker.
 

@@ -245,4 +245,6 @@ Dispatch retries are bounded and require the supported certainty/idempotency con
 
 A spill needs the supported Environment output path and current access. It does not grant additional file authority. Truncation or references are not complete inline results. Redaction at this managed output boundary is not a universal promise that arbitrary logs, custom callbacks, or unmanaged tools are secret-free.
 
+By default, temporary tool results are written below the default Environment mount's `.a13n/tmp/tool-results/`. A Host can set `RunBindings.tool_result_directory` (also accepted by `RunBindings.embedded()`) to a canonical absolute Environment directory, such as `/environment/scratch/tmp/tool-results`. This applies to both proactive Toolset disclosure and managed-tool overflow without changing the default mount. An unavailable explicit directory does not fall back to the workspace; the result remains a bounded preview with no file path. Harness creates unique Run-private subdirectories and attempts to remove them on Run cleanup, leaving other files alone. These files are not durable outputs or continuation storage.
+
 See [Environment tools](environments.md) for canonical resource and model-visible operation integration, and [Host embedding](hosting.md) for durable command ownership outside the process-local boundary.

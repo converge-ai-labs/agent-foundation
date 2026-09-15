@@ -21,6 +21,7 @@ def build_agent_management(
         resources.models,
         connectivity_resolver=resources.connectivity,
         web_provider_registry=resources.web_providers,
+        memory_backend_catalog=resources.memory_backends,
     )
     return AgentManagement(
         shared.storage.sessions,

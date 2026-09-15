@@ -8,9 +8,10 @@ from typing import Any, Protocol
 
 import httpx2
 from a13n_harness.errors import ModelResolutionError
+from pydantic_ai.profiles import ModelProfile as NativeModelProfile
 from pydantic_ai.providers import Provider
 
-from ..descriptions import default_candidate
+from ..candidates import default_candidate
 from ..domain import ModelCandidate
 from ..headers import validate_header_names
 from .types import CredentialFormat, ProviderConfiguration, RuntimeProvider, ValidatedProviderConfiguration
@@ -34,6 +35,7 @@ class DiscoveredModelIdentity:
 NativeProviderBuilder = Callable[[RuntimeProvider, httpx2.AsyncClient, str], Provider[Any]]
 EndpointResolver = Callable[[Mapping[str, object]], str | None]
 CredentialValidator = Callable[[Mapping[str, object], bool], None]
+ModelProfileResolver = Callable[[str], NativeModelProfile | None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -49,7 +51,7 @@ class ModelDiscoveryAdapter(Protocol):
 
     def next_page(self, payload: Mapping[str, Any]) -> dict[str, str]: ...
 
-    def describe(
+    def candidate(
         self, model_api: str, upstream_model: str, display_name: str | None, metadata: Mapping[str, Any]
     ) -> ModelCandidate: ...
 
@@ -64,7 +66,7 @@ class ModelListSchema:
 
 @dataclass(frozen=True, slots=True)
 class JsonModelDiscoveryAdapter:
-    """Describe one Provider's bounded JSON model-list operation."""
+    """Project one Provider's bounded JSON model-list operation."""
 
     request_builder: Callable[[RuntimeProvider], ModelListRequest]
     schema: ModelListSchema
@@ -101,7 +103,7 @@ class JsonModelDiscoveryAdapter:
             raise ProviderOperationError("the Provider returned an unsupported continuation format")
         return {}
 
-    def describe(
+    def candidate(
         self, model_api: str, upstream_model: str, display_name: str | None, metadata: Mapping[str, Any]
     ) -> ModelCandidate:
         return default_candidate(model_api, upstream_model, display_name)
@@ -122,6 +124,7 @@ class ProviderIntegration:
     endpoint_configuration_field: str | None = None
     credential_validator: CredentialValidator | None = None
     model_discovery: ModelDiscoveryAdapter | None = None
+    model_profile: ModelProfileResolver | None = None
     reserved_headers: tuple[str, ...] = ("authorization",)
     additional_endpoint_fields: tuple[str, ...] = ()
 

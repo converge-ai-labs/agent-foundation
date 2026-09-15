@@ -19,6 +19,7 @@ from prompt_toolkit.application import create_app_session
 from prompt_toolkit.document import Document
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
+from prompt_toolkit.selection import SelectionState
 
 
 def _png() -> bytes:
@@ -630,3 +631,83 @@ async def test_cancel_key_stops_pending_menu_query_without_consuming_next_draft(
             if not task.done():
                 task.cancel()
                 await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("change", ["edit", "replace", "save", "remove", "undo"])
+async def test_empty_clipboard_cleans_only_its_anchor_after_async_edits(
+    monkeypatch: pytest.MonkeyPatch, change: str
+) -> None:
+    import a13n_harness_ui.interactive.shell as module
+
+    entered, release = threading.Event(), threading.Event()
+
+    def clipboard():
+        entered.set()
+        release.wait(5)
+        return ()
+
+    monkeypatch.setattr(module, "clipboard_images", clipboard)
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+        shell = CliShell(CliRequest())
+        buffer = shell.composer.buffer
+        buffer.document = Document("before selected after", 15, SelectionState(7))
+        original = buffer.document
+        messages = []
+        monkeypatch.setattr(shell, "emit", messages.append)
+        shell.start_clipboard()
+        token = shell.inline.tokens(buffer.text)[0]
+        try:
+            assert await asyncio.to_thread(entered.wait, 3)
+            if change == "edit":
+                buffer.save_to_undo_stack()
+                buffer.insert_text(" typed later", fire_event=False)
+                buffer.document = Document(buffer.text, len(buffer.text), SelectionState(8))
+            elif change == "replace":
+                shell._draft_generation += 1
+                buffer.reset(document=Document("new draft", 4, SelectionState(1)))
+            elif change == "save":
+                shell._save_draft()
+                buffer.document = Document("menu answer", 4, SelectionState(1))
+            elif change == "remove":
+                buffer.save_to_undo_stack()
+                buffer.start_selection()
+                buffer.cursor_left()
+                shell.clipboard.set_data(buffer.cut_selection())
+                assert token in shell.clipboard.texts[0]
+            else:
+                buffer.undo()
+            current = buffer.document
+            release.set()
+            assert shell._clipboard_task is not None
+            await shell._clipboard_task
+            assert token not in shell.inline.values
+            assert token not in buffer.text
+            assert messages == []
+            assert not shell.renderer.transcript.blocks
+            if change == "edit":
+                assert buffer.text == "before selected typed later after"
+                assert buffer.cursor_position == len(buffer.text)
+                assert buffer.selection_state is not None
+                assert buffer.selection_state.original_cursor_position == 15
+                buffer.undo()
+                assert buffer.text == original.text
+                buffer.redo()
+                assert buffer.text == "before selected typed later after"
+            else:
+                assert buffer.document == current
+            for stack in (buffer._undo_stack, buffer._redo_stack):
+                assert all(token not in text for text, _ in stack)
+            if change == "save":
+                shell._restore_draft()
+                assert buffer.document == original
+            if change == "remove":
+                assert shell.clipboard.texts == ("selected",)
+            if change == "undo":
+                buffer.redo()
+                assert buffer.text == original.text
+        finally:
+            release.set()
+            if shell._clipboard_task is not None:
+                await shell._clipboard_task
+            shell.renderer.transcript.close()

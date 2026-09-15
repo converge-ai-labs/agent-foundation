@@ -8,7 +8,7 @@ from attrs import define as _attrs_define
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
-    from ..models.harness_model_characteristics import HarnessModelCharacteristics
+    from ..models.agent_model_characteristics import AgentModelCharacteristics
     from ..models.model_override_settings_type_0 import ModelOverrideSettingsType0
 
 
@@ -19,23 +19,23 @@ T = TypeVar("T", bound="ModelOverride")
 class ModelOverride:
     """
     Attributes:
-        characteristics (HarnessModelCharacteristics | None | Unset):
+        characteristics (AgentModelCharacteristics | None | Unset):
         model_key (None | str | Unset):
         settings (ModelOverrideSettingsType0 | None | Unset):
     """
 
-    characteristics: HarnessModelCharacteristics | Unset | None = UNSET
+    characteristics: AgentModelCharacteristics | Unset | None = UNSET
     model_key: str | Unset | None = UNSET
     settings: ModelOverrideSettingsType0 | Unset | None = UNSET
 
     def to_dict(self) -> dict[str, Any]:
-        from ..models.harness_model_characteristics import HarnessModelCharacteristics
+        from ..models.agent_model_characteristics import AgentModelCharacteristics
         from ..models.model_override_settings_type_0 import ModelOverrideSettingsType0
 
         characteristics: dict[str, Any] | Unset | None
         if isinstance(self.characteristics, Unset):
             characteristics = UNSET
-        elif isinstance(self.characteristics, HarnessModelCharacteristics):
+        elif isinstance(self.characteristics, AgentModelCharacteristics):
             characteristics = self.characteristics.to_dict()
         else:
             characteristics = self.characteristics
@@ -68,12 +68,12 @@ class ModelOverride:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.harness_model_characteristics import HarnessModelCharacteristics
+        from ..models.agent_model_characteristics import AgentModelCharacteristics
         from ..models.model_override_settings_type_0 import ModelOverrideSettingsType0
 
         d = dict(src_dict)
 
-        def _parse_characteristics(data: object) -> HarnessModelCharacteristics | Unset | None:
+        def _parse_characteristics(data: object) -> AgentModelCharacteristics | Unset | None:
             if data is None:
                 return data
             if isinstance(data, Unset):
@@ -81,12 +81,12 @@ class ModelOverride:
             try:
                 if not isinstance(data, dict):
                     raise TypeError()
-                characteristics_type_0 = HarnessModelCharacteristics.from_dict(data)
+                characteristics_type_0 = AgentModelCharacteristics.from_dict(data)
 
                 return characteristics_type_0
             except (TypeError, ValueError, AttributeError, KeyError):
                 pass
-            return cast(HarnessModelCharacteristics | Unset | None, data)
+            return cast(AgentModelCharacteristics | Unset | None, data)
 
         characteristics = _parse_characteristics(d.pop("characteristics", UNSET))
 

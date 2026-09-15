@@ -634,10 +634,12 @@ export interface paths {
         get: operations["comment_api_threads__thread_id__comments__comment_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /** Delete Comment */
+        delete: operations["delete_comment_api_threads__thread_id__comments__comment_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /** Edit Comment */
+        patch: operations["edit_comment_api_threads__thread_id__comments__comment_id__patch"];
         trace?: never;
     };
     "/api/threads/{thread_id}/comments/{comment_id}/capture": {
@@ -1677,6 +1679,23 @@ export interface components {
             /** Next Cursor */
             next_cursor?: string | null;
         };
+        /**
+         * CommentReferencePreview
+         * @description Additive attachment display metadata; the captured bytes own full content.
+         */
+        CommentReferencePreview: {
+            /**
+             * Version
+             * @default 1
+             */
+            version?: number;
+            /** Author */
+            author?: string | null;
+            /** Preview */
+            preview?: string | null;
+            /** Quote */
+            quote?: string | null;
+        };
         /** CommentSelection */
         CommentSelection: {
             /** Start */
@@ -2263,8 +2282,8 @@ export interface components {
         HarnessModelCharacteristics: {
             /** Capabilities */
             capabilities?: components["schemas"]["ModelCapability"][];
-            /** Context Window */
-            context_window?: number | null;
+            /** Context Window Tokens */
+            context_window_tokens?: number | null;
             /**
              * Proactive Context Management Threshold
              * @default 0.65
@@ -2452,13 +2471,13 @@ export interface components {
         };
         /** OutputComment */
         OutputComment: {
+            /** Body */
+            body: string;
             /** Comment Id */
             comment_id: string;
             target: components["schemas"]["SavedOutputTarget"];
             selection?: components["schemas"]["CommentSelection"] | null;
             author: components["schemas"]["CommentAuthor"];
-            /** Body */
-            body: string;
             /** Root Thread Id */
             root_thread_id: string;
             /**
@@ -2466,6 +2485,13 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+            /**
+             * Version
+             * @default 1
+             */
+            version?: number;
+            /** Updated At */
+            updated_at?: string | null;
         };
         /** PageFocus */
         PageFocus: {
@@ -3522,6 +3548,7 @@ export interface components {
             size: number;
             /** Source */
             source?: components["schemas"]["FileContextSource"] | components["schemas"]["GitContextSource"] | components["schemas"]["CommentContextSource"] | null;
+            comment?: components["schemas"]["CommentReferencePreview"] | null;
         };
         /** ThreadConfiguration */
         ThreadConfiguration: {
@@ -4250,13 +4277,20 @@ export interface components {
         };
         /** CommentPublication */
         CommentPublication: {
+            /** Body */
+            body: string;
             /** Comment Id */
             comment_id: string;
             target: components["schemas"]["SavedOutputTarget"];
             selection?: components["schemas"]["CommentSelection"] | null;
             author: components["schemas"]["CommentAuthor"];
+        };
+        /** CommentEdit */
+        CommentEdit: {
             /** Body */
             body: string;
+            /** Expected Version */
+            expected_version: number;
         };
         /** ProjectDefaultsApply */
         ProjectDefaultsApply: {
@@ -5712,6 +5746,7 @@ export interface operations {
                 cursor?: string | null;
                 limit?: number;
                 target?: string | null;
+                newest_first?: boolean;
             };
             header?: never;
             path: {
@@ -5808,9 +5843,79 @@ export interface operations {
             };
         };
     };
-    capture_comment_api_threads__thread_id__comments__comment_id__capture_post: {
+    delete_comment_api_threads__thread_id__comments__comment_id__delete: {
+        parameters: {
+            query: {
+                expected_version: number;
+            };
+            header?: never;
+            path: {
+                thread_id: string;
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_comment_api_threads__thread_id__comments__comment_id__patch: {
         parameters: {
             query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+                comment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CommentEdit"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OutputComment"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    capture_comment_api_threads__thread_id__comments__comment_id__capture_post: {
+        parameters: {
+            query?: {
+                expected_version?: number | null;
+            };
             header?: never;
             path: {
                 thread_id: string;

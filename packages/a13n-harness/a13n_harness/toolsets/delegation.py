@@ -540,9 +540,7 @@ def _create_inline_child_bindings(
             "Inline delegation found an incompatible invocation policy.",
             code="capability_type_mismatch",
         )
-    factory = child.declaration.run_capability_factory
-    child_capabilities = tuple(factory()) if factory is not None else ()
-    return RunBindings(
+    bindings = RunBindings(
         instance=AgentInstanceContext(
             identity=identity,
             agent_instance_id=f"agent-{secrets.token_urlsafe(12)}",
@@ -552,11 +550,29 @@ def _create_inline_child_bindings(
             host_refs=parent.instance.host_refs,
         ),
         environment=_BorrowedEnvironmentRuntime(parent.environment),
+        tool_result_directory=parent.tool_result_directory,
         model_resolver=parent.model_resolver,
         toolset_instructions=parent._toolset_instructions_override,
-        capabilities=(*((invocation_policy,) if invocation_policy is not None else ()), *child_capabilities),
+        capabilities=(invocation_policy,) if invocation_policy is not None else (),
         metadata=parent.metadata,
     )
+    factory = child.declaration.run_bindings_factory
+    if factory is None:
+        return bindings
+    resolved = factory(bindings)
+    if not isinstance(resolved, RunBindings):
+        raise DefinitionError("Child run bindings factory must return RunBindings.", code="subagent_binding_invalid")
+    if resolved.instance != bindings.instance or resolved.environment is not bindings.environment:
+        raise DefinitionError(
+            "Child run bindings factory cannot replace the child instance or borrowed Environment.",
+            code="subagent_binding_invalid",
+        )
+    if invocation_policy is not None and not any(item is invocation_policy for item in resolved.capabilities):
+        raise DefinitionError(
+            "Child run bindings factory cannot remove or replace the inherited invocation policy.",
+            code="subagent_binding_invalid",
+        )
+    return resolved
 
 
 def _without_borrowed_environment_state(state: HarnessState) -> HarnessState:
@@ -676,7 +692,11 @@ async def _finalize_task_bindings(
             "The parent embedded task view is unavailable.",
             code="task_state_binding_missing",
         )
-    return replace(bindings, capabilities=(*bindings.capabilities, borrowed))
+    if bindings.task_state is not None:
+        raise DefinitionError(
+            "Shared child tasks already have a task-state binding.", code="task_state_binding_conflict"
+        )
+    return replace(bindings, task_state=borrowed)
 
 
 def _definition_working_state(child: BuiltSubagent):

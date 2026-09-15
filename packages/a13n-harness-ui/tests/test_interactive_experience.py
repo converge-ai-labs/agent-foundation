@@ -393,6 +393,62 @@ async def test_live_cost_and_zero_context_are_projected_before_completion(
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("gap", [False, True])
+@pytest.mark.parametrize("output_omitted", [False, True])
+async def test_recovered_final_answer_keeps_markdown_separate_from_notices(
+    tmp_path: Path, gap: bool, output_omitted: bool
+) -> None:
+    from a13n_harness_ui.interactive.backend import SessionBackend
+    from a13n_harness_ui.live import HarnessUiLiveHub
+
+    answer = "# Recovered heading\n\n**Important result**\n\n```python\nprint('done')\n```"
+    hub = HarnessUiLiveHub()
+    renderer = StreamRenderer(Status())
+    if gap:
+        renderer.ingest("TEXT_MESSAGE_CONTENT", {"message_id": "partial", "delta": "Incomplete **answer"})
+    renderer.gap = gap
+    outcome = SimpleNamespace(
+        execution=SimpleNamespace(output=answer, output_omitted=output_omitted),
+        environment=SimpleNamespace(cleanup_failures=()),
+    )
+    app = SimpleNamespace(
+        live_events=hub.subscribe,
+        submit_thread=AsyncMock(return_value=SimpleNamespace(receipt_id="receipt-one")),
+        wait_root_operation=AsyncMock(
+            return_value=SimpleNamespace(status=RootOperationStatus.completed, outcome=outcome, failure=None)
+        ),
+        context_usage=AsyncMock(return_value=SimpleNamespace(latest_request_tokens=0)),
+        thread_usage=AsyncMock(return_value=SimpleNamespace(root=_usage_totals())),
+    )
+    backend = SessionBackend(app, CliRequest(), tmp_path, renderer.status)
+    backend.refresh = AsyncMock(return_value=True)
+    backend.ensure_session = AsyncMock(return_value="thread-one")
+    try:
+        assert await backend.execute(renderer, prompt="test") == ""
+        blocks = list(renderer.transcript.blocks.values())
+        notices = [block for block in blocks if block.kind == "notice"]
+        assert len(notices) == int(gap) + int(output_omitted)
+        assert all(not block.markdown for block in notices)
+        if output_omitted:
+            assert answer not in _text(renderer)
+            assert "/history" in notices[-1].source
+        else:
+            recovered = blocks[-1]
+            assert recovered.source == answer + "\n"
+            assert recovered.markdown and not recovered.streaming
+            renderer.transcript.render(80)
+            fragments = [fragment for row in recovered.rows for fragment in row]
+            assert any("bold" in style and "Important result" in text for style, text in fragments)
+            assert "# Recovered heading" not in "".join(text for _, text in fragments)
+        # A later normal streamed response still takes the Markdown path.
+        renderer.ingest("TEXT_MESSAGE_CONTENT", {"message_id": "next", "delta": "**Next answer**"})
+        assert list(renderer.transcript.blocks.values())[-1].markdown
+    finally:
+        renderer.transcript.close()
+        await hub.close()
+
+
+@pytest.mark.anyio
 async def test_subscription_close_invalidates_outliving_child_process_observations(tmp_path: Path) -> None:
     from a13n_harness_ui.interactive.backend import SessionBackend
     from a13n_harness_ui.live import HarnessUiLiveHub

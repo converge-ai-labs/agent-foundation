@@ -106,7 +106,7 @@ asyncio.run(main())
 | `default_toolsets`   | `()`    | Definition-owned default declarations                       |
 | `allow_run_override` | `False` | Whether the Host can replace the complete surface for a Run |
 
-When explicitly allowed, supply `ClientToolsRunCapability(toolsets=...)` in fresh `RunBindings.capabilities`. This is **whole-list replacement**, not a merge; `toolsets=()` clears the surface. A Run attachment cannot independently install the definition owner or change its override policy. Reserved capability IDs and definition/Run provenance are checked.
+When explicitly allowed, supply `RunBindings.client_toolsets`. This is **whole-list replacement**, not a merge; `client_toolsets=()` clears the surface, while `None` retains the defaults. A binding cannot independently install the definition owner or change its override policy. The effective declarations are validated and copied for the Run.
 
 Use stable `toolset_id` and tool names. A resumed external call must still match the selected declaration and current continuation contract; changing a schema or swapping executors is not a way to accept mismatched pending results.
 

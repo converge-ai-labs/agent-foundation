@@ -1,8 +1,5 @@
 """First-party optional Agent Harness Capabilities."""
 
-from importlib import import_module
-from typing import TYPE_CHECKING
-
 from .codeact import CodeActCapability, CodeActConfig
 from .context import (
     CompactionCapability,
@@ -26,7 +23,6 @@ from .documents import (
     DocumentKind,
     DocumentsCapability,
     DocumentsConfiguration,
-    DocumentsRunCapability,
 )
 from .interaction import (
     AskUserQuestionRequest,
@@ -43,8 +39,8 @@ from .media import (
     MediaReadError,
     MediaReadRequest,
     MediaResource,
-    MediaRunCapability,
 )
+from .memory import MemoryCapability, MemoryScope
 from .native_image_generation import NativeImageGenerationCapability, NativeImageSaver
 from .skills import (
     BoundSkillCatalog,
@@ -54,7 +50,6 @@ from .skills import (
     SkillManager,
     SkillMaterializer,
     SkillsCapability,
-    SkillSelectionRunCapability,
     SkillSource,
     SkillsPolicy,
 )
@@ -106,6 +101,7 @@ from .web import (
     WEB_SEARCH_BACKEND_PRIORITY_ENV,
     WEB_SEARCH_CONTEXT_SIZE_ENV,
     WEB_SEARCH_MODE_ENV,
+    WebBinding,
     WebCapability,
     WebClient,
     WebConfiguration,
@@ -115,7 +111,6 @@ from .web import (
     WebProviderError,
     WebRequest,
     WebResponse,
-    WebRunCapability,
     WebScrapeBackendBinding,
     WebScrapeConfiguration,
     WebScrapeProvider,
@@ -135,27 +130,13 @@ from .working_state import (
     Task,
     TaskMutation,
     TaskState,
+    TaskStateBinding,
     TaskStateCell,
     TaskStateError,
-    TaskStateRunCapability,
     WorkingState,
     WorkingStateCapability,
     WorkingStateConfiguration,
 )
-
-if TYPE_CHECKING:
-    from .mem0 import Mem0Capability, Mem0Scope
-
-
-def __getattr__(name: str) -> object:
-    # Importing any capability must not initialize an unused memory SDK and its
-    # vector-store integrations. Preserve the public re-exports on explicit use.
-    if name in {"Mem0Capability", "Mem0Scope"}:
-        value = vars(import_module(".mem0", __name__))[name]
-        globals()[name] = value
-        return value
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
 
 __all__ = [
     "MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS",
@@ -187,7 +168,6 @@ __all__ = [
     "DocumentKind",
     "DocumentsCapability",
     "DocumentsConfiguration",
-    "DocumentsRunCapability",
     "EmbeddedTaskStateCell",
     "FileContextCapability",
     "FileContextConfiguration",
@@ -203,9 +183,8 @@ __all__ = [
     "MediaReadRequest",
     "MediaReader",
     "MediaResource",
-    "MediaRunCapability",
-    "Mem0Capability",
-    "Mem0Scope",
+    "MemoryCapability",
+    "MemoryScope",
     "NativeImageGenerationCapability",
     "NativeImageSaver",
     "ProviderTaskCursor",
@@ -215,7 +194,6 @@ __all__ = [
     "SkillCatalogItem",
     "SkillManager",
     "SkillMaterializer",
-    "SkillSelectionRunCapability",
     "SkillSource",
     "SkillsCapability",
     "SkillsPolicy",
@@ -240,9 +218,9 @@ __all__ = [
     "Task",
     "TaskMutation",
     "TaskState",
+    "TaskStateBinding",
     "TaskStateCell",
     "TaskStateError",
-    "TaskStateRunCapability",
     "ToolProxyCapability",
     "ToolProxyConfig",
     "ToolProxyGroup",
@@ -261,6 +239,7 @@ __all__ = [
     "UserQuestion",
     "UserQuestionAnswers",
     "UserQuestionOption",
+    "WebBinding",
     "WebCapability",
     "WebClient",
     "WebConfiguration",
@@ -270,7 +249,6 @@ __all__ = [
     "WebProviderError",
     "WebRequest",
     "WebResponse",
-    "WebRunCapability",
     "WebScrapeBackendBinding",
     "WebScrapeConfiguration",
     "WebScrapeProvider",

@@ -56,6 +56,14 @@ Apply [Code Quality and Design](DEVELOPMENT.md#code-quality-and-design) when imp
 
 Keep transport handling, application orchestration, domain behavior, and infrastructure adapters separated. Update the accepted design in `spec/` when a change alters ownership, lifecycle, compatibility, security, or deployment semantics; do not use the development guide to introduce product architecture implicitly.
 
+## Compatibility Baselines
+
+Harness owns fixed compatibility inputs under `packages/a13n-harness/tests/fixtures/compatibility/`. Its existing package CI reads those committed inputs and checks their meaning, not only parsing. Host-specific configuration persistence and startup retain small consumer integration tests rather than duplicating the Harness baseline. These cases are representative regression coverage, not a guarantee for every historical dependency or package combination.
+
+Before an agent modifies, deletes, moves, or replaces an established baseline, it must obtain explicit human agreement and explain the accepted input or behavior affected. Do not regenerate fixtures, remove legacy spellings, or weaken semantic assertions just to make an implementation change pass. Prefer adding cases while retaining previous inputs. Initial baseline creation and refinement may proceed within an explicitly authorized compatibility task.
+
+PRs changing the baseline must explicitly request human compatibility review and explain the impact. The metadata-only PR workflow posts or updates a review notice when this directory changes, including renames and removals. The notice is not approval or a branch-protection gate; ordinary reviewer routing remains in `MAINTAINERS.md`. Baseline tests run in existing component CI without a separate release matrix or automatic schema-version changes.
+
 ## Local Validation
 
 Use the Makefile as the stable development interface:
@@ -126,7 +134,7 @@ UI Tests runs the Linux suite with seven file-grouped workers on an eight-core r
 
 a13n-envd CI runs protocol verification and the native daemon platform matrix in parallel after path classification. The `a13n-envd checks` job requires every selected protocol, client, and daemon check to succeed; unselected checks may be skipped.
 
-Live Service/Harness and Environment journeys run manually. Use `make live-test-ci suite=<name>` to run a reviewed selection, `make live-test-ci-environment-build` to prepare native Environment inputs, and `make live-test-check` to validate fixture support without live infrastructure. The [live-test guide](dev/live_tests/README.md#manual-correctness-suites) owns suite contents, opt-ins, exclusions and expected capability skips.
+Live Tests CI runs 34 reviewed Service/Harness smoke journeys in three parallel matrix jobs, each with job-owned PostgreSQL, Redis and RustFS services. Core uses two pytest workers with independent labs; Queue/IAM and Management each use one. Cases within each pytest worker reuse its lab and run serially; fault and native Environment matrices remain manual. Use `make live-test-ci suite=<name>` to run a reviewed selection, `make live-test-ci-environment-build` to prepare native Environment inputs, and `make live-test-check` to validate fixture support without live infrastructure. The default `docker` mode owns disposable infrastructure containers; explicit `external` mode connects to prepared test services and creates isolated databases and buckets. The [live-test guide](dev/live_tests/README.md#ci-smoke-suite) owns the automatic selection, infrastructure configuration, opt-ins, exclusions and expected capability skips.
 
 Select directories, files, or pytest node IDs with `PYTHON_TEST_DIRS`. Paths in the same package run in one pytest process; packages run separately in first-selected order, stopping on failure. Without a selection, all workspace suites run. Use `PYTHON_TEST_WORKERS` to override concurrency, including `0` for a small serial reproduction:
 
@@ -143,7 +151,7 @@ pnpm --dir frontend --filter a13n-console test src/features/skills/import.test.t
 
 ## PR Labels
 
-The [PR Labels workflow](.github/workflows/pr-labels.yml) adds changelog labels when a PR is opened or marked ready for review. It does not run on each push or label edit. Draft PRs skip code CI; marking a PR ready starts the applicable path-filtered checks, and later code pushes rerun them. Labels do not gate CI. Open work in progress as a draft to avoid spending CI time before review. Write the usual Conventional Commit title; no manual label step or extra merge gate is required:
+The labeling job in the [PR Labels workflow](.github/workflows/pr-labels.yml) adds changelog labels when a PR is opened or marked ready for review. That job does not run on each push or label edit; the independent compatibility-review notice also refreshes on pushes and reopening. Draft PRs skip code CI; marking a PR ready starts the applicable path-filtered checks, and later code pushes rerun them. Labels do not gate CI. Open work in progress as a draft to avoid spending CI time before review. Write the usual Conventional Commit title; no manual label step or extra merge gate is required:
 
 | Title type                                          | Label           |
 | --------------------------------------------------- | --------------- |

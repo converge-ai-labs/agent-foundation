@@ -7,7 +7,7 @@ from copy import deepcopy
 from enum import StrEnum
 from typing import Any, Self
 
-from pydantic import BaseModel, ConfigDict, Field, TypeAdapter
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, TypeAdapter
 from pydantic_ai.agent.spec import AgentSpec as PydanticAgentSpec
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.usage import UsageLimits
@@ -30,16 +30,18 @@ class HarnessModelCharacteristics(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     capabilities: frozenset[ModelCapability] = Field(default_factory=frozenset)
-    context_window: int | None = Field(default=None, gt=0)
+    context_window_tokens: int | None = Field(
+        default=None, gt=0, validation_alias=AliasChoices("context_window_tokens", "context_window")
+    )
     proactive_context_management_threshold: float | None = Field(default=0.65, ge=0.0, le=1.0)
     compact_threshold: float = Field(default=0.90, gt=0.0, le=1.0)
 
     @property
     def summary_reminder_tokens(self) -> int | None:
         """Return the absolute proactive summarize threshold when it is known."""
-        if self.context_window is None or self.proactive_context_management_threshold is None:
+        if self.context_window_tokens is None or self.proactive_context_management_threshold is None:
             return None
-        return int(self.context_window * self.proactive_context_management_threshold)
+        return int(self.context_window_tokens * self.proactive_context_management_threshold)
 
 
 def _default_usage_limits() -> UsageLimits:

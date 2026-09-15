@@ -5,17 +5,18 @@ OSS is the primary memory backend. This directory builds **unmodified** native M
 ## Start
 
 ```bash
-make setup       # Service stores, Langfuse, Mem0 and Service migrations
-make mem0-up     # Only the checkout-owned Mem0 stack
+make setup       # Service stores, Langfuse and Service migrations; no memory backend
+# First manually set enabled = true in dev/mem0/local.toml.
+make mem0-up     # Only the checkout-owned Mem0 stack, after explicit opt-in
 make mem0-logs
 make mem0-down   # Stop containers; preserve volumes
 ```
 
-`dev/service/local.toml` selects OSS at `http://127.0.0.1:18888` with the public fixture key `local-mem0-api-key`. The helper derives the Compose project, API key and host port from the selected `SERVICE_CONFIG`, not ambient `MEM0_LOCAL_*` variables or `.env`. Only a local `127.0.0.1` OSS endpoint is managed; external OSS and Platform are operator-owned. PostgreSQL and the embedding fixture have no host ports. The Mem0 process is non-root.
+`make mem0-up` explicitly starts OSS at `http://127.0.0.1:18888` with the public fixture key `local-mem0-api-key`. Local infrastructure settings live in `dev/mem0/local.toml`, with `enabled = false` by default. Manually set `enabled = true` and adjust `port` and `api_key` when needed. To keep private settings out of Git, copy it to `dev/mem0/local.private.toml` and pass `MEM0_CONFIG=dev/mem0/local.private.toml` to Make (or `--mem0-config PATH` to `python -m dev.service`). `make dev` and `make setup` start Mem0 only when that selected file explicitly enables it. Product Service settings remain independent; ordinary development and standard tests require no Mem0 server or credentials. The checkout determines the Compose project; ambient `MEM0_LOCAL_*` variables do not change the helper's target. The helper only manages this checkout-owned local stack, never a Memory Provider's external endpoint. External OSS and Platform remain operator-owned. PostgreSQL and the embedding fixture have no host ports. The Mem0 process is non-root.
 
 The default embedding endpoint is a deterministic, hashed-word, 128-dimensional fixture. It validates storage, HTTP contracts, CRUD, scope isolation, and bounded listing without paid credentials. **It does not validate semantic embedding quality or real LLM inference.** The separate Service scripted model is not a memory model. Explicit writes use `infer=false`, so neither writes nor retrieval require chat completion. The fixture rejects chat requests instead of pretending to perform extraction.
 
-Service running does not enable Agent memory. Set the selected Agent revision's `config.memory` explicitly as shown in the [Service guide](../../docs/a13n-service/memory.md). This work adds no Console page or UI switch.
+Service running does not enable Agent memory. Create a managed Memory Provider and set the selected Agent revision's `config.memory.provider_id` explicitly as shown in the [Service guide](../../docs/a13n-service/memory.md). This work adds no Console page or UI switch.
 
 ## Use real models
 
@@ -44,7 +45,7 @@ These settings configure the native server for operator-owned inference workflow
 
 Changing embedding model or dimensions does not re-embed existing records. Configuration goes through native `POST /configure`; the helper does not inspect or modify the database. A mismatched existing collection can fail on native reads or writes. Restore the old configuration or choose a new `MEM0_OSS_COLLECTION` and migrate explicitly. Startup is not a guarantee that existing vectors match the selected model. Even equal-dimensional models can use incompatible vector spaces: choose a new collection when changing the model. `make dev-reset` resets Service-owned storage, not Mem0 volumes. There is no memory reset command.
 
-The three keys have distinct owners: `memory.api_key` authenticates Service to Mem0; `MEM0_OSS_EMBEDDING_API_KEY` and `MEM0_OSS_LLM_API_KEY` authenticate Mem0 to its model endpoints. Check `make mem0-logs` for native connectivity or dimension errors. Local startup applies model settings through native `POST /configure` and verifies authenticated `GET /memories`, not semantic quality. Development diagnostics stay in startup logs and this guide, never product response schemas.
+The three keys have distinct owners: the Memory Provider's `credential.api_key` authenticates Service to Mem0 (match `api_key` in the selected local Mem0 configuration); `MEM0_OSS_EMBEDDING_API_KEY` and `MEM0_OSS_LLM_API_KEY` authenticate Mem0 to its model endpoints. Check `make mem0-logs` for native connectivity or dimension errors. Local startup applies model settings through native `POST /configure` and verifies authenticated `GET /memories`, not semantic quality. Development diagnostics stay in startup logs and this guide, never product response schemas.
 
 ## API walkthrough
 
@@ -53,7 +54,14 @@ Use an authenticated human User bearer token with Workspace access. Obtain immut
 ```bash
 export SERVICE_URL='http://127.0.0.1:8000'
 # Set WORKSPACE_ID and SERVICE_TOKEN privately.
-BASE="$SERVICE_URL/api/v1/workspaces/$WORKSPACE_ID/memories"
+PROVIDERS="$SERVICE_URL/api/v1/workspaces/$WORKSPACE_ID/memory-providers"
+# Workspace Builder authority is required to create a Provider.
+# Public local fixture key only; substitute your privately supplied key as needed.
+PROVIDER_ID=$(curl --fail-with-body -sS -H "Authorization: Bearer $SERVICE_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Local memories","type":"a13n.mem0-oss","configuration":{"base_url":"http://127.0.0.1:18888"},"credential":{"api_key":"local-mem0-api-key"}}' \
+  "$PROVIDERS" | jq -er '.id')
+BASE="$PROVIDERS/$PROVIDER_ID/memories"
 curl --fail-with-body -H "Authorization: Bearer $SERVICE_TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"text":"Prefer concise implementation explanations."}' \
@@ -65,6 +73,14 @@ curl --fail-with-body -H "Authorization: Bearer $SERVICE_TOKEN" \
   "$BASE/search?scope=user"
 # Use the returned native memory ID for GET, PUT or DELETE /memories/{id}.
 ```
+
+To enable recall and tools, preserve the Agent's existing configuration when publishing a new revision and set:
+
+```json
+{"memory": {"provider_id": "memprov_REPLACE_WITH_RETURNED_ID"}}
+```
+
+This fragment belongs in Agent `config`, not a standalone creation request. Each child Agent keeps its own selection. Endpoint/type are immutable; rotate credentials through Provider PATCH with the current ETag, or create a new Provider for another target. Provider identity is part of the namespace even when endpoints match. Pre-refactor records are not automatically imported. See [Service memory](../../docs/a13n-service/memory.md) for authoring and migration details.
 
 For an Agent use `scope=agent&subject_id=$AGENT_ID`; for a Thread use `scope=thread&subject_id=$THREAD_ID`. User scope forbids `subject_id`. Viewer is read-only; Runner can write. Add/update preserve nonblank text exactly. Do not automatically repeat `memory_write_unconfirmed`: a timed-out write may have committed.
 
@@ -89,12 +105,12 @@ uv run --locked python -m dev.mem0.configuration --base-url http://127.0.0.1:188
 
 Run this configuration command only against your checkout-owned test instance: it changes the explicitly selected endpoint. It uses `MEM0_LOCAL_API_KEY` (default public fixture key) and `MEM0_OSS_*` model settings from the invoking shell, and persists configuration through Mem0's native API. The Service adapter never configures the backend; the dev helper skips external operator-owned backends. The Compose health check only checks the OpenAPI endpoint; configure before writing memories. No patched initialization path exists.
 
-## Validation
+## Optional integration validation
 
-Unit/contract tests need no remote credentials:
+Mem0 is not a required development or live-test dependency. Default checks neither start nor contact a Mem0 server; native integration tests skip without explicit `TEST_MEM0_OSS_*` settings. Unit/contract tests use local doubles and need no remote credentials:
 
 ```bash
-uv run --locked pytest packages/a13n-harness/tests/test_mem0.py packages/a13n-harness/tests/test_mem0_backends.py
+uv run --locked pytest packages/a13n-harness/tests/test_memory.py packages/a13n-harness/tests/test_mem0_backends.py
 uv run --locked pytest packages/a13n-service/tests/memory
 uv run --locked pytest dev/service/tests
 ```

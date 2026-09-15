@@ -9,6 +9,7 @@ from attrs import define as _attrs_define
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
+    from ..models.model_declarations import ModelDeclarations
     from ..models.model_settings import ModelSettings
     from ..models.principal_ref import PrincipalRef
 
@@ -34,6 +35,9 @@ class Model:
         updated_by (PrincipalRef):
         upstream_model (str):
         workspace_id (None | str):
+        base_model (None | str | Unset):
+        declarations (ModelDeclarations | Unset): Harness-facing facts and authoring choices declared for one saved
+            Model.
         settings (ModelSettings | Unset):
     """
 
@@ -51,6 +55,8 @@ class Model:
     updated_by: PrincipalRef
     upstream_model: str
     workspace_id: str | None
+    base_model: str | Unset | None = UNSET
+    declarations: ModelDeclarations | Unset = UNSET
     settings: ModelSettings | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
@@ -84,6 +90,16 @@ class Model:
         workspace_id: str | None
         workspace_id = self.workspace_id
 
+        base_model: str | Unset | None
+        if isinstance(self.base_model, Unset):
+            base_model = UNSET
+        else:
+            base_model = self.base_model
+
+        declarations: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.declarations, Unset):
+            declarations = self.declarations.to_dict()
+
         settings: dict[str, Any] | Unset = UNSET
         if not isinstance(self.settings, Unset):
             settings = self.settings.to_dict()
@@ -108,6 +124,10 @@ class Model:
                 "workspace_id": workspace_id,
             }
         )
+        if base_model is not UNSET:
+            field_dict["base_model"] = base_model
+        if declarations is not UNSET:
+            field_dict["declarations"] = declarations
         if settings is not UNSET:
             field_dict["settings"] = settings
 
@@ -115,6 +135,7 @@ class Model:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+        from ..models.model_declarations import ModelDeclarations
         from ..models.model_settings import ModelSettings
         from ..models.principal_ref import PrincipalRef
 
@@ -157,6 +178,22 @@ class Model:
 
         workspace_id = _parse_workspace_id(d.pop("workspace_id"))
 
+        def _parse_base_model(data: object) -> str | Unset | None:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(str | Unset | None, data)
+
+        base_model = _parse_base_model(d.pop("base_model", UNSET))
+
+        _declarations = d.pop("declarations", UNSET)
+        declarations: ModelDeclarations | Unset
+        if isinstance(_declarations, Unset):
+            declarations = UNSET
+        else:
+            declarations = ModelDeclarations.from_dict(_declarations)
+
         _settings = d.pop("settings", UNSET)
         settings: ModelSettings | Unset
         if isinstance(_settings, Unset):
@@ -179,6 +216,8 @@ class Model:
             updated_by=updated_by,
             upstream_model=upstream_model,
             workspace_id=workspace_id,
+            base_model=base_model,
+            declarations=declarations,
             settings=settings,
         )
 

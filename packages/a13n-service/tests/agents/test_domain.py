@@ -40,6 +40,10 @@ def test_agent_settings_preserve_provider_specific_values_until_selection_valida
     assert config.settings["openrouter_provider"] == {"only": ["Amazon Bedrock"]}
     with pytest.raises(ValidationError, match="Extra inputs"):
         AgentModel.model_validate({"model_key": "primary", "model_api": "openai.responses"})
+    with pytest.raises(ValidationError, match="Extra inputs"):
+        AgentModel.model_validate(
+            {"model_key": "primary", "characteristics": {"capabilities": ["image_understanding"]}}
+        )
 
 
 @pytest.mark.parametrize(

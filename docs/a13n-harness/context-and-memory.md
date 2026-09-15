@@ -10,7 +10,7 @@ An agent needs relevant input now and enough state to continue later. Harness ke
 | Current instructions or selected files  | File context                          | Unlimited recursive repository ingestion |
 | Long conversations                      | Handoff and compaction                | Recovery of unsaved side effects         |
 | Tasks and notes across turns            | Working state in `HarnessState`       | Cross-worker scheduling or locks         |
-| Recall across conversations             | Opt-in Mem0 integration               | Automatic durable transcript acceptance  |
+| Recall across conversations             | Opt-in Memory Capability              | Automatic durable transcript acceptance  |
 | Smaller requests after idle time        | Cold-start filter                     | Provider cache-lifetime detection        |
 
 A model context budget does not enable tools by itself. Select the corresponding Capability, then configure its thresholds. For continuation serialization and human decisions, use [State and Resume](state-and-resume.md).
@@ -43,17 +43,17 @@ All three have explicit byte, item, depth, or line bounds. Configure them to mat
 
 For context lifecycle features, callers supply Harness-managed policy through the `AgentSpec.model_characteristics` construction key. An explicit Harness context window is projected onto the effective native `ModelProfile`. `HandoffCapability()` uses it to resolve its 65% reminder during build. An otherwise unconfigured `CompactionCapability()` resolves its 90% threshold at each request, preferring native `RunContext` context-window and usage values before falling back to Harness characteristics and captured provider usage. Explicit token settings override these values, and the Capabilities remain opt-in.
 
-## Mem0 Long-Term Memory
+## Long-Term Memory
 
-Memory is opt-in. OSS is the primary backend: open a native transport at Host startup and pass it to `Mem0Capability`. The [Service memory guide](../a13n-service/memory.md) covers hosted authorization and deployment. The OSS adapter calls public native endpoints on an existing deployment; no source patch or special server image is required. Its list operation is bounded, not paginated.
+Memory is opt-in. `MemoryCapability` works with any implementation of the typed `MemoryBackend` contract. Mem0 OSS and Platform are built-in adapters. For OSS, open a native transport in your Host and pass it to the Capability. The [Service memory guide](../a13n-service/memory.md) covers hosted authorization and deployment. The OSS adapter calls public native endpoints on an existing deployment; no source patch or special server image is required. Its list operation is bounded, not paginated.
 
 ```python
-from a13n_harness.capabilities import Mem0Capability, Mem0Scope
+from a13n_harness.capabilities import MemoryCapability, MemoryScope
 from a13n_harness.capabilities.mem0_backends import open_mem0_oss
 
 async with open_mem0_oss(base_url=mem0_url, api_key=mem0_api_key) as backend:
     capabilities = (
-        Mem0Capability(backend=backend, scope=Mem0Scope.USER, recall_limit=5),
+        MemoryCapability(backend=backend, scope=MemoryScope.USER, recall_limit=5),
     )
     # Build and execute Agents inside this Host-owned transport lifetime.
 ```
@@ -70,11 +70,58 @@ Platform is an independent adapter, not an OSS compatibility mode:
 from a13n_harness.capabilities.mem0_backends import open_mem0_platform
 
 async with open_mem0_platform(api_key=platform_api_key) as backend:
-    capabilities = (Mem0Capability(backend=backend, scope=Mem0Scope.USER),)
+    capabilities = (MemoryCapability(backend=backend, scope=MemoryScope.USER),)
     # Build and execute Agents here.
 ```
 
 Both context managers own one Host lifetime. The Capability borrows the backend and never closes it. Optional recall failures omit recalled context; required recall fails before model work. An unconfirmed write is not safe to repeat blindly: inspect the memory first. The Harness does not automatically write terminal transcripts to memory because a process-local result does not prove durable checkpoint acceptance. Applications that need extraction should enqueue it only after their own successful durable commit.
+
+### Custom memory behavior
+
+Set `auto_recall=False` and `toolset=False` when your own Capability owns recall or tools. These flags do not remove the selected backend. Existing Harness plugins contribute custom Capabilities through `get_capabilities()`; there is no separate memory behavior registry and no second public memory attachment.
+
+Use the finalized Capability in the current native `RunContext`, not an original construction object or private context cache:
+
+```python
+from a13n_harness import AgentContext
+from a13n_harness.capabilities import MemoryCapability, MemoryScope
+from a13n_harness.memory import MemoryRecord
+from pydantic_ai import RunContext
+
+
+async def remember_user_preference(
+    ctx: RunContext[AgentContext], text: str
+) -> MemoryRecord:
+    memory = ctx.capabilities.get(MemoryCapability.id)
+    if not isinstance(memory, MemoryCapability):
+        raise ValueError("This Agent has no selected memory backend")
+    return await memory.add(ctx, text, scope=MemoryScope.USER)
+```
+
+The same API exposes typed `search`, `list`, `get`, `update`, and `delete` operations. A fixed-scope Capability does not require a scope argument; otherwise each call selects one available scope. Records expose `id`, `text`, `subjects`, and optional `score`. List returns a `MemoryPage`: `pagination=None` means bounded results of unknown completeness; `pagination.next_cursor=None` means the last native page. OSS lists up to 1000 records, and Platform caps each native page at 200. Search is independent of the listed subset.
+
+Custom post-commit jobs and management services can call an authorized `MemoryBackend` directly; they do not need to create a Capability or run an Agent. Text is nonblank, at most 8000 characters, and preserved verbatim. Writes verify readback, and `MemoryWriteUnconfirmed` requires inspection before repetition. A delete does not remove already observed text from context or traces.
+
+### Backend factories
+
+Hosts that need configurable backend selection use `MemoryBackendPlugin` and `build_memory_backend_catalog` from `a13n_harness.memory_plugins`. The plugin itself is the factory. Its stable key and display name describe an implementation, its independent Pydantic models validate nonsecret configuration and credentials without I/O, and `open(configuration, credential)` returns a Host-owned asynchronous context manager.
+
+```python
+from a13n_harness.memory_plugins import build_memory_backend_catalog
+
+catalog = build_memory_backend_catalog(builtin_keys=("a13n.mem0-oss",))
+plugin = catalog["a13n.mem0-oss"]
+configuration = plugin.configuration_model.model_validate({"base_url": mem0_url})
+credential = plugin.credential_model.model_validate({"api_key": mem0_api_key})
+
+async with plugin.open(configuration, credential) as backend:
+    capability = MemoryCapability(backend=backend, auto_recall=False, toolset=False)
+    # Build Agents with this capability and your custom behavior plugin here.
+```
+
+Catalogs also accept explicit plugin objects or selected installed entry-point keys from `a13n_harness.memory_backends`. Installing a distribution does not enable it. Duplicate keys fail rather than shadowing, and unselected entry points are not imported. Embedded applications can continue injecting a backend directly. Hosted applications instead select an authorized [Memory Provider resource](../a13n-service/memory.md); provider selection and Agent behavior are separate settings.
+
+The public names are `MemoryCapability` and `MemoryScope`, with Capability ID `a13n.memory`. There are no compatibility aliases for the earlier Mem0-only Capability. Backend objects, credentials, and transports are not serialized in `AgentSpec` or `HarnessState`.
 
 ## Working State
 
@@ -86,7 +133,7 @@ from a13n_harness.capabilities import WorkingStateCapability
 capabilities = (WorkingStateCapability(),)
 ```
 
-This embedded mode is useful for one process-local or state-resumed Agent. Provider mode replaces task storage with a fresh `TaskStateRunCapability`; the provider remains authoritative, while Harness events report bounded committed deltas.
+This embedded mode is useful for one process-local or state-resumed Agent. Provider mode replaces task storage with a fresh `TaskStateBinding` in `RunBindings.task_state`; the provider remains authoritative, while Harness events report bounded committed deltas.
 
 The Notes tools have explicit mutation semantics:
 

@@ -120,12 +120,9 @@ The complete machine-readable validation schema, including named enum/union defi
 
 ## `memory`
 
-| Setting                  | Environment variable                  | Type / choices            | Constraints and default                     |
-| ------------------------ | ------------------------------------- | ------------------------- | ------------------------------------------- |
-| `memory.provider`        | `A13N_SERVICE_MEMORY_PROVIDER`        | "none", "platform", "oss" | default="none"                              |
-| `memory.base_url`        | `A13N_SERVICE_MEMORY_BASE_URL`        | string or null            | default=null                                |
-| `memory.api_key`         | `A13N_SERVICE_MEMORY_API_KEY`         | string or null            | default=null                                |
-| `memory.timeout_seconds` | `A13N_SERVICE_MEMORY_TIMEOUT_SECONDS` | number                    | maximum=300; exclusiveMinimum=0; default=30 |
+| Setting                  | Environment variable                  | Type / choices | Constraints and default                     |
+| ------------------------ | ------------------------------------- | -------------- | ------------------------------------------- |
+| `memory.timeout_seconds` | `A13N_SERVICE_MEMORY_TIMEOUT_SECONDS` | number         | maximum=300; exclusiveMinimum=0; default=30 |
 
 ## `webhooks`
 

@@ -3,12 +3,37 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import ClassVar
+from typing import Any, ClassVar
 
+from pydantic import BaseModel, SecretBytes, SecretStr, TypeAdapter
 from sqlalchemy import BigInteger, LargeBinary, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.secrets.crypto import SecretProtectionError, SecretProtector
+
+_JSON_SERIALIZER = TypeAdapter(Any)
+
+
+def credential_payload(credentials: BaseModel) -> dict[str, object]:
+    """Reveal validated secret fields only for resource-owned encrypted persistence."""
+
+    revealed = _reveal_secrets(credentials.model_dump(mode="python", by_alias=True))
+    payload = _JSON_SERIALIZER.dump_python(revealed, mode="json")
+    if not isinstance(payload, dict):
+        raise TypeError("Resource credentials must serialize as an object")
+    return payload
+
+
+def _reveal_secrets(value: object) -> object:
+    if isinstance(value, SecretStr):
+        return value.get_secret_value()
+    if isinstance(value, SecretBytes):
+        return value.get_secret_value().decode("utf-8")
+    if isinstance(value, dict):
+        return {key: _reveal_secrets(item) for key, item in value.items()}
+    if isinstance(value, list | tuple | set | frozenset):
+        return [_reveal_secrets(item) for item in value]
+    return value
 
 
 @dataclass(frozen=True, slots=True, repr=False)

@@ -15,7 +15,7 @@ from a13n_service.log import configure_logging
 from .docker import ensure_docker
 from .environment import LOCAL_CONFIG, ROOT, Environment
 from .langfuse import USER_EMAIL, USER_PASSWORD, Langfuse, local_traces
-from .mem0 import Mem0
+from .mem0 import LOCAL_MEM0_CONFIG, Mem0, Mem0Settings, load_mem0_settings
 from .reset import reset
 
 
@@ -42,16 +42,21 @@ def check_ports(environment: Environment, *, console: bool = False) -> None:
                 ) from None
 
 
-def setup(environment: Environment, langfuse: Langfuse, config: Path) -> None:
+def setup(
+    environment: Environment, langfuse: Langfuse, config: Path, *, mem0_settings: Mem0Settings | None = None
+) -> None:
     with environment.lock():
         if environment.incomplete.exists():
             raise ValueError("The previous reset did not complete; rerun make dev-reset with the intended STATE")
         langfuse.validate()
-        Mem0(environment).validate()
+        mem0 = Mem0(environment, mem0_settings or Mem0Settings())
+        if mem0.settings.enabled:
+            mem0.validate()
         ensure_docker()
         environment.compose("up", "-d", "--wait")
         langfuse.start()
-        Mem0(environment).start()
+        if mem0.settings.enabled:
+            mem0.start()
         DatabaseMigrator(environment.settings.database_config(), environment.settings.migration_config()).upgrade()
     print(f"Configuration: {config.resolve()}")
     print(f"Service: http://{environment.settings.service.host}:{environment.settings.service.port}")
@@ -69,6 +74,7 @@ def setup(environment: Environment, langfuse: Langfuse, config: Path) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=LOCAL_CONFIG)
+    parser.add_argument("--mem0-config", type=Path, default=LOCAL_MEM0_CONFIG)
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("setup", help="Prepare owned stores, Langfuse and schema, preserving data")
     commands.add_parser("stop", help="Stop owned infrastructure including Langfuse, preserving data")
@@ -96,7 +102,7 @@ def main() -> None:
             with local_traces(langfuse):
                 reset(environment, args.state)
         elif args.command == "setup":
-            setup(environment, langfuse, args.config)
+            setup(environment, langfuse, args.config, mem0_settings=load_mem0_settings(args.mem0_config))
         elif args.command == "stop":
             with environment.lock():
                 environment.require_stopped()
@@ -104,8 +110,10 @@ def main() -> None:
                 langfuse.compose("stop")
                 Mem0(environment).compose("stop")
         elif args.command == "mem0":
-            mem0 = Mem0(environment)
+            mem0 = Mem0(environment, load_mem0_settings(args.mem0_config))
             if args.action == "up":
+                if not mem0.settings.enabled:
+                    raise ValueError("Mem0 is disabled; set enabled = true in the selected --mem0-config file")
                 ensure_docker()
                 mem0.start()
             elif args.action == "logs":

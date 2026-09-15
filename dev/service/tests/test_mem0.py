@@ -1,4 +1,4 @@
-"""Local OSS lifecycle follows selected configuration, not ambient Compose settings."""
+"""Local OSS is explicitly managed, independently of Service Provider resources."""
 
 import os
 import subprocess
@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 from a13n_service.configuration.sections import MemorySettings
 
-from dev.service.mem0 import Mem0
+from dev.service.mem0 import LOCAL_MEM0_CONFIG, Mem0, Mem0Settings, load_mem0_settings
 from dev.service.tests.test_commands import local_environment
 
 
@@ -46,7 +46,7 @@ def test_compose_uses_checkout_and_selected_configuration(tmp_path, monkeypatch)
 
 @pytest.mark.parametrize("port", [8000, 18080, 15432, 3000])
 def test_port_conflicts_fail_before_compose(tmp_path, port):
-    memory = Mem0(local_environment(tmp_path, memory={"base_url": f"http://127.0.0.1:{port}"}))
+    memory = Mem0(local_environment(tmp_path), Mem0Settings(port=port))
     with pytest.raises(ValueError, match="overlaps"):
         memory.validate()
 
@@ -66,18 +66,30 @@ def test_embedding_size_and_real_endpoint_configuration_are_explicit(tmp_path, m
     memory.validate()
 
 
-@pytest.mark.parametrize(
-    "config",
-    [
-        {"provider": "none"},
-        {"provider": "platform", "api_key": "test"},
-        {"provider": "oss", "base_url": "https://memory.example", "api_key": "test"},
-    ],
-)
-def test_external_backends_are_not_managed(tmp_path, monkeypatch, config):
-    memory = Mem0(local_environment(tmp_path, memory=config))
-    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: pytest.fail("must not start Docker"))
-    assert not memory.enabled
+def test_local_stack_settings_are_separate_from_product_configuration(tmp_path):
+    config = tmp_path / "mem0.toml"
+    config.write_text('enabled = true\nport = 18899\napi_key = "local-custom-key"\n')
+    memory = Mem0(local_environment(tmp_path), load_mem0_settings(config))
+    assert memory.settings.enabled
+    assert memory.port == 18899
+    assert memory.api_key == "local-custom-key"
+    assert MemorySettings().model_dump() == {"timeout_seconds": 30.0}
+
+
+@pytest.mark.parametrize("value", ["0", "65536", "invalid"])
+def test_invalid_local_port_is_rejected(tmp_path, value):
+    config = tmp_path / "mem0.toml"
+    config.write_text(f'port = "{value}"\n')
+    with pytest.raises(ValueError, match="Invalid local Mem0 configuration"):
+        load_mem0_settings(config)
+
+
+def test_default_configuration_never_validates_or_starts_mem0(tmp_path, monkeypatch):
+    settings = load_mem0_settings(LOCAL_MEM0_CONFIG)
+    assert not settings.enabled
+    memory = Mem0(local_environment(tmp_path), settings)
+    monkeypatch.setattr(Mem0, "validate", lambda self: pytest.fail("disabled backend must not be validated"))
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: pytest.fail("disabled backend must not start"))
     memory.start()
 
 

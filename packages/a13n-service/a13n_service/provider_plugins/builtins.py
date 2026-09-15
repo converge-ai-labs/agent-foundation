@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from a13n_harness.memory_plugins import Mem0OSSBackendPlugin, Mem0PlatformBackendPlugin
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from a13n_service.connectivity.connectors.providers.composio.configuration import (
@@ -34,6 +35,8 @@ class ApiKeyCredential(BaseModel):
 
 
 def register(registry: ProviderPluginRegistry) -> None:
+    registry.memory.register(Mem0OSSBackendPlugin())
+    registry.memory.register(Mem0PlatformBackendPlugin())
     for integration in BUILT_IN_PROVIDER_INTEGRATIONS:
         registry.model.register(integration)
     registry.connector.register(

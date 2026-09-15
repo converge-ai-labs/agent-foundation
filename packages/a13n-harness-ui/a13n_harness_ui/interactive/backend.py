@@ -185,7 +185,7 @@ class SessionBackend:
             else model.settings.get("thinking", "default")
         )
         self.status.context_window = (
-            None if model.model_characteristics is None else model.model_characteristics.context_window
+            None if model.model_characteristics is None else model.model_characteristics.context_window_tokens
         )
         return True
 
@@ -699,14 +699,15 @@ class SessionBackend:
         outcome = operation.outcome
         if outcome is not None and operation.status == RootOperationStatus.completed:
             if not renderer.assistant_seen or renderer.gap:
-                prefix = "[Recovered final answer after incomplete live output]\n" if renderer.gap else ""
+                if renderer.gap:
+                    renderer.append("[Recovered final answer after incomplete live output]\n", kind="notice")
                 if outcome.execution.output_omitted:
                     renderer.append(
-                        prefix
-                        + "[Final output exceeds the bounded result projection; use /history to inspect retained messages.]\n"
+                        "[Final output exceeds the bounded result projection; use /history to inspect retained messages.]\n",
+                        kind="notice",
                     )
                 else:
-                    renderer.append(prefix + str(outcome.execution.output) + "\n")
+                    renderer.append(str(outcome.execution.output) + "\n", markdown=True)
             if outcome.environment.cleanup_failures:
                 renderer.append(
                     f"Warning: {len(outcome.environment.cleanup_failures)} environment cleanup failure(s).\n"

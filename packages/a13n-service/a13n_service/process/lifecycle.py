@@ -8,6 +8,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import replace
 from functools import partial
 
+from a13n_harness.memory_plugins import MemoryBackendCatalog
 from a13n_harness.plugin_factories import build_harness_plugin_factory_catalog
 from anyio import create_task_group, to_thread
 from pydantic_ai import prices
@@ -77,6 +78,12 @@ async def open_process_runtime(
             )
             if owns_worker(settings.service.role) and settings.pricing.auto_update:
                 stack.enter_context(prices.update_in_background())
+            protector = settings.secret_protector()
+            memory_catalog = (
+                components.memory_backend_catalog
+                if components.memory_backend_catalog is not None
+                else MemoryBackendCatalog(provider_catalogs.memory)
+            )
             shared = SharedRuntime(
                 storage=storage,
                 lifecycle=LifecycleWriter(
@@ -84,8 +91,13 @@ async def open_process_runtime(
                     if settings.gateway.a2a_enabled
                     else (write_hook_lifecycle,)
                 ),
-                secret_protector=settings.secret_protector(),
-                memories=await build_memory_service(settings.memory, storage.sessions, stack)
+                secret_protector=protector,
+                memories=build_memory_service(
+                    settings.memory,
+                    storage.sessions,
+                    protector,
+                    memory_catalog,
+                )
                 if owns_control(settings.service.role) or owns_worker(settings.service.role)
                 else None,
             )
@@ -94,6 +106,7 @@ async def open_process_runtime(
                 shared,
                 model_provider_registry,
                 WebProviderRegistry(provider_catalogs.web),
+                memory_catalog,
             )
             execution = (
                 await build_execution_resources(

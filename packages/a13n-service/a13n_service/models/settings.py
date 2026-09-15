@@ -6,8 +6,9 @@ import ast
 import inspect
 import json
 import textwrap
+from copy import deepcopy
 from functools import lru_cache
-from typing import Any, get_type_hints
+from typing import Any, cast, get_type_hints
 
 from jsonschema import Draft202012Validator
 from pydantic import ConfigDict, JsonValue, create_model
@@ -175,9 +176,94 @@ def validate_settings(model_api: str, settings: JsonObject) -> JsonObject:
         raise _invalid(list(error.absolute_path), "invalid_type_or_value")
     for field in _ESCAPE_FIELDS & settings.keys():
         _validate_body_paths(model_api, field, settings[field])
+    _reasoning_choice(model_api, settings)
     return settings
 
 
-def effective_settings(model_api: str, defaults: JsonObject, overrides: JsonObject) -> JsonObject:
-    validate_settings(model_api, overrides)
-    return validate_settings(model_api, {**defaults, **overrides})
+def effective_settings(model_api: str, defaults: JsonObject, *override_layers: JsonObject) -> JsonObject:
+    effective = validate_settings(model_api, defaults)
+    for overrides in override_layers:
+        validate_settings(model_api, overrides)
+        inherited = effective
+        if (choice := _reasoning_choice(model_api, overrides)) is not None:
+            inherited = _without_conflicting_reasoning_settings(model_api, effective, choice)
+        merged = {**inherited, **deepcopy(overrides)}
+        if choice is not None:
+            alternative = BUILT_IN_MODEL_APIS[model_api].reasoning_alternatives[choice]
+            for path in alternative.paths:
+                if not _has_path(overrides, path) and (value := _path_value(inherited, path)) is not _MISSING:
+                    _set_path(merged, path, value)
+        effective = validate_settings(model_api, merged)
+    return effective
+
+
+def _reasoning_choice(model_api: str, settings: JsonObject) -> int | None:
+    selected: list[tuple[int, tuple[str, ...]]] = []
+    for index, alternative in enumerate(BUILT_IN_MODEL_APIS[model_api].reasoning_alternatives):
+        path = next((path for path in alternative.paths if _has_path(settings, path)), None)
+        if path is not None:
+            selected.append((index, path))
+    if len(selected) > 1:
+        raise _invalid(list(selected[1][1]), "conflicting_reasoning_settings")
+    return selected[0][0] if selected else None
+
+
+def _has_path(settings: JsonObject, path: tuple[str, ...]) -> bool:
+    value: JsonValue = settings
+    for part in path:
+        if not isinstance(value, dict) or part not in value:
+            return False
+        value = value[part]
+    return True
+
+
+def _without_conflicting_reasoning_settings(model_api: str, settings: JsonObject, selected: int) -> JsonObject:
+    result = deepcopy(settings)
+    for index, alternative in enumerate(BUILT_IN_MODEL_APIS[model_api].reasoning_alternatives):
+        if index == selected:
+            continue
+        for source, target in alternative.preserved_fields:
+            if (value := _path_value(result, source)) is not _MISSING:
+                _set_path(result, target, value)
+        for path in alternative.paths:
+            _delete_path(result, path)
+    return result
+
+
+_MISSING = object()
+
+
+def _path_value(settings: JsonObject, path: tuple[str, ...]) -> JsonValue | object:
+    value: JsonValue = settings
+    for part in path:
+        if not isinstance(value, dict) or part not in value:
+            return _MISSING
+        value = value[part]
+    return value
+
+
+def _set_path(settings: JsonObject, path: tuple[str, ...], value: JsonValue | object) -> None:
+    current = settings
+    for part in path[:-1]:
+        child = current.setdefault(part, {})
+        if not isinstance(child, dict):
+            return
+        current = child
+    current[path[-1]] = cast(JsonValue, value)
+
+
+def _delete_path(settings: JsonObject, path: tuple[str, ...]) -> None:
+    parents: list[tuple[JsonObject, str]] = []
+    current = settings
+    for part in path[:-1]:
+        value = current.get(part)
+        if not isinstance(value, dict):
+            return
+        parents.append((current, part))
+        current = value
+    current.pop(path[-1], None)
+    for parent, part in reversed(parents):
+        child = parent.get(part)
+        if child != {}:
+            break
+        del parent[part]

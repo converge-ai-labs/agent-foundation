@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
@@ -219,13 +220,19 @@ it("dirty file text survives refresh, conflict and navigation until explicit res
   render(<FileView {...props} />, { wrapper: f.Wrapper });
   await screen.findByText("Disk revision changed");
   expect(f.buffers.get(props.path)?.value).toBe("local changes");
-  vi.spyOn(window, "confirm").mockReturnValue(true);
   await waitFor(() =>
     expect(
       (screen.getByText("Keep local text") as HTMLButtonElement).disabled,
     ).toBe(false),
   );
   fireEvent.click(screen.getByText("Keep local text"));
+  const confirmation = await screen.findByRole("dialog", {
+    name: "Keep your local text?",
+  });
+  fireEvent.click(
+    within(confirmation).getByRole("button", { name: "Keep local text" }),
+  );
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   f.put.mockResolvedValue({ data: { ...file.entry, revision: "third" } });
   fireEvent.click(screen.getByText("Save file"));
   await screen.findByText("File saved.");

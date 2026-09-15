@@ -213,11 +213,13 @@ class EnvironmentRunPlan:
         profile: ResolvedEnvironmentProfile,
         mounts: Sequence[_PreparedMount],
         runtime: EnvironmentRuntime,
+        tool_result_directory: str,
     ) -> None:
         self._store = store
         self.profile = profile
         self._mounts = tuple(mounts)
         self.runtime = runtime
+        self.tool_result_directory = tool_result_directory
         self.environments: Mapping[str, Environment] = MappingProxyType(
             {item.alias: item.environment for item in mounts}
         )
@@ -454,6 +456,9 @@ class EnvironmentRunService:
             profile=profile,
             mounts=mounts,
             runtime=runtime,
+            tool_result_directory=(
+                f"{(thread_mount.mount_path or '/environment/thread-files').rstrip('/')}/tmp/tool-results"
+            ),
         )
 
     async def _prepare_thread_files_mount(

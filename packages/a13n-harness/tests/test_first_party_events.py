@@ -25,7 +25,7 @@ from a13n_harness.capabilities import (
     EmbeddedTaskStateCell,
     HandoffCapability,
     TaskMutation,
-    TaskStateRunCapability,
+    TaskStateBinding,
     WorkingStateCapability,
     WorkingStateConfiguration,
 )
@@ -655,7 +655,7 @@ async def test_provider_task_observation_emits_once_at_harness_read_boundaries()
         capabilities=(WorkingStateCapability(WorkingStateConfiguration(task_mode="provider")),),
     )
     bindings = RunBindings.embedded(
-        capabilities=(TaskStateRunCapability(source="provider", cell=cell),),
+        task_state=TaskStateBinding(source="provider", cell=cell),
     )
     events, terminal = await _collect_extensions(executable, "Observe", bindings=bindings)
 
@@ -710,7 +710,7 @@ async def test_provider_changes_before_harness_mutation_keep_provider_observed_r
         capabilities=(WorkingStateCapability(WorkingStateConfiguration(task_mode="provider")),),
     )
     bindings = RunBindings.embedded(
-        capabilities=(TaskStateRunCapability(source="provider", cell=cell),),
+        task_state=TaskStateBinding(source="provider", cell=cell),
     )
     events, terminal = await _collect_extensions(executable, "Mutate", bindings=bindings)
 

@@ -746,6 +746,62 @@ async def test_acceptance_publishes_complete_generation_before_atomic_selection(
         }
 
 
+async def test_reacceptance_preserves_digest_collisions_and_compare_and_select(tmp_path: Path) -> None:
+    from a13n_harness_ui.errors import StoreConflictError, StoreIntegrityError
+
+    root = _write_source(tmp_path)
+    source = await load_harness_ui_configuration(root)
+    async with open_local_store(StorageSettings(data_root=tmp_path / "state")) as store:
+        service = CompositionAcceptanceService(store, AgentCompositionResolver(_catalog()))
+        first = await service.accept(source, expected_current_digest=None)
+        assert await service.accept(source, expected_current_digest=source.source_digest) == first
+        assert len(await store.objects.references()) == 1
+        altered = source.model_copy(update={"content_plugin_diagnostics": ("Different content",)})
+        with pytest.raises(StoreIntegrityError) as collision:
+            await service.accept(altered, expected_current_digest=source.source_digest)
+        assert collision.value.code == "configuration_digest_collision"
+        assert await service.current() == source
+        assert len(await store.objects.references()) == 1
+        root.write_text(root.read_text() + "display: {logo: false}\n")
+        changed = await load_harness_ui_configuration(root)
+        await service.accept(changed, expected_current_digest=source.source_digest)
+        with pytest.raises(StoreConflictError) as conflict:
+            await service.accept(source, expected_current_digest=source.source_digest)
+        assert conflict.value.code == "configuration_selection_conflict"
+        assert await service.current() == changed
+        assert await store.configurations.reference(source.source_digest) == first.generation
+
+
+@pytest.mark.parametrize(("retained_value", "candidate_value"), [(False, 0), (1, 1.0)])
+async def test_reacceptance_rejects_equal_python_values_with_different_json_types(
+    tmp_path: Path, retained_value: bool | int, candidate_value: int | float
+) -> None:
+    import json
+
+    from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration
+    from a13n_harness_ui.errors import StoreIntegrityError
+
+    root = _write_source(tmp_path)
+    payload = (await load_harness_ui_configuration(root)).model_dump(mode="json")
+    settings = payload["models"]["model-primary"]["settings"]
+    settings["provider_option"] = retained_value
+    source = LoadedHarnessUiConfiguration.model_validate_json(json.dumps(payload))
+    settings["provider_option"] = candidate_value
+    candidate = LoadedHarnessUiConfiguration.model_validate_json(json.dumps(payload))
+    assert source == candidate  # Python equality alone loses JSON scalar distinctions.
+    async with open_local_store(StorageSettings(data_root=tmp_path / "state")) as store:
+        service = CompositionAcceptanceService(store, AgentCompositionResolver(_catalog()))
+        accepted = await service.accept(source, expected_current_digest=None)
+        with pytest.raises(StoreIntegrityError) as collision:
+            await service.accept(candidate, expected_current_digest=source.source_digest)
+        assert collision.value.code == "configuration_digest_collision"
+        retained = await service.current()
+        assert retained is not None
+        assert type(retained.models["model-primary"].settings["provider_option"]) is type(retained_value)
+        assert await store.configurations.reference(source.source_digest) == accepted.generation
+        assert len(await store.objects.references()) == 1
+
+
 def test_plugin_layout_routes_skills_inside_the_full_plugin_mount(tmp_path: Path) -> None:
     plugin = tmp_path / "plugin-reviewer"
     layout = EnvironmentPathLayout.resolve(

@@ -2,18 +2,27 @@
 
 from __future__ import annotations
 
-import hashlib
 from collections.abc import Mapping
 from datetime import datetime
+from operator import eq
 from typing import Annotated, Literal
 
 from ag_ui.core import Event
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, TypeAdapter, model_validator
 
 from a13n_service.storage import ObjectConflict, ObjectInfo, ObjectStore, ObjectStoreUnavailable
-from a13n_service.storage.codec import DurableObjectCodecError, canonical_model_bytes, decode_canonical_model
+from a13n_service.storage.codec import (
+    COMPRESSED_JSON_CONTENT_TYPE,
+    COMPRESSED_JSON_ENCODING,
+    DurableObjectCodecError,
+    DurableObjectSizeError,
+    compressed_size_limit,
+    decode_compressed_model,
+    encode_compressed_model,
+    run_codec,
+)
 
-HOSTED_AGUI_REPLAY_CONTENT_TYPE = "application/vnd.a13n.hosted-agui-replay+json"
+HOSTED_AGUI_REPLAY_CONTENT_TYPE = COMPRESSED_JSON_CONTENT_TYPE
 _EVENT = TypeAdapter(Event)
 _ResourceId = Annotated[str, StringConstraints(min_length=1, max_length=72)]
 _ExternalId = Annotated[str, StringConstraints(min_length=1, max_length=512)]
@@ -81,6 +90,7 @@ class HostedAguiReplayStore:
         self._objects = objects
         self._max_events = max_events
         self._max_bytes = max_bytes
+        self._max_encoded_bytes = compressed_size_limit(max_bytes)
 
     async def publish(
         self,
@@ -89,10 +99,12 @@ class HostedAguiReplayStore:
     ) -> HostedAguiReplaySnapshot:
         if len(snapshot.events) > self._max_events:
             raise HostedAguiReplayUnavailable("Hosted AG-UI event count exceeds the retained replay bound")
-        body = canonical_model_bytes(snapshot)
-        if len(body) > self._max_bytes:
-            raise HostedAguiReplayUnavailable("Hosted AG-UI replay exceeds its encoded size bound")
-        digest = hashlib.sha256(body).hexdigest()
+        try:
+            body, digest = await encode_compressed_model(snapshot, max_bytes=self._max_bytes)
+        except DurableObjectSizeError as error:
+            raise HostedAguiReplayUnavailable("Hosted AG-UI replay exceeds its decoded size bound") from error
+        except DurableObjectCodecError as error:
+            raise HostedAguiReplayError("Hosted AG-UI replay cannot be encoded") from error
         key = hosted_agui_replay_key(organization_id, snapshot.binding_id)
         metadata = _metadata(snapshot, digest=digest)
         try:
@@ -105,7 +117,7 @@ class HostedAguiReplayStore:
             )
         except ObjectConflict as error:
             existing = await self.read(organization_id, snapshot.binding_id)
-            if existing != snapshot:
+            if not await run_codec(eq, existing, snapshot):
                 raise HostedAguiReplayError(
                     "existing Hosted AG-UI replay does not match the complete delivery"
                 ) from error
@@ -119,14 +131,24 @@ class HostedAguiReplayStore:
 
     async def read(self, organization_id: str, binding_id: str) -> HostedAguiReplaySnapshot:
         key = hosted_agui_replay_key(organization_id, binding_id)
-        body, info = await _read_object(self._objects, key, max_bytes=self._max_bytes)
+        body, info = await _read_object(self._objects, key, max_bytes=self._max_encoded_bytes)
+        digest = info.metadata.get("digest-sha256", "")
+        metadata = {
+            "storage-encoding": COMPRESSED_JSON_ENCODING,
+            "schema-version": "1",
+            "binding-id": binding_id,
+            "digest-sha256": digest,
+        }
+        _verify_info(info, key=key, body=body, metadata=metadata)
         try:
-            snapshot = decode_canonical_model(body, _SNAPSHOT)
+            snapshot = await decode_compressed_model(body, _SNAPSHOT, max_bytes=self._max_bytes, digest_sha256=digest)
+        except DurableObjectSizeError as error:
+            raise HostedAguiReplayUnavailable("Hosted AG-UI replay exceeds its decoded size bound") from error
         except DurableObjectCodecError as error:
             raise HostedAguiReplayError("Hosted AG-UI replay body is invalid") from error
         if snapshot.binding_id != binding_id:
             raise HostedAguiReplayError("Hosted AG-UI replay belongs to another binding")
-        metadata = _metadata(snapshot, digest=hashlib.sha256(body).hexdigest())
+        metadata = _metadata(snapshot, digest=digest)
         _verify_info(info, key=key, body=body, metadata=metadata)
         if len(snapshot.events) > self._max_events:
             raise HostedAguiReplayUnavailable("Hosted AG-UI event count exceeds the retained replay bound")
@@ -139,6 +161,7 @@ def hosted_agui_replay_key(organization_id: str, binding_id: str) -> str:
 
 def _metadata(snapshot: HostedAguiReplaySnapshot, *, digest: str) -> dict[str, str]:
     return {
+        "storage-encoding": COMPRESSED_JSON_ENCODING,
         "schema-version": "1",
         "binding-id": snapshot.binding_id,
         "run-id": snapshot.run_id,

@@ -178,13 +178,14 @@ it("renders actual briefs, deduplicates replay, and opens the matching conversat
   act(() => native.mock.results[0].value.onclick());
   expect(screen.getByText("/threads/thread-1")).toBeTruthy();
 });
-it("keeps in-app notices without desktop permission or when disabled, and suppresses foreground native alerts", async () => {
+it("delivers native alerts in the foreground, but keeps only in-app notices without permission or when disabled", async () => {
   permission = "granted";
   vi.mocked(document.hasFocus).mockReturnValue(true);
   mount();
   fireEvent.click(screen.getByText("Emit"));
   expect(await screen.findByText(event.notice!.brief)).toBeTruthy();
-  expect(native).not.toHaveBeenCalled();
+  expect(native).toHaveBeenCalledOnce();
+  native.mockClear();
   permission = "default";
   fireEvent(document, new Event("visibilitychange"));
   event = notice("receipt-2", "suspended");
@@ -247,4 +248,33 @@ it("continues in-app delivery when native notification construction fails", asyn
   fireEvent.click(screen.getByText("Emit"));
   expect(await screen.findByText(event.notice!.brief)).toBeTruthy();
   expect(screen.getByRole("alert").textContent).toContain("could not display");
+});
+
+it("reports asynchronous delivery errors and never treats a test request as confirmed macOS delivery", async () => {
+  permission = "granted";
+  mount();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Send test notification" }),
+  );
+  expect(screen.getByText(/does not confirm/)).toBeTruthy();
+  const notification = native.mock.results[0].value;
+  act(() => notification.onshow());
+  expect(screen.getByText(/browser reported/)).toBeTruthy();
+  act(() => notification.onerror());
+  expect(screen.getByRole("alert").textContent).toContain(
+    "system notification settings",
+  );
+  expect(screen.queryByText(/browser reported/)).toBeNull();
+});
+it("falls back to native delivery when optional cross-tab locking is unavailable", async () => {
+  permission = "granted";
+  vi.stubGlobal("navigator", {
+    locks: {
+      request: vi.fn().mockRejectedValue(new Error("Lock unavailable")),
+    },
+  });
+  mount();
+  fireEvent.click(screen.getByText("Emit"));
+  await waitFor(() => expect(native).toHaveBeenCalledOnce());
+  expect(screen.getByText(event.notice!.brief)).toBeTruthy();
 });

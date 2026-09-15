@@ -348,7 +348,7 @@ Run acceptance stores the final exact ordered `SkillRevisionLock` tuple in `Effe
 
 ## Worker Materialization and Harness Use
 
-Before Harness entry, the current `RunAttemptExecutor` verifies the exact locks in `EffectiveAgentConfig.skills`, then reads and verifies their package content. It constructs an explicit `SkillManager` with the exact Host materializer and supplies `SkillSelectionRunCapability` with every `skill_key`. After Harness enters the fresh primary Environment, but before model or tool work, `SkillsCapability`:
+Before Harness entry, the current `RunAttemptExecutor` verifies the exact locks in `EffectiveAgentConfig.skills`, then reads and verifies their package content. It constructs an explicit `SkillManager` with the exact Host materializer and only the accepted `skill_key` catalog. `RunBindings.skill_selection` remains unset: `SkillsCapability` uses that complete already-restricted catalog without a second selection wrapper. After Harness enters the fresh primary Environment, but before model or tool work, `SkillsCapability`:
 
 1. invokes the materializer to write those files through the current version-pinned `FileOperator` into a Host-reserved content-addressed root;
 2. verifies the complete root and writes a Host completion manifest last;

@@ -71,7 +71,7 @@ async def test_setup_reuses_existing_codex_login_without_login_or_refresh(
     assert model.settings["thinking"] == "high"
     assert model.settings["openai_service_tier"] == ("default" if fast == "off" else "priority")
     assert "service_tier" not in model.settings
-    assert model.model_characteristics.context_window == 350000
+    assert model.model_characteristics.context_window_tokens == 350000
     assert configuration.document.defaults.environment_profile == "environment-native"
 
 

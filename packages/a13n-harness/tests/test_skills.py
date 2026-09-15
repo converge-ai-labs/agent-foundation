@@ -30,7 +30,6 @@ from a13n_harness.capabilities import (
     SkillCatalogItem,
     SkillManager,
     SkillsCapability,
-    SkillSelectionRunCapability,
     SubagentCapability,
 )
 from a13n_harness.context import SkillPath
@@ -763,7 +762,7 @@ async def test_host_skill_selection_injects_only_exact_selected_names(tmp_path: 
         "Use a skill",
         bindings=RunBindings.embedded(
             environment=_binding(tmp_path),
-            capabilities=(SkillSelectionRunCapability(names=frozenset({"alpha"})),),
+            skill_selection=frozenset({"alpha"}),
         ),
     )
 
@@ -799,7 +798,7 @@ async def test_empty_host_skill_selection_injects_no_skill_catalog(tmp_path: Pat
         "Use a skill",
         bindings=RunBindings.embedded(
             environment=_binding(tmp_path),
-            capabilities=(SkillSelectionRunCapability(names=frozenset()),),
+            skill_selection=frozenset(),
         ),
     )
 
@@ -832,7 +831,7 @@ async def test_resumed_run_reselects_skills_from_fresh_host_bindings(tmp_path: P
         "First",
         bindings=RunBindings.embedded(
             environment=_binding(tmp_path),
-            capabilities=(SkillSelectionRunCapability(names=frozenset({"alpha"})),),
+            skill_selection=frozenset({"alpha"}),
         ),
     )
     assert first.state is not None
@@ -921,10 +920,8 @@ async def test_child_run_uses_its_own_skill_selection(tmp_path: Path) -> None:
                 agent_instance_id="skill-parent",
             ),
             environment=_binding(tmp_path),
-            capabilities=(
-                InvocationPolicyCapability(evaluator=_Allow()),
-                SkillSelectionRunCapability(names=frozenset({"alpha"})),
-            ),
+            capabilities=(InvocationPolicyCapability(evaluator=_Allow()),),
+            skill_selection=frozenset({"alpha"}),
         ),
     )
 
@@ -956,7 +953,7 @@ async def test_host_skill_selection_rejects_unknown_names(tmp_path: Path) -> Non
             "Use a skill",
             bindings=RunBindings.embedded(
                 environment=_binding(tmp_path),
-                capabilities=(SkillSelectionRunCapability(names=frozenset({"missing"})),),
+                skill_selection=frozenset({"missing"}),
             ),
         )
     assert exc_info.value.code == "skill_selection_unknown"
@@ -965,11 +962,11 @@ async def test_host_skill_selection_rejects_unknown_names(tmp_path: Path) -> Non
 
 def test_skill_selection_requires_immutable_bounded_exact_names() -> None:
     with pytest.raises(TypeError, match="frozenset"):
-        SkillSelectionRunCapability(names=("alpha",))  # type: ignore[arg-type]
+        RunBindings.embedded(skill_selection=("alpha",))  # type: ignore[arg-type]
     with pytest.raises(ValueError, match="bounded"):
-        SkillSelectionRunCapability(names=frozenset({"x" * 257}))
-    with pytest.raises(ValueError, match="must be"):
-        SkillSelectionRunCapability(id="custom", names=frozenset())
+        RunBindings.embedded(skill_selection=frozenset({"x" * 257}))
+    with pytest.raises(ValueError, match="bounded"):
+        RunBindings.embedded(skill_selection=frozenset({""}))
 
 
 @pytest.mark.parametrize("content", ["none", "standard", "full"])
@@ -1537,7 +1534,7 @@ async def test_resolution_phase_records_selection_and_bounded_results(tmp_path, 
     )
     bindings = RunBindings.embedded(
         environment=_binding(tmp_path),
-        capabilities=() if selection is None else (SkillSelectionRunCapability(names=selection),),
+        skill_selection=selection,
     )
     try:
         if selection == frozenset({"missing"}):

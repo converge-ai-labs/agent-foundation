@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from a13n_harness.capabilities.mem0 import Mem0Scope
+from a13n_harness.memory import MemoryScope as ScopeKind
 from fastapi import APIRouter, Depends, Path, Query, Request, Response
 
 from a13n_service.application_errors import ErrorCategory
@@ -14,11 +14,11 @@ from a13n_service.request_runtime import get_process_runtime
 from .domain import Memory, MemoryCollection, MemoryScope, MemorySearch, MemoryWrite
 from .service import MemoryService, failure
 
-router = APIRouter(prefix="/api/v1/workspaces/{workspace}/memories", tags=["memory"])
+router = APIRouter(prefix="/api/v1/workspaces/{workspace}/memory-providers/{provider_id}/memories", tags=["memory"])
 Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]
 
 
-def memory_scope(scope: Mem0Scope, subject_id: Annotated[ThreadId | None, Query()] = None) -> MemoryScope:
+def memory_scope(scope: ScopeKind, subject_id: Annotated[ThreadId | None, Query()] = None) -> MemoryScope:
     try:
         return MemoryScope(scope=scope, subject_id=subject_id)
     except ValueError as error:
@@ -45,48 +45,68 @@ async def list_memories(
     request: Request,
     actor: Actor,
     workspace_id: WorkspaceId,
+    provider_id: str,
     scope: Scope,
     limit: Annotated[int, Query(ge=1, le=1000, description="Maximum loaded records, not a total count.")] = 1000,
     cursor: Annotated[str | None, Query(max_length=2048)] = None,
 ) -> MemoryCollection:
     return await _memory(request).list(
-        actor=actor, workspace_id=workspace_id, selection=scope, limit=limit, cursor=cursor
+        actor=actor, workspace_id=workspace_id, provider_id=provider_id, selection=scope, limit=limit, cursor=cursor
     )
 
 
 @router.post("/search", response_model=MemoryCollection)
 async def search_memories(
-    request: Request, actor: Actor, workspace_id: WorkspaceId, scope: Scope, body: MemorySearch
+    request: Request, actor: Actor, workspace_id: WorkspaceId, provider_id: str, scope: Scope, body: MemorySearch
 ) -> MemoryCollection:
-    return await _memory(request).search(actor=actor, workspace_id=workspace_id, selection=scope, query=body)
+    return await _memory(request).search(
+        actor=actor, workspace_id=workspace_id, provider_id=provider_id, selection=scope, query=body
+    )
 
 
 @router.post("", response_model=Memory, status_code=201)
 async def add_memory(
-    request: Request, actor: Actor, workspace_id: WorkspaceId, scope: Scope, body: MemoryWrite
+    request: Request, actor: Actor, workspace_id: WorkspaceId, provider_id: str, scope: Scope, body: MemoryWrite
 ) -> Memory:
-    return await _memory(request).add(actor=actor, workspace_id=workspace_id, selection=scope, text=body.text)
+    return await _memory(request).add(
+        actor=actor, workspace_id=workspace_id, provider_id=provider_id, selection=scope, text=body.text
+    )
 
 
 @router.get("/{memory_id}", response_model=Memory)
 async def get_memory(
-    request: Request, actor: Actor, workspace_id: WorkspaceId, scope: Scope, memory_id: MemoryId
+    request: Request, actor: Actor, workspace_id: WorkspaceId, provider_id: str, scope: Scope, memory_id: MemoryId
 ) -> Memory:
-    return await _memory(request).get(actor=actor, workspace_id=workspace_id, selection=scope, memory_id=memory_id)
+    return await _memory(request).get(
+        actor=actor, workspace_id=workspace_id, provider_id=provider_id, selection=scope, memory_id=memory_id
+    )
 
 
 @router.put("/{memory_id}", response_model=Memory)
 async def update_memory(
-    request: Request, actor: Actor, workspace_id: WorkspaceId, scope: Scope, memory_id: MemoryId, body: MemoryWrite
+    request: Request,
+    actor: Actor,
+    workspace_id: WorkspaceId,
+    provider_id: str,
+    scope: Scope,
+    memory_id: MemoryId,
+    body: MemoryWrite,
 ) -> Memory:
     return await _memory(request).update(
-        actor=actor, workspace_id=workspace_id, selection=scope, memory_id=memory_id, text=body.text
+        actor=actor,
+        workspace_id=workspace_id,
+        provider_id=provider_id,
+        selection=scope,
+        memory_id=memory_id,
+        text=body.text,
     )
 
 
 @router.delete("/{memory_id}", status_code=204)
 async def delete_memory(
-    request: Request, actor: Actor, workspace_id: WorkspaceId, scope: Scope, memory_id: MemoryId
+    request: Request, actor: Actor, workspace_id: WorkspaceId, provider_id: str, scope: Scope, memory_id: MemoryId
 ) -> Response:
-    await _memory(request).delete(actor=actor, workspace_id=workspace_id, selection=scope, memory_id=memory_id)
+    await _memory(request).delete(
+        actor=actor, workspace_id=workspace_id, provider_id=provider_id, selection=scope, memory_id=memory_id
+    )
     return Response(status_code=204)

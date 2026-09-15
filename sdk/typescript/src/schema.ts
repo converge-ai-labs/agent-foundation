@@ -294,6 +294,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/base-models": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Base Models */
+    get: operations["get_base_models"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/connection-authorizations/{authorization_id}": {
     parameters: {
       query?: never;
@@ -1086,6 +1103,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/memory-provider-types": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Types */
+    get: operations["get_memory_provider_types"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/memory-provider-types/{provider_type}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Type */
+    get: operations["get_memory_provider_types_provider_type"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/model-provider-types": {
     parameters: {
       query?: never;
@@ -1245,6 +1296,76 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/organizations/{organization}/memory-providers": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Organization Provider */
+    get: operations["get_organizations_organization_memory_providers"];
+    put?: never;
+    /** Create Organization Provider */
+    post: operations["post_organizations_organization_memory_providers"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/organizations/{organization}/memory-providers/{provider_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Organization Provider */
+    get: operations["get_organizations_organization_memory_providers_provider_id"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Update Organization Provider */
+    patch: operations["patch_organizations_organization_memory_providers_provider_id"];
+    trace?: never;
+  };
+  "/api/v1/organizations/{organization}/memory-providers/{provider_id}/references": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** References Organization Provider */
+    get: operations["get_organizations_organization_memory_providers_provider_id_references"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/organizations/{organization}/model-catalog/suggestions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Suggest Organization Model Declarations */
+    post: operations["post_organizations_organization_model_catalog_suggestions"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/organizations/{organization}/model-providers": {
     parameters: {
       query?: never;
@@ -1279,23 +1400,6 @@ export interface paths {
     head?: never;
     /** Organization Update Model Provider */
     patch: operations["patch_organizations_organization_model_providers_provider_id"];
-    trace?: never;
-  };
-  "/api/v1/organizations/{organization}/model-providers/{provider_id}/describe-model": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Organization Describe Provider Model */
-    post: operations["post_organizations_organization_model_providers_provider_id_describe_model"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
     trace?: never;
   };
   "/api/v1/organizations/{organization}/model-providers/{provider_id}/discover-models": {
@@ -2801,7 +2905,43 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace}/memories": {
+  "/api/v1/workspaces/{workspace}/memory-providers": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Workspace Provider */
+    get: operations["get_workspaces_workspace_memory_providers"];
+    put?: never;
+    /** Create Workspace Provider */
+    post: operations["post_workspaces_workspace_memory_providers"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace}/memory-providers/{provider_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Workspace Provider */
+    get: operations["get_workspaces_workspace_memory_providers_provider_id"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Update Workspace Provider */
+    patch: operations["patch_workspaces_workspace_memory_providers_provider_id"];
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace}/memory-providers/{provider_id}/memories": {
     parameters: {
       query?: never;
       header?: never;
@@ -2809,17 +2949,17 @@ export interface paths {
       cookie?: never;
     };
     /** List Memories */
-    get: operations["get_workspaces_workspace_memories"];
+    get: operations["get_workspaces_workspace_memory_providers_provider_id_memories"];
     put?: never;
     /** Add Memory */
-    post: operations["post_workspaces_workspace_memories"];
+    post: operations["post_workspaces_workspace_memory_providers_provider_id_memories"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace}/memories/search": {
+  "/api/v1/workspaces/{workspace}/memory-providers/{provider_id}/memories/search": {
     parameters: {
       query?: never;
       header?: never;
@@ -2829,14 +2969,14 @@ export interface paths {
     get?: never;
     put?: never;
     /** Search Memories */
-    post: operations["post_workspaces_workspace_memories_search"];
+    post: operations["post_workspaces_workspace_memory_providers_provider_id_memories_search"];
     delete?: never;
     options?: never;
     head?: never;
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace}/memories/{memory_id}": {
+  "/api/v1/workspaces/{workspace}/memory-providers/{provider_id}/memories/{memory_id}": {
     parameters: {
       query?: never;
       header?: never;
@@ -2844,12 +2984,46 @@ export interface paths {
       cookie?: never;
     };
     /** Get Memory */
-    get: operations["get_workspaces_workspace_memories_memory_id"];
+    get: operations["get_workspaces_workspace_memory_providers_provider_id_memories_memory_id"];
     /** Update Memory */
-    put: operations["put_workspaces_workspace_memories_memory_id"];
+    put: operations["put_workspaces_workspace_memory_providers_provider_id_memories_memory_id"];
     post?: never;
     /** Delete Memory */
-    delete: operations["delete_workspaces_workspace_memories_memory_id"];
+    delete: operations["delete_workspaces_workspace_memory_providers_provider_id_memories_memory_id"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace}/memory-providers/{provider_id}/references": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** References Workspace Provider */
+    get: operations["get_workspaces_workspace_memory_providers_provider_id_references"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace}/model-catalog/suggestions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Suggest Workspace Model Declarations */
+    post: operations["post_workspaces_workspace_model_catalog_suggestions"];
+    delete?: never;
     options?: never;
     head?: never;
     patch?: never;
@@ -2889,23 +3063,6 @@ export interface paths {
     head?: never;
     /** Update Model Provider */
     patch: operations["patch_workspaces_workspace_model_providers_provider_id"];
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace}/model-providers/{provider_id}/describe-model": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Describe Provider Model */
-    post: operations["post_workspaces_workspace_model_providers_provider_id_describe_model"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
     trace?: never;
   };
   "/api/v1/workspaces/{workspace}/model-providers/{provider_id}/discover-models": {
@@ -3740,13 +3897,31 @@ export interface components {
     };
     /** AgentModel */
     AgentModel: {
-      characteristics?: components["schemas"]["HarnessModelCharacteristics"];
+      characteristics?: components["schemas"]["AgentModelCharacteristics"];
       /** Model Key */
       model_key: string;
       /** Settings */
       settings?: {
         [key: string]: components["schemas"]["JsonValue"];
       };
+    };
+    /**
+     * AgentModelCharacteristics
+     * @description Agent-owned context policy layered over Model declarations.
+     */
+    AgentModelCharacteristics: {
+      /**
+       * Compact Threshold
+       * @default 0.9
+       */
+      compact_threshold?: number;
+      /** Context Window Tokens */
+      context_window_tokens?: number | null;
+      /**
+       * Proactive Context Management Threshold
+       * @default 0.65
+       */
+      proactive_context_management_threshold?: number | null;
     };
     /**
      * AgentReviewer
@@ -4135,6 +4310,20 @@ export interface components {
     AuthorizationRedirect: {
       /** Url */
       url: string;
+    };
+    /** BaseModelCandidate */
+    BaseModelCandidate: {
+      /** Base Model */
+      base_model: string;
+      /** Inferred Model Api */
+      inferred_model_api: string | null;
+      /** Model Api Label */
+      model_api_label: string | null;
+    };
+    /** BaseModelCandidateCollection */
+    BaseModelCandidateCollection: {
+      /** Items */
+      items: components["schemas"]["BaseModelCandidate"][];
     };
     /** BinaryContent */
     BinaryContent: {
@@ -4816,6 +5005,26 @@ export interface components {
       /** Version */
       version?: number | null;
     };
+    /** CreateMemoryProviderRequest */
+    CreateMemoryProviderRequest: {
+      /** Configuration */
+      configuration?: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+      /** Credential */
+      credential: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+      /**
+       * Enabled
+       * @default true
+       */
+      enabled?: boolean;
+      /** Name */
+      name: string;
+      /** Type */
+      type: string;
+    };
     /** CreateModelProviderRequest */
     CreateModelProviderRequest: {
       /** Configuration */
@@ -4840,6 +5049,9 @@ export interface components {
     };
     /** CreateModelRequest */
     CreateModelRequest: {
+      /** Base Model */
+      base_model?: string | null;
+      declarations?: components["schemas"]["ModelDeclarations"];
       /** Description */
       description?: string | null;
       /**
@@ -4850,7 +5062,7 @@ export interface components {
       /** Key */
       key: string;
       /** Model Api */
-      model_api: string;
+      model_api?: string | null;
       /** Name */
       name: string;
       /** Provider Id */
@@ -5050,13 +5262,6 @@ export interface components {
     DeleteQueuedSubmissionRequest: {
       /** Expected Version */
       expected_version: number;
-    };
-    /** DescribeModelRequest */
-    DescribeModelRequest: {
-      /** Model Api */
-      model_api?: string | null;
-      /** Upstream Model */
-      upstream_model: string;
     };
     /**
      * DeveloperMessage
@@ -5493,26 +5698,6 @@ export interface components {
     HTTPValidationError: {
       /** Detail */
       detail?: components["schemas"]["ValidationError"][];
-    };
-    /**
-     * HarnessModelCharacteristics
-     * @description Resolved Harness characteristics of the active Agent model.
-     */
-    HarnessModelCharacteristics: {
-      /** Capabilities */
-      capabilities?: components["schemas"]["ModelCapability"][];
-      /**
-       * Compact Threshold
-       * @default 0.9
-       */
-      compact_threshold?: number;
-      /** Context Window */
-      context_window?: number | null;
-      /**
-       * Proactive Context Management Threshold
-       * @default 0.65
-       */
-      proactive_context_management_threshold?: number | null;
     };
     /** HookSubscription */
     HookSubscription: {
@@ -6131,12 +6316,6 @@ export interface components {
       /** Items */
       items: components["schemas"]["MCPTool"][];
     };
-    /**
-     * Mem0Scope
-     * @description Trusted Harness identity boundary used for Mem0 records.
-     * @enum {string}
-     */
-    Mem0Scope: "thread" | "agent" | "user";
     /** Memory */
     Memory: {
       /** Id */
@@ -6161,6 +6340,89 @@ export interface components {
       /** Next Cursor */
       next_cursor: string | null;
     };
+    /** MemoryProvider */
+    MemoryProvider: {
+      /** Configuration */
+      configuration: {
+        [key: string]: unknown;
+      };
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      created_by: components["schemas"]["PrincipalRef"];
+      /** Credential Configured */
+      credential_configured: boolean;
+      /** Enabled */
+      enabled: boolean;
+      /** Id */
+      id: string;
+      /** Name */
+      name: string;
+      /** Organization Id */
+      organization_id: string;
+      /** Type */
+      type: string;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      updated_by: components["schemas"]["PrincipalRef"];
+      /** Workspace Id */
+      workspace_id: string | null;
+    };
+    /** MemoryProviderCollection */
+    MemoryProviderCollection: {
+      /** Items */
+      items: components["schemas"]["MemoryProvider"][];
+      /** Next Cursor */
+      next_cursor?: string | null;
+    };
+    /** MemoryProviderDefinition */
+    MemoryProviderDefinition: {
+      /** Configuration Schema */
+      configuration_schema: {
+        [key: string]: unknown;
+      };
+      /** Credential Schema */
+      credential_schema: {
+        [key: string]: unknown;
+      };
+      /** Display Name */
+      display_name: string;
+      /** Type */
+      type: string;
+    };
+    /** MemoryProviderDefinitionCollection */
+    MemoryProviderDefinitionCollection: {
+      /** Items */
+      items: components["schemas"]["MemoryProviderDefinition"][];
+    };
+    /** MemoryProviderReference */
+    MemoryProviderReference: {
+      /** Agent Id */
+      agent_id: string;
+      /** Agent Revision Id */
+      agent_revision_id: string;
+      /** Is Current */
+      is_current: boolean;
+      /** Version */
+      version: number;
+    };
+    /** MemoryProviderReferenceCollection */
+    MemoryProviderReferenceCollection: {
+      /** Items */
+      items: components["schemas"]["MemoryProviderReference"][];
+      /** Next Cursor */
+      next_cursor?: string | null;
+    };
+    /**
+     * MemoryScope
+     * @enum {string}
+     */
+    MemoryScope: "thread" | "agent" | "user";
     /** MemorySearch */
     MemorySearch: {
       /**
@@ -6183,6 +6445,8 @@ export interface components {
        * @default true
        */
       auto_recall?: boolean;
+      /** Provider Id */
+      provider_id: string;
       /**
        * Recall Limit
        * @default 5
@@ -6200,7 +6464,7 @@ export interface components {
        * @default 2
        */
       recall_timeout?: number;
-      scope?: components["schemas"]["Mem0Scope"] | null;
+      scope?: components["schemas"]["MemoryScope"] | null;
       /**
        * Toolset
        * @default true
@@ -6214,12 +6478,15 @@ export interface components {
     };
     /** Model */
     Model: {
+      /** Base Model */
+      base_model?: string | null;
       /**
        * Created At
        * Format: date-time
        */
       created_at: string;
       created_by: components["schemas"]["PrincipalRef"];
+      declarations?: components["schemas"]["ModelDeclarations"];
       /** Description */
       description: string | null;
       /** Enabled */
@@ -6256,6 +6523,7 @@ export interface components {
       /** Display Name */
       display_name?: string | null;
       limits?: components["schemas"]["ModelLimits"];
+      native_profile?: components["schemas"]["ModelProfile"];
       /** Parameter Support */
       parameter_support?: {
         [key: string]: "supported" | "unsupported" | "unknown";
@@ -6277,6 +6545,46 @@ export interface components {
      */
     ModelCapability:
       "image_understanding" | "video_understanding" | "audio_understanding";
+    /** ModelCatalogMatch */
+    ModelCatalogMatch: {
+      /**
+       * Items
+       * @default []
+       */
+      items?: components["schemas"]["ModelCatalogSuggestion"][];
+      /**
+       * Source
+       * @enum {string}
+       */
+      source:
+        | "none"
+        | "explicit"
+        | "exact"
+        | "normalized"
+        | "name_tokens"
+        | "ambiguous";
+    };
+    /** ModelCatalogSuggestion */
+    ModelCatalogSuggestion: {
+      /** Base Model */
+      base_model: string;
+      declarations: components["schemas"]["ModelDeclarations"];
+      /** Model Api */
+      model_api: string | null;
+      /** Model Api Label */
+      model_api_label: string | null;
+    };
+    /** ModelCatalogSuggestionRequest */
+    ModelCatalogSuggestionRequest: {
+      /** Base Model */
+      base_model?: string | null;
+      /** Model Api */
+      model_api?: string | null;
+      /** Provider Id */
+      provider_id: string;
+      /** Upstream Model */
+      upstream_model: string;
+    };
     /** ModelCollection */
     ModelCollection: {
       /** Items */
@@ -6301,39 +6609,30 @@ export interface components {
       /** Success */
       success: boolean;
     };
-    /** ModelDescription */
-    ModelDescription: {
-      /** Display Name */
-      display_name?: string | null;
-      limits?: components["schemas"]["ModelLimits"];
-      /** Parameter Support */
-      parameter_support?: {
-        [key: string]: "supported" | "unsupported" | "unknown";
-      };
-      profile?: components["schemas"]["ModelProfile"];
-      /** Settings Schema */
-      settings_schema: {
-        [key: string]: unknown;
-      };
-      /** Suggested Model Api */
-      suggested_model_api: string;
-      /** Suggested Settings */
-      suggested_settings?: {
-        [key: string]: components["schemas"]["JsonValue"];
-      };
-      /** Upstream Model */
-      upstream_model: string;
+    /**
+     * ModelDeclarations
+     * @description Harness-facing facts and authoring choices declared for one saved Model.
+     */
+    ModelDeclarations: {
+      /** Capabilities */
+      capabilities?: components["schemas"]["ModelCapability"][];
+      /** Context Window Tokens */
+      context_window_tokens?: number | null;
+      /** Max Output Tokens */
+      max_output_tokens?: number | null;
+      pricing?: components["schemas"]["ModelPricing"] | null;
+      /** Structured Output */
+      structured_output?: boolean | null;
+      /**
+       * Thinking Efforts
+       * @default []
+       */
+      thinking_efforts?: ("minimal" | "low" | "medium" | "high" | "xhigh")[];
     };
     /** ModelDiscovery */
     ModelDiscovery: {
       /** Items */
       items: components["schemas"]["ModelCandidate"][];
-      /** Settings Schemas */
-      settings_schemas: {
-        [key: string]: {
-          [key: string]: unknown;
-        };
-      };
     };
     /** ModelIdentity */
     ModelIdentity: {
@@ -6352,7 +6651,7 @@ export interface components {
     /** ModelOverride */
     ModelOverride: {
       characteristics?:
-        components["schemas"]["HarnessModelCharacteristics"] | null;
+        components["schemas"]["AgentModelCharacteristics"] | null;
       /** Model Key */
       model_key?: string | null;
       /** Settings */
@@ -6361,8 +6660,22 @@ export interface components {
       } | null;
     };
     /**
+     * ModelPricing
+     * @description Editable USD prices per million tokens.
+     */
+    ModelPricing: {
+      /** Cache Read */
+      cache_read?: number | null;
+      /** Cache Write */
+      cache_write?: number | null;
+      /** Input */
+      input?: number | null;
+      /** Output */
+      output?: number | null;
+    };
+    /**
      * ModelProfile
-     * @description Read-only Provider capability information returned by discovery and description.
+     * @description Read-only Provider capability information returned by discovery.
      */
     ModelProfile: {
       /** Input Modalities */
@@ -6441,6 +6754,16 @@ export interface components {
       default_model_api: string;
       /** Display Name */
       display_name: string;
+      /** Model Api Labels */
+      model_api_labels: {
+        [key: string]: string;
+      };
+      /** Settings Schemas */
+      settings_schemas: {
+        [key: string]: {
+          [key: string]: unknown;
+        };
+      };
       /** Supported Model Apis */
       supported_model_apis: string[];
       /** Supports Model Discovery */
@@ -7015,7 +7338,7 @@ export interface components {
     };
     /** ResolvedAgentModel */
     ResolvedAgentModel: {
-      characteristics: components["schemas"]["HarnessModelCharacteristics"];
+      characteristics: components["schemas"]["AgentModelCharacteristics"];
       /** Model Id */
       model_id: string;
       /** Model Key */
@@ -8534,6 +8857,17 @@ export interface components {
       /** Enabled */
       enabled: boolean;
     };
+    /** UpdateMemoryProviderRequest */
+    UpdateMemoryProviderRequest: {
+      /** Credential */
+      credential?: {
+        [key: string]: components["schemas"]["JsonValue"];
+      } | null;
+      /** Enabled */
+      enabled?: boolean | null;
+      /** Name */
+      name?: string | null;
+    };
     /** UpdateModelProviderRequest */
     UpdateModelProviderRequest: {
       /** Configuration */
@@ -8553,6 +8887,9 @@ export interface components {
     };
     /** UpdateModelRequest */
     UpdateModelRequest: {
+      /** Base Model */
+      base_model?: string | null;
+      declarations?: components["schemas"]["ModelDeclarations"] | null;
       /** Description */
       description?: string | null;
       /** Enabled */
@@ -10027,6 +10364,38 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_base_models: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BaseModelCandidateCollection"];
         };
       };
       /** @description Service error. */
@@ -12649,6 +13018,82 @@ export interface operations {
       };
     };
   };
+  get_memory_provider_types: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryProviderDefinitionCollection"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_memory_provider_types_provider_type: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        provider_type: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryProviderDefinition"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
   get_model_provider_types: {
     parameters: {
       query?: never;
@@ -13333,6 +13778,301 @@ export interface operations {
       };
     };
   };
+  get_organizations_organization_memory_providers: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+        type?: string | null;
+        enabled?: boolean | null;
+      };
+      header?: never;
+      path: {
+        organization: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryProviderCollection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_organizations_organization_memory_providers: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateMemoryProviderRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          /** @description Strong representation precondition. */
+          ETag?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryProvider"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_organizations_organization_memory_providers_provider_id: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        provider_id: string;
+        organization: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          /** @description Strong representation precondition. */
+          ETag?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryProvider"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  patch_organizations_organization_memory_providers_provider_id: {
+    parameters: {
+      query?: never;
+      header: {
+        "If-Match": string;
+      };
+      path: {
+        provider_id: string;
+        organization: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateMemoryProviderRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          /** @description Strong representation precondition. */
+          ETag?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryProvider"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_organizations_organization_memory_providers_provider_id_references: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path: {
+        provider_id: string;
+        organization: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryProviderReferenceCollection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_organizations_organization_model_catalog_suggestions: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ModelCatalogSuggestionRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelCatalogMatch"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
   get_organizations_organization_model_providers: {
     parameters: {
       query?: {
@@ -13502,55 +14242,6 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ModelProvider"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  post_organizations_organization_model_providers_provider_id_describe_model: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider_id: string;
-        organization: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["DescribeModelRequest"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ModelDescription"];
         };
       };
       /** @description Invalid request. */
@@ -19556,17 +20247,217 @@ export interface operations {
       };
     };
   };
-  get_workspaces_workspace_memories: {
+  get_workspaces_workspace_memory_providers: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+        type?: string | null;
+        enabled?: boolean | null;
+      };
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryProviderCollection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_workspaces_workspace_memory_providers: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateMemoryProviderRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          /** @description Strong representation precondition. */
+          ETag?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryProvider"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_workspaces_workspace_memory_providers_provider_id: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        provider_id: string;
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          /** @description Strong representation precondition. */
+          ETag?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryProvider"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  patch_workspaces_workspace_memory_providers_provider_id: {
+    parameters: {
+      query?: never;
+      header: {
+        "If-Match": string;
+      };
+      path: {
+        provider_id: string;
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateMemoryProviderRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          /** @description Strong representation precondition. */
+          ETag?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryProvider"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_workspaces_workspace_memory_providers_provider_id_memories: {
     parameters: {
       query: {
         /** @description Maximum loaded records, not a total count. */
         limit?: number;
         cursor?: string | null;
-        scope: components["schemas"]["Mem0Scope"];
+        scope: components["schemas"]["MemoryScope"];
         subject_id?: string | null;
       };
       header?: never;
       path: {
+        provider_id: string;
         workspace: string;
       };
       cookie?: never;
@@ -19606,14 +20497,15 @@ export interface operations {
       };
     };
   };
-  post_workspaces_workspace_memories: {
+  post_workspaces_workspace_memory_providers_provider_id_memories: {
     parameters: {
       query: {
-        scope: components["schemas"]["Mem0Scope"];
+        scope: components["schemas"]["MemoryScope"];
         subject_id?: string | null;
       };
       header?: never;
       path: {
+        provider_id: string;
         workspace: string;
       };
       cookie?: never;
@@ -19657,14 +20549,15 @@ export interface operations {
       };
     };
   };
-  post_workspaces_workspace_memories_search: {
+  post_workspaces_workspace_memory_providers_provider_id_memories_search: {
     parameters: {
       query: {
-        scope: components["schemas"]["Mem0Scope"];
+        scope: components["schemas"]["MemoryScope"];
         subject_id?: string | null;
       };
       header?: never;
       path: {
+        provider_id: string;
         workspace: string;
       };
       cookie?: never;
@@ -19708,14 +20601,15 @@ export interface operations {
       };
     };
   };
-  get_workspaces_workspace_memories_memory_id: {
+  get_workspaces_workspace_memory_providers_provider_id_memories_memory_id: {
     parameters: {
       query: {
-        scope: components["schemas"]["Mem0Scope"];
+        scope: components["schemas"]["MemoryScope"];
         subject_id?: string | null;
       };
       header?: never;
       path: {
+        provider_id: string;
         memory_id: string;
         workspace: string;
       };
@@ -19756,14 +20650,15 @@ export interface operations {
       };
     };
   };
-  put_workspaces_workspace_memories_memory_id: {
+  put_workspaces_workspace_memory_providers_provider_id_memories_memory_id: {
     parameters: {
       query: {
-        scope: components["schemas"]["Mem0Scope"];
+        scope: components["schemas"]["MemoryScope"];
         subject_id?: string | null;
       };
       header?: never;
       path: {
+        provider_id: string;
         memory_id: string;
         workspace: string;
       };
@@ -19808,14 +20703,15 @@ export interface operations {
       };
     };
   };
-  delete_workspaces_workspace_memories_memory_id: {
+  delete_workspaces_workspace_memory_providers_provider_id_memories_memory_id: {
     parameters: {
       query: {
-        scope: components["schemas"]["Mem0Scope"];
+        scope: components["schemas"]["MemoryScope"];
         subject_id?: string | null;
       };
       header?: never;
       path: {
+        provider_id: string;
         memory_id: string;
         workspace: string;
       };
@@ -19830,6 +20726,102 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_workspaces_workspace_memory_providers_provider_id_references: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path: {
+        provider_id: string;
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryProviderReferenceCollection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_workspaces_workspace_model_catalog_suggestions: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ModelCatalogSuggestionRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelCatalogMatch"];
+        };
       };
       /** @description Invalid request. */
       400: {
@@ -20023,55 +21015,6 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ModelProvider"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  post_workspaces_workspace_model_providers_provider_id_describe_model: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider_id: string;
-        workspace: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["DescribeModelRequest"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ModelDescription"];
         };
       };
       /** @description Invalid request. */

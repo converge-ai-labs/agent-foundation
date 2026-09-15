@@ -42,7 +42,11 @@ async def test_model_stream_failure_recovers_within_budget_without_false_complet
             },
         )
     agent = await journey.agent(
-        model={"model_key": "live-fixture", "settings": {"timeout": 3}, "characteristics": {"context_window": 32768}}
+        model={
+            "model_key": "live-fixture",
+            "settings": {"timeout": 3},
+            "characteristics": {"context_window_tokens": 32768},
+        }
     )
     case = await journey.case(failure=failure, failures=failures, delay_seconds=10)
     receipt = await journey.start(case, agent_id=agent["agent"]["id"])

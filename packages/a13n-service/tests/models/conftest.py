@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import base64
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from datetime import UTC, datetime
 
 import pytest
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
+from a13n_service.models.base_models import BaseModelReference
+from a13n_service.models.domain import ModelDeclarations
 from a13n_service.models.provider_service import ModelProviderService
 from a13n_service.models.providers import built_in_provider_registry
 from a13n_service.models.service import ModelService
@@ -21,6 +23,25 @@ NOW = datetime(2026, 9, 3, tzinfo=UTC)
 ORG_ID = "org_1234567890abcdef"
 WORKSPACE_ID = "ws_1234567890abcdef"
 USER_ID = "usr_1234567890abcdef"
+
+
+class StubModelCatalog:
+    def __init__(self) -> None:
+        self.results: dict[tuple[str, str], ModelDeclarations] = {}
+
+    async def declarations(
+        self,
+        provider_type: str,
+        provider_configuration: Mapping[str, object],
+        reference: BaseModelReference,
+    ) -> ModelDeclarations:
+        del provider_configuration
+        return self.results.get((provider_type, reference.base_model), ModelDeclarations())
+
+
+@pytest.fixture
+def model_catalog() -> StubModelCatalog:
+    return StubModelCatalog()
 
 
 def actor() -> AuthenticatedActor:
@@ -64,8 +85,8 @@ def provider_service(model_sessions: async_sessionmaker[AsyncSession]) -> ModelP
 
 
 @pytest.fixture
-def model_service(model_sessions: async_sessionmaker[AsyncSession]) -> ModelService:
-    return ModelService(model_sessions, built_in_provider_registry(), clock=lambda: NOW)
+def model_service(model_sessions: async_sessionmaker[AsyncSession], model_catalog: StubModelCatalog) -> ModelService:
+    return ModelService(model_sessions, built_in_provider_registry(), clock=lambda: NOW, catalog=model_catalog)
 
 
 async def seed_models(sessions: async_sessionmaker[AsyncSession]) -> None:

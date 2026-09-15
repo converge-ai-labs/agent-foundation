@@ -1,10 +1,23 @@
 """Attempt-authorized memory bindings for root and inline child Agents."""
 
-from collections.abc import Awaitable, Callable, Mapping
+import asyncio
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 
-from a13n_harness.capabilities.mem0 import Mem0Capability, Mem0Scope
-from a13n_harness.capabilities.mem0_backends import Mem0Backend, Mem0Subject, added_memory_id
+from a13n_harness.capabilities.memory import MemoryCapability
 from a13n_harness.errors import RunError
+from a13n_harness.memory import (
+    MemoryBackend,
+    MemoryPage,
+    MemoryPaginationUnsupported,
+    MemoryRecord,
+    MemoryRecordNotFound,
+    MemoryScope,
+    MemorySubject,
+    MemoryWriteUnconfirmed,
+    require_memory_subject,
+    validate_memory_text,
+)
 
 from a13n_service.agents.domain import EffectiveAgentConfig
 from a13n_service.agents.models import AgentRecord
@@ -22,8 +35,10 @@ from a13n_service.storage import short_session
 from a13n_service.temporal import utc_now
 
 from .domain import MemorySelection
+from .execution import MemoryProviderAccess, open_memory_backend
+from .resources import MemoryProviderError, require_provider
 from .scopes import memory_subject
-from .service import MemoryService, memory_io
+from .service import MemoryService
 
 
 def graph_uses_memory(config: EffectiveAgentConfig) -> bool:
@@ -32,57 +47,122 @@ def graph_uses_memory(config: EffectiveAgentConfig) -> bool:
     )
 
 
-class AuthorizedMemoryBackend(Mem0Backend):
+@asynccontextmanager
+async def _backend_io(timeout: float, *, write: bool = False) -> AsyncIterator[None]:
+    try:
+        async with asyncio.timeout(timeout):
+            yield
+    except asyncio.CancelledError:
+        raise
+    except (MemoryRecordNotFound, MemoryPaginationUnsupported):
+        raise
+    except Exception as error:
+        if write or isinstance(error, MemoryWriteUnconfirmed):
+            raise MemoryWriteUnconfirmed("Inspect current memory before repeating the write") from error
+        raise RunError("Memory is unavailable.", code="memory_unavailable") from error
+
+
+class AuthorizedMemoryBackend(MemoryBackend):
     def __init__(
         self,
         service: MemoryService,
-        subjects: tuple[Mem0Subject, ...],
-        authorize: Callable[[tuple[Mem0Subject, ...], bool], Awaitable[None]],
+        subjects: tuple[MemorySubject, ...],
+        authorize: Callable[[tuple[MemorySubject, ...], bool], Awaitable[MemoryProviderAccess]],
     ) -> None:
         self.service = service
         self.subjects = subjects
         self.authorize = authorize
 
-    async def _authorize(self, subjects: tuple[Mem0Subject, ...], *, write: bool = False) -> None:
+    async def _authorize(self, subjects: tuple[MemorySubject, ...], *, write: bool = False) -> MemoryProviderAccess:
         if not subjects or any(subject not in self.subjects for subject in subjects):
-            raise RunError("The memory scope is unavailable.", code="mem0_scope_unavailable")
-        await self.authorize(subjects, write)
-
-    def _check_results(self, raw: object, subjects: tuple[Mem0Subject, ...]) -> object:
-        if not isinstance(raw, Mapping) or not isinstance(raw.get("results"), list):
-            raise ValueError("Invalid memory results")
-        for item in raw["results"]:
-            if not isinstance(item, Mapping) or not any(
-                item.get(subject.field) == subject.value for subject in subjects
-            ):
-                raise ValueError("Memory result is outside the authorized scope")
-        return raw
+            raise RunError("The memory scope is unavailable.", code="memory_scope_unavailable")
+        return await self.authorize(subjects, write)
 
     async def search(
-        self, query: str, *, subjects: tuple[Mem0Subject, ...], limit: int, threshold: float | None = None
-    ) -> object:
-        await self._authorize(subjects)
-        async with memory_io(self.service.timeout):
-            raw = await self.service.require_backend().search(
-                query, subjects=subjects, limit=limit, threshold=threshold
+        self, query: str, *, subjects: tuple[MemorySubject, ...], limit: int, threshold: float | None = None
+    ) -> tuple[MemoryRecord, ...]:
+        access = await self._authorize(subjects)
+        async with (
+            _backend_io(self.service.timeout),
+            open_memory_backend(access, self.service.catalog, self.service.protector) as backend,
+        ):
+            records = await backend.search(query, subjects=subjects, limit=limit, threshold=threshold)
+            if len(records) > limit:
+                raise ValueError("Invalid memory result count")
+            for record in records:
+                require_memory_subject(record, subjects)
+            return records
+
+    async def list(self, subject: MemorySubject, *, limit: int, cursor: str | None = None) -> MemoryPage:
+        access = await self._authorize((subject,))
+        async with (
+            _backend_io(self.service.timeout),
+            open_memory_backend(access, self.service.catalog, self.service.protector) as backend,
+        ):
+            page = await backend.list(subject, limit=limit, cursor=cursor)
+            if len(page.items) > limit:
+                raise ValueError("Invalid memory result count")
+            for record in page.items:
+                require_memory_subject(record, (subject,))
+            return page
+
+    async def get(self, memory_id: str, *, subject: MemorySubject) -> MemoryRecord:
+        access = await self._authorize((subject,))
+        async with (
+            _backend_io(self.service.timeout),
+            open_memory_backend(access, self.service.catalog, self.service.protector) as backend,
+        ):
+            record = await backend.get(memory_id, subject=subject)
+            require_memory_subject(record, (subject,))
+            return record
+
+    async def add(self, text: str, *, subject: MemorySubject) -> MemoryRecord:
+        validate_memory_text(text)
+        access = await self._authorize((subject,), write=True)
+        async with (
+            _backend_io(self.service.timeout, write=True),
+            open_memory_backend(access, self.service.catalog, self.service.protector) as backend,
+        ):
+            return await backend.add(text, subject=subject)
+
+    async def update(self, memory_id: str, text: str, *, subject: MemorySubject) -> MemoryRecord:
+        validate_memory_text(text)
+        access = await self._authorize((subject,), write=True)
+        async with (
+            _backend_io(self.service.timeout, write=True),
+            open_memory_backend(access, self.service.catalog, self.service.protector) as backend,
+        ):
+            return await backend.update(memory_id, text, subject=subject)
+
+    async def delete(self, memory_id: str, *, subject: MemorySubject) -> None:
+        access = await self._authorize((subject,), write=True)
+        async with (
+            _backend_io(self.service.timeout, write=True),
+            open_memory_backend(access, self.service.catalog, self.service.protector) as backend,
+        ):
+            await backend.delete(memory_id, subject=subject)
+
+
+async def validate_memory_providers(
+    service: MemoryService, *, organization_id: str, workspace_id: str, config: EffectiveAgentConfig
+) -> None:
+    pending = [config]
+    selected: set[str] = set()
+    while pending:
+        node = pending.pop()
+        if node.memory is not None:
+            selected.add(node.memory.provider_id)
+        pending.extend(child.effective_config for child in node.child_configs.values())
+    async with short_session(service.authorizer.sessions) as session:
+        for provider_id in sorted(selected):
+            await require_provider(
+                session,
+                organization_id=organization_id,
+                workspace_id=workspace_id,
+                provider_id=provider_id,
+                eligible=True,
+                catalog=service.catalog,
             )
-            return self._check_results(raw, subjects)
-
-    async def list(self, subject: Mem0Subject, *, limit: int, cursor: str | None = None) -> object:
-        await self._authorize((subject,))
-        async with memory_io(self.service.timeout):
-            raw = await self.service.require_backend().list(subject, limit=limit, cursor=cursor)
-            return self._check_results(raw, (subject,))
-
-    async def add(self, text: str, *, subject: Mem0Subject) -> object:
-        await self._authorize((subject,), write=True)
-        backend = self.service.require_backend()
-        async with memory_io(self.service.timeout, write=True):
-            raw = await backend.add(text, subject=subject)
-            result = await self.service._get(backend, added_memory_id(raw), subject)
-            if result.memory != text:
-                raise ValueError("Explicit memory write was not confirmed")
-            return raw
 
 
 def memory_capability(
@@ -93,24 +173,31 @@ def memory_capability(
     agent_id: str,
     selection: MemorySelection,
     current_context: Callable[[], AttemptContext],
-) -> Mem0Capability:
-    service.require_backend()
+) -> MemoryCapability:
     scopes = {
-        Mem0Scope.THREAD: memory_subject(run.organization_id, workspace_id, Mem0Scope.THREAD, run.thread_id),
-        Mem0Scope.AGENT: memory_subject(run.organization_id, workspace_id, Mem0Scope.AGENT, agent_id),
+        MemoryScope.THREAD: memory_subject(
+            run.organization_id, workspace_id, selection.provider_id, MemoryScope.THREAD, run.thread_id
+        ),
+        MemoryScope.AGENT: memory_subject(
+            run.organization_id, workspace_id, selection.provider_id, MemoryScope.AGENT, agent_id
+        ),
     }
     snapshot = current_context().authorization.snapshot
     if (
         run.authority_principal.principal_type is PrincipalType.user
         and WorkspaceAction.memory_read in snapshot.workspace_actions
     ):
-        scopes[Mem0Scope.USER] = memory_subject(
-            run.organization_id, workspace_id, Mem0Scope.USER, run.authority_principal.principal_id
+        scopes[MemoryScope.USER] = memory_subject(
+            run.organization_id,
+            workspace_id,
+            selection.provider_id,
+            MemoryScope.USER,
+            run.authority_principal.principal_id,
         )
     if selection.scope is not None and selection.scope not in scopes:
-        raise RunError("The configured memory scope is unavailable.", code="mem0_scope_unavailable")
+        raise RunError("The configured memory scope is unavailable.", code="memory_scope_unavailable")
 
-    async def authorize(subjects: tuple[Mem0Subject, ...], write: bool) -> None:
+    async def authorize(subjects: tuple[MemorySubject, ...], write: bool) -> MemoryProviderAccess:
         try:
             async with short_session(service.authorizer.sessions) as session:
                 context = current_context()
@@ -147,7 +234,7 @@ def memory_capability(
                         raise AttemptAuthorityError("Memory Agent is unavailable")
                 action = WorkspaceAction.memory_write if write else WorkspaceAction.memory_read
                 for subject in subjects:
-                    if subject.field == "user_id":
+                    if subject.scope is MemoryScope.USER:
                         await authorize_workspace(
                             session,
                             actor=actor,
@@ -156,7 +243,7 @@ def memory_capability(
                             snapshot=context.authorization.snapshot,
                         )
                     else:
-                        owner = run.agent_id if subject.field == "run_id" else agent_id
+                        owner = run.agent_id if subject.scope is MemoryScope.THREAD else agent_id
                         await authorize_agent(
                             session,
                             actor=actor,
@@ -165,11 +252,20 @@ def memory_capability(
                             action=action,
                             snapshot=context.authorization.snapshot,
                         )
-        except (AttemptAuthorityError, AuthorizationError) as error:
-            raise RunError("Memory execution authority is unavailable.", code="mem0_scope_unavailable") from error
+                provider = await require_provider(
+                    session,
+                    organization_id=run.organization_id,
+                    workspace_id=workspace_id,
+                    provider_id=selection.provider_id,
+                    eligible=True,
+                    catalog=service.catalog,
+                )
+                return MemoryProviderAccess.from_record(provider)
+        except (AttemptAuthorityError, AuthorizationError, MemoryProviderError) as error:
+            raise RunError("Memory execution authority is unavailable.", code="memory_scope_unavailable") from error
 
-    return Mem0Capability(
+    return MemoryCapability(
         backend=AuthorizedMemoryBackend(service, tuple(scopes.values()), authorize),
         scope_ids={scope: subject.value for scope, subject in scopes.items()},
-        **selection.model_dump(),
+        **selection.model_dump(exclude={"provider_id"}),
     )

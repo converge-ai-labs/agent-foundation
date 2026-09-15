@@ -15,6 +15,7 @@ from a13n_harness_ui.surfaces import (
     ThreadConfigurationMutationInput,
     ThreadConfigurationPatch,
 )
+from a13n_harness_ui.thread_files import AttachmentUpload, ComposerAttachment, ComposerInput
 from anyio import Event, fail_after
 from pydantic_ai.messages import ModelMessage
 from pydantic_ai.models.function import AgentInfo, FunctionModel
@@ -255,6 +256,92 @@ async def test_skill_references_refresh_on_submission_and_keep_active_catalog(
             )
         assert unavailable.value.code == "skill_reference_unavailable"
         assert await app.active_root_operation(thread.thread_id) is None
+
+
+@pytest.mark.parametrize("with_skill", [False, True])
+@pytest.mark.parametrize("input_kind", ["plain", "composer", "attachment"])
+async def test_steering_after_project_rename_does_not_read_current_configuration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, with_skill: bool, input_kind: str
+) -> None:
+    configuration = _write_configuration(tmp_path, projects=(("project-main", "Main", tmp_path),), skills=True)
+    started, finish = Event(), Event()
+    seen: list[ModelMessage] = []
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        seen[:] = messages
+        started.set()
+        await finish.wait()
+        yield "complete"
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=configuration) as app:
+        thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="wait")
+        with fail_after(10):
+            await started.wait()
+        catalog = await app.skill_catalog(thread_id=thread.thread_id)
+        item = next(item for item in catalog.items if item.name == "harness-ui-configuration")
+        references = (
+            (SkillReference(catalog_id=catalog.catalog_id, item_id=item.item_id, name=item.name),) if with_skill else ()
+        )
+        project = configuration.parent / "projects" / "project-main.yaml"
+        project.write_text(project.read_text().replace("name: Main", "name: Renamed"))
+        await app.reload_configuration()
+        assert (await app.skill_catalog(thread_id=thread.thread_id)) == catalog
+
+        async def unreadable(*args, **kwargs):
+            raise AssertionError("Active steering must not read stored configuration or checkpoints")
+
+        # Simulate a shared generation that this running App cannot decode. The
+        # live stream and its pinned catalog still own steering, including attachments.
+        with monkeypatch.context() as patch:
+            patch.setattr(app._store.objects, "read_model", unreadable)
+            if with_skill:
+                assert (await app.skill_catalog(thread_id=thread.thread_id)) == catalog
+            else:
+                # Plain guidance needs no catalog, even if its cached entry is absent.
+                app._terminal_projections._active_skill_catalogs.clear()
+                patch.setattr(app._terminal_projections, "skill_catalog", unreadable)
+            text = "focus on the renamed project"
+            message: str | ComposerInput = text
+            if input_kind == "composer":
+                message = ComposerInput(parts=(text,))
+            elif input_kind == "attachment":
+                message = ComposerInput(
+                    parts=(
+                        text,
+                        ComposerAttachment(
+                            upload=AttachmentUpload(
+                                name="guidance.txt", media_type="text/plain", data=b"Review the change"
+                            ),
+                            label="file#1",
+                        ),
+                    )
+                )
+            steering = await app.steer_root_operation(
+                receipt_id=receipt.receipt_id, message=message, skill_references=references
+            )
+            assert steering.accepted
+            assert steering.enqueue_id is not None
+        finish.set()
+        with fail_after(10):
+            operation = await app.wait_root_operation(receipt.receipt_id)
+        assert operation.status is RootOperationStatus.completed
+        assert "focus on the renamed project" in str(seen)
+
+
+async def test_empty_skill_references_do_not_resolve_a_catalog(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    configuration = _write_configuration(tmp_path, projects=(("project-main", "Main", tmp_path),))
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=configuration) as app:
+
+        async def unexpected(**kwargs):
+            raise AssertionError("There are no Skill references to resolve")
+
+        monkeypatch.setattr(app._terminal_projections, "skill_catalog", unexpected)
+        assert await app.validate_skill_references(()) == ()
 
 
 @pytest.mark.parametrize("invalid", ["identity", "name", "duplicate", "mixed_duplicate", "ambiguous"])

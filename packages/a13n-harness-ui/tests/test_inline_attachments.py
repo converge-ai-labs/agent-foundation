@@ -437,3 +437,126 @@ def test_old_file_metadata_without_name_keeps_label() -> None:
         {"source_id": "old-input", "harness_ui": {"composer": {"index": 0, "label": "file#1"}}}
     )
     assert composer_piece(metadata) == (0, "file#1")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("keys", ["\x16", "\x1bv"])
+@pytest.mark.parametrize("change", ["none", "edit", "reset"])
+async def test_empty_clipboard_keys_preserve_only_valid_redo(monkeypatch, keys: str, change: str) -> None:
+    import a13n_harness_ui.interactive.shell as module
+
+    entered, release = threading.Event(), threading.Event()
+
+    def clipboard():
+        entered.set()
+        release.wait(5)
+        return ()
+
+    monkeypatch.setattr(module, "clipboard_images", clipboard)
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+        shell = CliShell(CliRequest())
+        buffer = shell.composer.buffer
+        buffer.document = Document("first", 5)
+        buffer.save_to_undo_stack()
+        buffer.insert_text(" later", fire_event=False)
+        buffer.undo()
+        assert buffer.text == "first"
+        assert buffer._redo_stack == [("first later", 11)]
+        terminal = asyncio.create_task(shell.app.run_async())
+        try:
+            await _until(lambda: shell.app.is_running)
+            pipe.send_text(keys)
+            assert await asyncio.to_thread(entered.wait, 3)
+            if change == "edit":
+                # Even editing back to the same text must invalidate old redo.
+                pending_text = buffer.text
+                buffer.insert_text("changed", fire_event=False)
+                buffer.delete_before_cursor(7)
+                assert buffer.text == pending_text
+            elif change == "reset":
+                shell._draft_generation += 1
+                buffer.reset(document=Document("new draft", 9))
+            release.set()
+            assert shell._clipboard_task is not None
+            await shell._clipboard_task
+            assert not shell._pending_attachments
+            assert not _source(shell.renderer)
+            if change == "none":
+                assert buffer._redo_stack == [("first later", 11)]
+                buffer.redo()
+                assert buffer.text == "first later"
+            else:
+                assert buffer._redo_stack == []
+                buffer.redo()
+                assert buffer.text == ("new draft" if change == "reset" else "first")
+        finally:
+            release.set()
+            if shell._clipboard_task is not None:
+                await shell._clipboard_task
+            shell.app.exit()
+            await terminal
+            shell.renderer.transcript.close()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("content", ["attachment", "folded-text"])
+async def test_pending_selected_content_survives_interaction_submission(monkeypatch, content: str) -> None:
+    import a13n_harness_ui.interactive.shell as module
+
+    entered, release = threading.Event(), threading.Event()
+
+    def clipboard():
+        entered.set()
+        release.wait(5)
+        return ()
+
+    monkeypatch.setattr(module, "clipboard_images", clipboard)
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+        shell = CliShell(CliRequest())
+        shell.ready = True
+        buffer = shell.composer.buffer
+        if content == "attachment":
+            shell.insert_attachments((_image(),))
+        else:
+            buffer.insert_text(shell.pastes.insert("folded text " * 100), fire_event=False)
+        original = Document(buffer.text, len(buffer.text), SelectionState(0))
+        buffer.document = original
+        answers = []
+
+        async def handle(text, **kwargs):
+            answers.append(text)
+
+        monkeypatch.setattr(shell, "handle", handle)
+        terminal = asyncio.create_task(shell.app.run_async())
+        try:
+            await _until(lambda: shell.app.is_running)
+            pipe.send_text("\x16")
+            assert await asyncio.to_thread(entered.wait, 3)
+            shell._save_draft()
+            # Model an interaction answer through the real Enter/reset/retain path.
+            shell.menu_handler = handle
+            pipe.send_text("answer\r")
+            await _until(lambda: answers == ["answer"])
+            assert shell._pending_attachments
+            if content == "attachment":
+                assert shell.inline.compile(original.text).attachments == (_image(),)
+            else:
+                assert shell.pastes.expand(original.text) == "folded text " * 100
+            release.set()
+            assert shell._clipboard_task is not None
+            await shell._clipboard_task
+            assert not shell._pending_attachments
+            shell._restore_draft()
+            assert buffer.document == original
+            if content == "attachment":
+                assert shell.inline.compile(buffer.text).attachments == (_image(),)
+            else:
+                assert shell.pastes.expand(buffer.text) == "folded text " * 100
+            assert not _source(shell.renderer)
+        finally:
+            release.set()
+            if shell._clipboard_task is not None:
+                await shell._clipboard_task
+            shell.app.exit()
+            await terminal
+            shell.renderer.transcript.close()

@@ -15,23 +15,10 @@ use serde::{Deserialize, Serialize};
 pub struct ModelDiscovery {
     #[serde(rename = "items")]
     pub items: Vec<models::ModelCandidate>,
-
-    #[serde(rename = "settings_schemas")]
-    pub settings_schemas:
-        std::collections::HashMap<String, std::collections::HashMap<String, serde_json::Value>>,
 }
 
 impl ModelDiscovery {
-    pub fn new(
-        items: Vec<models::ModelCandidate>,
-        settings_schemas: std::collections::HashMap<
-            String,
-            std::collections::HashMap<String, serde_json::Value>,
-        >,
-    ) -> ModelDiscovery {
-        ModelDiscovery {
-            items,
-            settings_schemas,
-        }
+    pub fn new(items: Vec<models::ModelCandidate>) -> ModelDiscovery {
+        ModelDiscovery { items }
     }
 }

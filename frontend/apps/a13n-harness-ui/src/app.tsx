@@ -8,6 +8,10 @@ import { DraftContext, type SourceDraft } from "./configuration/sources";
 import { Workbench } from "./shell/workbench";
 import { NotificationsProvider } from "./shell/notifications";
 import { ComposerDrafts } from "./conversations/composer";
+import {
+  NewConversationDrafts,
+  type NewDraft,
+} from "./conversations/new-conversation";
 import { ChildControlsProvider } from "./conversations/child-controls";
 import { CommentDrafts, type CommentDraft } from "./conversations/comments";
 import { FileBuffers, type FileBuffer } from "./native/buffer";
@@ -55,6 +59,7 @@ export function BrowserApp() {
   const [connecting, setConnecting] = useState(true);
   const drafts = useRef(new Map<string, SourceDraft>());
   const composers = useRef(new Map<string, ThreadDraft>());
+  const [newConversations] = useState(() => new Map<string, NewDraft>());
   const comments = useRef(new Map<string, CommentDraft>());
   const files = useRef(new Map<string, FileBuffer>());
   const [queries] = useState(
@@ -135,63 +140,65 @@ export function BrowserApp() {
         <DraftContext.Provider value={drafts.current}>
           <CommentDrafts.Provider value={comments.current}>
             <ComposerDrafts.Provider value={composers.current}>
-              <ChildControlsProvider>
-                <FileBuffers.Provider value={files.current}>
-                  {status ? (
-                    <BrowserRouter>
-                      <NotificationsProvider>
-                        <Workbench
-                          status={status}
-                          forget={forget}
-                          unauthorized={unauthorized}
-                        />
-                      </NotificationsProvider>
-                    </BrowserRouter>
-                  ) : (
-                    <main className={styles.access}>
-                      <div className={styles.accessCard}>
-                        <span className={styles.brandMark}>a13n</span>
-                        <h1>Log in to Harness UI</h1>
-                        <p>
-                          Use the instance API key printed by your server.
-                          Provider accounts and model keys are configured after
-                          connecting.
-                        </p>
-                        <p role="status">
-                          {error ||
-                            (connecting
-                              ? "Connecting to server…"
-                              : "Enter your instance key.")}
-                        </p>
-                        <form
-                          className={styles.stack}
-                          onSubmit={(event) => {
-                            event.preventDefault();
-                            setKey(input);
-                            setAttempt((value) => value + 1);
-                          }}
-                        >
-                          <TextField
-                            label="API key"
-                            type="password"
-                            value={input}
-                            onChange={setInput}
+              <NewConversationDrafts.Provider value={newConversations}>
+                <ChildControlsProvider>
+                  <FileBuffers.Provider value={files.current}>
+                    {status ? (
+                      <BrowserRouter>
+                        <NotificationsProvider>
+                          <Workbench
+                            status={status}
+                            forget={forget}
+                            unauthorized={unauthorized}
                           />
-                          <Button type="submit" loading={connecting}>
-                            Log in
-                          </Button>
-                        </form>
-                        {drafts.current.size > 0 && (
+                        </NotificationsProvider>
+                      </BrowserRouter>
+                    ) : (
+                      <main className={styles.access}>
+                        <div className={styles.accessCard}>
+                          <span className={styles.brandMark}>a13n</span>
+                          <h1>Log in to Harness UI</h1>
                           <p>
-                            Your unsaved changes are kept in this tab. Log in
-                            again without reloading to continue editing.
+                            Use the instance API key printed by your server.
+                            Provider accounts and model keys are configured
+                            after connecting.
                           </p>
-                        )}
-                      </div>
-                    </main>
-                  )}
-                </FileBuffers.Provider>
-              </ChildControlsProvider>
+                          <p role="status">
+                            {error ||
+                              (connecting
+                                ? "Connecting to server…"
+                                : "Enter your instance key.")}
+                          </p>
+                          <form
+                            className={styles.stack}
+                            onSubmit={(event) => {
+                              event.preventDefault();
+                              setKey(input);
+                              setAttempt((value) => value + 1);
+                            }}
+                          >
+                            <TextField
+                              label="API key"
+                              type="password"
+                              value={input}
+                              onChange={setInput}
+                            />
+                            <Button type="submit" loading={connecting}>
+                              Log in
+                            </Button>
+                          </form>
+                          {drafts.current.size > 0 && (
+                            <p>
+                              Your unsaved changes are kept in this tab. Log in
+                              again without reloading to continue editing.
+                            </p>
+                          )}
+                        </div>
+                      </main>
+                    )}
+                  </FileBuffers.Provider>
+                </ChildControlsProvider>
+              </NewConversationDrafts.Provider>
             </ComposerDrafts.Provider>
           </CommentDrafts.Provider>
         </DraftContext.Provider>

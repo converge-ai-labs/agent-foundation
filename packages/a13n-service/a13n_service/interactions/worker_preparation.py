@@ -14,10 +14,11 @@ from a13n_harness import (
     DeferredToolResume,
     EnvironmentAccess,
     EnvironmentMount,
+    RunBindings,
     RunInputValue,
     RunPreparationContext,
 )
-from a13n_harness.capabilities import SubagentCapability
+from a13n_harness.capabilities import SubagentCapability, WebBinding
 from a13n_harness.errors import RunError
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 from anyio import to_thread
@@ -34,7 +35,7 @@ from a13n_service.assets.runtime import AssetRuntime
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.environments.runtime import prepare_run_environment, validate_run_environment
-from a13n_service.memory.runtime import graph_uses_memory, memory_capability
+from a13n_service.memory.runtime import graph_uses_memory, memory_capability, validate_memory_providers
 from a13n_service.memory.service import MemoryService
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.provider_runtime import LiveProviderResolver
@@ -136,8 +137,14 @@ class WorkerAttemptPreparer:
             environment_id=self._run.environment_id,
         )
         if graph_uses_memory(config):
-            if self._memory is None or self._memory.backend is None:
-                raise RunError("Memory is unavailable.", code="mem0_configuration_invalid")
+            if self._memory is None:
+                raise RunError("Memory is unavailable.", code="memory_provider_unavailable")
+            await validate_memory_providers(
+                self._memory,
+                organization_id=self._run.organization_id,
+                workspace_id=self._workspace_id,
+                config=config,
+            )
         if self._web is not None:
             await self._web.validate(
                 run=self._run,
@@ -240,23 +247,24 @@ class WorkerAttemptPreparer:
                 selected = (*selected, ProtocolContextCapability(protocol_context))
             return (*selected, WorkerInputCapability(self._sources)) if context.is_root else selected
 
-        def run_capabilities(node: AgentDefinitionReconstructionContext):
+        def web_binding(node: AgentDefinitionReconstructionContext) -> WebBinding | None:
             selection = web_selection(node.config.toolsets)
             if selection is None:
-                return ()
+                return None
             if self._web is None:
                 raise RuntimeError("Web runtime is unavailable")
-            return (
-                self._web.binding(
-                    run=run,
-                    workspace_id=self._workspace_id,
-                    agent_id=node.agent_id,
-                    selection=selection,
-                    current_context=lambda: self._control.current_context,
-                ),
+            return self._web.binding(
+                run=run,
+                workspace_id=self._workspace_id,
+                agent_id=node.agent_id,
+                selection=selection,
+                current_context=lambda: self._control.current_context,
             )
 
-        root_web = run_capabilities(
+        def run_bindings(node: AgentDefinitionReconstructionContext, bindings: RunBindings) -> RunBindings:
+            return replace(bindings, web=web_binding(node))
+
+        root_web = web_binding(
             AgentDefinitionReconstructionContext(
                 agent_id=run.agent_id,
                 agent_revision_id=run.agent_revision_id,
@@ -269,7 +277,7 @@ class WorkerAttemptPreparer:
         if prepared_plugins is None:
             raise RuntimeError("Plugin configuration has not been durably prepared")
         definition = AgentReconstructor(
-            self._catalog, capability_provider=capabilities, run_capability_provider=run_capabilities
+            self._catalog, capability_provider=capabilities, run_bindings_provider=run_bindings
         ).reconstruct(
             agent_id=run.agent_id,
             agent_revision_id=run.agent_revision_id,
@@ -360,10 +368,8 @@ class WorkerAttemptPreparer:
             deferred_resume=resume,
             collaborators=HarnessCollaborators(
                 instance=instance,
-                capabilities=(
-                    *root_web,
-                    *((self._bound_secrets.capability(),) if self._bound_secrets is not None else ()),
-                ),
+                web=root_web,
+                capabilities=(self._bound_secrets.capability(),) if self._bound_secrets is not None else (),
                 model_resolver=SnapshotRunModelResolver(
                     snapshots=resources.models,
                     organization_id=run.organization_id,

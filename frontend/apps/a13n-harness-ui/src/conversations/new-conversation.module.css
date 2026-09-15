@@ -1,0 +1,122 @@
+.page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: auto;
+}
+.welcome {
+  flex: 1;
+  min-height: 180px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 32px 20px;
+  text-align: center;
+}
+.welcome > svg {
+  width: 48px;
+  height: 48px;
+  color: var(--a13n-secondary);
+  opacity: 0.55;
+}
+.welcome h1 {
+  max-width: 760px;
+  margin: 0;
+  font-size: clamp(22px, 2.5vw, 32px);
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: -0.025em;
+  overflow-wrap: anywhere;
+}
+.welcome h1 span {
+  text-decoration: underline dotted var(--a13n-border);
+  text-underline-offset: 6px;
+}
+.inputArea {
+  width: min(100%, 860px);
+  margin: 0 auto;
+  padding-bottom: 8px;
+}
+.context {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 20px;
+  margin: 0 12px -12px;
+  padding: 12px 16px 24px;
+  border: 0;
+  border-radius: 14px 14px 0 0;
+  background: var(--a13n-surface);
+}
+.context > * {
+  flex: 1;
+  min-width: 150px;
+}
+.location {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.location > svg {
+  flex-shrink: 0;
+  color: var(--a13n-secondary);
+  width: 18px;
+  height: 18px;
+}
+.location > button {
+  flex: 1;
+  min-width: 0;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+.context > .mode {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.agentChoice {
+  min-width: 0;
+  max-width: min(320px, 38vw);
+}
+.agentChoice > button {
+  max-width: 100%;
+  font-size: 12px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+.setup {
+  display: inline-block;
+  margin: 10px 8px;
+  font-size: 13px;
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+@media (max-width: 600px) {
+  .welcome {
+    gap: 16px;
+    padding: 24px 8px;
+  }
+  .context {
+    gap: 8px;
+    padding-inline: 10px;
+    margin-inline: 6px;
+  }
+  .context > * {
+    min-width: 120px;
+  }
+  .context > .mode {
+    flex-basis: 100%;
+    text-align: right;
+  }
+}

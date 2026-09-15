@@ -70,4 +70,5 @@ INTEGRATION = ProviderIntegration(
         request_builder=_request,
         schema=ModelListSchema(collection_field="models", identifier_field="name"),
     ),
+    model_profile=OllamaProvider.model_profile,
 )

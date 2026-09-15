@@ -17,7 +17,6 @@ from a13n_harness.errors import DefinitionError
 from a13n_harness.tools.metadata import HARNESS_TOOL_METADATA_KEY
 
 CLIENT_TOOLS_CAPABILITY_ID = "a13n.client-tools"
-CLIENT_TOOLS_RUN_CAPABILITY_ID = "a13n.client-tools.run"
 CLIENT_TOOL_MARKER_KEY = "a13n.harness.client-tool"
 MAX_CLIENT_TOOLSETS = 32
 MAX_CLIENT_TOOLS = 128
@@ -99,20 +98,6 @@ class ClientToolsSpec(BaseModel):
 
 
 @dataclass(kw_only=True)
-class ClientToolsRunCapability(AbstractCapability[AgentContext]):
-    """Fresh Host attachment carrying a complete replacement client surface."""
-
-    id: str | None = CLIENT_TOOLS_RUN_CAPABILITY_ID
-    toolsets: tuple[ClientToolsetDefinition, ...] = ()
-
-    def __post_init__(self) -> None:
-        if self.id != CLIENT_TOOLS_RUN_CAPABILITY_ID:
-            raise ValueError(f"ClientToolsRunCapability.id must be {CLIENT_TOOLS_RUN_CAPABILITY_ID!r}")
-        object.__setattr__(self, "toolsets", tuple(deepcopy(self.toolsets)))
-        _validate_toolsets(self.toolsets)
-
-
-@dataclass(kw_only=True)
 class ClientToolsCapability(AbstractCapability[AgentContext]):
     """Definition-selected owner that resolves and composes the effective client surface."""
 
@@ -142,24 +127,14 @@ class ClientToolsCapability(AbstractCapability[AgentContext]):
                 "ClientToolsCapability must originate from the Agent definition.",
                 code="capability_scope_invalid",
             )
-        attachment = ctx.capabilities.get(CLIENT_TOOLS_RUN_CAPABILITY_ID)
-        if attachment is not None and type(attachment) is not ClientToolsRunCapability:
-            raise DefinitionError(
-                "The client-tools run Capability has an incompatible type.",
-                code="client_tools_run_type_mismatch",
-            )
-        if type(attachment) is ClientToolsRunCapability:
-            if CLIENT_TOOLS_RUN_CAPABILITY_ID not in provenance.run_ids:
-                raise DefinitionError(
-                    "ClientToolsRunCapability must originate from RunBindings.",
-                    code="capability_scope_invalid",
-                )
+        toolsets = ctx.deps.client_toolsets
+        if toolsets is not None:
             if not self.spec.allow_run_override:
                 raise DefinitionError(
                     "This Agent definition does not allow a client-tools run override.",
                     code="client_tools_override_forbidden",
                 )
-            return tuple(deepcopy(attachment.toolsets))
+            return tuple(deepcopy(toolsets))
         return tuple(deepcopy(self.spec.default_toolsets))
 
 

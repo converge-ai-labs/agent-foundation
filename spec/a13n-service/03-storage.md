@@ -114,6 +114,25 @@ Object keys are non-empty UTF-8 strings. They cannot contain NUL, be absolute pa
 
 The protocol reports provider-neutral not-found, conflict, invalid-request, and unavailable outcomes. It preserves cancellation. Provider-specific errors may be attached as diagnostic causes but are not required for consumer control flow.
 
+### Compressed JSON Objects
+
+Run checkpoints, Run replay snapshots, and Hosted AG-UI replay snapshots share one codec in their domain storage interfaces. These interfaces serialize and validate typed values; `ObjectStore` reads and writes the resulting bytes on either backend.
+
+The format is UTF-8 RFC 8785 canonical JSON compressed with Zstandard level 1 into one standard frame, with checksum and decoded content size, without a dictionary or internal multithreaded compression. Required metadata is `storage-encoding=rfc8785-zstd-v1` and `digest-sha256`; the content type is `application/zstd`. Each domain owns its key, identity metadata, and schema. The encoding version is independent of domain schema versions. Readers reject missing or unsupported encoding markers; writers always use this format.
+
+Stored-object digests and sizes cover the exact compressed body, excluding backend publication framing. Backend versions remain independent conditional-write tokens. Metadata-only writes reuse the stored body; uncertain-write reconciliation compares the actual submitted bytes and metadata. Recompression cannot establish byte identity across compressor versions. Domain-specific logical digests retain their own definitions.
+
+Reading an object requires all of the following:
+
+- Validate content type, encoding, encoded size, and SHA-256 against the stored body.
+- Decode exactly one complete checksummed frame with a known content size and no dictionary, rejecting truncation, trailing data, and additional or skippable frames.
+- Enforce separate bounds on encoded reads, decoded bytes, and the decompression window. Check declared sizes before allocation and actual sizes while reading and decoding; allow ordinary compression overhead for incompressible inputs within the decoded limit.
+- Verify decoded size, strict UTF-8 JSON, unique keys, finite numbers, RFC 8785 canonical bytes, and the owning schema and identity.
+
+Domain size limits apply to canonical JSON before compression and after decompression. Codec work, including serialization and validation, runs outside the async event loop with bounded concurrency and memory, without a database session or transaction. Failures follow the owning domain's integrity or unavailable outcome.
+
+Compression sits inside backend publication framing, preserving the S3 adapter's internal `Content-Encoding` and publication versions. Other object kinds and live transports use their own representations.
+
 ## Mounted Filesystem Access
 
 Local files and NFS do not have separate Python providers. Deployment mounts NFS before starting the process and passes its mount point as a configured filesystem root; local mode passes a local directory. Application code uses the same `pathlib` and AnyIO operations for both.

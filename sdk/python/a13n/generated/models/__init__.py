@@ -33,6 +33,7 @@ from .agent_input import AgentInput
 from .agent_input_schema_version import AgentInputSchemaVersion
 from .agent_labels import AgentLabels
 from .agent_model import AgentModel
+from .agent_model_characteristics import AgentModelCharacteristics
 from .agent_model_settings import AgentModelSettings
 from .agent_reviewer import AgentReviewer
 from .agent_reviewer_model_settings_type_0 import AgentReviewerModelSettingsType0
@@ -65,6 +66,8 @@ from .authorization_action import AuthorizationAction
 from .authorization_action_type import AuthorizationActionType
 from .authorization_redirect import AuthorizationRedirect
 from .authorization_status import AuthorizationStatus
+from .base_model_candidate import BaseModelCandidate
+from .base_model_candidate_collection import BaseModelCandidateCollection
 from .binary_content import BinaryContent
 from .binary_content_delivery import BinaryContentDelivery
 from .binary_input_content import BinaryInputContent
@@ -149,6 +152,9 @@ from .create_invitation_request import CreateInvitationRequest
 from .create_key_request import CreateKeyRequest
 from .create_managed_environment_request import CreateManagedEnvironmentRequest
 from .create_managed_environment_request_labels import CreateManagedEnvironmentRequestLabels
+from .create_memory_provider_request import CreateMemoryProviderRequest
+from .create_memory_provider_request_configuration import CreateMemoryProviderRequestConfiguration
+from .create_memory_provider_request_credential import CreateMemoryProviderRequestCredential
 from .create_model_provider_request import CreateModelProviderRequest
 from .create_model_provider_request_configuration import CreateModelProviderRequestConfiguration
 from .create_model_provider_request_extra_headers import CreateModelProviderRequestExtraHeaders
@@ -182,7 +188,6 @@ from .delegation_context_policy import DelegationContextPolicy
 from .delegation_context_policy_history import DelegationContextPolicyHistory
 from .delegation_context_policy_task_state import DelegationContextPolicyTaskState
 from .delete_queued_submission_request import DeleteQueuedSubmissionRequest
-from .describe_model_request import DescribeModelRequest
 from .developer_message import DeveloperMessage
 from .document_input_content import DocumentInputContent
 from .duplicate_agent_request import DuplicateAgentRequest
@@ -233,7 +238,6 @@ from .git_hub_skill_import_provenance import GitHubSkillImportProvenance
 from .grant import Grant
 from .grant_resource_type import GrantResourceType
 from .grant_role_key import GrantRoleKey
-from .harness_model_characteristics import HarnessModelCharacteristics
 from .hook_subscription import HookSubscription
 from .hook_subscription_collection import HookSubscriptionCollection
 from .hook_subscription_revision import HookSubscriptionRevision
@@ -302,10 +306,19 @@ from .mcpo_auth_setup_action_grant_types_item import MCPOAuthSetupActionGrantTyp
 from .mcpo_auth_setup_action_token_endpoint_auth_methods_item import MCPOAuthSetupActionTokenEndpointAuthMethodsItem
 from .mcpo_auth_setup_action_type import MCPOAuthSetupActionType
 from .mcpo_auth_setup_request import MCPOAuthSetupRequest
-from .mem_0_scope import Mem0Scope
 from .memory import Memory
 from .memory_collection import MemoryCollection
 from .memory_pagination import MemoryPagination
+from .memory_provider import MemoryProvider
+from .memory_provider_collection import MemoryProviderCollection
+from .memory_provider_configuration import MemoryProviderConfiguration
+from .memory_provider_definition import MemoryProviderDefinition
+from .memory_provider_definition_collection import MemoryProviderDefinitionCollection
+from .memory_provider_definition_configuration_schema import MemoryProviderDefinitionConfigurationSchema
+from .memory_provider_definition_credential_schema import MemoryProviderDefinitionCredentialSchema
+from .memory_provider_reference import MemoryProviderReference
+from .memory_provider_reference_collection import MemoryProviderReferenceCollection
+from .memory_scope import MemoryScope
 from .memory_search import MemorySearch
 from .memory_selection import MemorySelection
 from .memory_write import MemoryWrite
@@ -315,20 +328,20 @@ from .model_candidate_parameter_support import ModelCandidateParameterSupport
 from .model_candidate_parameter_support_additional_property import ModelCandidateParameterSupportAdditionalProperty
 from .model_candidate_suggested_settings import ModelCandidateSuggestedSettings
 from .model_capability import ModelCapability
+from .model_catalog_match import ModelCatalogMatch
+from .model_catalog_match_source import ModelCatalogMatchSource
+from .model_catalog_suggestion import ModelCatalogSuggestion
+from .model_catalog_suggestion_request import ModelCatalogSuggestionRequest
 from .model_collection import ModelCollection
 from .model_connection_test_result import ModelConnectionTestResult
-from .model_description import ModelDescription
-from .model_description_parameter_support import ModelDescriptionParameterSupport
-from .model_description_parameter_support_additional_property import ModelDescriptionParameterSupportAdditionalProperty
-from .model_description_settings_schema import ModelDescriptionSettingsSchema
-from .model_description_suggested_settings import ModelDescriptionSuggestedSettings
+from .model_declarations import ModelDeclarations
+from .model_declarations_thinking_efforts_item import ModelDeclarationsThinkingEffortsItem
 from .model_discovery import ModelDiscovery
-from .model_discovery_settings_schemas import ModelDiscoverySettingsSchemas
-from .model_discovery_settings_schemas_additional_property import ModelDiscoverySettingsSchemasAdditionalProperty
 from .model_identity import ModelIdentity
 from .model_limits import ModelLimits
 from .model_override import ModelOverride
 from .model_override_settings_type_0 import ModelOverrideSettingsType0
+from .model_pricing import ModelPricing
 from .model_profile import ModelProfile
 from .model_profile_input_modalities_type_0_item import ModelProfileInputModalitiesType0Item
 from .model_provider import ModelProvider
@@ -338,6 +351,11 @@ from .model_provider_definition import ModelProviderDefinition
 from .model_provider_definition_collection import ModelProviderDefinitionCollection
 from .model_provider_definition_configuration_schema import ModelProviderDefinitionConfigurationSchema
 from .model_provider_definition_credential_schema import ModelProviderDefinitionCredentialSchema
+from .model_provider_definition_model_api_labels import ModelProviderDefinitionModelApiLabels
+from .model_provider_definition_settings_schemas import ModelProviderDefinitionSettingsSchemas
+from .model_provider_definition_settings_schemas_additional_property import (
+    ModelProviderDefinitionSettingsSchemasAdditionalProperty,
+)
 from .model_settings import ModelSettings
 from .model_test_request import ModelTestRequest
 from .new_environment_selection import NewEnvironmentSelection
@@ -555,6 +573,8 @@ from .update_connector_provider_request_credentials_type_0 import UpdateConnecto
 from .update_environment_request import UpdateEnvironmentRequest
 from .update_hook_subscription_request import UpdateHookSubscriptionRequest
 from .update_hook_subscription_state_request import UpdateHookSubscriptionStateRequest
+from .update_memory_provider_request import UpdateMemoryProviderRequest
+from .update_memory_provider_request_credential_type_0 import UpdateMemoryProviderRequestCredentialType0
 from .update_model_provider_request import UpdateModelProviderRequest
 from .update_model_provider_request_configuration_type_0 import UpdateModelProviderRequestConfigurationType0
 from .update_model_provider_request_extra_headers import UpdateModelProviderRequestExtraHeaders
@@ -637,6 +657,7 @@ __all__ = (
     "AgentInputSchemaVersion",
     "AgentLabels",
     "AgentModel",
+    "AgentModelCharacteristics",
     "AgentModelSettings",
     "AgentReviewer",
     "AgentReviewerModelSettingsType0",
@@ -669,6 +690,8 @@ __all__ = (
     "AuthorizationActionType",
     "AuthorizationRedirect",
     "AuthorizationStatus",
+    "BaseModelCandidate",
+    "BaseModelCandidateCollection",
     "BinaryContent",
     "BinaryContentDelivery",
     "BinaryInputContent",
@@ -753,6 +776,9 @@ __all__ = (
     "CreateKeyRequest",
     "CreateManagedEnvironmentRequest",
     "CreateManagedEnvironmentRequestLabels",
+    "CreateMemoryProviderRequest",
+    "CreateMemoryProviderRequestConfiguration",
+    "CreateMemoryProviderRequestCredential",
     "CreateModelProviderRequest",
     "CreateModelProviderRequestConfiguration",
     "CreateModelProviderRequestExtraHeaders",
@@ -786,7 +812,6 @@ __all__ = (
     "DelegationContextPolicyHistory",
     "DelegationContextPolicyTaskState",
     "DeleteQueuedSubmissionRequest",
-    "DescribeModelRequest",
     "DeveloperMessage",
     "DocumentInputContent",
     "DuplicateAgentRequest",
@@ -834,7 +859,6 @@ __all__ = (
     "GrantResourceType",
     "GrantRoleKey",
     "HTTPValidationError",
-    "HarnessModelCharacteristics",
     "HookSubscription",
     "HookSubscriptionCollection",
     "HookSubscriptionRevision",
@@ -898,10 +922,19 @@ __all__ = (
     "MCPToolCollection",
     "MCPToolInputSchema",
     "MCPToolOutputSchemaType0",
-    "Mem0Scope",
     "Memory",
     "MemoryCollection",
     "MemoryPagination",
+    "MemoryProvider",
+    "MemoryProviderCollection",
+    "MemoryProviderConfiguration",
+    "MemoryProviderDefinition",
+    "MemoryProviderDefinitionCollection",
+    "MemoryProviderDefinitionConfigurationSchema",
+    "MemoryProviderDefinitionCredentialSchema",
+    "MemoryProviderReference",
+    "MemoryProviderReferenceCollection",
+    "MemoryScope",
     "MemorySearch",
     "MemorySelection",
     "MemoryWrite",
@@ -911,20 +944,20 @@ __all__ = (
     "ModelCandidateParameterSupportAdditionalProperty",
     "ModelCandidateSuggestedSettings",
     "ModelCapability",
+    "ModelCatalogMatch",
+    "ModelCatalogMatchSource",
+    "ModelCatalogSuggestion",
+    "ModelCatalogSuggestionRequest",
     "ModelCollection",
     "ModelConnectionTestResult",
-    "ModelDescription",
-    "ModelDescriptionParameterSupport",
-    "ModelDescriptionParameterSupportAdditionalProperty",
-    "ModelDescriptionSettingsSchema",
-    "ModelDescriptionSuggestedSettings",
+    "ModelDeclarations",
+    "ModelDeclarationsThinkingEffortsItem",
     "ModelDiscovery",
-    "ModelDiscoverySettingsSchemas",
-    "ModelDiscoverySettingsSchemasAdditionalProperty",
     "ModelIdentity",
     "ModelLimits",
     "ModelOverride",
     "ModelOverrideSettingsType0",
+    "ModelPricing",
     "ModelProfile",
     "ModelProfileInputModalitiesType0Item",
     "ModelProvider",
@@ -934,6 +967,9 @@ __all__ = (
     "ModelProviderDefinitionCollection",
     "ModelProviderDefinitionConfigurationSchema",
     "ModelProviderDefinitionCredentialSchema",
+    "ModelProviderDefinitionModelApiLabels",
+    "ModelProviderDefinitionSettingsSchemas",
+    "ModelProviderDefinitionSettingsSchemasAdditionalProperty",
     "ModelSettings",
     "ModelTestRequest",
     "NewEnvironmentSelection",
@@ -1147,6 +1183,8 @@ __all__ = (
     "UpdateEnvironmentRequest",
     "UpdateHookSubscriptionRequest",
     "UpdateHookSubscriptionStateRequest",
+    "UpdateMemoryProviderRequest",
+    "UpdateMemoryProviderRequestCredentialType0",
     "UpdateModelProviderRequest",
     "UpdateModelProviderRequestConfigurationType0",
     "UpdateModelProviderRequestExtraHeaders",

@@ -46,31 +46,7 @@ class Section(BaseModel):
 
 
 class MemorySettings(Section):
-    provider: Literal["none", "platform", "oss"] = "none"
-    base_url: str | None = Field(default=None, min_length=1, max_length=2048)
-    api_key: SecretStr | None = Field(default=None, min_length=1, max_length=4096, repr=False)
     timeout_seconds: float = Field(default=30, gt=0, le=300)
-
-    @model_validator(mode="after")
-    def validate_backend(self) -> Self:
-        if self.provider != "none" and self.api_key is None:
-            raise ValueError("memory.api_key is required when memory.provider is enabled")
-        if self.provider == "oss" and self.base_url is None:
-            raise ValueError("memory.base_url is required for the OSS server")
-        if self.base_url is not None:
-            from urllib.parse import urlsplit
-
-            url = urlsplit(self.base_url)
-            if (
-                url.scheme not in {"http", "https"}
-                or not url.hostname
-                or url.username
-                or url.password
-                or url.query
-                or url.fragment
-            ):
-                raise ValueError("memory.base_url must be an HTTP(S) URL without credentials, query, or fragment")
-        return self
 
 
 class ObservabilityQuerySettings(Section):

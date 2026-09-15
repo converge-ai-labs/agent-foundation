@@ -197,7 +197,7 @@ An explicit file reference carries only a model-facing logical path and a bounde
 
 `RuntimeContextCapability` emits one bounded `REQUEST_EPILOGUE` block on eligible requests. Its tool-results form is deliberately lightweight and can include elapsed logical-run time, configured model context-window size, and latest model-request token usage. The context-window size is explicit Runtime Capability configuration because the Harness has no provider-neutral guarantee that a native Model profile exposes it. Current time, cumulative run usage, and selected Host metadata remain independently configurable fields for input projections. Runtime context reports context facts only; it does not own summary-tool guidance.
 
-`HandoffCapability` owns both the `summarize` tool guidance and its concise `TOOL_RESULTS` reminder. Its frozen configuration can disable that reminder or defer it until latest model-request usage reaches an explicit token threshold selected by the Host; a zero threshold reminds after every ordinary tool-result batch. When neither reminder field is explicitly set and Harness `AgentSpec.model_characteristics` is present, the builder derives the threshold as `int(context_window * proactive_context_management_threshold)`; the default ratio is 65%, and `None` disables the automatic reminder. The reminder neither triggers compaction nor implies that the provider has accepted a larger request. Keeping this policy with the summary tool avoids coupling generic runtime projection to one optional context-management behavior.
+`HandoffCapability` owns both the `summarize` tool guidance and its concise `TOOL_RESULTS` reminder. Its frozen configuration can disable that reminder or defer it until latest model-request usage reaches an explicit token threshold selected by the Host; a zero threshold reminds after every ordinary tool-result batch. When neither reminder field is explicitly set and Harness `AgentSpec.model_characteristics` is present, the builder derives the threshold as `int(context_window_tokens * proactive_context_management_threshold)`; the default ratio is 65%, and `None` disables the automatic reminder. The reminder neither triggers compaction nor implies that the provider has accepted a larger request. Keeping this policy with the summary tool avoids coupling generic runtime projection to one optional context-management behavior.
 
 An explicit `summarize` handoff uses its own validated history-replacement path. Before invoking it, the Agent reconciles stale notes and task statuses. When the prepared handoff reaches a non-exact replacement boundary, Handoff removes Harness-owned overlays through their ownership metadata before rebuilding history; caller-authored text that resembles an overlay remains untouched. The handoff summary owns narrative continuity and the immediate next step; it does not mechanically duplicate all structured notes or tasks, store itself as a note, or replace their current state. It replays the current logical run's initial semantic input and every delivered public steering input in order, using the same retained-input ledger as compaction. Each replayed request preserves native structured `UserContent`, including multimodal values and part boundaries, rather than extracting only plain text. The user-role continuation summary, restored-context notice, and file reminders precede these requests as separately identifiable context; pending steering and internal notices are not replayed. After replacement, current Notes and Tasks overlays are freshly projected on the next eligible request. A pending `DeferredToolRequests` boundary is not part of the replaceable prefix: its exact suspended message tail, call IDs, categories, and message identity remain unchanged through authoritative resume validation until matching results are incorporated. Provider-suspended continuation receives the same protection. Only after those exact continuations advance can a validated replacement become ordinary active messages and reintroduce pending handoff guidance once.
 
@@ -214,7 +214,7 @@ Working State emits independent bounded `REQUEST_EPILOGUE` overlays, with Notes 
 The definition fixes one task mode:
 
 - `embedded` stores the complete immutable task snapshot in Capability state and is the default;
-- `provider` requires a fresh typed `TaskStateRunCapability` whose identity-bound cell owns reads and linearizable mutations. Only bounded non-authoritative cursor metadata may enter Harness State; provider clients, credentials, scopes, and fences do not.
+- `provider` requires a fresh typed `TaskStateBinding` whose identity-bound cell owns reads and linearizable mutations. Only bounded non-authoritative cursor metadata may enter Harness State; provider clients, credentials, scopes, and fences do not.
 
 Inline children receive either an explicit identity-bound shared task view or an isolated task scope according to delegation policy. A borrowed child view never copies the parent's task state or broader `AgentContext` into the child snapshot. Process-local Hosts may deliberately retain an embedded cell for background children; distributed Hosts use a provider with equivalent compare-and-swap, idempotency, and stale-owner reconciliation semantics.
 
@@ -264,7 +264,7 @@ The two scan modes are explicit and have no fallback dispatch. `scan(files=...)`
 
 An Environment-aware Host such as Harness UI calls `scan_environment(environment=...)` against an entered Environment to scan, preview, or import Skill packages without constructing an Agent or starting a Harness run. A CLI-style Host that directly controls a non-virtual FileOperator calls `scan(files=...)`. Host resource CRUD, source configuration, immutable revision manifests, content digests, package copying, and persistence remain Host concerns rather than `SkillManager` behavior.
 
-For a Harness run, `SkillsCapability` invokes `scan_environment()`, applies the fresh Host selection, requires the selected bound catalog to remain current, and publishes the bounded deterministic run catalog. It repeats the relevant-path fence before each model request and before and after each tool execution, so a concurrent relevant retarget fails rather than exposing content through a different mount incarnation. By default, the complete resolved catalog becomes the model-facing catalog for that logical run. A Host can instead provide one fresh `SkillSelectionRunCapability` in `RunBindings.capabilities`; its exact set of final skill names replaces that default for the run. A non-empty set injects only those names, an empty set injects no skills or routing instructions, and any name absent from the conflict-resolved discovered catalog fails run preparation. The override is an allowlist, not a pattern language, exclusion list, source selector, or durable setting.
+For a Harness run, `SkillsCapability` invokes `scan_environment()`, applies the fresh Host selection, requires the selected bound catalog to remain current, and publishes the bounded deterministic run catalog. It repeats the relevant-path fence before each model request and before and after each tool execution, so a concurrent relevant retarget fails rather than exposing content through a different mount incarnation. By default, the complete resolved catalog becomes the model-facing catalog for that logical run. A Host can instead provide a fresh exact-name set in `RunBindings.skill_selection`; its exact set of final skill names replaces that default for the run. A non-empty set injects only those names, an empty set injects no skills or routing instructions, and any name absent from the conflict-resolved discovered catalog fails run preparation. The override is an allowlist, not a pattern language, exclusion list, source selector, or durable setting.
 
 Selection occurs after source discovery and identity-conflict resolution but before model instructions, `SkillPath` publication, access observation, or continuation reconciliation. It therefore narrows model exposure without changing source readiness or catalog validation. It never grants a source, materializes an unselected source on its own, expands Environment access, or makes an unselected skill path receive skill-specific file treatment. Absence of the run Capability preserves the definition-selected default rather than meaning an empty selection.
 
@@ -291,13 +291,13 @@ Media, document conversion, and web acquisition are separate optional Capabiliti
 
 Without domain restrictions, `auto` contributes both candidates and marks only the Host `search` definition as the fallback for native `web_search`. Pydantic AI resolves the effective Model profile: when that profile supports native Web search, it retains the native tool and removes the Host fallback; otherwise it removes the native candidate and retains the bound Host function tool. If neither path is usable, request preparation fails explicitly before provider dispatch. Fetch, scrape, and download are independent and are never suppressed by this selection. The Harness does not maintain a model-name or provider compatibility matrix.
 
-Native search executes under the selected Model provider's account, credentials, messages, usage, and billing. It does not consume Host search backends, infer a separate search credential from the environment, or pass through Host `WebPolicy`. A definition using `native` or `auto` therefore deliberately accepts the Model provider's native-search authority boundary. The complete Web feature still requires one fresh `WebRunCapability` because fetch, scrape, and download retain their current client and policy collaborators.
+Native search executes under the selected Model provider's account, credentials, messages, usage, and billing. It does not consume Host search backends, infer a separate search credential from the environment, or pass through Host `WebPolicy`. A definition using `native` or `auto` therefore deliberately accepts the Model provider's native-search authority boundary. The complete Web feature still requires one fresh `WebBinding` in `RunBindings.web` because fetch, scrape, and download retain their current client and policy collaborators.
 
 Search, scrape, fetch, and download each own independent `allow_domains` and `deny_domains` through their operation configuration. Each list has at most 256 normalized lowercase ASCII IDNA hostnames without trailing dots. One bare entry matches both its apex and subdomains at a DNS-label boundary. Wildcards, URLs, ports, credentials, paths, IP literals, and malformed hostnames are invalid. A deny match wins and an empty allow list is unrestricted. These restrictions do not replace live `WebPolicy` or Provider enforcement, and one operation's restrictions never apply to a sibling operation.
 
 Destination authorization runs before transport work and on every redirect hop. Host transports receiving `WebDomainPolicy` check the requested operation's domain rule before DNS/network I/O and retain their policy, address checks, redirect limits, and credential-audience rules. Search filtering preserves provider order, can yield fewer or zero results, and does not refill the result count. Restricted search rejects `native` mode; restricted `auto` suppresses the native candidate and requires a Host search backend. A restricted scrape binding is valid only when `WebScrapeBackendBinding.supports_domain_restrictions` is explicitly true; unsupported restricted scrape fails before provider dispatch and never falls back to fetch. Separately, a non-allow tool permission for `web.search` fails explicitly if provider-native `WebSearchTool` remains active, because the local permission gate cannot intercept it. These controls are not a network sandbox for shell, remote MCP, arbitrary plugins, or provider-internal operations.
 
-Host search and scrape use independent ordered backend bindings. Each binding has a normalized `backend_id` and a fresh provider object; provider credentials and availability remain in `WebRunCapability`, never definition configuration or model arguments. Binding order is the default fallback priority. `WebSearchConfiguration` and `WebScrapeConfiguration` may either select one exact `backend` or provide a partial `backend_priority`; exact selection disables fallback and fails preparation when that backend is absent, while a partial priority moves available named backends first and retains all remaining bound backends in Host order. Search and scrape never share a registry merely because one service can implement both provider protocols.
+Host search and scrape use independent ordered backend bindings. Each binding has a normalized `backend_id` and a fresh provider object; provider credentials and availability remain in `WebBinding`, never definition configuration or model arguments. Binding order is the default fallback priority. `WebSearchConfiguration` and `WebScrapeConfiguration` may either select one exact `backend` or provide a partial `backend_priority`; exact selection disables fallback and fails preparation when that backend is absent, while a partial priority moves available named backends first and retains all remaining bound backends in Host order. Search and scrape never share a registry merely because one service can implement both provider protocols.
 
 Omitting the `WebCapability` configuration constructs `WebConfiguration` from the documented `A13N_HARNESS_WEB_*` process environment variables. Environment values may select search mode, native search context size, scrape mode, one exact backend, or a comma-separated partial backend priority; they never identify provider objects or carry credentials. An exact `*_BACKEND` takes precedence over the corresponding `*_BACKEND_PRIORITY`. Passing an explicit `WebConfiguration`, including one loaded from a preset, is authoritative and performs no ambient environment merge.
 
@@ -323,7 +323,7 @@ class CompactionCapability:
     def __init__(self, policy: CompactionPolicy | None = None) -> None: ...
 ```
 
-An explicit `trigger_tokens` remains an absolute Host-selected threshold and takes precedence. `CompactionCapability()` without a policy resolves the threshold at each eligible model-request boundary. Its ratio remains Harness-owned: an explicit `AgentSpec.model_characteristics.compact_threshold` wins, otherwise the `HarnessModelCharacteristics` default is 90%. The context window comes first from the effective native `RunContext.model.context_window`; if unavailable, the Capability falls back to Harness `model_characteristics.context_window`. Because the builder projects an explicit Harness window into the effective native Model profile, that managed definition takes precedence while remaining visible through the upstream API. The integer `trigger_tokens` observation rounds the ratio threshold upward so it names the first reachable token count that satisfies the ratio.
+An explicit `trigger_tokens` remains an absolute Host-selected threshold and takes precedence. `CompactionCapability()` without a policy resolves the threshold at each eligible model-request boundary. Its ratio remains Harness-owned: an explicit `AgentSpec.model_characteristics.compact_threshold` wins, otherwise the `HarnessModelCharacteristics` default is 90%. The context window comes first from the effective native `RunContext.model.context_window`; if unavailable, the Capability falls back to Harness `model_characteristics.context_window_tokens`. Because the builder projects an explicit Harness window into the effective native Model profile, that managed definition takes precedence while remaining visible through the upstream API. The integer `trigger_tokens` observation rounds the ratio threshold upward so it names the first reachable token count that satisfies the ratio.
 
 Automatic compaction first compares native `RunContext.context_window_used` with the ratio. If Pydantic AI cannot provide that value, the Capability falls back to the latest captured provider-reported input-plus-output token count divided by the resolved context window. The same latest token count is used for the bounded context snapshot and for an explicit absolute policy. If either required window or provider usage remains unknown, the Capability skips compaction on that boundary. It does not fail Agent construction, infer a window from the model name, or serialize messages to estimate tokens.
 
@@ -371,24 +371,30 @@ Ordinary compact-run failures, including an empty plain-text summary, emit a bou
 
 After successful nested generation and replacement-history construction, compaction exposes the exact generated summary through the native Capability event channel. The summary remains separate from normal assistant output and is correlated to its compaction operation. Failure and cancellation do not publish successful-summary content. This process-local observation does not promise a persisted continuation or installed outer-history snapshot. [Events and Usage](12-events-observability-and-usage.md) owns the event shape and lifecycle distinction.
 
-## Mem0 Integration
+## Memory Integration
 
-`Mem0Capability` is the first-party long-term-memory integration. OSS is the primary backend, using the native Mem0 server API; Platform has a separate native `AsyncMemoryClient` adapter. The shared `Mem0Backend` contract contains only bounded search, list, and explicit add. It does not emulate the Platform wire protocol or own memory storage. The Capability remains opt-in in an Agent definition; package installation or backend configuration alone enables no behavior.
+`MemoryCapability` is the single public long-term-memory Capability, identified by `a13n.memory`. It borrows a provider-neutral `MemoryBackend` and owns optional automatic recall, standard memory tools, context projection, and typed current-run operations for custom Capabilities. It remains opt-in in an Agent definition; package installation or backend configuration alone enables no behavior. Mem0 OSS and Platform are independent built-in adapters, not public behavior types.
+
+The `MemoryBackend` asynchronous contract covers `search`, `list`, `add`, `get`, `update`, and `delete`. `MemorySubject` contains a trusted `MemoryScope` and namespace value; no native filter names cross this boundary. `MemoryRecord` contains `id`, verbatim `text`, verified `subjects`, and an optional finite `score`. Search returns a bounded tuple of records. List returns `MemoryPage(items, pagination)`: absent pagination means unknown completeness; a present `MemoryPagination(next_cursor=None)` means a terminal native page. No total count, timestamps, metadata, extraction history, offset traversal, or complete export is implied. Get/update/delete require an explicit subject and verify ownership before mutation. Adds and updates confirm exact text and subject by readback; deletes confirm native absence. `MemoryRecordNotFound`, `MemoryPaginationUnsupported`, and `MemoryWriteUnconfirmed` are provider-neutral failures. Write uncertainty requires inspection before repetition, never automatic retry.
+
+`MemoryBackendPlugin` is an inert backend factory within `a13n-harness`, separate from `AbstractHarnessPlugin`. Each implementation defines a stable key, display name, independent Pydantic configuration and credential models with pure validation, and an asynchronous context-manager factory owning backend construction and cleanup. Its configuration contains no secrets. A host-selected immutable `MemoryBackendCatalog` contains only explicitly selected built-ins, installed entry points from `a13n_harness.memory_backends`, and direct plugin objects. Duplicate keys fail without shadowing; unselected entry points are not imported. The built-in keys are `a13n.mem0-oss` and `a13n.mem0-platform`. Embedded Hosts can inject a backend directly without a catalog or Service resource. Service and Harness share this protocol and adapter implementation, not a client instance across processes.
+
+The following is a conceptual construction schema, not serialized state.
 
 ```python
-class Mem0Scope(StrEnum):
+class MemoryScope(StrEnum):
     THREAD = "thread"
     AGENT = "agent"
     USER = "user"
 
 
-class Mem0Capability(AbstractModelContextCapability):
+class MemoryCapability(AbstractModelContextCapability):
     def __init__(
         self,
         *,
-        backend: Mem0Backend,
-        scope_ids: Mapping[Mem0Scope, str] | None = None,
-        scope: Mem0Scope | None = None,
+        backend: MemoryBackend,
+        scope_ids: Mapping[MemoryScope, str] | None = None,
+        scope: MemoryScope | None = None,
         toolset: bool = True,
         auto_recall: bool = True,
         recall_limit: int = 5,
@@ -402,13 +408,17 @@ The backend is required and borrowed. The Host owns its transport lifetime, cred
 
 The Capability resolves scope only from trusted current context:
 
-| Scope    | Trusted value                 | Mem0 entity field |
-| -------- | ----------------------------- | ----------------- |
-| `thread` | `AgentContext.thread_id`      | `run_id`          |
-| `agent`  | the `agent_id` Identity claim | `agent_id`        |
-| `user`   | the `user_id` Identity claim  | `user_id`         |
+| Scope    | Trusted value                 |
+| -------- | ----------------------------- |
+| `thread` | `AgentContext.thread_id`      |
+| `agent`  | the `agent_id` Identity claim |
+| `user`   | the `user_id` Identity claim  |
+
+Native field mapping belongs only to the backend adapter. Mem0 maps thread to `run_id`, agent to `agent_id`, and user to `user_id`.
 
 A configured `scope` is fixed for recall and tools; a missing required claim fails before model or memory-provider work. With `scope=None`, recall searches the union of all currently available scopes, while model tools accept one `thread`, `agent`, or `user` selector and resolve its value in trusted code. The model never supplies an entity ID. Without `scope_ids`, thread is always available; agent and user require their corresponding claims. A Host-supplied `scope_ids` mapping replaces this derivation with explicit trusted namespace bindings and can omit unavailable scopes.
+
+`auto_recall=False` and `toolset=False` disable only the corresponding defaults, not the selected backend or public operations. Custom behavior is contributed through existing `AbstractHarnessPlugin.get_capabilities()` and native Capability hooks, with corresponding defaults disabled explicitly; no class-name, tool-name, or feature-slot replacement heuristic exists. A custom Capability obtains the finalized owner using `ctx.capabilities.get(MemoryCapability.id)`, checks `isinstance(owner, MemoryCapability)`, and calls its typed `search/list/add/get/update/delete` methods with the current native `RunContext`. It never needs private context caches or native clients and credentials. Operations resolve one trusted scope, require a scope when none is fixed, and reject use through an unbound source or another logical Run's owner. Root, child, and concurrent Runs have independent bindings; native `for_run()` and logical-run recovery retain state without another public attachment or lifecycle. Hosts performing management or post-commit work can call their authorized backend directly without constructing a Capability.
 
 OSS searches at most three scopes concurrently using native direct entity filters, deduplicates by memory ID using the highest finite score, sorts by descending score then ID, and applies the total limit. One deadline bounds the entire union; failure cancels siblings and never returns successful partial recall. Platform uses its native union filter. Listing respects native limits: OSS uses public `GET /memories` with `top_k` and returns a bounded set without continuation; Platform retains native pages. No upstream patch, private route, direct storage access, or Service-side mirror is required. Bounded lists do not establish collection completeness. Automatic recall searches independently of any management list.
 
@@ -416,11 +426,11 @@ Pydantic `for_run()` receives the final prompt after `RunInputFactory` and Harne
 
 `recall_timeout` bounds provider wait. Timeout, authentication or provider failure, malformed response, empty query, and no result produce bounded observations. With `recall_required=False`, they omit the block and execution continues; with `recall_required=True`, timeout, authentication or provider failure, or malformed response terminates before model work. Cancellation always propagates.
 
-When `toolset=True`, the Capability composes exactly one of two Toolsets. A fixed-scope Toolset exposes `memory_search`, `memory_list`, and `memory_add` without a scope argument. An unbound Toolset exposes the same names with a `Mem0Scope` selector. Search and list are managed read tools, while add is a managed write tool and stores explicit bounded text with `infer=False`. Provider failures become bounded typed tool failures. A write requires a completed single `ADD` result; acceptance or queuing is not persistence. Unconfirmed writes return `mem0_write_unconfirmed`, instruct reconciliation, and never suggest automatic retry. Raw entity IDs, update, delete, batch, history, event polling, and entity administration are not model-visible.
+When `toolset=True`, the Capability composes exactly one of two Toolsets. A fixed-scope Toolset exposes `memory_search`, `memory_list`, and `memory_add` without a scope argument. An unbound Toolset exposes the same names with a `MemoryScope` selector. Search and list are managed read tools, while add is a managed write tool and stores explicit bounded text with `infer=False`. Provider failures become bounded typed tool failures. Explicit text contains 1–8000 characters, cannot be blank, and is stored verbatim. Mem0 add requires a completed single native `ADD` result and verified readback; acceptance or queuing is not persistence. Unconfirmed writes return `memory_write_unconfirmed`, instruct reconciliation, and never suggest automatic retry. Raw entity IDs, update, delete, batch, history, event polling, and entity administration are not model-visible.
 
 Automatic recall emits bounded context lifecycle events and one `memory_recall` Harness operation observation. The operation span and metric contain only the closed operation kind; events may include configured scope kinds, outcome, and result count. Pydantic owns model-visible memory-tool spans and the managed invocation boundary owns their events. Harness-authored observations contain no query, memory text, entity value, endpoint, credential, SDK response body, or raw exception.
 
-Mem0 records and SDK-side extraction remain provider-owned durable state. The Capability performs no automatic terminal transcript extraction: a process-local result does not prove Host checkpoint acceptance. A Host that requires automatic extraction dispatches it after its own durable commit. No memory task outlives a logical Harness Run without explicit Host ownership.
+Memory records remain provider-owned durable state. The Capability performs no automatic terminal transcript extraction: a process-local result does not prove Host checkpoint acceptance. A Host that requires automatic extraction dispatches it after its own durable commit. No memory task outlives a logical Harness Run without explicit Host ownership.
 
 ## State Ownership
 
@@ -434,7 +444,7 @@ Mem0 records and SDK-side extraction remain provider-owned durable state. The Ca
 | Retained semantic inputs and user steering   | Mandatory steering bridge namespace when automatic compaction is enabled                |
 | Monitored-process tasks and completion route | Host collaborator; Capability state can retain only incorporated completion IDs         |
 | Temporary media/document/web content         | Owning Capability or selected provider until bounded projection and cleanup             |
-| Long-term memory records                     | Mem0; `Mem0Capability` owns no portable or durable namespace                            |
+| Long-term memory records                     | Selected backend; `MemoryCapability` owns no portable or durable namespace              |
 | Portable multi-Environment backend state     | Explicit `HarnessState.environment_states`; backing-target authority remains Host-owned |
 | Host delivery, counters, and scheduler work  | Host                                                                                    |
 
@@ -450,7 +460,7 @@ A child run receives an explicit context seed and a fresh `AgentContext`. Parent
 | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | Imported messages are invalid                                          | Run creation fails before provider work                                                                           |
 | Optional dynamic guidance is unavailable                               | Owning Capability omits it and emits a diagnostic                                                                 |
-| Required guidance or Mem0 recall fails                                 | Run fails before model work with a bounded memory error                                                           |
+| Required guidance or memory recall fails                               | Run fails before model work with a bounded memory error                                                           |
 | Shared task binding is missing or incompatible                         | Inline child dispatch fails before child model/tool work                                                          |
 | Task claim conflicts or uses a stale version                           | Typed conflict; the existing task owner and state remain unchanged                                                |
 | Structured question cannot be correlated or validated                  | Deferred resume fails under [Tool Execution](07-tool-execution.md#structured-user-questions)                      |
@@ -461,21 +471,21 @@ A child run receives an explicit context seed and a fresh `AgentContext`. Parent
 | Resource exceeds policy or conversion fails                            | Owning tool returns a bounded typed failure and cleans its partial assets                                         |
 | Compaction output is invalid                                           | Original history remains active                                                                                   |
 | Context exceeds the provider limit after policy                        | Model step fails with a bounded context error                                                                     |
-| Optional Mem0 recall times out or fails                                | Recall block is omitted after bounded observation; history remains valid                                          |
+| Optional memory recall times out or fails                              | Recall block is omitted after bounded observation; history remains valid                                          |
 
 ## Boundaries
 
-| Concern                                          | Owner                               |
-| ------------------------------------------------ | ----------------------------------- |
-| Prompt-dependent Mem0 recall and bounded tools   | `Mem0Capability` and Mem0 SDK       |
-| Dynamic context validation and structural commit | Harness model-context coordinator   |
-| Owned-overlay cleanup during history replacement | Compaction and Handoff Capabilities |
-| Instruction and history composition              | Pydantic AI and owning Capabilities |
-| Active messages and namespaced run state         | Harness                             |
-| Long-term memory storage and consolidation       | Mem0 or Host                        |
-| Automatic post-commit extraction                 | Host                                |
-| Application conversation and display history     | Host                                |
-| Provider context limits and request acceptance   | Model provider                      |
+| Concern                                          | Owner                                   |
+| ------------------------------------------------ | --------------------------------------- |
+| Prompt-dependent memory recall and bounded tools | `MemoryCapability` and selected backend |
+| Dynamic context validation and structural commit | Harness model-context coordinator       |
+| Owned-overlay cleanup during history replacement | Compaction and Handoff Capabilities     |
+| Instruction and history composition              | Pydantic AI and owning Capabilities     |
+| Active messages and namespaced run state         | Harness                                 |
+| Long-term memory storage and consolidation       | Selected backend or Host                |
+| Automatic post-commit extraction                 | Host                                    |
+| Application conversation and display history     | Host                                    |
+| Provider context limits and request acceptance   | Model provider                          |
 
 ## Trade-offs
 
@@ -487,9 +497,9 @@ Direct instructions, public model-request hooks, native enqueue, and Capability 
 
 Tasks and notes share tool presentation and one state owner without turning `AgentContext` into a collection of managers. Their separate request overlays preserve distinct recall semantics while retaining one storage namespace and lifecycle. A typed task cell supports atomic parent/child coordination, while notes, messages, and unrelated Capability state remain isolated. Handoff owns narrative continuity, automatic compaction owns history reduction, Notes own structured session facts, and Tasks own structured execution state; these Capabilities coordinate through instructions and fresh projection rather than direct dependencies.
 
-### Native Mem0 Client vs. Another Memory Port
+### Neutral Memory Operations vs. Vendor Behavior
 
-Using the native async SDK keeps one supported Mem0 API and response contract, while accepting its dependency and compatibility surface as part of the Harness release. A borrowed client amortizes SDK validation and connection setup across Runs. The environment-backed convenience path instead creates and closes one client per logical Run so the Harness does not invent an executable-lifetime resource owner.
+One typed storage contract permits custom behavior and managed backend selection without leaking vendor response shapes or duplicating a Capability per provider. Native Mem0 APIs remain authoritative inside the adapters; bounded OSS lists are not emulated as pagination. Hosts own transport lifetime and authorization, while the Capability borrows the selected backend and retains only logical-run behavior. Backend factory selection and behavior-plugin composition are independent.
 
 ### Host-owned Memory Work vs. Automatic Background Tasks
 

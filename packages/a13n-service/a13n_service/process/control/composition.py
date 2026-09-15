@@ -22,6 +22,7 @@ from a13n_service.gateway.queries import NativeInteractionQueries
 from a13n_service.iam.runtime import build_identity_runtime, initialize_identity
 from a13n_service.interactions.queue import QueuedSubmissionStore
 from a13n_service.interactions.submissions import QueuedSubmissionService
+from a13n_service.memory.providers import MemoryProviderService
 from a13n_service.process.agents import AgentResources
 from a13n_service.process.background import BackgroundTask
 from a13n_service.process.components import Components
@@ -76,7 +77,7 @@ async def build_control_runtime(
         shared, environment_catalog, settings, oss_identity=identity is not None
     )
     skills = await build_skill_bundle(components, shared, execution, stack)
-    models = build_model_bundle(settings, components, shared, execution)
+    models = await build_model_bundle(settings, components, shared, execution, stack)
     agents = build_agent_management(
         components,
         shared,
@@ -201,6 +202,8 @@ async def build_control_runtime(
         ),
     )
     subagents = build_subagent_maintenance(settings, shared, gateway_replay)
+    if shared.memories is None:
+        raise RuntimeError("Memory resources were not composed for Control")
     runtime = ControlRuntime(
         trace_queries=trace_queries,
         environments=environments,
@@ -214,6 +217,9 @@ async def build_control_runtime(
             shared.storage.sessions,
             shared.secret_protector,
             WebProviderRegistry(provider_catalogs.web),
+        ),
+        memory_providers=MemoryProviderService(
+            shared.storage.sessions, shared.secret_protector, shared.memories.catalog
         ),
         assets=assets.catalog,
         asset_uploads=assets.uploads,

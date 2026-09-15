@@ -14,12 +14,13 @@ from a13n_service.agents.domain import (
     EffectiveAgentModel,
 )
 from a13n_service.agents.invocation import merge_agent_run_override
+from a13n_service.agents.model_characteristics import compose_model_characteristics
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.agents.toolsets import default_toolsets
 from a13n_service.digests import digest_request
 from a13n_service.iam.models import OrganizationRecord, WorkspaceRecord
 from a13n_service.interactions.state import HostContinuationState, RunCheckpoint
-from a13n_service.models.domain import ModelExecutionSnapshot
+from a13n_service.models.domain import ModelDeclarations, ModelExecutionSnapshot
 from a13n_service.storage import transaction
 from a13n_service.storage.config import PostgreSQLConfig
 from a13n_service.storage.object_store import LocalObjectStore
@@ -58,7 +59,7 @@ def agent_config() -> AgentConfig:
             "model": {
                 "model_key": MODEL_KEY,
                 "settings": {"temperature": 0.2},
-                "characteristics": {"context_window": 128000},
+                "characteristics": {"context_window_tokens": 128000},
             },
             "instructions": "Be helpful.",
             "input_adapter": {"adapter_key": "native", "config": {}},
@@ -82,13 +83,14 @@ def effective_agent_config(*, assets_enabled: bool = False) -> EffectiveAgentCon
         model_id=MODEL_ID,
         model_key=MODEL_KEY,
         upstream_model="gpt-5.6-terra",
+        base_model="openai:gpt-5.6-terra",
         model_api="openai.responses",
     )
     candidate = EffectiveAgentConfig(
         resolved_model=EffectiveAgentModel(
             execution=execution,
             settings=merged.model.settings,
-            characteristics=merged.model.characteristics,
+            characteristics=compose_model_characteristics(ModelDeclarations(), merged.model.characteristics),
         ),
         instructions=merged.instructions,
         input_adapter=merged.input_adapter,

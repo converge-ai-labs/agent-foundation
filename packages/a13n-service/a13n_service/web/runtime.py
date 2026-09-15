@@ -3,11 +3,11 @@
 from collections.abc import Awaitable, Callable
 
 from a13n_harness.capabilities.web import (
+    WebBinding,
     WebCapability,
     WebConfiguration,
     WebDownloadConfiguration,
     WebFetchConfiguration,
-    WebRunCapability,
     WebScrapeBackendBinding,
     WebScrapeConfiguration,
     WebSearchBackendBinding,
@@ -127,7 +127,7 @@ class WebRuntime:
         agent_id: str,
         selection: WebSelection,
         current_context: Callable[[], AttemptContext],
-    ) -> WebRunCapability:
+    ) -> WebBinding:
         async def authorize_builtin(purpose: str) -> None:
             tool_id = f"web.{purpose}"
             await self._authorize_agent(run, workspace_id, agent_id, tool_id, current_context)
@@ -174,7 +174,7 @@ class WebRuntime:
                 ),
             )
 
-        return WebRunCapability(
+        return WebBinding(
             client=self._web_transport,
             policy=WebTransportPolicy(authorize_builtin),
             search_backends=search_backends,

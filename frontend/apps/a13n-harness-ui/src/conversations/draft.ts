@@ -76,7 +76,10 @@ export class ThreadDraft {
   undo = new Y.UndoManager(this.doc.getText("text"));
   // Retained IDs are a registry, not undoable editor content. In particular,
   // finishing an asynchronous upload must not revive a pending upload on undo.
-  uploads = new Map<string, { file: File; status: "pending" | "failed" }>();
+  uploads = new Map<
+    string,
+    { file: File; status: "staged" | "pending" | "failed" }
+  >();
   draftId: string | undefined;
   participantId: string | undefined;
   participants: Schema<"DraftFrame">["participants"] = {};

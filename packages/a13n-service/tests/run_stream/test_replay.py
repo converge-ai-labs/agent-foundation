@@ -4,6 +4,7 @@ import hashlib
 from datetime import UTC, datetime
 
 import pytest
+import zstandard
 from a13n_service.run_stream import (
     RUN_REPLAY_CONTENT_TYPE,
     CompleteRunStream,
@@ -19,7 +20,7 @@ from a13n_service.run_stream import (
     run_stream_key_digest_sha256,
 )
 from a13n_service.storage import ObjectStore
-from a13n_service.storage.codec import canonical_model_bytes
+from a13n_service.storage.codec import COMPRESSED_JSON_ENCODING, canonical_model_bytes
 
 pytestmark = pytest.mark.anyio
 
@@ -92,6 +93,73 @@ async def test_rejects_conflicting_existing_snapshot(object_store: ObjectStore) 
         await store.publish(ORGANIZATION_ID, RUN_ID, _source(content="different"))
 
 
+async def test_duplicate_publication_accepts_different_encoding_without_replacing_it(object_store: ObjectStore) -> None:
+    store = RunReplayStore(object_store)
+    snapshot = await store.publish(ORGANIZATION_ID, RUN_ID, _source())
+    key = run_replay_key(ORGANIZATION_ID, RUN_ID)
+    previous = await object_store.stat(key)
+    canonical = canonical_model_bytes(snapshot)
+    writer = zstandard.ZstdCompressor(level=1, write_checksum=True).compressobj(size=len(canonical))
+    split = len(canonical) // 2
+    body = writer.compress(canonical[:split]) + writer.flush(zstandard.COMPRESSOBJ_FLUSH_BLOCK)
+    body += writer.compress(canonical[split:]) + writer.flush()
+    digest = hashlib.sha256(body).hexdigest()
+    assert digest != previous.metadata["digest-sha256"]
+    published = await object_store.put(
+        key,
+        body,
+        content_type=previous.content_type,
+        metadata={**previous.metadata, "digest-sha256": digest},
+        if_match=previous.version,
+    )
+
+    assert await store.publish(ORGANIZATION_ID, RUN_ID, _source()) == snapshot
+    assert await object_store.stat(key) == published
+
+
+@pytest.mark.parametrize("corruption", ["encoding", "digest", "checksum"])
+async def test_replay_rejects_invalid_encoding(object_store: ObjectStore, corruption: str) -> None:
+    store = RunReplayStore(object_store)
+    snapshot = await store.publish(ORGANIZATION_ID, RUN_ID, _source())
+    key = run_replay_key(ORGANIZATION_ID, RUN_ID)
+    info = await object_store.stat(key)
+    body = zstandard.ZstdCompressor(level=1, write_checksum=True).compress(canonical_model_bytes(snapshot))
+    metadata = dict(info.metadata)
+    if corruption == "encoding":
+        del metadata["storage-encoding"]
+    elif corruption == "digest":
+        metadata["digest-sha256"] = "0" * 64
+    else:
+        body = body[:-1] + bytes([body[-1] ^ 1])
+        metadata["digest-sha256"] = hashlib.sha256(body).hexdigest()
+    await object_store.put(key, body, content_type=info.content_type, metadata=metadata, if_match=info.version)
+
+    with pytest.raises(RunReplayIntegrityError):
+        await store.read(ORGANIZATION_ID, RUN_ID)
+
+
+@pytest.mark.parametrize("bound", ["max_bytes", "max_events", "max_items"])
+async def test_replay_read_enforces_decoded_and_count_limits(object_store: ObjectStore, bound: str) -> None:
+    snapshot = await RunReplayStore(object_store).publish(ORGANIZATION_ID, RUN_ID, _source())
+    if bound == "max_bytes":
+        limit = len(canonical_model_bytes(snapshot)) - 1
+    elif bound == "max_events":
+        limit = 1
+    else:
+        # Publish two Items, then read with the one-Item limit.
+        source = _source()
+        event = source.entries[-1].event.model_copy(update={"item_id": deterministic_item_id(RUN_ID, "text", "other")})
+        await object_store.delete(run_replay_key(ORGANIZATION_ID, RUN_ID))
+        source = CompleteRunStream(
+            (source.entries[0], RunStreamEntry("2-0", event)), source.closed_at, source.stream_key_digest_sha256
+        )
+        await RunReplayStore(object_store).publish(ORGANIZATION_ID, RUN_ID, source)
+        limit = 1
+    store = RunReplayStore(object_store, **{bound: limit})
+    with pytest.raises(RetainedReplayUnavailable):
+        await store.read(ORGANIZATION_ID, RUN_ID)
+
+
 @pytest.mark.parametrize("corruption", ["attempt_index", "item_index"])
 async def test_rejects_semantically_inconsistent_snapshot_body(
     object_store: ObjectStore,
@@ -159,17 +227,18 @@ async def test_rejects_empty_or_oversized_snapshot_source(object_store: ObjectSt
     empty = CompleteRunStream((), source.closed_at, source.stream_key_digest_sha256)
     with pytest.raises(RetainedReplayUnavailable, match="event count"):
         await RunReplayStore(object_store).publish(ORGANIZATION_ID, RUN_ID, empty)
-    with pytest.raises(RetainedReplayUnavailable, match="encoded size"):
+    with pytest.raises(RetainedReplayUnavailable, match="decoded size"):
         await RunReplayStore(object_store, max_bytes=10).publish(ORGANIZATION_ID, RUN_ID, source)
 
 
 async def _overwrite_snapshot(object_store: ObjectStore, snapshot: RunReplaySnapshot) -> None:
-    body = canonical_model_bytes(snapshot)
+    body = zstandard.ZstdCompressor(level=1, write_checksum=True).compress(canonical_model_bytes(snapshot))
     await object_store.put(
         run_replay_key(ORGANIZATION_ID, RUN_ID),
         body,
         content_type=RUN_REPLAY_CONTENT_TYPE,
         metadata={
+            "storage-encoding": COMPRESSED_JSON_ENCODING,
             "schema-version": "1",
             "run-id": RUN_ID,
             "digest-sha256": hashlib.sha256(body).hexdigest(),

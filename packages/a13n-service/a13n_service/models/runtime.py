@@ -33,7 +33,7 @@ class PreparedModelExecution:
     organization_id: str
     workspace_id: str
     resource: ModelResource
-    settings: JsonObject
+    settings_layers: tuple[JsonObject, ...]
 
 
 class AcceptedModelSelector:
@@ -51,6 +51,7 @@ class AcceptedModelSelector:
         model_key: str | None = None,
         model_id: str | None = None,
         settings: JsonObject,
+        settings_override: JsonObject | None = None,
     ) -> PreparedModelExecution:
         if (model_key is None) == (model_id is None):
             raise ValueError("exactly one Model selector is required")
@@ -76,12 +77,13 @@ class AcceptedModelSelector:
             model = model_record.to_resource()
             _require_enabled(model_record, provider_record)
             self._registry.validate_model_api(provider_record.type, model.model_api)
-            effective_settings(model.model_api, model.settings, settings)
+            settings_layers = (settings,) if settings_override is None else (settings, settings_override)
+            effective_settings(model.model_api, model.settings, *settings_layers)
             return PreparedModelExecution(
                 organization_id=organization_id,
                 workspace_id=workspace_id,
                 resource=model,
-                settings=settings,
+                settings_layers=settings_layers,
             )
 
     async def freeze_in_transaction(
@@ -113,7 +115,7 @@ class AcceptedModelSelector:
                 "The Model changed during acceptance. Retry the request.",
                 category=ErrorCategory.conflict,
             )
-        effective_settings(model.model_api, model.settings, prepared.settings)
+        effective_settings(model.model_api, model.settings, *prepared.settings_layers)
         return ModelExecutionSnapshot.freeze(model)
 
 
