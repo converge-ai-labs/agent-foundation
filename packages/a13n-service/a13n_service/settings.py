@@ -19,7 +19,6 @@ from a13n_service.storage.config import (
     RedisMemoryConfig,
     RedisServerConfig,
     S3ObjectConfig,
-    SQLiteConfig,
     StorageSettings,
 )
 
@@ -52,18 +51,9 @@ from .configuration.sections import (
     WebhooksSettings,
     WorkerSettings,
 )
-from .configuration.sections import (
-    DatabaseBackend as DatabaseBackend,
-)
-from .configuration.sections import (
-    ObjectBackend as ObjectBackend,
-)
-from .configuration.sections import (
-    ProcessRole as ProcessRole,
-)
-from .configuration.sections import (
-    RedisBackend as RedisBackend,
-)
+from .configuration.sections import ObjectBackend as ObjectBackend
+from .configuration.sections import ProcessRole as ProcessRole
+from .configuration.sections import RedisBackend as RedisBackend
 
 
 class Settings(Section):
@@ -110,15 +100,9 @@ class Settings(Section):
             smtp_tls=self.iam.smtp_tls,
         )
 
-    def database_config(self) -> PostgreSQLConfig | SQLiteConfig:
-        if self.database.backend is DatabaseBackend.sqlite:
-            return SQLiteConfig(
-                path=self.database.sqlite_path,
-                busy_timeout_seconds=self.database.sqlite_busy_timeout_seconds,
-                cleanup_timeout_seconds=self.database.cleanup_timeout_seconds,
-            )
+    def database_config(self) -> PostgreSQLConfig:
         if self.database.url is None:
-            raise ValueError("A13N_SERVICE_DATABASE_URL is required for the PostgreSQL backend")
+            raise ValueError("A13N_SERVICE_DATABASE_URL is required")
         return PostgreSQLConfig(
             url=self.database.url,
             pool_size=self.database.pool_size,

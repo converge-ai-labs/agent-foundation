@@ -8,6 +8,7 @@ from a13n_service.app import Components, create_app
 from a13n_service.iam.models import RoleBindingRecord
 from a13n_service.settings import Settings
 from a13n_service.storage import transaction
+from a13n_service.storage.config import PostgreSQLConfig
 from a13n_service.trace_query import TraceQueryProviderRegistry
 from a13n_service.trace_query.authorization import RunTraceAccessAuthorizer
 from sqlalchemy import delete
@@ -19,10 +20,10 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.fixture
-def trace_settings(tmp_path, service_sqlite_database):
+def trace_settings(tmp_path, service_database: PostgreSQLConfig):
     return Settings(
         service={"role": "control"},
-        database={"backend": "sqlite", "sqlite_path": service_sqlite_database},
+        database={"url": service_database.url.get_secret_value()},
         redis={"backend": "memory"},
         objects={"backend": "local", "local_root": tmp_path / "objects"},
         filesystem={"root": tmp_path / "files"},

@@ -33,8 +33,8 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.fixture
-async def due_environment(postgres_interaction_sessions, tmp_path):
-    sessions = postgres_interaction_sessions
+async def due_environment(interaction_sessions, tmp_path):
+    sessions = interaction_sessions
     await seed_hook_actor_access(sessions)
     catalog = build_environment_provider_catalog(builtin_keys=("a13n.docker",))
     protector = SecretProtector(key=b"e" * 32, encryption_key_id="test")

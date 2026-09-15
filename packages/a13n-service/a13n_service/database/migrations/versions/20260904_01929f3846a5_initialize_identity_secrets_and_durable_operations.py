@@ -295,7 +295,6 @@ def upgrade() -> None:
         ["organization_id", "workspace_id", "owner_type", "owner_id", "key"],
         unique=True,
         postgresql_where=sa.text("deleted_at IS NULL"),
-        sqlite_where=sa.text("deleted_at IS NULL"),
     )
     op.create_table(
         "service_accounts",
@@ -324,7 +323,6 @@ def upgrade() -> None:
         ["workspace_id", "normalized_name"],
         unique=True,
         postgresql_where=sa.text("deleted_at IS NULL"),
-        sqlite_where=sa.text("deleted_at IS NULL"),
     )
 
 
@@ -334,15 +332,9 @@ def downgrade() -> None:
         "uq_service_accounts_active_workspace_normalized_name",
         table_name="service_accounts",
         postgresql_where=sa.text("deleted_at IS NULL"),
-        sqlite_where=sa.text("deleted_at IS NULL"),
     )
     op.drop_table("service_accounts")
-    op.drop_index(
-        "uq_secrets_active_owner_key",
-        table_name="secrets",
-        postgresql_where=sa.text("deleted_at IS NULL"),
-        sqlite_where=sa.text("deleted_at IS NULL"),
-    )
+    op.drop_index("uq_secrets_active_owner_key", table_name="secrets", postgresql_where=sa.text("deleted_at IS NULL"))
     op.drop_index("ix_secrets_owner_listing", table_name="secrets")
     op.drop_table("secrets")
     op.drop_index("uq_role_bindings_principal_resource", table_name="role_bindings")

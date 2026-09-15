@@ -376,14 +376,8 @@ def _account_position(position: dict[str, object]) -> tuple[str, str]:
 def _name_conflict(error: IntegrityError) -> None:
     # Only the two owning-scope name constraints map to a reconciliation conflict.
     if any(
-        is_unique_conflict(error, constraint=constraint, sqlite_columns=columns)
-        for constraint, columns in (
-            ("uq_web_providers_workspace_name", "web_providers.workspace_id, web_providers.normalized_name"),
-            (
-                "uq_web_providers_organization_normalized_name",
-                "web_providers.organization_id, web_providers.normalized_name",
-            ),
-        )
+        is_unique_conflict(error, constraint=constraint)
+        for constraint in ("uq_web_providers_workspace_name", "uq_web_providers_organization_normalized_name")
     ):
         raise WebProviderError(
             "web_provider_name_conflict",

@@ -17,11 +17,6 @@ from .domain import ConnectorProviderStatus
 from .models import ConnectorProviderRecord, ConnectorSharedSetupClaimRecord
 
 _CLAIM_CONSTRAINT = "uq_connector_shared_setup_claims_scope"
-_CLAIM_SQLITE_COLUMNS = (
-    "connector_shared_setup_claims.provider_id, "
-    "connector_shared_setup_claims.connector_key, "
-    "connector_shared_setup_claims.configuration_key"
-)
 
 
 async def reserve_shared_setup(
@@ -53,6 +48,6 @@ async def reserve_shared_setup(
                 )
             )
     except IntegrityError as error:
-        if is_unique_conflict(error, constraint=_CLAIM_CONSTRAINT, sqlite_columns=_CLAIM_SQLITE_COLUMNS):
+        if is_unique_conflict(error, constraint=_CLAIM_CONSTRAINT):
             raise ConnectorProviderError("shared_setup_outcome_unknown") from error
         raise

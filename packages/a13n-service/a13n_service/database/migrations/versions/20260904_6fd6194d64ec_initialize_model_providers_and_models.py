@@ -74,7 +74,6 @@ def upgrade() -> None:
         ["organization_id", "normalized_name"],
         unique=True,
         postgresql_where=sa.text("workspace_id IS NULL"),
-        sqlite_where=sa.text("workspace_id IS NULL"),
     )
     op.create_index(
         "ix_model_providers_workspace_updated", "model_providers", ["workspace_id", "updated_at", "id"], unique=False
@@ -138,7 +137,6 @@ def upgrade() -> None:
         ["organization_id", "normalized_key"],
         unique=True,
         postgresql_where=sa.text("workspace_id IS NULL"),
-        sqlite_where=sa.text("workspace_id IS NULL"),
     )
     op.create_index("ix_models_provider", "models", ["provider_id", "id"], unique=False)
     op.create_index("ix_models_workspace_updated", "models", ["workspace_id", "updated_at", "id"], unique=False)

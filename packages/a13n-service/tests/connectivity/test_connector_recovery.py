@@ -37,9 +37,7 @@ from .test_connector_service import create_connection, create_connector
 pytestmark = pytest.mark.anyio
 
 
-@pytest.mark.parametrize(
-    "composio_sessions", ["connectivity_sessions", "postgres_connectivity_sessions"], indirect=True
-)
+@pytest.mark.parametrize("composio_sessions", ["connectivity_sessions", "connectivity_sessions"], indirect=True)
 async def test_pending_setup_has_one_sender_across_http_replay_and_reconciliation(composio_setup, composio_sessions):
     connectivity_sessions = composio_sessions
     connections, connection, reconciler, _, requests, state, _ = composio_setup

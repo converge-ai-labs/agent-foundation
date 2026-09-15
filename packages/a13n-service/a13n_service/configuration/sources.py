@@ -118,15 +118,11 @@ def load_settings(
         _merge(values, overrides)
     try:
         settings = Settings.model_validate(values)
-        paths = {
-            "database": "sqlite_path",
-            "objects": "local_root",
-            "filesystem": "root",
-        }
+        paths = {"objects": "local_root", "filesystem": "root"}
         for section, field_name in paths.items():
             group = getattr(settings, section)
             value = getattr(group, field_name)
-            if not value.is_absolute() and str(value) != ":memory:":
+            if not value.is_absolute():
                 values.setdefault(section, {})[field_name] = (base / value).resolve()
         settings = Settings.model_validate(values)
         settings.storage_settings()

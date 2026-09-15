@@ -711,13 +711,7 @@ class EnvironmentService:
             query = select(EnvironmentTemplateRecord).where(
                 owner.visible(EnvironmentTemplateRecord.organization_id, EnvironmentTemplateRecord.workspace_id)
             )
-            query = query.where(
-                *label_predicates(
-                    EnvironmentTemplateRecord.labels,
-                    labels or {},
-                    dialect=session.bind.dialect.name,
-                )
-            )
+            query = query.where(*label_predicates(EnvironmentTemplateRecord.labels, labels or {}))
             if cursor is not None:
                 query = query.where(EnvironmentTemplateRecord.id > decode_cursor(cursor, scope=scope))
             rows = tuple(await session.scalars(query.order_by(EnvironmentTemplateRecord.id).limit(limit + 1)))
@@ -745,13 +739,7 @@ class EnvironmentService:
                 session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.environment_read
             )
             query = select(EnvironmentRecord).where(EnvironmentRecord.workspace_id == workspace_id)
-            query = query.where(
-                *label_predicates(
-                    EnvironmentRecord.labels,
-                    labels or {},
-                    dialect=session.bind.dialect.name,
-                )
-            )
+            query = query.where(*label_predicates(EnvironmentRecord.labels, labels or {}))
             if cursor is not None:
                 query = query.where(EnvironmentRecord.id > decode_cursor(cursor, scope=scope))
             rows = tuple(await session.scalars(query.order_by(EnvironmentRecord.id).limit(limit + 1)))

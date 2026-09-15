@@ -240,7 +240,6 @@ def upgrade() -> None:
         ["organization_id", "thread_id", "position", "id"],
         unique=False,
         postgresql_where=sa.text("position IS NOT NULL"),
-        sqlite_where=sa.text("position IS NOT NULL"),
     )
     op.create_index(
         "uq_thread_queued_submissions_position",
@@ -248,7 +247,6 @@ def upgrade() -> None:
         ["organization_id", "thread_id", "position"],
         unique=True,
         postgresql_where=sa.text("position IS NOT NULL"),
-        sqlite_where=sa.text("position IS NOT NULL"),
     )
 
 
@@ -258,13 +256,11 @@ def downgrade() -> None:
         "uq_thread_queued_submissions_position",
         table_name="thread_queued_submissions",
         postgresql_where=sa.text("position IS NOT NULL"),
-        sqlite_where=sa.text("position IS NOT NULL"),
     )
     op.drop_index(
         "ix_thread_queued_submissions_live",
         table_name="thread_queued_submissions",
         postgresql_where=sa.text("position IS NOT NULL"),
-        sqlite_where=sa.text("position IS NOT NULL"),
     )
     op.drop_index("ix_thread_queued_submissions_failed", table_name="thread_queued_submissions")
     op.drop_index("ix_thread_queued_submissions_consumed", table_name="thread_queued_submissions")

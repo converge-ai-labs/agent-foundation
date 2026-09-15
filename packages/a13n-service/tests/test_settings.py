@@ -3,20 +3,8 @@ from pathlib import Path
 
 import pytest
 from a13n_service.configuration.sources import load_settings
-from a13n_service.settings import (
-    DatabaseBackend,
-    ObjectBackend,
-    ProcessRole,
-    RedisBackend,
-    Settings,
-)
-from a13n_service.storage.config import (
-    LocalObjectConfig,
-    PostgreSQLConfig,
-    RedisMemoryConfig,
-    S3ObjectConfig,
-    SQLiteConfig,
-)
+from a13n_service.settings import ObjectBackend, ProcessRole, RedisBackend, Settings
+from a13n_service.storage.config import LocalObjectConfig, PostgreSQLConfig, RedisMemoryConfig, S3ObjectConfig
 
 
 def test_settings_preserve_service_defaults_without_exposing_secrets() -> None:
@@ -24,7 +12,8 @@ def test_settings_preserve_service_defaults_without_exposing_secrets() -> None:
 
     assert settings.service.role is ProcessRole.all
     assert settings.service.port == 8000
-    assert settings.database.backend is DatabaseBackend.postgresql
+    assert settings.database.url is not None
+    assert settings.database.url.get_secret_value().startswith("postgresql+psycopg://")
     assert settings.assets.max_size_bytes == 100 * 1024 * 1024
     assert settings.observability.query.provider == "none"
     assert settings.connectivity.retention_batch_size == 25
@@ -39,7 +28,7 @@ def test_asset_size_bound_must_be_positive_and_finite() -> None:
 
 def test_local_profile_maps_to_typed_storage_settings(tmp_path: Path) -> None:
     settings = Settings(
-        database={"backend": "sqlite", "sqlite_path": tmp_path / "database.sqlite3"},
+        database={"url": "postgresql://user:private-database-password@database/foundation"},
         redis={"backend": "memory"},
         objects={"backend": "local", "local_root": tmp_path / "objects"},
         filesystem={"root": tmp_path / "files"},
@@ -47,14 +36,14 @@ def test_local_profile_maps_to_typed_storage_settings(tmp_path: Path) -> None:
 
     storage = settings.storage_settings()
 
-    assert isinstance(storage.database, SQLiteConfig)
+    assert isinstance(storage.database, PostgreSQLConfig)
     assert isinstance(storage.redis, RedisMemoryConfig)
     assert isinstance(storage.objects, LocalObjectConfig)
 
 
 def test_network_profile_maps_to_typed_storage_settings(tmp_path: Path) -> None:
     settings = Settings(
-        database={"backend": "postgresql", "url": "postgresql://user:private-database-password@database/foundation"},
+        database={"url": "postgresql://user:private-database-password@database/foundation"},
         redis={"backend": "redis", "url": "redis://:private-redis-password@redis/0"},
         objects={"backend": "s3", "bucket": "foundation"},
         filesystem={"root": tmp_path / "files"},
@@ -130,7 +119,7 @@ def test_invalid_trace_query_configuration_fails_static_validation(
 @pytest.mark.parametrize(
     ("values", "message"),
     [
-        ({"database": {"backend": DatabaseBackend.postgresql, "url": None}}, "A13N_SERVICE_DATABASE_URL"),
+        ({"database": {"url": None}}, "A13N_SERVICE_DATABASE_URL"),
         ({"redis": {"backend": RedisBackend.redis, "url": None}}, "A13N_SERVICE_REDIS_URL"),
         ({"objects": {"backend": ObjectBackend.s3, "bucket": None}}, "A13N_SERVICE_OBJECT_BUCKET"),
     ],

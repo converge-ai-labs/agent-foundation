@@ -24,12 +24,7 @@ def upgrade() -> None:
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("organization_id", sa.String(length=72), nullable=False),
         sa.Column("workspace_id", sa.String(length=72), nullable=False),
-        sa.Column(
-            "labels",
-            sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), "postgresql"),
-            server_default=sa.text("'{}'"),
-            nullable=False,
-        ),
+        sa.Column("labels", postgresql.JSONB(astext_type=sa.Text()), server_default=sa.text("'{}'"), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.ForeignKeyConstraint(
@@ -75,12 +70,7 @@ def upgrade() -> None:
         sa.Column("origin_run_id", sa.String(length=72), nullable=True),
         sa.Column("head_run_id", sa.String(length=72), nullable=True),
         sa.Column("current_run_id", sa.String(length=72), nullable=True),
-        sa.Column(
-            "labels",
-            sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), "postgresql"),
-            server_default=sa.text("'{}'"),
-            nullable=False,
-        ),
+        sa.Column("labels", postgresql.JSONB(astext_type=sa.Text()), server_default=sa.text("'{}'"), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False),
         sa.CheckConstraint(
@@ -167,7 +157,6 @@ def upgrade() -> None:
         ["organization_id", "session_id"],
         unique=True,
         postgresql_where=sa.text("role = 'root'"),
-        sqlite_where=sa.text("role = 'root'"),
     )
     op.create_table(
         "runs",
@@ -181,12 +170,7 @@ def upgrade() -> None:
         sa.Column("authority_principal_id", sa.String(length=72), nullable=False),
         sa.Column("session_id", sa.String(length=72), nullable=False),
         sa.Column("thread_id", sa.String(length=72), nullable=False),
-        sa.Column(
-            "labels",
-            sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), "postgresql"),
-            server_default=sa.text("'{}'"),
-            nullable=False,
-        ),
+        sa.Column("labels", postgresql.JSONB(astext_type=sa.Text()), server_default=sa.text("'{}'"), nullable=False),
         sa.Column("parent_run_id", sa.String(length=72), nullable=True),
         sa.Column("retry_of_run_id", sa.String(length=72), nullable=True),
         sa.Column("lineage_kind", sa.String(length=16), nullable=False),
@@ -409,7 +393,6 @@ def upgrade() -> None:
         ["organization_id", "queue_name", "status", "available_at", "priority", "created_at", "id"],
         unique=False,
         postgresql_where=sa.text("status = 'accepted' OR (status = 'running' AND current_run_attempt_id IS NULL)"),
-        sqlite_where=sa.text("status = 'accepted' OR (status = 'running' AND current_run_attempt_id IS NULL)"),
     )
     op.create_index(
         "uq_runs_active_thread",
@@ -417,7 +400,6 @@ def upgrade() -> None:
         ["organization_id", "thread_id"],
         unique=True,
         postgresql_where=sa.text("status IN ('accepted', 'running')"),
-        sqlite_where=sa.text("status IN ('accepted', 'running')"),
     )
     op.create_index(
         "uq_runs_idempotency",
@@ -425,7 +407,6 @@ def upgrade() -> None:
         ["organization_id", "idempotency_key"],
         unique=True,
         postgresql_where=sa.text("idempotency_key IS NOT NULL"),
-        sqlite_where=sa.text("idempotency_key IS NOT NULL"),
     )
     op.create_index(
         "uq_runs_live_root_thread",
@@ -433,7 +414,6 @@ def upgrade() -> None:
         ["organization_id", "thread_id"],
         unique=True,
         postgresql_where=sa.text("parent_run_id IS NULL AND status IN ('accepted', 'running', 'waiting', 'completed')"),
-        sqlite_where=sa.text("parent_run_id IS NULL AND status IN ('accepted', 'running', 'waiting', 'completed')"),
     )
     op.create_index(
         "uq_runs_thread_authority",
@@ -519,82 +499,78 @@ def upgrade() -> None:
         ["organization_id", "status", "lease_expires_at", "run_id"],
         unique=False,
         postgresql_where=sa.text("status IN ('leased', 'running')"),
-        sqlite_where=sa.text("status IN ('leased', 'running')"),
     )
     op.create_index(
         "uq_run_attempts_number", "run_attempts", ["organization_id", "run_id", "attempt_number"], unique=True
     )
     op.create_index("uq_run_attempts_organization_id", "run_attempts", ["organization_id", "id"], unique=True)
-    if op.get_bind().dialect.name == "postgresql":
-        op.create_foreign_key(
-            "fk_threads_current_run_same_thread",
-            "threads",
-            "runs",
-            ["organization_id", "session_id", "id", "current_run_id"],
-            ["organization_id", "session_id", "thread_id", "id"],
-            ondelete="RESTRICT",
-            deferrable=True,
-            initially="DEFERRED",
-        )
-        op.create_foreign_key(
-            "fk_threads_head_run_same_thread",
-            "threads",
-            "runs",
-            ["organization_id", "session_id", "id", "head_run_id"],
-            ["organization_id", "session_id", "thread_id", "id"],
-            ondelete="RESTRICT",
-            deferrable=True,
-            initially="DEFERRED",
-        )
-        op.create_foreign_key(
-            "fk_threads_origin_run_same_thread",
-            "threads",
-            "runs",
-            ["organization_id", "origin_thread_id", "origin_run_id"],
-            ["organization_id", "thread_id", "id"],
-            ondelete="RESTRICT",
-            deferrable=True,
-            initially="DEFERRED",
-        )
-        op.create_foreign_key(
-            "fk_runs_current_attempt_same_run",
-            "runs",
-            "run_attempts",
-            ["organization_id", "id", "current_run_attempt_id"],
-            ["organization_id", "run_id", "id"],
-            ondelete="RESTRICT",
-            deferrable=True,
-            initially="DEFERRED",
-        )
-        op.create_foreign_key(
-            "fk_runs_sealed_attempt_same_run",
-            "runs",
-            "run_attempts",
-            ["organization_id", "id", "sealed_state_committed_by_run_attempt_id"],
-            ["organization_id", "run_id", "id"],
-            ondelete="RESTRICT",
-            deferrable=True,
-            initially="DEFERRED",
-        )
+    op.create_foreign_key(
+        "fk_threads_current_run_same_thread",
+        "threads",
+        "runs",
+        ["organization_id", "session_id", "id", "current_run_id"],
+        ["organization_id", "session_id", "thread_id", "id"],
+        ondelete="RESTRICT",
+        deferrable=True,
+        initially="DEFERRED",
+    )
+    op.create_foreign_key(
+        "fk_threads_head_run_same_thread",
+        "threads",
+        "runs",
+        ["organization_id", "session_id", "id", "head_run_id"],
+        ["organization_id", "session_id", "thread_id", "id"],
+        ondelete="RESTRICT",
+        deferrable=True,
+        initially="DEFERRED",
+    )
+    op.create_foreign_key(
+        "fk_threads_origin_run_same_thread",
+        "threads",
+        "runs",
+        ["organization_id", "origin_thread_id", "origin_run_id"],
+        ["organization_id", "thread_id", "id"],
+        ondelete="RESTRICT",
+        deferrable=True,
+        initially="DEFERRED",
+    )
+    op.create_foreign_key(
+        "fk_runs_current_attempt_same_run",
+        "runs",
+        "run_attempts",
+        ["organization_id", "id", "current_run_attempt_id"],
+        ["organization_id", "run_id", "id"],
+        ondelete="RESTRICT",
+        deferrable=True,
+        initially="DEFERRED",
+    )
+    op.create_foreign_key(
+        "fk_runs_sealed_attempt_same_run",
+        "runs",
+        "run_attempts",
+        ["organization_id", "id", "sealed_state_committed_by_run_attempt_id"],
+        ["organization_id", "run_id", "id"],
+        ondelete="RESTRICT",
+        deferrable=True,
+        initially="DEFERRED",
+    )
     _create_terminal_guards()
 
 
 def downgrade() -> None:
     """Remove the domain schema in reverse dependency order."""
     _drop_terminal_guards()
-    if op.get_bind().dialect.name == "postgresql":
-        op.drop_constraint("fk_runs_sealed_attempt_same_run", "runs", type_="foreignkey")
-        op.drop_constraint("fk_runs_current_attempt_same_run", "runs", type_="foreignkey")
-        op.drop_constraint("fk_threads_origin_run_same_thread", "threads", type_="foreignkey")
-        op.drop_constraint("fk_threads_head_run_same_thread", "threads", type_="foreignkey")
-        op.drop_constraint("fk_threads_current_run_same_thread", "threads", type_="foreignkey")
+    op.drop_constraint("fk_runs_sealed_attempt_same_run", "runs", type_="foreignkey")
+    op.drop_constraint("fk_runs_current_attempt_same_run", "runs", type_="foreignkey")
+    op.drop_constraint("fk_threads_origin_run_same_thread", "threads", type_="foreignkey")
+    op.drop_constraint("fk_threads_head_run_same_thread", "threads", type_="foreignkey")
+    op.drop_constraint("fk_threads_current_run_same_thread", "threads", type_="foreignkey")
     op.drop_index("uq_run_attempts_organization_id", table_name="run_attempts")
     op.drop_index("uq_run_attempts_number", table_name="run_attempts")
     op.drop_index(
         "ix_run_attempts_live_lease",
         table_name="run_attempts",
         postgresql_where=sa.text("status IN ('leased', 'running')"),
-        sqlite_where=sa.text("status IN ('leased', 'running')"),
     )
     op.drop_table("run_attempts")
     op.drop_index("uq_runs_thread_authority", table_name="runs")
@@ -602,25 +578,15 @@ def downgrade() -> None:
         "uq_runs_live_root_thread",
         table_name="runs",
         postgresql_where=sa.text("parent_run_id IS NULL AND status IN ('accepted', 'running', 'waiting', 'completed')"),
-        sqlite_where=sa.text("parent_run_id IS NULL AND status IN ('accepted', 'running', 'waiting', 'completed')"),
     )
+    op.drop_index("uq_runs_idempotency", table_name="runs", postgresql_where=sa.text("idempotency_key IS NOT NULL"))
     op.drop_index(
-        "uq_runs_idempotency",
-        table_name="runs",
-        postgresql_where=sa.text("idempotency_key IS NOT NULL"),
-        sqlite_where=sa.text("idempotency_key IS NOT NULL"),
-    )
-    op.drop_index(
-        "uq_runs_active_thread",
-        table_name="runs",
-        postgresql_where=sa.text("status IN ('accepted', 'running')"),
-        sqlite_where=sa.text("status IN ('accepted', 'running')"),
+        "uq_runs_active_thread", table_name="runs", postgresql_where=sa.text("status IN ('accepted', 'running')")
     )
     op.drop_index(
         "ix_runs_worker_scan",
         table_name="runs",
         postgresql_where=sa.text("status = 'accepted' OR (status = 'running' AND current_run_attempt_id IS NULL)"),
-        sqlite_where=sa.text("status = 'accepted' OR (status = 'running' AND current_run_attempt_id IS NULL)"),
     )
     op.drop_index("ix_runs_thread_created", table_name="runs")
     op.drop_index("ix_runs_trigger_session", table_name="runs")
@@ -630,12 +596,7 @@ def downgrade() -> None:
     op.drop_index("ix_runs_retry", table_name="runs")
     op.drop_index("ix_runs_parent", table_name="runs")
     op.drop_table("runs")
-    op.drop_index(
-        "uq_threads_session_root",
-        table_name="threads",
-        postgresql_where=sa.text("role = 'root'"),
-        sqlite_where=sa.text("role = 'root'"),
-    )
+    op.drop_index("uq_threads_session_root", table_name="threads", postgresql_where=sa.text("role = 'root'"))
     op.drop_index("ix_threads_selected_run", table_name="threads")
     op.drop_index("ix_threads_session_updated", table_name="threads")
     op.drop_index("ix_threads_session_created", table_name="threads")
@@ -649,145 +610,46 @@ def downgrade() -> None:
 
 def _create_terminal_guards() -> None:
     """Apply the schema change."""
-    if op.get_bind().dialect.name == "postgresql":
-        op.execute(
-            """
-            CREATE FUNCTION reject_terminal_interaction_update()
-            RETURNS trigger
-            LANGUAGE plpgsql
-            AS $$
-            BEGIN
-                IF TG_TABLE_NAME = 'runs'
-                   AND OLD.status IN ('waiting', 'completed', 'failed', 'cancelled')
-                   AND (to_jsonb(NEW) - 'labels' - 'updated_at')
-                       IS DISTINCT FROM (to_jsonb(OLD) - 'labels' - 'updated_at') THEN
-                    RAISE EXCEPTION 'sealed Run rows are immutable';
-                END IF;
-                IF TG_TABLE_NAME = 'run_attempts'
-                   AND OLD.status IN ('succeeded', 'yielded', 'failed', 'cancelled') THEN
-                    RAISE EXCEPTION 'terminal RunAttempt rows are immutable';
-                END IF;
-                RETURN NEW;
-            END;
-            $$
-            """
-        )
-        op.execute(
-            """
-            CREATE TRIGGER reject_sealed_run_update
-            BEFORE UPDATE ON runs
-            FOR EACH ROW EXECUTE FUNCTION reject_terminal_interaction_update()
-            """
-        )
-        op.execute(
-            """
-            CREATE TRIGGER reject_terminal_run_attempt_update
-            BEFORE UPDATE ON run_attempts
-            FOR EACH ROW EXECUTE FUNCTION reject_terminal_interaction_update()
-            """
-        )
-        return
+    op.execute(
+        """
+        CREATE FUNCTION reject_terminal_interaction_update()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+            IF TG_TABLE_NAME = 'runs'
+               AND OLD.status IN ('waiting', 'completed', 'failed', 'cancelled')
+               AND (to_jsonb(NEW) - 'labels' - 'updated_at')
+                   IS DISTINCT FROM (to_jsonb(OLD) - 'labels' - 'updated_at') THEN
+                RAISE EXCEPTION 'sealed Run rows are immutable';
+            END IF;
+            IF TG_TABLE_NAME = 'run_attempts'
+               AND OLD.status IN ('succeeded', 'yielded', 'failed', 'cancelled') THEN
+                RAISE EXCEPTION 'terminal RunAttempt rows are immutable';
+            END IF;
+            RETURN NEW;
+        END;
+        $$
+        """
+    )
     op.execute(
         """
         CREATE TRIGGER reject_sealed_run_update
         BEFORE UPDATE ON runs
-        WHEN OLD.status IN ('waiting', 'completed', 'failed', 'cancelled')
-             AND (
-                   NEW.environment_id IS NOT OLD.environment_id
-                OR NEW.environment_access IS NOT OLD.environment_access
-                OR NEW.environment_use_started_at IS NOT OLD.environment_use_started_at
-                OR NEW.id IS NOT OLD.id
-                OR NEW.version IS NOT OLD.version
-                OR NEW.organization_id IS NOT OLD.organization_id
-                OR NEW.authority_principal_type IS NOT OLD.authority_principal_type
-                OR NEW.authority_principal_id IS NOT OLD.authority_principal_id
-                OR NEW.session_id IS NOT OLD.session_id
-                OR NEW.thread_id IS NOT OLD.thread_id
-                OR NEW.parent_run_id IS NOT OLD.parent_run_id
-                OR NEW.retry_of_run_id IS NOT OLD.retry_of_run_id
-                OR NEW.lineage_kind IS NOT OLD.lineage_kind
-                OR NEW.trigger_type IS NOT OLD.trigger_type
-                OR NEW.trigger_entity_type IS NOT OLD.trigger_entity_type
-                OR NEW.trigger_entity_id IS NOT OLD.trigger_entity_id
-                OR NEW.parent_agent_instance_id IS NOT OLD.parent_agent_instance_id
-                OR NEW.delegation_id IS NOT OLD.delegation_id
-                OR NEW.parent_tool_call_id IS NOT OLD.parent_tool_call_id
-                OR NEW.agent_id IS NOT OLD.agent_id
-                OR NEW.agent_revision_id IS NOT OLD.agent_revision_id
-                OR NEW.effective_agent_config_digest IS NOT OLD.effective_agent_config_digest
-                OR NEW.model_execution_observation_json IS NOT OLD.model_execution_observation_json
-                OR NEW.connection_selections_json IS NOT OLD.connection_selections_json
-                OR NEW.native_tool_contexts_json IS NOT OLD.native_tool_contexts_json
-                OR NEW.priority IS NOT OLD.priority
-                OR NEW.queue_name IS NOT OLD.queue_name
-                OR NEW.available_at IS NOT OLD.available_at
-                OR NEW.current_run_attempt_id IS NOT OLD.current_run_attempt_id
-                OR NEW.execution_policy_version IS NOT OLD.execution_policy_version
-                OR NEW.max_attempts IS NOT OLD.max_attempts
-                OR NEW.max_handoffs IS NOT OLD.max_handoffs
-                OR NEW.execution_deadline_at IS NOT OLD.execution_deadline_at
-                OR NEW.max_usage_json IS NOT OLD.max_usage_json
-                OR NEW.attempts_started IS NOT OLD.attempts_started
-                OR NEW.attempts_charged IS NOT OLD.attempts_charged
-                OR NEW.handoffs_completed IS NOT OLD.handoffs_completed
-                OR NEW.usage_charged_json IS NOT OLD.usage_charged_json
-                OR NEW.idempotency_key IS NOT OLD.idempotency_key
-                OR NEW.request_fingerprint IS NOT OLD.request_fingerprint
-                OR NEW.status IS NOT OLD.status
-                OR NEW.wait_reason IS NOT OLD.wait_reason
-                OR NEW.pending_json IS NOT OLD.pending_json
-                OR NEW.input_kind IS NOT OLD.input_kind
-                OR NEW.input_json IS NOT OLD.input_json
-                OR NEW.input_object_key IS NOT OLD.input_object_key
-                OR NEW.input_object_digest_sha256 IS NOT OLD.input_object_digest_sha256
-                OR NEW.input_object_size_bytes IS NOT OLD.input_object_size_bytes
-                OR NEW.input_object_content_type IS NOT OLD.input_object_content_type
-                OR NEW.input_object_schema_version IS NOT OLD.input_object_schema_version
-                OR NEW.input_text IS NOT OLD.input_text
-                OR NEW.output_json IS NOT OLD.output_json
-                OR NEW.output_object_key IS NOT OLD.output_object_key
-                OR NEW.output_object_digest_sha256 IS NOT OLD.output_object_digest_sha256
-                OR NEW.output_object_size_bytes IS NOT OLD.output_object_size_bytes
-                OR NEW.output_object_content_type IS NOT OLD.output_object_content_type
-                OR NEW.output_object_schema_version IS NOT OLD.output_object_schema_version
-                OR NEW.output_text IS NOT OLD.output_text
-                OR NEW.failure_json IS NOT OLD.failure_json
-                OR NEW.sealed_state_digest_sha256 IS NOT OLD.sealed_state_digest_sha256
-                OR NEW.sealed_state_size_bytes IS NOT OLD.sealed_state_size_bytes
-                OR NEW.sealed_state_content_type IS NOT OLD.sealed_state_content_type
-                OR NEW.sealed_state_envelope_schema_version IS NOT OLD.sealed_state_envelope_schema_version
-                OR NEW.sealed_state_harness_schema_version IS NOT OLD.sealed_state_harness_schema_version
-                OR NEW.sealed_state_checkpoint_seq IS NOT OLD.sealed_state_checkpoint_seq
-                OR NEW.sealed_state_committed_by_run_attempt_id IS NOT OLD.sealed_state_committed_by_run_attempt_id
-                OR NEW.created_at IS NOT OLD.created_at
-                OR NEW.started_at IS NOT OLD.started_at
-                OR NEW.waiting_at IS NOT OLD.waiting_at
-                OR NEW.completed_at IS NOT OLD.completed_at
-                OR NEW.sealed_at IS NOT OLD.sealed_at
-             )
-        BEGIN
-            SELECT RAISE(ABORT, 'sealed Run rows are immutable');
-        END
+        FOR EACH ROW EXECUTE FUNCTION reject_terminal_interaction_update()
         """
     )
     op.execute(
         """
         CREATE TRIGGER reject_terminal_run_attempt_update
         BEFORE UPDATE ON run_attempts
-        WHEN OLD.status IN ('succeeded', 'yielded', 'failed', 'cancelled')
-        BEGIN
-            SELECT RAISE(ABORT, 'terminal RunAttempt rows are immutable');
-        END
+        FOR EACH ROW EXECUTE FUNCTION reject_terminal_interaction_update()
         """
     )
 
 
 def _drop_terminal_guards() -> None:
     """Reverse the schema change when it is safe to do so."""
-    if op.get_bind().dialect.name == "postgresql":
-        op.execute("DROP TRIGGER reject_terminal_run_attempt_update ON run_attempts")
-        op.execute("DROP TRIGGER reject_sealed_run_update ON runs")
-        op.execute("DROP FUNCTION reject_terminal_interaction_update()")
-        return
-    op.execute("DROP TRIGGER reject_terminal_run_attempt_update")
-    op.execute("DROP TRIGGER reject_sealed_run_update")
+    op.execute("DROP TRIGGER reject_terminal_run_attempt_update ON run_attempts")
+    op.execute("DROP TRIGGER reject_sealed_run_update ON runs")
+    op.execute("DROP FUNCTION reject_terminal_interaction_update()")

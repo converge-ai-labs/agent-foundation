@@ -1,72 +1,42 @@
 """Async relational storage construction and short session scopes."""
 
-import sqlite3
-from asyncio import CancelledError
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from pathlib import Path
-from typing import Protocol, cast
 
 from anyio import CancelScope, fail_after
 from anyio.lowlevel import checkpoint_if_cancelled
 from psycopg import OperationalError as PsycopgOperationalError
-from sqlalchemy import URL, event, text
-from sqlalchemy.engine import ExceptionContext, make_url
+from sqlalchemy import URL, text
+from sqlalchemy.engine import make_url
 from sqlalchemy.exc import DBAPIError, IntegrityError
 from sqlalchemy.exc import TimeoutError as PoolTimeoutError
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.pool import StaticPool
 
-from .config import PostgreSQLConfig, SQLiteConfig
-
-
-class _Cursor(Protocol):
-    def execute(self, statement: str) -> object: ...
-
-    def close(self) -> None: ...
+from .config import PostgreSQLConfig
 
 
-class _Connection(Protocol):
-    def cursor(self) -> _Cursor: ...
+def database_url(config: PostgreSQLConfig) -> URL:
+    """Return the validated SQLAlchemy URL for application and migration I/O."""
+
+    url = make_url(config.url.get_secret_value())
+    if url.drivername not in {"postgresql", "postgresql+psycopg"}:
+        raise ValueError("PostgreSQL requires a postgresql or postgresql+psycopg URL")
+    return url.set(drivername="postgresql+psycopg")
 
 
-def async_database_url(config: PostgreSQLConfig | SQLiteConfig) -> URL:
-    """Return the validated SQLAlchemy URL for asynchronous application I/O."""
-
-    if isinstance(config, PostgreSQLConfig):
-        return _postgresql_url(config).set(drivername="postgresql+psycopg")
-    return URL.create("sqlite+aiosqlite", database=_sqlite_database(config.path))
-
-
-def sync_database_url(config: PostgreSQLConfig | SQLiteConfig) -> URL:
-    """Return the validated SQLAlchemy URL for synchronous migration I/O."""
-
-    if isinstance(config, PostgreSQLConfig):
-        return _postgresql_url(config).set(drivername="postgresql+psycopg")
-    return URL.create("sqlite", database=_sqlite_database(config.path))
-
-
-def create_sql_engine(config: PostgreSQLConfig | SQLiteConfig) -> AsyncEngine:
-    if isinstance(config, PostgreSQLConfig):
-        return create_async_engine(
-            async_database_url(config),
-            pool_pre_ping=True,
-            pool_size=config.pool_size,
-            max_overflow=config.max_overflow,
-            pool_timeout=config.pool_timeout_seconds,
-            pool_recycle=config.pool_recycle_seconds,
-            connect_args={
-                "connect_timeout": config.connect_timeout_seconds,
-                "options": f"-c statement_timeout={int(config.statement_timeout_seconds * 1000)}",
-            },
-        )
-
-    if str(config.path) == ":memory:":
-        engine = create_async_engine(async_database_url(config), poolclass=StaticPool)
-    else:
-        engine = create_async_engine(async_database_url(config))
-    _configure_sqlite(engine, config.busy_timeout_seconds, config.path)
-    return engine
+def create_sql_engine(config: PostgreSQLConfig) -> AsyncEngine:
+    return create_async_engine(
+        database_url(config),
+        pool_pre_ping=True,
+        pool_size=config.pool_size,
+        max_overflow=config.max_overflow,
+        pool_timeout=config.pool_timeout_seconds,
+        pool_recycle=config.pool_recycle_seconds,
+        connect_args={
+            "connect_timeout": config.connect_timeout_seconds,
+            "options": f"-c statement_timeout={int(config.statement_timeout_seconds * 1000)}",
+        },
+    )
 
 
 def create_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
@@ -129,53 +99,9 @@ async def check_database(engine: AsyncEngine, *, timeout_seconds: float = 3) -> 
             await connection.execute(text("SELECT 1"))
 
 
-def _postgresql_url(config: PostgreSQLConfig) -> URL:
-    url = make_url(config.url.get_secret_value())
-    if url.drivername not in {"postgresql", "postgresql+psycopg"}:
-        raise ValueError("PostgreSQL backend requires a postgresql or postgresql+psycopg URL")
-    return url
-
-
-def _sqlite_database(path: Path) -> str:
-    return ":memory:" if str(path) == ":memory:" else str(path.absolute())
-
-
-def _configure_sqlite(engine: AsyncEngine, busy_timeout_seconds: float, path: Path) -> None:
-    busy_timeout_ms = int(busy_timeout_seconds * 1000)
-
-    @event.listens_for(engine.sync_engine, "handle_error")
-    def discard_cancelled_connection(context: ExceptionContext) -> None:
-        # Cancellation can leave an unfetched cursor holding a WAL snapshot
-        # even after rollback. Drain and close this connection under shielding
-        # so neither the cursor nor interrupted termination reaches the pool.
-        if isinstance(context.original_exception, CancelledError):
-            if context.connection is not None:
-                with CancelScope(shield=True):
-                    context.connection.invalidate()
-            # Other pooled connections are healthy; do not invalidate them.
-            context.is_disconnect = False
-
-    @event.listens_for(engine.sync_engine, "connect")
-    def configure_connection(dbapi_connection: object, _connection_record: object) -> None:
-        cursor = cast(_Connection, dbapi_connection).cursor()
-        try:
-            cursor.execute("PRAGMA foreign_keys=ON")
-            cursor.execute(f"PRAGMA busy_timeout={busy_timeout_ms}")
-            cursor.execute("PRAGMA synchronous=FULL")
-            if str(path) != ":memory:":
-                cursor.execute("PRAGMA journal_mode=WAL")
-        finally:
-            cursor.close()
-
-
-def is_unique_conflict(error: IntegrityError, *, constraint: str, sqlite_columns: str) -> bool:
+def is_unique_conflict(error: IntegrityError, *, constraint: str) -> bool:
     diagnostic = getattr(error.orig, "diag", None)
-    if diagnostic is not None:
-        return diagnostic.sqlstate == "23505" and diagnostic.constraint_name == constraint
-    return (
-        getattr(error.orig, "sqlite_errorcode", None) == sqlite3.SQLITE_CONSTRAINT_UNIQUE
-        and str(error.orig) == f"UNIQUE constraint failed: {sqlite_columns}"
-    )
+    return diagnostic is not None and diagnostic.sqlstate == "23505" and diagnostic.constraint_name == constraint
 
 
 def is_database_unavailable(error: BaseException) -> bool:

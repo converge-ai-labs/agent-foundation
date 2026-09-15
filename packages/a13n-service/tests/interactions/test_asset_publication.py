@@ -248,9 +248,9 @@ async def test_only_confined_regular_files_can_be_published(publication, tmp_pat
 
 
 async def test_postgresql_concurrent_invocation_commits_one_asset(
-    postgres_interaction_sessions, interaction_object_store, tmp_path
+    interaction_sessions, interaction_object_store, tmp_path
 ):
-    publication = await _fixture(postgres_interaction_sessions, interaction_object_store, tmp_path)
+    publication = await _fixture(interaction_sessions, interaction_object_store, tmp_path)
     async with _files(tmp_path / "env") as environment:
         first, second = await asyncio.gather(publication.publish(environment), publication.publish(environment))
     assert first == second
@@ -345,16 +345,16 @@ async def test_unreadable_source_is_concealed_without_hiding_asset(publication, 
         )
 
 
-async def test_unicode_agent_name_preserves_key_on_postgresql(postgres_interaction_sessions):
+async def test_unicode_agent_name_preserves_key_on_postgresql(interaction_sessions):
     from a13n_service.agents.domain import normalize_agent_name
     from a13n_service.agents.models import AgentRecord
 
     name = normalize_agent_name("ΐ" * 128)
-    async with transaction(postgres_interaction_sessions) as session:
+    async with transaction(interaction_sessions) as session:
         agent = await session.get(AgentRecord, AGENT_ID)
         key = agent.key
         agent.name = name
-    async with short_session(postgres_interaction_sessions) as session:
+    async with short_session(interaction_sessions) as session:
         agent = await session.get(AgentRecord, AGENT_ID)
         assert agent.name == name
         assert agent.key == key

@@ -351,21 +351,9 @@
       "title": "ControlSettings",
       "type": "object"
     },
-    "DatabaseBackend": {
-      "enum": [
-        "postgresql",
-        "sqlite"
-      ],
-      "title": "DatabaseBackend",
-      "type": "string"
-    },
     "DatabaseSettings": {
       "additionalProperties": false,
       "properties": {
-        "backend": {
-          "$ref": "#/$defs/DatabaseBackend",
-          "default": "postgresql"
-        },
         "url": {
           "anyOf": [
             {
@@ -379,12 +367,6 @@
           ],
           "default": "**********",
           "title": "Url"
-        },
-        "sqlite_path": {
-          "default": "var/a13n-service.sqlite3",
-          "format": "path",
-          "title": "Sqlite Path",
-          "type": "string"
         },
         "pool_size": {
           "default": 10,
@@ -425,13 +407,6 @@
           "exclusiveMinimum": 0,
           "maximum": 3600,
           "title": "Statement Timeout Seconds",
-          "type": "number"
-        },
-        "sqlite_busy_timeout_seconds": {
-          "default": 5,
-          "exclusiveMinimum": 0,
-          "maximum": 300,
-          "title": "Sqlite Busy Timeout Seconds",
           "type": "number"
         },
         "cleanup_timeout_seconds": {

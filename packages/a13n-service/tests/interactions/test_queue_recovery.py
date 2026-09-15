@@ -35,10 +35,8 @@ async def _queued(sessions, objects):
     return commands, receipt, queued.queued_submission
 
 
-async def test_worker_and_scanner_accept_exactly_one_queued_run(
-    postgres_interaction_sessions, interaction_object_store
-):
-    sessions = postgres_interaction_sessions
+async def test_worker_and_scanner_accept_exactly_one_queued_run(interaction_sessions, interaction_object_store):
+    sessions = interaction_sessions
     commands, source, queued = await _queued(sessions, interaction_object_store)
     results = []
 

@@ -14,9 +14,9 @@ pytestmark = pytest.mark.anyio
 
 
 async def test_freezing_allows_retained_run_references_but_excludes_metadata_changes(
-    postgres_interaction_sessions, interaction_object_store
+    interaction_sessions, interaction_object_store
 ):
-    sessions = postgres_interaction_sessions
+    sessions = interaction_sessions
     _, run, _ = await _accept_root(sessions, interaction_object_store)
     selections = ((AgentRecord, run.agent_id), (AgentRevisionRecord, run.agent_revision_id))
     async with transaction(sessions) as reference:
@@ -49,9 +49,9 @@ async def test_freezing_allows_retained_run_references_but_excludes_metadata_cha
 
 
 async def test_independent_invocation_freezes_share_agent_and_revision_locks(
-    postgres_interaction_sessions, interaction_object_store
+    interaction_sessions, interaction_object_store
 ):
-    sessions = postgres_interaction_sessions
+    sessions = interaction_sessions
     _, run, _ = await _accept_root(sessions, interaction_object_store)
 
     async def freeze(session):
@@ -79,13 +79,13 @@ async def test_independent_invocation_freezes_share_agent_and_revision_locks(
 
 
 async def test_lifecycle_hook_matching_overlaps_but_excludes_workspace_hook_mutations(
-    postgres_interaction_sessions, interaction_object_store
+    interaction_sessions, interaction_object_store
 ):
     from a13n_service.hooks.persistence import lock_hook_workspace, write_hook_lifecycle
     from a13n_service.lifecycle.models import LifecycleEventRecord
     from a13n_service.storage import short_session
 
-    sessions = postgres_interaction_sessions
+    sessions = interaction_sessions
     _, run, _ = await _accept_root(sessions, interaction_object_store)
     async with short_session(sessions) as session:
         event = await session.scalar(select(LifecycleEventRecord).where(LifecycleEventRecord.run_id == run.id))

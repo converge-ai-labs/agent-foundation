@@ -179,8 +179,8 @@ class OAuthCredentialRefresh:
             except (ValueError, SecretProtectionError):
                 _reauthorize(connection, now=now)
                 return _RefreshState.unavailable
-            # SQLite ignores FOR UPDATE. Compare the observed generations in
-            # the write itself so concurrent readers cannot both claim a token.
+            # Compare the observed generations in the write itself so
+            # concurrent readers cannot both claim a token.
             generation = await session.scalar(
                 update(MCPConnectionRecord)
                 .where(

@@ -15,14 +15,14 @@ from .test_router import settings
 pytestmark = pytest.mark.anyio
 
 
-async def test_five_configuration_resources_support_org_collections(model_sessions, service_sqlite_database, tmp_path):
+async def test_five_configuration_resources_support_org_collections(model_sessions, service_database, tmp_path):
     admin = await organization_admin(model_sessions, actor())
 
     async def authenticate(request: Request) -> AuthenticatedActor:
         return admin if request.headers.get("test-scope") == "organization" else actor()
 
     app = create_app(
-        settings(tmp_path, service_sqlite_database),
+        settings(tmp_path, service_database),
         components=Components(
             request_authenticator=authenticate,
             connector_provider_registry=fake_registry(FakeConnectorBackend()),

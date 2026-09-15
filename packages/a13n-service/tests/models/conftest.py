@@ -3,7 +3,6 @@ from __future__ import annotations
 import base64
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
-from pathlib import Path
 
 import pytest
 from a13n_service.endpoint_policy import EndpointPolicy
@@ -14,7 +13,7 @@ from a13n_service.models.providers import built_in_provider_registry
 from a13n_service.models.service import ModelService
 from a13n_service.secrets.crypto import SecretProtector
 from a13n_service.storage import transaction
-from a13n_service.storage.config import SQLiteConfig
+from a13n_service.storage.config import PostgreSQLConfig
 from a13n_service.storage.relational import create_session_factory, create_sql_engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -42,8 +41,8 @@ def protector() -> SecretProtector:
 
 
 @pytest.fixture
-async def model_sessions(service_sqlite_database: Path) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
-    engine = create_sql_engine(SQLiteConfig(path=service_sqlite_database))
+async def model_sessions(service_database: PostgreSQLConfig) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    engine = create_sql_engine(service_database)
     sessions = create_session_factory(engine)
     await seed_models(sessions)
     try:

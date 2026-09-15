@@ -39,11 +39,11 @@ DATABASE_URL="postgresql+psycopg://a13n_service_dev:local-only-password@127.0.0.
 VERSIONS_DIR="$ROOT_DIR/packages/a13n-service/a13n_service/database/migrations/versions"
 
 echo "Replaying migration history in disposable database $DATABASE_NAME..."
-A13N_SERVICE_DATABASE_BACKEND=postgresql A13N_SERVICE_DATABASE_URL="$DATABASE_URL" \
+A13N_SERVICE_DATABASE_URL="$DATABASE_URL" \
     uv run --locked a13n-service db upgrade
 
 echo "Generating migration: $MESSAGE"
-A13N_SERVICE_DATABASE_BACKEND=postgresql A13N_SERVICE_DATABASE_URL="$DATABASE_URL" \
+A13N_SERVICE_DATABASE_URL="$DATABASE_URL" \
     uv run --locked a13n-service db migrate "$MESSAGE"
 
 uv run --locked ruff format "$VERSIONS_DIR"

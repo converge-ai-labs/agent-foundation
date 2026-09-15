@@ -76,7 +76,7 @@ def native_transport(records, calls, response_type):
 
 @pytest.mark.parametrize("provider", ["oss", "platform"])
 async def test_full_native_api_lifecycle_and_scope_isolation(
-    memory_sessions, service_sqlite_database, tmp_path, monkeypatch, provider
+    memory_sessions, service_database, tmp_path, monkeypatch, provider
 ):
     monkeypatch.setenv("MEM0_TELEMETRY", "false")
     records, calls = {}, []
@@ -100,9 +100,7 @@ async def test_full_native_api_lifecycle_and_scope_isolation(
     async def authenticate(_request):
         return actor()
 
-    app = create_app(
-        settings(tmp_path, service_sqlite_database), components=Components(request_authenticator=authenticate)
-    )
+    app = create_app(settings(tmp_path, service_database), components=Components(request_authenticator=authenticate))
     async with stack, remote, app.router.lifespan_context(app):
         app.state.runtime.shared.memories.backend = backend
         async with httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url="http://testserver") as client:
@@ -180,7 +178,7 @@ def test_namespace_covers_organization_workspace_subject_and_kind():
 
 
 async def test_oss_default_loads_1000_for_client_paging_without_completeness_claim(
-    memory_sessions, service_sqlite_database, tmp_path
+    memory_sessions, service_database, tmp_path
 ):
     from a13n_service.collection_cursors import encode_collection_cursor
 
@@ -198,9 +196,7 @@ async def test_oss_default_loads_1000_for_client_paging_without_completeness_cla
     async def authenticate(_request):
         return actor()
 
-    app = create_app(
-        settings(tmp_path, service_sqlite_database), components=Components(request_authenticator=authenticate)
-    )
+    app = create_app(settings(tmp_path, service_database), components=Components(request_authenticator=authenticate))
     async with httpx2.AsyncClient(base_url="http://mem0/", transport=httpx2.MockTransport(handle)) as remote:
         async with app.router.lifespan_context(app):
             app.state.runtime.shared.memories.backend = Mem0OSSBackend(remote)

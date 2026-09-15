@@ -950,11 +950,11 @@ def oauth_refresh(mcp_services, connectivity_sessions, credential_protector):
 @pytest.mark.parametrize("invalidation", ["abandoned", "disabled", "deleted"])
 @pytest.mark.parametrize("grant", ["authorization_code", "client_credentials"])
 async def test_postgresql_cross_pod_authorization_and_single_refresh(
-    postgres_connectivity_sessions, credential_protector, monkeypatch, invalidation, grant
+    connectivity_sessions, credential_protector, monkeypatch, invalidation, grant
 ):
     from datetime import timedelta
 
-    sessions = postgres_connectivity_sessions
+    sessions = connectivity_sessions
     async with service_bundle(sessions, credential_protector) as (connections, pod_a, remote):
         created = await management(connections).create(
             actor=actor(),

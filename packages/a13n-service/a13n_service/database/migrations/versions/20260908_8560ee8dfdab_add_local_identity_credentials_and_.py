@@ -83,7 +83,6 @@ def upgrade() -> None:
         ["organization_id"],
         unique=True,
         postgresql_where=sa.text("created_by_user_id IS NULL"),
-        sqlite_where=sa.text("created_by_user_id IS NULL"),
     )
     op.create_index("uq_invitations_id_organization", "invitations", ["id", "organization_id"], unique=True)
     op.create_table(
@@ -166,10 +165,7 @@ def downgrade() -> None:
     op.drop_table("password_credentials")
     op.drop_index("uq_invitations_id_organization", table_name="invitations")
     op.drop_index(
-        "uq_invitations_bootstrap",
-        table_name="invitations",
-        postgresql_where=sa.text("created_by_user_id IS NULL"),
-        sqlite_where=sa.text("created_by_user_id IS NULL"),
+        "uq_invitations_bootstrap", table_name="invitations", postgresql_where=sa.text("created_by_user_id IS NULL")
     )
     op.drop_index("ix_invitations_organization_created", table_name="invitations")
     op.drop_table("invitations")

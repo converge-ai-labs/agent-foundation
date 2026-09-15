@@ -104,13 +104,7 @@ async def collect_sessions(
         .order_by(SessionRecord.updated_at.desc(), SessionRecord.id.desc())
         .limit(limit + 1)
     )
-    query = query.where(
-        *label_predicates(
-            SessionRecord.labels,
-            filters.labels,
-            dialect=database.bind.dialect.name,
-        )
-    )
+    query = query.where(*label_predicates(SessionRecord.labels, filters.labels))
     if authorization.visible_agent_ids is not None:
         query = query.where(
             select(RunRecord.id)

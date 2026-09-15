@@ -156,7 +156,7 @@ async def test_oauth_completion_can_refresh_before_discovery_establishes_ready(m
 
 
 @pytest.mark.parametrize("separate_instances", [False, True])
-async def test_sqlite_concurrent_refresh_claim_exchanges_old_token_once(
+async def test_concurrent_refresh_claim_exchanges_old_token_once(
     mcp_services, connectivity_sessions, credential_protector, monkeypatch, separate_instances
 ):
     import asyncio
@@ -170,7 +170,9 @@ async def test_sqlite_concurrent_refresh_claim_exchanges_old_token_once(
     snapshots = []
 
     async def read_before_either_claims(session, connection_id, **kwargs):
-        connection = await original(session, connection_id, **kwargs)
+        # Both claimants must observe the same unclaimed generations; the
+        # compare-in-write guard, not the row lock, must decide the winner.
+        connection = await original(session, connection_id, **{**kwargs, "lock": False})
         if len(snapshots) < 2:
             snapshots.append((connection.refresh_claim_generation, connection.credential_generation))
             assert connection.refresh_claim_owner is None

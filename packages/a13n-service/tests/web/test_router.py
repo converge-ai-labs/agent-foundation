@@ -14,16 +14,14 @@ pytestmark = pytest.mark.anyio
 
 @pytest.mark.parametrize("workspace_ref, organization_ref", [(WORKSPACE_ID, ORG_ID), ("default", "test")])
 async def test_http_contract_safe_credentials_preconditions_and_catalog(
-    web_sessions, service_sqlite_database, tmp_path, monkeypatch, workspace_ref, organization_ref
+    web_sessions, service_database, tmp_path, monkeypatch, workspace_ref, organization_ref
 ):
     admin = await organization_admin(web_sessions, actor())
 
     async def authenticate(request):
         return admin if request.headers.get("test-scope") == "organization" else actor()
 
-    app = create_app(
-        settings(tmp_path, service_sqlite_database), components=Components(request_authenticator=authenticate)
-    )
+    app = create_app(settings(tmp_path, service_database), components=Components(request_authenticator=authenticate))
     async with app.router.lifespan_context(app):
         async with httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url="http://testserver") as client:
             catalog = await client.get("/api/v1/web-provider-types")
@@ -74,11 +72,7 @@ async def test_http_contract_safe_credentials_preconditions_and_catalog(
             assert (await client.get(f"/api/v1/organizations/{ORG_ID}/web-providers")).status_code == 404
 
 
-async def test_search_reference_identity_rename_and_credential_boundaries(
-    web_sessions,
-    service_sqlite_database,
-    tmp_path,
-):
+async def test_search_reference_identity_rename_and_credential_boundaries(web_sessions, service_database, tmp_path):
     admin = await organization_admin(web_sessions, actor())
 
     async def authenticate(request):
@@ -92,9 +86,7 @@ async def test_search_reference_identity_rename_and_credential_boundaries(
                 id="ws_other", organization_id=ORG_ID, key="other", name="Other", created_at=NOW, updated_at=NOW
             )
         )
-    app = create_app(
-        settings(tmp_path, service_sqlite_database), components=Components(request_authenticator=authenticate)
-    )
+    app = create_app(settings(tmp_path, service_database), components=Components(request_authenticator=authenticate))
     async with app.router.lifespan_context(app):
         async with httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url="http://testserver") as client:
             for plural, resource_id, old_key, new_key, model, headers in (

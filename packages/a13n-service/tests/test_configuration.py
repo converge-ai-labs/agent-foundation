@@ -40,24 +40,30 @@ def test_no_implicit_files_and_no_environment_in_model(tmp_path, monkeypatch):
 
 def test_relative_paths_share_file_base_even_for_environment_overrides(tmp_path, monkeypatch):
     path = tmp_path / "service.toml"
-    path.write_text('[database]\nbackend="sqlite"\nsqlite_path="data/service.sqlite3"\n')
+    path.write_text('[database]\nurl="postgresql://db.example/service"\n')
     other = tmp_path / "elsewhere"
     other.mkdir()
     monkeypatch.chdir(other)
     settings = load_settings(path, environ={"A13N_SERVICE_OBJECT_LOCAL_ROOT": "content"})
-    assert settings.database.sqlite_path == tmp_path / "data/service.sqlite3"
+    assert settings.database.url is not None
+    assert settings.database.url.get_secret_value() == "postgresql://db.example/service"
     assert settings.objects.local_root == tmp_path / "content"
     assert settings.filesystem.root == tmp_path / "var/files"
 
 
 @pytest.mark.parametrize(
-    "document", ['[databse]\nbackend="sqlite"', '[database]\nbacked="sqlite"', '[observability.query]\nprovidre="none"']
+    "document",
+    [
+        '[databse]\nurl="postgresql://db.example/service"',
+        '[database]\nurls="postgresql://db.example/service"',
+        '[observability.query]\nprovidre="none"',
+    ],
 )
 def test_unknown_toml_fields_are_not_hidden_by_overrides(tmp_path, document):
     path = tmp_path / "service.toml"
     path.write_text(document)
     with pytest.raises(ConfigurationError, match="Unknown configuration field"):
-        load_settings(path, environ={"A13N_SERVICE_DATABASE_BACKEND": "postgresql"})
+        load_settings(path, environ={"A13N_SERVICE_DATABASE_URL": "postgresql://db.example/override"})
 
 
 def test_explicit_missing_or_invalid_toml_fails(tmp_path):

@@ -4,7 +4,7 @@ This package contains the hosted a13n Service executable, its internal async-fir
 
 The substrate exposes capability-specific interfaces instead of one generic storage facade:
 
-- SQL uses SQLAlchemy's async `AsyncEngine` and `AsyncSession` APIs with PostgreSQL or SQLite.
+- SQL uses SQLAlchemy's async `AsyncEngine` and `AsyncSession` APIs with PostgreSQL.
 - Redis-compatible data structures use `redis.asyncio.Redis` with Redis or process-local fakeredis.
 - Objects use the small Service-owned `ObjectStore` protocol with S3-compatible or local-directory adapters.
 - Local files and deployment-mounted NFS use the same confined `pathlib` and AnyIO helpers.
@@ -156,7 +156,7 @@ from a13n_service.storage import StorageSettings, open_storage
 
 settings = StorageSettings.model_validate(
     {
-        "database": {"backend": "sqlite", "path": Path("var/a13n-service.sqlite3")},
+        "database": {"url": "postgresql://a13n_service:password@127.0.0.1:5432/a13n_service"},
         "redis": {"backend": "memory"},
         "objects": {"backend": "local", "root": Path("var/objects")},
         "filesystem": {"root": Path("var/files")},
@@ -175,10 +175,7 @@ A network deployment selects the corresponding backends without changing consume
 ```python
 network_settings = StorageSettings.model_validate(
     {
-        "database": {
-            "backend": "postgresql",
-            "url": "postgresql://a13n_service:password@postgres/a13n_service",
-        },
+        "database": {"url": "postgresql://a13n_service:password@postgres/a13n_service"},
         "redis": {"backend": "redis", "url": "redis://redis:6379/0"},
         "objects": {
             "backend": "s3",
@@ -238,11 +235,11 @@ async with transaction(storage.sessions) as session:
 
 Each operation gets a short session. Never retain a session or transaction across external I/O, agent execution, sleeps, background work, or a streaming response.
 
-PostgreSQL is the distributed-service backend. SQLite is intended for a single-process, zero-service profile and must not be placed on NFS.
+PostgreSQL is the only relational backend; every profile requires a PostgreSQL database.
 
 ## Relational Schema and Migrations
 
-The OSS schema uses one linear migration chain. Its 13-revision domain baseline runs from `01929f3846a5` (identity, secrets, and durable operations) to `023eff74515b` (lifecycle events), and later feature revisions extend that single-head graph. Each revision owns its tables, indexes, constraints, and reverse-order downgrade; cyclic foreign keys and triggers stay with their owning domain. The baseline preserves terminal Run/RunAttempt and lifecycle-fact immutability, Hook revision guards, and deferred cyclic foreign keys. Migration tests compare the PostgreSQL schema with current metadata and verify both SQLite and PostgreSQL upgrade/downgrade behavior.
+The OSS schema uses one linear migration chain. Its 13-revision domain baseline runs from `01929f3846a5` (identity, secrets, and durable operations) to `023eff74515b` (lifecycle events), and later feature revisions extend that single-head graph. Each revision owns its tables, indexes, constraints, and reverse-order downgrade; cyclic foreign keys and triggers stay with their owning domain. The baseline preserves terminal Run/RunAttempt and lifecycle-fact immutability, Hook revision guards, and deferred cyclic foreign keys. Migration tests compare the PostgreSQL schema with current metadata and verify upgrade/downgrade behavior.
 
 Model migrations preserve invocation identity and actual settings while removing stored capability claims. Validate schema changes against the combined branch and current base so independently developed revisions cannot leave a multi-head graph unnoticed.
 
@@ -255,7 +252,7 @@ Generic relational storage and service schema ownership are deliberately separat
 
 The Alembic environment does not read process settings or create an engine. The runner supplies one validated connection and the artifact distribution's resolved metadata and revision graph, so CLI settings, composition, lock policy, and schema comparison have distinct owners. Another product distribution adds reviewed model and revision contributions through its own fixed build descriptor rather than package discovery or runtime edition selection.
 
-Select the database backend, then use the stable service CLI or repository commands:
+Point `database.url` at a PostgreSQL database, then use the stable service CLI or repository commands:
 
 ```bash
 make db-upgrade
@@ -266,15 +263,13 @@ make db-history
 
 Repository database commands use `SERVICE_CONFIG` (default `dev/service/local.toml`). Corresponding executable commands use `a13n-service --config PATH db` followed by `upgrade`, `current --check-heads`, `history`, or `migrate "description"`. There is one process CLI; migration implementation remains in `database/migration.py` rather than introducing a second database-only settings or command layer.
 
-For the zero-service profile, set `A13N_SERVICE_DATABASE_BACKEND=sqlite` and `A13N_SERVICE_DATABASE_SQLITE_PATH=var/a13n-service.sqlite3`. The same accepted history is applied to both backends. A domain requiring PostgreSQL-only schema behavior must reject SQLite explicitly.
-
 ### Add an ORM Model
 
 1. Define the model beside its owning domain using `a13n_service.database.Base`.
 2. Import that domain model module explicitly in `database/metadata.py`; there is no package scanning or plugin discovery.
 3. Run `make db-migrate msg="describe the schema change"`. The target rebuilds accepted history in a disposable PostgreSQL database before autogeneration.
 4. Review the generated revision for names, constraints, data loss, lock behavior, rolling compatibility, interruption safety, and downgrade or forward repair.
-5. Run the database tests on SQLite and PostgreSQL plus `make db-check` against an upgraded database.
+5. Run the database tests plus `make db-check` against an upgraded database.
 
 Do not create revision files by hand and do not use runtime `metadata.create_all()` as schema bootstrap. Application request paths use async SQLAlchemy; migrations use a separate synchronous `NullPool` connection because they run before traffic or in a dedicated deployment job.
 

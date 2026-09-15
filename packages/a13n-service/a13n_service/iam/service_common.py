@@ -39,8 +39,8 @@ async def identity_transaction(
 ) -> AsyncIterator[AsyncSession]:
     """Serialize membership changes per Organization, including last-Admin checks.
 
-    The no-op write takes the writer lock before reads on SQLite and a row lock
-    on PostgreSQL. No password work or external I/O belongs inside this scope.
+    The no-op write takes a row lock before reads. No password work or external
+    I/O belongs inside this scope.
     """
     async with transaction(sessions) as session:
         result = await session.execute(
@@ -56,11 +56,8 @@ async def identity_transaction(
 
 async def lock_bootstrap(session: AsyncSession) -> None:
     """Serialize the initially empty OSS database without a second identity table."""
-    if session.bind is not None and session.bind.dialect.name == "sqlite":
-        await session.execute(text("BEGIN IMMEDIATE"))
-    else:
-        # A fixed, private namespace; the canonical connection statement timeout bounds waiting.
-        await session.execute(text("SELECT pg_advisory_xact_lock(134644, 1)"))
+    # A fixed, private namespace; the canonical connection statement timeout bounds waiting.
+    await session.execute(text("SELECT pg_advisory_xact_lock(134644, 1)"))
 
 
 async def singleton_organization(session: AsyncSession) -> OrganizationRecord:

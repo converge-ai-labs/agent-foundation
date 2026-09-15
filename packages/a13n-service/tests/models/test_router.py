@@ -10,6 +10,7 @@ from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
 from a13n_service.settings import Settings
 from a13n_service.storage import transaction
+from a13n_service.storage.config import PostgreSQLConfig
 from a13n_service.storage.relational import create_session_factory, create_sql_engine
 from fastapi import Request
 
@@ -33,10 +34,10 @@ async def successful_model_test(**_: object) -> None:
     return None
 
 
-def settings(tmp_path: Path, database_path: Path) -> Settings:
+def settings(tmp_path: Path, database: PostgreSQLConfig) -> Settings:
     return Settings(
         iam={"initial_admin_email": "admin@example.com"},
-        database={"backend": "sqlite", "sqlite_path": database_path},
+        database={"url": database.url.get_secret_value()},
         redis={"backend": "memory"},
         objects={"backend": "local", "local_root": tmp_path / "objects"},
         filesystem={"root": tmp_path / "files"},
@@ -114,11 +115,8 @@ async def seed_database(configuration: Settings) -> None:
 
 
 @pytest.fixture
-async def api_client(
-    tmp_path: Path,
-    service_sqlite_database: Path,
-) -> AsyncIterator[httpx2.AsyncClient]:
-    configuration = settings(tmp_path, service_sqlite_database)
+async def api_client(tmp_path: Path, service_database: PostgreSQLConfig) -> AsyncIterator[httpx2.AsyncClient]:
+    configuration = settings(tmp_path, service_database)
     await seed_database(configuration)
     app = create_app(
         configuration,
@@ -217,11 +215,8 @@ async def test_unknown_fields_use_shared_safe_error(api_client: httpx2.AsyncClie
 
 
 @pytest.mark.anyio
-async def test_missing_authenticator_returns_401(
-    tmp_path: Path,
-    service_sqlite_database: Path,
-) -> None:
-    configuration = settings(tmp_path, service_sqlite_database)
+async def test_missing_authenticator_returns_401(tmp_path: Path, service_database: PostgreSQLConfig) -> None:
+    configuration = settings(tmp_path, service_database)
     await seed_database(configuration)
     app = create_app(configuration)
     async with app.router.lifespan_context(app):

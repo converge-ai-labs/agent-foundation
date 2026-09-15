@@ -13,8 +13,8 @@ from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.pool import NullPool
 
-from a13n_service.storage.config import DatabaseConfig, PostgreSQLConfig, SQLiteConfig
-from a13n_service.storage.relational import sync_database_url
+from a13n_service.storage.config import PostgreSQLConfig
+from a13n_service.storage.relational import database_url
 
 from .config import MigrationConfig
 
@@ -31,13 +31,11 @@ class DatabaseMigrator:
 
     def __init__(
         self,
-        database: DatabaseConfig,
+        database: PostgreSQLConfig,
         migration: MigrationConfig | None = None,
         *,
         script_location: Path = MIGRATIONS_PATH,
     ) -> None:
-        if isinstance(database, SQLiteConfig) and str(database.path) == ":memory:":
-            raise ValueError("schema migrations require a file-backed SQLite database")
         self._database = database
         self._migration = migration or MigrationConfig()
         self._script_location = script_location.resolve()
@@ -77,7 +75,6 @@ class DatabaseMigrator:
         engine = self._create_engine()
         try:
             with engine.connect() as connection:
-                self._configure_sqlite(connection)
                 with self._migration_lock(connection, enabled=lock):
                     config = self._alembic_config()
                     config.attributes["connection"] = connection
@@ -93,33 +90,15 @@ class DatabaseMigrator:
         return config
 
     def _create_engine(self) -> Engine:
-        connect_args: dict[str, object]
-        if isinstance(self._database, PostgreSQLConfig):
-            connect_args = {"connect_timeout": self._database.connect_timeout_seconds}
-        else:
-            if str(self._database.path) != ":memory:":
-                self._database.path.absolute().parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-            connect_args = {"timeout": self._database.busy_timeout_seconds}
         return create_engine(
-            sync_database_url(self._database),
+            database_url(self._database),
             poolclass=NullPool,
-            connect_args=connect_args,
+            connect_args={"connect_timeout": self._database.connect_timeout_seconds},
         )
-
-    def _configure_sqlite(self, connection: Connection) -> None:
-        if not isinstance(self._database, SQLiteConfig):
-            return
-        busy_timeout_ms = _milliseconds(self._database.busy_timeout_seconds)
-        connection.exec_driver_sql("PRAGMA foreign_keys=ON")
-        connection.exec_driver_sql(f"PRAGMA busy_timeout={busy_timeout_ms}")
-        connection.exec_driver_sql("PRAGMA synchronous=FULL")
-        if str(self._database.path) != ":memory:":
-            connection.exec_driver_sql("PRAGMA journal_mode=WAL")
-        connection.commit()
 
     @contextmanager
     def _migration_lock(self, connection: Connection, *, enabled: bool) -> Generator[None]:
-        if not enabled or connection.dialect.name != "postgresql":
+        if not enabled:
             yield
             return
 

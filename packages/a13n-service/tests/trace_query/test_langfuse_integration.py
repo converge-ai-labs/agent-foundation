@@ -16,6 +16,7 @@ from a13n_service.interactions.models import RunAttemptRecord
 from a13n_service.observability import RunAttemptCorrelation, TraceContent, build_observability_runtime
 from a13n_service.settings import ProcessRole, Settings
 from a13n_service.storage import transaction
+from a13n_service.storage.config import PostgreSQLConfig
 from a13n_service.trace_query import (
     LangfuseTraceQueryProvider,
     ProviderTraceQuery,
@@ -42,7 +43,7 @@ pytestmark = pytest.mark.skipif(
 async def test_otlp_trace_round_trips_through_langfuse_v4(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    service_sqlite_database: Path,
+    service_database: PostgreSQLConfig,
     interaction_sessions,
     trace_correlation: TraceCorrelation,
 ) -> None:
@@ -150,7 +151,7 @@ async def test_otlp_trace_round_trips_through_langfuse_v4(
 
     settings = Settings(
         service={"role": ProcessRole.control},
-        database={"backend": "sqlite", "sqlite_path": service_sqlite_database},
+        database={"url": service_database.url.get_secret_value()},
         redis={"backend": "memory"},
         objects={"backend": "local", "local_root": tmp_path / "objects"},
         filesystem={"root": tmp_path / "files"},

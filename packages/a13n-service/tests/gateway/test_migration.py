@@ -1,17 +1,15 @@
-from pathlib import Path
-
 from a13n_service.database.migration import DatabaseMigrator
-from a13n_service.storage.config import SQLiteConfig
-from a13n_service.storage.relational import sync_database_url
+from a13n_service.storage.config import PostgreSQLConfig
+from a13n_service.storage.relational import database_url
 from sqlalchemy import create_engine, inspect
 
 
-def test_gateway_binding_migration_round_trip(tmp_path: Path) -> None:
-    config = SQLiteConfig(path=tmp_path / "gateway-migrations.sqlite3")
+def test_gateway_binding_migration_round_trip(postgres_database: PostgreSQLConfig) -> None:
+    config = postgres_database
     migrator = DatabaseMigrator(config)
 
     migrator.upgrade()
-    engine = create_engine(sync_database_url(config))
+    engine = create_engine(database_url(config))
     try:
         inspector = inspect(engine)
         assert {"agui_thread_bindings", "agui_run_bindings"} <= set(inspector.get_table_names())
@@ -23,7 +21,7 @@ def test_gateway_binding_migration_round_trip(tmp_path: Path) -> None:
         engine.dispose()
 
     migrator.downgrade("base")
-    engine = create_engine(sync_database_url(config))
+    engine = create_engine(database_url(config))
     try:
         assert {"agui_thread_bindings", "agui_run_bindings"}.isdisjoint(inspect(engine).get_table_names())
     finally:

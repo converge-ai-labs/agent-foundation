@@ -8,7 +8,7 @@ from a13n_service.secrets.models import SecretRecord
 from a13n_service.skills.models import SkillUploadRecord
 from a13n_service.skills.retention import SkillUploadRetention
 from a13n_service.storage import short_session, transaction
-from a13n_service.storage.config import SQLiteConfig
+from a13n_service.storage.config import PostgreSQLConfig
 from a13n_service.storage.relational import create_session_factory, create_sql_engine
 from a13n_service.temporal import utc_now
 from sqlalchemy import select
@@ -18,28 +18,14 @@ from tests.interactions.conftest import ORGANIZATION_ID, USER_ID, WORKSPACE_ID, 
 pytestmark = pytest.mark.anyio
 
 
-@pytest.fixture(params=("sqlite", "postgres"))
-async def collection_sessions(request, service_sqlite_database):
-    from a13n_service.database.metadata import service_metadata
-    from a13n_service.storage.config import PostgreSQLConfig
-
-    config = (
-        SQLiteConfig(path=service_sqlite_database)
-        if request.param == "sqlite"
-        else PostgreSQLConfig(url=request.getfixturevalue("pg_url"))
-    )
-    engine = create_sql_engine(config)
-    if request.param == "postgres":
-        async with engine.begin() as connection:
-            await connection.run_sync(service_metadata().create_all)
+@pytest.fixture
+async def collection_sessions(service_database: PostgreSQLConfig):
+    engine = create_sql_engine(service_database)
     sessions = create_session_factory(engine)
     await _seed_interaction_database(sessions)
     try:
         yield sessions
     finally:
-        if request.param == "postgres":
-            async with engine.begin() as connection:
-                await connection.run_sync(service_metadata().drop_all)
         await engine.dispose()
 
 
@@ -104,7 +90,7 @@ async def test_upload_retention_waits_for_receipt_replay_then_progresses(collect
                     archive_sha256="a" * 64,
                     manifest={},
                     created_at=now - timedelta(days=2),
-                    expires_at=now + timedelta(days=1) if name == "live" else now - timedelta(days=1),
+                    expires_at=(now + timedelta(days=1) if name == "live" else now - timedelta(days=1)),
                 )
             )
         database.add(

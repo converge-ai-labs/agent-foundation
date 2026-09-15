@@ -8,16 +8,24 @@ import httpx2
 import pytest
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import create_async_engine
+from testcontainers.postgres import PostgresContainer
 
 from ..performance.connection_preparation import prepare_pg_connections, warm_http_connections
 
 
+@pytest.fixture(scope="module")
+def pool_database_url():
+    with PostgresContainer("postgres:17-alpine") as container:
+        yield (
+            f"postgresql+psycopg://{container.username}:{container.password}"
+            f"@{container.get_container_host_ip()}:{container.get_exposed_port(5432)}/{container.dbname}"
+        )
+
+
 @pytest.mark.anyio
 @pytest.mark.parametrize("state", ["cold", "warm"])
-async def test_sql_pool_state_controls_physical_connections_before_the_wave(tmp_path, state):
-    # SQLite exercises the real SQLAlchemy pool without Docker; live tests
-    # separately verify PostgreSQL authentication, transactions and persistence.
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'pool.db'}", pool_size=8, max_overflow=0)
+async def test_sql_pool_state_controls_physical_connections_before_the_wave(pool_database_url, state):
+    engine = create_async_engine(pool_database_url, pool_size=8, max_overflow=0)
     opened = []
     event.listen(engine.sync_engine, "connect", lambda connection, record: opened.append(connection))
     try:

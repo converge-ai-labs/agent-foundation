@@ -1,9 +1,7 @@
-from pathlib import Path
-
 from a13n_service.database.metadata import service_metadata
 from a13n_service.database.migration import DatabaseMigrator
-from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
-from a13n_service.storage.relational import sync_database_url
+from a13n_service.storage.config import PostgreSQLConfig
+from a13n_service.storage.relational import database_url
 from sqlalchemy import create_engine, inspect, text
 
 INTERACTION_TABLES = {
@@ -17,8 +15,8 @@ INTERACTION_TABLES = {
 }
 
 
-def _assert_schema(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) -> None:
-    engine = create_engine(sync_database_url(config))
+def _assert_schema(config: PostgreSQLConfig, *, present: bool) -> None:
+    engine = create_engine(database_url(config))
     try:
         inspector = inspect(engine)
         tables = set(inspector.get_table_names())
@@ -143,33 +141,20 @@ def _assert_schema(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
             "uq_child_run_relationships_child_run",
         } <= child_relationship_unique
         with engine.connect() as connection:
-            if connection.dialect.name == "postgresql":
-                trigger_names = set(
-                    connection.execute(
-                        text(
-                            "SELECT trigger_name FROM information_schema.triggers "
-                            "WHERE event_object_table IN ('runs', 'run_attempts')"
-                        )
-                    ).scalars()
-                )
-            else:
-                trigger_names = set(
-                    connection.execute(
-                        text(
-                            "SELECT name FROM sqlite_master "
-                            "WHERE type = 'trigger' AND tbl_name IN ('runs', 'run_attempts')"
-                        )
-                    ).scalars()
-                )
-        assert {
-            "reject_sealed_run_update",
-            "reject_terminal_run_attempt_update",
-        } <= trigger_names
+            trigger_names = set(
+                connection.execute(
+                    text(
+                        "SELECT trigger_name FROM information_schema.triggers "
+                        "WHERE event_object_table IN ('runs', 'run_attempts')"
+                    )
+                ).scalars()
+            )
+        assert {"reject_sealed_run_update", "reject_terminal_run_attempt_update"} <= trigger_names
     finally:
         engine.dispose()
 
 
-def _exercise_migration(config: PostgreSQLConfig | SQLiteConfig) -> None:
+def _exercise_migration(config: PostgreSQLConfig) -> None:
     migrator = DatabaseMigrator(config)
     migrator.upgrade()
     migrator.current(check_heads=True, verbose=False)
@@ -178,9 +163,5 @@ def _exercise_migration(config: PostgreSQLConfig | SQLiteConfig) -> None:
     _assert_schema(config, present=False)
 
 
-def test_interaction_schema_migrates_up_and_down_on_sqlite(tmp_path: Path) -> None:
-    _exercise_migration(SQLiteConfig(path=tmp_path / "interaction-migrations.sqlite3"))
-
-
-def test_interaction_schema_migrates_up_and_down_on_postgresql(pg_url: str) -> None:
-    _exercise_migration(PostgreSQLConfig(url=pg_url))
+def test_interaction_schema_migrates_up_and_down(postgres_database: PostgreSQLConfig) -> None:
+    _exercise_migration(postgres_database)

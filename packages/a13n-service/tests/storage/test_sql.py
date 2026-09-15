@@ -1,17 +1,14 @@
 import asyncio
 from collections.abc import AsyncIterator
-from pathlib import Path
-from threading import Event
 
 import anyio
 import pytest
-from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
+from a13n_service.storage.config import PostgreSQLConfig
 from a13n_service.storage.relational import (
-    async_database_url,
     create_session_factory,
     create_sql_engine,
+    database_url,
     short_session,
-    sync_database_url,
     transaction,
 )
 from sqlalchemy import Column, Integer, MetaData, String, Table, event, insert, select, text
@@ -29,15 +26,11 @@ records = Table(
 )
 
 
-@pytest.fixture(params=["sqlite", "postgresql"])
+@pytest.fixture
 async def sql_resources(
-    request: pytest.FixtureRequest, tmp_path: Path
+    postgres_database: PostgreSQLConfig,
 ) -> AsyncIterator[tuple[AsyncEngine, async_sessionmaker[AsyncSession]]]:
-    if request.param == "sqlite":
-        config = SQLiteConfig(path=tmp_path / "database.sqlite3")
-    else:
-        config = PostgreSQLConfig(url=request.getfixturevalue("pg_url"))
-    engine = create_sql_engine(config)
+    engine = create_sql_engine(postgres_database)
     async with engine.begin() as connection:
         await connection.run_sync(metadata.create_all)
     try:
@@ -70,7 +63,7 @@ async def test_transaction_rolls_back_on_error(sql_resources) -> None:
         assert (await session.execute(select(records))).all() == []
 
 
-async def test_constraints_are_portable(sql_resources) -> None:
+async def test_constraints_are_enforced(sql_resources) -> None:
     _, sessions = sql_resources
     async with transaction(sessions) as session:
         await session.execute(insert(records).values(id=1, name="unique"))
@@ -97,18 +90,14 @@ async def test_concurrent_tasks_use_independent_sessions(sql_resources) -> None:
 
 
 def test_postgresql_config_rejects_non_postgresql_url() -> None:
-    with pytest.raises(ValueError, match="PostgreSQL backend"):
+    with pytest.raises(ValueError, match="PostgreSQL requires"):
         create_sql_engine(PostgreSQLConfig(url="mysql://example/database"))
 
 
-def test_database_urls_select_sync_and_async_drivers(tmp_path: Path) -> None:
-    sqlite = SQLiteConfig(path=tmp_path / "database.sqlite3")
+def test_database_url_uses_the_psycopg_driver() -> None:
     postgresql = PostgreSQLConfig(url="postgresql://user:secret@example.test/database")
 
-    assert async_database_url(sqlite).drivername == "sqlite+aiosqlite"
-    assert sync_database_url(sqlite).drivername == "sqlite"
-    assert async_database_url(postgresql).drivername == "postgresql+psycopg"
-    assert sync_database_url(postgresql).drivername == "postgresql+psycopg"
+    assert database_url(postgresql).drivername == "postgresql+psycopg"
 
 
 @pytest.mark.parametrize("write", [False, True])
@@ -116,13 +105,7 @@ async def test_cancellation_during_database_io_finishes_cleanup_before_propagati
     engine, sessions = sql_resources
     entered = anyio.Event()
     completed_after_scope = False
-    is_sqlite = engine.dialect.name == "sqlite"
-    if is_sqlite:
-        import time
-
-        async with engine.connect() as connection:
-            await connection.run_sync(lambda sync: sync.connection.create_function("test_wait", 1, time.sleep))
-    statement = "SELECT test_wait(0.05)" if is_sqlite else "SELECT pg_sleep(0.05)"
+    statement = "SELECT pg_sleep(0.05)"
 
     def started(_conn, _cursor, sql, _parameters, _context, _many):
         if sql == statement:
@@ -156,14 +139,7 @@ async def test_cancellation_during_database_io_finishes_cleanup_before_propagati
 
 async def test_database_scope_honors_the_callers_earlier_deadline(sql_resources) -> None:
     engine, sessions = sql_resources
-    if engine.dialect.name == "sqlite":
-        import time
-
-        async with engine.connect() as connection:
-            await connection.run_sync(lambda sync: sync.connection.create_function("test_wait", 1, time.sleep))
-        statement = "SELECT test_wait(0.1)"
-    else:
-        statement = "SELECT pg_sleep(0.1)"
+    statement = "SELECT pg_sleep(0.1)"
     with pytest.raises(TimeoutError):
         with anyio.fail_after(0.01):
             async with short_session(sessions) as session:
@@ -268,92 +244,3 @@ async def test_cancellation_during_commit_returns_connection_before_propagating(
     async with short_session(sessions) as session:
         assert (await session.execute(select(records.c.name))).scalar_one() == "committed"
     assert "Exception" not in caplog.text
-
-
-async def test_cancelled_sqlite_query_drains_worker_before_closing_connection(tmp_path: Path) -> None:
-    engine = create_sql_engine(SQLiteConfig(path=tmp_path / "cancel-query.sqlite3"))
-    sessions = create_session_factory(engine)
-    started, release = Event(), Event()
-    cancellation = anyio.CancelScope()
-
-    def blocked_query():
-        started.set()
-        if not release.wait(5):
-            raise TimeoutError("query was not released")
-        return 42
-
-    async def install_function(driver):
-        await driver.create_function("blocked_query", 0, blocked_query)
-
-    def on_connect(connection, record):
-        connection.run_async(install_function)
-
-    event.listen(engine.sync_engine, "connect", on_connect)
-
-    async def query():
-        with cancellation:
-            async with short_session(sessions) as session:
-                await session.execute(text("SELECT blocked_query()"))
-        assert cancellation.cancelled_caught
-
-    try:
-        async with anyio.create_task_group() as tasks:
-            tasks.start_soon(query)
-            try:
-                assert await anyio.to_thread.run_sync(started.wait, 5)
-                cancellation.cancel()
-                await anyio.lowlevel.checkpoint()
-            finally:
-                release.set()
-        assert engine.pool.checkedout() == 0
-        async with short_session(sessions) as session:
-            assert (await session.execute(text("SELECT 1"))).scalar_one() == 1
-    finally:
-        release.set()
-        await engine.dispose()
-
-
-async def test_cancelled_sqlite_read_does_not_retain_snapshot(tmp_path: Path, monkeypatch) -> None:
-    import aiosqlite
-
-    config = SQLiteConfig(path=tmp_path / "cancel-read.sqlite3")
-    engine = create_sql_engine(config)
-    writer = create_sql_engine(config)
-    sessions = create_session_factory(engine)
-    errors = []
-    original = aiosqlite.Cursor.execute
-    cancellation = anyio.CancelScope()
-
-    async def cancel_after_read(cursor, sql, parameters=None):
-        result = await original(cursor, sql, parameters)
-        if sql.startswith("SELECT storage_contract_records"):
-            cancellation.cancel()
-            await anyio.lowlevel.checkpoint()
-        return result
-
-    try:
-        async with engine.begin() as connection:
-            await connection.run_sync(metadata.create_all)
-            await connection.execute(insert(records).values(id=1, name="original"))
-        with monkeypatch.context() as patch:
-            patch.setattr(aiosqlite.Cursor, "execute", cancel_after_read)
-            with cancellation:
-                try:
-                    async with short_session(sessions) as session:
-                        await session.execute(select(records))
-                except asyncio.CancelledError as error:
-                    # A caller may retain the traceback until well after cleanup.
-                    errors.append(error)
-                    raise
-        assert cancellation.cancelled_caught
-        async with writer.begin() as connection:
-            await connection.execute(records.update().values(name="other-writer"))
-        async with transaction(sessions) as session:
-            await session.execute(records.update().values(name="reused-pool"))
-        async with short_session(sessions) as session:
-            assert (await session.execute(select(records.c.name))).scalar_one() == "reused-pool"
-        assert engine.pool.checkedout() == 0
-    finally:
-        errors.clear()
-        await writer.dispose()
-        await engine.dispose()

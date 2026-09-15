@@ -22,7 +22,7 @@ Settings are immutable after startup. Restart the process after a change. `confi
 
 ## A single-process local profile
 
-This example selects SQLite, process-local Redis emulation, and local object storage:
+This example selects a local PostgreSQL, process-local Redis emulation, and local object storage:
 
 ```toml
 [service]
@@ -31,8 +31,7 @@ port = 8000
 role = "all"
 
 [database]
-backend = "sqlite"
-sqlite_path = "var/a13n-service.sqlite3"
+url = "postgresql://a13n_service:a13n_service@127.0.0.1:5432/a13n_service"
 
 [redis]
 backend = "memory"
@@ -53,9 +52,9 @@ public_origin = "http://127.0.0.1:8000"
 
 This configures infrastructure, not a ready-to-use account or model. Set up [identity](identity.md), [Models](models.md), and required credential encryption separately. For a complete repository development environment with fictional users and the Console, use the [local development guide](https://github.com/converge-ai-labs/agent-foundation/blob/main/dev/service/README.md) rather than inventing production credentials.
 
-Relative `database.sqlite_path`, `objects.local_root`, and `filesystem.root` paths resolve from the selected file's directory, including values supplied through environment overrides. Without a file, they resolve from the invocation directory. SQLite `:memory:` retains its special meaning. Keep local object and filesystem roots separate.
+Relative `objects.local_root` and `filesystem.root` paths resolve from the selected file's directory, including values supplied through environment overrides. Without a file, they resolve from the invocation directory. Keep local object and filesystem roots separate.
 
-SQLite and local objects are single-process choices. Do not put SQLite on NFS or use the local object adapter for multiple writing processes. A network backend failure never falls back to local storage.
+Local objects are a single-process choice. Do not use the local object adapter for multiple writing processes. A network backend failure never falls back to local storage.
 
 ## Distributed storage
 
@@ -66,7 +65,7 @@ Choose PostgreSQL, Redis, and S3-compatible objects for a distributed deployment
 role = "control"
 
 [database]
-backend = "postgresql"
+url = "postgresql://a13n_service:private-password@postgres.internal:5432/a13n_service"
 
 [redis]
 backend = "redis"

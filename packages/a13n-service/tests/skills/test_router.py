@@ -18,6 +18,7 @@ from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserR
 from a13n_service.settings import Settings
 from a13n_service.skills.router import _content_chunks
 from a13n_service.storage import transaction
+from a13n_service.storage.config import PostgreSQLConfig
 from a13n_service.storage.relational import create_session_factory, create_sql_engine
 from fastapi import Request
 
@@ -49,9 +50,9 @@ async def authenticate(request: Request) -> AuthenticatedActor:
     )
 
 
-def settings(tmp_path: Path, database_path: Path) -> Settings:
+def settings(tmp_path: Path, database: PostgreSQLConfig) -> Settings:
     return Settings(
-        database={"backend": "sqlite", "sqlite_path": database_path},
+        database={"url": database.url.get_secret_value()},
         redis={"backend": "memory"},
         objects={"backend": "local", "local_root": tmp_path / "objects"},
         filesystem={"root": tmp_path / "files"},
@@ -129,11 +130,8 @@ async def seed_database(config: Settings) -> None:
 
 
 @pytest.fixture
-async def api_client(
-    tmp_path: Path,
-    service_sqlite_database: Path,
-) -> AsyncIterator[httpx2.AsyncClient]:
-    config = settings(tmp_path, service_sqlite_database)
+async def api_client(tmp_path: Path, service_database: PostgreSQLConfig) -> AsyncIterator[httpx2.AsyncClient]:
+    config = settings(tmp_path, service_database)
     await seed_database(config)
     app = create_app(config, components=Components(request_authenticator=authenticate))
     async with app.router.lifespan_context(app):

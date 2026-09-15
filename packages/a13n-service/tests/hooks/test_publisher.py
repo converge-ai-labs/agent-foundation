@@ -455,20 +455,13 @@ async def test_response_limit_is_enforced_at_the_exact_boundary(
 
 
 async def test_postgresql_reclaim_fences_stale_publisher(
-    hook_postgres_sessions: async_sessionmaker[AsyncSession],
+    hook_interaction_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
-    _, _, _ = await _prepare_delivery(hook_postgres_sessions)
-    async with transaction(hook_postgres_sessions) as database:
-        first = (
-            await claim_webhook_deliveries(
-                database,
-                now=NOW,
-                lease_duration=timedelta(seconds=1),
-                limit=1,
-            )
-        )[0]
+    _, _, _ = await _prepare_delivery(hook_interaction_sessions)
+    async with transaction(hook_interaction_sessions) as database:
+        first = (await claim_webhook_deliveries(database, now=NOW, lease_duration=timedelta(seconds=1), limit=1))[0]
     reclaimed_at = NOW + timedelta(seconds=2)
-    async with transaction(hook_postgres_sessions) as database:
+    async with transaction(hook_interaction_sessions) as database:
         second = (
             await claim_webhook_deliveries(
                 database,
@@ -477,6 +470,6 @@ async def test_postgresql_reclaim_fences_stale_publisher(
                 limit=1,
             )
         )[0]
-    async with transaction(hook_postgres_sessions) as database:
+    async with transaction(hook_interaction_sessions) as database:
         assert not await complete_outbox(database, first, completed_at=reclaimed_at)
         assert await complete_outbox(database, second, completed_at=reclaimed_at)

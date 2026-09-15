@@ -685,8 +685,8 @@ class MCPOAuthService:
                 raise MCPConnectionError(
                     "oauth_issuer_mismatch", "OAuth callback issuer is invalid.", category=ErrorCategory.invalid_request
                 )
-            # SQLite ignores FOR UPDATE. Compare the validated state in the
-            # write itself so concurrent callbacks cannot both exchange it.
+            # Compare the validated state in the write itself so concurrent
+            # callbacks cannot both exchange it.
             claim_generation = await session.scalar(
                 update(MCPAuthorizationRecord)
                 .where(

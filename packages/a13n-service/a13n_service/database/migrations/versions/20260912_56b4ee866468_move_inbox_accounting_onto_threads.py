@@ -16,12 +16,6 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
-# Old and new binaries write different accounting owners. Quiesce all Service
-# writers before upgrade/downgrade and restart only the matching build afterward.
-# PostgreSQL takes bounded ACCESS EXCLUSIVE locks and copies one row per Thread;
-# migration lock/statement timeouts bound waiting and the backfill. No new index
-# is needed. SQLite uses native column DDL, avoiding a rebuild of the referenced
-# Thread table. Both directions preserve high-water marks even after inbox GC.
 _COLUMNS = (
     ("next_delivery_sequence", "1", "next_delivery_sequence >= 1", "positive"),
     ("pending_count", "0", "pending_count >= 0", "non_negative"),
@@ -30,51 +24,15 @@ _COLUMNS = (
 
 
 def upgrade() -> None:
-    """Move existing accounting before dropping its old owner."""
-    connection = op.get_bind()
-    sqlite = connection.dialect.name == "sqlite"
-    if sqlite:
-        # pysqlite's legacy transaction mode does not begin for DDL. Include
-        # column changes in the same rollback boundary as backfill and stamping.
-        connection.exec_driver_sql("BEGIN IMMEDIATE")
-    else:
-        connection.exec_driver_sql("LOCK TABLE threads, thread_inbox_counters IN ACCESS EXCLUSIVE MODE")
-    missing = connection.scalar(
-        sa.text(
-            "SELECT count(*) FROM threads t WHERE NOT EXISTS "
-            "(SELECT 1 FROM thread_inbox_counters c "
-            "WHERE c.organization_id = t.organization_id AND c.thread_id = t.id)"
-        )
-    )
-    if missing:
-        raise RuntimeError("Cannot migrate Thread inbox accounting: a Thread counter is missing")
+    """Move inbox accounting onto threads and drop its old owner."""
     for name, default, condition, suffix in _COLUMNS:
-        constraint = op.f(f"ck_threads_{name}_{suffix}")
-        # Inline checks let SQLite add a column without rebuilding threads and
-        # cascading through its many inbound references.
-        checks = (sa.CheckConstraint(condition, name=constraint),) if sqlite else ()
-        op.add_column("threads", sa.Column(name, sa.BigInteger(), *checks, server_default=default, nullable=False))
-        if not sqlite:
-            op.create_check_constraint(constraint, "threads", condition)
-    connection.execute(
-        sa.text(
-            "UPDATE threads SET (next_delivery_sequence, pending_count, pending_bytes) = "
-            "(SELECT c.next_delivery_sequence, c.pending_count, c.pending_bytes "
-            "FROM thread_inbox_counters c "
-            "WHERE c.organization_id = threads.organization_id AND c.thread_id = threads.id)"
-        )
-    )
+        op.add_column("threads", sa.Column(name, sa.BigInteger(), server_default=default, nullable=False))
+        op.create_check_constraint(op.f(f"ck_threads_{name}_{suffix}"), "threads", condition)
     op.drop_table("thread_inbox_counters")
 
 
 def downgrade() -> None:
-    """Restore the old owner and its current values before removing columns."""
-    connection = op.get_bind()
-    sqlite = connection.dialect.name == "sqlite"
-    if sqlite:
-        connection.exec_driver_sql("BEGIN IMMEDIATE")
-    else:
-        connection.exec_driver_sql("LOCK TABLE threads IN ACCESS EXCLUSIVE MODE")
+    """Restore the old owner before removing the thread columns."""
     op.create_table(
         "thread_inbox_counters",
         sa.Column("thread_id", sa.VARCHAR(length=72), autoincrement=False, nullable=False),
@@ -94,22 +52,8 @@ def downgrade() -> None:
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("thread_id", name=op.f("pk_thread_inbox_counters")),
-        sa.UniqueConstraint(
-            "organization_id",
-            "thread_id",
-            name=op.f("uq_thread_inbox_counters_scope"),
-            postgresql_include=[],
-            postgresql_nulls_not_distinct=False,
-        ),
-    )
-    connection.execute(
-        sa.text(
-            "INSERT INTO thread_inbox_counters "
-            "(thread_id, organization_id, next_delivery_sequence, pending_count, pending_bytes) "
-            "SELECT id, organization_id, next_delivery_sequence, pending_count, pending_bytes FROM threads"
-        )
+        sa.UniqueConstraint("organization_id", "thread_id", name=op.f("uq_thread_inbox_counters_scope")),
     )
     for name, _, _, suffix in reversed(_COLUMNS):
-        if not sqlite:
-            op.drop_constraint(op.f(f"ck_threads_{name}_{suffix}"), "threads", type_="check")
+        op.drop_constraint(op.f(f"ck_threads_{name}_{suffix}"), "threads", type_="check")
         op.drop_column("threads", name)

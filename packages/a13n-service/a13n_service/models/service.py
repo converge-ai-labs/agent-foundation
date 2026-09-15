@@ -125,9 +125,7 @@ class ModelService:
                 await session.flush()
                 return record.to_resource()
         except IntegrityError as error:
-            if not is_unique_conflict(
-                error, constraint="uq_models_workspace_key", sqlite_columns="models.workspace_id, models.normalized_key"
-            ):
+            if not is_unique_conflict(error, constraint="uq_models_workspace_key"):
                 raise
             raise ModelError(
                 "model_key_conflict",
