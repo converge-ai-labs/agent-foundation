@@ -8,11 +8,10 @@ import httpx2
 from a13n_harness.errors import ModelResolutionError
 from anyio import CancelScope, to_thread
 from pydantic_ai.models import Model as PydanticModel
-from pydantic_ai.profiles import ModelProfileSpec
 
 from a13n_service.endpoint_policy import EndpointPolicyError
 
-from .base_models import profile_reference
+from .base_models import compatible_model_profile
 from .domain import ModelExecutionSnapshot
 from .model_apis import BUILT_IN_MODEL_APIS
 from .provider_adapters.types import RuntimeProvider
@@ -59,10 +58,7 @@ class NativeModelFactory:
         )
         try:
             await self._endpoint_policy.validate(str(native_provider.base_url), resolve_dns=True)
-            profile: ModelProfileSpec | None = None
-            reference_name = profile_reference(snapshot.base_model, snapshot.model_api)
-            if reference_name is not None and reference_name != snapshot.upstream_model:
-                profile = binding.build(reference_name, native_provider).profile
+            profile = compatible_model_profile(snapshot.base_model, snapshot.model_api)
             return binding.build(snapshot.upstream_model, native_provider, profile=profile)
         except BaseException as error:
             with CancelScope(shield=True):

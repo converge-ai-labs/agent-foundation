@@ -74,6 +74,32 @@ def _stream_response() -> httpx2.Response:
     return httpx2.Response(200, text=body + "data: [DONE]\n\n", headers={"content-type": "text/event-stream"})
 
 
+def _chat_response(*, streaming: bool) -> httpx2.Response:
+    if streaming:
+        chunk = {
+            "id": "chat_test",
+            "object": "chat.completion.chunk",
+            "created": 1,
+            "model": "my-deepseek-reasoner",
+            "choices": [{"index": 0, "delta": {"role": "assistant", "content": "OK"}, "finish_reason": "stop"}],
+        }
+        return httpx2.Response(
+            200,
+            content=f"data: {json.dumps(chunk)}\n\ndata: [DONE]\n\n".encode(),
+            headers={"content-type": "text/event-stream"},
+        )
+    return httpx2.Response(
+        200,
+        json={
+            "id": "chat_test",
+            "object": "chat.completion",
+            "created": 1,
+            "model": "my-deepseek-reasoner",
+            "choices": [{"index": 0, "message": {"role": "assistant", "content": "OK"}, "finish_reason": "stop"}],
+        },
+    )
+
+
 @pytest.mark.anyio
 @pytest.mark.parametrize("stream", [False, True])
 @pytest.mark.parametrize("mode", ["none", "bearer", "api_key_header"])
@@ -249,4 +275,52 @@ async def test_openai_base_profile_routes_thinking_through_explicit_chat_overrid
     assert request.headers["authorization"] == "Bearer relay-secret"
     body = json.loads(request.content)
     assert body["model"] == "my-gpt-5"
+    assert body["reasoning_effort"] == "high"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_deepseek_base_profile_survives_openai_relay_agent_lifecycle(streaming: bool) -> None:
+    requests: list[httpx2.Request] = []
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        return _chat_response(streaming=streaming)
+
+    registry = built_in_provider_registry()
+    validated = registry.validate_provider(
+        "openai",
+        {"base_url": "https://relay.example/v1"},
+        credential_configured=True,
+    )
+    provider = RuntimeProvider("openai", validated.configuration, validated.endpoint, "relay-secret")
+    snapshot = ModelExecutionSnapshot(
+        model_id="mdl_1234567890abcdef",
+        model_key="relay-deepseek",
+        upstream_model="my-deepseek-reasoner",
+        base_model="deepseek:deepseek-reasoner",
+        model_api="openai.chat_completions",
+    )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
+        model = await NativeModelFactory(client, registry, _AllowEndpoints()).build(snapshot, provider)
+        assert model.profile["supports_thinking"] is True
+        assert model.profile["thinking_always_enabled"] is True
+        assert dict(model.profile)["openai_chat_thinking_field"] == "reasoning_content"
+        assert dict(model.profile)["openai_supports_tool_choice_required"] is False
+        agent = Agent(model)
+        async with model:
+            if streaming:
+                async with agent.run_stream("Reply OK", model_settings={"thinking": "high"}) as result:
+                    output = await result.get_output()
+            else:
+                output = (await agent.run("Reply OK", model_settings={"thinking": "high"})).output
+
+    assert output == "OK"
+    assert len(requests) == 1
+    request = requests[0]
+    assert str(request.url) == "https://relay.example/v1/chat/completions"
+    assert request.headers["authorization"] == "Bearer relay-secret"
+    body = json.loads(request.content)
+    assert body["model"] == "my-deepseek-reasoner"
     assert body["reasoning_effort"] == "high"

@@ -146,6 +146,113 @@ async def test_cache_refresh_is_single_flight_and_retains_last_good_snapshot() -
 
 
 @pytest.mark.anyio
+async def test_refresh_timeout_releases_single_flight_waiters_and_recovers() -> None:
+    now = 0.0
+    calls = 0
+    timed_out = asyncio.Event()
+    reference = BaseModelDirectory(("openai:gpt-5",)).require("openai:gpt-5")
+
+    async def handler(request: httpx2.Request) -> httpx2.Response:
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            try:
+                await asyncio.sleep(60)
+            finally:
+                timed_out.set()
+        return httpx2.Response(200, json=_payload(), request=request)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
+        catalog = ModelsDevCatalog(client, clock=lambda: now, refresh_seconds=10, refresh_timeout_seconds=0.01)
+        expected = await catalog.declarations("openai", {}, reference)
+
+        now = 11
+        first, second = await asyncio.gather(
+            catalog.declarations("openai", {}, reference),
+            catalog.declarations("openai", {}, reference),
+        )
+        assert first == second == expected
+        assert timed_out.is_set()
+        assert calls == 2
+
+        now = 72
+        assert await catalog.declarations("openai", {}, reference) == expected
+        assert calls == 3
+
+
+@pytest.mark.anyio
+async def test_initial_refresh_timeout_returns_empty_snapshot() -> None:
+    released = asyncio.Event()
+    reference = BaseModelDirectory(("openai:gpt-5",)).require("openai:gpt-5")
+
+    async def handler(request: httpx2.Request) -> httpx2.Response:
+        try:
+            await asyncio.sleep(60)
+        finally:
+            released.set()
+        return httpx2.Response(200, json=_payload(), request=request)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
+        catalog = ModelsDevCatalog(client, clock=lambda: 0, refresh_timeout_seconds=0.01)
+        assert await catalog.declarations("openai", {}, reference) == ModelDeclarations()
+        assert released.is_set()
+
+
+@pytest.mark.anyio
+async def test_refresh_freshness_starts_when_download_completes() -> None:
+    now = 0.0
+    calls = 0
+    reference = BaseModelDirectory(("openai:gpt-5",)).require("openai:gpt-5")
+
+    async def handler(request: httpx2.Request) -> httpx2.Response:
+        nonlocal calls, now
+        calls += 1
+        now += 9
+        return httpx2.Response(200, json=_payload(), request=request)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
+        catalog = ModelsDevCatalog(client, clock=lambda: now, refresh_seconds=10)
+        await catalog.declarations("openai", {}, reference)
+
+        now = 15
+        await catalog.declarations("openai", {}, reference)
+        assert calls == 1
+
+        now = 20
+        await catalog.declarations("openai", {}, reference)
+        assert calls == 2
+
+
+@pytest.mark.anyio
+async def test_caller_cancellation_is_preserved_and_releases_refresh() -> None:
+    blocking = True
+    started = asyncio.Event()
+    released = asyncio.Event()
+    reference = BaseModelDirectory(("openai:gpt-5",)).require("openai:gpt-5")
+
+    async def handler(request: httpx2.Request) -> httpx2.Response:
+        if blocking:
+            started.set()
+            try:
+                await asyncio.sleep(60)
+            finally:
+                released.set()
+        return httpx2.Response(200, json=_payload(), request=request)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
+        catalog = ModelsDevCatalog(client, refresh_timeout_seconds=30)
+        task = asyncio.create_task(catalog.declarations("openai", {}, reference))
+        await started.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        assert released.is_set()
+
+        blocking = False
+        assert (await catalog.declarations("openai", {}, reference)).pricing is not None
+
+
+@pytest.mark.anyio
 async def test_initial_catalog_failure_returns_empty_declarations_without_forwarding_credentials() -> None:
     calls = 0
     reference = BaseModelDirectory(("openai:gpt-5",)).require("openai:gpt-5")

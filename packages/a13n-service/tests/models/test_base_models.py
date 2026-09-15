@@ -1,4 +1,4 @@
-from a13n_service.models.base_models import BaseModelDirectory, profile_reference
+from a13n_service.models.base_models import BaseModelDirectory, compatible_model_profile
 
 NAMES = (
     "openai:gpt-5",
@@ -90,6 +90,67 @@ def test_explicit_api_applies_after_supported_identity_resolution() -> None:
     assert match.items[0].model_api == "openai.chat_completions"
 
 
+def test_identity_resolution_survives_unavailable_api_inference() -> None:
+    match = BaseModelDirectory(("anthropic:claude-sonnet-4-6",)).resolve(
+        upstream_model="my-claude-sonnet-4-6",
+        provider_type="openai",
+        provider_configuration={"base_url": "https://relay.example/v1"},
+        supported_model_apis=("openai.responses", "openai.chat_completions"),
+        model_api=None,
+        base_model=None,
+        base_model_supplied=False,
+    )
+
+    assert match.source == "name_tokens"
+    assert match.items[0].reference.base_model == "anthropic:claude-sonnet-4-6"
+    assert match.items[0].model_api is None
+
+
+def test_equivalent_google_namespaces_collapse_for_custom_endpoint() -> None:
+    match = BaseModelDirectory().resolve(
+        upstream_model="my-gemini-2.5-pro",
+        provider_type="google_gemini",
+        provider_configuration={"base_url": "https://relay.example"},
+        supported_model_apis=("google.generate_content",),
+        model_api=None,
+        base_model=None,
+        base_model_supplied=False,
+    )
+
+    assert match.source == "name_tokens"
+    assert match.items[0].reference.base_model == "google:gemini-2.5-pro"
+    assert match.items[0].model_api == "google.generate_content"
+
+
+def test_native_google_provider_retains_its_exact_namespace() -> None:
+    match = BaseModelDirectory(("google:gemini-2.5-pro", "google-cloud:gemini-2.5-pro")).resolve(
+        upstream_model="gemini-2.5-pro",
+        provider_type="google_vertex",
+        provider_configuration={},
+        supported_model_apis=("google.generate_content",),
+        model_api=None,
+        base_model=None,
+        base_model_supplied=False,
+    )
+
+    assert match.items[0].reference.base_model == "google-cloud:gemini-2.5-pro"
+
+
+def test_explicit_google_base_model_preserves_selected_pydantic_name() -> None:
+    match = BaseModelDirectory(("google:gemini-2.5-pro", "google-cloud:gemini-2.5-pro")).resolve(
+        upstream_model="my-gemini-2.5-pro",
+        provider_type="google_gemini",
+        provider_configuration={"base_url": "https://relay.example"},
+        supported_model_apis=("google.generate_content",),
+        model_api=None,
+        base_model="google-cloud:gemini-2.5-pro",
+        base_model_supplied=True,
+    )
+
+    assert match.source == "explicit"
+    assert match.items[0].reference.base_model == "google-cloud:gemini-2.5-pro"
+
+
 def test_equal_quality_distinct_chat_identities_remain_ambiguous() -> None:
     match = BaseModelDirectory(("openai-chat:gpt-5", "deepseek:gpt-5")).resolve(
         upstream_model="gpt-5",
@@ -122,16 +183,24 @@ def test_explicit_reference_and_null_suppress_inference() -> None:
     assert custom.source == "none"
 
 
-def test_candidates_and_profile_reference_come_from_pydantic_names_and_exact_api() -> None:
+def test_candidates_and_compatible_profiles_come_from_pydantic_names_and_api() -> None:
     candidates = BaseModelDirectory(("openai:gpt-5", "xai:grok-4")).candidates().items
 
     assert [item.base_model for item in candidates] == ["openai:gpt-5", "xai:grok-4"]
     assert candidates[0].inferred_model_api == "openai.responses"
     assert candidates[0].model_api_label == "OpenAI Responses"
     assert candidates[1].inferred_model_api is None
-    assert profile_reference("openai:gpt-5", "openai.responses") == "gpt-5"
-    assert profile_reference("openai:gpt-5", "openai.chat_completions") == "gpt-5"
-    assert profile_reference("anthropic:claude-sonnet-4-5", "openai.chat_completions") is None
+    responses_profile = compatible_model_profile("openai:gpt-5", "openai.responses")
+    chat_profile = compatible_model_profile("openai:gpt-5", "openai.chat_completions")
+    deepseek_profile = compatible_model_profile("deepseek:deepseek-reasoner", "openai.chat_completions")
+    assert responses_profile is not None and responses_profile["supports_thinking"] is True
+    assert chat_profile is not None and chat_profile["supports_thinking"] is True
+    assert deepseek_profile is not None
+    assert deepseek_profile["supports_thinking"] is True
+    assert deepseek_profile["thinking_always_enabled"] is True
+    assert dict(deepseek_profile)["openai_chat_thinking_field"] == "reasoning_content"
+    assert dict(deepseek_profile)["openai_supports_tool_choice_required"] is False
+    assert compatible_model_profile("anthropic:claude-sonnet-4-5", "openai.chat_completions") is None
 
 
 def test_bedrock_mantle_candidate_uses_pydantic_profile_interface() -> None:

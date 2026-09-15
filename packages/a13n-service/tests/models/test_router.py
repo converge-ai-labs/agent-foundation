@@ -456,7 +456,7 @@ async def test_base_model_explicit_override_and_null_suppression(api_client):
 
 
 @pytest.mark.anyio
-async def test_custom_endpoint_base_model_suggestion_uses_default_or_explicit_protocol(api_client):
+async def test_custom_endpoint_base_model_suggestion_uses_default_or_explicit_protocol(api_client, model_catalog):
     provider_response = await api_client.post(
         f"/api/v1/workspaces/{WORKSPACE_ID}/model-providers",
         json={
@@ -469,6 +469,7 @@ async def test_custom_endpoint_base_model_suggestion_uses_default_or_explicit_pr
     assert provider_response.status_code == 201
     provider_id = provider_response.json()["id"]
     suggestion_url = f"/api/v1/workspaces/{WORKSPACE_ID}/model-catalog/suggestions"
+    model_catalog.results[("openai", "anthropic:claude-sonnet-4-6")] = ModelDeclarations(context_window_tokens=200_000)
 
     defaulted = await api_client.post(
         suggestion_url,
@@ -503,3 +504,26 @@ async def test_custom_endpoint_base_model_suggestion_uses_default_or_explicit_pr
     assert claude.json()["source"] == "name_tokens"
     assert [item["base_model"] for item in claude.json()["items"]] == ["anthropic:claude-sonnet-4-5"]
     assert claude.json()["items"][0]["model_api"] == "openai.chat_completions"
+
+    claude_without_api = await api_client.post(
+        suggestion_url,
+        json={"provider_id": provider_id, "upstream_model": "my-claude-sonnet-4-6"},
+    )
+    assert claude_without_api.status_code == 200
+    assert claude_without_api.json()["source"] == "name_tokens"
+    assert [item["base_model"] for item in claude_without_api.json()["items"]] == ["anthropic:claude-sonnet-4-6"]
+    assert claude_without_api.json()["items"][0]["model_api"] is None
+    assert claude_without_api.json()["items"][0]["model_api_label"] is None
+    assert claude_without_api.json()["items"][0]["declarations"]["context_window_tokens"] == 200_000
+
+    create_without_api = await api_client.post(
+        f"/api/v1/workspaces/{WORKSPACE_ID}/models",
+        json={
+            "key": "claude-without-api",
+            "provider_id": provider_id,
+            "name": "Claude without API",
+            "upstream_model": "my-claude-sonnet-4-6",
+        },
+    )
+    assert create_without_api.status_code == 400
+    assert create_without_api.json()["error"]["code"] == "model_api_required"

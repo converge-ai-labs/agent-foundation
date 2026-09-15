@@ -7,7 +7,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
-from pydantic_ai.models import known_model_names
+from pydantic_ai.models import infer_model_profile, known_model_names
+from pydantic_ai.profiles import ModelProfile
 from pydantic_ai.providers.bedrock_mantle import bedrock_mantle_model_profile
 
 from .domain import BaseModelCandidate, BaseModelCandidateCollection
@@ -55,6 +56,8 @@ _API_FAMILY = {
     "openai.responses": "openai_responses",
     "openrouter.chat_completions": "openai_chat",
 }
+_EQUIVALENT_NAMESPACE_GROUPS = (("openai", "openai-chat"), ("google", "google-cloud"))
+_EQUIVALENT_NAMESPACES = {namespace: group for group in _EQUIVALENT_NAMESPACE_GROUPS for namespace in group}
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,36 +126,32 @@ class BaseModelDirectory:
                 ),
             )
 
-        ranked: list[tuple[int, int, BaseModelReference, str]] = []
+        ranked: list[tuple[int, int, BaseModelReference]] = []
         for reference in self._references:
             if reference.namespace is None or reference.namespace.startswith("gateway/"):
                 continue
-            selected_api = model_api or _compatible_model_api(reference.default_model_api, supported_model_apis)
-            if selected_api is None:
-                continue
             rank = _match_rank(upstream_model, reference)
             if rank is not None:
-                ranked.append((*rank, reference, selected_api))
+                ranked.append((*rank, reference))
         if not ranked:
             return BaseModelResolution(source="none")
 
-        best_quality = max((quality, length) for quality, length, _, _ in ranked)
-        winners = [
-            (reference, selected_api)
-            for quality, length, reference, selected_api in ranked
-            if (quality, length) == best_quality
-        ]
-        supported_references = [item for item in winners if item[0].default_model_api is not None]
+        best_quality = max((quality, length) for quality, length, _ in ranked)
+        winners = [reference for quality, length, reference in ranked if (quality, length) == best_quality]
+        supported_references = [reference for reference in winners if reference.default_model_api is not None]
         if supported_references:
             winners = supported_references
-        winners = _collapse_api_variants(winners, supported_model_apis, model_api)
         actual_namespace = _actual_namespace(provider_type, provider_configuration, model_api)
-        actual = [item for item in winners if item[0].namespace == actual_namespace]
+        actual = [reference for reference in winners if reference.namespace == actual_namespace]
         if actual:
             winners = actual
+        winners = _collapse_equivalent_references(winners, supported_model_apis, model_api)
         selections = tuple(
-            BaseModelSelection(reference, selected_api)
-            for reference, selected_api in sorted(winners, key=lambda item: item[0].base_model)
+            BaseModelSelection(
+                reference,
+                model_api or _compatible_model_api(reference.default_model_api, supported_model_apis),
+            )
+            for reference in sorted(winners, key=lambda item: item.base_model)
         )
         if len(selections) != 1:
             return BaseModelResolution(source="ambiguous", items=selections)
@@ -165,17 +164,17 @@ class BaseModelDirectory:
             raise ValueError("base_model must be an installed Pydantic AI model name") from error
 
 
-def profile_reference(base_model: str | None, model_api: str) -> str | None:
+def compatible_model_profile(base_model: str | None, model_api: str) -> ModelProfile | None:
     if base_model is None:
         return None
     reference = _reference(base_model)
-    if reference.default_model_api == model_api:
-        return reference.model_name
+    if _same_api_family(reference.default_model_api, model_api):
+        return infer_model_profile(base_model)
     if reference.namespace in {"openai", "openai-chat"} and model_api in {
         "openai.responses",
         "openai.chat_completions",
     }:
-        return reference.model_name
+        return infer_model_profile(base_model)
     return None
 
 
@@ -217,36 +216,47 @@ def _same_api_family(left: str | None, right: str) -> bool:
     return left is not None and _API_FAMILY.get(left) == _API_FAMILY.get(right)
 
 
-def _collapse_api_variants(
-    winners: list[tuple[BaseModelReference, str]],
+def _collapse_equivalent_references(
+    winners: list[BaseModelReference],
     supported_model_apis: Sequence[str],
     explicit_model_api: str | None,
-) -> list[tuple[BaseModelReference, str]]:
-    groups: dict[tuple[str, ...], list[tuple[BaseModelReference, str]]] = {}
+) -> list[BaseModelReference]:
+    groups: dict[tuple[str, ...], list[BaseModelReference]] = {}
     for winner in winners:
-        reference = winner[0]
+        equivalent_namespaces = _EQUIVALENT_NAMESPACES.get(winner.namespace or "")
         key = (
-            ("openai", *_tokens(reference.model_name))
-            if reference.namespace in {"openai", "openai-chat"}
-            else (reference.base_model,)
+            (equivalent_namespaces[0], winner.catalog_model_id or winner.model_name)
+            if equivalent_namespaces
+            else (winner.base_model,)
         )
         groups.setdefault(key, []).append(winner)
 
-    collapsed: list[tuple[BaseModelReference, str]] = []
+    collapsed: list[BaseModelReference] = []
     for variants in groups.values():
         if len(variants) == 1:
             collapsed.extend(variants)
             continue
-        if explicit_model_api is not None:
-            preferred = [item for item in variants if _same_api_family(item[0].default_model_api, explicit_model_api)]
-        else:
-            first_api = min(
-                (item[1] for item in variants),
-                key=supported_model_apis.index,
+        collapsed.append(
+            min(
+                variants,
+                key=lambda item: _equivalent_rank(item, supported_model_apis, explicit_model_api),
             )
-            preferred = [item for item in variants if item[1] == first_api]
-        collapsed.extend(preferred if len(preferred) == 1 else variants)
+        )
     return collapsed
+
+
+def _equivalent_rank(
+    reference: BaseModelReference,
+    supported_model_apis: Sequence[str],
+    explicit_model_api: str | None,
+) -> tuple[int, int]:
+    namespace_order = _EQUIVALENT_NAMESPACES[reference.namespace or ""]
+    if explicit_model_api is not None:
+        api_rank = 0 if _same_api_family(reference.default_model_api, explicit_model_api) else 1
+    else:
+        selected_api = _compatible_model_api(reference.default_model_api, supported_model_apis)
+        api_rank = supported_model_apis.index(selected_api) if selected_api is not None else len(supported_model_apis)
+    return api_rank, namespace_order.index(reference.namespace or "")
 
 
 def _match_rank(upstream_model: str, reference: BaseModelReference) -> tuple[int, int] | None:
@@ -305,5 +315,5 @@ __all__ = [
     "BaseModelReference",
     "BaseModelResolution",
     "BaseModelSelection",
-    "profile_reference",
+    "compatible_model_profile",
 ]

@@ -13,7 +13,7 @@ from typing import Any, Protocol, cast, get_args
 import httpx2
 from a13n_harness import ModelCapability
 from a13n_logging import get_logger
-from anyio import Lock
+from anyio import Lock, fail_after
 from pydantic_ai.settings import ThinkingEffort
 
 from .base_models import BaseModelReference
@@ -27,6 +27,7 @@ _MAX_CANONICAL_MODELS = 20_000
 _MAX_PROVIDER_MODELS = 50_000
 _REFRESH_SECONDS = 60 * 60
 _RETRY_SECONDS = 60
+_REFRESH_TIMEOUT_SECONDS = 30
 _THINKING_EFFORTS = cast(tuple[ThinkingEffort, ...], get_args(ThinkingEffort))
 _DEFAULT_PROVIDER_IDS = {
     "alibaba_model_studio": "alibaba",
@@ -72,10 +73,12 @@ class ModelsDevCatalog:
         *,
         clock: Callable[[], float] = monotonic,
         refresh_seconds: float = _REFRESH_SECONDS,
+        refresh_timeout_seconds: float = _REFRESH_TIMEOUT_SECONDS,
     ) -> None:
         self._http_client = http_client
         self._clock = clock
         self._refresh_seconds = refresh_seconds
+        self._refresh_timeout_seconds = refresh_timeout_seconds
         self._snapshot = _CatalogSnapshot()
         self._refresh_after = 0.0
         self._lock = Lock()
@@ -109,15 +112,16 @@ class ModelsDevCatalog:
             if now < self._refresh_after:
                 return self._snapshot
             try:
-                snapshot = await self._download()
-            except (httpx2.HTTPError, UnicodeDecodeError, json.JSONDecodeError, ValueError, TypeError):
+                with fail_after(self._refresh_timeout_seconds):
+                    snapshot = await self._download()
+            except (TimeoutError, httpx2.HTTPError, UnicodeDecodeError, json.JSONDecodeError, ValueError, TypeError):
                 logger.warning(
                     "model_catalog_refresh_failed", extra={"event": "model_catalog_refresh_failed"}, exc_info=True
                 )
-                self._refresh_after = now + _RETRY_SECONDS
+                self._refresh_after = self._clock() + _RETRY_SECONDS
             else:
                 self._snapshot = snapshot
-                self._refresh_after = now + self._refresh_seconds
+                self._refresh_after = self._clock() + self._refresh_seconds
                 logger.info(
                     "model_catalog_refreshed",
                     extra={"event": "model_catalog_refreshed", "canonical_models": len(snapshot.canonical)},
