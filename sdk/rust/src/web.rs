@@ -27,6 +27,39 @@ impl Serialize for Secret {
     }
 }
 
+/// One arbitrary JSON credential object retained as write-only input.
+#[derive(Clone)]
+pub struct WebProviderCredential(Map<String, Value>);
+impl WebProviderCredential {
+    pub fn new<K: Into<String>>(fields: impl IntoIterator<Item = (K, Value)>) -> Self {
+        Self(
+            fields
+                .into_iter()
+                .map(|(name, value)| (name.into(), value))
+                .collect(),
+        )
+    }
+
+    pub(crate) fn reveal(&self) -> Value {
+        Value::Object(self.0.clone())
+    }
+}
+impl fmt::Debug for WebProviderCredential {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("WebProviderCredential([REDACTED])")
+    }
+}
+impl fmt::Display for WebProviderCredential {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("[REDACTED]")
+    }
+}
+impl Serialize for WebProviderCredential {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str("[REDACTED]")
+    }
+}
+
 /// Three-state request field; its default omits the field on its owning request.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub enum Optional<T> {
@@ -209,7 +242,7 @@ pub struct CreateWebProviderRequest {
     pub provider_type: String,
     pub name: String,
     #[serde(skip)]
-    pub credential: BTreeMap<String, Secret>,
+    pub credential: WebProviderCredential,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub configuration: Option<Map<String, Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -219,7 +252,7 @@ impl CreateWebProviderRequest {
     pub fn new(
         provider_type: impl Into<String>,
         name: impl Into<String>,
-        credential: BTreeMap<String, Secret>,
+        credential: WebProviderCredential,
     ) -> Self {
         Self {
             provider_type: provider_type.into(),
@@ -235,7 +268,7 @@ pub struct UpdateWebProviderRequest {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
     #[serde(skip)]
-    pub credential: Option<BTreeMap<String, Secret>>,
+    pub credential: Option<WebProviderCredential>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub configuration: Option<Map<String, Value>>,
     #[serde(skip_serializing_if = "Option::is_none")]

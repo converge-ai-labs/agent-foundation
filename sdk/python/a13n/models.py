@@ -3,7 +3,9 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, Secret
+
+type WebProviderCredential = Secret[dict[str, JsonValue]]
 
 
 class Resource(BaseModel):
@@ -128,9 +130,9 @@ class Representation[T](Resource):
 
 class CreateWebProviderRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
-    type: Literal["brave", "exa"]
+    type: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
     name: str
-    credential: dict[str, SecretStr] = Field(repr=False)
+    credential: WebProviderCredential = Field(repr=False)
     configuration: dict[str, JsonValue] = Field(default_factory=dict)
     enabled: bool = True
 
@@ -140,4 +142,4 @@ class UpdateWebProviderRequest(BaseModel):
     name: str | None = None
     configuration: dict[str, JsonValue] | None = None
     enabled: bool | None = None
-    credential: dict[str, SecretStr] | None = Field(default=None, repr=False)
+    credential: WebProviderCredential | None = Field(default=None, repr=False)

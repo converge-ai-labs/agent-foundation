@@ -16,7 +16,7 @@ from anyio import current_time, fail_after, sleep
 from pydantic import BaseModel
 
 from a13n_service.credentials import CredentialSnapshot
-from a13n_service.provider_plugins.api import WebProviderRuntime
+from a13n_service.provider_plugins.api import WebProviderResponseError, WebProviderRuntime
 from a13n_service.secrets.crypto import SecretProtectionError, SecretProtector
 
 from .domain import ScrapeSelection, SearchSelection
@@ -73,9 +73,12 @@ async def _dispatch[ResultT](
             if failure is None:
                 assert result is not None
                 return result
-            if failure.code in retry_codes and attempt + 1 < max_dispatches:
-                retry_after = getattr(failure, "retry_after", None)
-                delay = retry_after if isinstance(retry_after, int | float) else 1.0
+            if (
+                isinstance(failure, WebProviderResponseError)
+                and failure.code in retry_codes
+                and attempt + 1 < max_dispatches
+            ):
+                delay = failure.retry_after if failure.retry_after is not None else 1.0
                 if delay < deadline - current_time():
                     await sleep(delay)
                     continue

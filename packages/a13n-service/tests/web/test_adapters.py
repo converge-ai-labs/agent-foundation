@@ -5,7 +5,8 @@ import json
 import httpx2
 import pytest
 from a13n_harness.capabilities.web import WebProviderError, WebScrapeRequest, WebSearchRequest
-from a13n_service.web.adapters import WebProviderResponseError, WebProviderTransport, _scrape_response_bytes
+from a13n_service.provider_plugins import WebProviderResponseError
+from a13n_service.web.adapters import WebProviderTransport, _scrape_response_bytes
 from a13n_service.web.domain import (
     MAX_SCRAPE_CONTENT_BYTES,
     CreateWebProviderRequest,

@@ -11,11 +11,13 @@ from a13n_service.provider_plugins import (
     PROVIDER_EXTENSION_API_VERSION,
     ConnectorProviderRegistration,
     ProviderCatalogs,
+    ProviderConfiguration,
+    ProviderIntegration,
     ProviderPluginRegistry,
 )
 from a13n_service.provider_plugins.connectors import build_connector_provider_registry
 from a13n_service.settings import Settings
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Configuration(BaseModel):
@@ -28,6 +30,20 @@ class Credential(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     token: str
+
+
+class AliasedConfiguration(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    endpoint: str = Field(alias="baseUrl")
+    tenant: str | None = "default-tenant"
+    required_nullable: str | None
+
+
+class AliasedModelConfiguration(ProviderConfiguration):
+    deployment: str = Field(alias="deploymentName")
+    tenant: str | None = "default-tenant"
+    required_nullable: str | None
 
 
 class ExternalEnvironmentProvider(EnvironmentProvider):
@@ -103,3 +119,58 @@ def test_external_connector_registration_binds_role_transport_and_freezes() -> N
         assert str(error) == "Connector Provider registry is frozen"
     else:
         raise AssertionError("startup registry remained mutable")
+
+
+def test_external_connector_configuration_preserves_aliases_and_explicit_nulls() -> None:
+    marker = cast(ConnectorProviderRuntime, object())
+    captured = []
+
+    def factory(_http, configuration, _credentials):
+        captured.append(configuration)
+        return marker
+
+    registration = ConnectorProviderRegistration(
+        type="aliased_connector",
+        display_name="Aliased Connector",
+        configuration_model=AliasedConfiguration,
+        credential_model=Credential,
+        setup_validator=lambda _configuration, _connector_key, _value: {},
+        factory=factory,
+    )
+    selected = build_connector_provider_registry((registration,), cast(ConnectorHttpClient, object()))
+
+    assert (
+        selected.require("aliased_connector").configure(
+            {"baseUrl": "https://connector.example", "tenant": None, "required_nullable": None},
+            {"token": "secret"},
+        )
+        is marker
+    )
+    assert captured == [{"baseUrl": "https://connector.example", "tenant": None, "required_nullable": None}]
+
+
+def test_external_model_configuration_preserves_aliases_and_explicit_nulls() -> None:
+    def unused_builder(_provider, _http, _model_api):
+        raise AssertionError("configuration validation must not construct a Provider")
+
+    integration = ProviderIntegration(
+        type="aliased_model",
+        display_name="Aliased Model",
+        configuration_model=AliasedModelConfiguration,
+        supported_model_apis=("openai.responses",),
+        build_provider=unused_builder,
+        endpoint="https://models.example.com/v1",
+    )
+    configuration = {
+        "deploymentName": "production",
+        "tenant": None,
+        "required_nullable": None,
+    }
+
+    validated = integration.validate_configuration(configuration, credential_configured=True)
+
+    assert validated.configuration == configuration
+    assert (
+        integration.validate_configuration(validated.configuration, credential_configured=True).configuration
+        == configuration
+    )

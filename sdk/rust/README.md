@@ -25,7 +25,7 @@ Bind API Key operations with `client.workspace().await?`. This reads `/api/v1/au
 
 Create an async bearer client with `Client::new(base_url, Secret::new(token))`. `web_providers` returns a `Representation<Page<WebProvider>>`; use `WebProviderListOptions` for cursor pagination and exact filters. `update_web_provider` requires the current account ETag. `test_web_provider` sends one quota-consuming probe only when called. Drop a request future to cancel that request; call `close()` to cancel all local delivery and release the pool.
 
-Credential request fields use a `BTreeMap<String, Secret>`, such as `BTreeMap::from([("api_key".into(), Secret::new(value))])`; ordinary serialization and diagnostics redact its values. `AgentRunOverride.toolsets` uses `Optional::Omitted` to inherit; a supplied `web` entry replaces that complete Toolset, and `enabled: Some(false)` disables it. `ToolPermission::Inherit` preserves the authored `inherit` setting. Configuration JSON round-trips preserve other fields in `fields`.
+Create a `WebProviderCredential` from the selected catalog type's arbitrary nested JSON fields, for example `WebProviderCredential::new([("api_key", serde_json::json!(value))])`. Ordinary serialization and diagnostics redact the complete object; the client reveals it only for the authorized request. `AgentRunOverride.toolsets` uses `Optional::Omitted` to inherit; a supplied `web` entry replaces that complete Toolset, and `enabled: Some(false)` disables it. `ToolPermission::Inherit` preserves the authored `inherit` setting. Configuration JSON round-trips preserve other fields in `fields`.
 
 ## Generated HTTP operations
 

@@ -15,6 +15,7 @@ from .api import (
     ConnectorProviderRegistration,
     ProviderPluginRegistry,
     WebProviderRegistration,
+    WebProviderResponseError,
     provider_plugin,
 )
 from .catalog import ProviderCatalogs, ProviderPluginError, load_provider_catalogs
@@ -32,6 +33,7 @@ __all__ = [
     "ProviderPluginRegistry",
     "RuntimeProvider",
     "WebProviderRegistration",
+    "WebProviderResponseError",
     "load_provider_catalogs",
     "provider_plugin",
 ]

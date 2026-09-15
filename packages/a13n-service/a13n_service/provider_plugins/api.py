@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Protocol, cast
@@ -9,6 +10,7 @@ from typing import Protocol, cast
 from a13n_environment import EnvironmentProvider
 from a13n_harness.capabilities.web import (
     WebPolicy,
+    WebProviderError,
     WebScrapeRequest,
     WebScrapeResult,
     WebSearchRequest,
@@ -22,6 +24,18 @@ from a13n_service.connectivity.domain import JsonObject
 from a13n_service.models.provider_adapters.base import ProviderIntegration
 
 PROVIDER_EXTENSION_API_VERSION = 1
+
+
+class WebProviderResponseError(WebProviderError):
+    """Safe explicit provider response that can be eligible for bounded retry."""
+
+    def __init__(self, code: str, *, retry_after: float | None = None) -> None:
+        if retry_after is not None and (
+            type(retry_after) not in {int, float} or math.isnan(retry_after) or retry_after < 0
+        ):
+            raise ValueError("retry_after must be a non-negative number")
+        super().__init__(code)
+        self.retry_after = retry_after
 
 
 class WebProviderRuntime(Protocol):

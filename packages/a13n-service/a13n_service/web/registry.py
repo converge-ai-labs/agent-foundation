@@ -79,7 +79,7 @@ class WebProviderRegistry:
     @staticmethod
     def _validated_json(model: type[BaseModel], value: object) -> dict[str, object]:
         parsed = model.model_validate(value)
-        return parsed.model_dump(mode="json", exclude_none=True)
+        return parsed.model_dump(mode="json", by_alias=True, exclude_none=False)
 
     @staticmethod
     def _definition(registration: WebProviderRegistration) -> WebProviderDefinition:

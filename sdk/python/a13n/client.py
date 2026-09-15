@@ -183,7 +183,7 @@ class Client:
         payload = body.model_dump(mode="json", exclude_unset=True) if body else None
         if isinstance(body, CreateWebProviderRequest | UpdateWebProviderRequest) and body.credential is not None:
             assert payload is not None
-            payload["credential"] = {name: value.get_secret_value() for name, value in body.credential.items()}
+            payload["credential"] = body.credential.get_secret_value()
         task = asyncio.current_task()
         if task:
             self._tasks.add(task)

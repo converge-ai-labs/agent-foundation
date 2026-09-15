@@ -105,7 +105,7 @@ Use `aclose()` or an async context manager. Closing cancels local requests, clea
 | Behavior           | Go                                                                  | Rust                                             |
 | ------------------ | ------------------------------------------------------------------- | ------------------------------------------------ |
 | Constructor        | `NewClient(baseURL, Secret, http.RoundTripper)`                     | `Client::new(base_url, Secret)`                  |
-| Credentials        | `map[string]Secret{"api_key": NewSecret(value)}`                    | `BTreeMap<String, Secret>`                       |
+| Credentials        | `NewWebProviderCredential(map[string]any{...})`                     | `WebProviderCredential::new(...)`                |
 | Injected transport | Owned supplied RoundTripper; nil clones the default                 | No public injection/transport builder            |
 | Timeout            | 30 seconds; per-call context also applies                           | 30 seconds; dropping a request future cancels it |
 | Retry policy       | No SDK retry loop; underlying transport behavior is separate        | Explicit retry-never policy                      |
@@ -117,7 +117,7 @@ Use `aclose()` or an async context manager. Closing cancels local requests, clea
 
 Go operations take `context.Context`; Workspace binding shares the parent lifetime. `Representation[T]` preserves `ETag` and `RequestID`. Handle `ApiError`, `ErrTransport`, `ErrProtocol`, and `ErrClosed`; caller cancellation propagates its context error.
 
-Rust returns typed representations and `Error::{Api, Transport, Protocol, InvalidInput, Closed}`. `ApiError` preserves safe status/code/details/request/retry information. A Workspace client borrows its parent. In both languages, optional request helpers distinguish omission, explicit null, and replacement; do not collapse them when serializing Run overrides. Their secret wrappers redact ordinary diagnostics, not authorized request serialization.
+Rust returns typed representations and `Error::{Api, Transport, Protocol, InvalidInput, Closed}`. `ApiError` preserves safe status/code/details/request/retry information. A Workspace client borrows its parent. In both languages, optional request helpers distinguish omission, explicit null, and replacement; do not collapse them when serializing Run overrides. `WebProviderCredential` retains an arbitrary nested JSON object and redacts ordinary diagnostics and serialization; only the Web request boundary reveals it.
 
 See the source package READMEs for language-native examples: [Python](https://github.com/converge-ai-labs/agent-foundation/tree/main/sdk/python), [Go](https://github.com/converge-ai-labs/agent-foundation/tree/main/sdk/go), [Rust](https://github.com/converge-ai-labs/agent-foundation/tree/main/sdk/rust), and [TypeScript](https://github.com/converge-ai-labs/agent-foundation/tree/main/sdk/typescript).
 

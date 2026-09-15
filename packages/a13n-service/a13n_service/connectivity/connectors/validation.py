@@ -25,7 +25,7 @@ def provider_response_errors(*, outcome_unknown: bool = False) -> Iterator[None]
 
 
 def model_json(value: BaseModel) -> JsonObject:
-    return _JSON_OBJECT.validate_python(value.model_dump(mode="json"))
+    return _JSON_OBJECT.validate_python(value.model_dump(mode="json", by_alias=True, exclude_none=False))
 
 
 def normalized_endpoint(value: str) -> str:

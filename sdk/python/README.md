@@ -52,7 +52,7 @@ replace = AgentRunOverride(
 ).to_wire()
 ```
 
-Use `CreateWebProviderRequest` / `UpdateWebProviderRequest` with a field-name-to-`pydantic.SecretStr` credential dictionary, such as `{"api_key": SecretStr(value)}`. Ordinary model diagnostics redact the values; the client reveals them only while serializing an authorized request. `test_web_provider` sends one quota-consuming probe only when called. Use `aclose()` or an async context manager to release the transport.
+`CreateWebProviderRequest` / `UpdateWebProviderRequest` accept any catalog type key and its schema-defined credential dictionary, including nested JSON objects. Pydantic converts that dictionary to a `WebProviderCredential` that redacts the complete object from ordinary model diagnostics; the client reveals it only while serializing an authorized request. Built-ins use `{"api_key": value}`; an external Provider can define another shape. `test_web_provider` sends one quota-consuming probe only when called. Use `aclose()` or an async context manager to release the transport.
 
 ## Generated HTTP operations
 

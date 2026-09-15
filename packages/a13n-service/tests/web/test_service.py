@@ -21,7 +21,7 @@ from a13n_service.web.probe import test_account as probe_account
 from a13n_service.web.registry import WebProviderRegistry
 from a13n_service.web.resources import WebProviderError
 from a13n_service.web.service import WebProviderService
-from pydantic import BaseModel, ConfigDict, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from sqlalchemy import select
 
 from ..models.conftest import WORKSPACE_ID, actor, protector
@@ -43,22 +43,33 @@ class _NestedCredentials(BaseModel):
     tenant: str | None = "default"
 
 
+class _AliasedConfiguration(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    endpoint: str = Field(alias="baseUrl")
+    tenant: str | None = "default-tenant"
+    required_nullable: str | None
+
+
 class _ProbeRuntime:
     def __init__(self, *, failure: str | None = None) -> None:
         self.calls: list[str] = []
         self.closed = 0
         self.failure = failure
         self.credentials: list[_NestedCredentials] = []
+        self.configurations: list[BaseModel] = []
 
-    async def search(self, *, credentials, **_kwargs):
+    async def search(self, *, configuration, credentials, **_kwargs):
         self.calls.append("search")
+        self.configurations.append(configuration)
         self.credentials.append(_NestedCredentials.model_validate(credentials))
         if self.failure is not None:
             raise HarnessWebProviderError(self.failure)
         return WebSearchResponse(results=())
 
-    async def scrape(self, *, credentials, request, policy, **_kwargs):
+    async def scrape(self, *, configuration, credentials, request, policy, **_kwargs):
         self.calls.append("scrape")
+        self.configurations.append(configuration)
         self.credentials.append(_NestedCredentials.model_validate(credentials))
         await policy.authorize(request.url, purpose="scrape")
         if self.failure is not None:
@@ -69,11 +80,19 @@ class _ProbeRuntime:
         self.closed += 1
 
 
-def _custom_service(web_sessions, secret_protector, runtime, *, search: bool, scrape: bool) -> WebProviderService:
+def _custom_service(
+    web_sessions,
+    secret_protector,
+    runtime,
+    *,
+    search: bool,
+    scrape: bool,
+    configuration_model: type[BaseModel] = _EmptyConfiguration,
+) -> WebProviderService:
     registration = WebProviderRegistration(
         type="custom_web",
         display_name="Custom Web",
-        configuration_model=_EmptyConfiguration,
+        configuration_model=configuration_model,
         credential_model=_NestedCredentials,
         setup_url="https://example.com/setup",
         factory=lambda: runtime,
@@ -187,6 +206,55 @@ async def test_nested_secret_credentials_survive_create_rotation_and_runtime(web
             request=UpdateWebProviderRequest(credential={"api_key": "must-not-leak", "nested": {"token": None}}),
         )
     assert "must-not-leak" not in str(invalid.value)
+
+
+async def test_plugin_configuration_aliases_and_nulls_survive_create_update_and_runtime(web_sessions) -> None:
+    runtime = _ProbeRuntime()
+    service = _custom_service(
+        web_sessions,
+        protector(),
+        runtime,
+        search=True,
+        scrape=False,
+        configuration_model=_AliasedConfiguration,
+    )
+    account = await service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        request=CreateWebProviderRequest(
+            type="custom_web",
+            name="Configured",
+            configuration={"baseUrl": "https://initial.example", "tenant": None, "required_nullable": None},
+            credential={"api_key": "secret", "nested": {"token": "nested"}},
+        ),
+    )
+    assert account.configuration == {
+        "baseUrl": "https://initial.example",
+        "tenant": None,
+        "required_nullable": None,
+    }
+    updated = await service.update(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        provider_id=account.id,
+        if_match=resource_etag(account.id, account.updated_at),
+        request=UpdateWebProviderRequest(
+            configuration={"baseUrl": "https://rotated.example", "tenant": None, "required_nullable": None}
+        ),
+    )
+    assert updated.configuration["baseUrl"] == "https://rotated.example"
+    assert updated.configuration["tenant"] is updated.configuration["required_nullable"] is None
+
+    result = await probe_account(
+        service,
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        provider_id=account.id,
+    )
+    assert result.success
+    reconstructed = _AliasedConfiguration.model_validate(runtime.configurations[0])
+    assert reconstructed.endpoint == "https://rotated.example"
+    assert reconstructed.tenant is reconstructed.required_nullable is None
 
 
 async def test_scope_visibility_owning_mutations_and_pagination(web_service, web_sessions) -> None:

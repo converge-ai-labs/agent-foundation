@@ -26,6 +26,7 @@ from pydantic import BaseModel
 
 from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
 from a13n_service.ids import new_object_id
+from a13n_service.provider_plugins.api import WebProviderResponseError
 
 from .domain import MAX_SCRAPE_CONTENT_BYTES, ScrapeSelection, SearchSelection
 
@@ -36,12 +37,6 @@ SEARCH_RESPONSE_BYTES = 1024 * 1024
 # The fixed allowance bounds the remaining result envelope and unexpected fields.
 SCRAPE_RESPONSE_OVERHEAD_BYTES = 256 * 1024
 MAX_JSON_BYTES_PER_CONTENT_BYTE = 6
-
-
-class WebProviderResponseError(WebProviderError):
-    def __init__(self, code: str, *, retry_after: float | None = None) -> None:
-        super().__init__(code)
-        self.retry_after = retry_after
 
 
 def provider_client() -> httpx2.AsyncClient:

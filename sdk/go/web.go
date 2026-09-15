@@ -15,6 +15,26 @@ func (Secret) String() string               { return "[REDACTED]" }
 func (Secret) GoString() string             { return "a13n.Secret([REDACTED])" }
 func (Secret) MarshalJSON() ([]byte, error) { return json.Marshal("[REDACTED]") }
 
+// WebProviderCredential retains one arbitrary JSON credential object as write-only input.
+type WebProviderCredential struct{ value json.RawMessage }
+
+func NewWebProviderCredential(value map[string]any) (WebProviderCredential, error) {
+	if value == nil {
+		return WebProviderCredential{}, errors.New("Web Provider credential must be a JSON object")
+	}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return WebProviderCredential{}, errors.New("Web Provider credential must contain JSON values")
+	}
+	return WebProviderCredential{value: encoded}, nil
+}
+func (WebProviderCredential) String() string               { return "[REDACTED]" }
+func (WebProviderCredential) GoString() string             { return "a13n.WebProviderCredential([REDACTED])" }
+func (WebProviderCredential) MarshalJSON() ([]byte, error) { return json.Marshal("[REDACTED]") }
+func (value WebProviderCredential) reveal() json.RawMessage {
+	return append(json.RawMessage(nil), value.value...)
+}
+
 // Optional preserves omission, explicit null, and replacement. Its zero value means omission.
 type Optional[T any] struct {
 	Value *T
@@ -168,13 +188,13 @@ type Representation[T any] struct {
 type CreateWebProviderRequest struct {
 	Type          string                     `json:"type"`
 	Name          string                     `json:"name"`
-	Credential    map[string]Secret          `json:"-"`
+	Credential    WebProviderCredential      `json:"-"`
 	Configuration map[string]json.RawMessage `json:"configuration,omitempty"`
 	Enabled       *bool                      `json:"enabled,omitempty"`
 }
 type UpdateWebProviderRequest struct {
 	Name          *string                    `json:"name,omitempty"`
-	Credential    map[string]Secret          `json:"-"`
+	Credential    *WebProviderCredential     `json:"-"`
 	Configuration map[string]json.RawMessage `json:"configuration,omitempty"`
 	Enabled       *bool                      `json:"enabled,omitempty"`
 }

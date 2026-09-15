@@ -81,7 +81,7 @@ Each child Agent uses its own accepted selection. Accepted Runs retain Provider 
 | Test                   | `POST .../{provider_id}/test` with `{}`                     |
 | References             | `GET .../{provider_id}/references`                          |
 
-Create with `type`, `name`, and write-only `credential`; configuration is currently `{}` and enabled defaults to true. Responses include a strong `ETag`; send it as `If-Match` for updates. Omission preserves a credential, while null and blank credentials are rejected.
+Create with `type`, `name`, and write-only `credential`; enabled defaults to true. Brave and Exa use an empty configuration and an `api_key` credential. Installed external types define their own configuration and credential object schemas in the type catalog, including nested objects and explicit nulls. Responses include a strong `ETag`; send it as `If-Match` for updates. Omission preserves a credential; each Provider schema decides which fields are required.
 
 ## SDK example
 
@@ -105,6 +105,8 @@ async def create_provider():
 ```
 
 API-key clients bind their Workspace once through `/auth/context`. Close clients when finished. Write-only request types redact credentials from ordinary diagnostics.
+
+The handwritten clients do not keep a built-in Provider allowlist. Read the selected type from `web_provider_types`, then pass its exact catalog key and schema-defined credential object. For example, an installed type can use `type="acme_web"` with a nested credential such as `{"oauth": {"client_id": "...", "client_secret": "..."}}`; the entire object remains redacted outside authorized request serialization.
 
 ## Failures and retries
 

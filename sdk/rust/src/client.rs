@@ -287,7 +287,7 @@ impl Client {
         request: &CreateWebProviderRequest,
     ) -> Result<Representation<WebProvider>, Error> {
         let mut body = serde_json::to_value(request).map_err(|_| Error::InvalidInput)?;
-        body["credential"] = credential_value(&request.credential);
+        body["credential"] = request.credential.reveal();
         self.request(Method::POST, &scope.segments(), Some(body), None, None)
             .await
     }
@@ -300,7 +300,7 @@ impl Client {
     ) -> Result<Representation<WebProvider>, Error> {
         let mut body = serde_json::to_value(request).map_err(|_| Error::InvalidInput)?;
         if let Some(credential) = &request.credential {
-            body["credential"] = credential_value(credential);
+            body["credential"] = credential.reveal();
         }
         let mut path = scope.segments().to_vec();
         path.push(provider_id);
@@ -333,15 +333,6 @@ impl Client {
         self.request(Method::GET, &path, None, None, Some(&options))
             .await
     }
-}
-
-fn credential_value(credentials: &std::collections::BTreeMap<String, Secret>) -> Value {
-    Value::Object(
-        credentials
-            .iter()
-            .map(|(name, value)| (name.clone(), Value::String(value.0.clone())))
-            .collect(),
-    )
 }
 
 impl Drop for Client {

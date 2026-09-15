@@ -133,7 +133,7 @@ Before each Provider dispatch and disclosure, Service rechecks the Attempt fence
 
 Fetch and download recheck Attempt and Agent authority for their exact tool ID on every hop and body boundary. They never read or authorize a Web Provider. Downloads additionally use current Environment file permissions at the call.
 
-One Provider operation has a 30-second total deadline. Service permits at most two dispatches to the same account only after an explicit rate-limit or temporary-unavailable response and sufficient retry budget. Transport failures, timeouts, invalid responses, cancellation, and authorization failures are not replayed. A saved-account test performs one search dispatch and is separate from Run execution and usage accounting.
+One Provider operation has a 30-second total deadline. Service permits at most two dispatches to the same account only after an explicit rate-limit or temporary-unavailable response and sufficient retry budget. The public Provider extension boundary represents that evidence with `WebProviderResponseError`; an ordinary safe `WebProviderError` code does not authorize replay. Transport failures, timeouts, invalid responses, cancellation, and authorization failures are not replayed. A saved-account test performs one supported Provider dispatch and is separate from Run execution and usage accounting.
 
 Provider receipts are recorded only when valid and reported; unknown cost remains unknown. Safe failure codes contain no credential, raw upstream response, private transport diagnostic, query, or extracted content. Clients and sensitive snapshots close on success, failure, cancellation, and Attempt exit.
 

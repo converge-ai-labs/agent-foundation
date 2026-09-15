@@ -1,6 +1,5 @@
 use a13n::*;
 use serde_json::{Value, json};
-use std::collections::BTreeMap;
 use std::sync::Arc;
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -22,8 +21,8 @@ struct Server {
     task: JoinHandle<()>,
 }
 
-fn credentials(value: &str) -> BTreeMap<String, Secret> {
-    BTreeMap::from([("api_key".into(), Secret::new(value))])
+fn credentials(value: &str) -> WebProviderCredential {
+    WebProviderCredential::new([("api_key", json!(value))])
 }
 impl Drop for Server {
     fn drop(&mut self) {
@@ -119,7 +118,8 @@ fn toolset_configuration_is_lossless_and_tri_state() {
         serde_json::to_value(config).unwrap(),
         json!({"toolsets":null})
     );
-    let request = CreateWebProviderRequest::new("brave", "Research", credentials("test-secret"));
+    let request =
+        CreateWebProviderRequest::new("external_web", "Research", credentials("test-secret"));
     assert!(
         !format!("{request:?} {}", serde_json::to_string(&request).unwrap())
             .contains("test-secret")
@@ -130,7 +130,18 @@ fn toolset_configuration_is_lossless_and_tri_state() {
 async fn account_crud_preserves_scope_etags_and_write_only_credentials() {
     let mut server = server(|_| Some((200, provider()))).await;
     let client = Client::new(&server.url, Secret::new("service-token")).unwrap();
-    let request = CreateWebProviderRequest::new("brave", "Research", credentials("test-secret"));
+    let request = CreateWebProviderRequest::new(
+        "external_web",
+        "Research",
+        WebProviderCredential::new([
+            ("api_key", json!("test-secret")),
+            (
+                "nested",
+                json!({"client_secret":"nested-secret","tenant":null}),
+            ),
+        ]),
+    );
+    assert!(!format!("{request:?}").contains("nested-secret"));
     let result = client
         .create_web_provider(&scope(), &request)
         .await
@@ -140,14 +151,21 @@ async fn account_crud_preserves_scope_etags_and_write_only_credentials() {
     assert!(!format!("{result:?}").contains("unexpected-secret"));
     let sent = server.requests.recv().await.unwrap();
     assert_eq!(sent.method, "POST");
-    assert_eq!(sent.body["credential"], json!({"api_key":"test-secret"}));
+    assert_eq!(sent.body["type"], "external_web");
+    assert_eq!(
+        sent.body["credential"],
+        json!({"api_key":"test-secret","nested":{"client_secret":"nested-secret","tenant":null}})
+    );
     assert!(sent.headers.contains("authorization: bearer service-token"));
+    let rotated = WebProviderCredential::new([("token", json!({"primary":"rotated-secret"}))]);
+    assert!(!format!("{rotated:?}").contains("rotated-secret"));
     client
         .update_web_provider(
             &scope(),
             "wprov_test",
             "\"v1\"",
             &UpdateWebProviderRequest {
+                credential: Some(rotated),
                 enabled: Some(false),
                 ..Default::default()
             },
@@ -156,7 +174,10 @@ async fn account_crud_preserves_scope_etags_and_write_only_credentials() {
         .unwrap();
     let sent = server.requests.recv().await.unwrap();
     assert_eq!(sent.method, "PATCH");
-    assert_eq!(sent.body, json!({"enabled":false}));
+    assert_eq!(
+        sent.body,
+        json!({"credential":{"token":{"primary":"rotated-secret"}},"enabled":false})
+    );
     assert!(sent.headers.contains("if-match: \"v1\""));
     client
         .web_provider(
@@ -248,7 +269,11 @@ async fn uncertain_mutations_are_not_replayed() {
         client
             .create_web_provider(
                 &scope(),
-                &CreateWebProviderRequest::new("exa", "Research", credentials("test-secret"))
+                &CreateWebProviderRequest::new(
+                    "external_web",
+                    "Research",
+                    credentials("test-secret")
+                )
             )
             .await,
         Err(Error::Transport)

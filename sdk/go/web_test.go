@@ -26,6 +26,14 @@ func response(status int, body string) *http.Response {
 
 var scope = a13n.WebProviderScope{Kind: "workspace", ID: "ws_test"}
 
+func credential(value map[string]any) a13n.WebProviderCredential {
+	credential, err := a13n.NewWebProviderCredential(value)
+	if err != nil {
+		panic(err)
+	}
+	return credential
+}
+
 func TestWebConfiguration(t *testing.T) {
 	Convey("Toolset overrides preserve omission, null, replacement, and unrelated fields", t, func() {
 		for _, raw := range []string{`{}`, `{"toolsets":null}`, `{"model":{"model_key":"research"},"toolsets":{"web":{"tools":{"search":{"config":{"provider_id":"wprov_test"}}}}}}`} {
@@ -65,24 +73,34 @@ func TestWebAccounts(t *testing.T) {
 		So(err, ShouldBeNil)
 		defer client.Close()
 		request := a13n.CreateWebProviderRequest{
-			Type: "brave", Name: "Research", Credential: map[string]a13n.Secret{"api_key": a13n.NewSecret("test-secret")},
+			Type: "external_web", Name: "Research", Credential: credential(map[string]any{
+				"api_key": "test-secret", "nested": map[string]any{"client_secret": "nested-secret", "tenant": nil},
+			}),
 		}
 		raw, err := json.Marshal(request)
 		So(err, ShouldBeNil)
 		So(string(raw)+fmt.Sprintf("%+v %#v", request, request), ShouldNotContainSubstring, "test-secret")
+		So(string(raw)+fmt.Sprintf("%+v %#v", request, request), ShouldNotContainSubstring, "nested-secret")
 		result, err := client.CreateWebProvider(context.Background(), scope, request)
 		So(err, ShouldBeNil)
 		So(result.ETag, ShouldEqual, `"v1"`)
 		So(result.RequestID, ShouldEqual, "req_test")
 		So(result.Value.ID, ShouldEqual, "wprov_test")
-		So(bodies[0]["credential"], ShouldResemble, map[string]any{"api_key": "test-secret"})
+		So(bodies[0]["type"], ShouldEqual, "external_web")
+		So(bodies[0]["credential"], ShouldResemble, map[string]any{
+			"api_key": "test-secret", "nested": map[string]any{"client_secret": "nested-secret", "tenant": nil},
+		})
 		raw, err = json.Marshal(result)
 		So(err, ShouldBeNil)
 		So(string(raw), ShouldNotContainSubstring, "unexpected-secret")
 		enabled := false
-		_, err = client.UpdateWebProvider(context.Background(), scope, "wprov_test", result.ETag, a13n.UpdateWebProviderRequest{Enabled: &enabled})
+		rotated := credential(map[string]any{"token": map[string]any{"primary": "rotated-secret"}})
+		So(fmt.Sprintf("%+v %#v", rotated, rotated), ShouldNotContainSubstring, "rotated-secret")
+		_, err = client.UpdateWebProvider(context.Background(), scope, "wprov_test", result.ETag, a13n.UpdateWebProviderRequest{Credential: &rotated, Enabled: &enabled})
 		So(err, ShouldBeNil)
-		So(bodies[1], ShouldResemble, map[string]any{"enabled": false})
+		So(bodies[1], ShouldResemble, map[string]any{
+			"credential": map[string]any{"token": map[string]any{"primary": "rotated-secret"}}, "enabled": false,
+		})
 		_, err = client.WebProvider(context.Background(), a13n.WebProviderScope{Kind: "organization", ID: "org_test"}, "wprov_test")
 		So(err, ShouldBeNil)
 		So(paths[2], ShouldEqual, "/prefix/api/v1/organizations/org_test/web-providers/wprov_test")
@@ -145,10 +163,10 @@ func TestUncertainWebMutations(t *testing.T) {
 		So(err, ShouldBeNil)
 		defer client.Close()
 		ctx := context.Background()
-		credential := map[string]a13n.Secret{"api_key": a13n.NewSecret("test-secret")}
-		_, err = client.CreateWebProvider(ctx, scope, a13n.CreateWebProviderRequest{Type: "exa", Name: "Research", Credential: credential})
+		secretObject := credential(map[string]any{"nested": map[string]any{"token": "test-secret"}})
+		_, err = client.CreateWebProvider(ctx, scope, a13n.CreateWebProviderRequest{Type: "external_web", Name: "Research", Credential: secretObject})
 		So(err, ShouldEqual, a13n.ErrTransport)
-		_, err = client.UpdateWebProvider(ctx, scope, "wprov_test", `"v1"`, a13n.UpdateWebProviderRequest{Credential: credential})
+		_, err = client.UpdateWebProvider(ctx, scope, "wprov_test", `"v1"`, a13n.UpdateWebProviderRequest{Credential: &secretObject})
 		So(err, ShouldEqual, a13n.ErrTransport)
 		_, err = client.TestWebProvider(ctx, scope, "wprov_test")
 		So(err, ShouldEqual, a13n.ErrTransport)
