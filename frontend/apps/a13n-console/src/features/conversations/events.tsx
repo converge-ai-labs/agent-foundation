@@ -1,5 +1,5 @@
 import { ArrowLeftIcon, ArrowRightIcon } from "@phosphor-icons/react";
-import { Button } from "a13n-ui";
+import { Button, ModalFrame } from "a13n-ui";
 
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -8,9 +8,9 @@ import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { conversationQueries } from "./api";
-import { ErrorNotice, Loading } from "../../shared/feedback";
+import { ErrorNotice, Loading, Timestamp } from "../../shared/feedback";
 import { JsonView } from "../../shared/form";
-import styles from "./conversations.module.css";
+import styles from "./inspector.module.css";
 
 export function RunEvents({ runId }: { runId: string }) {
   const { t } = useTranslation(),
@@ -25,7 +25,7 @@ export function RunEvents({ runId }: { runId: string }) {
   if (!can("lifecycle_event.read")) return null;
   return (
     <section>
-      <h3>{t("Lifecycle events")}</h3>
+      <h3>{t("Events")}</h3>
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
       {query.isPending ? (
         <Loading variant="code" rows={6} />
@@ -33,12 +33,36 @@ export function RunEvents({ runId }: { runId: string }) {
         query.data && (
           <>
             {query.data.retained_resource_seq_floor > sequence + 1 && (
-              <p>
+              <p className={styles.empty}>
                 {t("Earlier lifecycle events have expired from retention.")}
               </p>
             )}
-            <JsonView value={query.data.items} />
-            <div className={styles.inline}>
+            {!query.data.items.length ? (
+              <p className={styles.empty}>{t("No events retained.")}</p>
+            ) : (
+              <ol className={styles.eventList}>
+                {query.data.items.map((event) => (
+                  <li key={event.id}>
+                    <ModalFrame
+                      trigger={
+                        <button className={styles.eventRow} type="button">
+                          <code>{event.event_type}</code>
+                          <span>
+                            <Timestamp value={event.occurred_at} relative />
+                          </span>
+                        </button>
+                      }
+                      size="md"
+                      title={event.event_type}
+                      closeLabel={t("Close")}
+                    >
+                      <JsonView value={event} />
+                    </ModalFrame>
+                  </li>
+                ))}
+              </ol>
+            )}
+            <div className={styles.eventPager}>
               <Button
                 size="sm"
                 variant="outline"

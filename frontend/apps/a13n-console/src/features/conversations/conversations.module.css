@@ -90,8 +90,35 @@
 }
 .sessionDetail {
   height: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 0px;
+  min-height: 0;
+  position: relative;
+  transition: grid-template-columns 0.18s ease-out;
+}
+.sessionDetail[data-panel-open] {
+  grid-template-columns: minmax(0, 1fr) min(var(--panel-width, 360px), 55%);
+}
+.sessionDetail[data-resizing] {
+  transition: none;
+}
+.panelSlot {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.panelSlot > aside {
+  flex: none;
+  width: var(--panel-width, 360px);
+  height: 100%;
+}
+.sessionMain {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   min-height: 0;
   padding: 0 28px;
 }
@@ -120,15 +147,6 @@
 }
 .sessionBreadcrumb > span {
   min-width: 0;
-}
-.newThread {
-  margin-left: auto;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  text-decoration: none;
-  color: var(--a13n-secondary);
 }
 .backToSessions {
   display: inline-flex;
@@ -310,9 +328,6 @@
   background: var(--a13n-canvas);
   padding: 10px 0;
   margin-top: auto;
-}
-.dockControls:empty {
-  display: none;
 }
 .dockControls {
   display: flex;
@@ -507,10 +522,6 @@
     flex-wrap: wrap;
   }
 }
-.approvalChoices {
-  display: flex;
-  gap: 8px;
-}
 
 .historyRun {
   display: grid;
@@ -586,16 +597,6 @@
   gap: 8px;
   min-width: 0;
 }
-.sessionControls .newThread {
-  padding: 7px;
-  margin-left: 2px;
-  border-radius: 6px;
-  white-space: nowrap;
-}
-.newThread:hover {
-  background: var(--a13n-surface);
-  color: var(--a13n-text);
-}
 @media (max-width: 1000px) {
   .sessionHeader {
     flex-shrink: 0;
@@ -604,9 +605,6 @@
   }
   .sessionControls {
     width: 100%;
-  }
-  .sessionControls .newThread {
-    margin-left: auto;
   }
   .run {
     min-height: 100%;
@@ -624,9 +622,6 @@
   }
   .sessionIdentity h1 {
     font-size: 15px;
-  }
-  .newThread > span {
-    display: none;
   }
   .sessionBreadcrumb {
     gap: 6px;
@@ -646,47 +641,67 @@
   }
 }
 
-.sessionBody {
-  flex: 1;
-  min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-}
-.sessionBody[data-map-open] {
-  grid-template-columns: minmax(0, 1fr) 360px;
-  gap: 26px;
-}
 .sessionContent {
+  flex: 1;
   min-width: 0;
+  min-height: 0;
   overflow-y: auto;
   padding: 0 6px;
   overscroll-behavior: contain;
 }
-@media (max-width: 1100px) {
-  .sessionBody[data-map-open] {
-    grid-template-columns: minmax(0, 1fr) 280px;
-    gap: 16px;
-  }
+.panelResizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 13px;
+  transform: translateX(-50%);
+  cursor: col-resize;
+  z-index: 4;
+  touch-action: none;
 }
-@media (max-width: 760px) {
-  .sessionBody[data-map-open] {
-    grid-template-columns: minmax(0, 1fr) 240px;
-    gap: 12px;
-  }
+.panelResizer::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--a13n-border-soft);
+}
+.panelResizer:hover::after,
+.panelResizer:focus-visible::after {
+  width: 2px;
+  background: color-mix(in srgb, var(--a13n-text) 18%, transparent);
+}
+.panelResizer[data-dragging]::after {
+  width: 2px;
+  background: color-mix(in srgb, var(--a13n-text) 32%, transparent);
 }
 @media (max-width: 600px) {
-  .sessionBody[data-map-open] {
+  .sessionDetail {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: minmax(180px, 34%) minmax(0, 1fr);
-    gap: 0;
+    grid-template-rows: 0px minmax(0, 1fr);
+    transition: grid-template-rows 0.18s ease-out;
   }
-  .sessionBody[data-map-open] > aside {
+  .sessionDetail[data-panel-open] {
+    grid-template-rows: minmax(180px, 34%) minmax(0, 1fr);
+  }
+  .panelSlot {
+    grid-column: 1;
     grid-row: 1;
+  }
+  .panelSlot > aside {
+    width: 100%;
     border-left: 0;
     border-bottom: 1px solid var(--a13n-border);
   }
-  .sessionBody[data-map-open] > .sessionContent {
+  .sessionDetail > .sessionMain {
+    grid-column: 1;
     grid-row: 2;
+  }
+  .panelResizer {
+    display: none;
   }
 }
 
