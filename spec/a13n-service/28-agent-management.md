@@ -215,6 +215,16 @@ The config contains no Python class, import target, callable, native Model, Tool
 
 When `toolsets.assets.tools.publish` is active, the trusted Service `AssetCapability` exposes `publish_asset`. Each execution attempt binds only its current authorized Environment; the tool fails closed when no readable default binding can supply the selected path. Package presence or general Environment file access does not enable it.
 
+### Agent Configuration Files
+
+Console imports and exports one Service Agent configuration as a YAML 1.2 document. The serialized envelope has exactly `schema_version: 1`, `name`, optional nullable `description`, and `config`. `config` is the complete authored `AgentConfig`, including advanced fields, dependency references, and pinned versions. The envelope version describes this file format, not an Agent Revision version. Unknown envelope fields, unsupported versions, malformed configuration, duplicate mapping keys, multiple documents, aliases, non-finite numbers, and unsupported tags are rejected. Imports are bounded to 1 MiB of UTF-8 text, 50,000 YAML nodes, and 100 traversal levels.
+
+Export reads current saved Agent metadata and its selected saved Revision configuration. It excludes Agent identity, key, labels, avatar, default Environment binding, lifecycle state, history, resolved execution snapshots, and dependent resource contents. Export does not read or embed managed credentials or plaintext Secret values; `secret_requirements` remains a list of references. Authored instructions and business configuration are preserved verbatim. This file is not a Harness UI resource and does not embed a dependency bundle.
+
+Import creates a new custom Agent in the target Workspace through the existing Create Agent command after explicit preview and submission. It does not overwrite an existing Agent or create dependencies. The server retains authority for permissions, configuration validation, reference resolution, and idempotency. A failed or uncertain request preserves the import draft; retrying an unchanged creation request uses the same idempotency key.
+
+Console checks discoverable Model, reviewer Model, Skill, Connection, child Agent, child Environment Template Revision, and Web Provider references for search and scrape against the target Workspace. Missing or unavailable selections block submission and offer explicit replacement. Skill and child Agent version pins are checked and retained when remapping; unavailable pins require editing the file or choosing an available resource. Other configuration is retained, including settings and tool scopes. Matching keys or version numbers in another Workspace establishes availability, not identical behavior. Installed-plugin availability, Secret access, provider settings compatibility, graph validation, and execution readiness remain subject to their existing Service validation and runtime boundaries.
+
 ## Run Capability Overlay
 
 Agent authoring defines the default model-visible managed capability surface. After applying `AgentRunOverride`, a direct invocation or trusted input owner such as an authorized host integration can supply one bounded overlay without mutating the AgentRevision:
