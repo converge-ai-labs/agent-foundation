@@ -104,7 +104,7 @@ async def test_root_defaults_enable_codeact_and_match_empty_onboarding(tmp_path:
     assert empty.document.schema_version == "1"
     assert empty.document.tools.model_dump() == {
         "enable_ask_user_question": True,
-        "ask_user_question_timeout_seconds": 120,
+        "interaction_timeout_seconds": 120,
         "enable_codeact": True,
     }
     assert empty.sources[0].content == 'schema_version: "1"\n'

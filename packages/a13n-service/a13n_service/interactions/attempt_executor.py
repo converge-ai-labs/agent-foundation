@@ -7,7 +7,7 @@ from contextlib import AbstractAsyncContextManager, ExitStack
 from typing import Protocol
 
 from a13n_harness import SafeFailure
-from a13n_harness.errors import RunError
+from a13n_harness.errors import DefinitionError, RunError
 from a13n_harness.observation import record_span_metadata
 from a13n_logging import exception_details, get_logger
 from anyio import TASK_STATUS_IGNORED, CancelScope, create_task_group, fail_after, sleep
@@ -207,9 +207,16 @@ class RunAttemptExecutor[OutputT]:
                     )
                     if isinstance(error, (SkillRuntimeError, AttemptAuthorizationError)):
                         code = error.code
+                    elif isinstance(error, DefinitionError) and error.code in {
+                        "skill_materialization_invalid",
+                        "skill_materialization_unavailable",
+                        "skill_materialization_stale",
+                    }:
+                        code = error.code
                     elif isinstance(error, (PluginSelectionError, AgentDefinitionReconstructionError)):
                         code = error.reason
                     elif isinstance(error, RunError) and error.code in {
+                        "execution_usage_exhausted",
                         "environment_required",
                         "search_provider_unavailable",
                         "web_operation_unavailable",
@@ -228,7 +235,14 @@ class RunAttemptExecutor[OutputT]:
                     ):
                         finalization = await self._control.fail_execution(
                             self._committer,
-                            SafeFailure(code=code, message="The RunAttempt could not complete execution."),
+                            SafeFailure(
+                                code=code,
+                                message=(
+                                    "The Run model usage budget is exhausted."
+                                    if code == "execution_usage_exhausted"
+                                    else "The RunAttempt could not complete execution."
+                                ),
+                            ),
                         )
                         _observe_receipt(span, finalization)
                 finally:

@@ -57,6 +57,25 @@ setup_correlation_secret = "local-public-test-correlation-key-not-a-real-secret"
 # The local profile permits private and proxy-routed model endpoints for development.
 private_endpoint_cidrs = ["0.0.0.0/0", "::/0"]
 
+[memory]
+# make setup / make dev starts unmodified OSS and configures it via its native API.
+# Existing external OSS deployments need no patch or replacement image.
+# Management listing loads up to 1,000 records; it is not full-collection pagination.
+# This selects the backend, not Agent behavior: set config.memory on an Agent
+# revision to enable recall and memory tools. See dev/mem0/README.md.
+provider = "oss"
+base_url = "http://127.0.0.1:18888"
+api_key = "local-mem0-api-key"
+# The default OSS stack uses deterministic 128-dimensional development embeddings.
+# Set MEM0_OSS_EMBEDDING_{BASE_URL,MODEL,API_KEY,DIMENSIONS} for real embeddings.
+# Explicit memory writes use infer=false; they do not call an LLM or extract a
+# transcript. LLM configuration is independent: MEM0_OSS_LLM_{BASE_URL,MODEL,API_KEY}.
+# Real keys belong in local environment variables, never in this committed file.
+# Switching to Platform only changes this section (provider = "platform") and
+# its API key; OSS model settings are not used by Platform.
+# Set provider = "none" to opt out; existing memories are retained.
+timeout_seconds = 30
+
 [pricing]
 auto_update = false
 
@@ -65,27 +84,39 @@ tracing = true
 # Local debugging captures input/output content in the local Langfuse volumes.
 trace_content = "standard"
 
-# Logfire alternative for development (explicit opt-in; no Logfire SDK required):
-# Keep tracing = true above; consider trace_content = "none" for remote export.
-# In [observability.query] below, replace provider = "langfuse" with provider = "none".
-# Service has no built-in Logfire trace-query adapter; inspect traces in Logfire.
-# Exporter credentials remain Host environment, not committed TOML values:
-#   export A13N_DEV_TRACE_BACKEND=logfire
-#   export LOGFIRE_TOKEN='YOUR_LOGFIRE_WRITE_TOKEN'
-#   export LOGFIRE_BASE_URL=https://logfire-us.pydantic.dev
-#   make service-dev
-# For the EU region use https://logfire-eu.pydantic.dev.
-# The dev launcher builds a fresh HTTP/protobuf OTLP profile from these values,
-# rather than retaining ambient OTEL_* endpoints or Langfuse Basic headers.
-# To return to local Langfuse, unset A13N_DEV_TRACE_BACKEND and restore provider below.
-
 [observability.query]
-# dev.service uses this same local project for OTLP export and trace queries.
+# Default: local Langfuse for both OTLP export and Console trace queries.
 # The adjacent port (3001) serves Langfuse media. Neither backend reads .env.
 provider = "langfuse"
 langfuse_base_url = "http://127.0.0.1:3000"
 langfuse_public_key = "lf_pk_agent_foundation_local"
 langfuse_secret_key = "lf_sk_agent_foundation_local"
+
+# Alternative: Logfire for both OTLP export and Console trace queries.
+# Copy this file to local.private.toml, then replace the four Langfuse entries
+# above with the following entries in this same [observability.query] table:
+# provider = "logfire"
+# logfire_base_url = "https://logfire-us.pydantic.dev"
+# logfire_history_from = "2026-09-14T00:00:00Z"
+# logfire_read_token = "YOUR_LOGFIRE_READ_TOKEN"
+#
+# Use the project's region (EU: https://logfire-eu.pydantic.dev) and a
+# timezone-aware history lower bound covering the traces you want to query.
+# Real tokens belong only in private configuration or environment variables.
+# Instead of logfire_read_token in the private file, you can export:
+#   export A13N_SERVICE_OBSERVABILITY_QUERY_LOGFIRE_READ_TOKEN='YOUR_LOGFIRE_READ_TOKEN'
+# OTLP export requires a write token for the same project:
+#   export LOGFIRE_TOKEN='YOUR_LOGFIRE_WRITE_TOKEN'
+#   make dev SERVICE_CONFIG=dev/service/local.private.toml
+#
+# Export defaults to the selected query provider and its regional base URL;
+# no Logfire SDK is required. A13N_DEV_TRACE_BACKEND and LOGFIRE_BASE_URL
+# explicitly override export selection and address, independently of queries.
+# For export-only Logfire, select provider = "none" and export
+# A13N_DEV_TRACE_BACKEND=logfire (and LOGFIRE_BASE_URL for a non-US project).
+# Keep tracing = true above; trace_content = "standard" uploads input/output
+# to Logfire. Choose trace_content = "none" to omit that content.
+# Switching backends does not reset Service data or migrate existing traces.
 
 [migration]
 auto_migrate = false

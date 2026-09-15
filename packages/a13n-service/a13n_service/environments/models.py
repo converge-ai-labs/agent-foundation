@@ -16,11 +16,13 @@ from sqlalchemy import (
     Index,
     String,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.credentials import ResourceCredential
 from a13n_service.database import Base
+from a13n_service.labels import LABELS_SQL_TYPE
 from a13n_service.temporal import assume_utc
 
 from .domain import (
@@ -94,9 +96,18 @@ class EnvironmentTemplateRecord(ResourceColumns[str | None], Base):
         UniqueConstraint("id", "organization_id", name="uq_environment_templates_scope"),
         CheckConstraint("version >= 1", name="version_positive"),
         Index("ix_environment_templates_workspace", "workspace_id", "id"),
+        Index(
+            "ix_environment_templates_labels",
+            "labels",
+            postgresql_using="gin",
+            postgresql_ops={"labels": "jsonb_path_ops"},
+        ),
     )
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     description: Mapped[str | None] = mapped_column(String(4096))
+    labels: Mapped[dict[str, str]] = mapped_column(
+        LABELS_SQL_TYPE, nullable=False, default=dict, server_default=text("'{}'")
+    )
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     current_revision_id: Mapped[str] = mapped_column(String(72), nullable=False)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -107,6 +118,7 @@ class EnvironmentTemplateRecord(ResourceColumns[str | None], Base):
                 **self.identity(),
                 "name": self.name,
                 "description": self.description,
+                "labels": self.labels,
                 "version": self.version,
                 "current_revision_id": self.current_revision_id,
                 "archived_at": assume_utc(self.archived_at) if self.archived_at else None,
@@ -181,8 +193,17 @@ class EnvironmentRecord(ResourceColumns[str], Base):
         CheckConstraint("retention_condition IN ('active','idle')", name="retention_condition_valid"),
         Index("ix_environments_maintenance", "next_maintenance_at", "id"),
         Index("ix_environments_capacity", "workspace_id", "ownership", "status"),
+        Index(
+            "ix_environments_labels",
+            "labels",
+            postgresql_using="gin",
+            postgresql_ops={"labels": "jsonb_path_ops"},
+        ),
     )
     name: Mapped[str] = mapped_column(String(128), nullable=False, default="Environment")
+    labels: Mapped[dict[str, str]] = mapped_column(
+        LABELS_SQL_TYPE, nullable=False, default=dict, server_default=text("'{}'")
+    )
     provider_id: Mapped[str] = mapped_column(String(72), nullable=False)
     template_revision_id: Mapped[str | None] = mapped_column(String(72))
     ownership: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -208,6 +229,7 @@ class EnvironmentRecord(ResourceColumns[str], Base):
             {
                 **self.identity(),
                 "name": self.name,
+                "labels": self.labels,
                 "provider_id": self.provider_id,
                 "template_revision_id": self.template_revision_id,
                 "ownership": self.ownership,

@@ -8,9 +8,20 @@
 .navigation label {
   font-size: 12px;
 }
+.navigationFilters {
+  display: grid;
+  gap: 8px;
+}
 .threadGroups {
+  flex: 1;
   overflow: auto;
   min-height: 80px;
+  scrollbar-gutter: stable;
+}
+.threadSkeletons {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
 }
 .groupHeading {
   display: flex;
@@ -21,14 +32,128 @@
   color: var(--a13n-secondary);
   font-size: 12px;
 }
-.groupHeading > div {
-  display: flex;
+.groupHeading:not(:has(.projectDrag)) {
+  padding-inline-start: 22px;
 }
-.groupHeading > span {
+.groupActions {
+  display: flex;
+  flex-shrink: 0;
+}
+.groupToggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  padding: 8px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  cursor: pointer;
+  border-radius: 4px;
+}
+.groupToggle > span {
   overflow: hidden;
+  white-space: nowrap;
   text-overflow: ellipsis;
+  font-weight: 500;
+}
+.groupToggle > svg {
+  flex-shrink: 0;
+  transition: transform 0.15s;
+}
+.groupToggle:focus-visible {
+  outline: 2px solid var(--ring);
+}
+.expandedChevron {
+  transform: rotate(90deg);
+}
+.projectDrag {
+  touch-action: none;
+  cursor: grab;
+  opacity: 0;
+  width: 16px;
+  flex-shrink: 0;
+}
+.groupHeading:hover .projectDrag,
+.groupHeading:focus-within .projectDrag,
+.projectDrag[aria-pressed="true"] {
+  opacity: 1;
+}
+.projectDrag[aria-pressed="true"] {
+  cursor: grabbing;
+}
+.movingProject {
+  background: var(--a13n-surface);
+  box-shadow: 0 -2px 0 var(--ring);
+  border-radius: 6px;
+}
+.groupThreads {
+  margin-inline-start: 22px;
+}
+.pinnedThread {
+  border-bottom: 1px solid var(--a13n-border);
+  margin-bottom: 4px;
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@media (hover: none) {
+  .projectDrag {
+    opacity: 1;
+  }
+}
+.threadRow {
+  display: flex;
+  align-items: center;
+  border-radius: 6px;
+}
+.threadRow:hover,
+.threadRow:has([data-popup-open]) {
+  background: var(--a13n-hover);
+}
+.threadRow:has(.selected) {
+  background: var(--a13n-elevated);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 4%);
+}
+.threadRow:has(.selected) strong {
+  font-weight: 500;
+}
+.threadActions {
+  flex-shrink: 0;
+  margin-inline-end: 4px;
+  color: var(--a13n-secondary);
+  background: transparent;
+}
+@media (hover: hover) and (pointer: fine) {
+  .threadActions,
+  .groupActions {
+    opacity: 0;
+  }
+  .threadRow:hover .threadActions,
+  .threadRow:focus-within .threadActions,
+  .threadRow:has(.selected) .threadActions,
+  .threadActions[data-popup-open],
+  .groupHeading:hover .groupActions,
+  .groupHeading:focus-within .groupActions {
+    opacity: 1;
+  }
+}
+.threadActions:hover,
+.threadActions[data-popup-open] {
+  color: var(--a13n-text);
+  background: var(--accent);
 }
 .threadLink {
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: flex-start;
   gap: 8px;
@@ -40,7 +165,11 @@
 }
 .threadLink:hover,
 .selected {
-  background: var(--a13n-surface);
+  color: var(--a13n-text);
+}
+.threadLink:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: -2px;
 }
 .threadLink > svg {
   flex-shrink: 0;
@@ -59,6 +188,17 @@
 .threadLink small {
   display: block;
   color: var(--a13n-secondary);
+  font-size: 11px;
+  margin-top: 2px;
+}
+.threadWaiting {
+  color: var(--warning-foreground);
+}
+.threadRunning {
+  color: var(--info-foreground);
+}
+.threadFailed {
+  color: var(--destructive-foreground);
 }
 .emptyGroup {
   display: block;
@@ -88,24 +228,14 @@
   min-height: 0;
   height: 100%;
 }
-.header {
+.activityBar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 12px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid var(--a13n-border);
-}
-.header h1 {
-  font-size: 18px;
-  font-weight: 500;
-  margin: 0 0 4px;
-  overflow-wrap: anywhere;
-}
-.header small {
+  font-size: 12px;
   color: var(--a13n-secondary);
 }
-.headerActions,
 .toolbar {
   display: flex;
   gap: 6px;
@@ -124,9 +254,10 @@
   margin: 0 auto;
 }
 .entry {
-  margin-bottom: 24px;
+  margin-bottom: 8px;
 }
 .userMessage {
+  color: var(--a13n-text);
   margin: 12px 0 24px auto;
   padding: 14px 18px;
   background: var(--a13n-surface);
@@ -210,9 +341,9 @@
   color: var(--a13n-secondary);
 }
 .activity {
-  padding: 8px 12px;
-  margin: 8px 0;
-  background: var(--a13n-surface);
+  padding: 8px 10px;
+  margin: 4px 0;
+  background: color-mix(in srgb, var(--a13n-surface) 45%, transparent);
   border-radius: 6px;
   font-size: 13px;
 }
@@ -222,6 +353,37 @@
 }
 .activity details {
   margin: 10px 0;
+}
+.activity > summary {
+  color: var(--a13n-secondary);
+}
+.activity[open] > summary {
+  color: var(--a13n-text);
+  margin-bottom: 10px;
+}
+.activity > summary:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: 3px;
+}
+.children {
+  margin-top: 12px;
+}
+.children > details {
+  background: var(--a13n-surface);
+  padding: 10px 12px;
+}
+.children > details > summary {
+  color: var(--a13n-text);
+}
+.children small {
+  color: var(--a13n-secondary);
+  overflow-wrap: anywhere;
+}
+.childLive {
+  margin: 12px 0;
+}
+.composerHint summary {
+  cursor: pointer;
 }
 .rawSource {
   font-size: 12px;
@@ -237,11 +399,11 @@
   margin: 0 auto;
   border: 1px solid var(--a13n-border);
   border-radius: 12px;
-  padding: 12px 16px;
+  padding: 8px 12px;
   background: var(--a13n-canvas);
 }
 .composer:focus-within {
-  border-color: var(--a13n-secondary);
+  border-color: var(--ring);
 }
 .composerHeading {
   display: flex;
@@ -304,7 +466,7 @@
   font-size: 13px;
   color: var(--a13n-text);
   background: var(--a13n-surface);
-  border-left: 3px solid #d97706;
+  border-left: 3px solid var(--warning-foreground);
   padding: 10px 12px;
   margin: 10px 0;
 }
@@ -462,16 +624,12 @@
   list-style: decimal;
 }
 .form h3 {
-  font-weight: 600;
+  font-weight: 500;
   margin-bottom: 8px;
 }
 .form > section + section {
   padding-top: 16px;
   border-top: 1px solid var(--a13n-border);
-}
-.header small {
-  display: block;
-  line-height: 1.6;
 }
 
 .commentActions {
@@ -515,4 +673,259 @@
   background: var(--background);
   padding: 0.75rem;
   resize: vertical;
+}
+
+.savedOutput {
+  position: relative;
+}
+.outputTools {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--a13n-secondary);
+  margin-top: 8px;
+}
+.selectionAction {
+  position: absolute;
+  width: max-content;
+  max-width: 100%;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  background: var(--a13n-elevated);
+  border: 1px solid var(--a13n-border);
+  border-radius: 8px;
+  padding: 3px;
+  box-shadow: 0 4px 16px #0000000a;
+}
+.selectionHint {
+  display: block;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.markdown [data-comment-ids] {
+  color: inherit;
+  background: light-dark(#fff1b8, #594822);
+  border-bottom: 2px solid light-dark(#d4af42, #bd9740);
+  cursor: pointer;
+  box-decoration-break: clone;
+}
+.markdown [data-comment-ids]:hover,
+.markdown [data-comment-ids]:focus-visible {
+  background: light-dark(#ffe28a, #79602a);
+  outline: 1px solid var(--a13n-secondary);
+  outline-offset: 2px;
+}
+.inlineDiscussion {
+  width: min(360px, calc(100vw - 24px));
+  max-height: min(620px, calc(100dvh - 32px));
+  font-size: 13px;
+}
+.inlineHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.inlineHeading h2 {
+  font-size: 14px;
+  font-weight: 500;
+}
+.inlineDiscussion .commentCard,
+.inlineDiscussion .commentDraft {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+}
+.inlineDiscussion .form h3 {
+  font-size: 13px;
+  font-weight: 500;
+}
+.inlineDiscussion .form > section + section,
+.inlineDiscussion .commentCard + .commentCard {
+  border-top: 1px solid var(--a13n-border);
+  padding-top: 12px;
+}
+
+.savedOutput {
+  color-scheme: light;
+}
+:global(.dark) .savedOutput {
+  color-scheme: dark;
+}
+
+.markdown p,
+.markdown li {
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+.commentsPanel {
+  gap: 14px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.commentToolbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.commentToolbar > span {
+  margin-inline-end: auto;
+}
+.commentEmpty {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 20px 16px 28px;
+  text-align: center;
+}
+.commentEmpty > svg,
+.commentEmpty p {
+  color: var(--a13n-secondary);
+}
+.commentEmpty strong {
+  color: var(--a13n-text);
+  font-size: 14px;
+  font-weight: 500;
+}
+.commentEmpty p {
+  max-width: 32ch;
+  margin: 0;
+}
+.commentsPanel .commentCard,
+.commentsPanel .commentDraft {
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+}
+.commentsPanel .commentCard + .commentCard {
+  padding-top: 16px;
+  border-top: 1px solid var(--a13n-border);
+}
+.commentsPanel h3,
+.commentCard strong {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* Attachment identities live in the editor text; widgets are their presentation. */
+.inlineAttachment {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  max-width: min(280px, 100%);
+  margin: 2px 3px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 7px;
+  background: var(--a13n-surface);
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.4;
+  overflow: hidden;
+}
+.inlineAttachmentOpen,
+.inlineAttachmentRemove {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 6px 8px;
+  min-width: 0;
+}
+.inlineAttachmentOpen span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.inlineAttachmentRemove {
+  align-self: stretch;
+  color: var(--a13n-secondary);
+  border-left: 1px solid var(--a13n-border);
+  flex-shrink: 0;
+}
+.inlineAttachment button:hover {
+  background: var(--a13n-hover);
+}
+.inlineAttachment button:focus-visible {
+  outline: 2px solid var(--a13n-secondary);
+  outline-offset: -2px;
+}
+.attachmentThumbnail {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.attachmentThumbnail[hidden] {
+  display: none;
+}
+.attachmentPreview {
+  display: block;
+  max-width: 100%;
+  max-height: 65dvh;
+  object-fit: contain;
+  margin: 12px auto;
+}
+.inputText {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.8;
+}
+.inputAttachment {
+  display: inline-block;
+  vertical-align: middle;
+  max-width: 100%;
+  margin: 3px 4px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 8px;
+  background: var(--a13n-surface);
+  font-size: 12px;
+}
+.inputAttachment > summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  cursor: pointer;
+  list-style: none;
+}
+.inputAttachment > summary::-webkit-details-marker {
+  display: none;
+}
+.inputAttachment > summary::after {
+  content: "+";
+  color: var(--a13n-secondary);
+  margin-left: 8px;
+}
+.inputAttachment[open] > summary::after {
+  content: "−";
+}
+.inputAttachment strong {
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+.inputAttachmentDetails {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--a13n-border);
+  max-width: min(620px, 100%);
+  overflow-wrap: anywhere;
+}
+.inputAttachmentDetails small {
+  color: var(--a13n-secondary);
+}
+.inputAttachment[open] .attachmentThumbnail {
+  width: 96px;
+  height: 72px;
+  object-fit: contain;
 }

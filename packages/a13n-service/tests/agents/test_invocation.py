@@ -482,3 +482,97 @@ async def test_parent_acceptance_freezes_child_model_defaults_and_detects_child_
         async with transaction(agent_sessions) as session:
             await agent_invocation_resolver.freezing.freeze_in_transaction(session, prepared=prepared)
     assert accepted_child.effective_config.resolved_model.settings["max_tokens"] == 321
+
+
+def test_permission_and_reviewer_overrides_inherit_replace_and_clear() -> None:
+    from a13n_service.agents.domain import AgentConfig
+
+    base = AgentConfig.model_validate(
+        {
+            **agent_config().model_dump(),
+            "permissions": {"default": "deny"},
+            "reviewer": {"model": MODEL_ID, "instruction": "Review writes."},
+        }
+    )
+    inherited = merge_agent_run_override(base, AgentRunOverride(instructions="Changed task"))
+    assert inherited.permissions == base.permissions and inherited.reviewer == base.reviewer
+    assert inherited.reviewer.risk_threshold == "extra_high"
+    assert inherited.reviewer.on_flagged == "deny"
+    changed = merge_agent_run_override(
+        base,
+        AgentRunOverride.model_validate(
+            {
+                "reviewer": {
+                    "model": MODEL_ID,
+                    "on_flagged": "approval_required",
+                    "rules": {"environment.shell_exec": {"risk_threshold": "high"}},
+                },
+            }
+        ),
+    )
+    assert changed.reviewer.on_flagged == "approval_required"
+    assert changed.reviewer.rules["environment.shell_exec"].risk_threshold == "high"
+    assert changed.reviewer.instruction is None
+    cleared = merge_agent_run_override(base, AgentRunOverride(permissions=None, reviewer=None))
+    assert cleared.permissions is None and cleared.reviewer is None
+    replaced = merge_agent_run_override(
+        base, AgentRunOverride.model_validate({"permissions": {"rules": {"web.search": "review"}}})
+    )
+    assert replaced.permissions.default == "inherit" and replaced.permissions.rules == {"web.search": "review"}
+
+
+@pytest.mark.anyio
+async def test_permissions_and_managed_reviewer_survive_acceptance_and_reconstruction(
+    agent_management: AgentManagement,
+    agent_invocation_resolver: AgentInvocationResolver,
+    agent_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    from a13n_harness.capabilities import SubagentCapability
+    from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
+    from a13n_harness.tools import ToolPermissionsCapability
+    from a13n_service.agents.domain import AgentConfig, EffectiveAgentConfig, PreparedAgentPlugins
+    from a13n_service.agents.reconstruction import AgentReconstructor
+
+    config = AgentConfig.model_validate(
+        {
+            **agent_config().model_dump(),
+            "permissions": {"rules": {"web.search": "review"}},
+            "reviewer": {
+                "model": MODEL_ID,
+                "instruction": "Review writes.",
+                "model_settings": {"temperature": 0.1},
+                "on_flagged": "approval_required",
+                "rules": {"environment.shell_exec": {"risk_threshold": "high"}},
+            },
+        }
+    )
+    created = await agent_management.commands.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="create-reviewed-agent",
+        request=CreateAgentRequest(name="Reviewed Agent", config=config),
+    )
+    prepared = await agent_invocation_resolver.preparation.prepare(actor=actor(), agent_id=created.agent.id)
+    assert prepared.reviewer_model is not None
+    async with transaction(agent_sessions) as session:
+        frozen = await agent_invocation_resolver.freezing.freeze_in_transaction(session, prepared=prepared)
+    effective = EffectiveAgentConfig.model_validate_json(frozen.effective_config.model_dump_json())
+    assert effective.permissions == config.permissions and effective.reviewer == config.reviewer
+    assert effective.resolved_reviewer_model is not None
+    assert effective.resolved_reviewer_model.execution.model_id == MODEL_ID
+    assert effective.resolved_reviewer_model.settings["temperature"] == 0.1
+    # Capture is sufficient; reconstruction does not reread the Model resource.
+    definition = AgentReconstructor(plugin_catalog=HarnessPluginFactoryCatalog(())).reconstruct(
+        agent_id=created.agent.id,
+        agent_revision_id=created.revision.id,
+        effective_config=effective,
+        subagent_capability=SubagentCapability(),
+        prepared_plugins=PreparedAgentPlugins(plugins=()),
+    )
+    assert any(isinstance(capability, ToolPermissionsCapability) for capability in definition.capabilities)
+    review = next(
+        capability for capability in definition.capabilities if isinstance(capability, ToolPermissionsCapability)
+    )
+    assert review.policy.risk_threshold == "extra_high"
+    assert review.policy.on_flagged == "approval_required"
+    assert review.policy.rules["environment.shell_exec"].risk_threshold == "high"

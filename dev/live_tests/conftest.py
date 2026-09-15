@@ -19,8 +19,13 @@ def pytest_addoption(parser):
     parser.addoption("--live", action="store_true", help="Run real local Foundation HTTP journeys")
     parser.addoption("--live-round-two", action="store_true", help="Run isolated process and dependency fault journeys")
     parser.addoption("--live-management", action="store_true", help="Run isolated Service/Harness management journeys")
+    parser.addoption(
+        "--live-model-console", action="store_true", help="Run optional Chromium model-management journeys"
+    )
     parser.addoption("--live-plugin-image", action="store_true", help="Build and run a custom plugin Worker image")
     parser.addoption("--live-providers", action="store_true", help="Run configured real-provider integration journeys")
+    parser.addoption("--live-openai", action="store_true", help="Run official OpenAI API journeys using OPENAI_API_KEY")
+    parser.addoption("--live-zhipu", action="store_true", help="Run free official GLM journeys using ZHIPU_API_KEY")
     parser.addoption("--live-environments", action="store_true", help="Run the five-backend Environment matrix")
     parser.addoption("--live-performance", action="store_true", help="Measure bounded PG, S3 and Service operations")
     parser.addoption("--performance-profile", help="TOML concurrency matrix and per-operation latency budgets")

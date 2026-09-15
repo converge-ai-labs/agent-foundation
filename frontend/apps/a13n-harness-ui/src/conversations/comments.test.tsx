@@ -15,6 +15,7 @@ import {
   Discussion,
   SavedOutput,
   CommentListButton,
+  ChildSavedOutputs,
   type CommentDraft,
 } from "./comments";
 import { MessageText } from "./message-text";
@@ -61,7 +62,7 @@ it("maps repeated rendered text through exact source positions and Unicode code 
     ),
   ).toEqual({ start: 1, end: 2, quote: "😀" });
 });
-it("rejects decoded or cross-Markdown approximations and supports exact raw-source fallback", () => {
+it("maps cross-Markdown source spans but rejects decoded approximations and supports raw-source fallback", () => {
   const source = "Left **bold** &amp; right";
   const { container } = render(
     <>
@@ -77,7 +78,7 @@ it("rejects decoded or cross-Markdown approximations and supports exact raw-sour
       source,
       select(left.firstChild!, 0, strong.firstChild!, 4),
     ),
-  ).toBeUndefined();
+  ).toEqual({ start: 0, end: 11, quote: "Left **bold" });
   const decoded = container.querySelector("p")!.lastChild!;
   expect(
     selectedSource(container, source, select(decoded, 1, decoded, 2)),
@@ -306,4 +307,171 @@ it("never anchors a server-truncated transcript excerpt", () => {
   );
   expect(screen.getByText("Displayed excerpt")).toBeTruthy();
   expect(container.querySelector("[data-source-start]")).toBeNull();
+});
+
+it("splits overlapping verified highlights at exact Unicode source offsets without relocating stale quotes", () => {
+  const source = "A😀 **same** then **same**";
+  const start = [...source.slice(0, source.lastIndexOf("same"))].length;
+  const { container } = render(
+    <MessageText
+      text={source}
+      selectable
+      highlights={[
+        { id: "second", selection: { start, end: start + 4, quote: "same" } },
+        {
+          id: "overlap",
+          selection: { start: start + 2, end: start + 4, quote: "me" },
+        },
+        { id: "stale", selection: { start: 0, end: 4, quote: "same" } },
+      ]}
+    />,
+  );
+  const marks = container.querySelectorAll<HTMLElement>("[data-comment-ids]");
+  expect([...marks].map((mark) => mark.textContent).join("")).toBe("same");
+  expect(marks[0].dataset.commentIds).toBe("second");
+  expect(marks[1].dataset.commentIds).toBe("second overlap");
+  expect(
+    container.querySelector("strong")?.querySelector("[data-comment-ids]"),
+  ).toBeNull();
+  expect(
+    selectedSource(
+      container,
+      source,
+      select(marks[0].firstChild!, 0, marks[1].firstChild!, 2),
+    ),
+  ).toEqual({ start, end: start + 4, quote: "same" });
+});
+it("opens a text selection's private editor inline and publishes only after explicit confirmation", async () => {
+  const POST = vi.fn(async (_path, { body }) => ({
+    data: {
+      ...body,
+      root_thread_id: "thread-one",
+      created_at: "2026-09-14T00:00:00Z",
+    },
+  }));
+  const { container, drafts } = setup(POST);
+  const source = container.querySelector("[data-source-start]")!;
+  select(source.firstChild!, 6, source.firstChild!, 11);
+  fireEvent.mouseUp(source);
+  fireEvent.click(screen.getByRole("button", { name: "Comment on selection" }));
+  await screen.findByLabelText("Comment", { selector: "textarea" });
+  expect(
+    screen
+      .getByRole("dialog", { name: "Comments" })
+      .hasAttribute("data-a13n-modal"),
+  ).toBe(false);
+  expect(drafts.get("thread-one")!.publication.selection).toEqual({
+    start: 6,
+    end: 11,
+    quote: "saved",
+  });
+  expect(POST).not.toHaveBeenCalled();
+  fireEvent.change(screen.getByLabelText("Comment", { selector: "textarea" }), {
+    target: { value: "Inline private feedback" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Post comment" }));
+  await screen.findByRole("heading", { name: "Comment published" });
+  expect(POST.mock.calls[0][1].body.selection).toEqual({
+    start: 6,
+    end: 11,
+    quote: "saved",
+  });
+});
+it("activates a saved text highlight from the keyboard without creating or sending feedback", async () => {
+  const POST = vi.fn();
+  setup(POST, [
+    {
+      comment_id: "comment-highlight",
+      target,
+      author: { display_name: "Reader" },
+      body: "A nearby discussion",
+      selection: { start: 6, end: 11, quote: "saved" },
+      root_thread_id: "thread-one",
+      created_at: "2026-09-14T00:00:00Z",
+    },
+  ]);
+  const mark = await screen.findByRole("button", {
+    name: "Read comments on highlighted text",
+  });
+  fireEvent.keyDown(mark, { key: "Enter" });
+  await screen.findByText("A nearby discussion");
+  expect(
+    screen.queryByLabelText("Comment", { selector: "textarea" }),
+  ).toBeNull();
+  expect(POST).not.toHaveBeenCalled();
+});
+
+it("keeps recorded child text collapsed without removing its independent comment target", async () => {
+  const recorded: Schema<"SavedOutputTarget"> = {
+    producing_thread_id: "child-one",
+    source_id: "b".repeat(64),
+    location: { kind: "child_text", execution_id: "exec-one", activity: 0 },
+  };
+  const final: Schema<"SavedOutputTarget"> = {
+    ...recorded,
+    location: { kind: "child_text", execution_id: "exec-one", activity: null },
+  };
+  const GET = vi.fn(async () => ({
+    data: {
+      outputs: [
+        { target: recorded, text: "Recorded working text" },
+        { target: final, text: "Final answer" },
+      ],
+      next_cursor: null,
+    },
+  }));
+  const queries = new QueryClient();
+  const { container } = render(
+    <QueryClientProvider client={queries}>
+      <TransportContext value={{ client: { GET } } as unknown as Transport}>
+        <ChildSavedOutputs threadId="root" executionId="exec-one" />
+      </TransportContext>
+    </QueryClientProvider>,
+  );
+  const outer = container.querySelector("details")!;
+  outer.open = true;
+  fireEvent(outer, new Event("toggle"));
+  const summary = await screen.findByText("Recorded text · activity 1");
+  const details = summary.closest("details")!;
+  expect(details.open).toBe(false);
+  expect(
+    screen.getByText("Final answer", { selector: "span" }).closest("details"),
+  ).toBe(outer);
+  details.open = true;
+  fireEvent(details, new Event("toggle"));
+  expect(
+    screen
+      .getByText("Recorded working text", { selector: "span" })
+      .closest("details"),
+  ).toBe(details);
+});
+
+it("shows a quiet pre-checkpoint child state and refreshes the saved output after reconciliation", async () => {
+  const GET = vi
+    .fn()
+    .mockRejectedValueOnce(
+      new ApiError("No checkpoint", 400, "comment_source_unavailable"),
+    )
+    .mockResolvedValue({ data: { outputs: [], next_cursor: null } });
+  const queries = new QueryClient();
+  const { container } = render(
+    <QueryClientProvider client={queries}>
+      <TransportContext value={{ client: { GET } } as unknown as Transport}>
+        <ChildSavedOutputs threadId="root" executionId="exec-one" />
+      </TransportContext>
+    </QueryClientProvider>,
+  );
+  const outer = container.querySelector("details")!;
+  outer.open = true;
+  fireEvent(outer, new Event("toggle"));
+  await screen.findByText("No retained saved text is available yet.");
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(GET).toHaveBeenCalledTimes(1);
+  await queries.invalidateQueries({
+    queryKey: ["child-saved-output", "root", "exec-one"],
+  });
+  await waitFor(() => expect(GET).toHaveBeenCalledTimes(2));
+  expect(
+    screen.getByText("No retained saved text is available yet."),
+  ).toBeTruthy();
 });

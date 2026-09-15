@@ -13,6 +13,12 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct SearchSelection {
+    #[serde(rename = "allow_domains", skip_serializing_if = "Option::is_none")]
+    pub allow_domains: Option<Vec<String>>,
+
+    #[serde(rename = "deny_domains", skip_serializing_if = "Option::is_none")]
+    pub deny_domains: Option<Vec<String>>,
+
     #[serde(rename = "include_domains", skip_serializing_if = "Option::is_none")]
     pub include_domains: Option<Vec<String>>,
 
@@ -26,6 +32,8 @@ pub struct SearchSelection {
 impl SearchSelection {
     pub fn new(provider_id: String) -> SearchSelection {
         SearchSelection {
+            allow_domains: None,
+            deny_domains: None,
             include_domains: None,
             max_results: None,
             provider_id,

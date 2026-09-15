@@ -4,7 +4,7 @@ from a13n_service.iam.models import UserRecord, WorkspaceRecord
 from a13n_service.interactions.control_models import QueuedSubmissionRecord
 from a13n_service.interactions.models import RunRecord, ThreadRecord
 from a13n_service.interactions.queue import QueuedSubmissionStore
-from a13n_service.interactions.queue_recovery import QueueRecovery
+from a13n_service.interactions.queue_drain import QueueDrain
 from a13n_service.storage import short_session, transaction
 from sqlalchemy import select
 
@@ -35,18 +35,27 @@ async def _queued(sessions, objects):
     return commands, receipt, queued.queued_submission
 
 
-async def test_overlapping_scans_accept_exactly_one_queued_run(interaction_sessions, interaction_object_store):
-    sessions = interaction_sessions
+async def test_worker_and_scanner_accept_exactly_one_queued_run(
+    postgres_interaction_sessions, interaction_object_store
+):
+    sessions = postgres_interaction_sessions
     commands, source, queued = await _queued(sessions, interaction_object_store)
     results = []
 
     async def scan():
-        results.append(await QueueRecovery(sessions, commands.queued).scan())
+        results.append(await QueueDrain(sessions, commands.queued).scan())
+
+    async def consume():
+        results.append(
+            await QueueDrain(sessions, commands.queued).consume_thread(
+                organization_id=ORGANIZATION_ID, thread_id=source.thread_id
+            )
+        )
 
     async with anyio.create_task_group() as tasks:
         tasks.start_soon(scan)
-        tasks.start_soon(scan)
-    assert sum(result.completed for result in results) == 1
+        tasks.start_soon(consume)
+    assert sum(result if isinstance(result, bool) else result.completed for result in results) == 1
     async with short_session(sessions) as database:
         row = await database.get(QueuedSubmissionRecord, queued.queued_submission_id)
         assert row.consumed_run_id is not None and row.position is None
@@ -66,7 +75,7 @@ async def test_reversible_disablement_defers_but_owner_deletion_fails_intent(
     async with transaction(sessions) as database:
         user = await database.get(UserRecord, USER_ID)
         user.status = "disabled"
-    collector = QueueRecovery(sessions, commands.queued)
+    collector = QueueDrain(sessions, commands.queued)
     assert (await collector.scan()).deferred == 1
     async with transaction(sessions) as database:
         row = await database.get(QueuedSubmissionRecord, queued.queued_submission_id)
@@ -74,7 +83,7 @@ async def test_reversible_disablement_defers_but_owner_deletion_fails_intent(
         workspace = await database.get(WorkspaceRecord, WORKSPACE_ID)
         workspace.deleted_at = NOW
     # A fresh replica recovers entirely from owning durable records.
-    assert (await QueueRecovery(sessions, commands.queued).scan()).completed == 1
+    assert (await QueueDrain(sessions, commands.queued).scan()).completed == 1
     async with short_session(sessions) as database:
         row = await database.get(QueuedSubmissionRecord, queued.queued_submission_id)
         thread = await database.get(ThreadRecord, source.thread_id)

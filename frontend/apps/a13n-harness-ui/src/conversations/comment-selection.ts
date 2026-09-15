@@ -8,11 +8,36 @@ type SourceNode = {
   position?: { start: { offset?: number }; end: { offset?: number } };
   children?: SourceNode[];
 };
-export function sourceAnchors(text: string) {
+export type CommentHighlight = {
+  id: string;
+  selection: Schema<"CommentSelection">;
+};
+export function sourceAnchors(
+  text: string,
+  highlights: CommentHighlight[] = [],
+) {
+  const characters = [...text];
+  const ranges = highlights.flatMap(({ id, selection }) => {
+    if (
+      selection.start < 0 ||
+      selection.end <= selection.start ||
+      selection.end > characters.length ||
+      characters.slice(selection.start, selection.end).join("") !==
+        selection.quote
+    )
+      return [];
+    return [
+      {
+        id,
+        start: characters.slice(0, selection.start).join("").length,
+        end: characters.slice(0, selection.end).join("").length,
+      },
+    ];
+  });
   return () => (tree: SourceNode) => {
     const visit = (node: SourceNode) => {
       if (!node.children) return;
-      node.children = node.children.map((child) => {
+      node.children = node.children.flatMap<SourceNode>((child) => {
         const start = child.position?.start.offset;
         const end = child.position?.end.offset;
         if (
@@ -21,12 +46,39 @@ export function sourceAnchors(text: string) {
           end !== undefined &&
           text.slice(start, end) === child.value
         ) {
-          return {
-            type: "element",
-            tagName: "span",
-            properties: { "data-source-start": start, "data-source-end": end },
-            children: [child],
-          };
+          const cuts = [
+            ...new Set([
+              start,
+              end,
+              ...ranges.flatMap((range) => [
+                Math.max(start, Math.min(end, range.start)),
+                Math.max(start, Math.min(end, range.end)),
+              ]),
+            ]),
+          ].sort((a, b) => a - b);
+          return cuts.slice(0, -1).map((from, index) => {
+            const to = cuts[index + 1];
+            const ids = ranges
+              .filter((range) => range.start < to && range.end > from)
+              .map((range) => range.id);
+            return {
+              type: "element",
+              tagName: "span",
+              properties: {
+                "data-source-start": from,
+                "data-source-end": to,
+                ...(ids.length
+                  ? {
+                      "data-comment-ids": ids.join(" "),
+                      tabIndex: 0,
+                      role: "button",
+                      "aria-label": "Read comments on highlighted text",
+                    }
+                  : {}),
+              },
+              children: [{ type: "text", value: text.slice(from, to) }],
+            };
+          });
         }
         visit(child);
         return child;
@@ -55,7 +107,34 @@ export function selectedSource(
   const end = point(range.endContainer, range.endOffset, container);
   if (start === undefined || end === undefined || start >= end) return;
   const quote = source.slice(start, end);
-  if (quote !== range.toString() || !quote || [...quote].length > 16384) return;
+  if (!quote || [...quote].length > 16384) return;
+  if (quote !== range.toString()) {
+    // Formatting may separate source-identical nodes. Verify every selected
+    // text fragment in order; retain the exact source (including Markdown),
+    // rather than searching for a repeated rendered quote.
+    const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT);
+    let previous = start;
+    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+      if (!range.intersectsNode(node)) continue;
+      const from = node === range.startContainer ? range.startOffset : 0;
+      const to =
+        node === range.endContainer
+          ? range.endOffset
+          : (node.textContent?.length ?? 0);
+      if (from === to) continue;
+      const position = point(node, from, container);
+      if (
+        position === undefined ||
+        position < previous ||
+        position + to - from > end ||
+        source.slice(position, position + to - from) !==
+          node.textContent?.slice(from, to)
+      )
+        return;
+      previous = position + to - from;
+    }
+    if (previous !== end) return;
+  }
   return {
     start: [...source.slice(0, start)].length,
     end: [...source.slice(0, end)].length,

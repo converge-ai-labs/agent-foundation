@@ -121,7 +121,7 @@ def test_catalog_projection_returns_detached_models() -> None:
 @pytest.mark.parametrize(
     ("key", "configuration"),
     [
-        ("ShellReviewCapability", {"model": "logical:review", "extra_option": True}),
+        ("ToolPermissionsCapability", {"review": {"model": "logical:review", "extra_option": True}}),
         ("_ProviderSettingsCapability", {"settings": {}, "extra_option": True}),
         ("Thinking", {"effort": "low", "extra_option": True}),
         ("_AliasedSettingsCapability", {"request_settings": {}, "extra_option": True}),
@@ -131,26 +131,27 @@ def test_catalog_reports_native_unexpected_constructor_arguments(key, configurat
     with pytest.raises(CompositionError) as error:
         _settings_catalog().capabilities(((key, configuration),))
     assert error.value.code == "capability_configuration_invalid"
-    assert isinstance(error.value.__cause__, TypeError)
+    expected_error = ValueError if key == "ToolPermissionsCapability" else TypeError
+    assert isinstance(error.value.__cause__, expected_error)
 
 
-@pytest.mark.parametrize("key", ["ShellReviewCapability", "_ProviderSettingsCapability"])
+@pytest.mark.parametrize("key", ["ToolPermissionsCapability", "_ProviderSettingsCapability"])
 def test_catalog_preserves_settings_without_adding_native_type_validation(key: str) -> None:
     settings: dict[str, Any] = {"temperature": 0.5, "openai_store": False, "anthropic_effort": "low"}
     configuration = (
-        {"model": "logical:review", "model_settings": settings}
-        if key == "ShellReviewCapability"
+        {"review": {"model": "logical:review", "model_settings": settings}}
+        if key == "ToolPermissionsCapability"
         else {"settings": settings}
     )
     selected = _settings_catalog().capabilities(((key, configuration),))[0]
     capability = cast(Any, selected.capability)
-    actual = capability.model_settings if key == "ShellReviewCapability" else capability.settings
+    actual = capability.config.model_settings if key == "ToolPermissionsCapability" else capability.settings
     assert actual == settings
 
     settings["temperature"] = "not-a-number"
     selected = _settings_catalog().capabilities(((key, configuration),))[0]
     capability = cast(Any, selected.capability)
-    actual = capability.model_settings if key == "ShellReviewCapability" else capability.settings
+    actual = capability.config.model_settings if key == "ToolPermissionsCapability" else capability.settings
     assert actual == settings  # The native Model, not UI constructor wrapping, owns request validation.
 
 

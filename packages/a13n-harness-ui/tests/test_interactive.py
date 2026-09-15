@@ -946,8 +946,9 @@ def test_resume_with_explicit_permissions_is_rejected_before_any_app_start(monke
 @pytest.mark.anyio
 @pytest.mark.parametrize("decision", ["approve", "deny"])
 @pytest.mark.parametrize("mode", ["full-control", "sandbox"])
+@pytest.mark.parametrize("shortcut", [True, False])
 async def test_pending_shell_decision_is_reviewed_and_resumed_through_app(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, decision: str, mode: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, decision: str, mode: str, shortcut: bool
 ) -> None:
     if mode == "sandbox" and os.environ.get("A13N_HARNESS_UI_TEST_SANDBOX") != "1":
         pytest.skip("Set A13N_HARNESS_UI_TEST_SANDBOX=1 with a compatible envd binary and native isolation support")
@@ -959,17 +960,28 @@ async def test_pending_shell_decision_is_reviewed_and_resumed_through_app(
     path = await _seed(tmp_path, monkeypatch)
     agent_path = path.parent / "agents/codex.yaml"
     agent = yaml.safe_load(agent_path.read_text())
-    agent["capabilities"].append(
-        {
-            "capability": "ShellReviewCapability",
-            "configuration": {
-                "model": "model-codex",
-                "risk_threshold": "high",
-                "on_flagged": "approval_required",
-                "on_error": "skip",
-            },
-        }
-    )
+    if shortcut:
+        root = yaml.safe_load(path.read_text())
+        root["security"] = {"shell_review": {"enable": True, "model": "model-codex", "risk_threshold": "high"}}
+        path.write_text(yaml.safe_dump(root))
+    else:
+        # The disabled root shortcut must not suppress explicit Agent policies.
+        agent["capabilities"].extend(
+            [
+                {
+                    "capability": "ToolPermissionsCapability",
+                    "configuration": {
+                        "rules": {"environment.shell_exec": "review"},
+                        "review": {
+                            "model": "model-codex",
+                            "risk_threshold": "high",
+                            "on_flagged": "approval_required",
+                            "on_error": "allow",
+                        },
+                    },
+                },
+            ]
+        )
     agent_path.write_text(yaml.safe_dump(agent))
     marker = tmp_path / "approved-result"
 
@@ -1014,7 +1026,8 @@ async def test_pending_shell_decision_is_reviewed_and_resumed_through_app(
         assert interaction is not None
         prompt = interaction.prompt()
         assert "Reason: Needs review" in prompt
-        assert prompt.index("Risk: high") < prompt.index("Reason:") < prompt.index("Command:")
+        assert "Risk: high" in prompt  # Shell presentation reads the shared risk assessment.
+        assert prompt.index("Reason:") < prompt.index("Command:")
         assert "Command:\necho reviewed > approved-result" in prompt
         response = interaction.accept("yes" if decision == "approve" else "no")
         assert response is not None and not isinstance(response, str)
@@ -1337,7 +1350,7 @@ async def test_default_tasks_and_questions_suspend_resume_through_native_ui(
 
     path = await _seed(tmp_path, monkeypatch)
     root = yaml.safe_load(path.read_text())
-    root["tools"]["ask_user_question_timeout_seconds"] = 30
+    root["tools"]["interaction_timeout_seconds"] = 30
     path.write_text(yaml.safe_dump(root))
 
     async def stream(messages, info):
@@ -1401,9 +1414,9 @@ async def test_default_tasks_and_questions_suspend_resume_through_native_ui(
         assert interaction is not None and interaction.title() == "Option"
         assert interaction.timeout_seconds == 30
         if timeout:
-            interaction.question_started -= interaction.timeout_seconds
+            interaction.request_started -= interaction.timeout_seconds
             assert interaction.expired
-            response = interaction.expire_question()
+            response = interaction.expire()
         else:
             response = interaction.accept("One")
         assert response is not None and not isinstance(response, str)

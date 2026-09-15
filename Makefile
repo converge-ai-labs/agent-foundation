@@ -131,6 +131,13 @@ cli: harness-ui-env ## Run Harness UI with workspace-local config/data (CLI_ARGS
 webui: harness-ui-env a13n-harness-ui-assets ## Build and start WebUI with a generated login link (WEBUI_ARGS forwards options)
 	@uv run --locked --env-file "$(HARNESS_UI_ENV)" python -m dev.harness-ui.cli $(CLI_ARGS) webui $(WEBUI_ARGS)
 
+.PHONY: cli-landing webui-landing
+cli-landing: ## Try CLI first-run setup with disposable home/config/data; clean up on exit
+	@uv run --locked python -m dev.harness-ui.landing cli
+
+webui-landing: a13n-harness-ui-assets ## Try WebUI first-run setup with disposable state (WEBUI_ARGS forwards options); Ctrl+C cleans up
+	@uv run --locked python -m dev.harness-ui.landing webui $(WEBUI_ARGS)
+
 harness-dev: harness-env ## Run SDK observation scenarios; initialize .env if missing (HARNESS_ARGS selects a scenario)
 	@uv run --locked --env-file "$(HARNESS_ENV)" opentelemetry-instrument python dev/observation-demo/agent.py $(HARNESS_ARGS)
 
@@ -201,7 +208,20 @@ live-test-plugin-image: sync ## Build a custom plugin wheel/image and exercise t
 
 .PHONY: live-test-providers
 live-test-providers: sync ## Run optional configured real Providers in disposable local labs
-	@$(LIVE_TEST_RUN) python -m pytest dev/live_tests/providers/test_31_real_providers.py --live-providers -v --tb=short -o log_cli=true -o log_cli_level=INFO $(LIVE_TEST_ARGS)
+	@$(LIVE_TEST_RUN) python -m pytest dev/live_tests/providers --live-providers -v --tb=short -o log_cli=true -o log_cli_level=INFO $(LIVE_TEST_ARGS)
+
+.PHONY: live-test-models live-test-model-console live-test-openai live-test-zhipu
+live-test-openai: sync ## Run official OpenAI Chat Completions and Responses journeys
+	@$(LIVE_TEST_RUN) python -m pytest dev/live_tests/providers/test_openai_direct.py --live-openai -n 0 -v --tb=short --log-disable=httpx2 $(LIVE_TEST_ARGS)
+
+live-test-zhipu: sync ## Run GLM journeys against the official BigModel endpoint
+	@$(LIVE_TEST_RUN) python -m pytest dev/live_tests/providers/test_zhipu_direct.py --live-zhipu -n 0 -v --tb=short --log-disable=httpx2 $(LIVE_TEST_ARGS)
+
+live-test-models: sync ## Run isolated Model Management HTTP, IAM, protocol and recovery journeys
+	@uv run --locked python -m pytest dev/live_tests/model --live-management -n 0 -v --tb=short --log-disable=httpx2 $(LIVE_TEST_ARGS)
+
+live-test-model-console: sync frontend-sync sdk-typescript-build ## Run optional Chromium Model Management journeys
+	@uv run --locked --with playwright==1.58.0 python -m pytest dev/live_tests/model/test_console.py --live-management --live-model-console -n 0 -v --tb=short --log-disable=httpx2 $(LIVE_TEST_ARGS)
 
 live-test-check: sync ## Validate live-test support without contacting services
 	@uv run --locked ruff check --no-fix dev/live_tests
@@ -209,7 +229,17 @@ live-test-check: sync ## Validate live-test support without contacting services
 	@uv run --locked mdformat --check --number dev/live_tests/README.md dev/live_tests/performance/REPORTING.md
 	@uv run --locked python -m pytest dev/live_tests -q
 
-dev-down: ## Stop local Service and Langfuse infrastructure, preserving all data
+.PHONY: mem0-up mem0-down mem0-logs
+mem0-up: sync ## Start and verify the local Mem0 OSS server using SERVICE_CONFIG
+	@$(SERVICE_DEV) mem0 up
+
+mem0-down: sync ## Stop local Mem0 OSS while preserving memories
+	@$(SERVICE_DEV) mem0 down
+
+mem0-logs: sync ## Inspect local Mem0 OSS startup and provider errors
+	@$(SERVICE_DEV) mem0 logs
+
+dev-down: ## Stop local Service, Mem0 OSS and Langfuse infrastructure, preserving all data
 	@$(SERVICE_DEV) stop
 
 .PHONY: langfuse-up langfuse-down langfuse-test langfuse-reset

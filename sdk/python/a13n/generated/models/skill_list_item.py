@@ -7,9 +7,11 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 from attrs import define as _attrs_define
 
 from ..models.skill_list_item_source_kind import SkillListItemSourceKind
+from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
     from ..models.principal_ref import PrincipalRef
+    from ..models.skill_list_item_labels import SkillListItemLabels
 
 
 T = TypeVar("T", bound="SkillListItem")
@@ -32,6 +34,7 @@ class SkillListItem:
         updated_by (PrincipalRef):
         version (int):
         workspace_id (str):
+        labels (SkillListItemLabels | Unset):
     """
 
     created_at: datetime.datetime
@@ -47,6 +50,7 @@ class SkillListItem:
     updated_by: PrincipalRef
     version: int
     workspace_id: str
+    labels: SkillListItemLabels | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         created_at = self.created_at.isoformat()
@@ -79,6 +83,10 @@ class SkillListItem:
 
         workspace_id = self.workspace_id
 
+        labels: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.labels, Unset):
+            labels = self.labels.to_dict()
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update(
@@ -98,12 +106,15 @@ class SkillListItem:
                 "workspace_id": workspace_id,
             }
         )
+        if labels is not UNSET:
+            field_dict["labels"] = labels
 
         return field_dict
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         from ..models.principal_ref import PrincipalRef
+        from ..models.skill_list_item_labels import SkillListItemLabels
 
         d = dict(src_dict)
         created_at = datetime.datetime.fromisoformat(d.pop("created_at"))
@@ -145,6 +156,13 @@ class SkillListItem:
 
         workspace_id = d.pop("workspace_id")
 
+        _labels = d.pop("labels", UNSET)
+        labels: SkillListItemLabels | Unset
+        if isinstance(_labels, Unset):
+            labels = UNSET
+        else:
+            labels = SkillListItemLabels.from_dict(_labels)
+
         skill_list_item = cls(
             created_at=created_at,
             created_by=created_by,
@@ -159,6 +177,7 @@ class SkillListItem:
             updated_by=updated_by,
             version=version,
             workspace_id=workspace_id,
+            labels=labels,
         )
 
         return skill_list_item

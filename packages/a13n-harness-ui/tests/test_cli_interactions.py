@@ -74,17 +74,15 @@ def test_question_timeout_configuration_rejects_invalid_values(timeout: object) 
     from a13n_harness_ui.configuration.models import ToolsConfiguration
 
     with pytest.raises(ValueError):
-        ToolsConfiguration.model_validate({"ask_user_question_timeout_seconds": timeout})
+        ToolsConfiguration.model_validate({"interaction_timeout_seconds": timeout})
 
 
 def test_question_timeout_is_per_question_and_never_approves_other_requests() -> None:
     interaction = DecisionInteraction(_batch(), timeout_seconds=30)
-    interaction.question_started -= 31
-    assert interaction.expired
     assert interaction.accept("One") is None
     assert not interaction.expired
-    interaction.question_started -= 31
-    assert interaction.expire_question() is None
+    interaction.request_started -= 31
+    assert interaction.expire() is None
     assert interaction.responses == [
         ExternalToolResult(
             request_id="question",
@@ -103,12 +101,23 @@ def test_question_timeout_is_per_question_and_never_approves_other_requests() ->
 
 
 @pytest.mark.anyio
-async def test_terminal_question_timeout_rejects_call_then_keeps_shell_approval_pending() -> None:
+async def test_terminal_timeout_denies_questions_and_tool_approvals_uniformly(monkeypatch) -> None:
     from types import SimpleNamespace
 
     with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
         shell = CliShell(CliRequest())
         shell.backend = SimpleNamespace()
+        completed = []
+        original_finish = shell._finish_decision
+
+        def finish(response):
+            if response is None:
+                original_finish(response)
+            else:
+                completed.append(response)
+                shell.interaction = None
+
+        monkeypatch.setattr(shell, "_finish_decision", finish)
         shell.ready = True
         shell.composer.text = "preserved draft"
         shell._save_draft()
@@ -124,8 +133,12 @@ async def test_terminal_question_timeout_rejects_call_then_keeps_shell_approval_
             assert shell.job is None
             assert shell._saved_draft.text == "preserved draft"
             assert "Timed out" in "".join(block.source for block in shell.renderer.transcript.blocks.values())
-            await asyncio.sleep(0.1)
-            assert shell.interaction.index == 1
+            async with asyncio.timeout(2):
+                while not completed:
+                    await asyncio.sleep(0.01)
+            assert len(completed) == 1
+            assert completed[0].responses[0].denied
+            assert not completed[0].responses[1].approved
         finally:
             shell.closing = True
             await flusher
@@ -218,6 +231,7 @@ def test_setup_access_selection_and_back_preserve_no_secret_defaults() -> None:
     wizard.accept("all")
     wizard.accept("")
     wizard.accept("")  # Tool recommendations.
+    wizard.accept("yes")  # Root shell-review shortcut, including API connections.
     wizard.accept("Keep replies concise")
     wizard.accept("1")
     assert wizard.question is None
@@ -404,17 +418,18 @@ async def test_rejected_resume_preserves_images_and_command(tmp_path: Path, newe
     with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
         shell = CliShell(CliRequest(), directory=tmp_path)
         shell.backend = backend
-        shell.images = (image,)
+        shell.insert_attachments((image,))
+        original_draft = shell.composer.buffer.document
         await shell.command(shell.registry.parse("/resume missing"))
         if newer_draft:
             shell.composer.buffer.document = Document("new draft")
         release.set()
         await shell.job
-        assert shell.images == (image,)
-        assert shell.composer.text == ("new draft" if newer_draft else "/resume missing")
+        assert shell.images == (() if newer_draft else (image,))
+        assert shell.composer.text == ("new draft" if newer_draft else original_draft.text)
         if newer_draft:
             await shell.command(shell.registry.parse("/recover"))
-            assert shell.composer.text == "/resume missing"
+            assert shell.composer.buffer.document == original_draft
             assert shell.images == (image,)
 
 
@@ -458,7 +473,7 @@ async def test_rejected_steering_can_be_recovered_without_overwriting_newer_draf
 
     entered, release = asyncio.Event(), asyncio.Event()
 
-    async def reject(message):
+    async def reject(message, *, skill_references):
         entered.set()
         await release.wait()
         raise ValueError("Receipt is no longer running")
@@ -476,7 +491,9 @@ async def test_rejected_steering_can_be_recovered_without_overwriting_newer_draf
         assert shell.composer.text == "new draft"
         await shell.command(shell.registry.parse("/recover"))
         assert shell.composer.text == "/steer important guidance"
-        backend.steer.assert_awaited_once_with("important guidance")
+        from a13n_harness_ui.thread_files import ComposerInput
+
+        backend.steer.assert_awaited_once_with(ComposerInput(("important guidance",)), skill_references=())
 
 
 def test_cursor_edit_expands_paste_and_atomic_backspace_preserves_other_text(tmp_path: Path) -> None:
@@ -525,7 +542,8 @@ async def test_long_paste_delete_replacement_and_undo_keep_payload(tmp_path: Pat
             assert shell.composer.text == marker
             assert shell.pastes.expand(shell.composer.text) == original
         finally:
-            shell.app.exit()
+            if shell.app.is_running:
+                shell.app.exit()
             await task
             shell.renderer.transcript.close()
 
@@ -535,31 +553,44 @@ def _shell_approval(**changes) -> DecisionInteraction:
         request_id="shell-call",
         tool_name="shell_exec",
         arguments={"command": "rm report.txt", "cwd": "/workspace", "environment": {"TOKEN": "hidden-value"}},
-        metadata={"a13n.harness.shell-review": {"status": "flagged", "risk": "high", "reason": "Deletes a report"}},
+        metadata={
+            "a13n.harness.tool-approval": {"tool_id": "environment.shell_exec"},
+            "a13n.harness.tool-review": {"risk": "high", "reason": "Deletes a report"},
+        },
     ).model_copy(update=changes)
     return DecisionInteraction(DecisionBatchView(continuation_id="b" * 64, requests=(request,)))
 
 
-def test_approval_panel_puts_reason_before_command_and_keeps_explicit_choices() -> None:
+def test_approval_panel_puts_reason_before_command_and_keeps_explicit_choices(monkeypatch: pytest.MonkeyPatch) -> None:
     interaction = _shell_approval()
+    now = 10.0
+    interaction.request_started = now
+    monkeypatch.setattr("a13n_harness_ui.interactive.decisions.time.monotonic", lambda: now)
     text = interaction.prompt()
     assert interaction.prompt_kind == "approval"
     assert text.index("Risk: high") < text.index("Reason: Deletes a report") < text.index("Command:")
     assert "Working directory: /workspace" in text
     assert "TOKEN" in text and "hidden-value" not in text
-    assert "Inspect request details" in text and "Approve once" in text and "Deny" in text
+    assert "1. Approve once" in text and "2. Deny" in text and "3. Deny with reason" in text
+    assert "Details: /review shell-call" in text
     selection = interaction.selection()
     assert selection is not None and selection.cursor == -1
     with pytest.raises(ValueError):
         interaction.accept("")
-    interaction.question_started = 0
-    assert not interaction.expired
+    now += interaction.timeout_seconds
+    assert interaction.expired
+    response = interaction.expire()
+    assert isinstance(response, ThreadDeferredResponse)
+    assert not response.responses[0].approved
 
 
 @pytest.mark.parametrize(
     "metadata",
     [
-        {"a13n.harness.shell-review": {"status": "error"}},
+        {
+            "a13n.harness.tool-approval": {"tool_id": "environment.shell_exec"},
+            "reason": "Tool review could not complete.",
+        },
         {"policy": "Operator confirmation required"},
     ],
 )
@@ -569,7 +600,7 @@ def test_approval_panel_handles_missing_assessment_and_generic_metadata(metadata
     if "policy" in metadata:
         assert "Operator confirmation required" in text
     else:
-        assert "The reviewer failed; no risk assessment or reason is available" in text
+        assert "Tool review could not complete." in text
 
 
 def test_approval_panel_discloses_bounded_and_source_omissions() -> None:
@@ -587,11 +618,11 @@ def test_approval_panel_renders_untrusted_reason_as_literal_terminal_safe_text(w
 
     interaction = _shell_approval(
         metadata={
-            "a13n.harness.shell-review": {
-                "status": "flagged",
+            "a13n.harness.tool-approval": {"tool_id": "environment.shell_exec"},
+            "a13n.harness.tool-review": {
                 "risk": "high",
                 "reason": "[red]reason[/red]\x1b[2J",
-            }
+            },
         }
     )
     renderer = StreamRenderer(Status())
@@ -634,7 +665,8 @@ def test_approval_panel_uses_styled_sections_and_code_not_a_metadata_dump(theme_
     from rich.text import Text
 
     metadata = {
-        "a13n.harness.shell-review": {"status": "flagged", "risk": "high", "reason": "Deletes a report"},
+        "a13n.harness.tool-approval": {"tool_id": "environment.shell_exec"},
+        "a13n.harness.tool-review": {"risk": "high", "reason": "Deletes a report"},
         "a13n.harness.invocation-policy": {"decision": "allow", "metadata": {"token": "details-only"}},
     }
     interaction = _shell_approval(metadata=metadata)
@@ -650,3 +682,187 @@ def test_approval_panel_uses_styled_sections_and_code_not_a_metadata_dump(theme_
     assert "HIGH" in risk.plain and any("bold" in str(span.style) for span in risk.spans)
     assert not any(isinstance(part, Text) and "Approve once" in part.plain for part in sections)
     assert interaction.request.metadata == metadata
+
+
+def test_shared_approval_reason_renders_without_an_empty_shell_risk_row() -> None:
+    from a13n_harness_ui.interactive.approvals import approval_panel
+    from a13n_harness_ui.interactive.theme import resolve_theme
+    from rich.console import Group
+    from rich.text import Text
+
+    interaction = _shell_approval(
+        metadata={
+            "a13n.harness.tool-approval": {"requested_sources": ["reviewer"]},
+            "a13n.harness.invocation-policy": {"metadata": {"token": "details-only"}},
+            "reason": "Confirm the export destination",
+        }
+    )
+    assert "Reason: Confirm the export destination" in interaction.prompt()
+    assert "details-only" not in interaction.display_prompt()
+    panel = approval_panel(interaction.display_prompt(), resolve_theme("dark"))
+    assert isinstance(panel.renderable, Group)
+    text = [item.plain for item in panel.renderable.renderables if isinstance(item, Text)]
+    assert "Approval reason" in text
+    assert not any(item.startswith("Risk ") for item in text)
+    assert any("Confirm the export destination" in item for item in text)
+
+
+def test_uniform_interaction_timeout_accepts_legacy_question_setting():
+    from a13n_harness_ui.configuration.models import ToolsConfiguration
+
+    config = ToolsConfiguration.model_validate({"ask_user_question_timeout_seconds": 30})
+    assert config.interaction_timeout_seconds == 30
+    assert config.model_dump()["interaction_timeout_seconds"] == 30
+
+
+def test_shell_approval_uses_unified_risk_evidence_best_effort():
+    interaction = _shell_approval(
+        metadata={
+            "reason": "Removes a report",
+            "a13n.harness.tool-approval": {"tool_id": "environment.shell_exec"},
+            "a13n.harness.tool-review": {"risk": "high", "reason": "Removes a report"},
+        }
+    )
+    text = interaction.prompt()
+    assert "Risk: high" in text
+    assert "Removes a report" in text
+
+
+@pytest.mark.parametrize("choice, approved", [("1", True), ("2", False), ("approve", True), ("deny", False)])
+def test_approval_action_choices(choice, approved):
+    interaction = _shell_approval()
+    response = interaction.accept(choice)
+    assert isinstance(response, ThreadDeferredResponse)
+    assert response.responses == (ApprovalDecision(request_id="shell-call", approved=approved),)
+
+
+def test_denial_reason_editor_never_interprets_reason_as_approval():
+    interaction = _shell_approval()
+    started = interaction.request_started
+    assert interaction.accept("3") is None
+    assert interaction.editor == "reason" and interaction.selection() is None
+    assert interaction.request_started == started
+    with pytest.raises(ValueError, match="denial reason"):
+        interaction.accept(" ")
+    assert interaction.back()
+    assert interaction.selection().cursor == -1
+    assert interaction.request_started == started
+    assert interaction.accept("deny with reason") is None
+    response = interaction.accept("approve")
+    assert isinstance(response, ThreadDeferredResponse)
+    assert response.responses == (ApprovalDecision(request_id="shell-call", approved=False, denial_message="approve"),)
+
+
+def _external_interaction():
+    from a13n_harness_ui.surfaces import ExternalRequestView
+
+    return DecisionInteraction(
+        DecisionBatchView(
+            continuation_id="c" * 64,
+            requests=(ExternalRequestView(request_id="external-call", tool_name="external_tool", arguments={}),),
+        )
+    )
+
+
+def test_external_action_opens_result_editor_without_inventing_execution():
+    interaction = _external_interaction()
+    assert [choice.label for choice in interaction.selection().choices] == [
+        "Provide result",
+        "Deny",
+        "Deny with reason",
+    ]
+    with pytest.raises(ValueError):
+        interaction.accept("approve")
+    assert interaction.accept("1") is None
+    assert interaction.editor == "result" and not interaction.responses
+    with pytest.raises(ValueError):
+        interaction.accept("not JSON")
+    assert interaction.editor == "result" and not interaction.responses
+    response = interaction.accept("1")  # A numeric result is data only after opening the editor.
+    assert isinstance(response, ThreadDeferredResponse)
+    assert response.responses == (ExternalToolResult(request_id="external-call", result=1),)
+
+
+@pytest.mark.parametrize("external", [False, True])
+def test_timeout_while_editing_denies_without_resetting_clock(external, monkeypatch):
+    interaction = _external_interaction() if external else _shell_approval()
+    now = 10.0
+    interaction.request_started = now
+    monkeypatch.setattr("a13n_harness_ui.interactive.decisions.time.monotonic", lambda: now)
+    assert interaction.accept("1" if external else "3") is None
+    assert interaction.request_started == now
+    now += interaction.timeout_seconds
+    response = interaction.accept('{"ok": true}' if external else "too late")
+    assert isinstance(response, ThreadDeferredResponse)
+    item = response.responses[0]
+    assert item.denied if external else not item.approved
+    assert "timed out" in item.denial_message
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("external", [False, True])
+async def test_terminal_decision_editor_keyboard_back_validation_and_submit(tmp_path, external, monkeypatch):
+    from types import SimpleNamespace
+
+    async def execute(*args, **kwargs):
+        return ""
+
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+        shell = CliShell(CliRequest(), directory=tmp_path)
+        shell.ready = True
+        shell.backend = SimpleNamespace(execute=execute, thread_id=None)
+        shell.app.timeoutlen = 0.05
+        submitted = []
+
+        def launch(operation, **kwargs):
+            operation.close()
+            submitted.append(True)
+
+        monkeypatch.setattr(shell, "launch", launch)
+        shell.composer.text = "saved user draft"
+        shell._save_draft()
+        shell.interaction = _external_interaction() if external else _shell_approval()
+        interaction = shell.interaction
+        shell.selection = interaction.selection()
+        shell._emit_decision()
+        task = asyncio.create_task(shell.app.run_async())
+        try:
+            async with asyncio.timeout(3):
+                while not shell.app.is_running:
+                    await asyncio.sleep(0.01)
+            # Down from the unselected cursor chooses the first action. Approval
+            # denial-with-reason is the third action; external result is the first.
+            pipe.send_text("\x1b[B" * (1 if external else 3) + "\r")
+            await asyncio.sleep(0.1)
+            assert shell.selection is None
+            assert not shell.selector_focused
+            assert interaction.editor == ("result" if external else "reason")
+            started = interaction.request_started
+            pipe.send_text("\x1b")
+            await asyncio.sleep(0.6)
+            assert interaction.editor is None
+            assert shell.selection.cursor == -1
+            assert interaction.request_started == started
+            pipe.send_text(("1" if external else "3") + "\r")
+            await asyncio.sleep(0.1)
+            if external:
+                pipe.send_text("invalid JSON\r")
+                await asyncio.sleep(0.1)
+                assert shell.composer.text == "invalid JSON"
+                assert not submitted
+                shell.composer.text = ""
+            pipe.send_text(('{"ok": true}' if external else "Do not remove this report") + "\r")
+            await asyncio.sleep(0.1)
+            assert submitted == [True]
+            assert shell.interaction is None
+            assert shell.composer.text == "saved user draft"
+            item = interaction.responses[0]
+            if external:
+                assert item.result == {"ok": True} and not item.denied
+            else:
+                assert not item.approved and item.denial_message == "Do not remove this report"
+        finally:
+            if shell.app.is_running:
+                shell.app.exit()
+            await task
+            shell.renderer.transcript.close()

@@ -33,6 +33,10 @@
 .cell :global([data-state="succeeded"]) {
   background: transparent;
 }
+.table :global([data-slot="table-header"]) {
+  clip-path: inset(0 round 8px 8px 0 0);
+  background: color-mix(in srgb, var(--a13n-text) 3%, var(--a13n-canvas));
+}
 .table :global([data-slot="table-head"]) {
   font-size: 12px;
   font-weight: 400;

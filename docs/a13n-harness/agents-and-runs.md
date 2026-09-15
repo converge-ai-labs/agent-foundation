@@ -334,6 +334,8 @@ Recovery has narrow owners:
 
 Self-healing is opt-in through `SelfHealingModelCapability` and performs only supported one-shot history repairs around the final effective Model, including a concrete, run-resolved, or natively inferred Model. It is not a retry for arbitrary model or tool exceptions. Semantic model recovery is disabled by default; opt in with a bounded `ModelRecoveryPolicy` on the definition when continuing an interrupted model attempt is valid for the application.
 
+An interrupted attempt retains text already emitted, even when the stream stops during a subsequent tool call. The next attempt receives that partial response as interrupted history, not as completed output. Unfinished thinking and tool arguments are excluded; invalid provider-native call/return groups are removed without erasing surrounding recoverable text. Failed or cancelled runs export the same filtered history for a later Host-selected continuation.
+
 Recovery never makes uncertain external side effects exactly once. When a tool or provider mutation may have been dispatched without an authoritative result, reconcile current provider state before retrying.
 
 ## Usage

@@ -32,6 +32,7 @@ from prompt_toolkit.layout.containers import (
 from prompt_toolkit.layout.controls import FormattedTextControl
 from prompt_toolkit.layout.dimension import Dimension
 from prompt_toolkit.layout.menus import CompletionsMenu
+from prompt_toolkit.layout.processors import Processor
 from prompt_toolkit.mouse_events import MouseEvent, MouseEventType
 from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.styles import Style
@@ -39,13 +40,14 @@ from prompt_toolkit.utils import get_cwidth
 from prompt_toolkit.widgets import TextArea
 
 from a13n_harness_ui.environment_profiles import WINDOWS_EXECUTION_NOTICE, local_sandbox_supported
-from a13n_harness_ui.thread_files import AttachmentUpload, ComposerInput
+from a13n_harness_ui.thread_files import AttachmentUpload
 
 from .attachments import add_images, clipboard_images, read_attachment
 from .commands import CommandRegistry, Invocation
 from .composer import ComposerWindow, wrapped_height
 from .diagnostics import exception_report, pending_task_warning
 from .history import HistoryBrowser
+from .inline_attachments import AttachmentBuffer, AttachmentClipboard, AttachmentProcessor, InlineAttachments
 from .local_shell import run_local_shell, validate_local_shell_support
 from .pastes import PendingPastes
 from .questions import QuestionCard
@@ -110,10 +112,12 @@ class CliShell:
         self._saved_draft: Document | None = None
         self.pastes = PendingPastes()
         self.mouse = True
-        self.images: tuple[AttachmentUpload, ...] = ()
-        self._saved_images: tuple[AttachmentUpload, ...] = ()
+        self.inline = InlineAttachments()
+        self.clipboard = AttachmentClipboard()
         self._draft_generation = 0
-        self._recoverable: tuple[Document, tuple[AttachmentUpload, ...]] | None = None
+        self._recoverable: Document | None = None
+        self._submitted_draft: Document | None = None
+        self._sending_draft: Document | None = None
         self._clipboard_task: asyncio.Task[None] | None = None
         self._last_interrupt = float("-inf")
         self.view = TranscriptControl(self.renderer.transcript)
@@ -122,6 +126,10 @@ class CliShell:
             completer=SlashCompleter(self.registry),
             complete_while_typing=True,
         )
+        self.composer.buffer = AttachmentBuffer(self.inline, SlashCompleter(self.registry))
+        self.composer.control.buffer = self.composer.buffer
+        processors: list[Processor] = [AttachmentProcessor(self.inline)]
+        self.composer.control.input_processors = processors
         self.composer.window = ComposerWindow(
             self.composer.control,
             style="class:text-area class:input-area",
@@ -213,12 +221,6 @@ class CliShell:
                         ),
                     ),
                     ConditionalContainer(
-                        Window(
-                            FormattedTextControl(self._attachment_chips), height=1, style="class:session-selector.key"
-                        ),
-                        filter=Condition(lambda: bool(self.images) and self.app.output.get_size().rows >= 10),
-                    ),
-                    ConditionalContainer(
                         Window(FormattedTextControl(self._composer_header), height=1, style="class:input-area.border"),
                         filter=Condition(lambda: self.question_card is None and self.app.output.get_size().rows >= 8),
                     ),
@@ -283,6 +285,7 @@ class CliShell:
             ]
         )
         self.app: Application[None] = Application(
+            clipboard=self.clipboard,
             layout=Layout(layout, focused_element=self.composer),
             key_bindings=self._bindings(),
             full_screen=True,
@@ -308,6 +311,7 @@ class CliShell:
                 "selection.description": rules["session-selector.hint"],
                 "selection.hint": rules["session-selector.key"],
                 "warning": rules["status-bar.warning"],
+                "input-area.attachment": rules["session-selector.key"],
             }
         )
         return Style.from_dict(rules)
@@ -315,7 +319,9 @@ class CliShell:
     def _composer_height(self) -> Dimension:
         size = self.app.output.get_size()
         # Match BufferControl's trailing cursor cell and the window's wrapping.
-        rows = sum(wrapped_height(line + " ", size.columns) for line in self.composer.text.split("\n"))
+        rows = sum(
+            wrapped_height(line + " ", size.columns) for line in self.inline.display(self.composer.text).split("\n")
+        )
         minimum = 3 if size.rows >= 16 else 1
         height = min(max(1, size.rows // 3), max(minimum, min(7, rows)))
         return Dimension(min=1, preferred=height, max=height)
@@ -559,8 +565,6 @@ class CliShell:
         self.selector_focused = True
         if self._saved_draft is None:
             self._saved_draft = self.composer.buffer.document
-            self._saved_images = self.images
-            self.images = ()
             self._draft_generation += 1
         self.composer.buffer.reset()
 
@@ -571,8 +575,6 @@ class CliShell:
         if self._saved_draft is not None:
             self.composer.buffer.document = self._saved_draft
             self._saved_draft = None
-            self.images = self._saved_images
-            self._saved_images = ()
             self._draft_generation += 1
         if not self.busy and self.interaction is None:
             self.status.state = "ready"
@@ -617,7 +619,7 @@ class CliShell:
         from a13n_harness_ui.surfaces import StructuredQuestionRequestView
 
         assert self.interaction is not None
-        self.selector_focused = True
+        self.selector_focused = self.selection is not None
         if isinstance(self.interaction.request, StructuredQuestionRequestView):
             self.renderer.register_questions(self.interaction.request)
             assert self.selection is not None
@@ -719,8 +721,8 @@ class CliShell:
                 and self.interaction is not None
                 and self.interaction.expired
             ):
-                self.emit("Timed out: ask_user_question. No answer or approval was supplied.")
-                self._finish_decision(self.interaction.expire_question())
+                self.emit(f"Timed out: {self.interaction.request.tool_name}. No answer or approval was supplied.")
+                self._finish_decision(self.interaction.expire())
             if self.renderer.transcript.dirty:
                 await self.flush()
             if self.status.started is not None:
@@ -754,6 +756,11 @@ class CliShell:
                     self.emit(str(exc))
                     return
             try:
+                if self.inline.tokens(text):
+                    self.inline.compile(self.pastes.expand(text))
+                    command = self.registry.lookup(text) if text.startswith("/") else None
+                    if text.startswith("!") or (command is not None and command.name != "steer"):
+                        raise ValueError("Attachments belong to prompts, not commands. Your draft is preserved.")
                 if text.startswith("/") and self.registry.lookup(text) is not None:
                     invocation = self.registry.parse(text, busy=self.busy)
                     name = invocation.command.name
@@ -764,6 +771,12 @@ class CliShell:
                         raise ValueError("Finish this interaction or /cancel first. Your input is preserved.")
                     if self._input_task is not None and not self._input_task.done() and name not in local:
                         raise ValueError("Finishing the previous action. Your input is preserved.")
+                    if name == "steer":
+                        if not self.can_steer:
+                            raise ValueError("No running receipt accepts steering. Your draft is preserved.")
+                        assert self.backend is not None
+                        steering_receipt = self.backend.receipt_id
+                        text = invocation.arguments[0]
                 elif text.startswith("!"):
                     self._validate_local_shell(text)
                 elif (self._input_task is not None and not self._input_task.done()) or not self.ready:
@@ -775,20 +788,17 @@ class CliShell:
                         raise ValueError(
                             "Still preparing or working. Your draft is preserved; /cancel stops active work."
                         )
-                    if self.images:
-                        raise ValueError(
-                            "Active-run guidance accepts text only. Text and attachments remain in your draft."
-                        )
                     assert self.backend is not None
                     # Freeze at Enter, before scheduling: never retarget a later Run.
                     steering_receipt = self.backend.receipt_id
             except ValueError as exc:
                 self.emit(str(exc))
                 return
+            self._submitted_draft = event.current_buffer.document
             text = self.pastes.expand(text)
             if self.interaction is None and self.menu_handler is None:
-                # History stores authored content, never unresolved fold markers.
-                event.current_buffer.text = text
+                # Plain history recalls labels as text, never resurrects attachments.
+                event.current_buffer.text = self.inline.display(text)
                 event.current_buffer.append_to_history()
             event.current_buffer.reset()
             # Reset clears undo history. Only saved/recoverable drafts can now
@@ -796,8 +806,19 @@ class CliShell:
             self.pastes.retain(
                 tuple(
                     document.text
-                    for document in (self._saved_draft, None if self._recoverable is None else self._recoverable[0])
+                    for document in (self._saved_draft, self._recoverable, self._submitted_draft, self._sending_draft)
                     if document is not None
+                )
+            )
+            self.inline.retain(
+                (
+                    text,
+                    *self.clipboard.texts,
+                    *(
+                        doc.text
+                        for doc in (self._saved_draft, self._recoverable, self._submitted_draft, self._sending_draft)
+                        if doc
+                    ),
                 )
             )
             if self._input_task is not None and not self._input_task.done():
@@ -880,7 +901,6 @@ class CliShell:
                     event.app.exit()
                     return
                 event.current_buffer.reset()
-                self.images = ()
                 self._draft_generation += 1
                 self._last_interrupt = now
                 self.emit("Press Ctrl+C again within 2 seconds to exit. Draft cleared.")
@@ -901,11 +921,13 @@ class CliShell:
 
         @keys.add(Keys.BracketedPaste)
         def paste_text(event: KeyPressEvent) -> None:
-            pasted = event.data
+            pasted = self.inline.external_text(event.data)
             if self.interaction is None and self.menu_handler is None:
                 pasted = self.pastes.insert(pasted)
             else:
                 pasted = pasted.replace("\r\n", "\n").replace("\r", "\n")
+            if event.current_buffer.selection_state is not None:
+                event.current_buffer.cut_selection()
             event.current_buffer.insert_text(pasted)
             if len(event.data) > 1000:
                 self.emit("Long paste folded. Alt+E expands it for editing; Backspace removes the block.")
@@ -1221,6 +1243,12 @@ class CliShell:
                 self.backend = None
 
     async def cancel(self) -> None:
+        if self.interaction is not None and not self.busy and self.interaction.back():
+            if self.interaction.expired:
+                self._finish_decision(self.interaction.expire())
+            else:
+                self._finish_decision(None)
+            return
         if (
             self._input_task is not None
             and self._input_task is not asyncio.current_task()
@@ -1262,7 +1290,8 @@ class CliShell:
             operation.close()
             self.emit("Still working. Use /cancel first.")
             return
-        generation, images = self._draft_generation, self.images
+        generation = self._draft_generation
+        failure_draft = self.composer.buffer.document if self.inline.tokens(self.composer.text) else None
         self.job_kind = kind
         self.status.state = "working" if kind == "run" else kind
         self.status.started = time.monotonic()
@@ -1273,8 +1302,14 @@ class CliShell:
         async def execute() -> None:
             try:
                 result = await operation
-                if discard_images and self._draft_generation == generation and self.images == images:
-                    self.images = ()
+                if discard_images and self._draft_generation == generation:
+                    buffer = self.composer.buffer
+                    assert isinstance(buffer, AttachmentBuffer)
+                    for token in self.inline.tokens(buffer.text):
+                        buffer.replace_token(token, "")
+                    # A confirmed conversation switch cannot undo attachments into
+                    # a different Thread. Preserve any unrelated authored text.
+                    buffer.reset(document=buffer.document)
                     self._draft_generation += 1
                 if result:
                     self.emit(result)
@@ -1298,7 +1333,7 @@ class CliShell:
                 if on_error is not None:
                     on_error(exc)
                 if failure_input is not None:
-                    self._restore_rejected_command(failure_input, generation, images)
+                    self._restore_rejected_command(failure_input, generation, draft=failure_draft)
             finally:
                 self.renderer.finish()
                 if self.status.started is not None:
@@ -1324,12 +1359,12 @@ class CliShell:
 
         self.job = asyncio.create_task(execute())
 
-    def _restore_rejected_command(self, text: str, generation: int, images: tuple[AttachmentUpload, ...]) -> None:
-        draft = Document(text, len(text))
+    def _restore_rejected_command(self, text: str, generation: int, *, draft: Document | None = None) -> None:
+        draft = draft or Document(text, len(text))
         if not self.composer.text and self._draft_generation == generation:
             self.composer.buffer.document = draft
         else:
-            self._recoverable = (draft, images)
+            self._recoverable = draft
             self.emit("Input was not confirmed. /recover restores its draft; no automatic retry occurred.")
 
     def _validate_local_shell(self, text: str) -> None:
@@ -1355,40 +1390,48 @@ class CliShell:
         slash_command = text.startswith("/") and self.registry.lookup(text) is not None
         if text.startswith("/") and not slash_command:
             self.emit("No matching command; treating the original input as plain text.")
-        if text.startswith("!"):
-            try:
-                self._validate_local_shell(text)
-            except ValueError as exc:
-                self.emit(str(exc))
-                self._restore_rejected_command(text, self._draft_generation, self.images)
-                return
-            self.launch(self._local_shell(text[1:]), kind="local shell", failure_input=text)
-            return
         if steering_receipt is not None:
+            draft = self._submitted_draft or Document(text, len(text))
+            self._submitted_draft = None
+            self._sending_draft = draft
             self._draft_generation += 1
             generation = self._draft_generation
             try:
                 assert self.backend is not None
+                prompt = self.inline.compile(text)
                 result = await self.backend.steer(
-                    text, receipt_id=steering_receipt, skill_references=self.registry.skill_references(text)
+                    prompt, receipt_id=steering_receipt, skill_references=self.registry.skill_references(prompt.text)
                 )
                 self.emit(result)
             except asyncio.CancelledError:
-                self._restore_rejected_command(text, generation, ())
+                self._restore_rejected_command(text, generation, draft=draft)
                 raise
             except Exception as exc:
                 self.emit(str(exc))
-                self._restore_rejected_command(text, generation, ())
+                self._restore_rejected_command(text, generation, draft=draft)
+            finally:
+                self._sending_draft = None
+            return
+        if text.startswith("!"):
+            try:
+                if self.inline.tokens(text):
+                    raise ValueError("Attachments cannot be passed to a local shell command.")
+                self._validate_local_shell(text)
+            except ValueError as exc:
+                self.emit(str(exc))
+                self._restore_rejected_command(text, self._draft_generation)
+                return
+            self.launch(self._local_shell(text[1:]), kind="local shell", failure_input=text)
             return
         if slash_command:
-            generation, images = self._draft_generation, self.images
+            generation = self._draft_generation
             try:
                 invocation = self.registry.parse(text, busy=self.busy)
                 self.emit(f"Command accepted: /{invocation.command.name}")
                 await self.command(invocation)
             except Exception as exc:
                 self.emit(str(exc))
-                self._restore_rejected_command(text, generation, images)
+                self._restore_rejected_command(text, generation)
             return
         if self.menu_handler is not None:
             await self.menu_answer(text)
@@ -1399,19 +1442,43 @@ class CliShell:
         elif text.strip() or self.images:
             self.send_prompt(text)
 
-    def _attachment_chips(self) -> str:
-        return terminal_text(
-            " ".join(
-                f"[{index}: {image.name} {len(image.data) // 1024} KiB]" for index, image in enumerate(self.images, 1)
-            )
-            + " · /remove index|all"
-        )
+    @property
+    def images(self) -> tuple[AttachmentUpload, ...]:
+        return self.inline.uploads(self.composer.text)
 
-    async def acquire_images(self, path: str | None = None) -> None:
+    def insert_attachments(self, incoming: tuple[AttachmentUpload, ...]) -> None:
+        add_images(self.images, incoming)
+        buffer = self.composer.buffer
+        assert isinstance(buffer, AttachmentBuffer)
+        tokens = ""
+        for upload in incoming:
+            token = self.inline.reserve()
+            self.inline.values[token].upload = upload
+            tokens += token
+        buffer.insert_attachment(tokens)
+
+    def _begin_attachment(self) -> tuple[str, int] | None:
         if self.interaction is not None or self.selection is not None:
             self.emit("Attachments belong to conversation drafts. Finish or cancel this interaction first.")
+            return None
+        buffer = self.composer.buffer
+        assert isinstance(buffer, AttachmentBuffer)
+        try:
+            if len(self.inline.tokens(buffer.text)) >= 8:
+                raise ValueError("An input supports up to eight attachments.")
+            token = self.inline.reserve()
+            buffer.insert_attachment(token)
+            return token, self._draft_generation
+        except ValueError as exc:
+            self.emit(str(exc))
+            return None
+
+    async def acquire_images(self, path: str | None = None, *, anchor: tuple[str, int] | None = None) -> None:
+        anchor = anchor or self._begin_attachment()
+        if anchor is None:
             return
-        generation = self._draft_generation
+        token, generation = anchor
+        entry = self.inline.values[token]
         try:
             incoming = await asyncio.to_thread(
                 lambda: (
@@ -1421,44 +1488,75 @@ class CliShell:
                 )
             )
             if generation != self._draft_generation or self.closing:
-                self.emit("Image paste discarded because its draft changed. Paste again to attach here.")
+                raise ValueError("Image paste discarded because its draft changed. Paste again to attach here.")
+            if token not in self.composer.text:
+                entry.error = "Paste was removed before reading finished."
                 return
-            self.images = add_images(self.images, incoming)
-            self.app.invalidate()
+            add_images(self.images, incoming)
+            entry.upload = incoming[0]
+            replacement = token
+            for upload in incoming[1:]:
+                extra = self.inline.reserve()
+                self.inline.values[extra].upload = upload
+                replacement += extra
+            buffer = self.composer.buffer
+            assert isinstance(buffer, AttachmentBuffer)
+            buffer.replace_token(token, replacement)
+        except asyncio.CancelledError:
+            entry.error = "Image paste cancelled."
+            raise
         except Exception as exc:
+            entry.error = str(exc)
             self.emit(f"File not attached: {exc}")
+        finally:
+            self.app.invalidate()
 
     def start_clipboard(self) -> None:
         if self._clipboard_task is not None and not self._clipboard_task.done():
             self.emit("Still reading the clipboard.")
             return
-        self._clipboard_task = asyncio.create_task(self.acquire_images())
+        anchor = self._begin_attachment()
+        if anchor is not None:
+            self._clipboard_task = asyncio.create_task(self.acquire_images(anchor=anchor))
 
     def send_prompt(self, text: str) -> None:
         assert self.backend is not None
         if self.busy:
-            self.emit("The active operation changed. Your draft is preserved; send again explicitly.")
+            draft = self._submitted_draft or Document(text, len(text))
+            if not self.composer.text:
+                self.composer.buffer.document = draft
+            else:
+                self._recoverable = draft
+            self.emit("The active operation changed. Draft restored or available through /recover; send explicitly.")
             return
-        images, self.images = self.images, ()
+        source_id = f"input-{uuid4().hex}"
+        try:
+            prompt = self.inline.compile(text, source_id)
+        except ValueError as exc:
+            self.emit(str(exc))
+            if not self.composer.text:
+                self.composer.buffer.document = self._submitted_draft or Document(text, len(text))
+            return
+        draft = self._submitted_draft or Document(text, len(text))
+        self._submitted_draft = None
+        self._sending_draft = draft
         self._draft_generation += 1
         accepted = False
-        draft = Document(text, len(text))
 
         def admitted() -> None:
             nonlocal accepted
             accepted = True
+            self._sending_draft = None
             self._recoverable = None
 
-        source_id = f"input-{uuid4().hex}"
-        prompt = ComposerInput(text=text, attachments=images, source_id=source_id)
-        self.renderer.local_input(source_id, text)
+        self.renderer.local_input(source_id, prompt.display_text)
         self.app.invalidate()
         execution = self.backend.execute(
             self.renderer,
             prompt=prompt,
             flush=self.flush,
             admitted=admitted,
-            skill_references=self.registry.skill_references(text),
+            skill_references=self.registry.skill_references(prompt.text),
         )
 
         async def send() -> str:
@@ -1469,11 +1567,12 @@ class CliShell:
                     self.emit("Input was not admitted; draft restored or available through /recover.")
                     if not self.composer.text and not self.images and self._saved_draft is None:
                         self.composer.buffer.document = draft
-                        self.images = images
                         self._draft_generation += 1
                     else:
-                        self._recoverable = (draft, images)
+                        self._recoverable = draft
                         self.emit("Prompt was not admitted. /recover restores it; no automatic retry occurred.")
+                if self._sending_draft is draft:
+                    self._sending_draft = None
 
         self.view.latest()
         self.launch(send(), kind="run")
@@ -1650,19 +1749,10 @@ class CliShell:
             await self.acquire_images(argument)
         elif name == "paste-image":
             self.start_clipboard()
-        elif name == "remove":
-            if argument == "all":
-                self.images = ()
-            elif argument is not None and argument.isdecimal() and 1 <= int(argument) <= len(self.images):
-                index = int(argument) - 1
-                self.images = self.images[:index] + self.images[index + 1 :]
-            else:
-                raise ValueError("Use /remove <attachment number> or /remove all.")
-            self._draft_generation += 1
         elif name == "recover":
             if self._recoverable is None:
                 raise ValueError("No unsubmitted prompt to recover.")
-            self.composer.buffer.document, self.images = self._recoverable
+            self.composer.buffer.document = self._recoverable
             self._recoverable = None
             self._draft_generation += 1
         elif name == "cancel":
@@ -1713,7 +1803,8 @@ class CliShell:
                 self.launch(choose_codex_reset(self) if argument == "reset" else show_codex_usage(self), kind="usage")
         elif name == "steer":
             assert argument is not None
-            result = await self.backend.steer(argument)
+            prompt = self.inline.compile(argument)
+            result = await self.backend.steer(prompt, skill_references=self.registry.skill_references(prompt.text))
             self.emit(result)
         elif name == "resume" and argument is None:
             self.open_resume()

@@ -13,6 +13,7 @@ if TYPE_CHECKING:
     from ..models.inline_hook_subscription_input import InlineHookSubscriptionInput
     from ..models.reject_pending_resolution import RejectPendingResolution
     from ..models.respond_pending_resolution import RespondPendingResolution
+    from ..models.waiting_run_feedback_request_labels import WaitingRunFeedbackRequestLabels
 
 
 T = TypeVar("T", bound="WaitingRunFeedbackRequest")
@@ -25,6 +26,7 @@ class WaitingRunFeedbackRequest:
         expected_thread_version (int):
         sealed_state_digest_sha256 (str):
         hook_subscription (InlineHookSubscriptionInput | None | Unset):
+        labels (WaitingRunFeedbackRequestLabels | Unset):
         resolutions (list[ApprovePendingResolution | CompletePendingResolution | RejectPendingResolution |
             RespondPendingResolution] | Unset):
     """
@@ -32,6 +34,7 @@ class WaitingRunFeedbackRequest:
     expected_thread_version: int
     sealed_state_digest_sha256: str
     hook_subscription: InlineHookSubscriptionInput | Unset | None = UNSET
+    labels: WaitingRunFeedbackRequestLabels | Unset = UNSET
     resolutions: (
         list[ApprovePendingResolution | CompletePendingResolution | RejectPendingResolution | RespondPendingResolution]
         | Unset
@@ -54,6 +57,10 @@ class WaitingRunFeedbackRequest:
             hook_subscription = self.hook_subscription.to_dict()
         else:
             hook_subscription = self.hook_subscription
+
+        labels: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.labels, Unset):
+            labels = self.labels.to_dict()
 
         resolutions: list[dict[str, Any]] | Unset = UNSET
         if not isinstance(self.resolutions, Unset):
@@ -81,6 +88,8 @@ class WaitingRunFeedbackRequest:
         )
         if hook_subscription is not UNSET:
             field_dict["hook_subscription"] = hook_subscription
+        if labels is not UNSET:
+            field_dict["labels"] = labels
         if resolutions is not UNSET:
             field_dict["resolutions"] = resolutions
 
@@ -93,6 +102,7 @@ class WaitingRunFeedbackRequest:
         from ..models.inline_hook_subscription_input import InlineHookSubscriptionInput
         from ..models.reject_pending_resolution import RejectPendingResolution
         from ..models.respond_pending_resolution import RespondPendingResolution
+        from ..models.waiting_run_feedback_request_labels import WaitingRunFeedbackRequestLabels
 
         d = dict(src_dict)
         expected_thread_version = d.pop("expected_thread_version")
@@ -115,6 +125,13 @@ class WaitingRunFeedbackRequest:
             return cast(InlineHookSubscriptionInput | Unset | None, data)
 
         hook_subscription = _parse_hook_subscription(d.pop("hook_subscription", UNSET))
+
+        _labels = d.pop("labels", UNSET)
+        labels: WaitingRunFeedbackRequestLabels | Unset
+        if isinstance(_labels, Unset):
+            labels = UNSET
+        else:
+            labels = WaitingRunFeedbackRequestLabels.from_dict(_labels)
 
         _resolutions = d.pop("resolutions", UNSET)
         resolutions: (
@@ -176,6 +193,7 @@ class WaitingRunFeedbackRequest:
             expected_thread_version=expected_thread_version,
             sealed_state_digest_sha256=sealed_state_digest_sha256,
             hook_subscription=hook_subscription,
+            labels=labels,
             resolutions=resolutions,
         )
 

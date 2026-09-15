@@ -7,6 +7,7 @@ import re
 from collections.abc import Awaitable, Callable, Sequence
 
 from a13n_harness import AgentContext
+from a13n_harness.tools import ToolIdentityToolset
 from anyio import to_thread
 from jsonschema import Draft202012Validator, ValidationError
 from mcp.types import Tool
@@ -47,7 +48,7 @@ class _PortableToolNames(RenamedToolset[AgentContext]):
 
 
 def namespaced(toolset: AbstractToolset[AgentContext], key: str) -> AbstractToolset[AgentContext]:
-    return _PortableToolNames(toolset, {}).prefixed(key)
+    return _PortableToolNames(ToolIdentityToolset(toolset, source_id=key, kind="mcp"), {}).prefixed(key)
 
 
 def selected_tools(tools: Sequence[Tool], allowed: tuple[str, ...] | None) -> tuple[Tool, ...]:

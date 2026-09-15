@@ -336,7 +336,7 @@ No later fact follows merely because an earlier fact occurred. In particular, a 
 08. Product authorization remains outside Harness, Environment Provider, and envd peer-authentication logic.
 09. Durable completion, projection, external delivery, usage ingestion, and any external settlement remain separate facts.
 10. Public protocol adapters share application and authorization authority but retain independent wire identities, errors, and delivery contracts.
-11. A queued submission owns no execution lease or outcome; only atomic consumption accepts the Run that later owns scheduling and recovery. A state-first completed handoff can combine source sealing, first-entry consumption, and successor acceptance in one short transaction; otherwise terminal relational state remains sufficient for recovery scanning.
+11. A queued submission owns no execution lease or outcome; only atomic consumption accepts the Run that later owns scheduling and recovery. Source sealing commits first; the same Worker then attempts first-entry consumption and successor acceptance in a separate transaction. Terminal relational state remains sufficient for periodic recovery scanning.
 12. Graceful drain gates new claims while every active Attempt keeps renewing until an authoritative terminal commit or the drain deadline.
 13. Planned `yielded` handoff preserves the running Run, state key, and stream, but its successor always receives a fresh RunAttempt and Harness Run.
 14. Every distinct Asset publication creates an independent immutable Asset; Run references do not create another relation or Asset-specific continuation state.

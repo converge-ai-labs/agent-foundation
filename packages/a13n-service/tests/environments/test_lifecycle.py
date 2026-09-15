@@ -7,6 +7,7 @@ from a13n_environment import (
     EnvironmentDescriptor,
     EnvironmentOperations,
     EnvironmentPermissionSet,
+    EnvironmentProviderOutcomeCertainty,
     EnvironmentState,
 )
 from a13n_service.environments.domain import (
@@ -14,7 +15,7 @@ from a13n_service.environments.domain import (
     CreateProviderRequest,
     CreateTemplateRequest,
 )
-from a13n_service.environments.lifecycle import EnvironmentLifecycle
+from a13n_service.environments.lifecycle import EnvironmentLifecycle, LifecycleOutcome
 from a13n_service.environments.models import EnvironmentRecord
 from a13n_service.storage import short_session, transaction
 
@@ -133,12 +134,15 @@ async def test_stale_lifecycle_publication_cannot_change_target(
     async with transaction(environment_sessions) as session:
         row = await session.get(EnvironmentRecord, environment.id)
         row.status, row.condition_since = "running", now - timedelta(seconds=60)
-    operation = await lifecycle.acquire(environment.id, "stop")
+    operation = await lifecycle.acquire_maintenance(environment.id)
+    assert operation is not None and operation.action == "stop"
     async with transaction(environment_sessions) as session:
         row = await session.get(EnvironmentRecord, environment.id)
         row.operation_generation += 1
     with pytest.raises(RuntimeError, match="authority changed"):
-        await lifecycle.publish(operation, Target(None, []))
+        await lifecycle.publish(
+            operation, LifecycleOutcome(certainty=EnvironmentProviderOutcomeCertainty.KNOWN, state=None)
+        )
     async with short_session(environment_sessions) as session:
         row = await session.get(EnvironmentRecord, environment.id)
         assert row.status == "running" and row.operation_id == operation.operation_id
@@ -169,7 +173,8 @@ async def test_suspended_owner_cannot_dispatch_a_new_destructive_effect(
         row = await session.get(EnvironmentRecord, environment.id)
         row.status = "running" if action == "stop" else "stopped"
         row.condition_since = now - timedelta(seconds=120 if action == "delete" else 60)
-    operation = await lifecycle.acquire(environment.id, action)
+    operation = await lifecycle.acquire_maintenance(environment.id)
+    assert operation is not None and operation.action == action
     with pytest.raises(RuntimeError, match=r"authority (changed|expired)"):
         await lifecycle.execute(operation)
     assert events == ["close"], "An obsolete owner dispatched stop/delete before its publication was fenced"
@@ -271,14 +276,13 @@ async def test_abandoned_preparation_is_observed_without_starting_target(
         publish = lifecycle.publish
 
         async def fail_once(*args, **kwargs):
+            from sqlalchemy.exc import DBAPIError
+
             monkeypatch.setattr(lifecycle, "publish", publish)
-            raise RuntimeError("Publication unavailable")
+            raise DBAPIError(None, None, RuntimeError("Publication unavailable"), connection_invalidated=True)
 
         monkeypatch.setattr(lifecycle, "publish", fail_once)
-        with pytest.raises(RuntimeError, match="Publication unavailable"):
-            await lifecycle.maintain(environment.id)
-    else:
-        await lifecycle.maintain(environment.id)
+    await lifecycle.maintain(environment.id)
     assert events == ["observe", "close"]
     async with short_session(environment_sessions) as session:
         row = await session.get(EnvironmentRecord, environment.id)
@@ -325,7 +329,9 @@ async def test_absent_docker_allocation_releases_capacity_and_delete_is_idempote
     async def admit(environment_id):
         async with transaction(environment_sessions) as session:
             await capacity.lock_workspace(session, environment_id)
-            await capacity.admit(session, await session.get(EnvironmentRecord, environment_id))
+            row = await session.get(EnvironmentRecord, environment_id, with_for_update=True)
+            await capacity.admit(session, row)
+            row.operation_id, row.operation_action = f"envop-{environment_id}", "prepare"
 
     with pytest.raises(EnvironmentError, match="capacity is exhausted"):
         await admit(second.id)
@@ -404,19 +410,19 @@ async def test_periodic_batches_advance_past_failures_and_exclude_deleted_and_ex
             row.next_maintenance_at = now - timedelta(seconds=10 - index)
         (await session.get(EnvironmentRecord, third.id)).status = "deleted"
     lifecycle = EnvironmentLifecycle(environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: now)
-    maintain = AsyncMock(side_effect=RuntimeError("provider unavailable"))
-    monkeypatch.setattr(lifecycle, "maintain", maintain)
+    load_configuration = AsyncMock(side_effect=RuntimeError("configuration unavailable"))
+    monkeypatch.setattr("a13n_service.environments.lifecycle.load_configuration", load_configuration)
     loop = EnvironmentMaintenanceLoop(lifecycle, concurrency=1, batch_size=1)
     await loop.run_once()
     await loop.run_once()
     await loop.run_once()
-    assert {call.args[0] for call in maintain.await_args_list} == {first.id, second.id}
+    assert {call.args[1].id for call in load_configuration.await_args_list} == {first.id, second.id}
     now += timedelta(seconds=5)
     await loop.run_once()
-    assert maintain.await_count == 2
+    assert load_configuration.await_count == 2
     now += timedelta(seconds=25)
     await loop.run_once()
-    assert maintain.await_count == 4
+    assert load_configuration.await_count == 4
 
 
 async def test_unknown_stop_retains_operation_receipt_until_reconciled(
@@ -633,7 +639,7 @@ async def test_slow_target_does_not_block_available_workers_at_a_page_boundary(
     release, progressed = asyncio.Event(), asyncio.Event()
     visited = []
 
-    async def maintain(environment_id):
+    async def maintain(environment_id, *, cutoff):
         visited.append(environment_id)
         if environment_id == ids[0]:
             await release.wait()

@@ -37,22 +37,30 @@ def capability_panel(
     name: object, event: Mapping[str, object], *, directory: PurePath | None = None
 ) -> CapabilityPanel | None:
     """Interpret known native facts here, never in the shared stream protocol."""
-    if name == "a13n.harness.invocation":
+    if name == "a13n.harness.tool":
         payload = event.get("payload")
-        if (
-            isinstance(payload, dict)
-            and payload.get("phase") == "denied"
-            and payload.get("reason_code") == "shell_review_timeout"
-        ):
-            timeout = payload.get("timeout_seconds")
-            duration = f" after {timeout:g}s" if isinstance(timeout, int | float) else ""
+        if not isinstance(payload, dict) or payload.get("type") != "tool_review_result":
+            return None
+        if payload.get("error_code") == "tool_review_timeout":
             return CapabilityPanel(
-                "Shell review · timed out",
-                f"AI review timed out{duration}. Automatically denied; command was not executed.\n"
-                f"Tool: {payload.get('tool_name', 'shell')} · Request: {payload.get('tool_call_id', 'unavailable')}",
+                "Shell review · timed out"
+                if payload.get("tool_id") == "environment.shell_exec"
+                else "Tool review · timed out",
+                "AI review timed out. Automatically denied; tool was not executed.\n"
+                f"Tool: {payload.get('tool_id')} · Request: {payload.get('tool_call_id')}",
                 "warning",
             )
-        return None
+        result = payload.get("result")
+        assessment = result.get("assessment") if isinstance(result, dict) else None
+        decision = payload.get("decision")
+        if decision == "allow":
+            return None
+        reason = assessment.get("reason") if isinstance(assessment, dict) else "AI review could not complete."
+        return CapabilityPanel(
+            "Tool review · approval required" if decision == "approval_required" else "Tool review · denied",
+            f"{reason}\nTool: {payload.get('tool_id')} · Request: {payload.get('tool_call_id')}",
+            "warning",
+        )
     if name == "a13n.filesystem.edit_applied":
         before, after, path = event.get("before"), event.get("after"), event.get("file_path")
         if not isinstance(before, str) or not isinstance(after, str) or not isinstance(path, str):

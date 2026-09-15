@@ -116,6 +116,15 @@ The complete machine-readable validation schema, including named enum/union defi
 | `models.resolve_dns_on_save`             | `A13N_SERVICE_MODEL_RESOLVE_DNS_ON_SAVE`             | boolean         | default=true                                |
 | `models.connection_test_timeout_seconds` | `A13N_SERVICE_MODEL_CONNECTION_TEST_TIMEOUT_SECONDS` | number          | maximum=120; exclusiveMinimum=0; default=15 |
 
+## `memory`
+
+| Setting                  | Environment variable                  | Type / choices            | Constraints and default                     |
+| ------------------------ | ------------------------------------- | ------------------------- | ------------------------------------------- |
+| `memory.provider`        | `A13N_SERVICE_MEMORY_PROVIDER`        | "none", "platform", "oss" | default="none"                              |
+| `memory.base_url`        | `A13N_SERVICE_MEMORY_BASE_URL`        | string or null            | default=null                                |
+| `memory.api_key`         | `A13N_SERVICE_MEMORY_API_KEY`         | string or null            | default=null                                |
+| `memory.timeout_seconds` | `A13N_SERVICE_MEMORY_TIMEOUT_SECONDS` | number                    | maximum=300; exclusiveMinimum=0; default=30 |
+
 ## `webhooks`
 
 | Setting                             | Environment variable                            | Type / choices  | Constraints and default                        |

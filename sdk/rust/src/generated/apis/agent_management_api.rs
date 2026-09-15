@@ -60,6 +60,15 @@ pub enum GetWorkspacesWorkspaceAgentsAgentAvatarImageIdError {
     UnknownValue(serde_json::Value),
 }
 
+/// struct for typed errors of method [`get_workspaces_workspace_agents_agent_labels`]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum GetWorkspacesWorkspaceAgentsAgentLabelsError {
+    Status400(models::ErrorResponse),
+    DefaultResponse(models::ErrorResponse),
+    UnknownValue(serde_json::Value),
+}
+
 /// struct for typed errors of method [`get_workspaces_workspace_agents_agent_revisions`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -127,6 +136,15 @@ pub enum PostWorkspacesWorkspaceAgentsAgentRevisionsRevisionIdRestoreError {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum PutWorkspacesWorkspaceAgentsAgentAvatarError {
+    Status400(models::ErrorResponse),
+    DefaultResponse(models::ErrorResponse),
+    UnknownValue(serde_json::Value),
+}
+
+/// struct for typed errors of method [`put_workspaces_workspace_agents_agent_labels`]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum PutWorkspacesWorkspaceAgentsAgentLabelsError {
     Status400(models::ErrorResponse),
     DefaultResponse(models::ErrorResponse),
     UnknownValue(serde_json::Value),
@@ -282,6 +300,7 @@ pub async fn get_workspaces_workspace_agents(
     enabled: Option<bool>,
     source: Option<&str>,
     include_archived: Option<bool>,
+    label: Option<Vec<String>>,
 ) -> Result<Response<models::AgentCollection>, Error<GetWorkspacesWorkspaceAgentsError>> {
     // add a prefix to parameters to efficiently prevent name collisions
     let p_path_workspace = workspace;
@@ -290,6 +309,7 @@ pub async fn get_workspaces_workspace_agents(
     let p_query_enabled = enabled;
     let p_query_source = source;
     let p_query_include_archived = include_archived;
+    let p_query_label = label;
 
     let uri_str = format!(
         "{}/api/v1/workspaces/{workspace}/agents",
@@ -312,6 +332,25 @@ pub async fn get_workspaces_workspace_agents(
     }
     if let Some(ref param_value) = p_query_include_archived {
         req_builder = req_builder.query(&[("include_archived", &param_value.to_string())]);
+    }
+    if let Some(ref param_value) = p_query_label {
+        req_builder = match "multi" {
+            "multi" => req_builder.query(
+                &param_value
+                    .into_iter()
+                    .map(|p| ("label".to_owned(), p.to_string()))
+                    .collect::<Vec<(std::string::String, std::string::String)>>(),
+            ),
+            _ => req_builder.query(&[(
+                "label",
+                &param_value
+                    .into_iter()
+                    .map(|p| p.to_string())
+                    .collect::<Vec<String>>()
+                    .join(",")
+                    .to_string(),
+            )]),
+        };
     }
     if let Some(ref user_agent) = configuration.user_agent {
         req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
@@ -499,6 +538,76 @@ pub async fn get_workspaces_workspace_agents_agent_avatar_image_id(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetWorkspacesWorkspaceAgentsAgentAvatarImageIdError> =
+            serde_json::from_str(&content).ok();
+        Err(Error::ResponseError(Box::new(ResponseContent {
+            status,
+            headers,
+            content,
+            entity,
+        })))
+    }
+}
+
+pub async fn get_workspaces_workspace_agents_agent_labels(
+    configuration: &configuration::Configuration,
+    workspace: &str,
+    agent: &str,
+) -> Result<Response<models::LabelsBody>, Error<GetWorkspacesWorkspaceAgentsAgentLabelsError>> {
+    // add a prefix to parameters to efficiently prevent name collisions
+    let p_path_workspace = workspace;
+    let p_path_agent = agent;
+
+    let uri_str = format!(
+        "{}/api/v1/workspaces/{workspace}/agents/{agent}/labels",
+        configuration.base_path,
+        workspace = crate::generated::apis::urlencode(p_path_workspace),
+        agent = crate::generated::apis::urlencode(p_path_agent)
+    );
+    let mut req_builder = configuration.client.request(reqwest::Method::GET, &uri_str);
+
+    if let Some(ref user_agent) = configuration.user_agent {
+        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
+    }
+    if let Some(ref token) = configuration.bearer_access_token {
+        req_builder = req_builder.bearer_auth(token.to_owned());
+    };
+
+    let req = req_builder.build()?;
+    let resp = configuration.client.execute(req).await?;
+
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream");
+    let content_type = super::ContentType::from(content_type);
+
+    if !status.is_client_error() && !status.is_server_error() {
+        let content = resp.text().await?;
+        match content_type {
+            ContentType::Json => serde_json::from_str(&content)
+                .map(|data| Response {
+                    data,
+                    status,
+                    headers,
+                })
+                .map_err(Error::from),
+            ContentType::Text => {
+                return Err(Error::from(serde_json::Error::custom(
+                    "Received `text/plain` content type response that cannot be converted to `models::LabelsBody`",
+                )));
+            }
+            ContentType::Unsupported(unknown_type) => {
+                return Err(Error::from(serde_json::Error::custom(format!(
+                    "Received `{unknown_type}` content type response that cannot be converted to `models::LabelsBody`"
+                ))));
+            }
+        }
+    } else {
+        let content = resp.text().await?;
+        let entity: Option<GetWorkspacesWorkspaceAgentsAgentLabelsError> =
             serde_json::from_str(&content).ok();
         Err(Error::ResponseError(Box::new(ResponseContent {
             status,
@@ -1139,6 +1248,82 @@ pub async fn put_workspaces_workspace_agents_agent_avatar(
     } else {
         let content = resp.text().await?;
         let entity: Option<PutWorkspacesWorkspaceAgentsAgentAvatarError> =
+            serde_json::from_str(&content).ok();
+        Err(Error::ResponseError(Box::new(ResponseContent {
+            status,
+            headers,
+            content,
+            entity,
+        })))
+    }
+}
+
+pub async fn put_workspaces_workspace_agents_agent_labels(
+    configuration: &configuration::Configuration,
+    workspace: &str,
+    agent: &str,
+    if_match: &str,
+    labels_body: models::LabelsBody,
+) -> Result<Response<models::LabelsBody>, Error<PutWorkspacesWorkspaceAgentsAgentLabelsError>> {
+    // add a prefix to parameters to efficiently prevent name collisions
+    let p_path_workspace = workspace;
+    let p_path_agent = agent;
+    let p_header_if_match = if_match;
+    let p_body_labels_body = labels_body;
+
+    let uri_str = format!(
+        "{}/api/v1/workspaces/{workspace}/agents/{agent}/labels",
+        configuration.base_path,
+        workspace = crate::generated::apis::urlencode(p_path_workspace),
+        agent = crate::generated::apis::urlencode(p_path_agent)
+    );
+    let mut req_builder = configuration.client.request(reqwest::Method::PUT, &uri_str);
+
+    if let Some(ref user_agent) = configuration.user_agent {
+        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
+    }
+    req_builder = req_builder.header("If-Match", p_header_if_match.to_string());
+    if let Some(ref token) = configuration.bearer_access_token {
+        req_builder = req_builder.bearer_auth(token.to_owned());
+    };
+    req_builder = req_builder.json(&p_body_labels_body);
+
+    let req = req_builder.build()?;
+    let resp = configuration.client.execute(req).await?;
+
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream");
+    let content_type = super::ContentType::from(content_type);
+
+    if !status.is_client_error() && !status.is_server_error() {
+        let content = resp.text().await?;
+        match content_type {
+            ContentType::Json => serde_json::from_str(&content)
+                .map(|data| Response {
+                    data,
+                    status,
+                    headers,
+                })
+                .map_err(Error::from),
+            ContentType::Text => {
+                return Err(Error::from(serde_json::Error::custom(
+                    "Received `text/plain` content type response that cannot be converted to `models::LabelsBody`",
+                )));
+            }
+            ContentType::Unsupported(unknown_type) => {
+                return Err(Error::from(serde_json::Error::custom(format!(
+                    "Received `{unknown_type}` content type response that cannot be converted to `models::LabelsBody`"
+                ))));
+            }
+        }
+    } else {
+        let content = resp.text().await?;
+        let entity: Option<PutWorkspacesWorkspaceAgentsAgentLabelsError> =
             serde_json::from_str(&content).ok();
         Err(Error::ResponseError(Box::new(ResponseContent {
             status,

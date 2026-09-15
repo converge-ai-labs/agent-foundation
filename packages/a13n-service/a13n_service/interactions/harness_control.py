@@ -11,6 +11,7 @@ from typing import Any, Literal, Protocol
 
 from a13n_harness import AgentContext, AgentDefinition, HarnessState, RunInputValue
 from a13n_harness.errors import DefinitionError
+from a13n_harness.usage import UsageRecord
 from pydantic_ai import Agent, CallToolsNode, RunContext
 from pydantic_ai.agent import AbstractAgent, ModelRequestNode
 from pydantic_ai.capabilities import (
@@ -105,6 +106,8 @@ class RunControlPort(Protocol):
     ) -> None: ...
 
     async def after_stream_entry(self) -> None: ...
+
+    async def ingest_usage(self, harness_run_id: str, records: Sequence[UsageRecord]) -> None: ...
 
     async def before_model_node(self, boundary: HarnessHookBoundary) -> None: ...
 

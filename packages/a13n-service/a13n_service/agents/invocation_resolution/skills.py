@@ -69,6 +69,36 @@ async def prepare_skills(
         raise agent_revision_not_executable("skill_selection_invalid") from error
 
 
+async def validate_retained_skills(
+    session: AsyncSession,
+    *,
+    organization_id: str,
+    workspace_id: str,
+    locks: tuple[SkillRevisionLock, ...],
+) -> None:
+    """Recheck exact source locks inside a successor's acceptance transaction."""
+
+    # A successor retains exact versions even when the source selected current.
+    prepared = tuple(
+        PreparedSkillLock(
+            binding=ResolvedSkillBinding(skill_id=lock.skill_id, skill_key=lock.skill_key, version=lock.version),
+            revision_id=lock.skill_revision_id,
+            revision_version=lock.version,
+            content_digest=lock.content_digest,
+        )
+        for lock in locks
+    )
+    try:
+        await freeze_skill_locks(
+            session,
+            organization_id=organization_id,
+            workspace_id=workspace_id,
+            prepared=prepared,
+        )
+    except SkillSelectionInvalid as error:
+        raise agent_revision_not_executable("skill_selection_invalid") from error
+
+
 async def freeze_skills(
     session: AsyncSession,
     prepared: PreparedAgentInvocation,

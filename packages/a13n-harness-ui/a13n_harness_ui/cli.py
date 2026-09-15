@@ -218,7 +218,7 @@ def update_command() -> None:
 
 @cli.command("setup")
 @click.option(
-    "--advanced", is_flag=True, help="Also choose context, reasoning, shell review, subagents, and instructions."
+    "--advanced", is_flag=True, help="Also choose context, reasoning, tool review, subagents, and instructions."
 )
 @click.pass_context
 def setup_command(ctx: click.Context, advanced: bool) -> None:
@@ -232,7 +232,7 @@ def add_group() -> None:
 
 
 @add_group.command("agent")
-@click.option("--advanced", is_flag=True, help="Also customize reasoning, shell review, and instructions.")
+@click.option("--advanced", is_flag=True, help="Also customize reasoning, tool review, and instructions.")
 @click.pass_context
 def add_agent_command(ctx: click.Context, advanced: bool) -> None:
     """Create another agent without changing existing agents or defaults."""

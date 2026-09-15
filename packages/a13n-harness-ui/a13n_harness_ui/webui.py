@@ -6,9 +6,10 @@ import base64
 import binascii
 import hmac
 import ipaddress
+import json
 import os
 import secrets
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncGenerator, AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -16,11 +17,11 @@ from urllib.parse import quote, urlsplit
 
 import click
 import uvicorn
-from anyio import create_task_group, fail_after, move_on_after
+from anyio import Event, create_task_group, fail_after, move_on_after, sleep
 from fastapi import FastAPI, Query, Request, WebSocket
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 from starlette.requests import HTTPConnection
 from starlette.types import ASGIApp, Receive, Scope, Send
 from starlette.websockets import WebSocketDisconnect
@@ -80,10 +81,12 @@ from a13n_harness_ui.output_comment_models import (
 from a13n_harness_ui.page_presence import (
     PRESENCE_REFRESH_SECONDS,
     PRESENCE_TIMEOUT_SECONDS,
+    PointerFrame,
+    PointerReport,
     PresenceFrame,
     PresenceReport,
 )
-from a13n_harness_ui.setup import EnvironmentReadiness, SetupStatus
+from a13n_harness_ui.setup import EnvironmentReadiness, SetupModelOptions, SetupModelOptionsRequest, SetupStatus
 from a13n_harness_ui.shared_drafts import DraftCommand, DraftFrame
 from a13n_harness_ui.storage import ThreadConfiguration
 from a13n_harness_ui.storage.usage import ThreadUsageView
@@ -115,7 +118,14 @@ from a13n_harness_ui.surfaces import (
     ThreadSummary,
     TranscriptPage,
 )
-from a13n_harness_ui.thread_files import MAX_ATTACHMENT_BYTES, AttachmentUpload, ThreadAttachment
+from a13n_harness_ui.thread_files import (
+    MAX_ATTACHMENT_BYTES,
+    AttachmentUpload,
+    ComposerAttachmentReference,
+    ComposerInput,
+    ThreadAttachment,
+)
+from a13n_harness_ui.webui_lifecycle import EventStreamResponse, RequestLog, WebUIServer
 
 API_VERSION = "1"
 _MAX_BODY = 1024 * 1024
@@ -145,21 +155,50 @@ class ListenerStatus(SurfaceModel):
 
 
 class CreateThreadRequest(SurfaceModel):
+    thread_id: str | None = Field(default=None, pattern=r"^thread-[0-9a-f]{32}$")
     defaults: NewThreadDefaults | None = None
     title: str | None = Field(default=None, min_length=1, max_length=200)
+
+
+class InputAttachmentReference(SurfaceModel):
+    attachment_id: str = Field(min_length=1, max_length=100)
 
 
 class PromptRequest(SurfaceModel):
     prompt: str = Field(default="", max_length=256 * 1024)
     attachment_ids: tuple[str, ...] = Field(default=(), max_length=8)
+    parts: tuple[str | InputAttachmentReference, ...] | None = Field(default=None, max_length=1024)
+
+    @model_validator(mode="after")
+    def validate_ordered_input(self) -> PromptRequest:
+        if self.parts is not None:
+            if self.prompt or self.attachment_ids:
+                raise ValueError("Use ordered parts or prompt/attachment_ids, not both.")
+            if sum(len(part) for part in self.parts if isinstance(part, str)) > 256 * 1024:
+                raise ValueError("Authored input exceeds 256 Ki characters.")
+        return self
+
+    def input(self) -> str | ComposerInput:
+        if self.parts is None:
+            return self.prompt
+        return ComposerInput(
+            parts=tuple(
+                part if isinstance(part, str) else ComposerAttachmentReference(part.attachment_id)
+                for part in self.parts
+            )
+        )
 
 
 class SteerRequest(SurfaceModel):
     prompt: str = Field(min_length=1, max_length=256 * 1024)
 
 
-class RootSteerRequest(SteerRequest):
-    attachment_ids: tuple[str, ...] = Field(default=(), max_length=8)
+class RootSteerRequest(PromptRequest):
+    @model_validator(mode="after")
+    def validate_instruction(self) -> RootSteerRequest:
+        if self.parts is None and not self.prompt and not self.attachment_ids:
+            raise ValueError("An instruction must not be empty.")
+        return self
 
 
 class SetupApplyRequest(SurfaceModel):
@@ -340,12 +379,18 @@ def _frame(model: BaseModel) -> str:
 
 
 def create_webui(
-    app_factory: AppFactory, *, api_key: str | None, host: str = "127.0.0.1", static_root: Path = _STATIC
+    app_factory: AppFactory,
+    *,
+    api_key: str | None,
+    host: str = "127.0.0.1",
+    static_root: Path = _STATIC,
+    stopping: Event | None = None,
 ) -> FastAPI:
     """Build the adapter; only its ASGI lifespan opens and owns the App."""
     if api_key == "":
         raise ValueError("API key cannot be empty")
     owner: HarnessUiApp | None = None
+    stopping = stopping if stopping is not None else Event()
 
     @asynccontextmanager
     async def lifespan(_server: FastAPI) -> AsyncIterator[None]:
@@ -369,6 +414,7 @@ def create_webui(
     # Wildcard binds accept IP literals, never arbitrary DNS names.
     hosts = frozenset({host, "localhost", "127.0.0.1", "::1"})
     server.add_middleware(AccessBoundary, api_key=api_key, allowed_hosts=hosts)
+    server.add_middleware(RequestLog)
 
     @server.middleware("http")
     async def response_headers(request: Request, call_next: Any) -> Any:
@@ -393,7 +439,7 @@ def create_webui(
             "host_git_permission_denied",
         }:
             status = 403
-        elif code in {"host_files_partial_failure", "thread_run_active"}:
+        elif code in {"host_files_partial_failure", "thread_run_active", "thread_exists"}:
             status = 409
         elif code == "host_files_io_error":
             status = 500
@@ -475,14 +521,34 @@ def create_webui(
                         with move_on_after(PRESENCE_REFRESH_SECONDS):
                             await changed.wait()
 
+                async def pointer_output() -> None:
+                    previous: PointerFrame | None = None
+                    while not directory.closed:
+                        changed = directory.pointer_changed
+                        own = directory.participants.get(participant)
+                        if own is not None and own.pointer_enabled:
+                            frame = directory.pointer_snapshot(participant)
+                            if frame != previous:
+                                await socket.send_json(frame.model_dump(mode="json"))
+                                previous = frame
+                        with move_on_after(1):
+                            await changed.wait()
+                        # Coalesce latest positions, without a queue or resource I/O.
+                        await sleep(0.05)
+
                 group.start_soon(output)
+                group.start_soon(pointer_output)
                 try:
                     while True:
                         try:
                             with fail_after(PRESENCE_TIMEOUT_SECONDS):
                                 raw = await receive_text(socket, limit=16384)
-                            report = PresenceReport.model_validate_json(raw)
-                            await app().report_page_presence(participant, report)
+                            payload = json.loads(raw)
+                            if isinstance(payload, dict) and payload.get("kind") == "pointer":
+                                directory.report_pointer(participant, PointerReport.model_validate(payload))
+                            else:
+                                report = PresenceReport.model_validate(payload)
+                                await app().report_page_presence(participant, report)
                         except (ValidationError, ValueError):
                             await socket.send_json(
                                 ErrorEnvelope(
@@ -527,7 +593,10 @@ def create_webui(
                             await socket.close()
                             group.cancel_scope.cancel()
                             return
-                        await changed.wait()
+                        while not changed.is_set():
+                            with move_on_after(1):
+                                await changed.wait()
+                            draft.expire_presence()
 
                 group.start_soon(output)
                 try:
@@ -750,6 +819,12 @@ def create_webui(
     async def setup(rediscover: bool = False) -> SetupStatus:
         return await app().setup_status(rediscover=rediscover)
 
+    @server.post(
+        "/api/setup/model-options", response_model=SetupModelOptions, openapi_extra=_body(SetupModelOptionsRequest)
+    )
+    async def model_options(request: Request) -> SetupModelOptions:
+        return await app().setup_model_options(await _document(request, SetupModelOptionsRequest))
+
     @server.post("/api/setup/preview", response_model=SetupPreview, openapi_extra=_body(SetupSelection))
     async def preview(request: Request) -> SetupPreview:
         return await app().preview_setup(await _document(request, SetupSelection))
@@ -808,6 +883,10 @@ def create_webui(
     @server.delete("/api/auth/keys/{reference}")
     async def delete_api_key(reference: str) -> None:
         await app().delete_api_key(reference)
+
+    @server.get("/api/auth/logins", response_model=LoginStatus | None)
+    async def active_login() -> LoginStatus | None:
+        return await app().active_login()
 
     @server.post("/api/auth/logins", response_model=LoginStatus, openapi_extra=_body(LoginRequest))
     async def start_login(request: Request) -> LoginStatus:
@@ -982,13 +1061,19 @@ def create_webui(
     @server.get("/api/threads/activity", response_model=ThreadActivityPage)
     async def thread_activity(
         project_id: Annotated[str | None, Query(max_length=128)] = None,
+        project_scope: Literal["all", "projectless", "unavailable"] = "all",
         query: Annotated[str | None, Query(max_length=512)] = None,
         include_archived: bool = False,
         cursor: Annotated[str | None, Query(max_length=2048)] = None,
         limit: Annotated[int, Query(ge=1, le=100)] = 20,
     ) -> ThreadActivityPage:
         return await app().thread_activity(
-            project_id=project_id, query=query, include_archived=include_archived, cursor=cursor, limit=limit
+            project_id=project_id,
+            project_scope=project_scope,
+            query=query,
+            include_archived=include_archived,
+            cursor=cursor,
+            limit=limit,
         )
 
     @server.get("/api/threads/{thread_id}/tasks", response_model=TaskPage)
@@ -1063,7 +1148,7 @@ def create_webui(
     @server.post("/api/threads", response_model=ThreadSummary, openapi_extra=_body(CreateThreadRequest))
     async def create(request: Request) -> ThreadSummary:
         document = await _document(request, CreateThreadRequest)
-        return await app().create_thread(defaults=document.defaults, title=document.title)
+        return await app().create_thread(defaults=document.defaults, title=document.title, thread_id=document.thread_id)
 
     @server.get("/api/threads/{thread_id}", response_model=ThreadDetail)
     async def thread(thread_id: str) -> ThreadDetail:
@@ -1146,7 +1231,7 @@ def create_webui(
         document = await _document(request, PromptRequest)
         try:
             return await app().submit_thread(
-                thread_id=thread_id, prompt=document.prompt, attachment_ids=document.attachment_ids
+                thread_id=thread_id, prompt=document.input(), attachment_ids=document.attachment_ids
             )
         except ValueError as exc:
             raise HarnessUiError(str(exc), code="input_invalid") from exc
@@ -1168,9 +1253,12 @@ def create_webui(
     )
     async def steer(receipt_id: str, request: Request) -> RootControlResult:
         document = await _document(request, RootSteerRequest)
-        return await app().steer_root_operation(
-            receipt_id=receipt_id, message=document.prompt, attachment_ids=document.attachment_ids
-        )
+        try:
+            return await app().steer_root_operation(
+                receipt_id=receipt_id, message=document.input(), attachment_ids=document.attachment_ids
+            )
+        except ValueError as exc:
+            raise HarnessUiError(str(exc), code="input_invalid") from exc
 
     @server.post("/api/operations/{receipt_id}/cancel", response_model=RootControlResult)
     async def cancel(receipt_id: str) -> RootControlResult:
@@ -1185,7 +1273,7 @@ def create_webui(
         # generator task so cancellation closes delivery, never the root Run.
         await app().get_thread(thread_id)
 
-        async def events() -> AsyncIterator[str]:
+        async def events() -> AsyncGenerator[str]:
             try:
                 if after is not None:
                     parsed = _parse_cursor(after, "focus", thread_id)
@@ -1229,13 +1317,16 @@ def create_webui(
             except HarnessUiError as exc:
                 yield _frame(ResetFrame(reason=exc.code))
 
-        return StreamingResponse(
-            events(), media_type="text/event-stream", headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"}
+        return EventStreamResponse(
+            events(),
+            stopping=stopping,
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
         )
 
     @server.get("/api/events", response_model=SummaryOpenFrame | SummaryEventFrame | ResetFrame)
     async def summary(after: Annotated[str | None, Query(max_length=1024)] = None) -> StreamingResponse:
-        async def events() -> AsyncIterator[str]:
+        async def events() -> AsyncGenerator[str]:
             try:
                 parsed = None if after is None else _parse_cursor(after, "summary", None)
                 cursor = None if parsed is None else SummaryCursor(epoch=parsed.epoch, sequence=parsed.sequence)
@@ -1255,8 +1346,11 @@ def create_webui(
             except HarnessUiError as exc:
                 yield _frame(ResetFrame(reason=exc.code))
 
-        return StreamingResponse(
-            events(), media_type="text/event-stream", headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"}
+        return EventStreamResponse(
+            events(),
+            stopping=stopping,
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
         )
 
     @server.get("/api/openapi.json", include_in_schema=False)
@@ -1294,7 +1388,7 @@ def create_webui(
             index,
             headers={
                 "Cache-Control": "no-cache",
-                "Content-Security-Policy": "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'",
+                "Content-Security-Policy": "default-src 'self'; connect-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-ancestors 'none'; base-uri 'none'",
             },
         )
 
@@ -1313,6 +1407,8 @@ def openapi_document(server: FastAPI) -> dict[str, Any]:
         DraftFrame,
         PresenceReport,
         PresenceFrame,
+        PointerReport,
+        PointerFrame,
         ErrorEnvelope,
     ):
         schema = model.model_json_schema(ref_template="#/components/schemas/{model}")
@@ -1324,6 +1420,8 @@ def openapi_document(server: FastAPI) -> dict[str, Any]:
             "path": "/api/presence/connect",
             "input": {"$ref": "#/components/schemas/PresenceReport"},
             "output": {"$ref": "#/components/schemas/PresenceFrame"},
+            "pointer_input": {"$ref": "#/components/schemas/PointerReport"},
+            "pointer_output": {"$ref": "#/components/schemas/PointerFrame"},
             "error": {"$ref": "#/components/schemas/ErrorEnvelope"},
             "report_timeout_seconds": PRESENCE_TIMEOUT_SECONDS,
         },
@@ -1393,16 +1491,19 @@ async def run(
             "WARNING: non-loopback plain HTTP grants shared instance access on a trusted network, not tenant isolation. Use external TLS when needed.",
             err=True,
         )
-    server = create_webui(app_factory, api_key=selected_key, host=host)
-    await uvicorn.Server(
+    stopping = Event()
+    server = create_webui(app_factory, api_key=selected_key, host=host, stopping=stopping)
+    await WebUIServer(
         uvicorn.Config(
             server,
             host=host,
             port=port,
             access_log=False,
+            log_config=None,
             log_level="warning",
             timeout_graceful_shutdown=3,
             ws="websockets-sansio",
             ws_max_size=1024 * 1024,
-        )
+        ),
+        stopping=stopping,
     ).serve()

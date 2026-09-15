@@ -120,5 +120,10 @@ async def prepare_agent_resources(
             capabilities[revision_id] = (*capabilities[revision_id], SkillsCapability(runtime.manager))
     return PreparedAgentResources(
         capabilities,
-        tuple(selected.resolved_model.execution for selected in configurations.values()),
+        tuple(
+            model.execution
+            for selected in configurations.values()
+            for model in (selected.resolved_model, selected.resolved_reviewer_model)
+            if model is not None
+        ),
     )

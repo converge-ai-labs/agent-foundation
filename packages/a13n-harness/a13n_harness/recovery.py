@@ -184,7 +184,7 @@ class InterruptedResponseTracker:
             self._observe_part(event.index, event.part, finalized=True)
 
     def sanitize(self, messages: Sequence[ModelMessage]) -> tuple[ModelMessage, ...]:
-        """Replace Pydantic's interrupted tail with only safely replayable parts."""
+        """Replace Pydantic's interrupted tail with observed text and finalized parts."""
         sanitized = list(messages)
         if not sanitized:
             return ()
@@ -196,7 +196,7 @@ class InterruptedResponseTracker:
             return tuple(sanitized)
 
         parts = self._safe_parts()
-        if parts is None or not parts:
+        if not parts:
             sanitized.pop()
         else:
             sanitized[-1] = replace(tail, parts=parts)
@@ -236,7 +236,7 @@ class InterruptedResponseTracker:
                 provider_details=delta.provider_details,
             )
 
-    def _safe_parts(self) -> list[ModelResponsePart] | None:
+    def _safe_parts(self) -> list[ModelResponsePart]:
         safe: list[ModelResponsePart] = []
         for index in sorted(self._parts):
             part = self._parts[index]
@@ -247,10 +247,9 @@ class InterruptedResponseTracker:
                 if index in self._finalized_indices and (part.content or part.signature):
                     safe.append(part)
             elif isinstance(part, BaseToolCallPart | BaseToolReturnPart):
-                if index not in self._finalized_indices:
-                    return None
-                safe.append(part)
-        return safe if _native_parts_are_balanced(safe) else None
+                if index in self._finalized_indices:
+                    safe.append(part)
+        return safe
 
 
 def normalize_interrupted_history(
@@ -270,8 +269,14 @@ def normalize_interrupted_history(
         tail.state == "interrupted" or (close_pending_tools and tail.state != "suspended")
     ):
         if tail.state == "interrupted" and not _native_parts_are_balanced(tail.parts):
-            normalized.pop()
-            return tuple(normalized), 0
+            # Native results have no portable synthetic closure. Discard the
+            # native group, not independently recoverable text or ordinary calls.
+            parts = [part for part in tail.parts if not isinstance(part, NativeToolCallPart | NativeToolReturnPart)]
+            if not parts:
+                normalized.pop()
+                return tuple(normalized), 0
+            tail = replace(tail, parts=parts)
+            normalized[-1] = tail
         if not close_tool_calls:
             return tuple(normalized), 0
         missing = _missing_tool_calls(tail, ())

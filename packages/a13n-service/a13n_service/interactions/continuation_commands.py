@@ -8,6 +8,7 @@ from functools import partial
 from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.agents.invocation_resolution.skills import validate_retained_skills
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.assets import Asset
 from a13n_service.digests import digest_request
@@ -195,6 +196,13 @@ class ContinuationCommands:
             except AuthorizationError as error:
                 raise command_not_found() from error
 
+            await validate_retained_skills(
+                database,
+                organization_id=source.organization_id,
+                workspace_id=actor.workspace_id,
+                locks=source_state.envelope.effective_agent_config.skills,
+            )
+
         try:
             return await self._acceptance.advance_thread(
                 environment=RetainedRunEnvironment(source.id, source.thread_id),
@@ -209,6 +217,8 @@ class ContinuationCommands:
                 hook_actor=actor.principal,
                 final_validator=validate_final,
                 transaction_hook=partial(evidence.commit, now=self._clock()),
+                label_overrides=request.labels,
+                label_source_run_id=source.id,
             )
         except RunAcceptanceError as error:
             return await evidence.reconcile(error)
@@ -254,7 +264,7 @@ class ContinuationCommands:
                     if protocol_context is not None
                     else {}
                 ),
-                **request.model_dump(mode="json", include={"hook_subscription"}),
+                **request.model_dump(mode="json", include={"hook_subscription", "labels"}),
             }
         )
         evidence = RunCommandEvidence(
@@ -270,28 +280,20 @@ class ContinuationCommands:
         replay = await evidence.replay()
         if replay is not None:
             return replay
-        if thread.current_run_id != source.id or thread.head_run_id != source.id:
-            raise InteractionCommandError(
-                "run_not_feedback_eligible",
-                "The selected waiting Run is no longer the Thread's current head.",
-                category=ErrorCategory.conflict,
+        try:
+            return await self._accept_waiting_successor(
+                actor=actor,
+                source=source,
+                thread=thread,
+                source_state=source_state,
+                request=request,
+                normalized=normalized,
+                request_fingerprint=evidence.fingerprint,
+                transaction_hook=partial(evidence.commit, now=self._clock()),
+                protocol_context=protocol_context,
             )
-        if request.sealed_state_digest_sha256 != source.sealed_state.digest_sha256:
-            raise InteractionCommandError(
-                "run_waiting_state_conflict",
-                "The waiting Run state changed before feedback acceptance.",
-                category=ErrorCategory.conflict,
-            )
-
-        return await self._accept_waiting_successor(
-            actor=actor,
-            source=source,
-            source_state=source_state,
-            request=request,
-            normalized=normalized,
-            evidence=evidence,
-            protocol_context=protocol_context,
-        )
+        except RunAcceptanceError as error:
+            return await evidence.reconcile(error)
 
     async def continue_waiting(
         self,
@@ -304,6 +306,78 @@ class ContinuationCommands:
         prepared_assets: Mapping[str, Asset] | None = None,
     ) -> RunAcceptanceReceipt:
         require_idempotency_key(idempotency_key)
+        source, thread, source_state, normalized = await self._prepare_waiting_continue(
+            actor=actor, run_id=run_id, request=request, prepared_assets=prepared_assets
+        )
+        request_fingerprint = digest_request(
+            {
+                "expected_thread_version": request.expected_thread_version,
+                "waiting_continue": normalized.model_dump(mode="json", by_alias=True),
+                **request.model_dump(mode="json", include={"hook_subscription"}),
+            }
+        )
+        evidence = RunCommandEvidence(
+            self._sessions,
+            actor=actor,
+            operation="run.waiting_continue",
+            scope_id=run_id,
+            supplied_key=idempotency_key,
+            fingerprint=request_fingerprint,
+            binding=transaction_hook,
+            clock=self._clock,
+        )
+        replay = await evidence.replay()
+        if replay is not None:
+            return replay
+        try:
+            return await self._accept_waiting_successor(
+                actor=actor,
+                source=source,
+                thread=thread,
+                source_state=source_state,
+                request=request,
+                normalized=normalized,
+                request_fingerprint=evidence.fingerprint,
+                transaction_hook=partial(evidence.commit, now=self._clock()),
+                protocol_context=request.protocol_context,
+            )
+        except RunAcceptanceError as error:
+            return await evidence.reconcile(error)
+
+    async def accept_waiting_continue(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        run_id: str,
+        request_fingerprint: str,
+        request: WaitingContinueRunCommand,
+        transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None = None,
+        prepared_assets: Mapping[str, Asset] | None = None,
+    ) -> RunAcceptanceReceipt:
+        """Accept waiting intent under the calling entry point's command identity."""
+        source, thread, source_state, normalized = await self._prepare_waiting_continue(
+            actor=actor, run_id=run_id, request=request, prepared_assets=prepared_assets
+        )
+        return await self._accept_waiting_successor(
+            actor=actor,
+            source=source,
+            thread=thread,
+            source_state=source_state,
+            request=request,
+            normalized=normalized,
+            request_fingerprint=request_fingerprint,
+            transaction_hook=transaction_hook,
+            protocol_context=request.protocol_context,
+        )
+
+    async def _prepare_waiting_continue(
+        self,
+        *,
+        actor: AuthenticatedActor,
+        run_id: str,
+        request: WaitingContinueRunCommand,
+        prepared_assets: Mapping[str, Asset] | None,
+    ) -> tuple[Run, Thread, StoredRunState, WaitingRunContinueInput]:
         source, thread = await self._load_feedback_source(
             actor=actor,
             run_id=run_id,
@@ -330,58 +404,19 @@ class ContinuationCommands:
             pending=source.pending,
             input=accepted_input,
         )
-        request_fingerprint = digest_request(
-            {
-                "expected_thread_version": request.expected_thread_version,
-                "waiting_continue": normalized.model_dump(mode="json", by_alias=True),
-                **request.model_dump(mode="json", include={"hook_subscription"}),
-            }
-        )
-        evidence = RunCommandEvidence(
-            self._sessions,
-            actor=actor,
-            operation="run.waiting_continue",
-            scope_id=run_id,
-            supplied_key=idempotency_key,
-            fingerprint=request_fingerprint,
-            binding=transaction_hook,
-            clock=self._clock,
-        )
-        replay = await evidence.replay()
-        if replay is not None:
-            return replay
-        if thread.current_run_id != source.id or thread.head_run_id != source.id:
-            raise InteractionCommandError(
-                "run_not_waiting_continue_eligible",
-                "The selected waiting Run is no longer the Thread's current head.",
-                category=ErrorCategory.conflict,
-            )
-        if request.sealed_state_digest_sha256 != source.sealed_state.digest_sha256:
-            raise InteractionCommandError(
-                "run_waiting_state_conflict",
-                "The waiting Run state changed before continuation acceptance.",
-                category=ErrorCategory.conflict,
-            )
-
-        return await self._accept_waiting_successor(
-            actor=actor,
-            source=source,
-            source_state=source_state,
-            request=request,
-            normalized=normalized,
-            evidence=evidence,
-            protocol_context=request.protocol_context,
-        )
+        return source, thread, source_state, normalized
 
     async def _accept_waiting_successor(
         self,
         *,
         actor: AuthenticatedActor,
         source: Run,
+        thread: Thread,
         source_state: StoredRunState,
         request: WaitingRunFeedbackRequest | WaitingContinueRunCommand,
         normalized: WaitingRunFeedback,
-        evidence: RunCommandEvidence,
+        request_fingerprint: str,
+        transaction_hook: Callable[[AsyncSession, RunAcceptanceReceipt], Awaitable[None]] | None,
         protocol_context: ProtocolInputContext | None,
     ) -> RunAcceptanceReceipt:
         """Preserve the waiting execution while accepting its normalized resolution."""
@@ -391,6 +426,22 @@ class ContinuationCommands:
             if accepted_input is not None
             else (WorkspaceAction.run_feedback,)
         )
+        if thread.current_run_id != source.id or thread.head_run_id != source.id:
+            raise InteractionCommandError(
+                "run_not_waiting_continue_eligible" if accepted_input is not None else "run_not_feedback_eligible",
+                "The selected waiting Run is no longer the Thread's current head.",
+                category=ErrorCategory.conflict,
+            )
+        assert source.sealed_state is not None
+        if request.sealed_state_digest_sha256 != source.sealed_state.digest_sha256:
+            raise InteractionCommandError(
+                "run_waiting_state_conflict",
+                "The waiting Run state changed before continuation acceptance."
+                if accepted_input is not None
+                else "The waiting Run state changed before feedback acceptance.",
+                category=ErrorCategory.conflict,
+            )
+
         successor_id = new_run_id()
         state = initialize_waiting_continuation_state(
             RunStateSeed(
@@ -423,7 +474,7 @@ class ContinuationCommands:
             queue_name=source.queue_name,
             execution_budget=source.execution_budget,
             idempotency_key=None,
-            request_fingerprint=evidence.fingerprint,
+            request_fingerprint=request_fingerprint,
             input_kind=RunInputKind.waiting_continue if accepted_input is not None else RunInputKind.waiting_feedback,
             input=normalized.model_dump(mode="json", by_alias=True),
             input_text=input_text(accepted_input) if accepted_input is not None else None,
@@ -450,23 +501,28 @@ class ContinuationCommands:
             except AuthorizationError as error:
                 raise command_not_found() from error
 
-        try:
-            return await self._acceptance.advance_thread(
-                environment=RetainedRunEnvironment(source.id, source.thread_id),
-                run=successor,
-                state=state,
-                expected_thread_version=request.expected_thread_version,
-                expected_current_run_id=source.id,
-                expected_head_run_id=source.id,
-                next_head_run_id=source.id,
-                hook_subscription=request.hook_subscription,
-                hook_source_run_id=source.id if "hook_subscription" not in request.model_fields_set else None,
-                hook_actor=actor.principal,
-                final_validator=validate_final,
-                transaction_hook=partial(evidence.commit, now=self._clock()),
+            await validate_retained_skills(
+                database,
+                organization_id=source.organization_id,
+                workspace_id=actor.workspace_id,
+                locks=source_state.envelope.effective_agent_config.skills,
             )
-        except RunAcceptanceError as error:
-            return await evidence.reconcile(error)
+
+        return await self._acceptance.advance_thread(
+            label_overrides=request.labels,
+            environment=RetainedRunEnvironment(source.id, source.thread_id),
+            run=successor,
+            state=state,
+            expected_thread_version=request.expected_thread_version,
+            expected_current_run_id=source.id,
+            expected_head_run_id=source.id,
+            next_head_run_id=source.id,
+            hook_subscription=request.hook_subscription,
+            hook_source_run_id=source.id if "hook_subscription" not in request.model_fields_set else None,
+            hook_actor=actor.principal,
+            final_validator=validate_final,
+            transaction_hook=transaction_hook,
+        )
 
     async def _load_retry_source(self, *, actor: AuthenticatedActor, run_id: str) -> tuple[Run, Thread, Run | None]:
         async with short_session(self._sessions) as database:

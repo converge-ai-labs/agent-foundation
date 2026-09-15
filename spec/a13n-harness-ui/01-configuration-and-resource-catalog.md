@@ -4,7 +4,7 @@
 
 Harness UI uses a small multi-file configuration tree so people can configure and inspect the CLI with an ordinary editor or another agent. Files own desired Models, configured extensions, MCP servers, Agents, local Markdown subagents, Projects, and global defaults. The separately managed [Content Plugin catalog](01b-content-plugin-repositories.md) contributes editable fallback Markdown subagents and Skill sources. SQLite records accepted-generation indexes and mutable Thread selections but never becomes a competing editable resource source.
 
-A stable valid read of the configuration tree plus usable optional Content Plugin sources produces one accepted configuration generation. A malformed, incomplete, or changing primary configuration tree leaves the previous accepted generation active. Invalid optional plugin content is skipped with diagnostics under the [Content Plugin loading contract](01b-content-plugin-repositories.md#configuration-integration). Unusable Agent Capability selections are skipped with warnings under the [Capability catalog contract](01a-extension-discovery-and-management.md#capability-catalog), without rejecting the generation or rewriting source files. Existing Threads retain their sticky resource IDs, but each later Run resolves those IDs from the current accepted generation.
+A stable valid read of the configuration tree plus usable optional Content Plugin sources produces one accepted configuration generation. A malformed, incomplete, or changing primary configuration tree leaves the previous accepted generation active during live reload. At startup, a nonexistent Agent Model or effective reviewer Model reference is fatal even if a previous accepted generation exists. The application logs the source file, field, and missing Model ID and does not substitute a Model or skip permission policy. Other invalid startup candidates retain the diagnostic/repair flow. Invalid optional plugin content is skipped with diagnostics under the [Content Plugin loading contract](01b-content-plugin-repositories.md#configuration-integration). Unusable Agent Capability selections are skipped with warnings under the [Capability catalog contract](01a-extension-discovery-and-management.md#capability-catalog), without rejecting the generation or rewriting source files. Existing Threads retain their sticky resource IDs, but each later Run resolves those IDs from the current accepted generation.
 
 ## Configuration Tree
 
@@ -33,7 +33,7 @@ Each resource file defines one resource except MCP files, which also accept a mu
 
 The optional `AGENTS.md` beside the root YAML is global user-role guidance. Its exact UTF-8 content participates in the accepted generation fingerprint and source digest, under the same stable regular-file read and size limits as other primary sources. Edits and removal take effect on later accepted generations; captured Runs remain immutable. `RULES.md` and `AGENTS.override.md` are not instruction sources. Harness UI does not import guidance from ambient Codex configuration. [Composition](02-agent-composition-and-snapshots.md#resolution) owns injection and capture.
 
-The root file owns restart-bound process settings, user-input delivery, global defaults, and application tool switches:
+The root file owns restart-bound process settings, user-input delivery, global defaults, application tool switches, and WebUI collaboration preferences:
 
 ```yaml
 schema_version: "1"
@@ -49,11 +49,14 @@ input:
 
 tools:
   enable_ask_user_question: true
-  ask_user_question_timeout_seconds: 120
+  interaction_timeout_seconds: 120
   enable_codeact: true
 
 subagents:
   include: [code-reviewer, executor, explorer]
+
+webui:
+  sidekick: null
 
 defaults:
   project: project-agent-foundation
@@ -64,13 +67,17 @@ defaults:
   mcp_servers: []
 ```
 
+`webui.sidekick` is null or omitted by default. A mapping enables it: optional `agent` selects an existing Agent resource or inherits the calling Agent when omitted/null; optional `model` selects a Model resource override for the requested Run. An explicitly selected Agent without a Model requires a Model override. Empty `{}` enables inherited selections. Invalid references reject the candidate generation. WebUI General settings edits enabled state, Agent inheritance and Model override through the existing root-document draft and save flow, separately from `defaults.agent`. Selecting Disabled writes null. Saving neither creates a Thread nor starts execution. The preferences are captured per Run; [Sidekick instructions](05-runtime-subagents-and-surfaces.md#sidekick-instructions) owns the conditional behavior and terminal/child boundary.
+
+`security.shell_review` is an optional application-owned shortcut with `enable` (boolean, default `false`), `risk_threshold` (`low`, `medium`, `high`, `extra_high`, or null/omitted), `model` (Model resource ID or null/omitted), `on_flagged` (`deny`, `approval_required`, or null/omitted), and `on_error` (`deny`, `approval_required`, `allow`, or null/omitted). Disabled or omitted means no injection, not a prohibition: explicit Agent permission/review policy remains effective. Enabled merges the shortcut into one `ToolPermissionsCapability` before Run capture, with explicitly supplied shortcut fields taking precedence. Omitted/null fields inherit the Agent review configuration; without one, the threshold is `extra_high`, the Model is the effective Agent Model, `on_flagged` is `approval_required`, and `on_error` is `allow`. Setup materializes its reviewed selections in this root mapping. [Shell review composition](02-agent-composition-and-snapshots.md#shell-review-auxiliary-model) owns exact-rule merging, failure behavior, and frozen auxiliary Models.
+
 `subagents.include` is an ordered unique list of release-owned names: `code-reviewer`, `executor`, and `explorer`. Omitted or `[]` includes none. Normal setup includes all three; `setup --advanced` offers all or none; individual names remain editor-configurable. These selections extend the root Run roster, not every descendant roster. They are composition inputs, not sticky Thread selections. The package owns the definitions; no definition files are copied into the configuration tree. `a13n-harness-ui config subagents` lists available roles and current inclusion. [Composition](02-agent-composition-and-snapshots.md#built-in-subagents) owns expansion, identity, inheritance, and conflict handling.
 
 `tools.enable_ask_user_question` defaults to `true`; disabling it excludes the built-in `ask_user_question` Capability from newly resolved Runs, including explicitly authored selections. `tools.enable_codeact` defaults to `true`; when enabled it includes the native Harness CodeAct Capability with `run_code`, `run_program`, and its explicit `store`, `load`, and `forget` state tools. State bounds and persistence semantics follow the [Harness CodeAct contract](../a13n-harness/18-codeact.md). An explicit Agent `codeact` Capability configuration can narrow or tune its native runners, but cannot bypass the global disabled switch. Ordinary tool visibility filters still apply. These switches participate in accepted generations and captured compositions; they do not alter active or previously captured Runs. [Composition](02-agent-composition-and-snapshots.md#resolution) owns reconstruction.
 
 `input.long_text_threshold_chars` is a positive integer, default `8000`, or `null` to disable automatic text files. It counts Unicode characters in each submitted user-text block, not tokens or UTF-8 bytes. A block is eligible only when strictly longer than the threshold. A root Run captures the policy from its accepted generation and uses it for initial input and human steering; later configuration changes affect later Runs. The [root input contract](05-runtime-subagents-and-surfaces.md#long-text-input-files) owns conversion, readability checks, and failure behavior.
 
-`tools.ask_user_question_timeout_seconds` is a positive finite number, default `120`. It controls the terminal's wait for each displayed structured question, not model execution or shell-approval timeouts. The [interactive contract](07-interactive-cli.md#decisions-cancellation-and-recovery) owns expiry and continuation behavior.
+`tools.interaction_timeout_seconds` is a positive finite number, default `120`. It controls the active terminal Host's wait for each question, approval, or external result, not model execution. The old `ask_user_question_timeout_seconds` key is accepted as an input alias; output uses `interaction_timeout_seconds`. The [interactive contract](07-interactive-cli.md#decisions-cancellation-and-recovery) owns expiry and continuation behavior.
 
 `process.pricing_auto_update` defaults to `true` and controls the App-owned upstream price updater. It is restart-bound, not a Model or Agent resource setting. The [App lifetime](05-runtime-subagents-and-surfaces.md#app-lifetime) owns update and shutdown behavior.
 

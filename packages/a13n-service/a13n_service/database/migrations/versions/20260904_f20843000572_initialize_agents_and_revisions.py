@@ -9,6 +9,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision: str = "f20843000572"
 down_revision: str | Sequence[str] | None = "951f75b187a9"
@@ -28,6 +29,12 @@ def upgrade() -> None:
         sa.Column("name", sa.String(length=128), nullable=False),
         sa.Column("key", sa.String(length=64), nullable=False),
         sa.Column("description", sa.String(length=4096), nullable=True),
+        sa.Column(
+            "labels",
+            sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), "postgresql"),
+            server_default=sa.text("'{}'"),
+            nullable=False,
+        ),
         sa.Column("version", sa.BigInteger(), nullable=False),
         sa.Column("current_revision_id", sa.String(length=72), nullable=False),
         sa.Column("enabled", sa.Boolean(), nullable=False),
@@ -64,6 +71,14 @@ def upgrade() -> None:
         unique=False,
     )
     op.create_index("ix_agents_workspace_updated", "agents", ["workspace_id", "updated_at", "id"], unique=False)
+    op.create_index(
+        "ix_agents_labels",
+        "agents",
+        ["labels"],
+        unique=False,
+        postgresql_using="gin",
+        postgresql_ops={"labels": "jsonb_path_ops"},
+    )
     op.create_index("uq_agents_id_organization", "agents", ["id", "organization_id", "workspace_id"], unique=True)
     op.create_index("uq_agents_workspace_key", "agents", ["workspace_id", "key"], unique=True)
     op.create_table(
@@ -114,5 +129,6 @@ def downgrade() -> None:
     op.drop_index("uq_agents_workspace_key", table_name="agents")
     op.drop_index("uq_agents_id_organization", table_name="agents")
     op.drop_index("ix_agents_workspace_updated", table_name="agents")
+    op.drop_index("ix_agents_labels", table_name="agents", postgresql_using="gin")
     op.drop_index("ix_agents_workspace_availability", table_name="agents")
     op.drop_table("agents")

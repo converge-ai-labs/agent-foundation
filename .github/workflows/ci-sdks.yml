@@ -13,7 +13,10 @@ on:
       - ".pre-commit-config.yaml"
       - "pyproject.toml"
       - "sdk/**"
-      - "packages/**"
+      - "packages/*/*"
+      - "packages/*/a13n_*/**"
+      - "packages/a13n-service/tests/**"
+      - "conftest.py"
       - "scripts/export-a13n-service-openapi.py"
       - "scripts/tests/test_sdk_codegen.py"
       - "Makefile"
@@ -30,7 +33,10 @@ on:
       - ".pre-commit-config.yaml"
       - "pyproject.toml"
       - "sdk/**"
-      - "packages/**"
+      - "packages/*/*"
+      - "packages/*/a13n_*/**"
+      - "packages/a13n-service/tests/**"
+      - "conftest.py"
       - "scripts/export-a13n-service-openapi.py"
       - "scripts/tests/test_sdk_codegen.py"
       - "Makefile"
@@ -77,7 +83,12 @@ jobs:
             generated:
               - '.github/workflows/ci-sdks.yml'
               - 'Makefile'
-              - 'packages/**'
+              # Keep runtime sources and package-root metadata, not unrelated tests.
+              - 'packages/*/*'
+              - 'packages/*/a13n_*/**'
+              # Representative Service integration imports fixtures across test domains.
+              - 'packages/a13n-service/tests/**'
+              - 'conftest.py'
               - 'pyproject.toml'
               - 'uv.lock'
               - 'scripts/export-a13n-service-openapi.py'

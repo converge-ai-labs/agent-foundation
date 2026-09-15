@@ -19,15 +19,21 @@ from a13n_harness import (
     RunBindings,
 )
 from a13n_harness.capabilities import (
-    AgentShellCommandReviewer,
+    AgentToolReviewer,
     CodeActCapability,
     CompactionCapability,
     CompactionPolicy,
     HandoffCapability,
-    ShellReviewCapability,
+    ToolReviewConfig,
 )
 from a13n_harness.environment import DynamicEnvironmentCapability, DynamicEnvironmentConfiguration
-from a13n_harness.tools import HarnessTool, InvocationPolicyCapability, InvocationPolicyDecision
+from a13n_harness.tools import (
+    HarnessTool,
+    InvocationPolicyCapability,
+    InvocationPolicyDecision,
+    ToolPermissions,
+    ToolPermissionsCapability,
+)
 from a13n_harness.toolsets import AgentMediaUnderstandingProvider, CodeActPolicyToolset, CodeActToolPolicy
 from a13n_harness.toolsets.file_media import MediaUnderstandingRequest
 from a13n_harness.usage import ProviderUsageRecord
@@ -41,8 +47,8 @@ from pydantic_ai.models.function import AgentInfo, DeltaToolCall, DeltaToolCalls
 from pydantic_ai.models.instrumented import InstrumentationSettings
 from pydantic_ai.usage import RequestUsage
 
-from .test_shell_review import _metadata
 from .test_tool_observation import _environment, _provider
+from .test_tool_review import _metadata
 
 pytestmark = pytest.mark.anyio
 
@@ -75,13 +81,17 @@ async def test_auxiliary_models_are_native_descendants_of_the_invoking_tool(
         capabilities.extend(
             [
                 Capability(tools=[HarnessTool(shell_exec, harness_metadata=_metadata())]),
-                ShellReviewCapability(
-                    "test:review", reviewer=AgentShellCommandReviewer(FunctionModel(stream_function=_review_model))
+                ToolPermissionsCapability(
+                    ToolPermissions(default="review"),
+                    review=ToolReviewConfig(model="test:review"),
+                    reviewer=AgentToolReviewer(
+                        FunctionModel(stream_function=_review_model), config=ToolReviewConfig(model="test:review")
+                    ),
                 ),
             ]
         )
-        auxiliary_name = "shell-command-review"
-        source = "shell.review"
+        auxiliary_name = "tool-review"
+        source = "tool.review"
     else:
         tool_name = "view"
         suffix = {"image": "png", "video": "mp4", "audio": "mp3"}[kind]
@@ -126,17 +136,32 @@ async def test_auxiliary_models_are_native_descendants_of_the_invoking_tool(
     )
     assert result.output_or_raise() == "done"
     records = [record for record in result.usage_records if isinstance(record, ProviderUsageRecord)]
-    assert len(records) == 1
+    assert len(records) == (2 if kind == "shell" and nested else 1)
     assert source == records[0].source
     spans = exporter.get_finished_spans()
+    review = next(
+        (
+            span
+            for span in spans
+            if span.attributes.get("a13n.operation.kind") == "tool_review"
+            and span.attributes.get("a13n.tool.id") == "environment.shell_exec"
+        ),
+        None,
+    )
     auxiliary = next(
         span
         for span in spans
         if span.attributes.get("gen_ai.operation.name") == "invoke_agent"
         and span.attributes.get("gen_ai.agent.name") == auxiliary_name
+        and (review is None or span.parent.span_id == review.context.span_id)
     )
     tool = next(span for span in spans if span.attributes.get("gen_ai.tool.name") == tool_name)
-    assert auxiliary.parent.span_id == tool.context.span_id
+    if kind == "shell":
+        assert review is not None
+        assert auxiliary.parent.span_id == review.context.span_id
+        assert review.attributes["a13n.tool.id"] == "environment.shell_exec"
+    else:
+        assert auxiliary.parent.span_id == tool.context.span_id
     model_spans = [
         span
         for span in spans
@@ -179,7 +204,9 @@ async def test_auxiliary_agents_do_not_fall_back_to_global_instrumentation(
     media = AgentMediaUnderstandingProvider(
         models={"image": FunctionModel(lambda messages, info: ModelResponse(parts=[TextPart("analysis")]))}
     )
-    reviewer = AgentShellCommandReviewer(FunctionModel(stream_function=_review_model))
+    reviewer = AgentToolReviewer(
+        FunctionModel(stream_function=_review_model), config=ToolReviewConfig(model="test:review")
+    )
 
     async def shell_exec(command: str) -> str:
         return (
@@ -196,7 +223,9 @@ async def test_auxiliary_agents_do_not_fall_back_to_global_instrumentation(
         model=FunctionModel(stream_function=_single_shell_call()),
         capabilities=[
             Capability(tools=[HarnessTool(shell_exec, harness_metadata=_metadata())]),
-            ShellReviewCapability("test:review", reviewer=reviewer),
+            ToolPermissionsCapability(
+                ToolPermissions(default="review"), review=ToolReviewConfig(model="test:review"), reviewer=reviewer
+            ),
         ],
     )
     with provider.get_tracer("host").start_as_current_span("host"):
@@ -292,7 +321,7 @@ async def test_shared_auxiliary_agents_use_each_concurrent_runs_observation() ->
         async for delta in _review_model(messages, info):
             yield delta
 
-    reviewer = AgentShellCommandReviewer(FunctionModel(stream_function=review))
+    reviewer = AgentToolReviewer(FunctionModel(stream_function=review), config=ToolReviewConfig(model="test:review"))
     media = AgentMediaUnderstandingProvider(
         models={"image": FunctionModel(lambda messages, info: ModelResponse(parts=[TextPart("private-analysis")]))}
     )
@@ -320,7 +349,11 @@ async def test_shared_auxiliary_agents_use_each_concurrent_runs_observation() ->
                 model=FunctionModel(stream_function=_single_shell_call()),
                 capabilities=[
                     Capability(tools=[HarnessTool(shell_exec, harness_metadata=_metadata())]),
-                    ShellReviewCapability("test:review", reviewer=reviewer),
+                    ToolPermissionsCapability(
+                        ToolPermissions(default="review"),
+                        review=ToolReviewConfig(model="test:review"),
+                        reviewer=reviewer,
+                    ),
                 ],
             )
         )
@@ -342,7 +375,7 @@ async def test_shared_auxiliary_agents_use_each_concurrent_runs_observation() ->
         root = roots[0]
         trace_ids.append(root.context.trace_id)
         assert all(span.context.trace_id == root.context.trace_id for span in spans)
-        for name in ("shell-command-review", "image-understanding"):
+        for name in ("tool-review", "image-understanding"):
             assert (
                 sum(
                     span.attributes.get("gen_ai.operation.name") == "invoke_agent"
@@ -369,8 +402,9 @@ async def test_instrumented_review_preserves_failure_policy_and_cancellation(fai
         else:
             await asyncio.Event().wait()
 
-    reviewer = AgentShellCommandReviewer(
-        FunctionModel(stream_function=review), timeout_seconds=0.01 if failure == "timeout" else 120
+    reviewer = AgentToolReviewer(
+        FunctionModel(stream_function=review),
+        config=ToolReviewConfig(model="test:review", timeout_seconds=0.01 if failure == "timeout" else 120),
     )
 
     def shell_exec(command: str) -> str:
@@ -384,7 +418,9 @@ async def test_instrumented_review_preserves_failure_policy_and_cancellation(fai
         model=FunctionModel(stream_function=_single_shell_call()),
         capabilities=[
             Capability(tools=[HarnessTool(shell_exec, harness_metadata=_metadata())]),
-            ShellReviewCapability("test:review", reviewer=reviewer),
+            ToolPermissionsCapability(
+                ToolPermissions(default="review"), review=ToolReviewConfig(model="test:review"), reviewer=reviewer
+            ),
         ],
     )
     task = asyncio.create_task(
@@ -399,10 +435,10 @@ async def test_instrumented_review_preserves_failure_policy_and_cancellation(fai
         result = await task
         assert result.status == ("completed" if failure == "timeout" else "suspended")
         if failure == "timeout":
-            assert "Automatically denied; command was not executed" in str(result.all_messages())
+            assert "Tool review timed out; the tool was not executed" in str(result.all_messages())
         if failure == "invalid":
             assert any(
-                isinstance(record, ProviderUsageRecord) and record.source == "shell.review"
+                isinstance(record, ProviderUsageRecord) and record.source == "tool.review"
                 for record in result.usage_records
             )
     assert not executed
@@ -411,9 +447,10 @@ async def test_instrumented_review_preserves_failure_policy_and_cancellation(fai
         span
         for span in spans
         if span.attributes.get("gen_ai.operation.name") == "invoke_agent"
-        and span.attributes.get("gen_ai.agent.name") == "shell-command-review"
+        and span.attributes.get("gen_ai.agent.name") == "tool-review"
     )
-    tool = next(span for span in spans if span.attributes.get("gen_ai.tool.name") == "shell_exec")
-    assert auxiliary.parent.span_id == tool.context.span_id
+    review = next(span for span in spans if span.attributes.get("a13n.operation.kind") == "tool_review")
+    assert auxiliary.parent.span_id == review.context.span_id
+    assert not any(span.attributes.get("gen_ai.tool.name") == "shell_exec" for span in spans)
     if failure == "invalid":
         assert auxiliary.status.status_code is StatusCode.ERROR

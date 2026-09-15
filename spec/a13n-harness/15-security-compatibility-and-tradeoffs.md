@@ -73,6 +73,10 @@ This permits legitimate cache, migration, handoff, and state-transfer behavior. 
 
 ## Tool and Side-effect Safety
 
+The shared permission/review gate applies before tool-owned validation for native and managed local tool calls, including local MCP, ToolProxy targets, and CodeAct callbacks. This does not sandbox trusted Python or provider-native tools. `AgentContext.tool_approval` conveys verified human sources, not automatic mode/reviewer decisions; source-specific approvals cannot satisfy an unrelated later approval stage. Risk assessment and runtime threshold/action policy are independent. Compact saved review/action history is advisory: it neither grants approval nor automatically lowers risk, and a returned tool result does not prove external effects succeeded. Saved pending metadata is evidence only under the Host's authenticated continuation boundary, and current denial still wins. [Tool Execution](07-tool-execution.md#approval-and-deferred-calls) owns binding and invalidation.
+
+Reviewer request facts and declarations are untrusted data, separated from packaged system instructions and optional custom instructions. Review results and usage events are bounded observations, never credentials or grants. Web domain allow/deny restricts only the first-party Host Web paths and returned search results; it is not universal egress control for shell, MCP, or installed code.
+
 Managed tool execution distinguishes:
 
 1. model-selected name and arguments;

@@ -169,3 +169,21 @@ async def test_real_http_connection_uses_pinned_address_and_original_host(monkey
         server.close()
         await server.wait_closed()
     assert f"Host: unresolvable.example:{port}\r\n".encode() in received[0]
+
+
+async def test_domain_restriction_is_rechecked_before_redirect_network_io(public_dns):
+    from a13n_harness.capabilities.web import WebDomainPolicy
+    from a13n_harness.toolsets.domains import DomainRestrictions
+
+    requests = []
+
+    def handler(outgoing):
+        requests.append(outgoing)
+        return httpx2.Response(302, headers={"Location": "https://blocked.example/final"})
+
+    transport = WebTransport(client_factory=lambda: httpx2.AsyncClient(transport=httpx2.MockTransport(handler)))
+    policy = WebDomainPolicy(DomainRestrictions(allow_domains=("example.com",)), WebTransportPolicy(allowed))
+    with pytest.raises(WebProviderError) as error:
+        await transport.request(request(), policy=policy)
+    assert error.value.code == "web_domain_denied"
+    assert len(requests) == 1

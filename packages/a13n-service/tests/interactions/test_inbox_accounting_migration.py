@@ -80,9 +80,9 @@ async def test_accounting_migration_preserves_pending_entries_and_sequence_histo
             ).one()
             assert tuple(row) == expected
         migrator.upgrade(ACCOUNTING_REVISION)
-        migrator.current(check_heads=True, verbose=False)
         assert "thread_inbox_counters" not in inspect(engine).get_table_names()
         with engine.connect() as connection:
+            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == ACCOUNTING_REVISION
             assert (
                 tuple(
                     connection.execute(
@@ -171,6 +171,7 @@ def test_interrupted_accounting_migration_rolls_back_and_can_retry(accounting_da
         with engine.connect() as connection:
             assert connection.scalar(text("SELECT version_num FROM alembic_version")) == PREVIOUS_REVISION
         migrator.upgrade(ACCOUNTING_REVISION)
-        migrator.current(check_heads=True, verbose=False)
+        with engine.connect() as connection:
+            assert connection.scalar(text("SELECT version_num FROM alembic_version")) == ACCOUNTING_REVISION
     finally:
         engine.dispose()

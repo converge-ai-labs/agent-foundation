@@ -50,7 +50,7 @@ Only immediate lowercase `.yaml` or `.md` files are scanned, plus `.json` in `mc
 
 A missing, ambiguous, unloadable, or invalid Capability in an Agent produces a warning instead of blocking conversations. Harness UI skips only that entry, keeps valid entries (including other `NativeTool` entries), and leaves your YAML unchanged. The warning names the Agent ID, Capability key, and reason. The interactive CLI displays these warnings; `config validate` and the Web API's App status expose them as `capability_warnings`. Validation still succeeds when these are the only problems.
 
-Correct the Capability name or arguments, install its trusted implementation if needed, or remove the entry. If an explicitly configured default Capability is invalid, it stays skipped rather than being replaced with broader defaults. A missing Shell Review auxiliary Model also skips that review Capability; Environment permissions, mandatory invocation policy, and tool switches still apply.
+Correct the Capability name or arguments, install its trusted implementation if needed, or remove the entry. If an explicitly configured default Capability is invalid, it stays skipped rather than being replaced with broader defaults. Permission policy is never silently skipped: an invalid `ToolPermissionsCapability`, including a missing reviewer Model, rejects validation and Run composition whether or not the root shortcut is enabled. Repair the Agent policy, `security.shell_review`, or its referenced Model. Environment permissions, mandatory invocation policy, and tool switches still apply.
 
 Only valid selections are captured for a new Run. Already captured Runs do not change, and runtime/model-provider failures are not converted into configuration warnings. Invalid YAML structure, Model resources, and Environment or Plugin configuration still require repair.
 
@@ -82,11 +82,39 @@ display:
   max_tool_argument_chars: 8192
 tools:
   enable_ask_user_question: true
-  ask_user_question_timeout_seconds: 120
+  interaction_timeout_seconds: 120
   enable_codeact: true
+security:
+  shell_review:
+    enable: false
+    risk_threshold: null
+    on_flagged: null
+    on_error: null
+    model: null
 subagents:
   include: []
+webui:
+  sidekick: null
 ```
+
+### WebUI Sidekick
+
+In **Settings → General → Sidekick**, select **Enabled**, optionally choose an Agent and a Model override, then **Save changes**. This sets preferences for independent work without changing your default conversation Agent:
+
+```yaml
+webui:
+  sidekick:
+    agent: null              # Inherit the calling Agent
+    model: model-worker      # Override its Model for the requested Run
+```
+
+Use existing resource IDs. Set `agent: agent-worker` to select a different Agent; either choice can use a Model override. Omit/null `model` to use the selected Agent's Model. An empty `sidekick: {}` enables instructions with inherited selections. Overrides use the normal per-Run mechanism, not an Agent resource edit or a sticky Model change to later turns. Choose **Disabled** or set `sidekick: null` to turn off the extra instructions. Saving does not start any work. New WebUI Runs receive the preference; active Runs keep their captured instructions. Terminal Runs and delegated children are unaffected. Generic Thread, Project, Agent and Model discovery tools remain available in WebUI whether Sidekick is enabled or not. See [Thread collaboration](webui.md#agent-collaboration-and-sidekick) for behavior and delivery limits.
+
+### Shell review shortcut
+
+`security.shell_review.enable` defaults to `false`: no automatic permission/reviewer injection. Setup normally initializes it to `true`. Disabled means the shortcut is unused, not that explicit Agent policies are removed.
+
+When enabled, `risk_threshold` accepts `low`, `medium`, `high`, or `extra_high`, and `model` names a configured Model resource. `on_flagged` accepts `deny` or `approval_required`; `on_error` accepts `deny`, `approval_required`, or `allow`. Omitted/null fields inherit the Agent review policy, falling back to `extra_high`, the effective Agent Model, `approval_required` for flagged calls, and `allow` for non-timeout errors. Explicit shortcut fields take precedence during composition and preserve unrelated Agent rules. The shortcut opts in only `environment.shell_exec`, across root and child Agents. See the [shell-review recipe](configuration-recipes.md#configure-tool-review) for defaults, merging, and failure behavior. These settings affect later Run captures, not active Runs.
 
 ### Process settings
 
@@ -155,12 +183,12 @@ Display defaults are read at startup. `--display` and live `/mode` override the 
 
 ### Built-in tools and subagents
 
-| Field                                     | Default | Meaning                                                                                             |
-| ----------------------------------------- | ------- | --------------------------------------------------------------------------------------------------- |
-| `tools.enable_ask_user_question`          | `true`  | Include native `ask_user_question` in newly resolved Runs                                           |
-| `tools.ask_user_question_timeout_seconds` | `120`   | Positive finite seconds for each displayed terminal question, not shell approval or model execution |
-| `tools.enable_codeact`                    | `true`  | Include native CodeAct runners and explicit `store`/`load`/`forget` state tools                     |
-| `subagents.include`                       | `[]`    | Ordered named built-ins: `code-reviewer`, `executor`, `explorer`                                    |
+| Field                               | Default | Meaning                                                                                               |
+| ----------------------------------- | ------- | ----------------------------------------------------------------------------------------------------- |
+| `tools.enable_ask_user_question`    | `true`  | Include native `ask_user_question` in newly resolved Runs                                             |
+| `tools.interaction_timeout_seconds` | `120`   | Positive finite seconds for each terminal question, approval, or external result; not model execution |
+| `tools.enable_codeact`              | `true`  | Include native CodeAct runners and explicit `store`/`load`/`forget` state tools                       |
+| `subagents.include`                 | `[]`    | Ordered named built-ins: `code-reviewer`, `executor`, `explorer`                                      |
 
 Setup writes all three `tools` fields explicitly into the selected root YAML (by default `~/.a13n-harness-ui/a13n-harness-ui.yaml`), filling omitted fields with these defaults and preserving existing values.
 
@@ -169,6 +197,8 @@ Global disabled tool switches take precedence over explicit Agent capability sel
 For all built-ins use `[code-reviewer, executor, explorer]`; for a subset use, for example, `[explorer]`. Advanced setup offers all or none; normal setup uses its starter inclusion. Definitions remain package-owned; inclusion does not write `subagents/*.md`. [Built-in subagents](agents-and-subagents.md#built-in-subagents) explains inheritance and name conflicts.
 
 ## What wins, and when edits apply
+
+At startup, an Agent or effective reviewer reference to a nonexistent Model aborts the application, even when a previously accepted configuration exists. The error log identifies the configuration file, field, and Model ID. Correct the reference or add the intended Model resource, then restart. Harness UI does not silently drop permission rules, select a different Model, or fall back to the previous generation for this startup error. A disabled root shell-review shortcut is not an effective reviewer reference.
 
 The open App observes configuration changes and accepts a stable, complete, valid tree. This is not synchronous with an editor's save. Invalid or incomplete candidates leave the previous accepted generation active and produce diagnostics. `config validate` deliberately checks the tree; `config show` reports accepted configuration, which can differ from invalid files on disk.
 
@@ -182,7 +212,7 @@ For a new Thread, selection precedence is explicit creation/launch choices, sele
 | Contents of selected Model/Agent/extension resources                          | A newly captured Run uses the accepted resources                                                 | An active or already captured composition is not rebuilt                                           |
 | Tool switches and built-in subagent inclusion                                 | Newly resolved Run composition                                                                   | Existing Run tool/child contracts                                                                  |
 | `input.long_text_threshold_chars`                                             | Captured for a root Run, including its later steering input                                      | The active Run's input policy                                                                      |
-| `tools.ask_user_question_timeout_seconds`                                     | Read when a terminal decision interaction is created                                             | It does not change the originating model call or shell-approval policy                             |
+| `tools.interaction_timeout_seconds`                                           | Read when a terminal decision interaction is created                                             | It does not change model execution or expire pending decisions outside the active CLI              |
 | MCP literal-bearing source files                                              | New captures use new sources; an older capture verifies its source before client construction    | Already constructed clients retain their Run-local values; changed old sources can fail validation |
 | Skill content                                                                 | Catalog preparation uses the Run's current source set; files are read through Environment access | Catalog membership is Run-frozen, but file bytes are not copied into immutable composition         |
 
@@ -211,3 +241,5 @@ Changing it opens separate state; it does not migrate old sessions. Relative boo
 | `COLORFGBG`                                                 | Passive terminal metadata for automatic theme selection                                    |
 
 There is no general `A13N_HARNESS_UI_*` setting override mechanism. `storage`, `envd_runtime`, and application shutdown timeouts are embedding/runtime settings, **not** root YAML sections. Web listener and authentication options are [process-local CLI arguments](webui.md), not resource configuration.
+
+The legacy `tools.ask_user_question_timeout_seconds` input key remains accepted. Saved configuration uses `tools.interaction_timeout_seconds`. Editing a response does not restart the Host timer; expiry denies rather than approving or inventing a result.

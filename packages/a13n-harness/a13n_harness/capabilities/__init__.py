@@ -46,17 +46,6 @@ from .media import (
     MediaRunCapability,
 )
 from .native_image_generation import NativeImageGenerationCapability, NativeImageSaver
-from .shell_review import (
-    AgentShellCommandReviewer,
-    ShellCommandReviewer,
-    ShellReviewAction,
-    ShellReviewAssessment,
-    ShellReviewCapability,
-    ShellReviewError,
-    ShellReviewRequest,
-    ShellReviewResult,
-    ShellRiskLevel,
-)
 from .skills import (
     BoundSkillCatalog,
     BoundSkillCatalogItem,
@@ -97,6 +86,18 @@ from .subagents import (
     SubagentWaitResult,
 )
 from .tool_proxy import ToolProxyCapability, ToolProxyConfig, ToolProxyGroup, ToolProxyPlan, ToolProxySelection
+from .tool_review import (
+    AgentToolReviewer,
+    ToolReviewAssessment,
+    ToolReviewConfig,
+    ToolReviewer,
+    ToolReviewError,
+    ToolReviewPolicy,
+    ToolReviewRequest,
+    ToolReviewResult,
+    ToolReviewRule,
+    ToolRiskLevel,
+)
 from .web import (
     WEB_SCRAPE_BACKEND_ENV,
     WEB_SCRAPE_BACKEND_PRIORITY_ENV,
@@ -141,13 +142,13 @@ from .working_state import (
 )
 
 if TYPE_CHECKING:
-    from .mem0 import MEM0_API_KEY_ENV, MEM0_BASE_URL_ENV, Mem0Capability, Mem0Scope
+    from .mem0 import Mem0Capability, Mem0Scope
 
 
 def __getattr__(name: str) -> object:
     # Importing any capability must not initialize an unused memory SDK and its
     # vector-store integrations. Preserve the public re-exports on explicit use.
-    if name in {"MEM0_API_KEY_ENV", "MEM0_BASE_URL_ENV", "Mem0Capability", "Mem0Scope"}:
+    if name in {"Mem0Capability", "Mem0Scope"}:
         value = vars(import_module(".mem0", __name__))[name]
         globals()[name] = value
         return value
@@ -156,8 +157,6 @@ def __getattr__(name: str) -> object:
 
 __all__ = [
     "MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS",
-    "MEM0_API_KEY_ENV",
-    "MEM0_BASE_URL_ENV",
     "WEB_SCRAPE_BACKEND_ENV",
     "WEB_SCRAPE_BACKEND_PRIORITY_ENV",
     "WEB_SCRAPE_MODE_ENV",
@@ -165,7 +164,7 @@ __all__ = [
     "WEB_SEARCH_BACKEND_PRIORITY_ENV",
     "WEB_SEARCH_CONTEXT_SIZE_ENV",
     "WEB_SEARCH_MODE_ENV",
-    "AgentShellCommandReviewer",
+    "AgentToolReviewer",
     "AskUserQuestionRequest",
     "AsyncDelegateRequest",
     "AsyncExecutionView",
@@ -211,14 +210,6 @@ __all__ = [
     "ResolvedDelegationContext",
     "RuntimeContextCapability",
     "RuntimeContextConfiguration",
-    "ShellCommandReviewer",
-    "ShellReviewAction",
-    "ShellReviewAssessment",
-    "ShellReviewCapability",
-    "ShellReviewError",
-    "ShellReviewRequest",
-    "ShellReviewResult",
-    "ShellRiskLevel",
     "SkillCatalogItem",
     "SkillManager",
     "SkillMaterializer",
@@ -255,6 +246,15 @@ __all__ = [
     "ToolProxyGroup",
     "ToolProxyPlan",
     "ToolProxySelection",
+    "ToolReviewAssessment",
+    "ToolReviewConfig",
+    "ToolReviewError",
+    "ToolReviewPolicy",
+    "ToolReviewRequest",
+    "ToolReviewResult",
+    "ToolReviewRule",
+    "ToolReviewer",
+    "ToolRiskLevel",
     "UserInteractionCapability",
     "UserQuestion",
     "UserQuestionAnswers",

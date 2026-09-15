@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass, replace
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.agents.domain import EffectiveAgentConfig
+from a13n_service.agents.domain import AgentRunOverride, EffectiveAgentConfig
 from a13n_service.agents.invocation_resolution import (
     AgentInvocationResolver,
     FrozenAgentInvocation,
@@ -29,11 +30,18 @@ from a13n_service.interactions.input import (
 )
 from a13n_service.secrets.agent_inputs import graph_secret_requirements, require_secret, validate_secret_bindings
 from a13n_service.secrets.domain import AgentSecretBinding
-from a13n_service.storage import short_session
+from a13n_service.storage import short_session, transaction
 
 from .environment_preview import input_environment_access
 from .errors import InteractionCommandError
 from .input import AcceptedAgentInput
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedCommandInput:
+    invocation: PreparedAgentInvocation
+    frozen: FrozenAgentInvocation
+    input: AcceptedAgentInput
 
 
 class CommandInput:
@@ -43,6 +51,74 @@ class CommandInput:
         self._sessions = sessions
         self._assets = assets
         self._endpoint_policy = endpoint_policy
+
+    async def prepare(
+        self,
+        invocations: AgentInvocationResolver,
+        *,
+        actor: AuthenticatedActor,
+        agent_id: str,
+        agent_revision_id: str | None,
+        expected_current_revision_id: str | None,
+        config_override: AgentRunOverride | None,
+        submitted: AgentInput,
+        environment: EnvironmentSelection | Omitted | None = Omitted.UNSET,
+        inherited_environment_id: str | Omitted | None = Omitted.UNSET,
+        environment_access_ceiling: str | None = None,
+        prepared_assets: Mapping[str, Asset] | None = None,
+    ) -> PreparedCommandInput:
+        """Freeze a selected invocation, then accept its input outside the transaction.
+
+        Callers select the authority and inheritance source and revalidate the
+        returned invocation and frozen configuration in the acceptance transaction.
+        """
+        prepared = await invocations.preparation.prepare(
+            actor=actor,
+            agent_id=agent_id,
+            agent_revision_id=agent_revision_id,
+            expected_current_revision_id=expected_current_revision_id,
+            config_override=config_override,
+        )
+        async with transaction(self._sessions) as database:
+            frozen = await invocations.freezing.freeze_in_transaction(database, prepared=prepared)
+        accepted = await self.accept(
+            actor=actor,
+            workspace_id=actor.workspace_id,
+            submitted=submitted,
+            frozen=frozen,
+            environment=environment,
+            inherited_environment_id=inherited_environment_id,
+            environment_access_ceiling=environment_access_ceiling,
+            prepared_assets=prepared_assets,
+        )
+        return PreparedCommandInput(prepared, frozen, accepted)
+
+    async def accept_with_skill_refresh[T](
+        self,
+        invocations: AgentInvocationResolver,
+        prepared: PreparedCommandInput,
+        operation: Callable[[PreparedCommandInput], Awaitable[T]],
+    ) -> T:
+        """Retry only Skill publication changes, retaining prepared identities and input.
+
+        Each operation builds a fresh unaccepted Run and state outside SQL. The
+        original AgentRevision, non-Skill settings, and pinned identities never
+        change; abandoned objects remain eligible for ordinary orphan collection.
+        """
+        for _ in range(2):
+            try:
+                return await operation(prepared)
+            except SkillPublicationChanged:
+                async with transaction(self._sessions) as database:
+                    frozen = await invocations.freezing.freeze_in_transaction(database, prepared=prepared.invocation)
+                if not _same_without_skills(frozen, prepared.frozen):
+                    raise InteractionCommandError(
+                        "run_invocation_changed",
+                        "The selected Agent invocation changed before Run acceptance.",
+                        category=ErrorCategory.conflict,
+                    ) from None
+                prepared = replace(prepared, frozen=frozen)
+        return await operation(prepared)
 
     async def accept(
         self,
@@ -137,8 +213,51 @@ async def validate_invocation(
 ) -> None:
     final = await invocations.freezing.freeze_in_transaction(database, prepared=prepared)
     if final != frozen:
+        if _same_without_skills(final, frozen) and _skills_differ(final.effective_config, frozen.effective_config):
+            raise SkillPublicationChanged()
         raise InteractionCommandError(
             "run_invocation_changed",
             "The selected Agent invocation changed before Run acceptance.",
             category=ErrorCategory.conflict,
         )
+
+
+class SkillPublicationChanged(InteractionCommandError):
+    """Only current Skill locks changed before the acceptance transaction committed."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            "run_invocation_changed",
+            "Skill publication changed the invocation before Run acceptance.",
+            category=ErrorCategory.conflict,
+        )
+
+
+def _without_skills(config: EffectiveAgentConfig) -> EffectiveAgentConfig:
+    return config.model_copy(
+        update={
+            "skills": (),
+            "content_digest": "0" * 64,
+            "child_configs": {
+                key: child.model_copy(update={"effective_config": _without_skills(child.effective_config)})
+                for key, child in config.child_configs.items()
+            },
+        }
+    )
+
+
+def _same_without_skills(final: FrozenAgentInvocation, frozen: FrozenAgentInvocation) -> bool:
+    return (
+        final.agent_id == frozen.agent_id
+        and final.agent_revision_id == frozen.agent_revision_id
+        and final.selector_kind == frozen.selector_kind
+        and final.connection_selections == frozen.connection_selections
+        and _without_skills(final.effective_config) == _without_skills(frozen.effective_config)
+    )
+
+
+def _skills_differ(first: EffectiveAgentConfig, second: EffectiveAgentConfig) -> bool:
+    return first.skills != second.skills or any(
+        _skills_differ(child.effective_config, second.child_configs[key].effective_config)
+        for key, child in first.child_configs.items()
+    )

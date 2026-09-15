@@ -13,8 +13,8 @@ from a13n_service.digests import digest_request
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
 from a13n_service.interactions.acceptance import (
     RunAcceptanceError,
-    validate_prepared_run,
 )
+from a13n_service.interactions.acceptance_validation import validate_prepared_run
 from a13n_service.interactions.attempts import AttemptContext, lock_attempt_authority, read_attempt_authority
 from a13n_service.interactions.domain import Run, StrictModel, Thread
 from a13n_service.interactions.environment_acceptance import add_run_with_environment
@@ -34,6 +34,7 @@ from a13n_service.interactions.objects import (
 )
 from a13n_service.interactions.records import thread_record
 from a13n_service.interactions.state import RunCheckpoint
+from a13n_service.labels import merge_labels
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
@@ -141,12 +142,13 @@ class ChildRunAcceptanceService:
                     if edge.name == prepared.relationship.subagent_name
                 )
                 choice = await child_environment_choice(database, parent=parent_resource, policy=edge.environment)
+                inherited_labels = merge_labels(session.labels)
                 child_run = (
                     prepared.run.model_copy(update={"environment_access": parent.environment_access})
                     if edge.environment.mode == "shared"
                     else prepared.run
-                )
-                database.add(thread_record(prepared.thread))
+                ).model_copy(update={"labels": inherited_labels})
+                database.add(thread_record(prepared.thread.model_copy(update={"labels": inherited_labels})))
                 child_record = await add_run_with_environment(
                     database,
                     run=child_run,
@@ -295,9 +297,10 @@ class ChildRunAcceptanceService:
                     source_child=source_run.to_resource(),
                     workspace_id=session.workspace_id,
                 )
+                assert child_thread is not None
                 child_record = await add_run_with_environment(
                     database,
-                    run=prepared.run,
+                    run=prepared.run.model_copy(update={"labels": merge_labels(source_run.labels)}),
                     state=prepared.state,
                     workspace_id=session.workspace_id,
                     intent=RetainedRunEnvironment(source_run.id, source_run.thread_id),
@@ -306,7 +309,6 @@ class ChildRunAcceptanceService:
                 database.add(
                     child_run_relationship_record(prepared.relationship, organization_id=prepared.run.organization_id)
                 )
-                assert child_thread is not None
                 child_thread.version += 1
                 child_thread.current_run_id = prepared.run.id
                 child_thread.updated_at = assume_utc(self._clock())

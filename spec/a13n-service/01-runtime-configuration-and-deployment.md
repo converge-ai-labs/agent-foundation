@@ -110,6 +110,10 @@ The observability section contains the tracing switch and Harness content select
 
 Before each Harness build, execution captures the current immutable catalog off the event loop and passes `pricing_catalog` to the public builder. Later builds automatically adopt validated updates, while active Agents and existing usage records retain their original pricing. [Harness Cost Calculation](../a13n-harness/12-events-observability-and-usage.md#cost-calculation) owns catalog precedence, revision identity, conversion fallback, and explicit policy overrides. Stopping or disabling one updater does not clear a snapshot previously published in that process. This background data refresh does not hot-reload the immutable process configuration.
 
+### Memory Backend
+
+`memory` selects the process-owned native OSS (primary), Platform, or disabled backend. Control and Worker use the same deployment selection; Connectivity does not open a memory transport. Backend credentials never enter Agent configuration or portable execution state. Configuration and shutdown do not create, migrate, or reset memory records. [Long-Term Memory](42-memory.md#backend-and-lifetime) owns the backend contract, operation deadlines, and explicit Agent opt-in.
+
 ## Deployment Profiles
 
 Service supports two profiles:

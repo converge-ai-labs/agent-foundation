@@ -16,11 +16,13 @@ from a13n_service.durable_operations.idempotency import is_evidence_unique_race
 from a13n_service.durable_operations.requests import evidence_record, load_replay, request_identity
 from a13n_service.etags import etag_matches, resource_etag
 from a13n_service.iam import AuthenticatedActor
+from a13n_service.iam.audit import security_audit_record
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.ids import new_object_id
+from a13n_service.labels import Labels, LabelsBody, label_predicates, labels_etag
 from a13n_service.secrets.crypto import SecretProtector
 from a13n_service.storage import short_session, transaction
-from a13n_service.temporal import utc_now
+from a13n_service.temporal import next_updated_at, utc_now
 
 from .access import authorize_environment_resource, authorize_environment_workspace, environment_actor_scope
 from .cursors import decode_cursor, encode_cursor
@@ -210,7 +212,9 @@ class EnvironmentService:
                 if replay:
                     await self._template(session, actor, replay.result_ref)
                     return replay.restore(EnvironmentTemplate)
-                recipe = TemplateConfiguration.model_validate(request.model_dump(exclude={"name", "description"}))
+                recipe = TemplateConfiguration.model_validate(
+                    request.model_dump(exclude={"name", "description", "labels"})
+                )
                 await self.validate_recipe(session, actor=actor, workspace_id=workspace_id, recipe=recipe)
                 row = EnvironmentTemplateRecord(
                     id=new_object_id("envtpl"),
@@ -218,6 +222,7 @@ class EnvironmentService:
                     workspace_id=workspace_id,
                     name=request.name,
                     description=request.description,
+                    labels=request.labels,
                     version=1,
                     current_revision_id=new_object_id("envrev"),
                     created_at=now,
@@ -344,12 +349,13 @@ class EnvironmentService:
         workspace_id: str,
         selection: NewEnvironmentSelection,
         now: datetime,
+        labels: Labels | None = None,
     ) -> EnvironmentRecord:
         await authorize_environment_workspace(
             session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.environment_template_use
         )
         selected = await resolve_selection(session, workspace_id=workspace_id, choice=selection)
-        row = allocate_selection(session, selected, workspace_id=workspace_id, now=now)
+        row = await allocate_selection(session, selected, workspace_id=workspace_id, now=now, labels=labels)
         await session.flush()
         return row
 
@@ -381,7 +387,12 @@ class EnvironmentService:
                     return replay.restore(Environment)
                 if isinstance(request, CreateManagedEnvironmentRequest):
                     row = await self.allocate(
-                        session, actor=actor, workspace_id=workspace_id, selection=request, now=now
+                        session,
+                        actor=actor,
+                        workspace_id=workspace_id,
+                        selection=request,
+                        now=now,
+                        labels=request.labels,
                     )
                     if request.name is not None:
                         row.name = request.name
@@ -453,6 +464,7 @@ class EnvironmentService:
         row = EnvironmentRecord(
             id=environment_id,
             name=request.name or default_environment_name(environment_id),
+            labels=request.labels,
             organization_id=provider.organization_id,
             workspace_id=workspace_id,
             provider_id=provider.id,
@@ -559,6 +571,86 @@ class EnvironmentService:
         )
         return row
 
+    async def get_template_labels(self, *, actor: AuthenticatedActor, template_id: str) -> tuple[LabelsBody, str]:
+        async with short_session(self.sessions) as session:
+            row = await self._template(session, actor, template_id)
+            return LabelsBody(labels=row.labels), labels_etag(row.id, row.labels)
+
+    async def replace_template_labels(
+        self, *, actor: AuthenticatedActor, template_id: str, body: LabelsBody, if_match: str
+    ) -> tuple[LabelsBody, str]:
+        async with transaction(self.sessions) as session:
+            row = await self._template(session, actor, template_id, manage=True, lock=True)
+            current = labels_etag(row.id, row.labels)
+            if not etag_matches(if_match, current):
+                raise EnvironmentManagementError(
+                    "labels_etag_mismatch",
+                    "Labels changed since they were read.",
+                    category=ErrorCategory.stale_version,
+                    details={"current_etag": current},
+                )
+            if row.labels != body.labels:
+                row.labels = dict(body.labels)
+                row.updated_at = next_updated_at(row.updated_at, utc_now())
+                session.add(
+                    security_audit_record(
+                        audit_id=new_object_id("audit"),
+                        actor=actor,
+                        organization_id=row.organization_id,
+                        workspace_id=row.workspace_id,
+                        action="environment_template.labels.update",
+                        resource_type="environment_template",
+                        resource_id=row.id,
+                        outcome="success",
+                        occurred_at=row.updated_at,
+                        details=None,
+                    )
+                )
+            return LabelsBody(labels=row.labels), labels_etag(row.id, row.labels)
+
+    async def get_environment_labels(self, *, actor: AuthenticatedActor, environment_id: str) -> tuple[LabelsBody, str]:
+        async with short_session(self.sessions) as session:
+            row = await self.require_environment(session, actor, environment_id)
+            return LabelsBody(labels=row.labels), labels_etag(row.id, row.labels)
+
+    async def replace_environment_labels(
+        self, *, actor: AuthenticatedActor, environment_id: str, body: LabelsBody, if_match: str
+    ) -> tuple[LabelsBody, str]:
+        async with transaction(self.sessions) as session:
+            row = await self.require_environment(session, actor, environment_id, lock=True)
+            await authorize_environment_workspace(
+                session,
+                actor=actor,
+                workspace_id=row.workspace_id,
+                action=WorkspaceAction.environment_manage,
+            )
+            current = labels_etag(row.id, row.labels)
+            if not etag_matches(if_match, current):
+                raise EnvironmentManagementError(
+                    "labels_etag_mismatch",
+                    "Labels changed since they were read.",
+                    category=ErrorCategory.stale_version,
+                    details={"current_etag": current},
+                )
+            if row.labels != body.labels:
+                row.labels = dict(body.labels)
+                row.updated_at = next_updated_at(row.updated_at, utc_now())
+                session.add(
+                    security_audit_record(
+                        audit_id=new_object_id("audit"),
+                        actor=actor,
+                        organization_id=row.organization_id,
+                        workspace_id=row.workspace_id,
+                        action="environment.labels.update",
+                        resource_type="environment",
+                        resource_id=row.id,
+                        outcome="success",
+                        occurred_at=row.updated_at,
+                        details=None,
+                    )
+                )
+            return LabelsBody(labels=row.labels), labels_etag(row.id, row.labels)
+
     @staticmethod
     def _match(resource_id: str, updated_at: datetime, if_match: str) -> None:
         if not etag_matches(if_match, resource_etag(resource_id, updated_at)):
@@ -598,12 +690,19 @@ class EnvironmentService:
             return (await self._template(session, actor, resource_id)).to_resource()
 
     async def list_templates(
-        self, *, actor: AuthenticatedActor, workspace_id: str | None, limit: int = 50, cursor: str | None = None
+        self,
+        *,
+        actor: AuthenticatedActor,
+        workspace_id: str | None,
+        limit: int = 50,
+        cursor: str | None = None,
+        labels: dict[str, str] | None = None,
     ) -> Collection[EnvironmentTemplate]:
         scope = {
             "collection": "templates",
             "workspace_id": workspace_id,
             "organization_boundary": actor.boundary_organization_id,
+            "labels": labels or {},
         }
         async with short_session(self.sessions) as session:
             owner = await authorize_environment_workspace(
@@ -611,6 +710,13 @@ class EnvironmentService:
             )
             query = select(EnvironmentTemplateRecord).where(
                 owner.visible(EnvironmentTemplateRecord.organization_id, EnvironmentTemplateRecord.workspace_id)
+            )
+            query = query.where(
+                *label_predicates(
+                    EnvironmentTemplateRecord.labels,
+                    labels or {},
+                    dialect=session.bind.dialect.name,
+                )
             )
             if cursor is not None:
                 query = query.where(EnvironmentTemplateRecord.id > decode_cursor(cursor, scope=scope))
@@ -625,14 +731,27 @@ class EnvironmentService:
             return (await self.require_environment(session, actor, resource_id)).to_resource()
 
     async def list_environments(
-        self, *, actor: AuthenticatedActor, workspace_id: str, limit: int = 50, cursor: str | None = None
+        self,
+        *,
+        actor: AuthenticatedActor,
+        workspace_id: str,
+        limit: int = 50,
+        cursor: str | None = None,
+        labels: dict[str, str] | None = None,
     ) -> Collection[Environment]:
-        scope = {"collection": "environments", "workspace_id": workspace_id}
+        scope = {"collection": "environments", "workspace_id": workspace_id, "labels": labels or {}}
         async with short_session(self.sessions) as session:
             await authorize_environment_workspace(
                 session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.environment_read
             )
             query = select(EnvironmentRecord).where(EnvironmentRecord.workspace_id == workspace_id)
+            query = query.where(
+                *label_predicates(
+                    EnvironmentRecord.labels,
+                    labels or {},
+                    dialect=session.bind.dialect.name,
+                )
+            )
             if cursor is not None:
                 query = query.where(EnvironmentRecord.id > decode_cursor(cursor, scope=scope))
             rows = tuple(await session.scalars(query.order_by(EnvironmentRecord.id).limit(limit + 1)))

@@ -2,31 +2,28 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useParams, useSearchParams } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
-import {
-  ArrowDown,
-  ShareNetwork,
-  SlidersHorizontal,
-  Stop,
-  PencilSimple,
-} from "@phosphor-icons/react";
+import { ArrowDown, Stop } from "@phosphor-icons/react";
 import { result } from "../transport/client";
-import { useTransport, useProjects, useSelectors } from "../transport/context";
+import { useTransport } from "../transport/context";
 import { ErrorNotice, TextField } from "../shell/ui";
 import type { Profile } from "../shell/presence";
 import { readPreference, writePreference } from "../shell/preferences";
 import { Composer, useDraft } from "./composer";
 import { Decisions } from "./decisions";
 import { ConversationDetails } from "./details";
-import { Discussion, CommentListButton } from "./comments";
-import { useHistory, useThread } from "./queries";
+import { WorkInspector } from "./work-inspector";
+import { Discussion } from "./comments";
+import { refreshThreadLists, useHistory, useThread } from "./queries";
 import { FocusDisplay, showFocusedOutput, watchThread } from "./stream";
 import { LiveOutput, SavedEntry } from "./transcript";
+import { savedToolGroups } from "./tool-presentation";
 import styles from "./conversation.module.css";
 
 export function ConversationPage(props: {
@@ -48,8 +45,16 @@ function Conversation({
   const transport = useTransport();
   const queries = useQueryClient();
   const detail = useThread(threadId);
-  const projects = useProjects();
-  const selectors = useSelectors();
+  const [search, setSearch] = useSearchParams();
+  const dialog = search.get("dialog");
+  const closeDialog = () =>
+    setSearch(
+      (current) => {
+        current.delete("dialog");
+        return current;
+      },
+      { replace: true },
+    );
   const draft = useDraft(threadId);
   const history = useHistory(
     threadId,
@@ -59,9 +64,18 @@ function Conversation({
   const [display] = useState(() => new FocusDisplay());
   const [connection, setConnection] = useState("Connecting");
   const [revision, setRevision] = useState(0);
-  const [rename, setRename] = useState(false);
+  const rename = dialog === "rename";
+  const setRename = (open: boolean) => {
+    if (!open) closeDialog();
+  };
   const [title, setTitle] = useState("");
-  const [inspection, setInspection] = useState(false);
+  const inspection = dialog === "details";
+  const setInspection = (open: boolean) => {
+    if (!open) closeDialog();
+  };
+  useEffect(() => {
+    if (rename) setTitle(detail.data?.thread.title ?? "");
+  }, [rename, detail.data?.thread.title]);
   const [message, setMessage] = useState("");
   const reader = useRef<HTMLDivElement>(null);
   const restoreScroll = useRef(readPreference(`scroll.${threadId}`, ""));
@@ -70,7 +84,8 @@ function Conversation({
   const [newOutput, setNewOutput] = useState(false);
   const reconcile = useCallback(() => {
     void queries.invalidateQueries({ queryKey: ["thread", threadId] });
-    void queries.invalidateQueries({ queryKey: ["threads"] });
+    void refreshThreadLists(queries);
+    void queries.invalidateQueries({ queryKey: ["child-saved-output"] });
   }, [queries, threadId]);
   useEffect(() => {
     let paint: ReturnType<typeof setTimeout> | undefined;
@@ -101,11 +116,15 @@ function Conversation({
       clearTimeout(refresh);
     };
   }, [transport, threadId, display, reconcile]);
-  const entries =
-    history.data?.pages
-      .slice()
-      .reverse()
-      .flatMap((page) => page.entries) ?? [];
+  const entries = useMemo(
+    () =>
+      history.data?.pages
+        .slice()
+        .reverse()
+        .flatMap((page) => page.entries) ?? [],
+    [history.data],
+  );
+  const toolGroups = useMemo(() => savedToolGroups(entries), [entries]);
   const continuation = history.data?.pages[0]?.continuation_id;
   const operation = detail.data?.thread.root_activity;
   const [lastReceipt, setLastReceipt] = useState<string | null>(null);
@@ -246,69 +265,19 @@ function Conversation({
       </div>
     );
   return (
-    <Discussion threadId={threadId} profile={profile}>
+    <Discussion
+      threadId={threadId}
+      profile={profile}
+      listOpen={dialog === "comments"}
+      closeList={closeDialog}
+    >
       <div className={styles.page}>
-        <header className={styles.header}>
-          <div>
-            <h1>{thread.title || "Untitled conversation"}</h1>
-            <small>
-              {projects.data?.find(
-                (project) =>
-                  project.project_id === thread.configuration.project_id,
-              )?.name ||
-                thread.configuration.project_id ||
-                "Without a project"}{" "}
-              ·{" "}
-              {selectors.data?.agents.find(
-                (agent) =>
-                  agent.agent_id === thread.configuration.agent_source.id,
-              )?.name || thread.configuration.agent_source.id}{" "}
-              · {thread.configuration.environment_profile_id} · {connection}
-              {thread.root_activity.state !== "inactive"
-                ? ` · ${thread.root_activity.state}`
-                : ""}
+        {(connection !== "Live" ||
+          thread.root_activity.state !== "inactive") && (
+          <div className={styles.activityBar}>
+            <small role="status">
+              {connection !== "Live" ? connection : thread.root_activity.state}
             </small>
-          </div>
-          <div className={styles.headerActions}>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Rename conversation"
-              onClick={() => {
-                setTitle(thread.title ?? "");
-                setRename(true);
-              }}
-            >
-              <PencilSimple />
-            </Button>
-            <Button
-              variant="ghost"
-              aria-label="Share conversation"
-              onClick={() => {
-                void navigator.clipboard
-                  .writeText(
-                    `${window.location.origin}/threads/${encodeURIComponent(threadId)}`,
-                  )
-                  .then(
-                    () =>
-                      setMessage(
-                        "Conversation link copied. Other people need this instance's API key.",
-                      ),
-                    () =>
-                      setMessage(
-                        "Could not copy the link. Copy this page's address without an API-key fragment.",
-                      ),
-                  );
-              }}
-            >
-              <ShareNetwork />
-              Share
-            </Button>
-            <CommentListButton />
-            <Button variant="ghost" onClick={() => setInspection(true)}>
-              <SlidersHorizontal />
-              Details
-            </Button>
             {thread.root_activity.available_actions?.includes("cancel") &&
               thread.root_activity.receipt_id && (
                 <Button
@@ -321,7 +290,8 @@ function Conversation({
                 </Button>
               )}
           </div>
-        </header>
+        )}
+
         {thread.archived && (
           <div className={styles.warning}>
             <p>This conversation is archived. Its history remains available.</p>
@@ -371,12 +341,26 @@ function Conversation({
                 Load earlier messages
               </Button>
             )}
-            {entries.map((entry) => (
-              <SavedEntry
+            {entries.map((entry, index) => (
+              <div
                 key={`${continuation}:${entry.position}`}
-                entry={entry}
-                threadId={threadId}
-              />
+                data-presence-anchor={`entry:${continuation}:${entry.position}`}
+              >
+                <SavedEntry
+                  entry={entry}
+                  continuation={
+                    index > 0 &&
+                    !entries[index - 1].parts.some(
+                      (part) => part.kind === "user" || part.kind === "media",
+                    ) &&
+                    !entry.parts.some(
+                      (part) => part.kind === "user" || part.kind === "media",
+                    )
+                  }
+                  toolGroups={toolGroups}
+                  threadId={threadId}
+                />
+              </div>
             ))}
             {showLive && (
               <LiveOutput
@@ -423,8 +407,16 @@ function Conversation({
             New output
           </Button>
         )}
+        <WorkInspector
+          threadId={threadId}
+          continuation={detail.data.continuation_id}
+          display={display}
+          live={showLive}
+          reconcile={reconcile}
+        />
         {!thread.archived && (
           <Composer
+            autoFocus={search.get("compose") === "1"}
             threadId={threadId}
             activity={thread.root_activity}
             canRun={detail.data.available_actions?.includes("run") ?? false}
@@ -433,6 +425,39 @@ function Conversation({
             reconcile={reconcile}
           />
         )}
+        <ModalFrame
+          open={dialog === "share"}
+          onOpenChange={(open) => {
+            if (!open) closeDialog();
+          }}
+          title="Share conversation"
+          description="People need access to this instance to open the conversation. The link contains no API key."
+          closeLabel="Close"
+        >
+          <TextField
+            label="Conversation link"
+            value={`${window.location.origin}/threads/${encodeURIComponent(threadId)}`}
+            onChange={() => {}}
+          />
+          <Button
+            onClick={() => {
+              void navigator.clipboard
+                .writeText(
+                  `${window.location.origin}/threads/${encodeURIComponent(threadId)}`,
+                )
+                .then(
+                  () => setMessage("Conversation link copied."),
+                  () =>
+                    setMessage(
+                      "Could not copy the link. Select and copy it above.",
+                    ),
+                );
+            }}
+          >
+            Copy link
+          </Button>
+          {message && <p role="status">{message}</p>}
+        </ModalFrame>
         <ModalFrame
           open={rename}
           onOpenChange={setRename}

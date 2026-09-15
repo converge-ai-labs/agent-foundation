@@ -1,41 +1,45 @@
-import { lazy, Suspense, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, ChoiceField, ModalFrame } from "a13n-ui";
+import { Button, ModalFrame } from "a13n-ui";
 import { X, Plus, ArrowClockwise } from "@phosphor-icons/react";
-import { useProjects, useTransport } from "../transport/context";
+import { useTransport } from "../transport/context";
 import { ApiError, result, type Schema } from "../transport/client";
-import { ErrorNotice, TextField } from "../shell/ui";
+import { ErrorNotice } from "../shell/ui";
 import styles from "./terminal.module.css";
 
 const TerminalScreen = lazy(() => import("./terminal-screen"));
 export function TerminalPanel({
   visible,
   directory,
+  projectId,
+  projectName,
   selected,
   select,
+  onActive,
   collapse,
   unauthorized,
 }: {
   visible: boolean;
   directory: string;
+  projectId: string;
+  projectName?: string;
   selected: string;
   select: (id: string) => void;
+  onActive?: (id: string) => void;
   collapse: () => void;
   unauthorized: () => void;
 }) {
   const { client } = useTransport();
   const queries = useQueryClient();
-  const projects = useProjects();
+  const currentProject = useRef(projectId);
+  currentProject.current = projectId;
   const sessions = useQuery({
     queryKey: ["native", "terminals"],
     queryFn: ({ signal }) =>
       result(client.GET("/api/host/terminals", { signal })),
     enabled: visible,
   });
-  const [creating, setCreating] = useState(false);
   const [closing, setClosing] = useState<Schema<"TerminalView"> | null>(null);
-  const [cwd, setCwd] = useState("");
-  const [project, setProject] = useState("");
   const [pending, setPending] = useState(false);
   const [attempted, setAttempted] = useState(false);
   const [error, setError] = useState<unknown>(null);
@@ -48,17 +52,29 @@ export function TerminalPanel({
   } | null>(null);
   const refresh = () =>
     void queries.invalidateQueries({ queryKey: ["native"] });
-  const active = sessions.data?.find((item) => item.terminal_id === selected);
-  const create = async (folder: string, projectId = project) => {
-    if (pending) return;
-    setCwd(folder);
+  const projectSessions =
+    sessions.data?.filter(
+      (item) => !!projectId && item.project_id === projectId,
+    ) ?? [];
+  const active = projectSessions.find((item) => item.terminal_id === selected);
+  const activeId = active?.terminal_id ?? "";
+  useEffect(() => {
+    onActive?.(visible ? activeId : "");
+  }, [activeId, visible, onActive]);
+  useEffect(() => {
+    setError(null);
+    setAttempted(false);
+    setClosing(null);
+  }, [projectId]);
+  const create = async () => {
+    if (pending || attempted || !directory || !projectId) return;
     setAttempted(true);
     setPending(true);
     setError(null);
     try {
       const value = await result(
         client.POST("/api/host/terminals", {
-          body: { cwd: folder, project_id: projectId || null },
+          body: { cwd: directory, project_id: projectId },
         }),
       );
       created.current = value.terminal_id;
@@ -66,11 +82,13 @@ export function TerminalPanel({
         ["native", "terminals"],
         (items = []) => [...items, value],
       );
-      select(value.terminal_id);
-      setCreating(false);
+      if (currentProject.current === projectId) {
+        select(value.terminal_id);
+        setAttempted(false);
+      }
     } catch (failure) {
+      if (currentProject.current !== projectId) return;
       setError(failure);
-      setCreating(true);
       if (
         failure instanceof ApiError &&
         failure.status >= 400 &&
@@ -92,6 +110,7 @@ export function TerminalPanel({
       });
       if (selected === closing.terminal_id) select("");
       setClosing(null);
+      setAttempted(false);
     } catch (failure) {
       setError(failure);
     } finally {
@@ -160,49 +179,31 @@ export function TerminalPanel({
         }}
       />
       <header className={styles.header}>
-        <strong>Terminal</strong>
+        <strong>Terminal{projectName ? ` · ${projectName}` : ""}</strong>
         <div className={styles.actions}>
           <Button
             size="sm"
             variant="ghost"
-            disabled={pending}
+            disabled={pending || attempted || !projectId || !directory}
             title={
-              directory ? `Start in ${directory}` : "Choose a starting folder"
+              directory
+                ? `Start in ${directory}`
+                : "Open a project conversation first"
             }
-            onClick={() => {
-              setProject("");
-              const folder = directory || projects.data?.[0]?.roots[0] || "";
-              if (folder) void create(folder, "");
-              else {
-                setCwd("");
-                setError(null);
-                setAttempted(false);
-                setCreating(true);
-              }
-            }}
+            onClick={() => void create()}
           >
             <Plus />
             New terminal
           </Button>
           <Button
-            size="sm"
-            variant="ghost"
-            disabled={pending}
-            onClick={() => {
-              setCwd(directory || projects.data?.[0]?.roots[0] || "");
-              setProject("");
-              setError(null);
-              setAttempted(false);
-              setCreating(true);
-            }}
-          >
-            Choose folder…
-          </Button>
-          <Button
             size="icon"
             variant="ghost"
             aria-label="Refresh terminal sessions"
-            onClick={refresh}
+            onClick={() => {
+              refresh();
+              setAttempted(false);
+              setError(null);
+            }}
           >
             <ArrowClockwise />
           </Button>
@@ -221,7 +222,7 @@ export function TerminalPanel({
         retry={() => void sessions.refetch()}
       />
       <div className={styles.sessionBar}>
-        {sessions.data?.map((item, index) => (
+        {projectSessions.map((item, index) => (
           <Button
             key={item.terminal_id}
             size="sm"
@@ -231,7 +232,7 @@ export function TerminalPanel({
             onClick={() => select(item.terminal_id)}
           >
             {item.cwd.split(/[\\/]/).filter(Boolean).at(-1) || "Terminal"}
-            {sessions.data!.filter((session) => session.cwd === item.cwd)
+            {projectSessions.filter((session) => session.cwd === item.cwd)
               .length > 1
               ? ` · ${index + 1}`
               : ""}
@@ -239,7 +240,7 @@ export function TerminalPanel({
           </Button>
         ))}
       </div>
-      {selected ? (
+      {active ? (
         <>
           <div className={styles.identity}>
             <span>
@@ -278,53 +279,39 @@ export function TerminalPanel({
       ) : (
         <div className={styles.empty}>
           <h3>
-            {sessions.data?.length ? "Choose a terminal" : "Open a terminal"}
+            {!projectId
+              ? "No project selected"
+              : projectSessions.length
+                ? "Choose a terminal"
+                : "Open a terminal"}
           </h3>
           <p>
-            Start a shell in your project folder, or select an existing session.
-            Sessions run on the server and are shared with everyone connected.
+            {selected && sessions.isSuccess
+              ? "This terminal is not available in the current project. Open a conversation in its project to view it."
+              : projectId
+                ? "Start a shell in this project's folder, or select one of its existing sessions."
+                : "Open a conversation in a project to see its terminals."}
           </p>
         </div>
       )}
+      <ErrorNotice error={error} />
+      {attempted && error != null && !closing && (
+        <p role="status">
+          The outcome may be unknown. Refresh the session list before starting
+          another terminal.
+        </p>
+      )}
       <ModalFrame
-        open={creating || !!closing}
+        open={!!closing}
         onOpenChange={(open) => {
           if (!open && !pending) {
-            setCreating(false);
             setClosing(null);
           }
         }}
-        title={closing ? "End this terminal session?" : "New terminal"}
-        description={
-          closing
-            ? "This closes the session and its native jobs for everyone. Closing only the panel does not do this."
-            : "Start a shell on the server. You will control it immediately; other people can join as viewers."
-        }
+        title="End this terminal session?"
+        description="This closes the session and its native jobs for everyone. Closing only the panel does not do this."
         closeLabel="Cancel"
       >
-        {creating && (
-          <div className={styles.form}>
-            <ChoiceField
-              label="Project context"
-              value={project}
-              options={[
-                { value: "", label: "No Project" },
-                ...(projects.data ?? []).map((item) => ({
-                  value: item.project_id,
-                  label: item.name,
-                })),
-              ]}
-              onValueChange={(id) => {
-                setProject(id);
-                const root = projects.data?.find(
-                  (item) => item.project_id === id,
-                )?.roots[0];
-                if (root) setCwd(root);
-              }}
-            />
-            <TextField label="Starting folder" value={cwd} onChange={setCwd} />
-          </div>
-        )}
         <ErrorNotice error={error} />
         {attempted && error != null && (
           <p role="status">
@@ -333,15 +320,8 @@ export function TerminalPanel({
             next.
           </p>
         )}
-        <Button
-          disabled={pending || attempted || (creating && !cwd)}
-          onClick={() => void (closing ? close() : create(cwd))}
-        >
-          {pending
-            ? "Waiting…"
-            : closing
-              ? "End session for everyone"
-              : "Start terminal"}
+        <Button disabled={pending || attempted} onClick={() => void close()}>
+          {pending ? "Waiting…" : "End session for everyone"}
         </Button>
       </ModalFrame>
     </section>

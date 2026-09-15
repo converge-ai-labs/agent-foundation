@@ -11,6 +11,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstra
 from a13n_service.digests import Sha256Digest
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.ids import ObjectId, new_object_id
+from a13n_service.labels import Labels
 
 SKILL_KEY_PATTERN = r"^[a-z0-9]+(?:-[a-z0-9]+)*$"
 SkillKey = Annotated[
@@ -123,6 +124,7 @@ class CreateSkillRequest(BaseModel):
 
     name: SkillName | None = None
     source: SkillRevisionSource
+    labels: Labels = Field(default_factory=dict)
 
 
 class CreateSkillRevisionRequest(BaseModel):
@@ -146,6 +148,7 @@ class Skill(BaseModel):
     workspace_id: ObjectId
     key: SkillKey
     name: str
+    labels: Labels = Field(default_factory=dict)
     version: int = Field(ge=1)
     current_revision_id: ObjectId
     created_at: datetime

@@ -579,6 +579,21 @@
             "title": "Key",
             "type": "string"
           },
+          "labels": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 63,
+              "minLength": 1
+            },
+            "title": "Labels",
+            "type": "object"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -700,6 +715,16 @@
             "title": "Instructions",
             "type": "string"
           },
+          "memory": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemorySelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "model": {
             "$ref": "#/components/schemas/AgentModel"
           },
@@ -707,6 +732,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/OutputSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "permissions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolPermissions"
               },
               {
                 "type": "null"
@@ -729,6 +764,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/RetryConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reviewer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentReviewer"
               },
               {
                 "type": "null"
@@ -824,6 +869,16 @@
             "title": "Instructions",
             "type": "string"
           },
+          "memory": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemorySelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "model": {
             "$ref": "#/components/schemas/AgentModel"
           },
@@ -831,6 +886,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/OutputSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "permissions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolPermissions"
               },
               {
                 "type": "null"
@@ -853,6 +918,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/RetryConfig"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reviewer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentReviewer"
               },
               {
                 "type": "null"
@@ -984,6 +1059,90 @@
         },
         "required": ["model_key"],
         "title": "AgentModel",
+        "type": "object"
+      },
+      "AgentReviewer": {
+        "additionalProperties": false,
+        "description": "Reviewer selected by immutable managed Model ID, never a provider route.",
+        "properties": {
+          "instruction": {
+            "anyOf": [
+              {
+                "maxLength": 32768,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Instruction"
+          },
+          "model": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Model",
+            "type": "string"
+          },
+          "model_settings": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/JsonValue"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Settings"
+          },
+          "on_error": {
+            "default": "approval_required",
+            "enum": ["deny", "approval_required", "allow"],
+            "title": "On Error",
+            "type": "string"
+          },
+          "on_flagged": {
+            "default": "deny",
+            "enum": ["deny", "approval_required"],
+            "title": "On Flagged",
+            "type": "string"
+          },
+          "risk_threshold": {
+            "$ref": "#/components/schemas/ToolRiskLevel",
+            "default": "extra_high"
+          },
+          "rules": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ToolReviewRule"
+            },
+            "maxProperties": 1024,
+            "title": "Rules",
+            "type": "object"
+          },
+          "shell_instruction": {
+            "anyOf": [
+              {
+                "maxLength": 32768,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shell Instruction"
+          },
+          "timeout_seconds": {
+            "default": 120,
+            "exclusiveMinimum": 0.0,
+            "maximum": 120.0,
+            "title": "Timeout Seconds",
+            "type": "number"
+          }
+        },
+        "required": ["model"],
+        "title": "AgentReviewer",
         "type": "object"
       },
       "AgentRevision": {
@@ -1182,6 +1341,16 @@
             ],
             "title": "Instructions"
           },
+          "memory": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemorySelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "model": {
             "anyOf": [
               {
@@ -1196,6 +1365,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/OutputSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "permissions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolPermissions"
               },
               {
                 "type": "null"
@@ -1221,6 +1400,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/RetryOverride"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reviewer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentReviewer"
               },
               {
                 "type": "null"
@@ -1325,6 +1514,16 @@
             ],
             "title": "Instructions"
           },
+          "memory": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemorySelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "model": {
             "anyOf": [
               {
@@ -1339,6 +1538,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/OutputSpec"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "permissions": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolPermissions"
               },
               {
                 "type": "null"
@@ -1364,6 +1573,16 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/RetryOverride"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reviewer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentReviewer"
               },
               {
                 "type": "null"
@@ -3453,6 +3672,21 @@
           },
           "input": {
             "$ref": "#/components/schemas/AgentInput"
+          },
+          "labels": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 63,
+              "minLength": 1
+            },
+            "title": "Labels",
+            "type": "object"
           }
         },
         "required": ["expected_thread_version", "input"],
@@ -3603,6 +3837,21 @@
               }
             ],
             "title": "Key"
+          },
+          "labels": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 63,
+              "minLength": 1
+            },
+            "title": "Labels",
+            "type": "object"
           },
           "name": {
             "title": "Name",
@@ -3906,6 +4155,21 @@
       "CreateManagedEnvironmentRequest": {
         "additionalProperties": false,
         "properties": {
+          "labels": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 63,
+              "minLength": 1
+            },
+            "title": "Labels",
+            "type": "object"
+          },
           "name": {
             "anyOf": [
               {
@@ -4177,6 +4441,21 @@
       "CreateSkillRequest": {
         "additionalProperties": false,
         "properties": {
+          "labels": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 63,
+              "minLength": 1
+            },
+            "title": "Labels",
+            "type": "object"
+          },
           "name": {
             "anyOf": [
               {
@@ -4272,6 +4551,21 @@
               }
             ],
             "title": "Description"
+          },
+          "labels": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 63,
+              "minLength": 1
+            },
+            "title": "Labels",
+            "type": "object"
           },
           "name": {
             "maxLength": 128,
@@ -4374,6 +4668,21 @@
               }
             ]
           },
+          "labels": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 63,
+              "minLength": 1
+            },
+            "title": "Labels",
+            "type": "object"
+          },
           "session_id": {
             "anyOf": [
               {
@@ -4386,6 +4695,21 @@
               }
             ],
             "title": "Session Id"
+          },
+          "session_labels": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 63,
+              "minLength": 1
+            },
+            "title": "Session Labels",
+            "type": "object"
           }
         },
         "title": "CreateThreadRequest",
@@ -4649,6 +4973,21 @@
             ],
             "title": "Key"
           },
+          "labels": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 63,
+              "minLength": 1
+            },
+            "title": "Labels",
+            "type": "object"
+          },
           "name": {
             "title": "Name",
             "type": "string"
@@ -4704,6 +5043,21 @@
             "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
             "title": "Id",
             "type": "string"
+          },
+          "labels": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 63,
+              "minLength": 1
+            },
+            "title": "Labels",
+            "type": "object"
           },
           "name": {
             "maxLength": 128,
@@ -5095,6 +5449,21 @@
             "title": "Id",
             "type": "string"
           },
+          "labels": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 63,
+              "minLength": 1
+            },
+            "title": "Labels",
+            "type": "object"
+          },
           "name": {
             "maxLength": 128,
             "minLength": 1,
@@ -5375,6 +5744,36 @@
           },
           "input": {
             "$ref": "#/components/schemas/AgentInput"
+          },
+          "labels": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 63,
+              "minLength": 1
+            },
+            "title": "Labels",
+            "type": "object"
+          },
+          "thread_labels": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 63,
+              "minLength": 1
+            },
+            "title": "Thread Labels",
+            "type": "object"
           }
         },
         "required": ["input"],
@@ -6385,6 +6784,30 @@
       "JsonValue": {
         "title": "JsonValue"
       },
+      "LabelsBody": {
+        "additionalProperties": false,
+        "description": "Complete replacement body for a resource label map.",
+        "properties": {
+          "labels": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 63,
+              "minLength": 1
+            },
+            "title": "Labels",
+            "type": "object"
+          }
+        },
+        "required": ["labels"],
+        "title": "LabelsBody",
+        "type": "object"
+      },
       "LaunchAuthorizationRequest": {
         "additionalProperties": false,
         "properties": {
@@ -6677,50 +7100,6 @@
         "title": "LoginResult",
         "type": "object"
       },
-      "MCPClientMetadata": {
-        "additionalProperties": false,
-        "properties": {
-          "client_id": {
-            "title": "Client Id",
-            "type": "string"
-          },
-          "client_name": {
-            "title": "Client Name",
-            "type": "string"
-          },
-          "grant_types": {
-            "default": ["authorization_code"],
-            "items": {
-              "type": "string"
-            },
-            "title": "Grant Types",
-            "type": "array"
-          },
-          "redirect_uris": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Redirect Uris",
-            "type": "array"
-          },
-          "response_types": {
-            "default": ["code"],
-            "items": {
-              "type": "string"
-            },
-            "title": "Response Types",
-            "type": "array"
-          },
-          "token_endpoint_auth_method": {
-            "default": "none",
-            "title": "Token Endpoint Auth Method",
-            "type": "string"
-          }
-        },
-        "required": ["client_id", "client_name", "redirect_uris"],
-        "title": "MCPClientMetadata",
-        "type": "object"
-      },
       "MCPOAuthClientConfiguration": {
         "additionalProperties": false,
         "properties": {
@@ -6755,7 +7134,7 @@
             "title": "Redirect Uri"
           },
           "source": {
-            "enum": ["pre_registered", "dynamic", "metadata_document"],
+            "enum": ["pre_registered", "dynamic"],
             "title": "Source",
             "type": "string"
           },
@@ -6842,7 +7221,7 @@
             "type": "boolean"
           },
           "client_registration": {
-            "enum": ["metadata_document", "dynamic", "manual"],
+            "enum": ["dynamic", "manual"],
             "title": "Client Registration",
             "type": "string"
           },
@@ -6920,7 +7299,7 @@
           "client_registration": {
             "anyOf": [
               {
-                "enum": ["metadata_document", "dynamic", "manual"],
+                "enum": ["dynamic", "manual"],
                 "type": "string"
               },
               {
@@ -7224,6 +7603,198 @@
         },
         "required": ["items"],
         "title": "MCPToolCollection",
+        "type": "object"
+      },
+      "Mem0Scope": {
+        "description": "Trusted Harness identity boundary used for Mem0 records.",
+        "enum": ["thread", "agent", "user"],
+        "title": "Mem0Scope",
+        "type": "string"
+      },
+      "Memory": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "memory": {
+            "maxLength": 262144,
+            "minLength": 1,
+            "title": "Memory",
+            "type": "string"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          }
+        },
+        "required": ["id", "memory"],
+        "title": "Memory",
+        "type": "object"
+      },
+      "MemoryCollection": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Memory"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "pagination": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemoryPagination"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Native pagination when available. Null means a bounded result, not a complete collection."
+          }
+        },
+        "required": ["items"],
+        "title": "MemoryCollection",
+        "type": "object"
+      },
+      "MemoryPagination": {
+        "additionalProperties": false,
+        "description": "Native traversal; a null cursor means the final page of that traversal.",
+        "properties": {
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": ["next_cursor"],
+        "title": "MemoryPagination",
+        "type": "object"
+      },
+      "MemorySearch": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 20,
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "query": {
+            "maxLength": 16000,
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          },
+          "threshold": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threshold"
+          }
+        },
+        "required": ["query"],
+        "title": "MemorySearch",
+        "type": "object"
+      },
+      "MemorySelection": {
+        "additionalProperties": false,
+        "description": "Opt-in Agent behavior; backend credentials and subject IDs are host-owned.",
+        "properties": {
+          "auto_recall": {
+            "default": true,
+            "title": "Auto Recall",
+            "type": "boolean"
+          },
+          "recall_limit": {
+            "default": 5,
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Recall Limit",
+            "type": "integer"
+          },
+          "recall_required": {
+            "default": false,
+            "title": "Recall Required",
+            "type": "boolean"
+          },
+          "recall_threshold": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recall Threshold"
+          },
+          "recall_timeout": {
+            "default": 2,
+            "exclusiveMinimum": 0.0,
+            "maximum": 300.0,
+            "title": "Recall Timeout",
+            "type": "number"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Mem0Scope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "toolset": {
+            "default": true,
+            "title": "Toolset",
+            "type": "boolean"
+          }
+        },
+        "title": "MemorySelection",
+        "type": "object"
+      },
+      "MemoryWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": ["text"],
+        "title": "MemoryWrite",
         "type": "object"
       },
       "Model": {
@@ -7937,6 +8508,21 @@
       "NewEnvironmentSelection": {
         "additionalProperties": false,
         "properties": {
+          "labels": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 63,
+              "minLength": 1
+            },
+            "title": "Labels",
+            "type": "object"
+          },
           "template_id": {
             "maxLength": 72,
             "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
@@ -9316,6 +9902,21 @@
             "title": "Configuration Schema Version",
             "type": "string"
           },
+          "labels": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 63,
+              "minLength": 1
+            },
+            "title": "Labels",
+            "type": "object"
+          },
           "name": {
             "anyOf": [
               {
@@ -9884,6 +10485,21 @@
                 "type": "null"
               }
             ]
+          },
+          "labels": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 63,
+              "minLength": 1
+            },
+            "title": "Labels",
+            "type": "object"
           }
         },
         "required": ["expected_thread_version"],
@@ -10521,6 +11137,21 @@
             ],
             "title": "Input Text"
           },
+          "labels": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 63,
+              "minLength": 1
+            },
+            "title": "Labels",
+            "type": "object"
+          },
           "lineage_kind": {
             "$ref": "#/components/schemas/RunLineageKind"
           },
@@ -10665,6 +11296,7 @@
           "version",
           "session_id",
           "thread_id",
+          "labels",
           "parent_run_id",
           "retry_of_run_id",
           "lineage_kind",
@@ -11107,6 +11739,24 @@
       "SearchSelection": {
         "additionalProperties": false,
         "properties": {
+          "allow_domains": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 256,
+            "title": "Allow Domains",
+            "type": "array"
+          },
+          "deny_domains": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 256,
+            "title": "Deny Domains",
+            "type": "array"
+          },
           "include_domains": {
             "default": [],
             "items": {
@@ -11456,6 +12106,21 @@
             "title": "Id",
             "type": "string"
           },
+          "labels": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 63,
+              "minLength": 1
+            },
+            "title": "Labels",
+            "type": "object"
+          },
           "preview": {
             "anyOf": [
               {
@@ -11493,6 +12158,7 @@
           "workspace_id",
           "created_at",
           "updated_at",
+          "labels",
           "preview",
           "run_count"
         ],
@@ -11559,6 +12225,21 @@
             "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
             "title": "Key",
             "type": "string"
+          },
+          "labels": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 63,
+              "minLength": 1
+            },
+            "title": "Labels",
+            "type": "object"
           },
           "name": {
             "title": "Name",
@@ -11735,6 +12416,21 @@
             "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
             "title": "Key",
             "type": "string"
+          },
+          "labels": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 63,
+              "minLength": 1
+            },
+            "title": "Labels",
+            "type": "object"
           },
           "name": {
             "title": "Name",
@@ -12136,6 +12832,21 @@
           "input": {
             "$ref": "#/components/schemas/AgentInput"
           },
+          "labels": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 63,
+              "minLength": 1
+            },
+            "title": "Labels",
+            "type": "object"
+          },
           "session_id": {
             "anyOf": [
               {
@@ -12146,6 +12857,36 @@
               }
             ],
             "title": "Session Id"
+          },
+          "session_labels": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 63,
+              "minLength": 1
+            },
+            "title": "Session Labels",
+            "type": "object"
+          },
+          "thread_labels": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 63,
+              "minLength": 1
+            },
+            "title": "Thread Labels",
+            "type": "object"
           }
         },
         "required": ["agent_id", "input"],
@@ -12857,6 +13598,21 @@
             "title": "Id",
             "type": "string"
           },
+          "labels": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 63,
+              "minLength": 1
+            },
+            "title": "Labels",
+            "type": "object"
+          },
           "organization_id": {
             "maxLength": 72,
             "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
@@ -13026,6 +13782,21 @@
             "title": "Id",
             "type": "string"
           },
+          "labels": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 63,
+              "minLength": 1
+            },
+            "title": "Labels",
+            "type": "object"
+          },
           "origin_kind": {
             "title": "Origin Kind",
             "type": "string"
@@ -13086,6 +13857,7 @@
           "head_run_id",
           "current_run_id",
           "default_environment_id",
+          "labels",
           "created_at",
           "updated_at"
         ],
@@ -13171,6 +13943,21 @@
           },
           "input": {
             "$ref": "#/components/schemas/AgentInput"
+          },
+          "labels": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 63,
+              "minLength": 1
+            },
+            "title": "Labels",
+            "type": "object"
           }
         },
         "required": ["input"],
@@ -13251,6 +14038,21 @@
           },
           "input": {
             "$ref": "#/components/schemas/AgentInput"
+          },
+          "labels": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 63,
+              "minLength": 1
+            },
+            "title": "Labels",
+            "type": "object"
           }
         },
         "required": ["input"],
@@ -13375,6 +14177,21 @@
           "input": {
             "$ref": "#/components/schemas/AgentInput"
           },
+          "labels": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 63,
+              "minLength": 1
+            },
+            "title": "Labels",
+            "type": "object"
+          },
           "waiting_resolution": {
             "anyOf": [
               {
@@ -13497,6 +14314,78 @@
         "required": ["id", "content", "toolCallId"],
         "title": "ToolMessage",
         "type": "object"
+      },
+      "ToolPermissionMode": {
+        "enum": ["allow", "deny", "ask", "review"],
+        "title": "ToolPermissionMode",
+        "type": "string"
+      },
+      "ToolPermissionSetting": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/ToolPermissionMode"
+          },
+          {
+            "const": "inherit",
+            "type": "string"
+          }
+        ],
+        "title": "ToolPermissionSetting"
+      },
+      "ToolPermissions": {
+        "additionalProperties": false,
+        "description": "Portable configuration. Inherit resolves a tool default, never an execution decision.",
+        "properties": {
+          "default": {
+            "$ref": "#/components/schemas/ToolPermissionSetting",
+            "default": "inherit"
+          },
+          "rules": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ToolPermissionSetting"
+            },
+            "maxProperties": 1024,
+            "title": "Rules",
+            "type": "object"
+          }
+        },
+        "title": "ToolPermissions",
+        "type": "object"
+      },
+      "ToolReviewRule": {
+        "additionalProperties": false,
+        "description": "A matching rule overrides the supplied fields of the global policy.",
+        "properties": {
+          "on_flagged": {
+            "anyOf": [
+              {
+                "enum": ["deny", "approval_required"],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "On Flagged"
+          },
+          "risk_threshold": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolRiskLevel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "ToolReviewRule",
+        "type": "object"
+      },
+      "ToolRiskLevel": {
+        "enum": ["low", "medium", "high", "extra_high"],
+        "title": "ToolRiskLevel",
+        "type": "string"
       },
       "Trace": {
         "additionalProperties": false,
@@ -14864,6 +15753,21 @@
                 "type": "null"
               }
             ]
+          },
+          "labels": {
+            "maxProperties": 32,
+            "patternProperties": {
+              "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$": {
+                "maxLength": 256,
+                "type": "string"
+              }
+            },
+            "propertyNames": {
+              "maxLength": 63,
+              "minLength": 1
+            },
+            "title": "Labels",
+            "type": "object"
           },
           "resolutions": {
             "default": [],
@@ -20376,6 +21280,192 @@
         "tags": ["environments"]
       }
     },
+    "/api/v1/environment-templates/{template_id}/labels": {
+      "get": {
+        "operationId": "get_environment_templates_template_id_labels",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "title": "Template Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelsBody"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get Template Labels",
+        "tags": ["environments"]
+      },
+      "put": {
+        "operationId": "put_environment_templates_template_id_labels",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "template_id",
+            "required": true,
+            "schema": {
+              "title": "Template Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabelsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelsBody"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Put Template Labels",
+        "tags": ["environments"]
+      }
+    },
     "/api/v1/environment-templates/{template_id}/revisions": {
       "get": {
         "operationId": "get_environment_templates_template_id_revisions",
@@ -20776,6 +21866,192 @@
           }
         ],
         "summary": "Delete Environment",
+        "tags": ["environments"]
+      }
+    },
+    "/api/v1/environments/{environment_id}/labels": {
+      "get": {
+        "operationId": "get_environments_environment_id_labels",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "title": "Environment Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelsBody"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get Environment Labels",
+        "tags": ["environments"]
+      },
+      "put": {
+        "operationId": "put_environments_environment_id_labels",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "environment_id",
+            "required": true,
+            "schema": {
+              "title": "Environment Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabelsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelsBody"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Put Environment Labels",
         "tags": ["environments"]
       }
     },
@@ -21946,93 +23222,6 @@
         "tags": ["model-management"]
       }
     },
-    "/api/v1/oauth/mcp/client-metadata/{issuer_key}/{redirect_key}.json": {
-      "get": {
-        "operationId": "get_oauth_mcp_client_metadata_issuer_key_redirect_key_json",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "issuer_key",
-            "required": true,
-            "schema": {
-              "pattern": "^[0-9a-f]{64}$",
-              "title": "Issuer Key",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "redirect_key",
-            "required": true,
-            "schema": {
-              "pattern": "^[0-9a-f]{64}$",
-              "title": "Redirect Key",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/MCPClientMetadata"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid request.",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Service error.",
-            "headers": {
-              "Retry-After": {
-                "schema": {
-                  "type": "string"
-                }
-              },
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "summary": "Mcp Client Metadata",
-        "tags": ["connectivity-management"]
-      }
-    },
     "/api/v1/organizations": {
       "get": {
         "operationId": "get_organizations",
@@ -22734,6 +23923,21 @@
                 }
               ],
               "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "label",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "maxLength": 320,
+                "type": "string"
+              },
+              "maxItems": 64,
+              "title": "Label",
+              "type": "array"
             }
           }
         ],
@@ -27607,6 +28811,192 @@
         "tags": ["protocol-gateway"]
       }
     },
+    "/api/v1/runs/{run_id}/labels": {
+      "get": {
+        "operationId": "get_runs_run_id_labels",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelsBody"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get Run Labels",
+        "tags": ["protocol-gateway"]
+      },
+      "put": {
+        "operationId": "put_runs_run_id_labels",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "run_id",
+            "required": true,
+            "schema": {
+              "title": "Run Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabelsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelsBody"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Put Run Labels",
+        "tags": ["protocol-gateway"]
+      }
+    },
     "/api/v1/runs/{run_id}/lineage": {
       "get": {
         "operationId": "get_runs_run_id_lineage",
@@ -28903,6 +30293,192 @@
         "tags": ["identity-management"]
       }
     },
+    "/api/v1/sessions/{session_id}/labels": {
+      "get": {
+        "operationId": "get_sessions_session_id_labels",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelsBody"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get Session Labels",
+        "tags": ["protocol-gateway"]
+      },
+      "put": {
+        "operationId": "put_sessions_session_id_labels",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabelsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelsBody"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Put Session Labels",
+        "tags": ["protocol-gateway"]
+      }
+    },
     "/api/v1/sessions/{session_id}/threads": {
       "get": {
         "operationId": "get_sessions_session_id_threads",
@@ -28943,6 +30519,21 @@
                 }
               ],
               "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "label",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "maxLength": 320,
+                "type": "string"
+              },
+              "maxItems": 64,
+              "title": "Label",
+              "type": "array"
             }
           }
         ],
@@ -29612,6 +31203,192 @@
         "tags": ["skill-management"]
       }
     },
+    "/api/v1/skills/{skill_id}/labels": {
+      "get": {
+        "operationId": "get_skills_skill_id_labels",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelsBody"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get Skill Labels",
+        "tags": ["skill-management"]
+      },
+      "put": {
+        "operationId": "put_skills_skill_id_labels",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "skill_id",
+            "required": true,
+            "schema": {
+              "title": "Skill Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabelsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelsBody"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Put Skill Labels",
+        "tags": ["skill-management"]
+      }
+    },
     "/api/v1/skills/{skill_id}/references": {
       "get": {
         "operationId": "get_skills_skill_id_references",
@@ -30025,6 +31802,192 @@
         "tags": ["protocol-gateway"]
       }
     },
+    "/api/v1/threads/{thread_id}/labels": {
+      "get": {
+        "operationId": "get_threads_thread_id_labels",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "title": "Thread Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelsBody"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get Thread Labels",
+        "tags": ["protocol-gateway"]
+      },
+      "put": {
+        "operationId": "put_threads_thread_id_labels",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "title": "Thread Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabelsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelsBody"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Put Thread Labels",
+        "tags": ["protocol-gateway"]
+      }
+    },
     "/api/v1/threads/{thread_id}/queued-submissions": {
       "get": {
         "operationId": "get_threads_thread_id_queued_submissions",
@@ -30378,6 +32341,21 @@
                 }
               ],
               "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "label",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "maxLength": 320,
+                "type": "string"
+              },
+              "maxItems": 64,
+              "title": "Label",
+              "type": "array"
             }
           }
         ],
@@ -31847,6 +33825,21 @@
               "title": "Include Archived",
               "type": "boolean"
             }
+          },
+          {
+            "in": "query",
+            "name": "label",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "maxLength": 320,
+                "type": "string"
+              },
+              "maxItems": 64,
+              "title": "Label",
+              "type": "array"
+            }
           }
         ],
         "responses": {
@@ -32652,6 +34645,210 @@
           }
         ],
         "summary": "Duplicate Agent",
+        "tags": ["agent-management"]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/agents/{agent}/labels": {
+      "get": {
+        "operationId": "get_workspaces_workspace_agents_agent_labels",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "agent",
+            "required": true,
+            "schema": {
+              "title": "Agent",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelsBody"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get Agent Labels",
+        "tags": ["agent-management"]
+      },
+      "put": {
+        "operationId": "put_workspaces_workspace_agents_agent_labels",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "agent",
+            "required": true,
+            "schema": {
+              "title": "Agent",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabelsBody"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabelsBody"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Put Agent Labels",
         "tags": ["agent-management"]
       }
     },
@@ -34503,6 +36700,21 @@
               ],
               "title": "Cursor"
             }
+          },
+          {
+            "in": "query",
+            "name": "label",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "maxLength": 320,
+                "type": "string"
+              },
+              "maxItems": 64,
+              "title": "Label",
+              "type": "array"
+            }
           }
         ],
         "responses": {
@@ -34717,6 +36929,21 @@
                 }
               ],
               "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "label",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "maxLength": 320,
+                "type": "string"
+              },
+              "maxItems": 64,
+              "title": "Label",
+              "type": "array"
             }
           }
         ],
@@ -35826,6 +38053,747 @@
         ],
         "summary": "Workspace Members",
         "tags": ["identity-settings"]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/memories": {
+      "get": {
+        "operationId": "get_workspaces_workspace_memories",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum loaded records, not a total count.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 1000,
+              "description": "Maximum loaded records, not a total count.",
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Mem0Scope"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subject_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 72,
+                  "pattern": "^(?:thread-[a-f0-9]{32}|[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64})$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subject Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryCollection"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "List Memories",
+        "tags": ["memory"]
+      },
+      "post": {
+        "operationId": "post_workspaces_workspace_memories",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Mem0Scope"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subject_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 72,
+                  "pattern": "^(?:thread-[a-f0-9]{32}|[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64})$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subject Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Memory"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Add Memory",
+        "tags": ["memory"]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/memories/search": {
+      "post": {
+        "operationId": "post_workspaces_workspace_memories_search",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Mem0Scope"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subject_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 72,
+                  "pattern": "^(?:thread-[a-f0-9]{32}|[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64})$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subject Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemorySearch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryCollection"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Search Memories",
+        "tags": ["memory"]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/memories/{memory_id}": {
+      "delete": {
+        "operationId": "delete_workspaces_workspace_memories_memory_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "memory_id",
+            "required": true,
+            "schema": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Memory Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Mem0Scope"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subject_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 72,
+                  "pattern": "^(?:thread-[a-f0-9]{32}|[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64})$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subject Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Delete Memory",
+        "tags": ["memory"]
+      },
+      "get": {
+        "operationId": "get_workspaces_workspace_memories_memory_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "memory_id",
+            "required": true,
+            "schema": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Memory Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Mem0Scope"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subject_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 72,
+                  "pattern": "^(?:thread-[a-f0-9]{32}|[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64})$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subject Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Memory"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get Memory",
+        "tags": ["memory"]
+      },
+      "put": {
+        "operationId": "put_workspaces_workspace_memories_memory_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "memory_id",
+            "required": true,
+            "schema": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Memory Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Mem0Scope"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subject_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 72,
+                  "pattern": "^(?:thread-[a-f0-9]{32}|[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64})$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subject Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Memory"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Update Memory",
+        "tags": ["memory"]
       }
     },
     "/api/v1/workspaces/{workspace}/model-providers": {
@@ -37697,6 +40665,21 @@
               ],
               "title": "Cursor"
             }
+          },
+          {
+            "in": "query",
+            "name": "label",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "maxLength": 320,
+                "type": "string"
+              },
+              "maxItems": 64,
+              "title": "Label",
+              "type": "array"
+            }
           }
         ],
         "responses": {
@@ -38985,6 +41968,21 @@
           },
           {
             "in": "query",
+            "name": "label",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "maxLength": 320,
+                "type": "string"
+              },
+              "maxItems": 64,
+              "title": "Label",
+              "type": "array"
+            }
+          },
+          {
+            "in": "query",
             "name": "limit",
             "required": false,
             "schema": {
@@ -39263,6 +42261,21 @@
                 }
               ],
               "title": "Source Kind"
+            }
+          },
+          {
+            "in": "query",
+            "name": "label",
+            "required": false,
+            "schema": {
+              "default": [],
+              "items": {
+                "maxLength": 320,
+                "type": "string"
+              },
+              "maxItems": 64,
+              "title": "Label",
+              "type": "array"
             }
           }
         ],

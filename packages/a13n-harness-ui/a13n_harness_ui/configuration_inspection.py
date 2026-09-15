@@ -7,7 +7,7 @@ from typing import Literal
 from pydantic import Field
 
 from a13n_harness_ui.composition import ResolvedRunComposition
-from a13n_harness_ui.configuration.models import AgentToolProxy
+from a13n_harness_ui.configuration.models import AgentToolProxy, SidekickConfiguration
 from a13n_harness_ui.configuration.views import AgentToolProxyView
 from a13n_harness_ui.surfaces import SurfaceModel, ThreadConfigurationResolution
 
@@ -25,6 +25,7 @@ class CapturedConfiguration(SurfaceModel):
     thread_configuration_version: int
     project_id: str | None
     project_roots: tuple[str, ...]
+    webui_sidekick: SidekickConfiguration | None = None
     agent: CapturedAgentSelection
     capability_ids: tuple[str, ...]
     harness_plugin_ids: tuple[str, ...]
@@ -61,6 +62,7 @@ def captured_configuration(composition_id: str, value: ResolvedRunComposition) -
         thread_configuration_version=value.thread_configuration_version,
         project_id=value.project_id,
         project_roots=value.project_roots,
+        webui_sidekick=value.webui_sidekick,
         agent=CapturedAgentSelection(
             name=root.roster_name, source_kind=root.source_kind, source_id=root.source_id, model_id=root.model.model_id
         ),

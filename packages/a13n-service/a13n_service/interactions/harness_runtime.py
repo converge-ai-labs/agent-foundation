@@ -22,6 +22,7 @@ from a13n_harness import (
     ExecutableAgent,
     HarnessBuilder,
     HarnessEvent,
+    HarnessExtensionEvent,
     HarnessObservationContext,
     HarnessRunResult,
     HarnessRunResultEvent,
@@ -33,8 +34,10 @@ from a13n_harness import (
     RunModelResolver,
 )
 from a13n_harness.errors import RunError
+from a13n_harness.events import UsageReportPayload
 from a13n_harness.model_context import ModelContextMiddleware
 from a13n_harness.pricing import get_current_pricing_catalog
+from a13n_harness.usage import UsageRecord
 from anyio import to_thread
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai import RunContext
@@ -55,6 +58,7 @@ from .harness_control import (
 )
 from .state import CompletedOutcomeCandidate, RunCheckpoint
 
+_USAGE_RECORDS_ADAPTER = TypeAdapter(tuple[UsageRecord, ...])
 _DEFERRED_REQUESTS_ADAPTER = TypeAdapter(DeferredToolRequests)
 logger = logging.getLogger("a13n_service.interactions.harness_runtime")
 
@@ -362,6 +366,7 @@ class HarnessDriver:
                         code="service_control_identity_mismatch",
                     )
                 terminal = item.result
+                await self._control.ingest_usage(stream.run_id, terminal.usage_records)
                 if self._control.terminal_observation_allowed:
                     await self._project_live(item)
                 continue
@@ -370,6 +375,10 @@ class HarnessDriver:
                     "Harness stream emitted an observation after its terminal result.",
                     code="service_stream_event_after_terminal",
                 )
+            if isinstance(item.event, HarnessExtensionEvent) and item.event.kind == "usage":
+                report = UsageReportPayload.model_validate(item.event.payload)
+                records = _USAGE_RECORDS_ADAPTER.validate_python(report.records)
+                await self._control.ingest_usage(stream.run_id, records)
             await self._project_live(item)
         if terminal is None:
             raise RunError(

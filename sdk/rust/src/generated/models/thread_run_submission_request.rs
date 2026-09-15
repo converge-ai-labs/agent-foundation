@@ -67,6 +67,9 @@ pub struct ThreadRunSubmissionRequest {
     #[serde(rename = "input")]
     pub input: Box<models::AgentInput>,
 
+    #[serde(rename = "labels", skip_serializing_if = "Option::is_none")]
+    pub labels: Option<serde_json::Value>,
+
     #[serde(
         rename = "waiting_resolution",
         default,
@@ -90,6 +93,7 @@ impl ThreadRunSubmissionRequest {
             expected_thread_version,
             hook_subscription: None,
             input: Box::new(input),
+            labels: None,
             waiting_resolution: None,
         }
     }

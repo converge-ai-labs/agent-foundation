@@ -4,7 +4,15 @@
 
 ## Status
 
-The initial binary exposes only `--help` and `--version`. Network commands are added only when the corresponding service API, typed Rust SDK operation, and end-to-end behavior exist. The CLI does not implement a separate HTTP client or manage a13n Service processes and infrastructure.
+The binary exposes `labels` for Agent, Session, Thread, Run, Skill, EnvironmentTemplate, and Environment. Set `A13N_TOKEN` to a Service API token and pass `--base-url` for the Service origin. Reads print the JSON body to stdout and the label ETag to stderr. Replacement requires that exact ETag and a complete JSON string-to-string map; `{}` clears all labels.
+
+```bash
+a13n-service-cli --base-url https://service.example labels run run_example
+a13n-service-cli --base-url https://service.example labels agent agt_example --workspace ws_example
+a13n-service-cli --base-url https://service.example labels run run_example --set '{"project":"support"}' --if-match '"etag-from-read"'
+```
+
+The CLI does not implement a separate HTTP client or manage a13n Service processes and infrastructure.
 
 ## Development
 

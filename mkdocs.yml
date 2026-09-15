@@ -107,6 +107,7 @@ nav:
           - Models: a13n-service/models.md
           - External tools: a13n-service/external-tools.md
           - Web search: a13n-service/search.md
+          - Long-term memory: a13n-service/memory.md
       - Integrate:
           - Language SDKs: a13n-service/sdks.md
           - HTTP contracts: a13n-service/http-contracts.md

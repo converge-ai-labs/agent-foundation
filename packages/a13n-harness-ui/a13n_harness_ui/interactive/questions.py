@@ -165,7 +165,7 @@ class QuestionCard:
 
     def hint(self) -> str:
         remaining = max(
-            0, math.ceil(self.interaction.timeout_seconds - (time.monotonic() - self.interaction.question_started))
+            0, math.ceil(self.interaction.timeout_seconds - (time.monotonic() - self.interaction.request_started))
         )
         total = len(self.rows(max(1, get_app().output.get_size().columns)))
         position = f"{self.top + 1}-{min(total, self.top + self.height().max)}/{total}"

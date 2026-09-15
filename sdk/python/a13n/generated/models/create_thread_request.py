@@ -8,6 +8,8 @@ from attrs import define as _attrs_define
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
+    from ..models.create_thread_request_labels import CreateThreadRequestLabels
+    from ..models.create_thread_request_session_labels import CreateThreadRequestSessionLabels
     from ..models.existing_environment_selection import ExistingEnvironmentSelection
     from ..models.new_environment_selection import NewEnvironmentSelection
 
@@ -21,12 +23,16 @@ class CreateThreadRequest:
     Attributes:
         agent_id (None | str | Unset):
         environment (ExistingEnvironmentSelection | NewEnvironmentSelection | None | Unset):
+        labels (CreateThreadRequestLabels | Unset):
         session_id (None | str | Unset):
+        session_labels (CreateThreadRequestSessionLabels | Unset):
     """
 
     agent_id: str | Unset | None = UNSET
     environment: ExistingEnvironmentSelection | NewEnvironmentSelection | Unset | None = UNSET
+    labels: CreateThreadRequestLabels | Unset = UNSET
     session_id: str | Unset | None = UNSET
+    session_labels: CreateThreadRequestSessionLabels | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.existing_environment_selection import ExistingEnvironmentSelection
@@ -48,11 +54,19 @@ class CreateThreadRequest:
         else:
             environment = self.environment
 
+        labels: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.labels, Unset):
+            labels = self.labels.to_dict()
+
         session_id: str | Unset | None
         if isinstance(self.session_id, Unset):
             session_id = UNSET
         else:
             session_id = self.session_id
+
+        session_labels: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.session_labels, Unset):
+            session_labels = self.session_labels.to_dict()
 
         field_dict: dict[str, Any] = {}
 
@@ -61,13 +75,19 @@ class CreateThreadRequest:
             field_dict["agent_id"] = agent_id
         if environment is not UNSET:
             field_dict["environment"] = environment
+        if labels is not UNSET:
+            field_dict["labels"] = labels
         if session_id is not UNSET:
             field_dict["session_id"] = session_id
+        if session_labels is not UNSET:
+            field_dict["session_labels"] = session_labels
 
         return field_dict
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+        from ..models.create_thread_request_labels import CreateThreadRequestLabels
+        from ..models.create_thread_request_session_labels import CreateThreadRequestSessionLabels
         from ..models.existing_environment_selection import ExistingEnvironmentSelection
         from ..models.new_environment_selection import NewEnvironmentSelection
 
@@ -107,6 +127,13 @@ class CreateThreadRequest:
 
         environment = _parse_environment(d.pop("environment", UNSET))
 
+        _labels = d.pop("labels", UNSET)
+        labels: CreateThreadRequestLabels | Unset
+        if isinstance(_labels, Unset):
+            labels = UNSET
+        else:
+            labels = CreateThreadRequestLabels.from_dict(_labels)
+
         def _parse_session_id(data: object) -> str | Unset | None:
             if data is None:
                 return data
@@ -116,10 +143,19 @@ class CreateThreadRequest:
 
         session_id = _parse_session_id(d.pop("session_id", UNSET))
 
+        _session_labels = d.pop("session_labels", UNSET)
+        session_labels: CreateThreadRequestSessionLabels | Unset
+        if isinstance(_session_labels, Unset):
+            session_labels = UNSET
+        else:
+            session_labels = CreateThreadRequestSessionLabels.from_dict(_session_labels)
+
         create_thread_request = cls(
             agent_id=agent_id,
             environment=environment,
+            labels=labels,
             session_id=session_id,
+            session_labels=session_labels,
         )
 
         return create_thread_request

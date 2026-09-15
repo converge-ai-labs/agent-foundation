@@ -52,17 +52,17 @@ No command-specific parameters.
 
 Configure a model, context budget, and execution permissions interactively.
 
-| Parameter    | Type / choices | Parser default | Meaning                                                                    |
-| ------------ | -------------- | -------------- | -------------------------------------------------------------------------- |
-| `--advanced` | boolean        | `false`        | Also choose context, reasoning, shell review, subagents, and instructions. |
+| Parameter    | Type / choices | Parser default | Meaning                                                                   |
+| ------------ | -------------- | -------------- | ------------------------------------------------------------------------- |
+| `--advanced` | boolean        | `false`        | Also choose context, reasoning, tool review, subagents, and instructions. |
 
 ### `add agent`
 
 Create another agent without changing existing agents or defaults.
 
-| Parameter    | Type / choices | Parser default | Meaning                                                   |
-| ------------ | -------------- | -------------- | --------------------------------------------------------- |
-| `--advanced` | boolean        | `false`        | Also customize reasoning, shell review, and instructions. |
+| Parameter    | Type / choices | Parser default | Meaning                                                  |
+| ------------ | -------------- | -------------- | -------------------------------------------------------- |
+| `--advanced` | boolean        | `false`        | Also customize reasoning, tool review, and instructions. |
 
 ### `add model`
 
@@ -233,7 +233,7 @@ Authenticate a compatible Model provider.
 
 Type these in the terminal composer, not your shell. Tab completes supported syntax; `/help` and `/?` show native help. There are no `/setup`, `/login`, `/approve`, `/deny`, or `/result` commands. Decisions use their typed selector.
 
-“While busy” means the command parser allows it during work; it is not permission to bypass a pending interaction or operate on an unavailable resource. `/steer` requires a currently steerable root operation. Attachment commands change the draft; active Enter steering accepts text only. See [Use the terminal](everyday-use.md).
+“While busy” means the command parser allows it during work; it is not permission to bypass a pending interaction or operate on an unavailable resource. `/steer` requires a currently steerable root operation. Attachment commands change the draft; active Enter steering sends its text and attachments together. See [Use the terminal](everyday-use.md).
 
 | Command grammar                         | Aliases | While busy | Purpose                                                                   |
 | --------------------------------------- | ------- | ---------- | ------------------------------------------------------------------------- |
@@ -243,7 +243,6 @@ Type these in the terminal composer, not your shell. Tab completes supported syn
 | `/mouse [on\|off]`                      | —       | Yes        | Toggle wheel capture; off preserves native selection/copy.                |
 | `/attach path`                          | —       | Yes        | Attach a file or image to the current draft.                              |
 | `/paste-image`                          | —       | Yes        | Read clipboard images explicitly.                                         |
-| `/remove index\|all`                    | —       | Yes        | Remove one attachment or all attachments from the current draft.          |
 | `/recover`                              | —       | No         | Restore an unsent prompt.                                                 |
 | `/status`                               | —       | Yes        | Show model, context, environment, and subscription usage.                 |
 | `/ps`                                   | —       | Yes        | Inspect observed background processes and their last reported status.     |

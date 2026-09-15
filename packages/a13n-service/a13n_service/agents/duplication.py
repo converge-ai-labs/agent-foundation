@@ -5,6 +5,7 @@ from __future__ import annotations
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.application_errors import ErrorCategory
 from a13n_service.durable_operations.idempotency import (
     IdempotencyIdentity,
     is_evidence_unique_race,
@@ -16,6 +17,7 @@ from a13n_service.iam import (
     authorize_workspace,
 )
 from a13n_service.iam.authorization import WorkspaceAction
+from a13n_service.labels import merge_labels
 from a13n_service.resource_keys import insert_with_key
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, utc_now
@@ -28,6 +30,7 @@ from .domain import (
     new_agent_revision_id,
 )
 from .errors import (
+    AgentError,
     agent_archived,
     agent_version_conflict,
     map_authorization_error,
@@ -131,6 +134,14 @@ class AgentDuplication:
                 )
                 duplicate_agent_id = new_agent_id()
                 new_revision_id = new_agent_revision_id()
+                try:
+                    labels = merge_labels(source.labels, request.labels)
+                except ValueError as error:
+                    raise AgentError(
+                        "merged_labels_invalid",
+                        str(error),
+                        category=ErrorCategory.invalid_request,
+                    ) from error
                 duplicate = AgentRecord(
                     id=duplicate_agent_id,
                     organization_id=source.organization_id,
@@ -138,6 +149,7 @@ class AgentDuplication:
                     source=AgentSource.custom.value,
                     name=request.name,
                     description=request.description,
+                    labels=labels,
                     version=1,
                     current_revision_id=new_revision_id,
                     enabled=True,

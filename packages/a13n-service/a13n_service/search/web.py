@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from urllib.parse import urljoin
 
 import httpx2
-from a13n_harness.capabilities.web import WebPolicy, WebProviderError, WebRequest, WebResponse
+from a13n_harness.capabilities.web import WebDomainPolicy, WebPolicy, WebProviderError, WebRequest, WebResponse
 from anyio import getaddrinfo, move_on_after
 
 from a13n_service.endpoint_policy import EndpointPolicy, EndpointPolicyError
@@ -50,11 +50,16 @@ class WebTransport:
         self._clients = client_factory
 
     async def request(self, request: WebRequest, *, policy: WebPolicy) -> WebResponse:
+        domains = policy if isinstance(policy, WebDomainPolicy) else None
+        if domains is not None:
+            policy = domains.policy
         if not isinstance(policy, WebTransportPolicy):
             raise WebProviderError("web_policy_unsupported")
         current_url = request.url
         redirects = 0
         while True:
+            if domains is not None:
+                domains.check_domain(current_url)
             target, address = await policy.resolve(current_url, purpose=request.purpose)
             # One client per hop prevents cookie or pooled TLS identity reuse across origins.
             client = self._clients()

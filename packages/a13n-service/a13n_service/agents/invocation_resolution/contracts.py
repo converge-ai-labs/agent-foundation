@@ -61,6 +61,7 @@ class PreparedAgentInvocation:
     skills: tuple[PreparedSkillLock, ...]
     subagents: tuple[PreparedChildInvocation, ...]
     connectivity: PreparedConnectivity
+    reviewer_model: PreparedModelExecution | None = None
 
 
 @dataclass(frozen=True, slots=True)

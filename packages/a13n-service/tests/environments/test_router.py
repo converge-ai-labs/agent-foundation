@@ -228,3 +228,64 @@ async def test_template_schemas_are_versioned_and_provider_specific(environment_
     assert "root" in recipe["required"]
     assert "host_id" in definition["configuration_schema"]["properties"]
     assert "host_id" not in recipe["properties"]
+
+
+@pytest.mark.anyio
+async def test_template_and_environment_labels_http_contract(environment_api_client, tmp_path):
+    from tests.labels_support import assert_labels_http_contract
+
+    client = environment_api_client
+    template = await create_template(client, tmp_path)
+    collection = f"/api/v1/workspaces/{WORKSPACE_ID}"
+    template_path = f"/api/v1/environment-templates/{template['id']}"
+    await assert_labels_http_contract(
+        client,
+        template_path,
+        f"{collection}/environment-templates",
+        immutable_fields=["version", "current_revision_id"],
+    )
+    etag = (await client.get(template_path + "/labels")).headers["etag"]
+    put = await client.put(
+        template_path + "/labels", headers={"If-Match": etag}, json={"labels": {"team": "infra", "stage": "dev"}}
+    )
+    assert put.status_code == 200
+    original_revision = (
+        await client.get(f"/api/v1/environment-template-revisions/{template['current_revision_id']}")
+    ).json()
+    published = await client.post(
+        template_path + "/revisions",
+        json={
+            "expected_version": 1,
+            "provider_id": original_revision["provider_id"],
+            "configuration": {"root": {"path": str(tmp_path / "new-current-root")}},
+            "retention": {"idle": {"stop_after": None, "delete_after": None}},
+            "preparation": "on_use",
+        },
+    )
+    assert published.status_code == 201, published.text
+    assert published.json()["version"] == 2
+    created = await client.post(
+        f"{collection}/threads",
+        headers={"Idempotency-Key": "labels-thread"},
+        json={
+            "environment": {"template_id": template["id"], "version": 1, "labels": {"stage": "prod"}},
+            "session_labels": {"customer": "acme"},
+            "labels": {"task": "investigate"},
+        },
+    )
+    assert created.status_code == 201, created.text
+    thread = created.json()
+    assert thread["labels"] == {"customer": "acme", "task": "investigate"}
+    path = f"/api/v1/environments/{thread['default_environment_id']}"
+    env = (await client.get(path)).json()
+    assert env["labels"] == {"team": "infra", "stage": "prod"}
+    await client.put(
+        template_path + "/labels", headers={"If-Match": put.headers["etag"]}, json={"labels": {"team": "changed"}}
+    )
+    assert (await client.get(path)).json()["labels"] == env["labels"]
+    await assert_labels_http_contract(
+        client,
+        path,
+        f"{collection}/environments",
+        immutable_fields=["generation", "template_revision_id", "provider_id"],
+    )

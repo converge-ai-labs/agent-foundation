@@ -11,6 +11,7 @@ from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
     from ..models.create_template_request_configuration import CreateTemplateRequestConfiguration
+    from ..models.create_template_request_labels import CreateTemplateRequestLabels
     from ..models.retention_policy import RetentionPolicy
 
 
@@ -28,6 +29,7 @@ class CreateTemplateRequest:
         access (EnvironmentAccess | Unset):
         configuration_schema_version (str | Unset):
         description (None | str | Unset):
+        labels (CreateTemplateRequestLabels | Unset):
         preparation (CreateTemplateRequestPreparation | Unset):
     """
 
@@ -38,6 +40,7 @@ class CreateTemplateRequest:
     access: EnvironmentAccess | Unset = UNSET
     configuration_schema_version: str | Unset = UNSET
     description: str | Unset | None = UNSET
+    labels: CreateTemplateRequestLabels | Unset = UNSET
     preparation: CreateTemplateRequestPreparation | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
@@ -61,6 +64,10 @@ class CreateTemplateRequest:
         else:
             description = self.description
 
+        labels: dict[str, Any] | Unset = UNSET
+        if not isinstance(self.labels, Unset):
+            labels = self.labels.to_dict()
+
         preparation: str | Unset = UNSET
         if not isinstance(self.preparation, Unset):
             preparation = self.preparation.value
@@ -81,6 +88,8 @@ class CreateTemplateRequest:
             field_dict["configuration_schema_version"] = configuration_schema_version
         if description is not UNSET:
             field_dict["description"] = description
+        if labels is not UNSET:
+            field_dict["labels"] = labels
         if preparation is not UNSET:
             field_dict["preparation"] = preparation
 
@@ -89,6 +98,7 @@ class CreateTemplateRequest:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         from ..models.create_template_request_configuration import CreateTemplateRequestConfiguration
+        from ..models.create_template_request_labels import CreateTemplateRequestLabels
         from ..models.retention_policy import RetentionPolicy
 
         d = dict(src_dict)
@@ -118,6 +128,13 @@ class CreateTemplateRequest:
 
         description = _parse_description(d.pop("description", UNSET))
 
+        _labels = d.pop("labels", UNSET)
+        labels: CreateTemplateRequestLabels | Unset
+        if isinstance(_labels, Unset):
+            labels = UNSET
+        else:
+            labels = CreateTemplateRequestLabels.from_dict(_labels)
+
         _preparation = d.pop("preparation", UNSET)
         preparation: CreateTemplateRequestPreparation | Unset
         if isinstance(_preparation, Unset):
@@ -133,6 +150,7 @@ class CreateTemplateRequest:
             access=access,
             configuration_schema_version=configuration_schema_version,
             description=description,
+            labels=labels,
             preparation=preparation,
         )
 

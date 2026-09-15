@@ -128,13 +128,15 @@ async def test_ssh_clipboard_failure_preserves_text_and_attachments(monkeypatch:
     with create_pipe_input(), create_app_session(output=DummyOutput()):
         shell = CliShell(CliRequest())
         shell.composer.text = "existing draft"
-        shell.images = (attachments.AttachmentUpload("notes.txt", b"notes", "text/plain"),)
+        shell.insert_attachments((attachments.AttachmentUpload("notes.txt", b"notes", "text/plain"),))
+        original_text = shell.composer.text
         original = shell.images
         messages = []
         monkeypatch.setattr(shell, "emit", messages.append)
         try:
             await shell.acquire_images()
-            assert shell.composer.text == "existing draft"
+            assert shell.composer.text.endswith(original_text[1:])
+            assert "failed" in shell.inline.display(shell.composer.text)
             assert shell.images == original
             assert len(messages) == 1
             assert "SSH session" in messages[0]

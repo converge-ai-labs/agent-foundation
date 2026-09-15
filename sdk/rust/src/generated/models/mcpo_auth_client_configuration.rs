@@ -76,8 +76,6 @@ pub enum Source {
     PreRegistered,
     #[serde(rename = "dynamic")]
     Dynamic,
-    #[serde(rename = "metadata_document")]
-    MetadataDocument,
 }
 
 impl Default for Source {

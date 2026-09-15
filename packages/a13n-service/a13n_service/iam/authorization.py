@@ -15,6 +15,8 @@ from .role_rules import validate_binding
 
 
 class WorkspaceAction(StrEnum):
+    memory_read = "memory.read"
+    memory_write = "memory.write"
     agent_read = "agent.read"
     agent_create = "agent.create"
     agent_update = "agent.update"
@@ -49,8 +51,11 @@ class WorkspaceAction(StrEnum):
     environment_use = "environment.use"
     secrets_bind = "secrets.bind"
     session_read = "session.read"
+    session_labels_update = "session.labels.update"
     thread_read = "thread.read"
+    thread_labels_update = "thread.labels.update"
     run_read = "run.read"
+    run_labels_update = "run.labels.update"
     lifecycle_event_read = "lifecycle_event.read"
     notification_subscribe = "notification.subscribe"
     usage_read = "usage.read"
@@ -108,6 +113,7 @@ _READ_ACTIONS = frozenset(
         WorkspaceAction.notification_subscribe,
         WorkspaceAction.usage_read,
         WorkspaceAction.trace_read,
+        WorkspaceAction.memory_read,
         WorkspaceAction.hook_subscription_read,
         WorkspaceAction.queued_submission_read,
         WorkspaceAction.a2a_push_configuration_read,
@@ -122,6 +128,7 @@ _RUNNER_ACTIONS = _READ_ACTIONS | frozenset(
     {
         WorkspaceAction.application_account_use,
         WorkspaceAction.agent_invoke,
+        WorkspaceAction.memory_write,
         WorkspaceAction.asset_create,
         WorkspaceAction.asset_use,
         WorkspaceAction.environment_use,
@@ -171,6 +178,9 @@ _BUILDER_ACTIONS = _RUNNER_ACTIONS | frozenset(
         WorkspaceAction.environment_provider_manage,
         WorkspaceAction.environment_template_manage,
         WorkspaceAction.environment_manage,
+        WorkspaceAction.session_labels_update,
+        WorkspaceAction.thread_labels_update,
+        WorkspaceAction.run_labels_update,
         WorkspaceAction.hook_subscription_update,
         WorkspaceAction.hook_subscription_delete,
         WorkspaceAction.hook_subscription_redrive,
@@ -207,6 +217,7 @@ _DIRECT_AGENT_VIEWER_ACTIONS = frozenset(
         WorkspaceAction.lifecycle_event_read,
         WorkspaceAction.notification_subscribe,
         WorkspaceAction.trace_read,
+        WorkspaceAction.memory_read,
         WorkspaceAction.a2a_push_configuration_read,
     }
 )
@@ -214,6 +225,7 @@ _DIRECT_AGENT_VIEWER_ACTIONS = frozenset(
 _DIRECT_AGENT_RUNNER_ACTIONS = _DIRECT_AGENT_VIEWER_ACTIONS | frozenset(
     {
         WorkspaceAction.agent_invoke,
+        WorkspaceAction.memory_write,
         WorkspaceAction.run_continue,
         WorkspaceAction.run_fork,
         WorkspaceAction.run_retry,

@@ -22,6 +22,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from a13n_service.database import Base
 from a13n_service.iam.domain import ActorRef, PrincipalRef, PrincipalType, SystemActorRef
+from a13n_service.labels import LABELS_SQL_TYPE
 from a13n_service.resource_keys import RESOURCE_KEY_MAX_LENGTH
 from a13n_service.temporal import assume_utc, optional_assume_utc
 
@@ -60,6 +61,12 @@ class AgentRecord(Base):
         Index("uq_agents_workspace_key", "workspace_id", "key", unique=True),
         Index("ix_agents_workspace_updated", "workspace_id", "updated_at", "id"),
         Index("ix_agents_workspace_availability", "workspace_id", "enabled", "archived_at", "updated_at", "id"),
+        Index(
+            "ix_agents_labels",
+            "labels",
+            postgresql_using="gin",
+            postgresql_ops={"labels": "jsonb_path_ops"},
+        ),
     )
 
     default_environment_template_id: Mapped[str | None] = mapped_column(String(72))
@@ -71,6 +78,9 @@ class AgentRecord(Base):
     key: Mapped[str] = mapped_column(String(RESOURCE_KEY_MAX_LENGTH), nullable=False)
     image_id: Mapped[str | None] = mapped_column(String(72))
     description: Mapped[str | None] = mapped_column(String(4096))
+    labels: Mapped[dict[str, str]] = mapped_column(
+        LABELS_SQL_TYPE, nullable=False, default=dict, server_default=text("'{}'")
+    )
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
     current_revision_id: Mapped[str] = mapped_column(String(72), nullable=False)
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
@@ -94,6 +104,7 @@ class AgentRecord(Base):
             name=self.name,
             key=self.key,
             description=self.description,
+            labels=self.labels or {},
             image_url=(
                 f"/api/v1/workspaces/{self.workspace_id}/agents/{self.id}/avatar/{self.image_id}"
                 if self.image_id

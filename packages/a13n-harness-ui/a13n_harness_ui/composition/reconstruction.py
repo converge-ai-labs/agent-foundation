@@ -262,13 +262,23 @@ class AgentReconstructor:
                 previous = model_recipes.setdefault(auxiliary_id, item.model)
                 if previous != item.model:
                     raise CompositionError("Model recipe identity collision.", code="model_recipe_collision")
-                configuration["model"] = auxiliary_id
-                overrides = configuration.get("model_settings", {})
+                review = (
+                    configuration.get("review") if item.capability == "ToolPermissionsCapability" else configuration
+                )
+                if not isinstance(review, dict):
+                    raise CompositionError("Tool review must be an object.", code="capability_configuration_invalid")
+                review = dict(review)
+                review["model"] = auxiliary_id
+                overrides = review.get("model_settings", {})
                 if not isinstance(overrides, dict):
                     raise CompositionError(
                         "Auxiliary Model settings must be an object.", code="capability_model_settings_invalid"
                     )
-                configuration["model_settings"] = {**item.model.settings, **overrides}
+                review["model_settings"] = {**item.model.settings, **overrides}
+                if item.capability == "ToolPermissionsCapability":
+                    configuration["review"] = review
+                else:
+                    configuration = review
             selections.append((item.capability, configuration))
         selected = self._catalog.capabilities(tuple(selections), path_layout=path_layout)
         capabilities: list[AbstractCapability[Any]] = [item.capability for item in selected]

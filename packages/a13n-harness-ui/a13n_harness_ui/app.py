@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Literal
+from uuid import uuid4
 
 import httpx2
 from a13n_environment import EnvironmentProvider
@@ -19,6 +20,7 @@ from a13n_harness.environment import EnvironmentRunExtensionFactory
 from a13n_harness.input import RunInputValue
 from a13n_harness.model_auth import GrokCredentials
 from a13n_harness.plugin_factories import HarnessPluginFactory
+from a13n_logging import get_logger
 from anyio import CancelScope, Event, Lock, create_task_group, move_on_after, sleep, to_thread
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai import BinaryContent, prices
@@ -155,7 +157,15 @@ from a13n_harness_ui.root_execution import RootRunExecutor
 from a13n_harness_ui.root_input import detach_input
 from a13n_harness_ui.root_run import RootRunCoordinator
 from a13n_harness_ui.settings import HarnessUiSettings
-from a13n_harness_ui.setup import EnvironmentReadiness, SetupProvider, SetupStatus, preflight_environment
+from a13n_harness_ui.setup import (
+    EnvironmentReadiness,
+    SetupModelOptions,
+    SetupModelOptionsRequest,
+    SetupProvider,
+    SetupStatus,
+    preflight_environment,
+    setup_model_options,
+)
 from a13n_harness_ui.shared_drafts import DraftCommand, SharedDraft
 from a13n_harness_ui.storage import (
     AgentResourceSource,
@@ -214,6 +224,7 @@ from a13n_harness_ui.thread_files import (
     MAX_ATTACHMENTS,
     MAX_INPUT_BYTES,
     AttachmentUpload,
+    ComposerAttachmentReference,
     ComposerInput,
     ThreadAttachment,
     ThreadFiles,
@@ -350,6 +361,10 @@ class HarnessUiApp:
             if self._logins is None:
                 raise AppStateError("Interactive login is unavailable.", code="login_unavailable")
             return self._logins.start(request)
+
+    async def active_login(self) -> LoginStatus | None:
+        async with self._operation():
+            return self._logins.active() if self._logins is not None else None
 
     async def login_status(self, session_id: str) -> LoginStatus:
         async with self._operation():
@@ -716,6 +731,7 @@ class HarnessUiApp:
         self,
         *,
         project_id: str | None,
+        project_scope: Literal["all", "projectless", "unavailable"] = "all",
         query: str | None = None,
         include_archived: bool = False,
         cursor: str | None = None,
@@ -724,6 +740,7 @@ class HarnessUiApp:
         async with self._operation():
             return await self._terminal_projections.thread_activity(
                 project_id=project_id,
+                project_scope=project_scope,
                 query=query,
                 include_archived=include_archived,
                 cursor=cursor,
@@ -889,6 +906,7 @@ class HarnessUiApp:
         *,
         defaults: NewThreadDefaults | RootThreadDefaults | None = None,
         title: str | None = None,
+        thread_id: str | None = None,
     ) -> ThreadSummary:
         async with self._operation():
             selected = (
@@ -896,7 +914,7 @@ class HarnessUiApp:
                 if isinstance(defaults, NewThreadDefaults)
                 else defaults
             )
-            thread = await self._threads.create(defaults=selected, title=title)
+            thread = await self._threads.create(defaults=selected, title=title, thread_id=thread_id)
             await self._summary_hub.publish(kind="thread", thread_id=thread.thread_id)
             return await self._projections.get_thread(thread.thread_id)
 
@@ -1406,51 +1424,96 @@ class HarnessUiApp:
     async def _prepare_input(
         self, thread_id: str, prompt: RunInputValue | ComposerInput, attachment_ids: tuple[str, ...]
     ) -> RunInputValue:
-        if isinstance(prompt, ComposerInput):
-            if not prompt.text.strip() and not prompt.attachments and not attachment_ids:
-                raise ValueError("A root message must not be blank.")
-            if len(prompt.attachments) + len(attachment_ids) > MAX_ATTACHMENTS:
-                raise ValueError("An input supports up to eight attachments.")
-            if sum(len(item.data) for item in prompt.attachments) > MAX_INPUT_BYTES:
-                raise ValueError("An input supports up to 20 MiB of attachments.")
-            staged = tuple([await self._thread_files.stage(thread_id, upload) for upload in prompt.attachments])
-            attachment_ids += tuple(item.attachment_id for item in staged)
-            prompt = (TextContent(prompt.text, metadata={"source_id": prompt.source_id}),)
-        if len(attachment_ids) > MAX_ATTACHMENTS:
+        uploads = prompt.attachments if isinstance(prompt, ComposerInput) else ()
+        references = prompt.attachment_ids if isinstance(prompt, ComposerInput) else ()
+        if len(uploads) + len(references) + len(attachment_ids) > MAX_ATTACHMENTS:
             raise ValueError("An input supports up to eight attachments.")
+        resolved = [await self._thread_files.read(thread_id, item) for item in references]
         attachments = [await self._thread_files.read(thread_id, item) for item in attachment_ids]
-        if sum(item.size for item, _ in attachments) > MAX_INPUT_BYTES:
+        if (
+            sum(len(item.data) for item in uploads) + sum(item.size for item, _ in (*resolved, *attachments))
+            > MAX_INPUT_BYTES
+        ):
             raise ValueError("An input supports up to 20 MiB of attachments.")
-        parts: list[UserContent] = [prompt] if isinstance(prompt, str) else list(prompt)
+        parts: list[UserContent] = []
+        if isinstance(prompt, ComposerInput):
+            if not prompt.text.strip() and not uploads and not resolved and not attachments:
+                raise ValueError("A root message must not be blank.")
+            source_id = prompt.source_id or f"input-{uuid4().hex}"
+            selected = iter(resolved)
+            for index, part in enumerate(prompt.parts):
+                if isinstance(part, str):
+                    if part:
+                        parts.append(
+                            TextContent(
+                                part, metadata={"source_id": source_id, "harness_ui": {"composer": {"index": index}}}
+                            )
+                        )
+                elif isinstance(part, ComposerAttachmentReference):
+                    item, data = next(selected)
+                    parts.extend(
+                        await self._attachment_input(
+                            thread_id, item, data, source_id=source_id, index=index, label=part.label
+                        )
+                    )
+                else:
+                    item = await self._thread_files.stage(thread_id, part.upload)
+                    parts.extend(
+                        await self._attachment_input(
+                            thread_id, item, part.upload.data, source_id=source_id, index=index, label=part.label
+                        )
+                    )
+        else:
+            parts.extend([prompt] if isinstance(prompt, str) else prompt)
         for item, data in attachments:
-            # Retention precedes scheduling. A failed admission can leave a retained
-            # orphan, but can never leave an accepted Run referencing pruneable input.
-            await self._thread_files.retain(thread_id, item.attachment_id)
-            path = f"attachments/{item.attachment_id}/content"
-            metadata = {"harness_ui": {"attachment": item.model_dump(), "mount": "thread-files", "path": path}}
-            if isinstance(item.source, CommentContextSource):
-                captured_text = context_text(item.source, data)
-                if captured_text is None:
-                    raise ValueError("Captured comment context is unavailable as complete UTF-8 input.")
-                parts.append(TextContent(captured_text, metadata=metadata))
-                continue
-            source_description = (
-                "" if item.source is None else f" Selected Host source: {item.source.model_dump_json()}."
-            )
-            parts.append(
-                TextContent(
-                    f"Attachment {item.name!r} ({item.media_type}): {path} on the thread-files Environment mount.{source_description}",
-                    metadata=metadata,
-                )
-            )
-            if item.source is not None:
-                captured_text = context_text(item.source, data)
-                if captured_text is not None:
-                    parts.append(TextContent(captured_text, metadata=metadata))
-            if item.media_type.startswith("image/"):
-                parts.append(BinaryContent(data=data, media_type=item.media_type, vendor_metadata=metadata))
+            parts.extend(await self._attachment_input(thread_id, item, data))
         await self._thread_files.touch(thread_id)
         return detach_input(tuple(parts))
+
+    async def _attachment_input(
+        self,
+        thread_id: str,
+        item: ThreadAttachment,
+        data: bytes,
+        *,
+        source_id: str | None = None,
+        index: int = 0,
+        label: str | None = None,
+    ) -> list[UserContent]:
+        # Retain before admission, so accepted input never references draft scratch.
+        await self._thread_files.retain(thread_id, item.attachment_id)
+        path = f"attachments/{item.attachment_id}/content"
+        namespace: dict[str, Any] = {"attachment": item.model_dump(), "mount": "thread-files", "path": path}
+        metadata: dict[str, Any] = {"harness_ui": namespace}
+        if source_id is not None:
+            metadata["source_id"] = source_id
+            namespace["composer"] = {"index": index, "label": label or item.name}
+        if isinstance(item.source, CommentContextSource):
+            captured_text = context_text(item.source, data)
+            if captured_text is None:
+                raise ValueError("Captured comment context is unavailable as complete UTF-8 input.")
+            return [TextContent(captured_text, metadata=metadata)]
+        source_description = "" if item.source is None else f" Selected Host source: {item.source.model_dump_json()}."
+        is_image = item.media_type.startswith("image/")
+        # The model sees the label beside the real image; display metadata alone
+        # cannot teach the model what the user's 'image#2' refers to.
+        name = f"{label} ({item.name!r})" if label else repr(item.name)
+        description_metadata = {**metadata, "display": False} if source_id and is_image else metadata
+        parts: list[UserContent] = [
+            TextContent(
+                f"Attachment {name} ({item.media_type}): {path} on the thread-files Environment mount.{source_description}",
+                metadata=description_metadata,
+            )
+        ]
+        if item.source is not None:
+            captured_text = context_text(item.source, data)
+            if captured_text is not None:
+                parts.append(
+                    TextContent(captured_text, metadata={**metadata, "display": False} if source_id else metadata)
+                )
+        if is_image:
+            parts.append(BinaryContent(data=data, media_type=item.media_type, vendor_metadata=metadata))
+        return parts
 
     async def submit_thread(
         self,
@@ -1581,7 +1644,7 @@ class HarnessUiApp:
         self,
         *,
         receipt_id: str,
-        message: str,
+        message: str | ComposerInput,
         skill_references: tuple[SkillReference, ...] = (),
         attachment_ids: tuple[str, ...] = (),
     ) -> RootControlResult:
@@ -1591,24 +1654,9 @@ class HarnessUiApp:
                 skill_references,
                 thread_id=operation.receipt.thread_id,
             )
-            if len(attachment_ids) > MAX_ATTACHMENTS:
-                raise HarnessUiError("An input supports up to eight attachments.", code="input_invalid")
-            for identity in attachment_ids:
-                try:
-                    item, data = await self._thread_files.read(operation.receipt.thread_id, identity)
-                except ValueError as exc:
-                    raise HarnessUiError(str(exc), code="input_invalid") from exc
-                text = None if item.source is None else context_text(item.source, data)
-                if text is None:
-                    raise HarnessUiError(
-                        "Steering supports only captured UTF-8 text context up to 64 KiB; keep the draft for ordinary submission.",
-                        code="steer_context_unsupported",
-                    )
-            # Reuse submission's retained-input metadata without widening the
-            # text-only steering boundary. All attachments were validated above.
             prepared = (
                 await self._prepare_input(operation.receipt.thread_id, message, attachment_ids)
-                if attachment_ids
+                if attachment_ids or isinstance(message, ComposerInput)
                 else message
             )
             return await self._root_runs.steer(receipt_id=receipt_id, message=prepared)
@@ -1722,8 +1770,19 @@ class HarnessUiApp:
             current = await self._configurations.current()
             defaults = None if current is None else current.document.defaults
             path = self._require_configuration_path()
+
+            def untouched() -> bool:
+                return not path.exists() and not any(
+                    any((path.parent / directory).glob("**/*.*"))
+                    for directory in ("agents", "models", "projects", "extensions", "mcp", "subagents")
+                )
+
             return SetupStatus(
                 needed=current is None or not current.agents or defaults is None or defaults.agent is None,
+                fresh=(current is None or not (current.agents or current.models or current.projects))
+                and self._candidate_error is None
+                and await to_thread.run_sync(untouched),
+                draft_scope=hashlib.sha256(f"{path.resolve()}\0{self._store.layout.root}".encode()).hexdigest()[:24],
                 configuration_path=str(path),
                 suggested_project_path=str(Path.cwd()),
                 providers=tuple(providers),
@@ -1739,6 +1798,10 @@ class HarnessUiApp:
                 else defaults.environment_profile,
                 diagnostic=None if self._candidate_error is None else str(self._candidate_error),
             )
+
+    async def setup_model_options(self, request: SetupModelOptionsRequest) -> SetupModelOptions:
+        async with self._operation():
+            return setup_model_options(request)
 
     async def preview_setup(self, selection: SetupSelection) -> SetupPreview:
         async with self._operation(), self._configuration_lock:
@@ -2007,6 +2070,7 @@ class HarnessUiApp:
             )
 
     async def _stop(self) -> None:
+        get_logger(__name__).debug("Stopping App: finishing admitted operations…")
         async with self._operation_lock:
             if self._state is not AppState.ready:
                 return
@@ -2023,6 +2087,7 @@ class HarnessUiApp:
         async with self._operation_lock:
             scopes = tuple(self._operation_scopes)
             idle = self._operations_idle
+        get_logger(__name__).debug("Cancelling %d unfinished App operation(s)…", len(scopes))
         for scope in scopes:
             scope.cancel()
         with move_on_after(self._settings.shutdown_timeout_seconds):
@@ -2035,13 +2100,17 @@ class HarnessUiApp:
         self._shared_drafts.clear()
         try:
             try:
+                get_logger(__name__).debug("Closing native terminal sessions…")
                 await self._host_terminal.close()
             finally:
+                get_logger(__name__).debug("Stopping active root Runs…")
                 await self._root_runs.close(timeout_seconds=self._settings.shutdown_timeout_seconds)
         finally:
             try:
+                get_logger(__name__).debug("Stopping child Runs…")
                 await self._subagent_operator.close(timeout_seconds=self._settings.shutdown_timeout_seconds)
             finally:
+                get_logger(__name__).debug("Closing live subscriptions…")
                 with CancelScope(shield=True):
                     try:
                         await self._live_hub.close()
@@ -2055,6 +2124,20 @@ class HarnessUiApp:
                 code="app_not_ready",
                 details={"state": self._state.value},
             )
+
+
+def _raise_startup_model_error(error: HarnessUiError | None) -> None:
+    if error is None or error.code not in {"configuration_model_missing", "capability_model_missing"}:
+        return
+    get_logger(__name__).error(
+        "Startup aborted: %s [code=%s, path=%s, field=%s, model_id=%s]",
+        error,
+        error.code,
+        error.details.get("path"),
+        error.details.get("field"),
+        error.details.get("model_id"),
+    )
+    raise error
 
 
 @asynccontextmanager
@@ -2108,6 +2191,7 @@ async def open_harness_ui_app(
                     candidate_error = None
                 except HarnessUiError as exc:
                     candidate_error = exc
+            _raise_startup_model_error(candidate_error)
             current_digest = await store.configurations.current_digest()
             if candidate is not None:
                 try:
@@ -2116,6 +2200,7 @@ async def open_harness_ui_app(
                         expected_current_digest=current_digest,
                     )
                 except HarnessUiError as exc:
+                    _raise_startup_model_error(exc)
                     if current_digest is None:
                         raise
                     candidate_error = exc
@@ -2276,11 +2361,13 @@ async def open_harness_ui_app(
                     projections=projections,
                     root_runs=root_runs,
                     create_thread=app.create_thread,
+                    configurations=configurations,
                 )
                 root_executor.set_root_capability_factory(
-                    lambda thread_id: ThreadCollaborationCapability(
+                    lambda composition: ThreadCollaborationCapability(
                         controller=thread_tools,
-                        source_thread_id=thread_id,
+                        source_thread_id=composition.thread_id,
+                        composition=composition,
                     )
                 )
             try:

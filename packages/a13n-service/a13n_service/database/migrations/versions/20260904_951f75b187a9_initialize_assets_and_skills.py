@@ -9,6 +9,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects import postgresql
 
 revision: str = "951f75b187a9"
 down_revision: str | Sequence[str] | None = "6fd6194d64ec"
@@ -120,6 +121,12 @@ def upgrade() -> None:
         sa.Column("workspace_id", sa.String(length=72), nullable=False),
         sa.Column("key", sa.String(length=64), nullable=False),
         sa.Column("name", sa.String(length=256), nullable=False),
+        sa.Column(
+            "labels",
+            sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), "postgresql"),
+            server_default=sa.text("'{}'"),
+            nullable=False,
+        ),
         sa.Column("version", sa.BigInteger(), nullable=False),
         sa.Column("current_revision_id", sa.String(length=72), nullable=False),
         sa.Column("created_by_type", sa.String(length=32), nullable=False),
@@ -148,6 +155,14 @@ def upgrade() -> None:
         sa.UniqueConstraint("id", "workspace_id", "organization_id", name="uq_skills_identity_scope"),
     )
     op.create_index("ix_skills_listing", "skills", ["workspace_id", "name", "id"], unique=False)
+    op.create_index(
+        "ix_skills_labels",
+        "skills",
+        ["labels"],
+        unique=False,
+        postgresql_using="gin",
+        postgresql_ops={"labels": "jsonb_path_ops"},
+    )
     op.create_index(
         "uq_skills_workspace_key_active",
         "skills",
@@ -240,6 +255,7 @@ def downgrade() -> None:
         sqlite_where=sa.text("deleted_at IS NULL"),
     )
     op.drop_index("ix_skills_listing", table_name="skills")
+    op.drop_index("ix_skills_labels", table_name="skills", postgresql_using="gin")
     op.drop_table("skills")
     op.drop_index(
         "uq_assets_run_invocation",

@@ -18,6 +18,7 @@ from a13n_harness import (
 from a13n_harness.events import HarnessExtensionEvent
 from a13n_harness.recovery import (
     INTERRUPTED_TOOL_RESULT,
+    InterruptedResponseTracker,
     is_recoverable_model_failure,
     normalize_interrupted_history,
 )
@@ -32,6 +33,8 @@ from pydantic_ai.messages import (
     ModelResponse,
     NativeToolCallPart,
     NativeToolReturnPart,
+    PartEndEvent,
+    PartStartEvent,
     RetryPromptPart,
     TextPart,
     ThinkingPart,
@@ -416,7 +419,7 @@ async def test_complete_native_tool_parts_survive_a_later_text_interruption() ->
     ],
     ids=("duplicate-id", "tool-name-mismatch", "return-before-call"),
 )
-async def test_malformed_native_tool_pairs_discard_the_interrupted_response(
+async def test_malformed_native_tool_pairs_preserve_surrounding_text(
     parts: tuple[NativeToolCallPart | NativeToolReturnPart, ...],
 ) -> None:
     async def stream(
@@ -445,15 +448,14 @@ async def test_malformed_native_tool_pairs_discard_the_interrupted_response(
         for part in message.parts
     )
     assert result.state is not None
-    assert not any(
-        isinstance(part, NativeToolCallPart | NativeToolReturnPart)
-        for message in result.state.message_history
-        if isinstance(message, ModelResponse)
-        for part in message.parts
-    )
+    assert result.state.message_history == result.all_messages()
+    tail = result.state.message_history[-1]
+    assert isinstance(tail, ModelResponse)
+    assert tail.state == "interrupted"
+    assert tail.parts == [TextPart(content="partial answer")]
 
 
-async def test_unmatched_native_tool_call_discards_the_interrupted_response() -> None:
+async def test_unmatched_native_tool_call_preserves_surrounding_text() -> None:
     async def stream(
         messages: list[ModelMessage],
         info: AgentInfo,
@@ -485,12 +487,11 @@ async def test_unmatched_native_tool_call_discards_the_interrupted_response() ->
         for part in message.parts
     )
     assert result.state is not None
-    assert not any(
-        isinstance(part, NativeToolCallPart)
-        for message in result.state.message_history
-        if isinstance(message, ModelResponse)
-        for part in message.parts
-    )
+    assert result.state.message_history == result.all_messages()
+    tail = result.state.message_history[-1]
+    assert isinstance(tail, ModelResponse)
+    assert tail.state == "interrupted"
+    assert tail.parts == [TextPart(content="partial answer after native call")]
 
 
 async def test_recovery_does_not_replay_an_unmatched_native_tool_call() -> None:
@@ -532,7 +533,7 @@ async def test_recovery_does_not_replay_an_unmatched_native_tool_call() -> None:
     )
 
 
-async def test_unfinalized_tool_call_invalidates_the_partial_response() -> None:
+async def test_unfinalized_tool_call_without_text_leaves_no_partial_response() -> None:
     calls: list[list[ModelMessage]] = []
 
     async def stream(
@@ -1553,3 +1554,162 @@ async def test_declared_recovery_closes_unmarked_call_before_argument_validation
     assert result.output_or_raise() == "continued"
     returns = [p for m in histories[0] for p in m.parts if isinstance(p, ToolReturnPart)]
     assert returns[0].content == INTERRUPTED_TOOL_RESULT
+
+
+@pytest.mark.parametrize("native_tool", [False, True])
+@pytest.mark.parametrize("max_attempts", [2, 3])
+async def test_retry_retains_visible_text_beside_an_unfinished_tool(native_tool: bool, max_attempts: int) -> None:
+    calls: list[list[ModelMessage]] = []
+
+    async def stream(
+        messages: list[ModelMessage], info: AgentInfo
+    ) -> AsyncIterator[str | dict[int, DeltaToolCall | NativeToolCallPart]]:
+        del info
+        calls.append(deepcopy(messages))
+        if len(calls) < max_attempts:
+            yield f"Inspection {len(calls)} completed. "
+            yield "Next I will inspect another file."
+            if native_tool:
+                yield {
+                    1: NativeToolCallPart(tool_name="web_search", args={"query": "next step"}, tool_call_id="native-1")
+                }
+            else:
+                yield {1: DeltaToolCall(name="inspect", json_args='{"path":', tool_call_id="tool-1")}
+            raise RuntimeError("stream disconnected during tool call")
+        yield "Continued without repeating the first inspection."
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        model_recovery=_recovery_policy(max_attempts=max_attempts),
+    )
+    result = await executable.run("start", bindings=RunBindings.embedded())
+
+    assert result.status == "completed"
+    assert len(calls) == max_attempts
+    for attempt_index, history in enumerate(calls[1:], start=1):
+        recovered = [message for message in history if isinstance(message, ModelResponse)]
+        assert len(recovered) == attempt_index
+        for index, response in enumerate(recovered, start=1):
+            assert response.state == "interrupted"
+            assert response.parts == [
+                TextPart(content=f"Inspection {index} completed. Next I will inspect another file.")
+            ]
+        assert not any(isinstance(part, ToolReturnPart) for message in history for part in message.parts)
+    assert result.state is not None
+    assert result.state.message_history == result.all_messages()
+    assert [message for message in result.state.message_history if isinstance(message, ModelResponse)][:-1] == recovered
+
+
+@pytest.mark.parametrize("native_tool", [False, True])
+@pytest.mark.parametrize("stop", ["cancel", "exhaust"])
+async def test_stopped_mixed_stream_exports_partial_text(native_tool: bool, stop: str) -> None:
+    started = asyncio.Event()
+    calls = 0
+
+    async def stream(
+        messages: list[ModelMessage], info: AgentInfo
+    ) -> AsyncIterator[str | dict[int, DeltaToolCall | NativeToolCallPart]]:
+        nonlocal calls
+        del messages, info
+        calls += 1
+        yield "Already inspected. "
+        yield "Next step pending."
+        if native_tool:
+            yield {1: NativeToolCallPart(tool_name="web_search", args={}, tool_call_id="native-1")}
+        else:
+            yield {1: DeltaToolCall(name="inspect", json_args='{"path":', tool_call_id="tool-1")}
+        started.set()
+        if stop == "cancel":
+            await asyncio.Event().wait()
+        raise RuntimeError("stream disconnected")
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        model_recovery=_recovery_policy(max_attempts=1),
+    )
+    async with executable.stream("start", bindings=RunBindings.embedded()) as run_stream:
+
+        async def consume():
+            return [event async for event in run_stream][-1]
+
+        pending = asyncio.create_task(consume())
+        await asyncio.wait_for(started.wait(), timeout=2)
+        if stop == "cancel":
+            run_stream.cancel()
+        terminal = await asyncio.wait_for(pending, timeout=2)
+
+    assert isinstance(terminal, HarnessRunResultEvent)
+    assert terminal.result.status == ("cancelled" if stop == "cancel" else "failed")
+    assert calls == 1
+    state = await run_stream.export_state()
+    assert state.message_history == terminal.result.all_messages()
+    assert terminal.result.state is not None
+    assert state.message_history == terminal.result.state.message_history
+    tail = state.message_history[-1]
+    assert isinstance(tail, ModelResponse)
+    assert tail.state == "interrupted"
+    assert tail.parts == [TextPart(content="Already inspected. Next step pending.")]
+
+
+@pytest.mark.parametrize("observed", [False, True])
+@pytest.mark.parametrize("close_tool_calls", [False, True])
+def test_native_filter_preserves_finalized_parts_and_closes_only_complete_ordinary_calls(
+    observed: bool, close_tool_calls: bool
+) -> None:
+    response = ModelResponse(
+        parts=[
+            ThinkingPart(content="finished reasoning", signature="signed"),
+            NativeToolCallPart(tool_name="web_search", args={}, tool_call_id="native-complete"),
+            NativeToolReturnPart(tool_name="web_search", content="found", tool_call_id="native-complete"),
+            ToolCallPart(tool_name="inspect", args={"path": "first"}, tool_call_id="ordinary-complete"),
+            TextPart(content="Inspection completed. Next step pending."),
+            NativeToolCallPart(tool_name="web_search", args={}, tool_call_id="native-unmatched"),
+        ],
+        state="interrupted",
+        model_name="test-model",
+        provider_name="test-provider",
+        provider_response_id="response-1",
+        metadata={"original": True},
+    )
+    tracker = None
+    if observed:
+        tracker = InterruptedResponseTracker()
+        for index, part in enumerate(response.parts):
+            tracker.observe(PartEndEvent(index=index, part=part), response_history_count=0)
+        # Unfinished tool arguments must not erase finalized parts or receive a synthetic result.
+        tracker.observe(
+            PartStartEvent(
+                index=len(response.parts),
+                part=ToolCallPart(tool_name="inspect", args='{"path":', tool_call_id="unfinished"),
+            ),
+            response_history_count=0,
+        )
+    original = deepcopy(response)
+
+    normalized, closed = normalize_interrupted_history(
+        (response,), response_tracker=tracker, close_tool_calls=close_tool_calls
+    )
+
+    assert closed == int(close_tool_calls)
+    retained = normalized[0]
+    assert isinstance(retained, ModelResponse)
+    expected = deepcopy(response)
+    expected.parts = [response.parts[index] for index in (0, 3, 4)]
+    assert retained == expected
+    assert response == original
+    if close_tool_calls:
+        assert len(normalized) == 2
+        assert len(normalized[1].parts) == 1
+        result = normalized[1].parts[0]
+        assert isinstance(result, ToolReturnPart)
+        assert result.tool_name == "inspect"
+        assert result.tool_call_id == "ordinary-complete"
+        assert result.content == INTERRUPTED_TOOL_RESULT
+        assert result.outcome == "failed"
+    else:
+        assert len(normalized) == 1
+    assert normalize_interrupted_history(normalized, close_tool_calls=close_tool_calls) == (normalized, 0)

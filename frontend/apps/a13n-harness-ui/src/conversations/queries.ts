@@ -1,12 +1,62 @@
 import { useEffect, useRef } from "react";
-import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useQuery,
+  type Query,
+  type QueryClient,
+} from "@tanstack/react-query";
 import { useTransport } from "../transport/context";
 import { result } from "../transport/client";
 
-export function useThreads(query = "", projectId?: string, archived = false) {
+const pendingRefreshes = new WeakSet<Query>();
+
+export async function refreshThreadLists(client: QueryClient) {
+  const cache = client.getQueryCache();
+  await Promise.all(
+    cache.findAll({ queryKey: ["threads"] }).map(async (query) => {
+      // A hint during Show more must neither cancel pagination nor be consumed by it.
+      // Coalesce hints per list, without making other Projects wait for this fetch.
+      if (query.state.fetchStatus === "fetching" && query.promise) {
+        query.invalidate();
+        if (pendingRefreshes.has(query)) return;
+        pendingRefreshes.add(query);
+        try {
+          await query.promise;
+        } catch {
+          /* Refresh after a failed observation as well. */
+        } finally {
+          pendingRefreshes.delete(query);
+        }
+      }
+      // Authentication replacement may have discarded this entire query cache.
+      if (cache.get(query.queryHash) === query) {
+        await client.invalidateQueries(
+          { queryKey: query.queryKey, exact: true },
+          { cancelRefetch: false },
+        );
+      }
+    }),
+  );
+}
+
+export function useThreads(
+  query = "",
+  projectId?: string,
+  archived = false,
+  {
+    scope = "all",
+    enabled = true,
+    limit = 30,
+  }: {
+    scope?: "all" | "projectless" | "unavailable";
+    enabled?: boolean;
+    limit?: number;
+  } = {},
+) {
   const { client } = useTransport();
   return useInfiniteQuery({
-    queryKey: ["threads", query, projectId, archived],
+    queryKey: ["threads", query, projectId, archived, scope, limit],
+    enabled,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) =>
       result(
@@ -15,9 +65,10 @@ export function useThreads(query = "", projectId?: string, archived = false) {
             query: {
               query: query || undefined,
               project_id: projectId,
+              project_scope: scope,
               include_archived: archived,
               cursor: pageParam,
-              limit: 30,
+              limit,
             },
           },
           signal,
@@ -30,6 +81,7 @@ export function useThread(threadId: string) {
   const { client } = useTransport();
   return useQuery({
     queryKey: ["thread", threadId, "detail"],
+    enabled: !!threadId,
     queryFn: ({ signal }) =>
       result(
         client.GET("/api/threads/{thread_id}", {

@@ -8,6 +8,7 @@ from attrs import define as _attrs_define
 
 if TYPE_CHECKING:
     from ..models.session_preview import SessionPreview
+    from ..models.session_resource_labels import SessionResourceLabels
 
 
 T = TypeVar("T", bound="SessionResource")
@@ -19,6 +20,7 @@ class SessionResource:
     Attributes:
         created_at (datetime.datetime):
         id (str):
+        labels (SessionResourceLabels):
         preview (None | SessionPreview):
         run_count (int | None):
         updated_at (datetime.datetime):
@@ -27,6 +29,7 @@ class SessionResource:
 
     created_at: datetime.datetime
     id: str
+    labels: SessionResourceLabels
     preview: SessionPreview | None
     run_count: int | None
     updated_at: datetime.datetime
@@ -38,6 +41,8 @@ class SessionResource:
         created_at = self.created_at.isoformat()
 
         id = self.id
+
+        labels = self.labels.to_dict()
 
         preview: dict[str, Any] | None
         if isinstance(self.preview, SessionPreview):
@@ -58,6 +63,7 @@ class SessionResource:
             {
                 "created_at": created_at,
                 "id": id,
+                "labels": labels,
                 "preview": preview,
                 "run_count": run_count,
                 "updated_at": updated_at,
@@ -70,11 +76,14 @@ class SessionResource:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         from ..models.session_preview import SessionPreview
+        from ..models.session_resource_labels import SessionResourceLabels
 
         d = dict(src_dict)
         created_at = datetime.datetime.fromisoformat(d.pop("created_at"))
 
         id = d.pop("id")
+
+        labels = SessionResourceLabels.from_dict(d.pop("labels"))
 
         def _parse_preview(data: object) -> SessionPreview | None:
             if data is None:
@@ -105,6 +114,7 @@ class SessionResource:
         session_resource = cls(
             created_at=created_at,
             id=id,
+            labels=labels,
             preview=preview,
             run_count=run_count,
             updated_at=updated_at,

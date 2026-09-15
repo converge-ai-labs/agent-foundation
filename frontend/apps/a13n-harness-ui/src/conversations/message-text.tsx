@@ -1,19 +1,21 @@
 import { memo, useMemo } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { sourceAnchors } from "./comment-selection";
+import { sourceAnchors, type CommentHighlight } from "./comment-selection";
 import styles from "./conversation.module.css";
 
 export const MessageText = memo(function MessageText({
   text,
   selectable = false,
+  highlights,
 }: {
   text: string;
   selectable?: boolean;
+  highlights?: CommentHighlight[];
 }) {
   const anchors = useMemo(
-    () => (selectable ? [sourceAnchors(text)] : []),
-    [text, selectable],
+    () => (selectable ? [sourceAnchors(text, highlights)] : []),
+    [text, selectable, highlights],
   );
   return (
     <div className={styles.markdown}>

@@ -6,6 +6,7 @@
 | [harness](harness/README.md)                   | Harness SDK development environment and observation scenarios                 |
 | [harness-ui](harness-ui/README.md)             | CLI/App development environment and scripted smoke workflow                   |
 | [live_tests](live_tests/README.md)             | Opt-in HTTP integration and recovery journeys with their own fixtures         |
+| [mem0](mem0/README.md)                         | Native OSS memory, isolated PGVector, embedding fixture and model setup       |
 | observability                                  | Local trace-backend infrastructure, including Langfuse                        |
 | [observation-demo](observation-demo/README.md) | Runnable observation demonstration                                            |
 

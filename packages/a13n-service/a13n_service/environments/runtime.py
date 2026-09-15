@@ -123,7 +123,7 @@ class RunEnvironment(Environment):
         async with asyncio.timeout(self._coordinator.lease_duration.total_seconds()):
             while True:
                 try:
-                    operation = await self._coordinator.acquire(self.environment_id, "prepare", attempt=self._attempt)
+                    operation = await self._coordinator.acquire_preparation(self.environment_id, attempt=self._attempt)
                     break
                 except EnvironmentOperationBusy:
                     await asyncio.sleep(delay)

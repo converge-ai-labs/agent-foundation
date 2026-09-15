@@ -120,15 +120,6 @@ pub enum GetMcpServersServerKeyError {
     UnknownValue(serde_json::Value),
 }
 
-/// struct for typed errors of method [`get_oauth_mcp_client_metadata_issuer_key_redirect_key_json`]
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonError {
-    Status400(models::ErrorResponse),
-    DefaultResponse(models::ErrorResponse),
-    UnknownValue(serde_json::Value),
-}
-
 /// struct for typed errors of method [`get_organizations_organization_connector_providers`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -1122,76 +1113,6 @@ pub async fn get_mcp_servers_server_key(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetMcpServersServerKeyError> = serde_json::from_str(&content).ok();
-        Err(Error::ResponseError(Box::new(ResponseContent {
-            status,
-            headers,
-            content,
-            entity,
-        })))
-    }
-}
-
-pub async fn get_oauth_mcp_client_metadata_issuer_key_redirect_key_json(
-    configuration: &configuration::Configuration,
-    issuer_key: &str,
-    redirect_key: &str,
-) -> Result<
-    Response<models::McpClientMetadata>,
-    Error<GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonError>,
-> {
-    // add a prefix to parameters to efficiently prevent name collisions
-    let p_path_issuer_key = issuer_key;
-    let p_path_redirect_key = redirect_key;
-
-    let uri_str = format!(
-        "{}/api/v1/oauth/mcp/client-metadata/{issuer_key}/{redirect_key}.json",
-        configuration.base_path,
-        issuer_key = crate::generated::apis::urlencode(p_path_issuer_key),
-        redirect_key = crate::generated::apis::urlencode(p_path_redirect_key)
-    );
-    let mut req_builder = configuration.client.request(reqwest::Method::GET, &uri_str);
-
-    if let Some(ref user_agent) = configuration.user_agent {
-        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
-    }
-
-    let req = req_builder.build()?;
-    let resp = configuration.client.execute(req).await?;
-
-    let status = resp.status();
-    let headers = resp.headers().clone();
-    let content_type = resp
-        .headers()
-        .get("content-type")
-        .and_then(|v| v.to_str().ok())
-        .unwrap_or("application/octet-stream");
-    let content_type = super::ContentType::from(content_type);
-
-    if !status.is_client_error() && !status.is_server_error() {
-        let content = resp.text().await?;
-        match content_type {
-            ContentType::Json => serde_json::from_str(&content)
-                .map(|data| Response {
-                    data,
-                    status,
-                    headers,
-                })
-                .map_err(Error::from),
-            ContentType::Text => {
-                return Err(Error::from(serde_json::Error::custom(
-                    "Received `text/plain` content type response that cannot be converted to `models::McpClientMetadata`",
-                )));
-            }
-            ContentType::Unsupported(unknown_type) => {
-                return Err(Error::from(serde_json::Error::custom(format!(
-                    "Received `{unknown_type}` content type response that cannot be converted to `models::McpClientMetadata`"
-                ))));
-            }
-        }
-    } else {
-        let content = resp.text().await?;
-        let entity: Option<GetOauthMcpClientMetadataIssuerKeyRedirectKeyJsonError> =
-            serde_json::from_str(&content).ok();
         Err(Error::ResponseError(Box::new(ResponseContent {
             status,
             headers,

@@ -122,23 +122,29 @@ The available names are `explorer`, `code-reviewer`, and `executor`. `[]` disabl
 
 For a child with an independent model, create an Agent resource and add `- agent: agent-reviewer` to the parent Agent's `subagents`. For instructions-only roles, use [Markdown children](agents-and-subagents.md#write-a-markdown-child).
 
-## Configure shell review
+## Configure tool review
 
-**File: `agents/<name>.yaml`, entry inside `capabilities`**
+**File: `a13n-harness-ui.yaml`**
 
 ```yaml
-capabilities:
-  - capability: ShellReviewCapability
-    configuration:
-      model: model-review
-      risk_threshold: high
-      on_flagged: approval_required
-      on_error: approval_required
+security:
+  shell_review:
+    enable: true
+    risk_threshold: extra_high
+    model: model-review
+    on_flagged: approval_required
+    on_error: allow
 ```
 
-Preserve other Capability entries. `model-review` must be a configured **Model resource**, not a subagent ID. This reviewer examines shell invocations; it is unrelated to delegating a code review to the `code-reviewer` child.
+Create `model-review` as a **Model resource** first, or use an existing Model ID. It is not the `code-reviewer` subagent and cannot execute tools. Subscription setup creates a separate lightweight reviewer; API-key setup reuses the connected Model. Each review makes a Model request, with the selected connection's usage and cost.
 
-The example asks for approval for flagged commands and non-timeout review errors. A review timeout denies execution regardless of `on_error`. Shell review is not filesystem or network isolation, and it cannot override a mandatory tool-policy denial. New subscription setup uses the less restrictive starter `extra_high` threshold and `on_error: skip`; choose intentionally rather than assuming all defaults are identical.
+This shortcut applies to shell launches (`environment.shell_exec`) across Agents and their children, not every tool. Risk levels are `low`, `medium`, `high`, and `extra_high`; the default threshold is `extra_high`. Calls at or above the threshold ask for approval by default. Other tools are not opted into review by this shortcut.
+
+Set `enable: false` to stop using the shortcut. **This does not remove or disable an explicitly configured Agent policy.** When enabled, the shortcut merges permissions and optional review into one `ToolPermissionsCapability` in the captured Run. Its shell permission wins even over an Agent's explicit `allow`, `deny`, or `ask`; its supplied threshold, flagged action, error action, and Model win over the corresponding Agent fields. Unrelated rules, reviewer instructions, and other settings are preserved. Omitted/null fields inherit the Agent reviewer configuration, falling back to `extra_high`, the effective Agent Model, `on_flagged: approval_required`, and `on_error: allow` when absent.
+
+Ordinary UI authoring uses this root mapping. Advanced Agent configuration can use one `ToolPermissionsCapability` with nested `review` configuration. With the shortcut off, permission `review` is still required for the reviewer to run: a reviewer or risk rule alone does not activate review. There is no separate review Capability or compatibility alias.
+
+`on_flagged` accepts `deny` or `approval_required`; `on_error` additionally accepts `allow`. Non-timeout reviewer errors follow the effective `on_error` policy; the default `allow` continues through all remaining checks. Reviewer timeout always denies execution. Human decisions use the separate Host `tools.interaction_timeout_seconds` (default 120). Risk/reason rendering is best effort; `/review request-id` opens details. History is advisory, not permission, and review is not filesystem or network isolation. Validate with `a13n-harness-ui config validate`; an enabled shortcut with a missing Model or invalid merged policy is an error. Accepted edits affect later Runs, never already captured execution.
 
 ## Enable an MCP server
 
@@ -192,7 +198,7 @@ display:
   max_tool_argument_chars: 8192
 tools:
   enable_ask_user_question: true
-  ask_user_question_timeout_seconds: 300
+  interaction_timeout_seconds: 300
   enable_codeact: true
 ```
 

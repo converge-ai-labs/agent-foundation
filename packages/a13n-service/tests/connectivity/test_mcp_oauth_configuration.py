@@ -30,13 +30,13 @@ from .test_mcp_service import APP_CALLBACK, ISSUER, MCP_ENDPOINT, RemoteServer
 from .test_mcp_service import mcp_services as mcp_services
 
 
-async def create_connection(connections):
+async def create_connection(connections, *, idempotency_key="create-client-test", name="Configured client"):
     return await management(connections).create(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
-        idempotency_key="create-client-test",
+        idempotency_key=idempotency_key,
         request=CreateConnectionRequest(
-            name="Configured client",
+            name=name,
             source=MCPSource(kind="mcp", endpoint_url=MCP_ENDPOINT, auth_mode=MCPAuthMode.oauth),
         ),
     )
@@ -50,6 +50,41 @@ def app_client():
         token_endpoint_auth_method="client_secret_post",
         redirect_uri=APP_CALLBACK,
     )
+
+
+@pytest.mark.anyio
+async def test_identical_manual_clients_remain_owned_by_independent_connections(mcp_services):
+    connections, oauth, remote = mcp_services
+    remote.use_dcr = False
+    first = await create_connection(connections, idempotency_key="create-first-client", name="First client")
+    second = await create_connection(connections, idempotency_key="create-second-client", name="Second client")
+
+    configured_first = await oauth.configuration.configure(
+        actor=actor(),
+        connection_id=first.id,
+        request=ConfigureMCPOAuthClientRequest(expected_version=first.version, client=app_client()),
+    )
+    first_client = await oauth.configuration.get(actor=actor(), connection_id=first.id)
+    assert first_client is not None
+    assert await oauth.configuration.get(actor=actor(), connection_id=second.id) is None
+
+    await oauth.configuration.configure(
+        actor=actor(),
+        connection_id=second.id,
+        request=ConfigureMCPOAuthClientRequest(expected_version=second.version, client=app_client()),
+    )
+    second_client = await oauth.configuration.get(actor=actor(), connection_id=second.id)
+    assert second_client == first_client
+
+    await oauth.configuration.configure(
+        actor=actor(),
+        connection_id=first.id,
+        request=ConfigureMCPOAuthClientRequest(expected_version=configured_first.version, client=None),
+    )
+
+    assert first.id != second.id
+    assert await oauth.configuration.get(actor=actor(), connection_id=first.id) is None
+    assert await oauth.configuration.get(actor=actor(), connection_id=second.id) == second_client
 
 
 def machine_client():
@@ -179,9 +214,9 @@ async def test_reconfiguration_invalidates_existing_authorization_and_clears_tok
 
 
 @pytest.mark.anyio
-async def test_pre_registered_browser_client_does_not_require_service_public_origin(mcp_services):
+async def test_manual_browser_client_is_reused_without_rediscovery(mcp_services):
     connections, oauth, remote = mcp_services
-    oauth._public_origin = None
+    remote.use_dcr = False
     created = await create_connection(connections)
     setup = await oauth.configuration.setup(
         actor=actor(),
@@ -255,7 +290,7 @@ async def test_setup_reauthorizes_retained_unusable_credentials(
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("issuer_advertised", [False, True])
-@pytest.mark.parametrize("registration", ["cimd", "dcr", "public", "confidential"])
+@pytest.mark.parametrize("registration", ["dcr", "public", "confidential"])
 async def test_missing_issuer_is_accepted_with_issuer_specific_callback(
     mcp_services, monkeypatch, issuer_advertised, registration
 ):
@@ -439,4 +474,15 @@ def test_client_credentials_requires_authenticated_token_requests():
             token_endpoint_auth_method="none",
             grant_type="client_credentials",
             client_secret="secret",
+        )
+
+
+@pytest.mark.parametrize("method", ["client_secret_basic", "client_secret_post"])
+def test_confidential_client_requires_secret(method):
+    with pytest.raises(ValidationError, match="require a secret"):
+        MCPOAuthClientInput(
+            issuer_url=ISSUER,
+            client_id="confidential-client",
+            token_endpoint_auth_method=method,
+            redirect_uri=APP_CALLBACK,
         )

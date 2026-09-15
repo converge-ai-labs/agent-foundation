@@ -74,6 +74,16 @@ def test_ci_routes_contract_inputs_and_sdk_changes_without_fanout() -> None:
     cases = {
         "packages/a13n-service/a13n_service/search/router.py": {"generated"},
         "packages/a13n-harness/a13n_harness/types.py": {"generated"},
+        "packages/a13n-harness-ui/tests/test_cli_interactions.py": set(),
+        "packages/a13n-environment/tests/test_direct_local.py": set(),
+        "packages/a13n-envd-client/tests/eip/test_stdio_e2e.py": set(),
+        "packages/a13n-logging/tests/test_logging.py": set(),
+        "packages/a13n-service/tests/process/test_openapi.py": {"generated"},
+        "packages/a13n-service/tests/models/conftest.py": {"generated"},
+        "packages/a13n-service/tests/models/test_router.py": {"generated"},
+        "packages/a13n-harness-ui/pyproject.toml": {"generated"},
+        "packages/a13n-service/README.md": {"generated"},
+        "conftest.py": {"generated"},
         "uv.lock": {"generated"},
         "sdk/openapi.json": {"generated"},
         "sdk/codegen/rust/model.mustache": {"generated"},
@@ -99,9 +109,8 @@ def test_ci_routes_contract_inputs_and_sdk_changes_without_fanout() -> None:
     for path, expected in cases.items():
         actual = {name for name, patterns in filters.items() if any(Path(path).full_match(p) for p in patterns)}
         assert actual == expected, path
-        if expected:
-            for event in ["pull_request", "push"]:
-                assert any(Path(path).full_match(p) for p in events[event]["paths"]), (event, path)
+        for event in ["pull_request", "push"]:
+            assert any(Path(path).full_match(p) for p in events[event]["paths"]) == bool(expected), (event, path)
     for output in filters:
         job = jobs[output.replace("_", "-")]
         assert job["needs"] == "changes"

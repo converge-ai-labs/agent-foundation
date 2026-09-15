@@ -13,6 +13,7 @@ from a13n_service.environments.selection import allocate_selection, resolve_sele
 from a13n_service.iam import AuthenticatedActor, authorize_agent
 from a13n_service.iam.authorization import WorkspaceAction, authorize_workspace
 from a13n_service.ids import new_object_id
+from a13n_service.labels import merge_labels
 from a13n_service.storage import transaction
 from a13n_service.temporal import utc_now
 
@@ -75,8 +76,22 @@ async def allocate_thread(
                     else WorkspaceAction.environment_use,
                 )
                 resolved = await resolve_selection(session, workspace_id=workspace_id, choice=selected)
-                environment_id = allocate_selection(session, resolved, workspace_id=workspace_id, now=now).id
+                environment_id = (
+                    await allocate_selection(
+                        session,
+                        resolved,
+                        workspace_id=workspace_id,
+                        now=now,
+                        labels=selected.labels if isinstance(selected, NewEnvironmentSelection) else None,
+                    )
+                ).id
             if body.session_id:
+                if "session_labels" in body.model_fields_set:
+                    raise ApplicationError(
+                        "creation_labels_not_allowed",
+                        "Session labels can only be supplied when creating a Session.",
+                        category=ErrorCategory.invalid_request,
+                    )
                 parent = await session.scalar(
                     select(SessionRecord)
                     .where(
@@ -98,11 +113,20 @@ async def allocate_thread(
                     id=new_object_id("session"),
                     organization_id=workspace.organization_id,
                     workspace_id=workspace_id,
+                    labels=body.session_labels,
                     created_at=now,
                     updated_at=now,
                 )
                 session.add(parent)
                 await session.flush()
+            try:
+                labels = merge_labels(parent.labels, body.labels)
+            except ValueError as error:
+                raise ApplicationError(
+                    "merged_labels_invalid",
+                    str(error),
+                    category=ErrorCategory.invalid_request,
+                ) from error
             thread = Thread(
                 id=new_thread_id(),
                 version=1,
@@ -112,6 +136,7 @@ async def allocate_thread(
                 role=ThreadRole.root,
                 origin_kind=ThreadOriginKind.new,
                 default_environment_id=environment_id,
+                labels=labels,
                 created_at=now,
                 updated_at=now,
             )

@@ -16,6 +16,7 @@ from a13n_harness.plugin_factories import (
     HarnessPluginFactoryCatalog,
     HarnessPluginFactoryRegistration,
 )
+from a13n_harness.tools.permissions import match_selector
 from a13n_logging import get_logger
 from pydantic import JsonValue
 
@@ -30,7 +31,7 @@ from a13n_harness_ui.configuration import (
     ModelResource,
     canonical_digest,
 )
-from a13n_harness_ui.configuration.models import MarkdownSubagentSelection
+from a13n_harness_ui.configuration.models import CapabilitySelection, MarkdownSubagentSelection, SidekickConfiguration
 from a13n_harness_ui.environment_profiles import (
     FULL_CONTROL_PROFILE_ID,
     built_in_environment_profile,
@@ -56,7 +57,7 @@ from .models import (
 )
 
 PACKAGE_SYSTEM_PROMPT = DEFAULT_SYSTEM_PROMPT
-PACKAGE_PROMPT_REVISION = "a13n-harness-ui/3"
+PACKAGE_PROMPT_REVISION = "a13n-harness-ui/1"
 IMPLICIT_NATIVE_PROFILE = FULL_CONTROL_PROFILE_ID
 _MAX_RESOLVED_NODES = 1024
 _MAX_RESOLVED_DEPTH = 128
@@ -204,6 +205,13 @@ class AgentCompositionResolver:
             thread_configuration_version=selection.version,
             project_id=selection.project_id,
             project_roots=tuple(item.path for item in project.roots) if project is not None else (),
+            webui_sidekick=(
+                SidekickConfiguration(
+                    agent=source.document.webui.sidekick.agent, model=source.document.webui.sidekick.model
+                )
+                if source.document.webui.sidekick is not None
+                else None
+            ),
             content_plugins=tuple(
                 ResolvedContentPlugin(
                     plugin_id=item.plugin_id,
@@ -441,7 +449,8 @@ class AgentCompositionResolver:
             )
             if not enabled
         }
-        for item in agent.capabilities:
+        selections = self._shell_review_selections(source, agent)
+        for item in selections:
             if item.capability in disabled:
                 continue
             configuration = dict(item.configuration)
@@ -455,18 +464,27 @@ class AgentCompositionResolver:
                 configuration["context_window_tokens"] = characteristics.context_window
             model = None
             try:
+                review = configuration.get("review") if item.capability == "ToolPermissionsCapability" else None
+                if isinstance(review, dict):
+                    review = dict(review)
+                    model_id = review.get("model")
+                    if model_id is None and source.document.security.shell_review.enable:
+                        if active_model is None and agent.model is None:
+                            raise self._review_model_error(source, agent, model_id=None, inherited=True)
+                        model = active_model
+                        if model is None:
+                            assert agent.model is not None
+                            model = self._model_recipe(source.models[agent.model])
+                        review["model"] = model.model_id
+                        configuration["review"] = review
+                    else:
+                        if not isinstance(model_id, str) or model_id not in source.models:
+                            raise self._review_model_error(source, agent, model_id=model_id)
+                        model = self._model_recipe(source.models[model_id])
                 self.catalog.capabilities(((item.capability, configuration),))
-                if item.capability == "ShellReviewCapability":
-                    model_id = item.configuration.get("model")
-                    if not isinstance(model_id, str) or model_id not in source.models:
-                        raise CompositionError(
-                            "Shell review must reference an available Model resource.",
-                            code="capability_model_missing",
-                            details={"agent_id": agent.id},
-                        )
-                    model = self._model_recipe(source.models[model_id])
             except CompositionError as exc:
-                if exc.code not in _SKIPPABLE_CAPABILITY_ERRORS:
+                # Never drop authorization rules because optional review is misconfigured.
+                if exc.code not in _SKIPPABLE_CAPABILITY_ERRORS or item.capability == "ToolPermissionsCapability":
                     raise
                 warning = f"Agent {agent.id}: skipped Capability {item.capability}: {exc} ({exc.code})"
                 if warnings is not None:
@@ -491,6 +509,80 @@ class AgentCompositionResolver:
                     )
                 )
         return tuple(recipes)
+
+    @staticmethod
+    def _review_model_error(
+        source: LoadedHarnessUiConfiguration,
+        agent: AgentResource,
+        *,
+        model_id: JsonValue,
+        inherited: bool = False,
+    ) -> CompositionError:
+        shortcut = source.document.security.shell_review
+        if shortcut.enable and shortcut.model is not None:
+            path = source.sources[0].relative_path
+            field = "security.shell_review.model"
+        else:
+            path = next(
+                (item.relative_path for item in source.sources if agent.id in item.indexed_resource_ids),
+                agent.id,
+            )
+            field = "model" if inherited else "capabilities.ToolPermissionsCapability.review.model"
+        # Do not include arbitrary malformed configuration values in diagnostics.
+        selected = model_id if isinstance(model_id, str) else None
+        return CompositionError(
+            f"{path}: {field} must reference an available Model resource; selected {selected!r} (Agent {agent.id}).",
+            code="capability_model_missing",
+            details={"agent_id": agent.id, "path": path, "field": field, "model_id": selected},
+        )
+
+    def _shell_review_selections(
+        self,
+        source: LoadedHarnessUiConfiguration,
+        agent: AgentResource,
+    ) -> tuple[CapabilitySelection, ...]:
+        selections = agent.capabilities
+        shortcut = source.document.security.shell_review
+        if not shortcut.enable:
+            return selections
+        permission_key = "ToolPermissionsCapability"
+        permissions: dict[str, JsonValue] = {}
+        remaining: list[CapabilitySelection] = []
+        for item in selections:
+            if item.capability == permission_key:
+                permissions.update(item.configuration)
+            else:
+                remaining.append(item)
+        authored_review = permissions.get("review", {})
+        if not isinstance(authored_review, dict):
+            raise CompositionError("Tool review must be an object.", code="capability_configuration_invalid")
+        review: dict[str, JsonValue] = {"on_flagged": "approval_required", "on_error": "allow", **authored_review}
+        permission_rules = permissions.get("rules", {})
+        if not isinstance(permission_rules, dict):
+            raise CompositionError("Tool policy rules must be a mapping.", code="capability_configuration_invalid")
+        permissions["rules"] = {**permission_rules, "environment.shell_exec": "review"}
+        if shortcut.model is not None:
+            review["model"] = shortcut.model
+        if shortcut.on_error is not None:
+            review["on_error"] = shortcut.on_error
+        shell_overrides = {
+            key: value
+            for key, value in {"risk_threshold": shortcut.risk_threshold, "on_flagged": shortcut.on_flagged}.items()
+            if value is not None
+        }
+        if shell_overrides:
+            review_rules = review.get("rules", {})
+            if not isinstance(review_rules, dict):
+                raise CompositionError("Tool review rules must be a mapping.", code="capability_configuration_invalid")
+            shell_rule = match_selector(review_rules, "environment.shell_exec")
+            if shell_rule is not None and not isinstance(shell_rule, dict):
+                raise CompositionError("Tool review rules must be mappings.", code="capability_configuration_invalid")
+            review["rules"] = {
+                **review_rules,
+                "environment.shell_exec": {**(shell_rule or {}), **shell_overrides},
+            }
+        permissions["review"] = review
+        return (*remaining, CapabilitySelection(capability=permission_key, configuration=permissions))
 
     def _plugins(
         self,

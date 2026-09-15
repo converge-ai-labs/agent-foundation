@@ -28,7 +28,7 @@ class MCPAuthMode(StrEnum):
 
 OAuthTokenAuthMethod = Literal["none", "client_secret_basic", "client_secret_post"]
 OAuthGrantType = Literal["authorization_code", "client_credentials"]
-OAuthClientSource = Literal["pre_registered", "dynamic", "metadata_document"]
+OAuthClientSource = Literal["pre_registered", "dynamic"]
 
 
 class MCPOAuthClientConfiguration(StrictModel):
@@ -74,7 +74,7 @@ class MCPOAuthDiscovery(StrictModel):
     redirect_uri: Endpoint | None
     token_endpoint_auth_methods_supported: tuple[OAuthTokenAuthMethod, ...]
     grant_types_supported: tuple[OAuthGrantType, ...]
-    client_registration: Literal["metadata_document", "dynamic", "manual"]
+    client_registration: Literal["dynamic", "manual"]
     authorization_response_iss_parameter_supported: bool
 
 
@@ -90,7 +90,7 @@ class MCPOAuthSetupAction(StrictModel):
     issuer_url: Endpoint | None = None
     token_endpoint_auth_methods: tuple[OAuthTokenAuthMethod, ...] = ()
     grant_types: tuple[OAuthGrantType, ...] = ()
-    client_registration: Literal["metadata_document", "dynamic", "manual"] | None = None
+    client_registration: Literal["dynamic", "manual"] | None = None
     documentation_url: Endpoint | None = None
 
 
@@ -131,12 +131,3 @@ class MCPTool(StrictModel):
 
 class MCPToolCollection(StrictModel):
     items: tuple[MCPTool, ...]
-
-
-class MCPClientMetadata(StrictModel):
-    client_id: str
-    client_name: str
-    redirect_uris: tuple[str, ...]
-    grant_types: tuple[str, ...] = ("authorization_code",)
-    response_types: tuple[str, ...] = ("code",)
-    token_endpoint_auth_method: str = "none"

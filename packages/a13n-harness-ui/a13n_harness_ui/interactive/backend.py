@@ -397,7 +397,7 @@ class SessionBackend:
         interaction = DecisionInteraction(batch)
         configuration = await self.app.current_configuration()
         if configuration is not None:
-            interaction.timeout_seconds = configuration.document.tools.ask_user_question_timeout_seconds
+            interaction.timeout_seconds = configuration.document.tools.interaction_timeout_seconds
         return interaction
 
     async def pending(self) -> str:
@@ -724,7 +724,11 @@ class SessionBackend:
         return f"Run {operation.status.value}."
 
     async def steer(
-        self, message: str, *, receipt_id: str | None = None, skill_references: tuple[SkillReference, ...] = ()
+        self,
+        message: str | ComposerInput,
+        *,
+        receipt_id: str | None = None,
+        skill_references: tuple[SkillReference, ...] = (),
     ) -> str:
         # The Enter handler supplies its captured target; never substitute a newer receipt.
         receipt_id = self.receipt_id if receipt_id is None else receipt_id

@@ -5,7 +5,7 @@
   background: var(--a13n-canvas);
 }
 .sidebar {
-  width: 232px;
+  width: 280px;
   flex-shrink: 0;
   min-height: 0;
   z-index: 30;
@@ -15,13 +15,20 @@
   background: var(--a13n-surface);
   border-right: 1px solid var(--a13n-border);
 }
+.sidebarHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 0 20px 8px;
+}
 .brand {
   display: flex;
   align-items: center;
   gap: 12px;
   color: var(--a13n-text);
   text-decoration: none;
-  padding: 0 8px 20px;
+  white-space: nowrap;
   font-size: 16px;
 }
 .brandMark {
@@ -65,6 +72,49 @@
   color: var(--a13n-text);
   font-weight: 500;
 }
+.profileButton {
+  max-width: 180px;
+  min-width: 0;
+  flex-shrink: 0;
+  gap: 6px;
+}
+.colorSwatch {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  border-radius: 50%;
+}
+.profileAvatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  color: white;
+  font-size: 11px;
+}
+.profileName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.profileForm {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+}
+.profileForm > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+@media (max-width: 700px) {
+  .profileButton {
+    max-width: 112px;
+    padding-inline: 4px;
+  }
+}
 .sidebarFooter {
   margin-top: auto;
   padding: 12px 8px 0;
@@ -75,41 +125,12 @@
   display: block;
   padding-top: 4px;
 }
-.statusDot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 100%;
-  background: var(--a13n-accent);
-  margin-right: 7px;
-}
 .workspace {
   flex: 1;
   min-width: 0;
   min-height: 0;
   display: flex;
   flex-direction: column;
-}
-.topbar {
-  min-height: 52px;
-  flex-shrink: 0;
-  padding: 8px 20px;
-  border-bottom: 1px solid var(--a13n-border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  background: var(--a13n-canvas);
-}
-.instanceLabel {
-  font-weight: 500;
-  font-size: 12px;
-}
-.connectionState {
-  font-size: 11px;
-  color: var(--a13n-secondary);
-  padding-left: 12px;
-  border-left: 1px solid var(--a13n-border);
 }
 .main {
   flex: 1;
@@ -433,6 +454,13 @@ a.resourceRow:hover {
   overflow: hidden;
   max-width: 300px;
 }
+.mobileNavigationHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-right: 32px;
+}
 .mobileNavigation nav {
   display: grid;
   gap: 4px;
@@ -456,14 +484,6 @@ a.resourceRow:hover {
   .workspace {
     margin-left: 0;
     width: 100%;
-  }
-  .topbar {
-    padding: 8px 12px;
-    gap: 8px;
-  }
-  .instanceLabel,
-  .connectionState {
-    display: none;
   }
   .mobileMenu {
     display: inline-flex;
@@ -573,4 +593,45 @@ a.resourceRow:hover {
     white-space: nowrap;
     flex-shrink: 0;
   }
+}
+
+.configurationForm {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+}
+.configurationForm > .stack {
+  gap: 24px;
+}
+.fieldGroup {
+  padding-block: 20px;
+}
+.selectionOptions {
+  display: grid;
+  gap: 12px;
+  padding-bottom: 16px;
+}
+.selectionList {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 4px 16px;
+  max-height: 240px;
+  overflow: auto;
+}
+.selectionOption {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.selectionOption:hover {
+  background: var(--a13n-hover);
+}
+.selectionOption > span {
+  min-width: 0;
 }

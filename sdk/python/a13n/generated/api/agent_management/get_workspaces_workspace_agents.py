@@ -19,6 +19,7 @@ def build_request(
     enabled: bool | Unset | None = UNSET,
     source: AgentSource | Unset | None = UNSET,
     include_archived: bool | Unset = UNSET,
+    label: list[str] | Unset = UNSET,
 ) -> dict[str, Any]:
 
     params: dict[str, Any] = {}
@@ -49,6 +50,12 @@ def build_request(
     params["source"] = json_source
 
     params["include_archived"] = include_archived
+
+    json_label: list[str] | Unset = UNSET
+    if not isinstance(label, Unset):
+        json_label = label
+
+    params["label"] = json_label
 
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
@@ -101,6 +108,7 @@ def sync_detailed(
     enabled: bool | Unset | None = UNSET,
     source: AgentSource | Unset | None = UNSET,
     include_archived: bool | Unset = UNSET,
+    label: list[str] | Unset = UNSET,
 ) -> Response[AgentCollection | ErrorResponse]:
     """List Agents
 
@@ -111,6 +119,7 @@ def sync_detailed(
         enabled (bool | None | Unset):
         source (AgentSource | None | Unset):
         include_archived (bool | Unset):
+        label (list[str] | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -127,6 +136,7 @@ def sync_detailed(
         enabled=enabled,
         source=source,
         include_archived=include_archived,
+        label=label,
     )
 
     response = client.get_httpx_client().request(
@@ -145,6 +155,7 @@ def sync(
     enabled: bool | Unset | None = UNSET,
     source: AgentSource | Unset | None = UNSET,
     include_archived: bool | Unset = UNSET,
+    label: list[str] | Unset = UNSET,
 ) -> AgentCollection | ErrorResponse | None:
     """List Agents
 
@@ -155,6 +166,7 @@ def sync(
         enabled (bool | None | Unset):
         source (AgentSource | None | Unset):
         include_archived (bool | Unset):
+        label (list[str] | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -172,6 +184,7 @@ def sync(
         enabled=enabled,
         source=source,
         include_archived=include_archived,
+        label=label,
     ).parsed
 
 
@@ -184,6 +197,7 @@ async def asyncio_detailed(
     enabled: bool | Unset | None = UNSET,
     source: AgentSource | Unset | None = UNSET,
     include_archived: bool | Unset = UNSET,
+    label: list[str] | Unset = UNSET,
 ) -> Response[AgentCollection | ErrorResponse]:
     """List Agents
 
@@ -194,6 +208,7 @@ async def asyncio_detailed(
         enabled (bool | None | Unset):
         source (AgentSource | None | Unset):
         include_archived (bool | Unset):
+        label (list[str] | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -210,6 +225,7 @@ async def asyncio_detailed(
         enabled=enabled,
         source=source,
         include_archived=include_archived,
+        label=label,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -226,6 +242,7 @@ async def asyncio(
     enabled: bool | Unset | None = UNSET,
     source: AgentSource | Unset | None = UNSET,
     include_archived: bool | Unset = UNSET,
+    label: list[str] | Unset = UNSET,
 ) -> AgentCollection | ErrorResponse | None:
     """List Agents
 
@@ -236,6 +253,7 @@ async def asyncio(
         enabled (bool | None | Unset):
         source (AgentSource | None | Unset):
         include_archived (bool | Unset):
+        label (list[str] | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -254,5 +272,6 @@ async def asyncio(
             enabled=enabled,
             source=source,
             include_archived=include_archived,
+            label=label,
         )
     ).parsed

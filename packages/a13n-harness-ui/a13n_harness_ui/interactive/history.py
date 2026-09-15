@@ -6,6 +6,7 @@ import json
 from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
+from .input_display import composer_history
 from .panels import tool_arguments, tool_preview, tool_result
 from .rendering import Status, StreamRenderer, terminal_text
 from .transcript import TranscriptControl, bounded_text
@@ -24,7 +25,7 @@ def restore_transcript(renderer: StreamRenderer, page: TranscriptPage) -> None:
     selected: list[tuple[TranscriptPart, str]] = []
     size = 0
     omitted = page.next_cursor is not None
-    parts = (part for entry in reversed(page.entries) for part in reversed(entry.parts))
+    parts = (part for entry in reversed(page.entries) for part in reversed(composer_history(entry.parts)))
     for part in parts:
         if not part.metadata.display or part.kind in {"system", "other"}:
             continue

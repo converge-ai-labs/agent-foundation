@@ -1,0 +1,151 @@
+"""Opt-in Skill barriers outside SQL sessions; every wrapper calls the real operation."""
+
+import os
+from functools import wraps
+
+
+def install(faults):
+    from a13n_service.agents.invocation_resolution.preparation import AgentInvocationPreparer
+    from a13n_service.agents.revisions import AgentRevisions
+    from a13n_service.interactions.acceptance import RunAcceptanceService
+    from a13n_service.skills.catalog import SkillCatalogService
+    from a13n_service.skills.materialization import EnvironmentSkillMaterializer
+
+    original_delete = SkillCatalogService.delete
+
+    @wraps(original_delete)
+    async def delete(self, **kwargs):
+        await faults.reach("skill.before_delete", skill_id=kwargs["skill_id"])
+        return await original_delete(self, **kwargs)
+
+    SkillCatalogService.delete = delete
+    original_prepare = AgentInvocationPreparer.prepare
+
+    @wraps(original_prepare)
+    async def prepare(self, **kwargs):
+        result = await original_prepare(self, **kwargs)
+        await faults.reach("skill.invocation_prepared", agent_id=kwargs["agent_id"])
+        return result
+
+    AgentInvocationPreparer.prepare = prepare
+    original_binding = AgentRevisions._prepare_resolution
+
+    @wraps(original_binding)
+    async def binding(self, **kwargs):
+        result = await original_binding(self, **kwargs)
+        await faults.reach("skill.binding_prepared", agent_id=kwargs["agent"].id)
+        return result
+
+    AgentRevisions._prepare_resolution = binding
+    original_initial = RunAcceptanceService._publish_initial
+
+    @wraps(original_initial)
+    async def initial(self, run, state):
+        result = await original_initial(self, run, state)
+        await faults.reach("skill.acceptance_prepared", agent_id=run.agent_id)
+        return result
+
+    RunAcceptanceService._publish_initial = initial
+    original_publish = EnvironmentSkillMaterializer._publish
+
+    @wraps(original_publish)
+    async def publish(self, files, destination, content):
+        ticket = await faults.take("skill.environment_stale", filename=destination.rsplit("/", 1)[-1])
+        if ticket is not None:
+            from a13n_harness.environment.models import EnvironmentError
+
+            await ticket.apply()
+            raise EnvironmentError("Injected stale test Environment mount", code="environment_stale_mount")
+        result = await original_publish(self, files, destination, content)
+        await faults.reach("skill.file_published", filename=destination.rsplit("/", 1)[-1], pid=os.getpid())
+        return result
+
+    EnvironmentSkillMaterializer._publish = publish
+
+    original_read = EnvironmentSkillMaterializer._read_package
+
+    @wraps(original_read)
+    async def read_package(self, selected):
+        await faults.reach("skill.before_package_read", skill_key=selected.lock.skill_key)
+        try:
+            return await original_read(self, selected)
+        except Exception:
+            await faults.reach("skill.package_read_failed", skill_key=selected.lock.skill_key)
+            raise
+
+    EnvironmentSkillMaterializer._read_package = read_package
+
+    from a13n_service.skills.sources import SkillSourcePreparer
+
+    original_source = SkillSourcePreparer.prepare
+
+    @wraps(original_source)
+    async def source(self, **kwargs):
+        result = await original_source(self, **kwargs)
+        await faults.reach("skill.source_prepared", upload_id=result.upload_id or "github")
+        return result
+
+    SkillSourcePreparer.prepare = source
+
+    if faults.role == "worker":
+        import json
+        import traceback
+
+        from a13n_service.process.attempts import WorkerAttempts
+        from a13n_service.run_stream.attempt_projection import AttemptRunStreamProjector
+
+        original_observation = AttemptRunStreamProjector.project_environment
+
+        @wraps(original_observation)
+        def environment_observation(self, observation):
+            if (faults.root / "observe-environment").exists():
+                path = faults.root / ("environment-" + self._context.run_attempt_id + ".jsonl")
+                # Correlation only; never serialize Environment configuration or credentials.
+                with path.open("a") as output:
+                    output.write(
+                        json.dumps(
+                            {
+                                "event_type": observation.event_type,
+                                "mount_id": observation.mount_id,
+                                "harness_run_id": observation.harness_run_id,
+                                "occurred_at": observation.occurred_at.isoformat(),
+                            }
+                        )
+                        + "\n"
+                    )
+                path.chmod(0o600)
+            return original_observation(self, observation)
+
+        AttemptRunStreamProjector.project_environment = environment_observation
+
+        original_attempt = WorkerAttempts.run
+
+        @wraps(original_attempt)
+        async def attempt(self, context, *args, **kwargs):
+            try:
+                return await original_attempt(self, context, *args, **kwargs)
+            except Exception as error:
+                # Record types and locations only: exception messages can contain credentials.
+                def describe(value):
+                    return {
+                        "type": type(value).__name__,
+                        "frames": [
+                            {"file": frame.filename, "line": frame.lineno, "function": frame.name}
+                            for frame in traceback.extract_tb(value.__traceback__)
+                        ],
+                        "children": [describe(child) for child in value.exceptions]
+                        if isinstance(value, BaseExceptionGroup)
+                        else [],
+                        "cause": describe(value.__cause__) if value.__cause__ is not None else None,
+                    }
+
+                path = faults.root / ("attempt-error-" + context.run_attempt_id + ".json")
+                path.write_text(
+                    json.dumps(
+                        {"run_id": context.run_id, "attempt_id": context.run_attempt_id, "error": describe(error)}
+                    )
+                )
+                path.chmod(0o600)
+                raise
+
+        WorkerAttempts.run = attempt

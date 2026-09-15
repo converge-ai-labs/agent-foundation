@@ -193,7 +193,7 @@ it("keeps child instructions after unknown control and addresses the exact paren
   });
   fireEvent.click(screen.getByText("Explorer · running"));
   fireEvent.change(
-    screen.getByRole("textbox", { name: "Instruction for Explorer" }),
+    await screen.findByRole("textbox", { name: "Instruction for Explorer" }),
     { target: { value: "Inspect this" } },
   );
   fireEvent.click(

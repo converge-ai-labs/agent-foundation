@@ -1,25 +1,40 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
+import { useEffect, type ReactNode } from "react";
+import { ToolCall } from "../conversations/tool-call";
 import {
   cleanup,
   fireEvent,
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter, useNavigate, useLocation } from "react-router";
 import { TransportContext } from "../transport/context";
 import type { Transport } from "../transport/client";
 import { NativeWorkspace } from "./workspace";
-import { FileBuffers } from "./buffer";
+import { FileBuffers, joinPath } from "./buffer";
 
 vi.mock("./files", () => ({
-  Files: ({ path, open }: { path: string; open: (path: string) => void }) => (
+  Files: ({
+    path,
+    directory,
+    open,
+  }: {
+    path: string;
+    directory: string;
+    open: (path: string) => void;
+  }) => (
     <div>
+      <p>Folder {directory}</p>
       <p>Selected {path}</p>
       <button onClick={() => open("/native/second.txt")}>
         Open second file
+      </button>
+      <button onClick={() => open(joinPath(directory, "nested"))}>
+        Open child folder
       </button>
     </div>
   ),
@@ -28,8 +43,19 @@ vi.mock("./file-view", () => ({
   FileView: ({ path }: { path: string }) => <p>Editor {path}</p>,
 }));
 vi.mock("./changes", () => ({
-  DiffView: ({ selection }: { selection: { path: string } }) => (
-    <p>Patch {selection.path}</p>
+  DiffView: ({
+    selection,
+    openFile,
+  }: {
+    selection: { path: string };
+    openFile: (path: string) => void;
+  }) => (
+    <div>
+      <p>Patch {selection.path}</p>
+      <button onClick={() => openFile("/native/deleted.txt")}>
+        Open diff file
+      </button>
+    </div>
   ),
   Changes: ({
     path,
@@ -61,44 +87,106 @@ vi.mock("./changes", () => ({
 vi.mock("./terminal", () => ({
   TerminalPanel: ({
     visible,
+    directory,
+    projectId,
+    selected,
     select,
+    onActive,
   }: {
     visible: boolean;
+    directory: string;
+    projectId: string;
+    selected: string;
     select: (id: string) => void;
-  }) => (
-    <section hidden={!visible}>
-      <button onClick={() => select("")}>Close selected terminal</button>
-    </section>
-  ),
+    onActive: (id: string) => void;
+  }) => {
+    useEffect(() => {
+      onActive(
+        visible && projectId && selected === "terminal-current" ? selected : "",
+      );
+    }, [visible, projectId, selected, onActive]);
+    return (
+      <section hidden={!visible}>
+        <p>
+          Terminal context {projectId} · {directory}
+        </p>
+        <button onClick={() => select("")}>Close selected terminal</button>
+      </section>
+    );
+  },
 }));
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  localStorage.clear();
 });
 function setup(
   initial: string,
   sharing = true,
   metadata?: Promise<{ data: { kind: string } }>,
+  currentProject: string | null = "project-one",
+  otherProject: string | null = currentProject,
+  currentRoots: string[] = ["/native"],
+  content?: ReactNode,
+  buffers = new Map(),
 ) {
   vi.stubGlobal("matchMedia", () => ({ matches: false }));
   const focus = vi.fn();
-  const get = vi.fn(async (url: string) =>
-    url === "/api/host/files/metadata" && metadata
-      ? metadata
-      : {
-          data:
-            url === "/api/status"
-              ? {
-                  features: {
-                    host_files: sharing,
-                    host_git: sharing,
-                    host_terminal: sharing,
-                  },
-                }
-              : url === "/api/projects"
-                ? []
-                : { kind: "file" },
-        },
+  const get = vi.fn(
+    async (
+      url: string,
+      options?: {
+        params?: { path?: { thread_id?: string }; query?: { path?: string } };
+      },
+    ) =>
+      url === "/api/host/files/metadata" && metadata
+        ? metadata
+        : {
+            data:
+              url === "/api/status"
+                ? {
+                    features: {
+                      host_files: sharing,
+                      host_git: sharing,
+                      host_terminal: sharing,
+                    },
+                  }
+                : url === "/api/projects"
+                  ? [
+                      {
+                        project_id: "project-unrelated",
+                        name: "Unrelated",
+                        roots: ["/unrelated"],
+                      },
+                      {
+                        project_id: "project-one",
+                        name: "Current project",
+                        roots: currentRoots,
+                      },
+                      {
+                        project_id: "project-two",
+                        name: "Other project",
+                        roots: ["/other"],
+                      },
+                    ]
+                  : url === "/api/threads/{thread_id}"
+                    ? {
+                        thread: {
+                          title: "Current conversation",
+                          configuration: {
+                            project_id:
+                              options?.params?.path?.thread_id === "other"
+                                ? otherProject
+                                : currentProject,
+                          },
+                        },
+                      }
+                    : {
+                        kind: options?.params?.query?.path?.endsWith(".txt")
+                          ? "file"
+                          : "directory",
+                      },
+          },
   );
   const transport = { client: { GET: get } } as unknown as Transport;
   const queries = new QueryClient({
@@ -111,7 +199,17 @@ function setup(
       <>
         <NativeWorkspace onFocus={focus} unauthorized={vi.fn()}>
           <p data-testid="chat">Chat remains mounted {location.pathname}</p>
+          {content}
         </NativeWorkspace>
+        <button
+          onClick={() =>
+            navigate(
+              "/threads/current?native=changes&native_path=%2Fother-repository",
+            )
+          }
+        >
+          Open peer repository
+        </button>
         <button onClick={() => navigate("/threads/other")}>
           Another conversation
         </button>
@@ -138,7 +236,7 @@ function setup(
     <MemoryRouter initialEntries={[initial]}>
       <QueryClientProvider client={queries}>
         <TransportContext value={transport}>
-          <FileBuffers value={new Map()}>
+          <FileBuffers value={buffers}>
             <Page />
           </FileBuffers>
         </TransportContext>
@@ -151,15 +249,18 @@ it("native deep links, file tabs and diff selection update personal focus withou
   const { focus } = setup(
     "/threads/current?native=files&native_path=%2Fnative%2Ffirst.txt",
   );
-  await screen.findByText("Selected /native/first.txt");
+  await screen.findByText("Editor /native/first.txt");
   await waitFor(() =>
     expect(focus).toHaveBeenLastCalledWith({
       kind: "file",
       path: "/native/first.txt",
     }),
   );
+  fireEvent.click(
+    screen.getByRole("button", { name: /Back to (files|changes)/ }),
+  );
   fireEvent.click(screen.getByRole("button", { name: "Open second file" }));
-  await screen.findByText("Selected /native/second.txt");
+  await screen.findByText("Editor /native/second.txt");
   await waitFor(() =>
     expect(focus).toHaveBeenLastCalledWith({
       kind: "file",
@@ -167,8 +268,8 @@ it("native deep links, file tabs and diff selection update personal focus withou
     }),
   );
   fireEvent.click(screen.getByRole("button", { name: "first.txt" }));
-  await screen.findByText("Selected /native/first.txt");
-  fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+  await screen.findByText("Editor /native/first.txt");
+  fireEvent.click(screen.getByRole("button", { name: "Close file explorer" }));
   await waitFor(() => expect(focus).toHaveBeenLastCalledWith(null));
   fireEvent.click(screen.getByRole("button", { name: "Changes" }));
   fireEvent.click(screen.getByRole("button", { name: "Select staged diff" }));
@@ -190,7 +291,9 @@ it("a native deep link cannot bypass disabled sharing or trigger metadata reques
     "/?native=files&native_path=%2Fnative%2Ffirst.txt",
     false,
   );
-  await screen.findByText("Native sharing disabled by this server");
+  await waitFor(() =>
+    expect(get.mock.calls.some(([path]) => path === "/api/status")).toBe(true),
+  );
   expect(get.mock.calls.some(([path]) => path.startsWith("/api/host"))).toBe(
     false,
   );
@@ -213,7 +316,7 @@ it("a peer diff supersedes a pending file read rather than mixing repository ide
     ).toBe(true),
   );
   fireEvent.click(screen.getByRole("button", { name: "Open peer diff" }));
-  await screen.findByText("Repository /other-repository · Diff reviewed.txt");
+  await screen.findByText("Patch reviewed.txt");
   finish({ data: { kind: "directory" } });
   await waitFor(() =>
     expect(focus).toHaveBeenLastCalledWith({
@@ -223,9 +326,7 @@ it("a peer diff supersedes a pending file read rather than mixing repository ide
       comparison: "staged",
     }),
   );
-  expect(
-    screen.getByText("Repository /other-repository · Diff reviewed.txt"),
-  ).toBeTruthy();
+  expect(screen.getByText("Patch reviewed.txt")).toBeTruthy();
   expect(screen.queryByText("Opening path…")).toBeNull();
 });
 it("toolbar collapse and confirmed process removal clear terminal page presence", async () => {
@@ -257,7 +358,7 @@ it("narrow peer navigation reveals the requested native or configuration view, n
   vi.stubGlobal("matchMedia", () => ({ matches: true }));
   fireEvent.click(screen.getByRole("button", { name: "Open peer diff" }));
   await screen.findByText("Patch reviewed.txt");
-  expect(screen.queryByLabelText("File explorer")).toBeNull();
+  expect(screen.getByLabelText("File explorer")).toBeTruthy();
   expect(
     screen
       .getByRole("button", { name: "Terminal" })
@@ -295,24 +396,18 @@ it("Settings supersedes a pending file open and returning to Chat cannot be stol
   expect(screen.getByTestId("chat").parentElement?.hidden).toBe(false);
 });
 
-it("retains open file tabs through Settings and closing the explorer focuses the visible editor", async () => {
+it("retains open file tabs through Settings and closing the drawer returns focus to Chat", async () => {
   const { focus } = setup(
     "/threads/current?native=files&native_path=%2Fnative%2Ffirst.txt",
   );
   await screen.findByText("Editor /native/first.txt");
   fireEvent.click(screen.getByRole("button", { name: "Close file explorer" }));
-  await waitFor(() =>
-    expect(focus).toHaveBeenLastCalledWith({
-      kind: "file",
-      path: "/native/first.txt",
-    }),
-  );
-  expect(document.activeElement?.textContent).toContain(
-    "Editor /native/first.txt",
-  );
+  await waitFor(() => expect(focus).toHaveBeenLastCalledWith(null));
+  expect(document.activeElement?.textContent).toContain("Chat remains mounted");
   fireEvent.click(screen.getByRole("button", { name: "Open peer resource" }));
   expect(screen.queryByLabelText("Open files")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Another conversation" }));
+  fireEvent.click(screen.getByRole("button", { name: "Files" }));
   fireEvent.click(await screen.findByRole("button", { name: "first.txt" }));
   await screen.findByText("Editor /native/first.txt");
 });
@@ -321,7 +416,7 @@ it("mobile Chat and conversation navigation reveal the conversation instead of l
   setup("/threads/current?terminal=terminal-current");
   await screen.findByRole("button", { name: "Terminal" });
   vi.stubGlobal("matchMedia", () => ({ matches: true }));
-  fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+  fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
   expect(
     screen
       .getByRole("button", { name: "Terminal" })
@@ -354,7 +449,9 @@ it.each(["Chat", "diff"])(
       ).toBe(true),
     );
     if (target === "Chat")
-      fireEvent.click(screen.getByRole("button", { name: "Chat" }));
+      fireEvent.click(
+        screen.getByRole("button", { name: "Close file explorer" }),
+      );
     else {
       fireEvent.click(screen.getByRole("button", { name: "Changes" }));
       fireEvent.click(
@@ -380,3 +477,312 @@ it.each(["Chat", "diff"])(
     else expect(screen.getByText("Patch second.txt")).toBeTruthy();
   },
 );
+
+it.each(["file", "diff"])(
+  "a repository-only peer link replaces a prior %s editor with its actual Changes explorer",
+  async (view) => {
+    const { focus } = setup(
+      view === "file"
+        ? "/threads/current?native=files&native_path=%2Fnative%2Ffirst.txt"
+        : "/threads/current?native=changes&native_path=%2Fnative&diff_path=first.txt&comparison=staged",
+    );
+    await screen.findByText(
+      view === "file" ? "Editor /native/first.txt" : "Patch first.txt",
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Open peer repository" }),
+    );
+    await screen.findByText("Repository /other-repository · Diff");
+    expect(screen.queryByText("Editor /native/first.txt")).toBeNull();
+    expect(screen.queryByText("Patch first.txt")).toBeNull();
+    await waitFor(() =>
+      expect(focus).toHaveBeenLastCalledWith({
+        kind: "changes",
+        repository_root: "/other-repository",
+      }),
+    );
+  },
+);
+it("shows pending and failed file opens beside the retained diff instead of hiding feedback in the explorer", async () => {
+  const { get } = setup(
+    "/threads/current?native=changes&native_path=%2Fnative&diff_path=deleted.txt&comparison=staged",
+  );
+  await screen.findByText("Patch deleted.txt");
+  let reject!: (error: Error) => void;
+  const pending = new Promise<{ data: { kind: string } }>((_resolve, fail) => {
+    reject = fail;
+  });
+  get.mockImplementationOnce(() => pending);
+  fireEvent.click(screen.getByRole("button", { name: "Open diff file" }));
+  await screen.findByText("Opening path…");
+  reject(new Error("The file was deleted"));
+  await screen.findByText("The file was deleted");
+  expect(screen.getByText("Patch deleted.txt")).toBeTruthy();
+  expect(
+    screen
+      .getByRole("button", { name: "Changes" })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
+  expect(screen.queryByText("Opening path…")).toBeNull();
+});
+
+it("Files, Changes and new-terminal context follow the current Project instead of a remembered folder or the first Project", async () => {
+  localStorage.setItem("a13n-harness-ui.native-directory", "/unrelated");
+  setup("/threads/current", true, undefined, "project-one", "project-two");
+  fireEvent.click(await screen.findByRole("button", { name: "Files" }));
+  await screen.findByText("Folder /native");
+  expect(screen.queryByLabelText("Folder or file path")).toBeNull();
+  expect(screen.queryByLabelText("Project root")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Changes" }));
+  await screen.findByText("Repository /native · Diff");
+  fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
+  await screen.findByText("Terminal context project-one · /native");
+  fireEvent.click(screen.getByRole("button", { name: "Another conversation" }));
+  await screen.findByText("Repository /other · Diff");
+  await screen.findByText("Terminal context project-two · /other");
+  fireEvent.click(screen.getByRole("button", { name: "Files" }));
+  await screen.findByText("Folder /other");
+});
+
+it("a conversation without a Project does not pick another Project's folder", async () => {
+  const { get } = setup("/threads/current", true, undefined, null);
+  fireEvent.click(await screen.findByRole("button", { name: "Files" }));
+  await screen.findByText(
+    "Open a conversation in a project to see its files and changes.",
+  );
+  expect(screen.queryByText(/Folder \/unrelated/)).toBeNull();
+  expect(
+    get.mock.calls.some(([url]) => url === "/api/host/files/metadata"),
+  ).toBe(false);
+});
+
+it.each(["directory", "file", "repository", "diff"])(
+  "explicit projectless %s links retain their explorer without a folder chooser",
+  async (target) => {
+    setup(
+      target === "directory" || target === "file"
+        ? `/?native=files&native_path=${encodeURIComponent(target === "file" ? "/native/first.txt" : "/native")}`
+        : `/?native=changes&native_path=%2Fnative${target === "diff" ? "&diff_path=first.txt&comparison=staged" : ""}`,
+      true,
+      target === "directory"
+        ? Promise.resolve({ data: { kind: "directory" } })
+        : undefined,
+      null,
+    );
+    if (target === "file" || target === "diff") {
+      await screen.findByText(
+        target === "file" ? "Editor /native/first.txt" : "Patch first.txt",
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: /Back to (files|changes)/ }),
+      );
+    }
+    await screen.findByText(
+      target === "directory" || target === "file"
+        ? "Folder /native"
+        : target === "diff"
+          ? "Repository /native · Diff first.txt"
+          : "Repository /native · Diff",
+    );
+    expect(screen.queryByLabelText("Folder or file path")).toBeNull();
+  },
+);
+
+it.each([
+  "/threads/current?terminal=terminal-foreign",
+  "/?terminal=terminal-current",
+])(
+  "an unavailable terminal link never publishes terminal focus: %s",
+  async (url) => {
+    const { focus } = setup(url);
+    await screen.findByText(/Terminal context/);
+    expect(
+      focus.mock.calls.some(([target]) => target?.kind === "terminal"),
+    ).toBe(false);
+  },
+);
+
+it.each(["/native", "C:\\native", "\\\\server\\share\\native"])(
+  "folder navigation shows the current location, goes up, and returns to the Project root: %s",
+  async (root) => {
+    const first = joinPath(root, "nested");
+    const second = joinPath(first, "nested");
+    const { focus } = setup(
+      "/threads/current",
+      true,
+      undefined,
+      "project-one",
+      "project-one",
+      [root],
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Files" }));
+    await screen.findByText(`Folder ${root}`);
+    expect(
+      screen
+        .getByRole("button", { name: "Up one level" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Open child folder" }));
+    await screen.findByText(`Folder ${first}`);
+    fireEvent.click(screen.getByRole("button", { name: "Open child folder" }));
+    await screen.findByText(`Folder ${second}`);
+    const trail = screen.getByRole("navigation", { name: "Current folder" });
+    expect(
+      trail.querySelector('[aria-current="location"]')?.getAttribute("title"),
+    ).toBe(second);
+    fireEvent.click(screen.getByRole("button", { name: "Up one level" }));
+    await screen.findByText(`Folder ${first}`);
+    fireEvent.click(
+      within(trail).getByRole("button", { name: "Current project" }),
+    );
+    await screen.findByText(`Folder ${root}`);
+    expect(
+      screen
+        .getByRole("button", { name: "Up one level" })
+        .hasAttribute("disabled"),
+    ).toBe(true);
+    await waitFor(() =>
+      expect(focus).toHaveBeenLastCalledWith({ kind: "file", path: root }),
+    );
+  },
+);
+
+it("file views retain folder navigation and a named return to the containing folder without losing the file tab", async () => {
+  setup(
+    "/threads/current?native=files&native_path=%2Fnative%2Fsrc%2Ffirst.txt",
+  );
+  await screen.findByText("Editor /native/src/first.txt");
+  const trail = screen.getByRole("navigation", { name: "Current folder" });
+  expect(
+    within(trail)
+      .getByRole("button", { name: "src" })
+      .getAttribute("aria-current"),
+  ).toBe("location");
+  fireEvent.click(screen.getByRole("button", { name: "Back to files" }));
+  await screen.findByText("Folder /native/src");
+  fireEvent.click(screen.getByRole("button", { name: "first.txt" }));
+  await screen.findByText("Editor /native/src/first.txt");
+  fireEvent.click(
+    within(trail).getByRole("button", { name: "Current project" }),
+  );
+  await screen.findByText("Folder /native");
+  fireEvent.click(screen.getByRole("button", { name: "first.txt" }));
+  await screen.findByText("Editor /native/src/first.txt");
+});
+
+it("a failed parent open keeps the actual location and a late child response cannot undo successful Up navigation", async () => {
+  const { get } = setup(
+    "/threads/current?native=files&native_path=%2Fnative%2Fsrc",
+  );
+  await screen.findByText("Folder /native/src");
+  get.mockRejectedValueOnce(new Error("Folder unavailable"));
+  fireEvent.click(screen.getByRole("button", { name: "Up one level" }));
+  await screen.findByText("Folder unavailable");
+  expect(screen.getByText("Folder /native/src")).toBeTruthy();
+  let finish!: (value: { data: { kind: string } }) => void;
+  get.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Open child folder" }));
+  await screen.findByText("Opening path…");
+  fireEvent.click(screen.getByRole("button", { name: "Up one level" }));
+  await screen.findByText("Folder /native");
+  finish({ data: { kind: "directory" } });
+  await waitFor(() => expect(screen.queryByText("Opening path…")).toBeNull());
+  expect(screen.getByText("Folder /native")).toBeTruthy();
+});
+
+it("explicit external native links keep usable ancestry rather than an empty Project breadcrumb", async () => {
+  setup("/threads/current?native=files&native_path=%2Fexternal%2Ffolder");
+  await screen.findByText("Folder /external/folder");
+  const trail = screen.getByRole("navigation", { name: "Current folder" });
+  expect(
+    within(trail).queryByRole("button", { name: "Current project" }),
+  ).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Up one level" }));
+  await screen.findByText("Folder /external");
+  fireEvent.click(within(trail).getByRole("button", { name: "/" }));
+  await screen.findByText("Folder /");
+  expect(
+    screen
+      .getByRole("button", { name: "Up one level" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+});
+
+it("switching configured roots from a file view returns to the selected folder instead of leaving a stale editor", async () => {
+  setup(
+    "/threads/current?native=files&native_path=%2Fnative%2Ffirst.txt",
+    true,
+    undefined,
+    "project-one",
+    "project-one",
+    ["/native", "/second-root"],
+  );
+  await screen.findByText("Editor /native/first.txt");
+  fireEvent.click(
+    within(
+      screen.getByRole("navigation", { name: "Project folders" }),
+    ).getByRole("button", { name: "second-root" }),
+  );
+  await screen.findByText("Folder /second-root");
+  expect(screen.queryByText("Editor /native/first.txt")).toBeNull();
+  expect(
+    screen
+      .getByRole("button", { name: "Up one level" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+});
+
+it("opens tool paths through existing private buffers without re-reading or replacing dirty text", async () => {
+  const dirty = { dirty: true, text: "Unsaved private edit" };
+  const buffers = new Map([["/native/deleted.txt", dirty]]);
+  const { get } = setup(
+    "/threads/current",
+    true,
+    undefined,
+    "project-one",
+    "project-one",
+    ["/native"],
+    <ToolCall
+      tool={{
+        id: "edit-one",
+        name: "edit",
+        input: { file_path: "/native/deleted.txt" },
+        result: { ok: true },
+      }}
+    />,
+    buffers,
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Open on host" }));
+  await screen.findByText("Editor /native/deleted.txt");
+  expect(buffers.get("/native/deleted.txt")).toBe(dirty);
+  expect(dirty.text).toBe("Unsaved private edit");
+  expect(
+    get.mock.calls.some(([url]) => url === "/api/host/files/metadata"),
+  ).toBe(false);
+  expect(screen.getByTestId("chat").textContent).toContain("/threads/current");
+});
+
+it("does not offer tool-to-host lookup when sharing is disabled", async () => {
+  setup(
+    "/threads/current",
+    false,
+    undefined,
+    "project-one",
+    "project-one",
+    ["/native"],
+    <ToolCall
+      tool={{
+        id: "edit-one",
+        name: "edit",
+        input: { file_path: "/native/a.txt" },
+      }}
+    />,
+  );
+  await screen.findByText("Edit");
+  expect(screen.queryByRole("button", { name: "Open on host" })).toBeNull();
+});

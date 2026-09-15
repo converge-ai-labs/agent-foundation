@@ -8,6 +8,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { parse } from "yaml";
 import { BrowserApp } from "./app";
 import { onlineManager } from "@tanstack/react-query";
 
@@ -269,57 +270,19 @@ it("reopens an unpublished resource draft without treating it as a missing serve
   expect(window.location.search).toContain("new=1");
 });
 
-it("submits only additional instructions and consumes setup preview before an uncertain publication", async () => {
+it("keeps incomplete existing configuration in focused repair without initialization", async () => {
   window.history.replaceState(null, "", "/setup");
-  const writes: Record<string, unknown>[] = [];
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async (request: Request) => {
-      const path = new URL(request.url).pathname;
-      if (path === "/api/setup/preview") {
-        const body = await request.json();
-        writes.push(body);
-        return json({ files: {}, preserved_paths: [], project_paths: [] });
-      }
-      if (path === "/api/setup/apply") throw new TypeError("Connection lost");
-      return fixture(request);
-    }),
-  );
   render(<BrowserApp />);
+  await screen.findByRole("heading", { name: "Setup & readiness" });
   expect(
-    (
-      (await screen.findByLabelText(
-        "Additional agent instructions",
-      )) as HTMLTextAreaElement
-    ).value,
-  ).toBe("");
-  await waitFor(() =>
-    expect(
-      (
-        screen.getByRole("button", {
-          name: "Review changes",
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(false),
-  );
-  fireEvent.click(screen.getByRole("button", { name: "Review changes" }));
-  await waitFor(() =>
-    expect(
-      (
-        screen.getByRole("button", {
-          name: "Save setup",
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(false),
-  );
-  expect(writes[0].instructions).toBe("");
-  fireEvent.click(screen.getByRole("button", { name: "Save setup" }));
-  await screen.findByText("Connection lost");
+    screen.getByRole("link", { name: "Repair agent connection" }),
+  ).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /Save and start/ })).toBeNull();
   expect(
-    (screen.getByRole("button", { name: "Save setup" }) as HTMLButtonElement)
-      .disabled,
+    vi
+      .mocked(fetch)
+      .mock.calls.every(([request]) => (request as Request).method === "GET"),
   ).toBe(true);
-  expect(screen.getByText(/Settings may have been saved/)).toBeTruthy();
 });
 
 it("attempts offline publication immediately and does not queue it for reconnect", async () => {
@@ -762,4 +725,232 @@ it("edits project defaults directly while preserving unknown project fields", as
   await waitFor(() => expect(saved).toContain("agent: agent-assistant"));
   expect(saved).toContain("retain: true");
   expect(saved).toContain("/test");
+});
+
+it("generates a visible collaboration name, remembers it across visits, and lets the user save a nonempty replacement", async () => {
+  localStorage.setItem("a13n-harness-ui.api-key", "test-key");
+  const component = render(<BrowserApp />);
+  const profile = await screen.findByRole("button", {
+    name: /^Your collaboration name: Guest /,
+  });
+  const generated = localStorage.getItem("a13n-harness-ui.display-name");
+  expect(generated).toMatch(/^Guest [a-f0-9]{6}$/);
+  fireEvent.click(profile);
+  const input = await screen.findByLabelText("Your display name");
+  fireEvent.change(input, { target: { value: "   " } });
+  expect(
+    screen.getByRole("button", { name: "Save name" }).hasAttribute("disabled"),
+  ).toBe(true);
+  expect(localStorage.getItem("a13n-harness-ui.display-name")).toBe(generated);
+  fireEvent.change(input, { target: { value: "  Alex  " } });
+  fireEvent.click(screen.getByRole("button", { name: "Save name" }));
+  await screen.findByRole("button", { name: "Your collaboration name: Alex" });
+  expect(localStorage.getItem("a13n-harness-ui.display-name")).toBe("Alex");
+  component.unmount();
+  render(<BrowserApp />);
+  await screen.findByRole("button", { name: "Your collaboration name: Alex" });
+});
+
+it("keeps a generated collaboration name stable when the workbench is reopened", async () => {
+  localStorage.setItem("a13n-harness-ui.api-key", "test-key");
+  const component = render(<BrowserApp />);
+  const first = await screen.findByRole("button", {
+    name: /^Your collaboration name: Guest /,
+  });
+  const label = first.getAttribute("aria-label")!;
+  component.unmount();
+  render(<BrowserApp />);
+  await screen.findByRole("button", { name: label });
+});
+
+it("configures Sidekick in General without changing defaults or starting conversations", async () => {
+  window.history.replaceState(null, "", "/settings");
+  const rootSource = {
+    ...source,
+    relative_path: "custom-root.yaml",
+    resource_kind: "root",
+    resource_ids: [],
+  };
+  let content =
+    '# Keep this comment\nschema_version: "1"\ndefaults: {agent: agent-assistant}\nprocess: {log_level: DEBUG}\nwebui: {custom: keep}\n';
+  let writes = 0;
+  let submissions = 0;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (request: Request) => {
+      const path = decodeURIComponent(new URL(request.url).pathname);
+      if (path === "/api/configuration/sources")
+        return json({
+          generation_digest: "g",
+          sources: [
+            rootSource,
+            {
+              ...source,
+              relative_path: "models/worker.yaml",
+              resource_kind: "model",
+              resource_ids: ["model-worker"],
+            },
+          ],
+        });
+      if (path === "/api/configuration/sources/custom-root.yaml") {
+        if (request.method === "PUT") {
+          content = (await request.json()).content;
+          writes += 1;
+          return json({ source_digest: `saved-${writes}` });
+        }
+        return json({
+          ...rootSource,
+          source_digest: `saved-${writes}`,
+          content,
+        });
+      }
+      if (path === "/api/selectors")
+        return json({
+          agents: [
+            {
+              agent_id: "agent-assistant",
+              name: "Assistant",
+              model_id: "model-main",
+            },
+            {
+              agent_id: "agent-worker",
+              name: "Worker",
+              model_id: "model-worker",
+            },
+            { agent_id: "agent-empty", name: "No model", model_id: null },
+          ],
+          environments: [],
+          harness_plugins: [],
+          environment_run_extensions: [],
+          mcp_servers: [],
+        });
+      if (request.method === "POST" && path.startsWith("/api/threads"))
+        submissions += 1;
+      return fixture(request);
+    }),
+  );
+  render(<BrowserApp />);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("combobox", { name: "Sidekick" }));
+  await user.click(await screen.findByRole("option", { name: "Enabled" }));
+  expect(
+    screen.getByRole("combobox", { name: "Sidekick agent" }).textContent,
+  ).toContain("Inherit current agent");
+  await user.click(screen.getByRole("combobox", { name: "Sidekick model" }));
+  await user.click(await screen.findByRole("option", { name: "model-worker" }));
+  expect(parse(content).webui.sidekick).toBeUndefined();
+  await user.click(screen.getByRole("combobox", { name: "Sidekick agent" }));
+  await user.click(await screen.findByRole("option", { name: "Worker" }));
+  expect(writes).toBe(0);
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(writes).toBe(1));
+  expect(parse(content).webui.sidekick).toEqual({
+    agent: "agent-worker",
+    model: "model-worker",
+  });
+  expect(content).toContain("agent-assistant");
+  expect(content).toContain("Keep this comment");
+  expect(content).toContain("DEBUG");
+  expect(content).toContain("custom: keep");
+  await waitFor(() =>
+    expect(
+      screen.getByRole("combobox", { name: "Sidekick agent" }).textContent,
+    ).toContain("Worker"),
+  );
+  await user.click(screen.getByRole("combobox", { name: "Sidekick" }));
+  await user.click(await screen.findByRole("option", { name: "Disabled" }));
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(writes).toBe(2));
+  expect(parse(content).webui.sidekick).toBeNull();
+  expect(content).toContain("custom: keep");
+  expect(content).toContain("agent-assistant");
+  expect(submissions).toBe(0);
+});
+
+it("previews collaboration colors and remembers a random initial color and later selection", async () => {
+  localStorage.setItem("a13n-harness-ui.api-key", "test-key");
+  const random = vi.spyOn(Math, "random").mockReturnValue(0.5);
+  try {
+    const component = render(<BrowserApp />);
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("button", {
+        name: /^Your collaboration name:/,
+      }),
+    );
+    const color = await screen.findByRole("combobox", { name: "Your color" });
+    expect(color.textContent).toBe("Purple");
+    expect(
+      color.querySelector<HTMLElement>("[style]")?.style.backgroundColor,
+    ).toBe("rgb(124, 58, 237)");
+    expect(localStorage.getItem("a13n-harness-ui.color")).toBe("#7c3aed");
+    component.unmount();
+
+    random.mockReturnValue(0.99);
+    const reopened = render(<BrowserApp />);
+    await user.click(
+      await screen.findByRole("button", {
+        name: /^Your collaboration name:/,
+      }),
+    );
+    const remembered = await screen.findByRole("combobox", {
+      name: "Your color",
+    });
+    expect(remembered.textContent).toBe("Purple");
+    await user.click(remembered);
+    for (const name of ["Slate", "Blue", "Purple", "Green", "Amber"]) {
+      const option = await screen.findByRole("option", { name });
+      expect(
+        option.querySelector<HTMLElement>("[style]")?.style.backgroundColor,
+      ).toBeTruthy();
+    }
+    await user.click(screen.getByRole("option", { name: "Green" }));
+    expect(remembered.textContent).toBe("Green");
+    expect(
+      remembered.querySelector<HTMLElement>("[style]")?.style.backgroundColor,
+    ).toBe("rgb(5, 150, 105)");
+    await waitFor(() =>
+      expect(localStorage.getItem("a13n-harness-ui.color")).toBe("#059669"),
+    );
+    reopened.unmount();
+
+    render(<BrowserApp />);
+    await user.click(
+      await screen.findByRole("button", {
+        name: /^Your collaboration name:/,
+      }),
+    );
+    expect(
+      (await screen.findByRole("combobox", { name: "Your color" })).textContent,
+    ).toBe("Green");
+  } finally {
+    random.mockRestore();
+  }
+});
+
+it("keeps destructive configuration actions secondary and requires named confirmation", async () => {
+  window.history.replaceState(
+    null,
+    "",
+    "/settings/source?path=agents%2Fassistant.yaml",
+  );
+  render(<BrowserApp />);
+  const user = userEvent.setup();
+  await user.click(
+    await screen.findByRole("button", { name: "More configuration actions" }),
+  );
+  await user.click(
+    await screen.findByRole("menuitem", { name: "Delete configuration" }),
+  );
+  const dialog = await screen.findByRole("dialog", {
+    name: "Delete this configuration?",
+  });
+  expect(dialog.textContent).toContain("agents/assistant.yaml");
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(
+    vi
+      .mocked(fetch)
+      .mock.calls.some(([request]) => (request as Request).method === "DELETE"),
+  ).toBe(false);
 });
