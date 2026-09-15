@@ -187,7 +187,9 @@ it("forgets the retained credential and closes protected views", async () => {
     "Access expired. Enter the API key printed by this server.",
   );
   expect(localStorage.getItem("a13n-harness-ui.api-key")).toBeNull();
-  expect(screen.queryByRole("heading", { name: "Your workspace" })).toBeNull();
+  expect(
+    screen.queryByRole("heading", { name: "What would you like to build?" }),
+  ).toBeNull();
 });
 
 it("retains dirty source fields through navigation and external invalidation", async () => {
@@ -418,7 +420,9 @@ it("works without browser storage", async () => {
     });
   try {
     render(<BrowserApp />);
-    await screen.findByRole("heading", { name: "Your workspace" });
+    await screen.findByRole("heading", {
+      name: "What would you like to build?",
+    });
     fireEvent.click(
       screen.getByRole("button", { name: "Switch to dark theme" }),
     );
@@ -992,7 +996,9 @@ it("shows one connection notice for server loss and reconciles on retry without 
   expect(screen.getAllByText("Connection interrupted")).toHaveLength(1);
   expect(screen.queryByText("Failed to fetch")).toBeNull();
   expect(screen.queryByText("0 online")).toBeNull();
-  expect(screen.getByRole("heading", { name: "Your workspace" })).toBeTruthy();
+  expect(
+    screen.getByRole("heading", { name: "What would you like to build?" }),
+  ).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
 
   const attempts = summaryRequests;
@@ -1011,7 +1017,13 @@ it("shows one connection notice for server loss and reconciles on retry without 
     expect(screen.queryAllByRole("alert")).toHaveLength(0);
   });
   expect(
-    fetcher.mock.calls.every(([request]) => request.method === "GET"),
+    fetcher.mock.calls.every(
+      ([request]) =>
+        request.method === "GET" ||
+        (request.method === "POST" &&
+          new URL(request.url).pathname ===
+            "/api/threads/configuration-preview"),
+    ),
   ).toBe(true);
 });
 

@@ -491,22 +491,13 @@ class TerminalProjectionService:
         thread_id: str | None = None,
         defaults: NewThreadDefaults | None = None,
     ) -> SkillCatalogView:
-        source = await self._required_configuration()
         receipt_id: str | None = None
         context_kind: Literal["draft", "idle", "active"] = "draft"
-        if thread_id is None:
-            selected = defaults or NewThreadDefaults()
-            resolved = resolve_thread_configuration(
-                source, RootThreadDefaults(**selected.model_dump(exclude_unset=True))
-            )
-            project_id = resolved.project_id
-            agent_id = resolved.agent_source.id
-        else:
+        thread = None
+        if thread_id is not None:
             thread = await self._store.threads.get(thread_id)
             if thread is None:
                 raise ThreadError("Thread does not exist.", code="thread_missing")
-            project_id = thread.configuration.project_id
-            agent_id = thread.configuration.agent_source.id
             operation = await self._root_runs.active(thread_id)
             if operation is None:
                 context_kind = "idle"
@@ -517,6 +508,19 @@ class TerminalProjectionService:
                 if cached is not None:
                     self._active_skill_catalogs.move_to_end(receipt_id)
                     return cached.model_copy(deep=True)
+        # Active catalogs belong to the admitted Run. Current configuration may
+        # have changed (or become unreadable) without changing that live Run.
+        source = await self._required_configuration()
+        if thread is None:
+            selected = defaults or NewThreadDefaults()
+            resolved = resolve_thread_configuration(
+                source, RootThreadDefaults(**selected.model_dump(exclude_unset=True))
+            )
+            project_id = resolved.project_id
+            agent_id = resolved.agent_source.id
+        else:
+            project_id = thread.configuration.project_id
+            agent_id = thread.configuration.agent_source.id
         if project_id is not None and project_id not in source.projects:
             raise ThreadError("The selected Project is unavailable.", code="thread_project_missing")
         if agent_id is None or agent_id not in source.agents:
@@ -544,6 +548,8 @@ class TerminalProjectionService:
         thread_id: str | None = None,
         defaults: NewThreadDefaults | None = None,
     ) -> tuple[str, ...]:
+        if not references:
+            return ()
         catalog = await self.skill_catalog(thread_id=thread_id, defaults=defaults)
         return self.validate_references_against(catalog, references)
 

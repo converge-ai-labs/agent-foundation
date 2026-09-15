@@ -52,7 +52,7 @@ class Environment:
         config = self.settings
         database = config.database
         redis = config.redis
-        if database.backend != "postgresql" or database.url is None or redis.backend != "redis" or redis.url is None:
+        if redis.backend != "redis" or redis.url is None:
             raise ValueError("Local tools require their dedicated PostgreSQL and Redis services")
         sql = make_url(database.url.get_secret_value())
         cache = urlsplit(redis.url.get_secret_value())

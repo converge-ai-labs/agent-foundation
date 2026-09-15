@@ -29,11 +29,10 @@ import { useThread, useThreads } from "./queries";
 import { useProjectExpansion, useProjectOrder } from "./project-order";
 import { NewProject } from "./new-project";
 import { RenameProject } from "../configuration/rename-project";
-import { NewConversation } from "./new-conversation";
+import { newConversationPath } from "./new-conversation";
 import { ThreadRow } from "./thread-row";
 import styles from "./conversation.module.css";
 
-export { NewConversation } from "./new-conversation";
 type Presence = Schema<"PresenceFrame"> | null;
 type Group = {
   id: string;
@@ -48,6 +47,7 @@ export function ConversationNavigation({
   presence?: Presence;
 }) {
   const projects = useProjects();
+  const navigate = useNavigate();
   const match = useMatch("/threads/:threadId");
   const selectedId = match?.params.threadId ?? "";
   const selected = useThread(selectedId).data?.thread;
@@ -59,9 +59,6 @@ export function ConversationNavigation({
   );
   const [adding, setAdding] = useState(false);
   const [renaming, setRenaming] = useState<Group | null>(null);
-  const [creating, setCreating] = useState<string | null | undefined>(
-    undefined,
-  );
   const [expanded, setExpanded] = useProjectExpansion();
   const order = useProjectOrder(
     (projects.data ?? []).map((project) => project.project_id),
@@ -101,6 +98,21 @@ export function ConversationNavigation({
   }, [searching, order.cancel]);
   return (
     <div className={styles.navigation}>
+      <Button
+        variant="ghost"
+        onClick={() =>
+          navigate(
+            newConversationPath(
+              scopedProject?.project_id ??
+                selected?.configuration.project_id ??
+                null,
+            ),
+          )
+        }
+      >
+        <Plus />
+        New conversation
+      </Button>
       <Button variant="outline" onClick={() => setAdding(true)}>
         <Plus />
         Add project
@@ -169,7 +181,9 @@ export function ConversationNavigation({
               archived={archived}
               presence={presence}
               selected={activeGroup === group.id ? selected : undefined}
-              create={() => setCreating(group.projectId ?? null)}
+              create={() =>
+                navigate(newConversationPath(group.projectId ?? null))
+              }
               order={order}
               rename={() => setRenaming(group)}
             />
@@ -202,12 +216,6 @@ export function ConversationNavigation({
           projectId={renaming.projectId}
           name={renaming.name}
           close={() => setRenaming(null)}
-        />
-      )}
-      {creating !== undefined && (
-        <NewConversation
-          projectId={creating}
-          close={() => setCreating(undefined)}
         />
       )}
     </div>

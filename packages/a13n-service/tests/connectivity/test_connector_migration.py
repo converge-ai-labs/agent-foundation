@@ -1,10 +1,9 @@
 from datetime import UTC, datetime
-from pathlib import Path
 
 from a13n_service.database.migration import DatabaseMigrator
-from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
-from a13n_service.storage.relational import sync_database_url
-from sqlalchemy import MetaData, create_engine, inspect, select, text
+from a13n_service.storage.config import PostgreSQLConfig
+from a13n_service.storage.relational import database_url
+from sqlalchemy import MetaData, create_engine, inspect, select
 
 TABLES = {
     "connections",
@@ -13,11 +12,11 @@ TABLES = {
 }
 
 
-def _exercise(configuration: PostgreSQLConfig | SQLiteConfig) -> None:
+def _exercise(configuration: PostgreSQLConfig) -> None:
     migrator = DatabaseMigrator(configuration)
     migrator.upgrade()
     migrator.current(check_heads=True, verbose=False)
-    engine = create_engine(sync_database_url(configuration))
+    engine = create_engine(database_url(configuration))
     try:
         inspector = inspect(engine)
         assert {"connector_tool_catalogs", "connector_connection_operations"}.isdisjoint(inspector.get_table_names())
@@ -35,25 +34,21 @@ def _exercise(configuration: PostgreSQLConfig | SQLiteConfig) -> None:
     finally:
         engine.dispose()
     migrator.downgrade("base")
-    engine = create_engine(sync_database_url(configuration))
+    engine = create_engine(database_url(configuration))
     try:
         assert TABLES.isdisjoint(inspect(engine).get_table_names())
     finally:
         engine.dispose()
 
 
-def test_connector_schema_migrates_on_sqlite(tmp_path: Path) -> None:
-    _exercise(SQLiteConfig(path=tmp_path / "connector-migrations.sqlite3"))
+def test_connector_schema_migrates(postgres_database: PostgreSQLConfig) -> None:
+    _exercise(postgres_database)
 
 
-def test_connector_schema_migrates_on_postgresql(pg_url: str) -> None:
-    _exercise(PostgreSQLConfig(url=pg_url))
-
-
-def _exercise_populated_upgrade(configuration: PostgreSQLConfig | SQLiteConfig) -> None:
+def _exercise_populated_upgrade(configuration: PostgreSQLConfig) -> None:
     migrator = DatabaseMigrator(configuration)
     migrator.upgrade("2999349e6c69")
-    engine = create_engine(sync_database_url(configuration))
+    engine = create_engine(database_url(configuration))
     metadata = MetaData()
     metadata.reflect(engine, only=["organizations", "workspaces", "connector_providers", "connections"])
     organizations, workspaces, providers, connections = (
@@ -121,8 +116,6 @@ def _exercise_populated_upgrade(configuration: PostgreSQLConfig | SQLiteConfig) 
             assert provider["version"] == 1
             assert child["connector_provider_id"] == provider["id"] == "provider_migration"
             assert child["id"] == "connection_migration"
-            if isinstance(configuration, SQLiteConfig):
-                assert connection.execute(text("PRAGMA foreign_key_check")).all() == []
         claims = current.tables["connector_shared_setup_claims"]
         assert {column.name for column in claims.columns} == {
             "id",
@@ -139,9 +132,5 @@ def _exercise_populated_upgrade(configuration: PostgreSQLConfig | SQLiteConfig) 
         migrator.downgrade("base")
 
 
-def test_connector_directory_upgrade_preserves_sqlite_rows(tmp_path: Path) -> None:
-    _exercise_populated_upgrade(SQLiteConfig(path=tmp_path / "retained-connectors.sqlite3"))
-
-
-def test_connector_directory_upgrade_preserves_postgresql_rows(pg_url: str) -> None:
-    _exercise_populated_upgrade(PostgreSQLConfig(url=pg_url))
+def test_connector_directory_upgrade_preserves_rows(postgres_database: PostgreSQLConfig) -> None:
+    _exercise_populated_upgrade(postgres_database)

@@ -1,14 +1,11 @@
 """The domain baseline chain must preserve dependencies and the final schema."""
 
-from pathlib import Path
-
-import pytest
 from a13n_service.database import DatabaseMigrator
 from a13n_service.database.default_comparison import compare_server_default
 from a13n_service.database.metadata import service_metadata
 from a13n_service.database.migration import MIGRATIONS_PATH
-from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
-from a13n_service.storage.relational import sync_database_url
+from a13n_service.storage.config import PostgreSQLConfig
+from a13n_service.storage.relational import database_url
 from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from alembic.script import ScriptDirectory
@@ -28,20 +25,13 @@ _BOUNDED_COLUMNS.update({table: ("key", 64) for table in ("organizations", "work
 _BOUNDED_COLUMNS["assets"] = ("filename", 256)
 
 
-@pytest.mark.parametrize("backend", ["sqlite", "postgresql"])
-def test_domain_baselines_upgrade_and_downgrade_at_every_boundary(
-    backend: str, request: pytest.FixtureRequest, tmp_path: Path
-) -> None:
-    config = (
-        SQLiteConfig(path=tmp_path / "baseline.sqlite3")
-        if backend == "sqlite"
-        else PostgreSQLConfig(url=request.getfixturevalue("pg_url"))
-    )
+def test_domain_baselines_upgrade_and_downgrade_at_every_boundary(postgres_database: PostgreSQLConfig) -> None:
+    config = postgres_database
     history = ScriptDirectory(str(MIGRATIONS_PATH))
     assert len(history.get_bases()) == len(history.get_heads()) == 1
     revisions = list(reversed(list(history.walk_revisions())))
     migrator = DatabaseMigrator(config)
-    engine = create_engine(sync_database_url(config))
+    engine = create_engine(database_url(config))
     snapshots: list[set[str]] = [set()]
     try:
         for revision in revisions:
@@ -72,11 +62,11 @@ def test_domain_baselines_upgrade_and_downgrade_at_every_boundary(
         migrator.downgrade("base")
 
 
-def test_service_baseline_matches_postgresql_metadata(pg_url: str) -> None:
-    config = PostgreSQLConfig(url=pg_url)
+def test_service_baseline_matches_postgresql_metadata(postgres_database: PostgreSQLConfig) -> None:
+    config = postgres_database
     migrator = DatabaseMigrator(config)
     migrator.upgrade()
-    engine = create_engine(sync_database_url(config))
+    engine = create_engine(database_url(config))
     try:
         with engine.connect() as connection:
             context = MigrationContext.configure(

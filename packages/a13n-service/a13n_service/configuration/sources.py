@@ -9,9 +9,7 @@ from collections.abc import Iterator, Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from pydantic import ValidationError
-
-from .sections import Section
+from pydantic import BaseModel, ValidationError
 
 if TYPE_CHECKING:
     from a13n_service.settings import Settings
@@ -44,13 +42,13 @@ class ConfigurationError(ValueError):
 
 
 def configuration_fields(
-    model: type[Section], prefix: tuple[str, ...] = ()
+    model: type[BaseModel], prefix: tuple[str, ...] = ()
 ) -> Iterator[tuple[str, tuple[str, ...], Any]]:
     """Enumerate the schema once for environment parsing and configuration docs."""
     for name, field in model.model_fields.items():
         path = (*prefix, name)
         annotation = field.annotation
-        if isinstance(annotation, type) and issubclass(annotation, Section):
+        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
             yield from configuration_fields(annotation, path)
             continue
         section, *parts = path
@@ -118,15 +116,11 @@ def load_settings(
         _merge(values, overrides)
     try:
         settings = Settings.model_validate(values)
-        paths = {
-            "database": "sqlite_path",
-            "objects": "local_root",
-            "filesystem": "root",
-        }
+        paths = {"objects": "local_root", "filesystem": "root"}
         for section, field_name in paths.items():
             group = getattr(settings, section)
             value = getattr(group, field_name)
-            if not value.is_absolute() and str(value) != ":memory:":
+            if not value.is_absolute():
                 values.setdefault(section, {})[field_name] = (base / value).resolve()
         settings = Settings.model_validate(values)
         settings.storage_settings()
@@ -139,14 +133,14 @@ def load_settings(
         raise ConfigurationError("Invalid configuration: check storage locations and identity settings") from None
 
 
-def _check_keys(model: type[Section], values: Mapping, prefix: str = "") -> None:
+def _check_keys(model: type[BaseModel], values: Mapping, prefix: str = "") -> None:
     for name, value in values.items():
         location = prefix + name
         field = model.model_fields.get(name)
         if field is None:
             raise ConfigurationError(f"Unknown configuration field: {location}")
         annotation = field.annotation
-        if isinstance(annotation, type) and issubclass(annotation, Section):
+        if isinstance(annotation, type) and issubclass(annotation, BaseModel):
             if not isinstance(value, dict):
                 raise ConfigurationError(f"Expected configuration section: {location}")
             _check_keys(annotation, value, location + ".")

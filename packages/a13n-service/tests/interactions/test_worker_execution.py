@@ -375,18 +375,18 @@ async def test_worker_claims_and_executes_an_accepted_run_in_process(
 
 @pytest.mark.parametrize("recover_candidate", [False, True])
 async def test_postgresql_worker_continues_late_input_in_same_run(
-    postgres_interaction_sessions, interaction_object_store, tmp_path, monkeypatch, recover_candidate
+    interaction_sessions, interaction_object_store, tmp_path, monkeypatch, recover_candidate
 ):
     await test_worker_claims_and_executes_an_accepted_run_in_process(
-        postgres_interaction_sessions, interaction_object_store, tmp_path, monkeypatch, recover_candidate, True
+        interaction_sessions, interaction_object_store, tmp_path, monkeypatch, recover_candidate, True
     )
 
 
 @pytest.mark.parametrize("recover_candidate", [False, True])
 async def test_worker_handoff_waits_for_late_input_incorporation(
-    relational_interaction_sessions, interaction_object_store, tmp_path, monkeypatch, recover_candidate
+    interaction_sessions, interaction_object_store, tmp_path, monkeypatch, recover_candidate
 ):
-    sessions = relational_interaction_sessions
+    sessions = interaction_sessions
     await test_worker_claims_and_executes_an_accepted_run_in_process(
         sessions,
         interaction_object_store,

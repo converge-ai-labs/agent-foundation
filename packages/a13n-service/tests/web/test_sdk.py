@@ -12,7 +12,7 @@ from ..models.test_router import settings
 pytestmark = pytest.mark.anyio
 
 
-async def test_generated_sdk_real_web_provider_crud(web_sessions, service_sqlite_database, tmp_path, monkeypatch):
+async def test_generated_sdk_real_web_provider_crud(web_sessions, service_database, tmp_path, monkeypatch):
     # SDKs remain standalone projects. Only this integration test adds the source
     # package to its import path; Service never depends on or bundles its SDK.
     root = Path(__file__).resolve().parents[4]
@@ -37,9 +37,7 @@ async def test_generated_sdk_real_web_provider_crud(web_sessions, service_sqlite
     async def authenticate(_request):
         return actor()
 
-    app = create_app(
-        settings(tmp_path, service_sqlite_database), components=Components(request_authenticator=authenticate)
-    )
+    app = create_app(settings(tmp_path, service_database), components=Components(request_authenticator=authenticate))
     async with app.router.lifespan_context(app):
         async with Client("http://testserver", "test-token", transport=httpx2.ASGITransport(app=app)) as client:
             created = await client.execute(

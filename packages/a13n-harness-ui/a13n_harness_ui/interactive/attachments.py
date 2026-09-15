@@ -36,8 +36,8 @@ def read_attachment(path: Path) -> AttachmentUpload:
     return AttachmentUpload(path.name, data, media_type)
 
 
-def _clipboard_failure(*, unavailable: bool) -> str:
-    reason = "Image clipboard unavailable." if unavailable else "No image or files in the clipboard."
+def _clipboard_failure() -> str:
+    reason = "Image clipboard unavailable."
     if os.environ.get("SSH_TTY") or os.environ.get("SSH_CONNECTION"):
         return (
             f"{reason} In this SSH session, image paste reads the remote host's clipboard, "
@@ -45,7 +45,7 @@ def _clipboard_failure(*, unavailable: bool) -> str:
             "(Cmd+V on macOS). Upload the file to the remote host, then use /attach <remote-path>. "
             "Installing wl-paste or xclip on the remote host does not forward your local clipboard."
         )
-    if unavailable and sys.platform == "linux":
+    if sys.platform == "linux":
         if not os.environ.get("WAYLAND_DISPLAY") and not os.environ.get("DISPLAY"):
             reason += " No Wayland or X11 display session was detected; a clipboard helper alone is not enough."
         else:
@@ -63,7 +63,7 @@ def clipboard_images() -> tuple[AttachmentUpload, ...]:
     try:
         value = ImageGrab.grabclipboard()
     except (OSError, NotImplementedError) as exc:
-        raise ValueError(_clipboard_failure(unavailable=True)) from exc
+        raise ValueError(_clipboard_failure()) from exc
     try:
         if isinstance(value, Image.Image):
             if value.width * value.height > 32_000_000:
@@ -79,7 +79,7 @@ def clipboard_images() -> tuple[AttachmentUpload, ...]:
         raise ValueError(
             "Clipboard content could not be read or encoded. Check the copied image or file and retry."
         ) from exc
-    raise ValueError(_clipboard_failure(unavailable=False))
+    return ()
 
 
 def add_images(

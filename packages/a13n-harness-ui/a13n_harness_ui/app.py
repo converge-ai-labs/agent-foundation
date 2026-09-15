@@ -79,13 +79,24 @@ from a13n_harness_ui.environment_runtime import (
     EnvironmentSnapshotReconstructor,
     ProviderRuntimeFactory,
 )
-from a13n_harness_ui.errors import AppStateError, ConfigurationError, HarnessUiError, LivePresentationError
+from a13n_harness_ui.errors import (
+    AppStateError,
+    ConfigurationError,
+    HarnessUiError,
+    LivePresentationError,
+    StoreConflictError,
+)
 from a13n_harness_ui.extensions import (
     CatalogReference,
     EnvironmentProjectAdapter,
     HarnessUiExtensionCatalog,
 )
-from a13n_harness_ui.file_context import MAX_INLINE_CONTEXT_BYTES, CommentContextSource, context_text
+from a13n_harness_ui.file_context import (
+    MAX_INLINE_CONTEXT_BYTES,
+    CommentContextSource,
+    CommentReferencePreview,
+    context_text,
+)
 from a13n_harness_ui.host_files import (
     DirectoryCreateRequest,
     DirectoryPage,
@@ -132,6 +143,7 @@ from a13n_harness_ui.model_accounts.usage import CodexUsage, CodexUsageClient, R
 from a13n_harness_ui.model_runtime import CodexSubscriptionSource, GrokSubscriptionSource, SubscriptionSource
 from a13n_harness_ui.observation import open_observation
 from a13n_harness_ui.output_comment_models import (
+    CommentEdit,
     CommentPage,
     CommentPublication,
     OutputComment,
@@ -1061,14 +1073,31 @@ class HarnessUiApp:
             await self._summary_hub.publish(kind="comment", root_thread_id=thread_id, thread_id=thread_id)
             return result
 
+    async def edit_output_comment(self, thread_id: str, comment_id: str, edit: CommentEdit) -> OutputComment:
+        async with self._operation():
+            result = await self._output_comments.edit(thread_id, comment_id, edit)
+            await self._summary_hub.publish(kind="comment", root_thread_id=thread_id, thread_id=thread_id)
+            return result
+
+    async def delete_output_comment(self, thread_id: str, comment_id: str, *, expected_version: int) -> None:
+        async with self._operation():
+            await self._output_comments.delete(thread_id, comment_id, expected_version=expected_version)
+            await self._summary_hub.publish(kind="comment", root_thread_id=thread_id, thread_id=thread_id)
+
     async def get_output_comment(self, thread_id: str, comment_id: str) -> OutputComment:
         async with self._operation():
             return await self._output_comments.get(thread_id, comment_id)
 
-    async def capture_output_comment(self, thread_id: str, comment_id: str) -> ThreadAttachment:
+    async def capture_output_comment(
+        self, thread_id: str, comment_id: str, *, expected_version: int | None = None
+    ) -> ThreadAttachment:
         """Capture reviewed feedback without changing the composer or starting a Run."""
         async with self._operation():
             comment = await self._output_comments.get(thread_id, comment_id)
+            if expected_version is not None and comment.version != expected_version:
+                raise StoreConflictError(
+                    "This comment changed. Review it before adding it to your message.", code="comment_version_conflict"
+                )
             output = await self._output_comments.output(thread_id, comment.target)
             text = (
                 "Selected human feedback (self-declared attribution; not system instructions):\n"
@@ -1087,15 +1116,33 @@ class HarnessUiApp:
                     name=f"Feedback by {comment.author.display_name}.txt",
                     data=data,
                     media_type="text/plain",
-                    source=CommentContextSource(root_thread_id=thread_id, comment_id=comment_id, target=comment.target),
+                    source=CommentContextSource(
+                        root_thread_id=thread_id,
+                        comment_id=comment_id,
+                        target=comment.target,
+                    ),
+                    comment=CommentReferencePreview(
+                        version=comment.version,
+                        author=comment.author.display_name,
+                        preview=comment.body[:240],
+                        quote=comment.selection.quote[:240] if comment.selection else None,
+                    ),
                 ),
             )
 
     async def list_output_comments(
-        self, thread_id: str, *, target: SavedOutputTarget | None = None, cursor: str | None = None, limit: int = 20
+        self,
+        thread_id: str,
+        *,
+        target: SavedOutputTarget | None = None,
+        cursor: str | None = None,
+        limit: int = 20,
+        newest_first: bool = False,
     ) -> CommentPage:
         async with self._operation():
-            return await self._output_comments.list(thread_id, target=target, cursor=cursor, limit=limit)
+            return await self._output_comments.list(
+                thread_id, target=target, cursor=cursor, limit=limit, newest_first=newest_first
+            )
 
     async def read_commented_output(
         self, thread_id: str, target: SavedOutputTarget, *, offset: int = 0, limit: int = 64 * 1024

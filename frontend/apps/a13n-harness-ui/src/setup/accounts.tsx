@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ChoiceField, ModalFrame } from "a13n-ui";
+import { ArrowSquareOut, Check, Copy } from "@phosphor-icons/react";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice, PageHeader, Panel, TextField } from "../shell/ui";
 import styles from "../shell/workbench.module.css";
+import accountStyles from "./accounts.module.css";
 
 function safeLoginUrl(value: string | null | undefined): string | undefined {
   if (!value) return;
@@ -43,7 +45,9 @@ export function ProviderAccount({
       setSession(status.session_id);
     }
   }, [activeLogin.data, provider, queries, session]);
-  const [copied, setCopied] = useState(false);
+  const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const [copyFailed, setCopyFailed] = useState(false);
+
   const [method, setMethod] = useState<"device" | "browser">("device");
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [switchOpen, setSwitchOpen] = useState(false);
@@ -135,6 +139,22 @@ export function ProviderAccount({
     (!login.data ||
       ["starting", "waiting"].includes(login.data.state ?? "starting"));
   const url = safeLoginUrl(login.data?.verification_url);
+  const code = login.data?.user_code;
+  useEffect(() => {
+    setCopiedCode(null);
+    setCopyFailed(false);
+  }, [session, code]);
+  async function copyCode() {
+    if (!code) return;
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopiedCode(code);
+      setCopyFailed(false);
+    } catch {
+      setCopiedCode(null);
+      setCopyFailed(true);
+    }
+  }
   const content = (
     <>
       <ErrorNotice
@@ -146,99 +166,124 @@ export function ProviderAccount({
           logout.error
         }
       />
-      <p>
-        {account.isPending
-          ? "Checking account…"
-          : account.data?.usable
-            ? "Connected"
-            : ready
-              ? "Account available · refreshes on first use"
-              : "Not connected"}
-        {!inline &&
-          account.data &&
-          ` · ${account.data.source} · ${account.data.expiry}`}
-      </p>
-      {!inline && account.data?.required_action !== "none" && (
-        <p>{account.data?.required_action?.replaceAll("_", " ")}</p>
-      )}
-      <div className={styles.stack}>
-        <details>
-          <summary>Advanced login options</summary>
-          <ChoiceField
-            label="Login method"
-            value={method}
-            options={[
-              {
-                value: "device",
-                label: "Device code (recommended for remote servers)",
-              },
-              { value: "browser", label: "Browser callback on the server" },
-            ]}
-            onValueChange={(value) => setMethod(value as "device" | "browser")}
-            disabled={active}
-          />
-          {method === "browser" && (
-            <p>
-              The callback must reach the server's loopback listener. For a
-              remote host or container, use device login where supported.
-            </p>
+      {!active && (
+        <>
+          <p className={accountStyles.accountStatus}>
+            {account.isPending
+              ? "Checking account…"
+              : account.data?.usable
+                ? "Connected"
+                : ready
+                  ? "Account available · refreshes on first use"
+                  : "Not connected"}
+            {!inline &&
+              account.data &&
+              ` · ${account.data.source} · ${account.data.expiry}`}
+          </p>
+          {!inline && account.data?.required_action !== "none" && (
+            <p>{account.data?.required_action?.replaceAll("_", " ")}</p>
           )}
-        </details>
-        <p>
-          Accounts are saved on this server and shared by everyone using this
-          instance. Connecting does not verify model access or make a model
-          request.
-        </p>
-        {activeLogin.data?.provider &&
-          activeLogin.data.provider !== provider && (
-            <p role="status">
-              A {activeLogin.data.provider} login is in progress. Return to that
-              connection to finish or cancel it.
-            </p>
-          )}
-        <div className={styles.actions}>
-          <Button
-            loading={start.isPending}
-            disabled={active || !!activeLogin.data?.session_id}
-            onClick={() => start.mutate(false)}
-          >
-            {account.data?.usable ? "Reconnect account" : "Connect account"}
-          </Button>
-          <Button variant="outline" onClick={() => void account.refetch()}>
-            Refresh status
-          </Button>
-          {account.data?.usable && (
-            <Button variant="outline" onClick={() => setLogoutOpen(true)}>
-              Disconnect account
-            </Button>
-          )}
-        </div>
-      </div>
-      {session && (
-        <div role="status" className={styles.notice}>
-          <strong>Login: {login.data?.state ?? "starting"}</strong>
-          {url && (
-            <a href={url} target="_blank" rel="noopener noreferrer">
-              Open provider verification
-            </a>
-          )}
-          {login.data?.user_code && (
-            <p>
-              Device code: <strong>{login.data.user_code}</strong>{" "}
+          <div className={styles.stack}>
+            <details className={accountStyles.advanced}>
+              <summary>Advanced login options</summary>
+              <ChoiceField
+                label="Login method"
+                value={method}
+                options={[
+                  {
+                    value: "device",
+                    label: "Device code (recommended for remote servers)",
+                  },
+                  { value: "browser", label: "Browser callback on the server" },
+                ]}
+                onValueChange={(value) =>
+                  setMethod(value as "device" | "browser")
+                }
+              />
+              {method === "browser" && (
+                <p>
+                  The callback must reach the server's loopback listener. For a
+                  remote host or container, use device login where supported.
+                </p>
+              )}
+            </details>
+            {activeLogin.data?.provider &&
+              activeLogin.data.provider !== provider && (
+                <p role="status">
+                  A {activeLogin.data.provider} login is in progress. Return to
+                  that connection to finish or cancel it.
+                </p>
+              )}
+            <div className={styles.actions}>
               <Button
-                variant="outline"
-                onClick={() => {
-                  void navigator.clipboard
-                    .writeText(login.data!.user_code!)
-                    .then(
-                      () => setCopied(true),
-                      () => setCopied(false),
-                    );
-                }}
+                loading={start.isPending}
+                disabled={!!activeLogin.data?.session_id}
+                onClick={() => start.mutate(false)}
               >
-                {copied ? "Copied" : "Copy code"}
+                {account.data?.usable ? "Reconnect account" : "Connect account"}
               </Button>
-            </p>
+              <Button variant="outline" onClick={() => void account.refetch()}>
+                Refresh status
+              </Button>
+              {account.data?.usable && (
+                <Button variant="outline" onClick={() => setLogoutOpen(true)}>
+                  Disconnect account
+                </Button>
+              )}
+            </div>
+          </div>
+        </>
+      )}
+      {session && (
+        <section aria-label="Provider login" className={accountStyles.login}>
+          <div className={accountStyles.loginHeader}>
+            <h3>
+              {active ? "Finish connecting your account" : "Account login"}
+            </h3>
+            <span role="status" className={accountStyles.loginStatus}>
+              Login: {login.data?.state ?? "starting"}
+            </span>
+          </div>
+          {active && (url || code) && (
+            <ol className={accountStyles.loginSteps}>
+              {url && (
+                <li>
+                  <span>Open the verification page</span>
+                  <a
+                    className={accountStyles.verificationLink}
+                    href={url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <span>{url}</span>
+                    <ArrowSquareOut size={18} aria-hidden="true" />
+                    <span className="sr-only"> (opens in a new tab)</span>
+                  </a>
+                </li>
+              )}
+              {code && (
+                <li>
+                  <span>Enter this device code</span>
+                  <div className={accountStyles.deviceCodeRow}>
+                    <strong className={accountStyles.deviceCode}>{code}</strong>
+                    <Button variant="outline" onClick={() => void copyCode()}>
+                      {copiedCode === code ? (
+                        <Check aria-hidden="true" />
+                      ) : (
+                        <Copy aria-hidden="true" />
+                      )}
+                      {copiedCode === code ? "Copied" : "Copy code"}
+                    </Button>
+                  </div>
+                  {copyFailed && (
+                    <p role="status">
+                      Could not copy automatically. Select and copy the code
+                      above.
+                    </p>
+                  )}
+                </li>
+              )}
+            </ol>
           )}
           {login.data?.message && <p>{login.data.message}</p>}
           {login.data?.error_code ===
@@ -256,8 +301,13 @@ export function ProviderAccount({
               Cancel login
             </Button>
           )}
-        </div>
+        </section>
       )}
+      <p className={accountStyles.help}>
+        Accounts are saved on this server and shared by everyone using this
+        instance. Connecting does not verify model access or make a model
+        request.
+      </p>
       <ModalFrame
         open={switchOpen}
         onOpenChange={setSwitchOpen}

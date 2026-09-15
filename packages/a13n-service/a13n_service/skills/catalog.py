@@ -145,13 +145,7 @@ class SkillCatalogService:
                     SkillRecord.deleted_at.is_(None),
                 )
             )
-            query = query.where(
-                *label_predicates(
-                    SkillRecord.labels,
-                    labels or {},
-                    dialect=session.bind.dialect.name,
-                )
-            )
+            query = query.where(*label_predicates(SkillRecord.labels, labels or {}))
             if source_kind:
                 query = query.where(source == source_kind)
             if term:

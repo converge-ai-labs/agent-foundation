@@ -30,9 +30,10 @@ def older_package(tmp_path: Path) -> tuple[Path, MetaData]:
     older = tmp_path / "older-migrations"
     shutil.copytree(migration.MIGRATIONS_PATH, older, ignore=shutil.ignore_patterns("__pycache__"))
     (older / "versions/20260912_4b71199c8ee5_add_saved_output_comments.py").unlink()
+    (older / "versions/20260915_20e4b84abfd1_add_comment_editing_and_deletion.py").unlink()
     metadata = MetaData()
     for table in harness_ui_metadata().sorted_tables:
-        if table.name != "output_comment":
+        if table.name not in {"output_comment", "output_comment_tombstone"}:
             table.to_metadata(metadata)
     return older, metadata
 
@@ -82,7 +83,7 @@ async def test_old_app_saves_run_across_new_app_migration_and_reconnects(tmp_pat
         async with new._store.database.engine.connect() as connection:
             assert (
                 await connection.execute(text("SELECT version_num FROM alembic_version"))
-            ).scalar_one() == "4b71199c8ee5"
+            ).scalar_one() == "20e4b84abfd1"
             assert (await connection.execute(text("SELECT count(*) FROM output_comment"))).scalar_one() == 0
 
 
@@ -161,3 +162,81 @@ async def test_comment_migration_preserves_heads_and_refuses_nonempty_downgrade(
         assert await app.get_output_comment(thread.thread_id, comment.comment_id) == comment
         assert await app.get_thread_transcript(thread_id=thread.thread_id) == before
         migrator.verify_current()
+
+
+@pytest.mark.parametrize("action", ["edit", "delete"])
+async def test_comment_lifecycle_upgrade_preserves_rows_and_blocks_lossy_downgrade(tmp_path, monkeypatch, action):
+    from a13n_harness_ui.output_comment_models import CommentEdit, CommentPublication
+
+    from .test_comment_protocol import publication
+
+    configuration = _write_configuration(tmp_path)
+    settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "data"), pricing_auto_update=False)
+
+    async def stream(messages, info):
+        yield "Retained lifecycle source"
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=stream)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    async with open_harness_ui_app(settings, configuration_path=configuration) as app:
+        thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Save")
+        await app.wait_root_operation(receipt.receipt_id)
+        transcript = await app.get_thread_transcript(thread_id=thread.thread_id)
+        target = next(
+            part.comment_target for entry in transcript.entries for part in entry.parts if part.comment_target
+        )
+        comment = await app.publish_output_comment(
+            thread.thread_id, CommentPublication.model_validate(publication(target.model_dump()))
+        )
+    migrator = DatabaseMigrator(settings.storage.data_root / "metadata.sqlite3")
+    # Construct a populated pre-lifecycle database using the actual previous revision.
+    migrator._run(lambda config: command.downgrade(config, "4b71199c8ee5"), write=True)
+    migrator.upgrade()
+    async with open_harness_ui_app(settings, configuration_path=configuration) as app:
+        async with app._store.database.engine.connect() as connection:
+            old_row = dict(
+                (
+                    await connection.execute(
+                        text(
+                            "SELECT comment_id, root_thread_id, producing_thread_id, target_key, source_kind, "
+                            "source_schema_version, source_digest, publication_json, created_at FROM output_comment"
+                        )
+                    )
+                )
+                .mappings()
+                .one()
+            )
+        restored = await app.get_output_comment(thread.thread_id, comment.comment_id)
+        assert restored == comment
+        assert restored.version == 1 and restored.updated_at is None
+        if action == "edit":
+            await app.edit_output_comment(
+                thread.thread_id, comment.comment_id, CommentEdit(body="Revised", expected_version=1)
+            )
+        else:
+            await app.delete_output_comment(thread.thread_id, comment.comment_id, expected_version=1)
+        async with app._store.database.engine.connect() as connection:
+            publications = (
+                (await connection.execute(text("SELECT publication_json FROM output_comment"))).scalars().all()
+            )
+            assert [CommentPublication.model_validate_json(value).body for value in publications] == (
+                ["Revised"] if action == "edit" else []
+            )
+        if action == "delete":
+            # A pre-lifecycle writer only knows these columns; its retry must not restore a deleted row.
+            from sqlalchemy.exc import IntegrityError
+
+            async with app._store.database.engine.begin() as connection:
+                with pytest.raises(IntegrityError, match="comment_deleted_conflict"):
+                    await connection.execute(
+                        text(
+                            f"INSERT INTO output_comment ({', '.join(old_row)}) VALUES ({', '.join(':' + key for key in old_row)})"
+                        ),
+                        old_row,
+                    )
+    with pytest.raises(RuntimeError, match="Cannot downgrade while edited or deleted"):
+        migrator._run(lambda config: command.downgrade(config, "4b71199c8ee5"), write=True)
+    migrator.verify_current()

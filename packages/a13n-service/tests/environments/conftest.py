@@ -3,7 +3,6 @@ from __future__ import annotations
 import base64
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
-from pathlib import Path
 
 import pytest
 from a13n_environment import build_environment_provider_catalog
@@ -13,7 +12,7 @@ from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserR
 from a13n_service.secrets.crypto import SecretProtector
 from a13n_service.secrets.models import SecretRecord
 from a13n_service.storage import transaction
-from a13n_service.storage.config import SQLiteConfig
+from a13n_service.storage.config import PostgreSQLConfig
 from a13n_service.storage.relational import create_session_factory, create_sql_engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -35,10 +34,8 @@ def actor() -> AuthenticatedActor:
 
 
 @pytest.fixture
-async def environment_sessions(
-    service_sqlite_database: Path,
-) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
-    engine = create_sql_engine(SQLiteConfig(path=service_sqlite_database))
+async def environment_sessions(service_database: PostgreSQLConfig) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    engine = create_sql_engine(service_database)
     sessions = create_session_factory(engine)
     async with transaction(sessions) as session:
         session.add(OrganizationRecord(id=ORG_ID, key="test", name="Test", created_at=NOW, updated_at=NOW))

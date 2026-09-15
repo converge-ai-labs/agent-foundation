@@ -77,7 +77,6 @@ def upgrade() -> None:
         ["organization_id", "normalized_name"],
         unique=True,
         postgresql_where=sa.text("workspace_id IS NULL"),
-        sqlite_where=sa.text("workspace_id IS NULL"),
     )
     op.create_index(
         "uq_memory_providers_workspace_name", "memory_providers", ["workspace_id", "normalized_name"], unique=True
@@ -93,7 +92,6 @@ def downgrade() -> None:
         "uq_memory_providers_organization_normalized_name",
         table_name="memory_providers",
         postgresql_where=sa.text("workspace_id IS NULL"),
-        sqlite_where=sa.text("workspace_id IS NULL"),
     )
     op.drop_index("uq_memory_providers_identity_scope", table_name="memory_providers")
     op.drop_index("ix_memory_providers_workspace_updated", table_name="memory_providers")

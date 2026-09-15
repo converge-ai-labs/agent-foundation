@@ -1,16 +1,14 @@
-from pathlib import Path
-
 from a13n_service.database.metadata import service_metadata
 from a13n_service.database.migration import DatabaseMigrator
-from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
-from a13n_service.storage.relational import sync_database_url
+from a13n_service.storage.config import PostgreSQLConfig
+from a13n_service.storage.relational import database_url
 from sqlalchemy import create_engine, inspect
 
 MODEL_TABLES = {"model_providers", "models"}
 
 
-def _assert_schema(configuration: PostgreSQLConfig | SQLiteConfig, *, present: bool) -> None:
-    engine = create_engine(sync_database_url(configuration))
+def _assert_schema(configuration: PostgreSQLConfig, *, present: bool) -> None:
+    engine = create_engine(database_url(configuration))
     try:
         inspector = inspect(engine)
         tables = set(inspector.get_table_names())
@@ -26,7 +24,7 @@ def _assert_schema(configuration: PostgreSQLConfig | SQLiteConfig, *, present: b
         engine.dispose()
 
 
-def _exercise(configuration: PostgreSQLConfig | SQLiteConfig) -> None:
+def _exercise(configuration: PostgreSQLConfig) -> None:
     migrator = DatabaseMigrator(configuration)
     migrator.upgrade("6fd6194d64ec")
     _assert_schema(configuration, present=True)
@@ -37,9 +35,5 @@ def _exercise(configuration: PostgreSQLConfig | SQLiteConfig) -> None:
     _assert_schema(configuration, present=False)
 
 
-def test_model_schema_migrates_up_and_down_on_sqlite(tmp_path: Path) -> None:
-    _exercise(SQLiteConfig(path=tmp_path / "model-migrations.sqlite3"))
-
-
-def test_model_schema_migrates_up_and_down_on_postgresql(pg_url: str) -> None:
-    _exercise(PostgreSQLConfig(url=pg_url))
+def test_model_schema_migrates_up_and_down(postgres_database: PostgreSQLConfig) -> None:
+    _exercise(postgres_database)

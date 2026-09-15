@@ -76,7 +76,6 @@ class ServiceAccountRecord(Base):
             "normalized_name",
             unique=True,
             postgresql_where=text("deleted_at IS NULL"),
-            sqlite_where=text("deleted_at IS NULL"),
         ),
     )
 
@@ -207,7 +206,6 @@ class InvitationRecord(Base):
             "organization_id",
             unique=True,
             postgresql_where=text("created_by_user_id IS NULL"),
-            sqlite_where=text("created_by_user_id IS NULL"),
         ),
         CheckConstraint("verification_mode IN ('email', 'out_of_band')", name="verification_mode_valid"),
         Index("ix_invitations_organization_created", "organization_id", "created_at", "id"),

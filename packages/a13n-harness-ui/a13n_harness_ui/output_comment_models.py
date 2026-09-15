@@ -1,4 +1,4 @@
-"""Detached saved-output locators and immutable human comment publications."""
+"""Detached saved-output anchors and versioned human comments."""
 
 from __future__ import annotations
 
@@ -55,11 +55,7 @@ class CommentAuthor(CommentModel):
         return value
 
 
-class CommentPublication(CommentModel):
-    comment_id: str = Field(pattern=r"^comment-[A-Za-z0-9_-]{16,64}$")
-    target: SavedOutputTarget
-    selection: CommentSelection | None = None
-    author: CommentAuthor
+class CommentText(CommentModel):
     body: str = Field(min_length=1, max_length=16 * 1024)
 
     @field_validator("body")
@@ -70,9 +66,22 @@ class CommentPublication(CommentModel):
         return value
 
 
+class CommentEdit(CommentText):
+    expected_version: int = Field(ge=1)
+
+
+class CommentPublication(CommentText):
+    comment_id: str = Field(pattern=r"^comment-[A-Za-z0-9_-]{16,64}$")
+    target: SavedOutputTarget
+    selection: CommentSelection | None = None
+    author: CommentAuthor
+
+
 class OutputComment(CommentPublication):
     root_thread_id: str = Field(min_length=1, max_length=80)
     created_at: datetime
+    version: int = Field(default=1, ge=1)
+    updated_at: datetime | None = None
 
 
 class CommentPage(CommentModel):

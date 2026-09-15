@@ -58,6 +58,12 @@ async def test_comment_capture_is_explicit_complete_scoped_and_retained_through_
                 "comment_id": comment["comment_id"],
                 "target": target,
             }
+            assert attachment["comment"] == {
+                "version": 1,
+                "author": "Reader",
+                "preview": request["body"],
+                "quote": "\U0001f600",
+            }
             download = prefix + f"/attachments/{attachment['attachment_id']}"
             captured = (await api.get(download)).text
             assert original in captured and "Keep this second paragraph." in captured

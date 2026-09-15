@@ -30,7 +30,7 @@ from a13n_service.storage import short_session, transaction
 from tests.hooks.support import hook_actor, seed_hook_actor_access
 from tests.lifecycle_support import test_lifecycle_writer
 
-from .conftest import AGENT_ID, NOW, WORKSPACE_ID
+from .conftest import AGENT_ID, NOW, WORKSPACE_ID, sealed_row_rewrite
 from .test_attempt_execution import _accept_root, _authority, _worker
 from .worker_helpers import prepare_permissions
 
@@ -356,16 +356,14 @@ async def test_cancelled_delegate_entry_closes_acquired_connection(
         assert stored.generation == 1 and stored.operation_id is None
 
 
-async def test_postgresql_concurrent_thread_key_allocates_one_environment(
-    postgres_interaction_sessions, tmp_path, monkeypatch
-):
+async def test_postgresql_concurrent_thread_key_allocates_one_environment(interaction_sessions, tmp_path, monkeypatch):
     import asyncio
 
     from a13n_service.interactions import thread_creation
     from a13n_service.interactions.thread_domain import CreateThreadRequest
     from sqlalchemy import func, select
 
-    _, template, _ = await recipe(postgres_interaction_sessions, tmp_path, "on_use")
+    _, template, _ = await recipe(interaction_sessions, tmp_path, "on_use")
     read = thread_creation.load_replay
     barrier = asyncio.Barrier(2)
     calls = 0
@@ -383,7 +381,7 @@ async def test_postgresql_concurrent_thread_key_allocates_one_environment(
     first, second = await asyncio.gather(
         *(
             thread_creation.allocate_thread(
-                postgres_interaction_sessions,
+                interaction_sessions,
                 actor=hook_actor(),
                 workspace_id=WORKSPACE_ID,
                 body=body,
@@ -393,7 +391,7 @@ async def test_postgresql_concurrent_thread_key_allocates_one_environment(
         )
     )
     assert first == second
-    async with short_session(postgres_interaction_sessions) as session:
+    async with short_session(interaction_sessions) as session:
         assert await session.scalar(select(func.count()).select_from(EnvironmentRecord)) == 1
     assert not (tmp_path / "workspace").exists()
 
@@ -407,20 +405,20 @@ def test_environment_modules_import_independently():
 
 
 async def test_postgresql_environment_lease_fences_competing_workers(
-    postgres_interaction_sessions, interaction_object_store, tmp_path
+    interaction_sessions, interaction_object_store, tmp_path
 ):
     import asyncio
 
     from a13n_environment import EnvironmentProviderOutcomeCertainty
     from a13n_service.environments.lifecycle import EnvironmentOperationBusy, LifecycleOutcome
 
-    _, _, lifecycle = await recipe(postgres_interaction_sessions, tmp_path, "on_use")
-    _, run, _ = await _accept_root(postgres_interaction_sessions, interaction_object_store)
+    _, _, lifecycle = await recipe(interaction_sessions, tmp_path, "on_use")
+    _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
     claim = await AttemptScheduler(
-        postgres_interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
+        interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
     ).claim(run.id, _worker())
-    attempt = await prepare_permissions(postgres_interaction_sessions, run, _authority(claim))
-    async with short_session(postgres_interaction_sessions) as session:
+    attempt = await prepare_permissions(interaction_sessions, run, _authority(claim))
+    async with short_session(interaction_sessions) as session:
         environment_id = (await session.get(RunRecord, run.id)).environment_id
     results = await asyncio.gather(
         lifecycle.acquire_preparation(environment_id, attempt=attempt),
@@ -429,7 +427,7 @@ async def test_postgresql_environment_lease_fences_competing_workers(
     )
     assert sum(isinstance(result, EnvironmentOperationBusy) for result in results) == 1
     old = next(result for result in results if not isinstance(result, BaseException))
-    async with transaction(postgres_interaction_sessions) as session:
+    async with transaction(interaction_sessions) as session:
         row = await session.get(EnvironmentRecord, environment_id)
         row.operation_expires_at = NOW
     current = await lifecycle.acquire_preparation(environment_id, attempt=attempt)
@@ -441,7 +439,7 @@ async def test_postgresql_environment_lease_fences_competing_workers(
 
 
 async def test_postgresql_shared_approval_wait_is_idle_only_after_last_active_user(
-    postgres_interaction_sessions, interaction_object_store, tmp_path
+    interaction_sessions, interaction_object_store, tmp_path
 ):
     from a13n_service.environments.retention import refresh_retention
     from a13n_service.interactions.models import SessionRecord
@@ -451,13 +449,15 @@ async def test_postgresql_shared_approval_wait_is_idle_only_after_last_active_us
     from .test_acceptance import _accepted_run
     from .test_attempt_execution import _wait_for_approval
 
-    await recipe(postgres_interaction_sessions, tmp_path, "on_use")
-    run, _ = await _wait_for_approval(postgres_interaction_sessions, interaction_object_store)
+    await recipe(interaction_sessions, tmp_path, "on_use")
+    run, _ = await _wait_for_approval(interaction_sessions, interaction_object_store)
     now = NOW + timedelta(seconds=5)
-    async with transaction(postgres_interaction_sessions) as session:
+    async with transaction(interaction_sessions) as session:
         original = await session.get(RunRecord, run.id)
         assert original.status == "waiting" and original.wait_reason == "approval"
-        original.environment_use_started_at = now
+        async with sealed_row_rewrite(session):
+            original.environment_use_started_at = now
+            await session.flush()
         thread = await session.get(ThreadRecord, run.thread_id)
         parent_session = await session.get(SessionRecord, thread.session_id)
         shared_session = SessionRecord(
@@ -573,7 +573,7 @@ async def test_missing_managed_recipe_never_falls_back_to_external_configuration
 
 
 async def test_environment_operations_use_no_database_queries_or_commits(
-    relational_interaction_sessions, interaction_object_store, tmp_path
+    interaction_sessions, interaction_object_store, tmp_path
 ):
     from a13n_harness import AgentIdentityRef, AgentInstanceContext
     from a13n_harness.environment.advanced import create_environment_runtime
@@ -581,7 +581,7 @@ async def test_environment_operations_use_no_database_queries_or_commits(
     from a13n_harness.environment.retention import EnvironmentOutputPolicy
     from sqlalchemy import event
 
-    sessions = relational_interaction_sessions
+    sessions = interaction_sessions
     _, _, lifecycle = await recipe(sessions, tmp_path, "on_run", shell=True)
     _, run, _ = await _accept_root(sessions, interaction_object_store)
     claim = await AttemptScheduler(sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer()).claim(
@@ -641,14 +641,14 @@ async def test_environment_operations_use_no_database_queries_or_commits(
 
 @pytest.mark.parametrize("resource", ["provider", "workspace"])
 async def test_environment_eligibility_changes_at_shared_iam_refresh(
-    relational_interaction_sessions, interaction_object_store, tmp_path, resource
+    interaction_sessions, interaction_object_store, tmp_path, resource
 ):
     from a13n_service.environments.models import EnvironmentProviderRecord
     from a13n_service.iam import AuthorizationError
     from a13n_service.iam.attempts import AttemptAuthorizationError
     from a13n_service.iam.models import WorkspaceRecord
 
-    sessions = relational_interaction_sessions
+    sessions = interaction_sessions
     _, _, lifecycle = await recipe(sessions, tmp_path, "on_run")
     _, run, _ = await _accept_root(sessions, interaction_object_store)
     claim = await AttemptScheduler(sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer()).claim(

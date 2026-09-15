@@ -5,6 +5,7 @@ import { useTransport } from "../transport/context";
 import { ErrorNotice } from "../shell/ui";
 import styles from "./conversation.module.css";
 import { AttachmentThumbnail } from "./attachment-thumbnail";
+import { commentReference, CommentReferenceContent } from "./comment-reference";
 
 export type InputPart = {
   kind: string;
@@ -36,6 +37,7 @@ function Attachment({
   related: InputPart[];
 }) {
   const transport = useTransport();
+  const comment = commentReference(attachment);
   const [url, setUrl] = useState("");
   const download = useRef<AbortController | null>(null);
   useEffect(
@@ -55,13 +57,25 @@ function Attachment({
       <summary>
         <AttachmentThumbnail threadId={threadId} attachment={attachment} />
         <strong>
-          {attachment.source && "comment_id" in attachment.source
-            ? "Comment reference · "
-            : ""}
-          {attachment.name}
+          {comment
+            ? comment.author
+              ? `Comment · ${comment.author}`
+              : "Comment reference"
+            : attachment.name}
         </strong>
+        {comment?.preview && (
+          <span className={styles.commentReferencePreview}>
+            {comment.preview}
+          </span>
+        )}
       </summary>
       <div className={styles.inputAttachmentDetails}>
+        {comment && (
+          <CommentReferenceContent
+            source={comment}
+            text={related.map((part) => part.text ?? "").join("\n")}
+          />
+        )}
         <small>
           {attachment.media_type} · {attachment.size.toLocaleString()} bytes
         </small>
@@ -108,14 +122,16 @@ function Attachment({
             Prepare download
           </Button>
         )}
-        <details className={styles.rawSource}>
-          <summary>Model-visible attachment content</summary>
-          {related.map((item, offset) => (
-            <pre key={offset} className={styles.code}>
-              {item.text || JSON.stringify(item.value, null, 2)}
-            </pre>
-          ))}
-        </details>
+        {!comment && (
+          <details className={styles.rawSource}>
+            <summary>Model-visible attachment content</summary>
+            {related.map((item, offset) => (
+              <pre key={offset} className={styles.code}>
+                {item.text || JSON.stringify(item.value, null, 2)}
+              </pre>
+            ))}
+          </details>
+        )}
         <ErrorNotice error={error} />
       </div>
     </details>

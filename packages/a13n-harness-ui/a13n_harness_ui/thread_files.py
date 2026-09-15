@@ -19,7 +19,7 @@ from anyio import CancelScope, Lock, to_thread
 from filelock import FileLock, Timeout
 from pydantic import BaseModel, ConfigDict
 
-from a13n_harness_ui.file_context import CapturedSource
+from a13n_harness_ui.file_context import CapturedSource, CommentReferencePreview
 
 logger = logging.getLogger(__name__)
 MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
@@ -38,6 +38,7 @@ class ThreadAttachment(BaseModel):
     media_type: str
     size: int
     source: CapturedSource | None = None
+    comment: CommentReferencePreview | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +47,7 @@ class AttachmentUpload:
     data: bytes
     media_type: str | None = None
     source: CapturedSource | None = None
+    comment: CommentReferencePreview | None = None
 
 
 def composer_attachment_label(label: str, name: str | None = None) -> str:
@@ -249,6 +251,7 @@ class ThreadFiles:
             media_type=media_type,
             size=len(upload.data),
             source=upload.source,
+            comment=upload.comment,
         )
         directory = await self.touch(thread_id)
         await to_thread.run_sync(self._stage, directory, attachment, upload.data)
@@ -258,9 +261,14 @@ class ThreadFiles:
     def _stage(directory: Path, attachment: ThreadAttachment, data: bytes) -> None:
         with _directory(directory, ("tmp", "uploads", attachment.attachment_id), create=True) as target:
             _write_file(target, "content", data)
-            # Only omit absent provenance itself, not required nullable fields
+            # Only omit absent top-level metadata, not required nullable fields
             # inside captured provenance (for example an unborn Git HEAD).
-            metadata = attachment.model_dump_json(exclude={"source"} if attachment.source is None else set())
+            absent = set()
+            if attachment.source is None:
+                absent.add("source")
+            if attachment.comment is None:
+                absent.add("comment")
+            metadata = attachment.model_dump_json(exclude=absent)
             _write_file(target, "metadata.json", metadata.encode("utf-8"))
 
     def _read(self, thread_id: str, attachment_id: str) -> tuple[ThreadAttachment, bytes]:

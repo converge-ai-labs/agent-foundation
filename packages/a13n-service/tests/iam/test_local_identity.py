@@ -1,4 +1,4 @@
-"""Local identity's public HTTP contract on the canonical SQLite adapter."""
+"""Local identity's public HTTP contract on the canonical PostgreSQL adapter."""
 
 import asyncio
 

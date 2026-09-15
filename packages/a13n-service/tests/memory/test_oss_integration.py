@@ -24,15 +24,11 @@ pytestmark = [
 ]
 
 
-async def test_service_real_unmodified_oss_crud_search_and_bounded_list(
-    memory_sessions, service_sqlite_database, tmp_path
-):
+async def test_service_real_unmodified_oss_crud_search_and_bounded_list(memory_sessions, service_database, tmp_path):
     async def authenticate(_request):
         return actor()
 
-    app = create_app(
-        settings(tmp_path, service_sqlite_database), components=Components(request_authenticator=authenticate)
-    )
+    app = create_app(settings(tmp_path, service_database), components=Components(request_authenticator=authenticate))
     async with open_mem0_oss(
         base_url=os.environ["TEST_MEM0_OSS_URL"], api_key=os.environ["TEST_MEM0_OSS_API_KEY"]
     ) as backend:

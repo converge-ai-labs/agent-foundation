@@ -68,9 +68,9 @@ async def sibling_run(sessions, run, environment_id):
 @pytest.mark.parametrize("kind", ["targets", "active"])
 @pytest.mark.parametrize("status", ["unprepared", "deleted"])
 async def test_postgresql_last_slot_admits_only_one_concurrent_run(
-    postgres_interaction_sessions, interaction_object_store, tmp_path, kind, status
+    interaction_sessions, interaction_object_store, tmp_path, kind, status
 ):
-    sessions = postgres_interaction_sessions
+    sessions = interaction_sessions
     service, template, lifecycle = await recipe(sessions, tmp_path, "on_use")
     lifecycle.capacity = CapacityLimits(
         max_targets=1 if kind == "targets" else 10, max_active=1 if kind == "active" else 10

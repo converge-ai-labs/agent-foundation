@@ -48,9 +48,7 @@ The ordered revision history, not ORM metadata and not runtime `create_all`, is 
 
 ## Backend Contract
 
-The same migration history applies to the SQLite minimal-service profile and the PostgreSQL distributed-service profile. Revisions in the portable relational subset must produce equivalent constraints, indexes, defaults, and application-visible type behavior on both backends.
-
-A schema feature that requires PostgreSQL-only types, locking, isolation, generated expressions, or DDL behavior declares PostgreSQL as a startup requirement for every domain that depends on it. The runner fails explicitly on SQLite before serving dependent work; it does not emulate the feature or silently omit the operation.
+PostgreSQL is the only relational backend. Every revision targets it directly and may use its full type, locking, generated-expression, and DDL surface; no second dialect is emulated and no schema feature needs a backend-portability gate.
 
 Migration application uses a dedicated synchronous database connection because it runs before service traffic or in a dedicated deployment job. Request and worker paths continue to use the asynchronous relational capability. The migration connection is never shared with the application pool.
 
@@ -62,7 +60,6 @@ Review verifies at least:
 
 - complete model registration and a single revision head;
 - explicit names for constraints and indexes;
-- equivalent SQLite and PostgreSQL behavior for portable changes;
 - table scans, rewrites, lock level, and statement duration;
 - rolling compatibility with both the preceding and updated application versions;
 - bounded, restartable handling for data movement;
@@ -90,21 +87,18 @@ sequenceDiagram
     Process-->>Deploy: Ready
 ```
 
-A dedicated migration job may own application for a deployment. Otherwise, control or all-in-one processes may apply the artifact distribution graph before becoming ready. Concurrent PostgreSQL runners serialize through one service-scoped advisory lock with a bounded wait. Worker-only and Connectivity-only processes never apply migrations and fail closed when the database is not at the expected distribution head.
-
-SQLite belongs to the single-process profile. One owning process applies history to a file-backed database before opening the service for work. In-memory SQLite cannot retain migration state across connections and is not a service migration target; SQLite files on NFS and multi-process migration coordination are also unsupported.
+A dedicated migration job may own application for a deployment. Otherwise, control or all-in-one processes may apply the artifact distribution graph before becoming ready. Concurrent runners serialize through one service-scoped PostgreSQL advisory lock with a bounded wait. Worker-only and Connectivity-only processes never apply migrations and fail closed when the database is not at the expected distribution head.
 
 ## Failure Semantics
 
-| Failure                                                 | Observable outcome                          | Recovery                                                                                          |
-| ------------------------------------------------------- | ------------------------------------------- | ------------------------------------------------------------------------------------------------- |
-| Migration ownership wait expires                        | Process or job fails before readiness       | Resolve the active runner or increase the bound only through a reviewed rollout plan              |
-| DDL lock or statement timeout                           | Revision stops and startup fails            | Remove the blocker, inspect database state, and rerun only when the revision is interruption-safe |
-| Database loses connection before commit status is known | Revision outcome may be unknown             | Inspect the recorded revision and affected schema before retrying                                 |
-| Database is behind or has an unknown revision           | Schema-dependent role fails closed          | Apply accepted history or restore a compatible database                                           |
-| Multiple heads or missing common/extension model        | Generation and verification fail            | Repair the final distribution graph or metadata before release                                    |
-| Database contains an unsupported distribution revision  | Every role fails schema compatibility       | Start a compatible distribution or apply an accepted forward path                                 |
-| Unsupported backend operation                           | Dependent role fails before serving traffic | Select PostgreSQL or change the domain design to the portable subset                              |
+| Failure                                                 | Observable outcome                    | Recovery                                                                                          |
+| ------------------------------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| Migration ownership wait expires                        | Process or job fails before readiness | Resolve the active runner or increase the bound only through a reviewed rollout plan              |
+| DDL lock or statement timeout                           | Revision stops and startup fails      | Remove the blocker, inspect database state, and rerun only when the revision is interruption-safe |
+| Database loses connection before commit status is known | Revision outcome may be unknown       | Inspect the recorded revision and affected schema before retrying                                 |
+| Database is behind or has an unknown revision           | Schema-dependent role fails closed    | Apply accepted history or restore a compatible database                                           |
+| Multiple heads or missing common/extension model        | Generation and verification fail      | Repair the final distribution graph or metadata before release                                    |
+| Database contains an unsupported distribution revision  | Every role fails schema compatibility | Start a compatible distribution or apply an accepted forward path                                 |
 
 A failed migration is never bypassed by stamping the database to a newer revision. Repair either safely reruns the accepted operation or introduces a reviewed forward revision based on observed database state.
 
@@ -118,8 +112,6 @@ Schema revision identity is internal deployment state, not a public API or domai
 
 One final distribution graph creates a serialization point for otherwise independent common and extension changes. Service accepts that coordination cost because one database and one process can use several domains atomically and therefore require one unambiguous compatibility state. Domains retain ownership of schema meaning without owning competing applied histories.
 
-Supporting SQLite and PostgreSQL constrains the default schema to a tested portable subset. A domain may choose stronger PostgreSQL behavior, but doing so narrows the supported deployment profile explicitly rather than creating weak local emulation.
-
 ## Invariants
 
 01. Each artifact distribution has one combined relational metadata registry and one ordered migration graph.
@@ -127,10 +119,9 @@ Supporting SQLite and PostgreSQL constrains the default schema to a tested porta
 03. Generic storage code does not import domain models or run migrations.
 04. Runtime table creation never substitutes for revision history.
 05. The final distribution revision graph has at most one head.
-06. Portable revisions are verified on both SQLite and PostgreSQL.
-07. PostgreSQL-only schema requirements fail explicitly in the SQLite profile.
-08. Migration connections are synchronous, dedicated, bounded, and separate from asynchronous application pools.
-09. Installed packages never change metadata or migration contents through discovery.
-10. Worker-only and Connectivity-only processes check the expected distribution head and never mutate it.
-11. Unknown, unsupported-distribution, or failed migration state blocks readiness and is never bypassed by automatic stamping.
-12. Generation, verification, migration, and readiness consume the same artifact-fixed distribution metadata and revision graph.
+06. Revisions and the migration runner target PostgreSQL only; no second backend is emulated.
+07. Migration connections are synchronous, dedicated, bounded, and separate from asynchronous application pools.
+08. Installed packages never change metadata or migration contents through discovery.
+09. Worker-only and Connectivity-only processes check the expected distribution head and never mutate it.
+10. Unknown, unsupported-distribution, or failed migration state blocks readiness and is never bypassed by automatic stamping.
+11. Generation, verification, migration, and readiness consume the same artifact-fixed distribution metadata and revision graph.

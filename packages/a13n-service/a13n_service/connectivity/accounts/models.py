@@ -61,7 +61,6 @@ class AccountRecord(ResourceCredential[str], Base):
             "identity_digest",
             unique=True,
             postgresql_where=text("deleted_at IS NULL"),
-            sqlite_where=text("deleted_at IS NULL"),
         ),
         Index("uq_application_accounts_id_organization", "id", "organization_id", "workspace_id", unique=True),
         Index(
@@ -70,7 +69,6 @@ class AccountRecord(ResourceCredential[str], Base):
             "normalized_name",
             unique=True,
             postgresql_where=text("deleted_at IS NULL"),
-            sqlite_where=text("deleted_at IS NULL"),
         ),
         Index("ix_application_accounts_workspace_updated", "workspace_id", "updated_at", "id"),
         Index("ix_application_accounts_provider_status", "provider_key", "status", "id"),

@@ -6,7 +6,6 @@ from collections.abc import AsyncGenerator, AsyncIterator, Iterator
 from contextlib import AsyncExitStack, asynccontextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
-from shutil import copyfile
 from typing import TYPE_CHECKING
 from unittest.mock import Mock
 from uuid import uuid4
@@ -14,11 +13,11 @@ from uuid import uuid4
 import anyio
 import pytest
 from a13n_service.connectivity.runtime import ConnectivityDataRuntime, ConnectivityRuntime
-from a13n_service.database.metadata import service_metadata
+from a13n_service.database.migration import DatabaseMigrator
 from a13n_service.observability import ObservabilityRuntime
 from a13n_service.process.runtime import ControlRuntime, ProcessRuntime, ProcessStatus, SharedRuntime
 from a13n_service.settings import Settings
-from a13n_service.storage.config import RedisMemoryConfig, RedisServerConfig
+from a13n_service.storage.config import PostgreSQLConfig, RedisMemoryConfig, RedisServerConfig
 from a13n_service.storage.object_store import LocalObjectStore, ObjectStore, S3ObjectStore
 from a13n_service.storage.redis import open_redis
 from aiobotocore.config import AioConfig
@@ -28,6 +27,8 @@ from botocore.exceptions import BotoCoreError, ClientError
 from pydantic_ai import prices
 from redis.asyncio import Redis
 from sqlalchemy import create_engine
+from sqlalchemy.engine import make_url
+from sqlalchemy.pool import NullPool
 from testcontainers.core.container import DockerContainer
 
 if TYPE_CHECKING:
@@ -48,22 +49,6 @@ def anyio_backend() -> str:
 
 
 @pytest.fixture(scope="session")
-def service_sqlite_template(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    path = tmp_path_factory.mktemp("service-database") / "template.sqlite3"
-    engine = create_engine(f"sqlite:///{path}")
-    service_metadata().create_all(engine)
-    engine.dispose()
-    return path
-
-
-@pytest.fixture
-def service_sqlite_database(tmp_path: Path, service_sqlite_template: Path) -> Path:
-    path = tmp_path / "service.sqlite3"
-    copyfile(service_sqlite_template, path)
-    return path
-
-
-@pytest.fixture(scope="session")
 def pg_url() -> Iterator[str]:
     from testcontainers.postgres import PostgresContainer
 
@@ -72,6 +57,71 @@ def pg_url() -> Iterator[str]:
             f"postgresql+psycopg://{container.username}:{container.password}"
             f"@{container.get_container_host_ip()}:{container.get_exposed_port(5432)}/{container.dbname}"
         )
+
+
+@pytest.fixture(scope="session")
+def postgres_admin_url(pg_url: str) -> str:
+    return make_url(pg_url).set(database="postgres").render_as_string(hide_password=False)
+
+
+def create_postgres_database(admin_url: str, name: str, *, template: str | None = None) -> None:
+    engine = create_engine(admin_url, isolation_level="AUTOCOMMIT", poolclass=NullPool)
+    try:
+        with engine.connect() as connection:
+            source = f' TEMPLATE "{template}"' if template else ""
+            connection.exec_driver_sql(f'CREATE DATABASE "{name}"{source}')
+    finally:
+        engine.dispose()
+
+
+def drop_postgres_database(admin_url: str, name: str) -> None:
+    engine = create_engine(admin_url, isolation_level="AUTOCOMMIT", poolclass=NullPool)
+    try:
+        with engine.connect() as connection:
+            connection.exec_driver_sql(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
+    finally:
+        engine.dispose()
+
+
+def postgres_config(pg_url: str, database: str) -> PostgreSQLConfig:
+    url = make_url(pg_url).set(database=database)
+    return PostgreSQLConfig(url=url.render_as_string(hide_password=False))
+
+
+@pytest.fixture
+def postgres_database(pg_url: str, postgres_admin_url: str) -> Iterator[PostgreSQLConfig]:
+    """An empty per-test PostgreSQL database."""
+    name = f"a13n_test_{uuid4().hex}"
+    create_postgres_database(postgres_admin_url, name)
+    try:
+        yield postgres_config(pg_url, name)
+    finally:
+        drop_postgres_database(postgres_admin_url, name)
+
+
+@pytest.fixture(scope="session")
+def service_postgres_template(pg_url: str, postgres_admin_url: str) -> Iterator[str]:
+    """Session-scoped template database holding the migrated service schema."""
+    name = f"a13n_template_{uuid4().hex}"
+    create_postgres_database(postgres_admin_url, name)
+    DatabaseMigrator(postgres_config(pg_url, name)).upgrade()
+    try:
+        yield name
+    finally:
+        drop_postgres_database(postgres_admin_url, name)
+
+
+@pytest.fixture
+def service_database(
+    pg_url: str, postgres_admin_url: str, service_postgres_template: str
+) -> Iterator[PostgreSQLConfig]:
+    """A per-test PostgreSQL database cloned from the migrated template."""
+    name = f"a13n_test_{uuid4().hex}"
+    create_postgres_database(postgres_admin_url, name, template=service_postgres_template)
+    try:
+        yield postgres_config(pg_url, name)
+    finally:
+        drop_postgres_database(postgres_admin_url, name)
 
 
 @pytest.fixture(scope="session")
@@ -109,7 +159,7 @@ class ProcessRuntimeFactory:
         placeholder = Mock()
         control = (
             ControlRuntime(
-                trace_queries=trace_queries if trace_queries is not None else placeholder,
+                trace_queries=(trace_queries if trace_queries is not None else placeholder),
                 environments=placeholder,
                 skill_uploads=placeholder,
                 skill_publication=placeholder,
@@ -119,8 +169,8 @@ class ProcessRuntimeFactory:
                 model_providers=placeholder,
                 assets=placeholder,
                 asset_uploads=placeholder,
-                hook_subscriptions=hook_subscriptions if hook_subscriptions is not None else placeholder,
-                lifecycle_events=lifecycle_events if lifecycle_events is not None else placeholder,
+                hook_subscriptions=(hook_subscriptions if hook_subscriptions is not None else placeholder),
+                lifecycle_events=(lifecycle_events if lifecycle_events is not None else placeholder),
                 gateway=gateway if gateway is not None else placeholder,
                 subagent_maintenance=placeholder,
             )

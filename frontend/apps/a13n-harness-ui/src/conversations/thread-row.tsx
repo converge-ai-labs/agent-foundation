@@ -1,4 +1,5 @@
-import { NavLink, useNavigate } from "react-router";
+import { NavLink, useNavigate, useLocation } from "react-router";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Menu, MenuTrigger, MenuPopup, MenuItem } from "a13n-ui";
 import {
   ChatCircle,
@@ -11,7 +12,11 @@ import {
   ShareNetwork,
   SlidersHorizontal,
 } from "@phosphor-icons/react";
-import type { Schema } from "../transport/client";
+import { result, type Schema } from "../transport/client";
+import { useTransport } from "../transport/context";
+import { ErrorNotice } from "../shell/ui";
+import { refreshThreadLists } from "./queries";
+import { newConversationPath } from "./new-conversation";
 import {
   ParticipantAvatars,
   threadParticipants,
@@ -54,70 +59,114 @@ export function ThreadRow({
   presence: Schema<"PresenceFrame"> | null;
 }) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const transport = useTransport();
+  const queries = useQueryClient();
+  const archive = useMutation({
+    mutationFn: () =>
+      result(
+        transport.client.PATCH("/api/threads/{thread_id}/metadata", {
+          params: { path: { thread_id: row.thread.thread_id } },
+          body: {
+            expected_version: row.thread.metadata_version,
+            patch: { archived: !row.thread.archived },
+          },
+        }),
+      ),
+    onSuccess: () => {
+      if (
+        !row.thread.archived &&
+        location.pathname ===
+          `/threads/${encodeURIComponent(row.thread.thread_id)}`
+      )
+        navigate(newConversationPath(row.thread.configuration.project_id));
+    },
+    onSettled: () => {
+      void queries.invalidateQueries({
+        queryKey: ["thread", row.thread.thread_id],
+      });
+      void refreshThreadLists(queries);
+    },
+  });
   return (
-    <div key={row.thread.thread_id} className={styles.threadRow}>
-      <NavLink
-        to={`/threads/${encodeURIComponent(row.thread.thread_id)}`}
-        className={({ isActive }) =>
-          `${styles.threadLink} ${isActive ? styles.selected : ""}`
-        }
-      >
-        <ThreadStateIcon row={row} />
-        <span>
-          <strong
-            title={
-              row.thread.title ||
-              row.thread.excerpt?.first_input ||
-              "Untitled conversation"
-            }
-          >
-            {row.thread.title ||
-              row.thread.excerpt?.first_input ||
-              "Untitled conversation"}
-          </strong>
-          {threadState(row) && <small>{threadState(row)}</small>}
-        </span>
-      </NavLink>
-      <ParticipantAvatars
-        participants={threadParticipants(presence, row.thread.thread_id)}
-        ownId={presence?.participant_id}
-        threadTitle={
-          row.thread.title ||
-          row.thread.excerpt?.first_input ||
-          "Untitled conversation"
-        }
-      />
-      <Menu>
-        <MenuTrigger
-          render={<Button variant="ghost" size="icon-sm" />}
-          className={styles.threadActions}
-          aria-label={`Actions for ${row.thread.title || "Untitled conversation"}`}
+    <div>
+      <div key={row.thread.thread_id} className={styles.threadRow}>
+        <NavLink
+          to={`/threads/${encodeURIComponent(row.thread.thread_id)}`}
+          className={({ isActive }) =>
+            `${styles.threadLink} ${isActive ? styles.selected : ""}`
+          }
         >
-          <DotsThree />
-        </MenuTrigger>
-        <MenuPopup align="start" side="right">
-          {(
-            [
-              ["rename", "Rename conversation", PencilSimple],
-              ["share", "Share conversation", ShareNetwork],
-              ["comments", "Comments", ChatCircle],
-              ["details", "Conversation details", SlidersHorizontal],
-            ] as const
-          ).map(([action, label, Icon]) => (
-            <MenuItem
-              key={action}
-              onClick={() =>
-                navigate(
-                  `/threads/${encodeURIComponent(row.thread.thread_id)}?dialog=${action}`,
-                )
+          <ThreadStateIcon row={row} />
+          <span>
+            <strong
+              title={
+                row.thread.title ||
+                row.thread.excerpt?.first_input ||
+                "Untitled conversation"
               }
             >
-              <Icon />
-              {label}
+              {row.thread.title ||
+                row.thread.excerpt?.first_input ||
+                "Untitled conversation"}
+            </strong>
+            {threadState(row) && <small>{threadState(row)}</small>}
+          </span>
+        </NavLink>
+        <ParticipantAvatars
+          participants={threadParticipants(presence, row.thread.thread_id)}
+          ownId={presence?.participant_id}
+          threadTitle={
+            row.thread.title ||
+            row.thread.excerpt?.first_input ||
+            "Untitled conversation"
+          }
+        />
+        <Menu>
+          <MenuTrigger
+            render={<Button variant="ghost" size="icon-sm" />}
+            className={styles.threadActions}
+            aria-label={`Actions for ${row.thread.title || "Untitled conversation"}`}
+          >
+            <DotsThree />
+          </MenuTrigger>
+          <MenuPopup align="start" side="right">
+            {(
+              [
+                ["rename", "Rename conversation", PencilSimple],
+                ["share", "Share conversation", ShareNetwork],
+                ["comments", "Comments", ChatCircle],
+                ["details", "Conversation details", SlidersHorizontal],
+              ] as const
+            ).map(([action, label, Icon]) => (
+              <MenuItem
+                key={action}
+                onClick={() =>
+                  navigate(
+                    `/threads/${encodeURIComponent(row.thread.thread_id)}?dialog=${action}`,
+                  )
+                }
+              >
+                <Icon />
+                {label}
+              </MenuItem>
+            ))}
+            <MenuItem
+              disabled={
+                archive.isPending ||
+                row.thread.root_activity.state !== "inactive"
+              }
+              onClick={() => archive.mutate()}
+            >
+              <Archive />
+              {row.thread.archived
+                ? "Restore conversation"
+                : "Archive conversation"}
             </MenuItem>
-          ))}
-        </MenuPopup>
-      </Menu>
+          </MenuPopup>
+        </Menu>
+      </div>
+      <ErrorNotice error={archive.error} />
     </div>
   );
 }

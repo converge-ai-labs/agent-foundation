@@ -39,7 +39,6 @@ class ModelProviderRecord(ResourceCredential[str | None], Base):
             "normalized_name",
             unique=True,
             postgresql_where=text("workspace_id IS NULL"),
-            sqlite_where=text("workspace_id IS NULL"),
         ),
         ForeignKeyConstraint(
             ("workspace_id", "organization_id"),
@@ -110,7 +109,6 @@ class ModelRecord(Base):
             "normalized_key",
             unique=True,
             postgresql_where=text("workspace_id IS NULL"),
-            sqlite_where=text("workspace_id IS NULL"),
         ),
         ForeignKeyConstraint(
             ("workspace_id", "organization_id"),

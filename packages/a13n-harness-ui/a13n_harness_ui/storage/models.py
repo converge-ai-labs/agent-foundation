@@ -171,7 +171,7 @@ class ThreadUsageRecord(Base):
 
 
 class OutputCommentRecord(Base):
-    """Immutable human publication and a retention root for its saved output."""
+    """Versioned human comment with an immutable saved-output anchor."""
 
     __tablename__ = "output_comment"
     __table_args__ = (
@@ -192,6 +192,20 @@ class OutputCommentRecord(Base):
     source_digest: Mapped[str] = mapped_column(String(_DIGEST), nullable=False)
     publication_json: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    updated_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
+
+
+class OutputCommentTombstoneRecord(Base):
+    """Deleted identities without retaining comment content or source pins."""
+
+    __tablename__ = "output_comment_tombstone"
+
+    comment_id: Mapped[str] = mapped_column(String(80), primary_key=True)
+    root_thread_id: Mapped[str] = mapped_column(
+        String(80), ForeignKey("thread.thread_id", ondelete="RESTRICT"), nullable=False
+    )
+    deleted_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
 
 
 class EnvironmentBindingRecord(Base):
