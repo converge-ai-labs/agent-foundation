@@ -35,6 +35,7 @@ class Model:
         updated_by (PrincipalRef):
         upstream_model (str):
         workspace_id (None | str):
+        base_model (None | str | Unset):
         declarations (ModelDeclarations | Unset): Harness-facing facts and authoring choices declared for one saved
             Model.
         settings (ModelSettings | Unset):
@@ -54,6 +55,7 @@ class Model:
     updated_by: PrincipalRef
     upstream_model: str
     workspace_id: str | None
+    base_model: str | Unset | None = UNSET
     declarations: ModelDeclarations | Unset = UNSET
     settings: ModelSettings | Unset = UNSET
 
@@ -88,6 +90,12 @@ class Model:
         workspace_id: str | None
         workspace_id = self.workspace_id
 
+        base_model: str | Unset | None
+        if isinstance(self.base_model, Unset):
+            base_model = UNSET
+        else:
+            base_model = self.base_model
+
         declarations: dict[str, Any] | Unset = UNSET
         if not isinstance(self.declarations, Unset):
             declarations = self.declarations.to_dict()
@@ -116,6 +124,8 @@ class Model:
                 "workspace_id": workspace_id,
             }
         )
+        if base_model is not UNSET:
+            field_dict["base_model"] = base_model
         if declarations is not UNSET:
             field_dict["declarations"] = declarations
         if settings is not UNSET:
@@ -168,6 +178,15 @@ class Model:
 
         workspace_id = _parse_workspace_id(d.pop("workspace_id"))
 
+        def _parse_base_model(data: object) -> str | Unset | None:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(str | Unset | None, data)
+
+        base_model = _parse_base_model(d.pop("base_model", UNSET))
+
         _declarations = d.pop("declarations", UNSET)
         declarations: ModelDeclarations | Unset
         if isinstance(_declarations, Unset):
@@ -197,6 +216,7 @@ class Model:
             updated_by=updated_by,
             upstream_model=upstream_model,
             workspace_id=workspace_id,
+            base_model=base_model,
             declarations=declarations,
             settings=settings,
         )

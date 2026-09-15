@@ -294,6 +294,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/base-models": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Base Models */
+    get: operations["get_base_models"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/connection-authorizations/{authorization_id}": {
     parameters: {
       query?: never;
@@ -1239,6 +1256,23 @@ export interface paths {
     put?: never;
     /** Invite */
     post: operations["post_organizations_organization_invitations"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/organizations/{organization}/model-catalog/suggestions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Suggest Organization Model Declarations */
+    post: operations["post_organizations_organization_model_catalog_suggestions"];
     delete?: never;
     options?: never;
     head?: never;
@@ -2784,6 +2818,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/workspaces/{workspace}/model-catalog/suggestions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Suggest Workspace Model Declarations */
+    post: operations["post_workspaces_workspace_model_catalog_suggestions"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/workspaces/{workspace}/model-providers": {
     parameters: {
       query?: never;
@@ -3634,8 +3685,8 @@ export interface components {
        * @default 0.9
        */
       compact_threshold?: number;
-      /** Context Window */
-      context_window?: number | null;
+      /** Context Window Tokens */
+      context_window_tokens?: number | null;
       /**
        * Proactive Context Management Threshold
        * @default 0.65
@@ -4032,6 +4083,20 @@ export interface components {
     AuthorizationRedirect: {
       /** Url */
       url: string;
+    };
+    /** BaseModelCandidate */
+    BaseModelCandidate: {
+      /** Base Model */
+      base_model: string;
+      /** Inferred Model Api */
+      inferred_model_api: string | null;
+      /** Model Api Label */
+      model_api_label: string | null;
+    };
+    /** BaseModelCandidateCollection */
+    BaseModelCandidateCollection: {
+      /** Items */
+      items: components["schemas"]["BaseModelCandidate"][];
     };
     /** BinaryContent */
     BinaryContent: {
@@ -4725,6 +4790,8 @@ export interface components {
     };
     /** CreateModelRequest */
     CreateModelRequest: {
+      /** Base Model */
+      base_model?: string | null;
       declarations?: components["schemas"]["ModelDeclarations"];
       /** Description */
       description?: string | null;
@@ -4736,7 +4803,7 @@ export interface components {
       /** Key */
       key: string;
       /** Model Api */
-      model_api: string;
+      model_api?: string | null;
       /** Name */
       name: string;
       /** Provider Id */
@@ -5993,6 +6060,8 @@ export interface components {
     };
     /** Model */
     Model: {
+      /** Base Model */
+      base_model?: string | null;
       /**
        * Created At
        * Format: date-time
@@ -6058,6 +6127,46 @@ export interface components {
      */
     ModelCapability:
       "image_understanding" | "video_understanding" | "audio_understanding";
+    /** ModelCatalogMatch */
+    ModelCatalogMatch: {
+      /**
+       * Items
+       * @default []
+       */
+      items?: components["schemas"]["ModelCatalogSuggestion"][];
+      /**
+       * Source
+       * @enum {string}
+       */
+      source:
+        | "none"
+        | "explicit"
+        | "exact"
+        | "normalized"
+        | "name_tokens"
+        | "ambiguous";
+    };
+    /** ModelCatalogSuggestion */
+    ModelCatalogSuggestion: {
+      /** Base Model */
+      base_model: string;
+      declarations: components["schemas"]["ModelDeclarations"];
+      /** Model Api */
+      model_api: string | null;
+      /** Model Api Label */
+      model_api_label: string | null;
+    };
+    /** ModelCatalogSuggestionRequest */
+    ModelCatalogSuggestionRequest: {
+      /** Base Model */
+      base_model?: string | null;
+      /** Model Api */
+      model_api?: string | null;
+      /** Provider Id */
+      provider_id: string;
+      /** Upstream Model */
+      upstream_model: string;
+    };
     /** ModelCollection */
     ModelCollection: {
       /** Items */
@@ -6089,8 +6198,13 @@ export interface components {
     ModelDeclarations: {
       /** Capabilities */
       capabilities?: components["schemas"]["ModelCapability"][];
-      /** Context Window */
-      context_window?: number | null;
+      /** Context Window Tokens */
+      context_window_tokens?: number | null;
+      /** Max Output Tokens */
+      max_output_tokens?: number | null;
+      pricing?: components["schemas"]["ModelPricing"] | null;
+      /** Structured Output */
+      structured_output?: boolean | null;
       /**
        * Thinking Efforts
        * @default []
@@ -6126,6 +6240,20 @@ export interface components {
       settings?: {
         [key: string]: components["schemas"]["JsonValue"];
       } | null;
+    };
+    /**
+     * ModelPricing
+     * @description Editable USD prices per million tokens.
+     */
+    ModelPricing: {
+      /** Cache Read */
+      cache_read?: number | null;
+      /** Cache Write */
+      cache_write?: number | null;
+      /** Input */
+      input?: number | null;
+      /** Output */
+      output?: number | null;
     };
     /**
      * ModelProfile
@@ -6208,6 +6336,10 @@ export interface components {
       default_model_api: string;
       /** Display Name */
       display_name: string;
+      /** Model Api Labels */
+      model_api_labels: {
+        [key: string]: string;
+      };
       /** Settings Schemas */
       settings_schemas: {
         [key: string]: {
@@ -8329,6 +8461,8 @@ export interface components {
     };
     /** UpdateModelRequest */
     UpdateModelRequest: {
+      /** Base Model */
+      base_model?: string | null;
       declarations?: components["schemas"]["ModelDeclarations"] | null;
       /** Description */
       description?: string | null;
@@ -9695,6 +9829,38 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_base_models: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BaseModelCandidateCollection"];
         };
       };
       /** @description Service error. */
@@ -12976,6 +13142,54 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["InvitationDelivery"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_organizations_organization_model_catalog_suggestions: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ModelCatalogSuggestionRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelCatalogMatch"];
         };
       };
       /** @description Invalid request. */
@@ -19154,6 +19368,54 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["Page_User_"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_workspaces_workspace_model_catalog_suggestions: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ModelCatalogSuggestionRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ModelCatalogMatch"];
         };
       };
       /** @description Invalid request. */

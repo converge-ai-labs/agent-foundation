@@ -29,7 +29,7 @@ def _preset() -> AgentSpec:
             "capabilities": [{"WebSearch": {"native": True}}],
             "model_characteristics": {
                 "capabilities": ["image_understanding"],
-                "context_window": 128000,
+                "context_window_tokens": 128000,
             },
         }
     )
@@ -114,7 +114,7 @@ def test_with_updates_accepts_field_aliases_and_dynamic_mapping_input() -> None:
         {
             "model_characteristics": {
                 "capabilities": ["audio_understanding"],
-                "context_window": 256000,
+                "context_window_tokens": 256000,
                 "compact_threshold": 0.8,
             },
             "$schema": "./agent-schema.json",
@@ -124,14 +124,14 @@ def test_with_updates_accepts_field_aliases_and_dynamic_mapping_input() -> None:
 
     assert updated.model_characteristics == HarnessModelCharacteristics(
         capabilities=frozenset({ModelCapability.AUDIO_UNDERSTANDING}),
-        context_window=256000,
+        context_window_tokens=256000,
         compact_threshold=0.8,
     )
     assert updated.json_schema_path == "./agent-schema.json"
     assert updated.toolset_instructions is False
     assert preset.model_characteristics == HarnessModelCharacteristics(
         capabilities=frozenset({ModelCapability.IMAGE_UNDERSTANDING}),
-        context_window=128000,
+        context_window_tokens=128000,
     )
 
 
@@ -143,7 +143,7 @@ def test_with_updates_rejects_unknown_duplicate_and_invalid_fields() -> None:
     with pytest.raises(ValueError, match="supplied more than once"):
         preset.with_updates({"model": "openai:gpt-5-mini"}, model="openai:gpt-5")
     with pytest.raises(ValidationError):
-        preset.with_updates(model_characteristics={"context_window": 0})
+        preset.with_updates(model_characteristics={"context_window_tokens": 0})
 
 
 def test_with_updates_does_not_recursively_merge_mapping_fields() -> None:

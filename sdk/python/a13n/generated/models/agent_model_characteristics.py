@@ -16,22 +16,22 @@ class AgentModelCharacteristics:
 
     Attributes:
         compact_threshold (float | Unset):
-        context_window (int | None | Unset):
+        context_window_tokens (int | None | Unset):
         proactive_context_management_threshold (float | None | Unset):
     """
 
     compact_threshold: float | Unset = UNSET
-    context_window: int | Unset | None = UNSET
+    context_window_tokens: int | Unset | None = UNSET
     proactive_context_management_threshold: float | Unset | None = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         compact_threshold = self.compact_threshold
 
-        context_window: int | Unset | None
-        if isinstance(self.context_window, Unset):
-            context_window = UNSET
+        context_window_tokens: int | Unset | None
+        if isinstance(self.context_window_tokens, Unset):
+            context_window_tokens = UNSET
         else:
-            context_window = self.context_window
+            context_window_tokens = self.context_window_tokens
 
         proactive_context_management_threshold: float | Unset | None
         if isinstance(self.proactive_context_management_threshold, Unset):
@@ -44,8 +44,8 @@ class AgentModelCharacteristics:
         field_dict.update({})
         if compact_threshold is not UNSET:
             field_dict["compact_threshold"] = compact_threshold
-        if context_window is not UNSET:
-            field_dict["context_window"] = context_window
+        if context_window_tokens is not UNSET:
+            field_dict["context_window_tokens"] = context_window_tokens
         if proactive_context_management_threshold is not UNSET:
             field_dict["proactive_context_management_threshold"] = proactive_context_management_threshold
 
@@ -56,14 +56,14 @@ class AgentModelCharacteristics:
         d = dict(src_dict)
         compact_threshold = d.pop("compact_threshold", UNSET)
 
-        def _parse_context_window(data: object) -> int | Unset | None:
+        def _parse_context_window_tokens(data: object) -> int | Unset | None:
             if data is None:
                 return data
             if isinstance(data, Unset):
                 return data
             return cast(int | Unset | None, data)
 
-        context_window = _parse_context_window(d.pop("context_window", UNSET))
+        context_window_tokens = _parse_context_window_tokens(d.pop("context_window_tokens", UNSET))
 
         def _parse_proactive_context_management_threshold(data: object) -> float | Unset | None:
             if data is None:
@@ -78,7 +78,7 @@ class AgentModelCharacteristics:
 
         agent_model_characteristics = cls(
             compact_threshold=compact_threshold,
-            context_window=context_window,
+            context_window_tokens=context_window_tokens,
             proactive_context_management_threshold=proactive_context_management_threshold,
         )
 

@@ -20,6 +20,7 @@ from pydantic_ai.models.openai import (
     OpenAIResponsesModelSettings,
 )
 from pydantic_ai.models.openrouter import OpenRouterModel, OpenRouterModelSettings
+from pydantic_ai.profiles import ModelProfileSpec
 from pydantic_ai.providers import Provider
 
 BuiltModel = PydanticModel[Any]
@@ -88,14 +89,21 @@ _OPENAI_CHAT_REASONING_ALTERNATIVES = (
 @dataclass(frozen=True, slots=True)
 class ModelApiBinding:
     key: str
+    display_name: str
     model_type: Callable[..., BuiltModel]
     settings_type: Any
     protected_body_paths: tuple[tuple[str, ...], ...]
     supports_extra_body: bool = True
     reasoning_alternatives: tuple[ReasoningAlternative, ...] = ()
 
-    def build(self, upstream_model: str, provider: NativeProvider) -> BuiltModel:
-        return self.model_type(upstream_model, provider=provider)
+    def build(
+        self,
+        upstream_model: str,
+        provider: NativeProvider,
+        *,
+        profile: ModelProfileSpec | None = None,
+    ) -> BuiltModel:
+        return self.model_type(upstream_model, provider=provider, profile=profile)
 
 
 def _index(bindings: Iterable[ModelApiBinding]) -> Mapping[str, ModelApiBinding]:
@@ -111,6 +119,7 @@ BUILT_IN_MODEL_APIS = _index(
     (
         ModelApiBinding(
             "openai.responses",
+            "OpenAI Responses",
             OpenAIResponsesModel,
             OpenAIResponsesModelSettings,
             (*_paths(*_RESPONSES_FIELDS), ("text", "format")),
@@ -118,6 +127,7 @@ BUILT_IN_MODEL_APIS = _index(
         ),
         ModelApiBinding(
             "openai.chat_completions",
+            "OpenAI Chat Completions",
             OpenAIChatModel,
             OpenAIChatModelSettings,
             _paths(*_CHAT_FIELDS),
@@ -125,6 +135,7 @@ BUILT_IN_MODEL_APIS = _index(
         ),
         ModelApiBinding(
             "anthropic.messages",
+            "Anthropic Messages",
             AnthropicModel,
             AnthropicModelSettings,
             (*_paths(*_ANTHROPIC_FIELDS), ("output_config", "format")),
@@ -140,6 +151,7 @@ BUILT_IN_MODEL_APIS = _index(
         ),
         ModelApiBinding(
             "google.generate_content",
+            "Google Generate Content",
             GoogleModel,
             GoogleModelSettings,
             (),
@@ -151,6 +163,7 @@ BUILT_IN_MODEL_APIS = _index(
         ),
         ModelApiBinding(
             "bedrock.converse",
+            "Amazon Bedrock Converse",
             BedrockConverseModel,
             BedrockModelSettings,
             _paths(*_ANTHROPIC_FIELDS, "modelId", "toolConfig", "outputConfig", "inferenceConfig"),
@@ -167,6 +180,7 @@ BUILT_IN_MODEL_APIS = _index(
         ),
         ModelApiBinding(
             "bedrock_mantle.responses",
+            "Amazon Bedrock Mantle Responses",
             BedrockMantleResponsesModel,
             OpenAIResponsesModelSettings,
             (*_paths(*_RESPONSES_FIELDS), ("text", "format")),
@@ -174,6 +188,7 @@ BUILT_IN_MODEL_APIS = _index(
         ),
         ModelApiBinding(
             "bedrock_mantle.chat_completions",
+            "Amazon Bedrock Mantle Chat Completions",
             BedrockMantleChatModel,
             OpenAIChatModelSettings,
             _paths(*_CHAT_FIELDS),
@@ -181,6 +196,7 @@ BUILT_IN_MODEL_APIS = _index(
         ),
         ModelApiBinding(
             "openrouter.chat_completions",
+            "OpenRouter Chat Completions",
             OpenRouterModel,
             OpenRouterModelSettings,
             _paths(*_CHAT_FIELDS, "models", "preset", "transforms"),
@@ -194,6 +210,7 @@ BUILT_IN_MODEL_APIS = _index(
         ),
         ModelApiBinding(
             "ollama.chat_completions",
+            "Ollama Chat Completions",
             OllamaModel,
             OpenAIChatModelSettings,
             _paths(*_CHAT_FIELDS, "format"),

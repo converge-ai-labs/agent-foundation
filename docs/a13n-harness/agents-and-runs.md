@@ -17,7 +17,7 @@ from a13n_harness.models import SelfHealingModelCapability
 executable = HarnessBuilder().build(
     AgentSpec(
         system_prompt="Answer concisely.",
-        model_characteristics=HarnessModelCharacteristics(context_window=200_000),
+        model_characteristics=HarnessModelCharacteristics(context_window_tokens=200_000),
     ),
     output_type=str,
     model=model,

@@ -18,12 +18,36 @@ pub struct ModelDeclarations {
     pub capabilities: Option<Vec<models::ModelCapability>>,
 
     #[serde(
-        rename = "context_window",
+        rename = "context_window_tokens",
         default,
         with = "::serde_with::rust::double_option",
         skip_serializing_if = "Option::is_none"
     )]
-    pub context_window: Option<Option<i32>>,
+    pub context_window_tokens: Option<Option<i32>>,
+
+    #[serde(
+        rename = "max_output_tokens",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub max_output_tokens: Option<Option<i32>>,
+
+    #[serde(
+        rename = "pricing",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub pricing: Option<Option<Box<models::ModelPricing>>>,
+
+    #[serde(
+        rename = "structured_output",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub structured_output: Option<Option<bool>>,
 
     #[serde(rename = "thinking_efforts", skip_serializing_if = "Option::is_none")]
     pub thinking_efforts: Option<Vec<ThinkingEfforts>>,
@@ -34,7 +58,10 @@ impl ModelDeclarations {
     pub fn new() -> ModelDeclarations {
         ModelDeclarations {
             capabilities: None,
-            context_window: None,
+            context_window_tokens: None,
+            max_output_tokens: None,
+            pricing: None,
+            structured_output: None,
             thinking_efforts: None,
         }
     }

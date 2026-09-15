@@ -44,7 +44,7 @@ def agent_config() -> AgentConfig:
             "model": {
                 "model_key": MODEL_KEY,
                 "settings": {"temperature": 0.2},
-                "characteristics": {"context_window": 128000},
+                "characteristics": {"context_window_tokens": 128000},
             },
             "instructions": "Be helpful.",
             "input_adapter": {"adapter_key": "native", "config": {}},
@@ -64,6 +64,7 @@ def effective_agent_config() -> EffectiveAgentConfig:
         model_id=MODEL_ID,
         model_key=MODEL_KEY,
         upstream_model="gpt-5.6-terra",
+        base_model="openai:gpt-5.6-terra",
         model_api="openai.responses",
     )
     candidate = EffectiveAgentConfig(

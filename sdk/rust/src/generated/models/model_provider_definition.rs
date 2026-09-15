@@ -25,6 +25,9 @@ pub struct ModelProviderDefinition {
     #[serde(rename = "display_name")]
     pub display_name: String,
 
+    #[serde(rename = "model_api_labels")]
+    pub model_api_labels: std::collections::HashMap<String, String>,
+
     #[serde(rename = "settings_schemas")]
     pub settings_schemas:
         std::collections::HashMap<String, std::collections::HashMap<String, serde_json::Value>>,
@@ -45,6 +48,7 @@ impl ModelProviderDefinition {
         credential_schema: std::collections::HashMap<String, serde_json::Value>,
         default_model_api: String,
         display_name: String,
+        model_api_labels: std::collections::HashMap<String, String>,
         settings_schemas: std::collections::HashMap<
             String,
             std::collections::HashMap<String, serde_json::Value>,
@@ -58,6 +62,7 @@ impl ModelProviderDefinition {
             credential_schema,
             default_model_api,
             display_name,
+            model_api_labels,
             settings_schemas,
             supported_model_apis,
             supports_model_discovery,

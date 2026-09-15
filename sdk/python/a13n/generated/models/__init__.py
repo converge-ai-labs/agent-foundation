@@ -63,6 +63,8 @@ from .authorization_action import AuthorizationAction
 from .authorization_action_type import AuthorizationActionType
 from .authorization_redirect import AuthorizationRedirect
 from .authorization_status import AuthorizationStatus
+from .base_model_candidate import BaseModelCandidate
+from .base_model_candidate_collection import BaseModelCandidateCollection
 from .binary_content import BinaryContent
 from .binary_content_delivery import BinaryContentDelivery
 from .binary_input_content import BinaryInputContent
@@ -301,6 +303,10 @@ from .model_candidate_parameter_support import ModelCandidateParameterSupport
 from .model_candidate_parameter_support_additional_property import ModelCandidateParameterSupportAdditionalProperty
 from .model_candidate_suggested_settings import ModelCandidateSuggestedSettings
 from .model_capability import ModelCapability
+from .model_catalog_match import ModelCatalogMatch
+from .model_catalog_match_source import ModelCatalogMatchSource
+from .model_catalog_suggestion import ModelCatalogSuggestion
+from .model_catalog_suggestion_request import ModelCatalogSuggestionRequest
 from .model_collection import ModelCollection
 from .model_connection_test_result import ModelConnectionTestResult
 from .model_declarations import ModelDeclarations
@@ -310,6 +316,7 @@ from .model_identity import ModelIdentity
 from .model_limits import ModelLimits
 from .model_override import ModelOverride
 from .model_override_settings_type_0 import ModelOverrideSettingsType0
+from .model_pricing import ModelPricing
 from .model_profile import ModelProfile
 from .model_profile_input_modalities_type_0_item import ModelProfileInputModalitiesType0Item
 from .model_provider import ModelProvider
@@ -319,6 +326,7 @@ from .model_provider_definition import ModelProviderDefinition
 from .model_provider_definition_collection import ModelProviderDefinitionCollection
 from .model_provider_definition_configuration_schema import ModelProviderDefinitionConfigurationSchema
 from .model_provider_definition_credential_schema import ModelProviderDefinitionCredentialSchema
+from .model_provider_definition_model_api_labels import ModelProviderDefinitionModelApiLabels
 from .model_provider_definition_settings_schemas import ModelProviderDefinitionSettingsSchemas
 from .model_provider_definition_settings_schemas_additional_property import (
     ModelProviderDefinitionSettingsSchemasAdditionalProperty,
@@ -631,6 +639,8 @@ __all__ = (
     "AuthorizationActionType",
     "AuthorizationRedirect",
     "AuthorizationStatus",
+    "BaseModelCandidate",
+    "BaseModelCandidateCollection",
     "BinaryContent",
     "BinaryContentDelivery",
     "BinaryInputContent",
@@ -861,6 +871,10 @@ __all__ = (
     "ModelCandidateParameterSupportAdditionalProperty",
     "ModelCandidateSuggestedSettings",
     "ModelCapability",
+    "ModelCatalogMatch",
+    "ModelCatalogMatchSource",
+    "ModelCatalogSuggestion",
+    "ModelCatalogSuggestionRequest",
     "ModelCollection",
     "ModelConnectionTestResult",
     "ModelDeclarations",
@@ -870,6 +884,7 @@ __all__ = (
     "ModelLimits",
     "ModelOverride",
     "ModelOverrideSettingsType0",
+    "ModelPricing",
     "ModelProfile",
     "ModelProfileInputModalitiesType0Item",
     "ModelProvider",
@@ -879,6 +894,7 @@ __all__ = (
     "ModelProviderDefinitionCollection",
     "ModelProviderDefinitionConfigurationSchema",
     "ModelProviderDefinitionCredentialSchema",
+    "ModelProviderDefinitionModelApiLabels",
     "ModelProviderDefinitionSettingsSchemas",
     "ModelProviderDefinitionSettingsSchemasAdditionalProperty",
     "ModelSettings",

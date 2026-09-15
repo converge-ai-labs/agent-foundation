@@ -17,7 +17,7 @@ async def test_uploaded_asset_reaches_harness_with_identical_bytes(management, k
     journey, live = management, management.live
     await journey.patch(
         journey.base + "/models/" + live.config["model_id"],
-        {"declarations": {"capabilities": ["image_understanding"], "context_window": 32768}},
+        {"declarations": {"capabilities": ["image_understanding"], "context_window_tokens": 32768}},
     )
     data = PNG if kind == "image" else b"LIVE_ASSET_BYTES_7f84af\n"
     media_type = "image/png" if kind == "image" else "text/plain"
@@ -42,7 +42,7 @@ async def test_uploaded_asset_reaches_harness_with_identical_bytes(management, k
         case,
         input=input_value,
         environment={"environment_id": environment["id"]},
-        config_override={"model": {"characteristics": {"context_window": 32768}}},
+        config_override={"model": {"characteristics": {"context_window_tokens": 32768}}},
     )
     result = await live.finish(receipt["run_id"])
     if kind == "image":

@@ -85,7 +85,7 @@ Image content lives at `organizations/{organization_id}/workspaces/{workspace_id
 
 ```python
 class AgentModelCharacteristics:
-    context_window: int | None = None
+    context_window_tokens: int | None = None
     proactive_context_management_threshold: float | None = 0.65
     compact_threshold: float = 0.90
 

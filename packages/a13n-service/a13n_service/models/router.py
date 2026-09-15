@@ -14,9 +14,12 @@ from a13n_service.iam.resource_routes import require_organization_boundary
 from a13n_service.request_runtime import get_control_runtime
 
 from .domain import (
+    BaseModelCandidateCollection,
     CreateModelProviderRequest,
     CreateModelRequest,
     Model,
+    ModelCatalogMatch,
+    ModelCatalogSuggestionRequest,
     ModelCollection,
     ModelConnectionTestResult,
     ModelDiscovery,
@@ -61,6 +64,12 @@ def _set_etag(response: Response, resource: Model | ModelProvider) -> None:
 @router.get("/model-provider-types", response_model=ModelProviderDefinitionCollection)
 async def list_model_provider_types(request: Request, actor: Actor) -> ModelProviderDefinitionCollection:
     return await _provider_service(request).type_definitions(actor=actor)
+
+
+@router.get("/base-models", response_model=BaseModelCandidateCollection)
+async def list_base_models(request: Request, actor: Actor) -> BaseModelCandidateCollection:
+    del actor
+    return _model_service(request).base_model_candidates()
 
 
 @router.get("/workspaces/{workspace}/model-providers", response_model=ModelProviderCollection)
@@ -185,6 +194,24 @@ async def list_models(
         provider_id=provider_id,
         enabled=enabled,
         owner_scope=scope,
+    )
+
+
+@router.post("/workspaces/{workspace}/model-catalog/suggestions", response_model=ModelCatalogMatch)
+async def suggest_workspace_model_declarations(
+    request: Request,
+    actor: Actor,
+    workspace_id: WorkspaceId,
+    body: ModelCatalogSuggestionRequest,
+) -> ModelCatalogMatch:
+    return await _model_service(request).catalog_suggestions(
+        actor=actor,
+        workspace_id=workspace_id,
+        provider_id=body.provider_id,
+        upstream_model=body.upstream_model,
+        base_model=body.base_model,
+        base_model_supplied="base_model" in body.model_fields_set,
+        model_api=body.model_api,
     )
 
 
@@ -373,6 +400,25 @@ async def organization_list_models(
         query_text=query,
         provider_id=provider_id,
         enabled=enabled,
+    )
+
+
+@router.post("/organizations/{organization}/model-catalog/suggestions", response_model=ModelCatalogMatch)
+async def suggest_organization_model_declarations(
+    request: Request,
+    actor: Actor,
+    organization_id: OrganizationId,
+    body: ModelCatalogSuggestionRequest,
+) -> ModelCatalogMatch:
+    require_organization_boundary(actor, organization_id)
+    return await _model_service(request).catalog_suggestions(
+        actor=actor,
+        workspace_id=None,
+        provider_id=body.provider_id,
+        upstream_model=body.upstream_model,
+        base_model=body.base_model,
+        base_model_supplied="base_model" in body.model_fields_set,
+        model_api=body.model_api,
     )
 
 

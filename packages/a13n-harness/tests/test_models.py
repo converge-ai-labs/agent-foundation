@@ -111,7 +111,7 @@ async def test_harness_context_window_is_shared_through_native_model_profile(
         monkeypatch.setattr(execution_module, "infer_model", lambda *args, **kwargs: model)
     spec = HarnessAgentSpec(
         model=None if model_source == "definition" else "logical:primary",
-        model_characteristics=HarnessModelCharacteristics(context_window=2_000),
+        model_characteristics=HarnessModelCharacteristics(context_window_tokens=2_000),
     )
     executable = HarnessBuilder().build(
         spec,

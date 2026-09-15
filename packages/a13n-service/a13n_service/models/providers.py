@@ -26,6 +26,7 @@ class ModelProviderDefinition(BaseModel):
     credential_schema: dict[str, object]
     supported_model_apis: tuple[str, ...]
     default_model_api: str
+    model_api_labels: dict[str, str]
     settings_schemas: dict[str, dict[str, object]]
     supports_model_discovery: bool
 
@@ -121,6 +122,9 @@ def _definition(integration: ProviderIntegration) -> ModelProviderDefinition:
         credential_schema=credential_schema,
         supported_model_apis=integration.supported_model_apis,
         default_model_api=integration.supported_model_apis[0],
+        model_api_labels={
+            model_api: BUILT_IN_MODEL_APIS[model_api].display_name for model_api in integration.supported_model_apis
+        },
         settings_schemas={model_api: settings_schema(model_api) for model_api in integration.supported_model_apis},
         supports_model_discovery=integration.model_discovery is not None,
     )

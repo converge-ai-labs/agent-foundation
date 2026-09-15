@@ -8,6 +8,10 @@ import pytest
 from a13n_service.app import Components, create_app
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
+from a13n_service.models.domain import (
+    ModelDeclarations,
+    ModelPricing,
+)
 from a13n_service.settings import Settings
 from a13n_service.storage import transaction
 from a13n_service.storage.relational import create_session_factory, create_sql_engine
@@ -117,6 +121,7 @@ async def seed_database(configuration: Settings) -> None:
 async def api_client(
     tmp_path: Path,
     service_sqlite_database: Path,
+    model_catalog,
 ) -> AsyncIterator[httpx2.AsyncClient]:
     configuration = settings(tmp_path, service_sqlite_database)
     await seed_database(configuration)
@@ -125,6 +130,7 @@ async def api_client(
         components=Components(
             request_authenticator=authenticate,
             model_connection_tester=successful_model_test,
+            model_catalog=model_catalog,
         ),
     )
     async with app.router.lifespan_context(app):
@@ -261,14 +267,17 @@ async def test_manual_model_ids_do_not_require_discovery(api_client):
             "name": "Manual",
             "upstream_model": "new/unlisted-deployment",
             "model_api": "bedrock.converse",
-            "declarations": {"context_window": 200000},
+            "declarations": {"context_window_tokens": 200000},
         },
     )
     assert created.status_code == 201
     assert created.json()["declarations"] == {
         "thinking_efforts": [],
         "capabilities": [],
-        "context_window": 200000,
+        "context_window_tokens": 200000,
+        "max_output_tokens": None,
+        "structured_output": None,
+        "pricing": None,
     }
 
 
@@ -307,10 +316,190 @@ async def test_model_capabilities_are_readonly_discovery_information(api_client)
     assert created.json()["declarations"] == {
         "thinking_efforts": [],
         "capabilities": [],
-        "context_window": None,
+        "context_window_tokens": None,
+        "max_output_tokens": None,
+        "structured_output": None,
+        "pricing": None,
     }
     for field in ("profile", "limits"):
         rejected = await api_client.patch(
             f"{url}/{created.json()['id']}", json={field: {}}, headers={"If-Match": created.headers["etag"]}
         )
         assert rejected.status_code == 400
+
+
+@pytest.mark.anyio
+async def test_catalog_suggestions_prefill_omitted_declarations_but_explicit_clears_win(api_client, model_catalog):
+    provider = await create_provider(api_client)
+    suggested = ModelDeclarations(
+        thinking_efforts=("low", "high"),
+        capabilities=("image_understanding",),
+        context_window_tokens=400_000,
+        max_output_tokens=128_000,
+        structured_output=True,
+        pricing=ModelPricing(input=1.25, output=10, cache_read=0.125, cache_write=2.5),
+    )
+    model_catalog.results[("openai", "openai:gpt-5")] = suggested
+    candidates = await api_client.get("/api/v1/base-models")
+    assert candidates.status_code == 200
+    assert any(item["base_model"] == "openai:gpt-5" for item in candidates.json()["items"])
+    suggestion = await api_client.post(
+        f"/api/v1/workspaces/{WORKSPACE_ID}/model-catalog/suggestions",
+        json={"provider_id": provider["id"], "upstream_model": "gpt-5"},
+    )
+    assert suggestion.status_code == 200
+    assert suggestion.json()["source"] == "exact"
+    assert suggestion.json()["items"][0]["base_model"] == "openai:gpt-5"
+    assert suggestion.json()["items"][0]["model_api"] == "openai.responses"
+    assert suggestion.json()["items"][0]["model_api_label"] == "OpenAI Responses"
+    assert suggestion.json()["items"][0]["declarations"] == suggested.model_dump(mode="json")
+
+    created = await api_client.post(
+        f"/api/v1/workspaces/{WORKSPACE_ID}/models",
+        json={
+            "key": "catalog-defaults",
+            "provider_id": provider["id"],
+            "name": "Catalog defaults",
+            "upstream_model": "gpt-5",
+            "model_api": "openai.responses",
+            "declarations": {
+                "thinking_efforts": [],
+                "context_window_tokens": None,
+                "structured_output": False,
+                "pricing": {"input": 0, "cache_read": None},
+            },
+        },
+    )
+    assert created.status_code == 201, created.text
+    assert created.json()["base_model"] == "openai:gpt-5"
+    assert created.json()["declarations"] == {
+        "thinking_efforts": [],
+        "capabilities": ["image_understanding"],
+        "context_window_tokens": None,
+        "max_output_tokens": 128_000,
+        "structured_output": False,
+        "pricing": {"input": 0.0, "output": 10.0, "cache_read": None, "cache_write": 2.5},
+    }
+
+    replacement = ModelDeclarations(
+        context_window_tokens=1_000_000,
+        max_output_tokens=250_000,
+        structured_output=False,
+        pricing=ModelPricing(input=99, output=199),
+    )
+    model_catalog.results[("openai", "openai:gpt-6-astra")] = replacement
+    fresh_suggestion = await api_client.post(
+        f"/api/v1/workspaces/{WORKSPACE_ID}/model-catalog/suggestions",
+        json={"provider_id": provider["id"], "upstream_model": "gpt-6-astra"},
+    )
+    assert fresh_suggestion.status_code == 200
+    assert fresh_suggestion.json()["items"][0]["declarations"] == replacement.model_dump(mode="json")
+
+    updated = await api_client.patch(
+        f"/api/v1/workspaces/{WORKSPACE_ID}/models/{created.json()['id']}",
+        json={"upstream_model": "gpt-6-astra"},
+        headers={"If-Match": created.headers["etag"]},
+    )
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["upstream_model"] == "gpt-6-astra"
+    assert updated.json()["base_model"] == "openai:gpt-5"
+    assert updated.json()["declarations"] == created.json()["declarations"]
+
+
+@pytest.mark.anyio
+async def test_base_model_explicit_override_and_null_suppression(api_client):
+    provider = await create_provider(api_client)
+    collection_url = f"/api/v1/workspaces/{WORKSPACE_ID}/models"
+
+    overridden = await api_client.post(
+        collection_url,
+        json={
+            "key": "chat-override",
+            "provider_id": provider["id"],
+            "name": "Chat override",
+            "upstream_model": "relay-gpt-5",
+            "base_model": "openai:gpt-5",
+            "model_api": "openai.chat_completions",
+        },
+    )
+    assert overridden.status_code == 201, overridden.text
+    assert overridden.json()["base_model"] == "openai:gpt-5"
+    assert overridden.json()["model_api"] == "openai.chat_completions"
+
+    suppressed = await api_client.post(
+        collection_url,
+        json={
+            "key": "no-base",
+            "provider_id": provider["id"],
+            "name": "No base",
+            "upstream_model": "gpt-5",
+            "base_model": None,
+            "model_api": "openai.responses",
+        },
+    )
+    assert suppressed.status_code == 201, suppressed.text
+    assert suppressed.json()["base_model"] is None
+
+    invalid = await api_client.post(
+        collection_url,
+        json={
+            "key": "invalid-base",
+            "provider_id": provider["id"],
+            "name": "Invalid base",
+            "upstream_model": "gpt-5",
+            "base_model": "openai:not-installed",
+            "model_api": "openai.responses",
+        },
+    )
+    assert invalid.status_code == 400
+    assert invalid.json()["error"]["code"] == "invalid_base_model"
+
+
+@pytest.mark.anyio
+async def test_custom_endpoint_base_model_suggestion_uses_default_or_explicit_protocol(api_client):
+    provider_response = await api_client.post(
+        f"/api/v1/workspaces/{WORKSPACE_ID}/model-providers",
+        json={
+            "type": "openai",
+            "name": "OpenAI relay",
+            "configuration": {"base_url": "https://relay.example/v1"},
+            "credential": "secret",
+        },
+    )
+    assert provider_response.status_code == 201
+    provider_id = provider_response.json()["id"]
+    suggestion_url = f"/api/v1/workspaces/{WORKSPACE_ID}/model-catalog/suggestions"
+
+    defaulted = await api_client.post(
+        suggestion_url,
+        json={"provider_id": provider_id, "upstream_model": "gpt-5"},
+    )
+    assert defaulted.status_code == 200
+    assert defaulted.json()["source"] == "exact"
+    assert [item["base_model"] for item in defaulted.json()["items"]] == ["openai:gpt-5"]
+    assert defaulted.json()["items"][0]["model_api"] == "openai.responses"
+
+    selected = await api_client.post(
+        suggestion_url,
+        json={
+            "provider_id": provider_id,
+            "upstream_model": "gpt-5",
+            "model_api": "openai.chat_completions",
+        },
+    )
+    assert selected.status_code == 200
+    assert selected.json()["source"] == "exact"
+    assert [item["base_model"] for item in selected.json()["items"]] == ["openai-chat:gpt-5"]
+
+    claude = await api_client.post(
+        suggestion_url,
+        json={
+            "provider_id": provider_id,
+            "upstream_model": "relay-claude-sonnet-4-5",
+            "model_api": "openai.chat_completions",
+        },
+    )
+    assert claude.status_code == 200
+    assert claude.json()["source"] == "name_tokens"
+    assert [item["base_model"] for item in claude.json()["items"]] == ["anthropic:claude-sonnet-4-5"]
+    assert claude.json()["items"][0]["model_api"] == "openai.chat_completions"

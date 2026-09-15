@@ -142,6 +142,7 @@ class ModelRecord(Base):
     name: Mapped[str] = mapped_column(String(128))
     description: Mapped[str | None] = mapped_column(String(2048))
     upstream_model: Mapped[str] = mapped_column(String(256))
+    base_model: Mapped[str | None] = mapped_column(String(256))
     model_api: Mapped[str] = mapped_column(String(96))
     settings: Mapped[dict[str, JsonValue]] = mapped_column(JSON)
     declarations: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
@@ -163,6 +164,7 @@ class ModelRecord(Base):
             name=self.name,
             description=self.description,
             upstream_model=self.upstream_model,
+            base_model=self.base_model,
             model_api=self.model_api,
             settings=self.settings,
             declarations=ModelDeclarations.model_validate(self.declarations),

@@ -13,6 +13,14 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Model {
+    #[serde(
+        rename = "base_model",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub base_model: Option<Option<String>>,
+
     #[serde(rename = "created_at")]
     pub created_at: chrono::DateTime<chrono::FixedOffset>,
 
@@ -80,6 +88,7 @@ impl Model {
         workspace_id: Option<String>,
     ) -> Model {
         Model {
+            base_model: None,
             created_at,
             created_by: Box::new(created_by),
             declarations: None,

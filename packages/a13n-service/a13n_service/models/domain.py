@@ -28,6 +28,7 @@ from .headers import HeaderUpdates
 
 BoundedDescription = Annotated[str, StringConstraints(max_length=2048)]
 UpstreamModel = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=256)]
+BaseModelName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=256)]
 ProviderType = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{1,63}$")]
 ModelApi = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$", max_length=96)]
 
@@ -84,6 +85,17 @@ class ModelLimits(BaseModel):
     max_output_tokens: int | None = Field(default=None, gt=0)
 
 
+class ModelPricing(BaseModel):
+    """Editable USD prices per million tokens."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    input: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    output: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    cache_read: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    cache_write: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+
+
 class ModelDeclarations(BaseModel):
     """Harness-facing facts and authoring choices declared for one saved Model."""
 
@@ -91,7 +103,10 @@ class ModelDeclarations(BaseModel):
 
     thinking_efforts: tuple[ThinkingEffort, ...] = ()
     capabilities: frozenset[ModelCapability] = Field(default_factory=frozenset)
-    context_window: int | None = Field(default=None, gt=0)
+    context_window_tokens: int | None = Field(default=None, gt=0)
+    max_output_tokens: int | None = Field(default=None, gt=0)
+    structured_output: bool | None = None
+    pricing: ModelPricing | None = None
 
     @field_validator("thinking_efforts")
     @classmethod
@@ -164,7 +179,8 @@ class CreateModelRequest(BaseModel):
     name: DisplayName
     description: BoundedDescription | None = None
     upstream_model: UpstreamModel
-    model_api: ModelApi
+    base_model: BaseModelName | None = None
+    model_api: ModelApi | None = None
     settings: dict[str, JsonValue] = Field(default_factory=dict)
     declarations: ModelDeclarations = Field(default_factory=ModelDeclarations)
     enabled: bool = True
@@ -176,6 +192,7 @@ class UpdateModelRequest(BaseModel):
     name: DisplayName | None = None
     description: BoundedDescription | None = None
     upstream_model: UpstreamModel | None = None
+    base_model: BaseModelName | None = None
     model_api: ModelApi | None = None
     settings: dict[str, JsonValue] | None = None
     declarations: ModelDeclarations | None = None
@@ -185,7 +202,7 @@ class UpdateModelRequest(BaseModel):
     def validate_change(self) -> UpdateModelRequest:
         if not self.model_fields_set:
             raise ValueError("at least one field must be supplied")
-        for field in self.model_fields_set - {"description"}:
+        for field in self.model_fields_set - {"description", "base_model"}:
             if getattr(self, field) is None:
                 raise ValueError(f"{field} cannot be null")
         return self
@@ -203,6 +220,7 @@ class Model(BaseModel):
     description: str | None
     upstream_model: str
     model_api: ModelApi
+    base_model: str | None = None
     settings: dict[str, JsonValue] = Field(default_factory=dict)
     declarations: ModelDeclarations = Field(default_factory=ModelDeclarations)
     enabled: bool
@@ -254,6 +272,8 @@ class ModelExecutionSnapshot(BaseModel):
     model_key: str
     upstream_model: str
     model_api: str
+    base_model: str | None = None
+    pricing: ModelPricing | None = None
 
     @classmethod
     def freeze(cls, model: Model) -> ModelExecutionSnapshot:
@@ -261,7 +281,9 @@ class ModelExecutionSnapshot(BaseModel):
             model_id=model.id,
             model_key=model.key,
             upstream_model=model.upstream_model,
+            base_model=model.base_model,
             model_api=model.model_api,
+            pricing=model.declarations.pricing,
         )
 
     def observation(self) -> ModelExecutionObservation:
@@ -290,3 +312,42 @@ class ModelDiscovery(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     items: tuple[ModelCandidate, ...]
+
+
+class ModelCatalogSuggestionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    provider_id: ObjectId
+    upstream_model: UpstreamModel
+    base_model: BaseModelName | None = None
+    model_api: ModelApi | None = None
+
+
+class BaseModelCandidate(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    base_model: BaseModelName
+    inferred_model_api: ModelApi | None
+    model_api_label: str | None
+
+
+class BaseModelCandidateCollection(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    items: tuple[BaseModelCandidate, ...]
+
+
+class ModelCatalogSuggestion(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    base_model: BaseModelName
+    model_api: ModelApi | None
+    model_api_label: str | None
+    declarations: ModelDeclarations
+
+
+class ModelCatalogMatch(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    source: Literal["none", "explicit", "exact", "normalized", "name_tokens", "ambiguous"]
+    items: tuple[ModelCatalogSuggestion, ...] = ()

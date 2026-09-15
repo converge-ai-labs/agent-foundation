@@ -125,7 +125,7 @@ def test_agent_spec_model_config_derives_context_capability_thresholds() -> None
                     ModelCapability.AUDIO_UNDERSTANDING,
                 }
             ),
-            context_window=200_000,
+            context_window_tokens=200_000,
             proactive_context_management_threshold=0.65,
             compact_threshold=0.90,
         ),
@@ -143,7 +143,7 @@ def test_agent_spec_model_config_derives_context_capability_thresholds() -> None
 
     assert spec.model_characteristics is not None
     dumped_configuration = spec.model_dump(mode="json", by_alias=True)["model_characteristics"]
-    assert dumped_configuration["context_window"] == 200_000
+    assert dumped_configuration["context_window_tokens"] == 200_000
     assert set(dumped_configuration["capabilities"]) == {
         "image_understanding",
         "video_understanding",
@@ -166,7 +166,7 @@ def test_handoff_model_config_distinguishes_unknown_context_from_disabled_remind
         (HarnessModelCharacteristics(), True, 0),
         (
             HarnessModelCharacteristics(
-                context_window=200_000,
+                context_window_tokens=200_000,
                 proactive_context_management_threshold=None,
             ),
             False,
@@ -190,7 +190,7 @@ def test_handoff_model_config_distinguishes_unknown_context_from_disabled_remind
 
 def test_explicit_context_capability_thresholds_override_agent_model_config() -> None:
     spec = HarnessAgentSpec(
-        model_characteristics=HarnessModelCharacteristics(context_window=200_000),
+        model_characteristics=HarnessModelCharacteristics(context_window_tokens=200_000),
     )
     executable = HarnessBuilder().build(
         spec,
@@ -591,7 +591,7 @@ async def test_compaction_resumes_after_completed_native_tools(tool_name: str) -
     )
     executable = HarnessBuilder().build(
         HarnessAgentSpec(
-            model_characteristics=HarnessModelCharacteristics(context_window=350_000, compact_threshold=0.9)
+            model_characteristics=HarnessModelCharacteristics(context_window_tokens=350_000, compact_threshold=0.9)
         ),
         output_type=str,
         model=FunctionModel(stream_function=stream),

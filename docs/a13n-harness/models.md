@@ -144,7 +144,7 @@ The `model_characteristics` construction and serialization key holds resolved Ha
 spec = AgentSpec(
     model="logical:support",
     model_characteristics=HarnessModelCharacteristics(
-        context_window=200_000,
+        context_window_tokens=200_000,
         proactive_context_management_threshold=0.65,
         compact_threshold=0.90,
     ),

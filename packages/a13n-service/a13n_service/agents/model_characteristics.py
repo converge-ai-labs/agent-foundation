@@ -16,8 +16,10 @@ def compose_model_characteristics(
     selected = policy or AgentModelCharacteristics()
     return HarnessModelCharacteristics(
         capabilities=declarations.capabilities,
-        context_window=(
-            selected.context_window if selected.context_window is not None else declarations.context_window
+        context_window_tokens=(
+            selected.context_window_tokens
+            if selected.context_window_tokens is not None
+            else declarations.context_window_tokens
         ),
         proactive_context_management_threshold=selected.proactive_context_management_threshold,
         compact_threshold=selected.compact_threshold,

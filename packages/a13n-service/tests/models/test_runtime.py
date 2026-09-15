@@ -255,6 +255,50 @@ async def test_factory_uses_explicit_calling_api_binding() -> None:
                             assert native.client.meta.config.retries["total_max_attempts"] == 1
 
 
+@pytest.mark.anyio
+async def test_factory_routes_openai_base_profile_through_explicit_openai_protocol() -> None:
+    snapshot = ModelExecutionSnapshot(
+        model_id="mdl_1234567890abcdef",
+        model_key="relay",
+        upstream_model="my-gpt-5",
+        base_model="openai:gpt-5",
+        model_api="openai.chat_completions",
+    )
+    provider = RuntimeProvider("openai", {}, "https://api.openai.com/v1", "secret")
+    async with httpx2.AsyncClient() as client:
+        native = await NativeModelFactory(
+            client,
+            built_in_provider_registry(),
+            _AllowEndpoints(),
+        ).build(snapshot, provider)
+        async with native:
+            assert isinstance(native, OpenAIChatModel)
+            assert native.model_name == "my-gpt-5"
+            assert native.profile.get("supports_thinking") is True
+
+
+@pytest.mark.anyio
+async def test_factory_does_not_copy_anthropic_profile_to_openai_protocol() -> None:
+    snapshot = ModelExecutionSnapshot(
+        model_id="mdl_1234567890abcdef",
+        model_key="relay",
+        upstream_model="relay-claude-sonnet-4-5",
+        base_model="anthropic:claude-sonnet-4-5",
+        model_api="openai.chat_completions",
+    )
+    provider = RuntimeProvider("openai", {}, "https://api.openai.com/v1", "secret")
+    async with httpx2.AsyncClient() as client:
+        native = await NativeModelFactory(
+            client,
+            built_in_provider_registry(),
+            _AllowEndpoints(),
+        ).build(snapshot, provider)
+        async with native:
+            assert isinstance(native, OpenAIChatModel)
+            assert native.model_name == "relay-claude-sonnet-4-5"
+            assert native.profile.get("supports_thinking") is False
+
+
 def _snapshot(api: str) -> ModelExecutionSnapshot:
     upstream_model = "provider/model"
     if api == "bedrock_mantle.responses":

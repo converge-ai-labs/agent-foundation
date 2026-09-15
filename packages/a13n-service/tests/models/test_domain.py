@@ -5,6 +5,7 @@ from a13n_service.models.domain import (
     CreateModelRequest,
     ModelDeclarations,
     ModelExecutionSnapshot,
+    ModelPricing,
     new_model_provider_id,
 )
 from pydantic import ValidationError
@@ -32,7 +33,15 @@ def test_model_key_is_normalized_and_one_api_is_required() -> None:
 def test_execution_snapshot_contains_only_request_selection_fields() -> None:
     fields = set(ModelExecutionSnapshot.model_fields)
 
-    assert fields == {"schema_version", "model_id", "model_key", "upstream_model", "model_api"}
+    assert fields == {
+        "schema_version",
+        "model_id",
+        "model_key",
+        "upstream_model",
+        "base_model",
+        "model_api",
+        "pricing",
+    }
     assert new_model_provider_id().startswith("mprov_")
 
 
@@ -41,9 +50,18 @@ def test_model_declarations_have_one_consistent_typed_default_shape() -> None:
     assert declarations.model_dump(mode="json") == {
         "thinking_efforts": [],
         "capabilities": [],
-        "context_window": None,
+        "context_window_tokens": None,
+        "max_output_tokens": None,
+        "structured_output": None,
+        "pricing": None,
     }
     with pytest.raises(ValidationError, match="thinking efforts must be unique"):
         ModelDeclarations(thinking_efforts=("high", "high"))
     with pytest.raises(ValidationError):
-        ModelDeclarations(context_window=0)
+        ModelDeclarations(context_window_tokens=0)
+    with pytest.raises(ValidationError):
+        ModelDeclarations(max_output_tokens=0)
+    for value in (-1, float("inf"), float("nan")):
+        with pytest.raises(ValidationError):
+            ModelPricing(input=value)
+    assert ModelPricing(input=0).input == 0

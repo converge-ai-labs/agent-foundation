@@ -49,6 +49,7 @@ class ModelProviderDefinition:
     credential_schema: JsonObject
     supported_model_apis: tuple[str, ...]
     default_model_api: str
+    model_api_labels: dict[str, str]
     settings_schemas: dict[str, JsonObject]
     supports_model_discovery: bool
 ```
@@ -141,7 +142,10 @@ class ModelLimits:
 class ModelDeclarations:
     thinking_efforts: tuple[ThinkingEffort, ...] = ()
     capabilities: frozenset[ModelCapability] = frozenset()
-    context_window: int | None = None
+    context_window_tokens: int | None = None
+    max_output_tokens: int | None = None
+    structured_output: bool | None = None
+    pricing: ModelPricing | None = None
 
 
 class Model:
@@ -153,6 +157,7 @@ class Model:
     name: str
     description: str | None
     upstream_model: str
+    base_model: str | None
     model_api: str
     settings: JsonObject
     declarations: ModelDeclarations
@@ -167,7 +172,7 @@ class Model:
 
 `upstream_model` is an opaque string of 1 through 256 characters passed unchanged to the selected native Pydantic AI Model. It is the invocation identifier required by the configured endpoint, including a model ID, deployment name, or inference endpoint ID. It is not restricted to a bundled or discovered catalog. This lets a Workspace use a newly released upstream model through an existing supported binding before Service's metadata is updated. Clients select `Model.key`; they do not substitute it for the upstream invocation identifier.
 
-`model_api` is one key allowed by the selected Provider type. `settings` contains non-secret, JSON-serializable native request defaults and defaults to an empty object. `declarations` is a separate typed object that never enters native request settings. It always serializes with empty `thinking_efforts`, empty `capabilities`, and a null `context_window` when values are absent. Effort choices are editable authoring options rather than a runtime allowlist or proof of provider support. Capabilities use the Harness image, video, and audio understanding values; context window is a positive token count or null.
+`base_model` is a nullable exact name from the installed Pydantic AI model directory. It is a profile and metadata reference, not an outbound identity: runtime always sends `upstream_model`. `model_api` is one key allowed by the selected Provider type. `settings` contains non-secret, JSON-serializable native request defaults and defaults to an empty object. `declarations` is a separate typed object that never enters native request settings. It always serializes with empty `thinking_efforts`, empty `capabilities`, null context/output capacities and structured-output support, and null pricing when values are absent. Effort choices are editable authoring options rather than a runtime allowlist or proof of provider support. Capabilities use the Harness image, video, and audio understanding values; token capacities are positive integers or null. Structured output is coarse advisory support. Optional pricing contains nullable nonnegative USD-per-million-token `input`, `output`, `cache_read`, and `cache_write` rates; zero means free and null means unknown.
 
 Discovery returns read-only `profile` and `limits` supplied by the Provider; unknown profile facts are omitted rather than reported as false, and unknown limits remain null rather than using fabricated numeric defaults. A separate read-only `native_profile` reports trusted facts about the local Pydantic AI calling channel without constructing a client or performing another network request. Catalog and native profiles are independent provenance channels: clients must not treat gateway-wide transport support as a per-model catalog claim. Clients may use catalog modalities and limits to suggest initial declarations, but saved declarations are explicit user-confirmed values and later discovery never overwrites them.
 
@@ -175,7 +180,7 @@ The safe profile deliberately mirrors only serializable Pydantic AI `ModelProfil
 
 The locked Pydantic AI OpenRouter Provider marks its calling channel as accepting unified thinking even for unknown vendor prefixes; Service adds no blanket catalog override and does not derive all effort choices from that gateway fact. When OpenRouter's exhaustive `supported_parameters` list omits reasoning, that per-model catalog fact remains false rather than being replaced by gateway-wide transport support. At dispatch, an explicit unified `thinking` value fails before the remote request when the freshly reconstructed native profile would otherwise drop it as unsupported. `thinking=false` likewise fails for a profile whose thinking is always enabled; positive thinking is accepted when the fresh profile reports either ordinary support or always-enabled thinking. Provider-specific advanced settings remain available under their native behavior. Unknown support is not presented as verified support, and Service does not duplicate provider effort translation.
 
-Model name, description, upstream model, calling API, settings, declarations, and enabled state are mutable under a strong ETag. Changing upstream model or API validates the resulting complete configuration; it never silently drops incompatible settings. A Model has no version, revision, revision route, historical configuration API, or copy route.
+Model name, description, upstream model, base model, calling API, settings, declarations, and enabled state are mutable under a strong ETag. Changing upstream model or API validates the resulting complete configuration; it never silently drops incompatible settings or reinfers a base model. A supplied null base model clears it. A Model has no version, revision, revision route, historical configuration API, or copy route.
 
 For OpenRouter, the initial API is `openrouter.chat_completions` and an omitted downstream routing setting leaves selection to OpenRouter. Users can configure native routing settings, including `openrouter_provider`, on the Model. Two Models such as `openrouter-claude` and `openrouter-aws-claude` can reference the same upstream Claude ID while one uses platform defaults and the other restricts eligible downstream providers. Downstream identifiers are upstream data rather than a Service release-pinned enum. OpenRouter performs that routing; it does not create additional Service Providers or a routing-policy resource.
 
@@ -207,9 +212,15 @@ Discovery returns suggestions, not evidence of successful model invocation. Open
 
 Results are separate from safe Provider definitions and saved Models. They may be briefly cached within the authorization and configured Provider boundary; connection or credential changes invalidate corresponding cached results. They are not durable resources, do not create or update Models, and never become an execution allowlist.
 
-Callers can select discovered candidates or enter an upstream ID manually, then submit the same ordinary Model create request. Clients prefill an editable name and key, one API, settings, and optional declaration suggestions; Provider catalog information remains read-only reference material. The create request always contains the chosen key and explicit API; optional settings and declarations use their typed defaults. Manual creation remains possible without discovery because Provider-type definitions supply every allowed settings schema. Only explicit creation adds a Model in the selected scope, and partial failure when adding several candidates leaves already created Models intact and identifies failed entries.
+Callers can select discovered candidates or enter an upstream ID manually, then submit the same ordinary Model create request. `GET /base-models` exposes the exact model names in the installed Pydantic AI directory together with an inferred calling API and its display label when known. Clients prefill an editable name and key, optional base model and API, settings, and declaration suggestions; Provider catalog information remains read-only reference material. Manual creation remains possible without discovery because Provider-type definitions supply every allowed settings schema. Only explicit creation adds a Model in the selected scope, and partial failure when adding several candidates leaves already created Models intact and identifies failed entries.
 
 Creation copies the submitted values into the Model. Subsequent discovery or metadata refresh never changes saved values, removes a saved Model, or disables it. Adopting new suggestions is an explicit edit under the Model's ETag. Changing upstream identity or calling API requires the client to review the saved declarations rather than silently applying candidate facts from the prior selection.
+
+The Service also owns one lifespan-scoped, bounded `httpx2` client and last-good cache for the public models.dev combined catalog. Refresh is single-flight with an explicit timeout, an 8 MiB response bound, item limits, one-hour freshness, and a one-minute retry interval after failure. Imports and dispatch never perform catalog I/O. Creation resolves the immutable Provider type in a short read transaction, closes it before cache refresh, and then reauthorizes and writes in a separate short transaction. An unavailable, oversized, or malformed catalog yields empty declarations and cannot prevent manual creation.
+
+`POST /workspaces/{workspace}/model-catalog/suggestions` and its Organization-scoped counterpart accept a Provider ID and upstream model, with optional `base_model` and `model_api`. They return a match source and zero or more editable candidates containing the base model, inferred or selected API and display label, and declarations. Selection is exclusively against the installed Pydantic AI directory: exact full or model names, separator-normalized equality, then the longest complete model-name token sequence. Matches respect numeric boundaries. Equivalent OpenAI Responses and Chat variants of one identity collapse to the Provider's ordered default API or the explicit current API. The explicit API is applied after identity matching, so a relay's Claude identity can retain an explicitly selected OpenAI-compatible Chat implementation without acquiring OpenAI model traits. The native Provider namespace disambiguates equal distinct identities only when its endpoint is not overridden; a custom endpoint does not imply upstream identity. Equal-quality distinct identities are returned as `ambiguous`; explicit null base model returns `none`; and an explicit installed base returns `explicit`.
+
+The models.dev catalog only enriches an already resolved base model; it does not perform a second identity match. Actual-provider entries may supply channel-specific prices, while canonical enrichment is provider-independent and unpriced. On create, one unique resolution is persisted as `base_model`, supplies `model_api` when the request omits it, and supplies declaration fields omitted by the request. An absent or ambiguous resolution requires an explicit API. Explicit null base model suppresses inference. Explicit API always wins, including cross-protocol use. Explicit empty arrays, nulls, false, zero prices, and nested pricing leaves override suggestions. Catalog updates never mutate saved Models, and identity edits never reapply suggestions. `max_output_tokens` remains capacity metadata rather than a request setting. Only exact installed `ThinkingEffort` values from an effort-type catalog option are suggested; toggles, token budgets, `none`, `default`, and `max` do not manufacture choices or require a Service effort translator.
 
 ## Parameter schemas and validation
 
@@ -253,7 +264,9 @@ class ModelExecutionSnapshot:
     model_id: ModelId
     model_key: str
     upstream_model: str
+    base_model: str | None
     model_api: str
+    pricing: ModelPricing | None
 
 
 class ModelExecutionObservation:
@@ -263,7 +276,7 @@ class ModelExecutionObservation:
     model_api: str
 ```
 
-The Provider ID is not duplicated in this snapshot because `Model.provider_id` is immutable. Runtime resolves the Provider through the retained `model_id`. The snapshot contains no profile, limits, endpoint, Provider config, credential, or secret. Profile and limits remain transient Provider information; they neither override the native Pydantic AI Model profile nor become Run reproducibility facts. Replacement attempts and explicit Retry reuse the same Model snapshot, so a mid-Run Model edit does not change upstream model or selected API.
+The Provider ID is not duplicated in this snapshot because `Model.provider_id` is immutable. Runtime resolves the Provider through the retained `model_id`. The snapshot freezes the accepted editable pricing basis but contains no catalog profile, limits, endpoint, Provider config, credential, or secret. Replacement attempts and explicit Retry reuse the same Model snapshot, so a mid-Run Model or catalog edit does not change upstream model, selected API, or prices. Pricing is configuration for later estimates, not a cost-accounting subsystem; callers must not infer tiered or audio coverage or double-count cached input.
 
 The final merged non-secret settings are stored once in `EffectiveAgentConfig.model.settings`, alongside the execution snapshot and effective Harness model characteristics. One composition path combines Model-declared capabilities and base context window with Agent or Run context policy for primary, reviewer, and nested Agents. Reviewers use the selected Model declarations and default context policy when they expose no policy controls. Every outbound request uses the frozen settings and characteristics. Model edits do not alter them during the Run. Static settings schemas and advisory candidate metadata are not execution snapshots. Retained Runs are reconstructed from their explicit execution selection, settings, and characteristics; compatibility handling must not infer an API from current Model defaults or rewrite historical selections.
 
@@ -283,7 +296,7 @@ Service owns outbound inference retries; native SDK automatic retries are disabl
 
 ## Native construction and endpoint safety
 
-Pydantic AI owns provider invocation, message conversion, streaming, tool calls, structured-output protocol behavior, and the effective native Model profile. Service keeps Provider integration and calling-API selection as two finite trusted registries rather than repeating protocol selection inside every Provider type.
+Pydantic AI owns provider invocation, message conversion, streaming, tool calls, structured-output protocol behavior, and the effective native Model profile. Service keeps Provider integration and calling-API selection as two finite trusted registries rather than repeating protocol selection inside every Provider type. For each fresh request and retry, the final native binding constructs the opaque upstream model with a profile resolved from the saved base model through that same binding and actual Provider. OpenAI Responses and Chat variants can therefore preserve known GPT traits across an explicit choice between those implementations. A reference from a different native family contributes no profile. The request still uses the snapshotted `upstream_model` and current Provider endpoint, authentication, and headers.
 
 One Provider integration owns only:
 

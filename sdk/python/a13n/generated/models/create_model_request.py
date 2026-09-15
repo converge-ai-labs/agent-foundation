@@ -20,37 +20,43 @@ class CreateModelRequest:
     """
     Attributes:
         key (str):
-        model_api (str):
         name (str):
         provider_id (str):
         upstream_model (str):
+        base_model (None | str | Unset):
         declarations (ModelDeclarations | Unset): Harness-facing facts and authoring choices declared for one saved
             Model.
         description (None | str | Unset):
         enabled (bool | Unset):
+        model_api (None | str | Unset):
         settings (CreateModelRequestSettings | Unset):
     """
 
     key: str
-    model_api: str
     name: str
     provider_id: str
     upstream_model: str
+    base_model: str | Unset | None = UNSET
     declarations: ModelDeclarations | Unset = UNSET
     description: str | Unset | None = UNSET
     enabled: bool | Unset = UNSET
+    model_api: str | Unset | None = UNSET
     settings: CreateModelRequestSettings | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         key = self.key
-
-        model_api = self.model_api
 
         name = self.name
 
         provider_id = self.provider_id
 
         upstream_model = self.upstream_model
+
+        base_model: str | Unset | None
+        if isinstance(self.base_model, Unset):
+            base_model = UNSET
+        else:
+            base_model = self.base_model
 
         declarations: dict[str, Any] | Unset = UNSET
         if not isinstance(self.declarations, Unset):
@@ -64,6 +70,12 @@ class CreateModelRequest:
 
         enabled = self.enabled
 
+        model_api: str | Unset | None
+        if isinstance(self.model_api, Unset):
+            model_api = UNSET
+        else:
+            model_api = self.model_api
+
         settings: dict[str, Any] | Unset = UNSET
         if not isinstance(self.settings, Unset):
             settings = self.settings.to_dict()
@@ -73,18 +85,21 @@ class CreateModelRequest:
         field_dict.update(
             {
                 "key": key,
-                "model_api": model_api,
                 "name": name,
                 "provider_id": provider_id,
                 "upstream_model": upstream_model,
             }
         )
+        if base_model is not UNSET:
+            field_dict["base_model"] = base_model
         if declarations is not UNSET:
             field_dict["declarations"] = declarations
         if description is not UNSET:
             field_dict["description"] = description
         if enabled is not UNSET:
             field_dict["enabled"] = enabled
+        if model_api is not UNSET:
+            field_dict["model_api"] = model_api
         if settings is not UNSET:
             field_dict["settings"] = settings
 
@@ -98,13 +113,20 @@ class CreateModelRequest:
         d = dict(src_dict)
         key = d.pop("key")
 
-        model_api = d.pop("model_api")
-
         name = d.pop("name")
 
         provider_id = d.pop("provider_id")
 
         upstream_model = d.pop("upstream_model")
+
+        def _parse_base_model(data: object) -> str | Unset | None:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(str | Unset | None, data)
+
+        base_model = _parse_base_model(d.pop("base_model", UNSET))
 
         _declarations = d.pop("declarations", UNSET)
         declarations: ModelDeclarations | Unset
@@ -124,6 +146,15 @@ class CreateModelRequest:
 
         enabled = d.pop("enabled", UNSET)
 
+        def _parse_model_api(data: object) -> str | Unset | None:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(str | Unset | None, data)
+
+        model_api = _parse_model_api(d.pop("model_api", UNSET))
+
         _settings = d.pop("settings", UNSET)
         settings: CreateModelRequestSettings | Unset
         if isinstance(_settings, Unset):
@@ -133,13 +164,14 @@ class CreateModelRequest:
 
         create_model_request = cls(
             key=key,
-            model_api=model_api,
             name=name,
             provider_id=provider_id,
             upstream_model=upstream_model,
+            base_model=base_model,
             declarations=declarations,
             description=description,
             enabled=enabled,
+            model_api=model_api,
             settings=settings,
         )
 
