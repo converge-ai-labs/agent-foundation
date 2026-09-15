@@ -53,7 +53,7 @@ from .native_context import NativeToolContext, parse_native_contexts
 from .selection_domain import ConnectionRunSelection
 from .selection_resolution import ConnectivitySelectionResolver, FrozenRunConnectivity
 from .tool_validation import validate_result
-from .toolsets import local_capability, namespaced, selected_tools, source_key
+from .toolsets import connection_source_key, local_capability, namespaced, selected_tools
 
 _CONNECTIONS = TypeAdapter(tuple[ConnectionRunSelection, ...])
 
@@ -345,7 +345,7 @@ class ExternalToolRuntime:
                 return ConnectorToolOutcome(kind="outcome_unknown", request_id=request_id).model_dump(mode="json")
 
         return await local_capability(
-            key=source_key("connector", selection.connection_id),
+            key=connection_source_key(selection.connection_id),
             tools=tools,
             allowed=selection.tools,
             handler=call,
@@ -402,7 +402,7 @@ class ExternalToolRuntime:
             await to_thread.run_sync(validate_result, to_jsonable_python(result))
             return result
 
-        key = source_key("mcp", selection.connection_id)
+        key = connection_source_key(selection.connection_id)
         async with self._remote.connect(endpoint, headers=await headers(), refresh_headers=headers) as client:
             toolset = MCPToolset[AgentContext](client, id=key, process_tool_call=call, tool_error_behavior="error")
             async with toolset:

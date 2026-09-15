@@ -54,5 +54,6 @@ def test_connection_tool_selections_are_bounded_and_unique(selection_type, id_fi
 
     assert selection.tools == ("orders.lookup",)
     assert selection.defer_loading is True
+    assert selection.permission == "inherit"
     with pytest.raises(ValidationError, match="tool names must be unique"):
         selection_type.model_validate({id_field: identifier, "tools": ["orders.lookup", "orders.lookup"]})

@@ -36,13 +36,14 @@ fn generated_wire_fixtures() {
     let null: UpdateAgentRequest = serde_json::from_value(json!({"name":null})).unwrap();
     assert_eq!(omitted.name, None);
     assert_eq!(null.name, Some(None));
-    let secret: CreateSearchProviderRequest =
-        serde_json::from_value(json!({"type":"brave","name":"test","credential":"do-not-print"}))
-            .unwrap();
+    let secret: CreateWebProviderRequest = serde_json::from_value(
+        json!({"type":"brave","name":"test","credential":{"api_key":"do-not-print"}}),
+    )
+    .unwrap();
     assert!(!format!("{secret:?}").contains("do-not-print"));
     assert_eq!(
         serde_json::to_value(secret).unwrap()["credential"],
-        "do-not-print"
+        json!({"api_key":"do-not-print"})
     );
 }
 
@@ -82,11 +83,10 @@ async fn generated_http_uses_owner_pool_prefix_and_headers() {
 
 #[test]
 fn boolean_constants_are_booleans_not_strings() {
-    let value = json!({"enabled": true});
-    let parsed: AssetPublicationConfig = serde_json::from_value(value.clone()).unwrap();
+    let value = json!({"enabled": true, "permission": "inherit"});
+    let parsed: ToolSelection = serde_json::from_value(value.clone()).unwrap();
     assert_eq!(serde_json::to_value(parsed).unwrap(), value);
-    assert!(serde_json::from_value::<AssetPublicationConfig>(json!({"enabled": false})).is_err());
-    assert!(serde_json::from_value::<AssetPublicationConfig>(json!({"enabled": "true"})).is_err());
+    assert!(serde_json::from_value::<ToolSelection>(json!({"enabled": "true"})).is_err());
     let quota: model_connection_test_result::MayConsumeQuotaOrIncurCost =
         serde_json::from_value(json!(true)).unwrap();
     assert_eq!(serde_json::to_value(quota).unwrap(), json!(true));

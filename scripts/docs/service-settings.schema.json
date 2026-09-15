@@ -479,14 +479,6 @@
           "title": "Local Providers",
           "type": "object"
         },
-        "provider_extensions": {
-          "default": [],
-          "items": {
-            "type": "string"
-          },
-          "title": "Provider Extensions",
-          "type": "array"
-        },
         "maintenance_interval_seconds": {
           "default": 5,
           "exclusiveMinimum": 0,
@@ -1049,6 +1041,60 @@
       "title": "MCPServerSettings",
       "type": "object"
     },
+    "MemorySettings": {
+      "additionalProperties": false,
+      "properties": {
+        "provider": {
+          "default": "none",
+          "enum": [
+            "none",
+            "platform",
+            "oss"
+          ],
+          "title": "Provider",
+          "type": "string"
+        },
+        "base_url": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Base Url"
+        },
+        "api_key": {
+          "anyOf": [
+            {
+              "format": "password",
+              "maxLength": 4096,
+              "minLength": 1,
+              "type": "string",
+              "writeOnly": true
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Api Key"
+        },
+        "timeout_seconds": {
+          "default": 30,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Timeout Seconds",
+          "type": "number"
+        }
+      },
+      "title": "MemorySettings",
+      "type": "object"
+    },
     "MigrationSettings": {
       "additionalProperties": false,
       "properties": {
@@ -1401,6 +1447,22 @@
       ],
       "title": "ProcessRole",
       "type": "string"
+    },
+    "ProviderPluginsSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": [],
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 128,
+          "title": "Enabled",
+          "type": "array"
+        }
+      },
+      "title": "ProviderPluginsSettings",
+      "type": "object"
     },
     "RedisBackend": {
       "enum": [
@@ -1773,6 +1835,9 @@
     "plugins": {
       "$ref": "#/$defs/PluginsSettings"
     },
+    "provider_plugins": {
+      "$ref": "#/$defs/ProviderPluginsSettings"
+    },
     "worker": {
       "$ref": "#/$defs/WorkerSettings"
     },
@@ -1793,6 +1858,9 @@
     },
     "models": {
       "$ref": "#/$defs/ModelsSettings"
+    },
+    "memory": {
+      "$ref": "#/$defs/MemorySettings"
     },
     "webhooks": {
       "$ref": "#/$defs/WebhooksSettings"

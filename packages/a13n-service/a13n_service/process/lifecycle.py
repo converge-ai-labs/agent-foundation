@@ -18,6 +18,7 @@ from a13n_service.gateway.a2a_push import append_matching_a2a_push_outbox
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.hooks.persistence import write_hook_lifecycle
 from a13n_service.interactions.lifecycle import LifecycleWriter
+from a13n_service.memory.composition import build_memory_service
 from a13n_service.models.providers import ProviderRegistry
 from a13n_service.object_retention.publication import PublicationObjectStore
 from a13n_service.observability import build_observability_runtime
@@ -33,9 +34,11 @@ from a13n_service.process.roles import owns_connectivity_data, owns_control, own
 from a13n_service.process.runtime import ProcessRuntime, ProcessStatus, SharedRuntime
 from a13n_service.process.submission import build_input_commands
 from a13n_service.process.worker import build_worker_runtime
+from a13n_service.provider_plugins import ProviderCatalogs
 from a13n_service.settings import Settings
 from a13n_service.storage import open_storage
 from a13n_service.trace_query.provider import TraceQueryProviderRegistry
+from a13n_service.web.registry import WebProviderRegistry
 
 logger = logging.getLogger("a13n_service.process.lifecycle")
 
@@ -49,6 +52,7 @@ async def open_process_runtime(
     trace_query_provider_registry: TraceQueryProviderRegistry,
     model_provider_registry: ProviderRegistry,
     model_endpoint_policy: EndpointPolicy,
+    provider_catalogs: ProviderCatalogs,
 ) -> AsyncIterator[ProcessRuntime]:
     """Open one supervised runtime for the configured process role."""
 
@@ -81,8 +85,16 @@ async def open_process_runtime(
                     else (write_hook_lifecycle,)
                 ),
                 secret_protector=settings.secret_protector(),
+                memories=await build_memory_service(settings.memory, storage.sessions, stack)
+                if owns_control(settings.service.role) or owns_worker(settings.service.role)
+                else None,
             )
-            agent_resources = build_agent_resources(components, shared, model_provider_registry)
+            agent_resources = build_agent_resources(
+                components,
+                shared,
+                model_provider_registry,
+                WebProviderRegistry(provider_catalogs.web),
+            )
             execution = (
                 await build_execution_resources(
                     shared,
@@ -94,7 +106,7 @@ async def open_process_runtime(
                 else None
             )
             environment_catalog = (
-                build_environment_catalog(settings, components)
+                build_environment_catalog(settings, components, provider_catalogs)
                 if owns_control(settings.service.role) or owns_worker(settings.service.role)
                 else None
             )
@@ -115,6 +127,7 @@ async def open_process_runtime(
                     environment_catalog,
                     stack,
                     components.connector_provider_registry,
+                    provider_catalogs=provider_catalogs,
                     plugin_catalog=plugin_catalog,
                     invocations=agent_resources.invocations,
                     observability=observability,
@@ -133,6 +146,7 @@ async def open_process_runtime(
                     agent_resources,
                     trace_query_provider_registry,
                     stack,
+                    provider_catalogs,
                 )
             input_acceptor = components.input_acceptor
             if owns_connectivity_data(settings.service.role) and input_acceptor is None:
@@ -155,6 +169,7 @@ async def open_process_runtime(
                 stack,
                 ingress_adapters=components.ingress_adapter_registry,
                 connector_providers=components.connector_provider_registry,
+                provider_catalogs=provider_catalogs,
                 input_acceptor=input_acceptor,
                 control_plane=owns_control(settings.service.role),
                 data_plane=owns_connectivity_data(settings.service.role),

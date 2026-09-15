@@ -8,10 +8,13 @@ import pytest
 from a13n_harness import HarnessState
 from a13n_service.agents.domain import (
     AgentConfig,
+    AgentRunOverride,
     EffectiveAgentConfig,
     EffectiveAgentModel,
 )
+from a13n_service.agents.invocation import merge_agent_run_override
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
+from a13n_service.agents.toolsets import default_toolsets
 from a13n_service.database.metadata import service_metadata
 from a13n_service.digests import digest_request
 from a13n_service.iam.models import OrganizationRecord, WorkspaceRecord
@@ -38,8 +41,19 @@ NOW = datetime(2026, 9, 3, 0, 30, tzinfo=UTC)
 
 
 def agent_config() -> AgentConfig:
+    toolsets = default_toolsets()
+    for key in ("files", "shell"):
+        selected = toolsets[key]
+        toolsets[key] = selected.model_copy(
+            update={
+                "tools": {
+                    name: tool.model_copy(update={"permission": "allow"}) for name, tool in selected.tools.items()
+                }
+            }
+        )
     return AgentConfig.model_validate(
         {
+            "toolsets": toolsets,
             "model": {
                 "model_key": MODEL_KEY,
                 "settings": {"temperature": 0.2},
@@ -57,8 +71,12 @@ def agent_config() -> AgentConfig:
     )
 
 
-def effective_agent_config() -> EffectiveAgentConfig:
+def effective_agent_config(*, assets_enabled: bool = False) -> EffectiveAgentConfig:
     base = agent_config()
+    override = None
+    if assets_enabled:
+        override = AgentRunOverride(toolsets={"assets": base.toolsets["assets"].model_copy(update={"enabled": True})})
+    merged = merge_agent_run_override(base, override)
     execution = ModelExecutionSnapshot(
         model_id=MODEL_ID,
         model_key=MODEL_KEY,
@@ -68,17 +86,18 @@ def effective_agent_config() -> EffectiveAgentConfig:
     candidate = EffectiveAgentConfig(
         resolved_model=EffectiveAgentModel(
             execution=execution,
-            settings=base.model.settings,
-            characteristics=base.model.characteristics,
+            settings=merged.model.settings,
+            characteristics=merged.model.characteristics,
         ),
-        instructions=base.instructions,
-        input_adapter=base.input_adapter,
-        client_tools=base.client_tools,
-        output_spec=base.output_spec,
-        retries=base.retries,
-        secret_requirements=base.secret_requirements,
-        asset_publication=base.asset_publication,
-        protocol=base.protocol,
+        instructions=merged.instructions,
+        input_adapter=merged.input_adapter,
+        toolsets=merged.toolsets,
+        reviewer=merged.reviewer,
+        client_tools=merged.client_tools,
+        output_spec=merged.output_spec,
+        retries=merged.retries,
+        secret_requirements=merged.secret_requirements,
+        protocol=merged.protocol,
         content_digest="0" * 64,
     )
     payload = candidate.model_dump(mode="json", by_alias=True, exclude={"content_digest"})

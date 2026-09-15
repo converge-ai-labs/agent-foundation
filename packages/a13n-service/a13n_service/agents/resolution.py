@@ -12,9 +12,11 @@ from a13n_service.environments.authoring import authorize_template
 from a13n_service.iam import AuthenticatedActor, authorize_agent, authorize_agent_skill_binding
 from a13n_service.iam.authorization import WorkspaceAction
 from a13n_service.models.runtime import AcceptedModelSelector, PreparedModelExecution
-from a13n_service.search.resources import SearchProviderError
-from a13n_service.search.resources import require_provider as require_search_provider
 from a13n_service.storage import short_session
+from a13n_service.web.domain import ScrapeSelection, provider_selections
+from a13n_service.web.registry import WebProviderRegistry, built_in_web_provider_registry
+from a13n_service.web.resources import WebProviderError, require_operation
+from a13n_service.web.resources import require_provider as require_web_provider
 
 from .connectivity_resolution import freeze_revision_connectivity, prepare_revision_connectivity
 from .domain import (
@@ -33,6 +35,7 @@ from .skill_resolution import (
     freeze_skill_bindings,
     prepare_skill_bindings,
 )
+from .toolsets import web_selection
 from .validation import AgentConfigValidationError, AgentProtocolPolicy, validate_agent_config
 
 MAX_SUBAGENT_DEPTH = 16
@@ -71,11 +74,13 @@ class AgentResolver:
         *,
         connectivity_resolver: ConnectivitySelectionResolver | None = None,
         protocol_policy: AgentProtocolPolicy | None = None,
+        web_provider_registry: WebProviderRegistry | None = None,
     ) -> None:
         self._sessions = sessions
         self._model_selector = model_selector
         self._connectivity_resolver = connectivity_resolver or ConnectivitySelectionResolver(sessions)
         self._protocol_policy = protocol_policy or AgentProtocolPolicy()
+        self._web_provider_registry = web_provider_registry or built_in_web_provider_registry()
 
     async def prepare(
         self,
@@ -160,13 +165,20 @@ class AgentResolver:
             agent_id=prepared.agent_id,
             action=WorkspaceAction.agent_revision_create,
         )
-        if prepared.config.search is not None:
-            await require_search_provider(
+        for operation, selection in provider_selections(web_selection(prepared.config.toolsets)):
+            provider = await require_web_provider(
                 session,
                 organization_id=prepared.organization_id,
                 workspace_id=prepared.workspace_id,
-                provider_id=prepared.config.search.provider_id,
+                provider_id=selection.provider_id,
                 eligible=True,
+                registry=self._web_provider_registry,
+            )
+            require_operation(
+                provider,
+                operation,
+                self._web_provider_registry,
+                selection=selection if isinstance(selection, ScrapeSelection) else None,
             )
         model = await self._model_selector.freeze_in_transaction(session, prepared=prepared.model)
         if prepared.reviewer_model is not None:
@@ -383,6 +395,6 @@ def resolution_error(error: Exception) -> AgentError:
 
     if isinstance(error, AgentError):
         return error
-    if isinstance(error, SearchProviderError):
+    if isinstance(error, WebProviderError):
         return AgentError(error.code, error.message, category=error.category)
     return agent_revision_create_failed("managed_resource_unavailable")

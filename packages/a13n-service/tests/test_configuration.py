@@ -98,6 +98,7 @@ def test_environment_catalog_is_unique_and_preserves_known_names():
     )
     assert fields["A13N_SERVICE_CONNECTIVITY_MCP_SERVERS"] == ("connectivity", "mcp_servers")
     assert fields["A13N_SERVICE_OBSERVABILITY_QUERY_PROVIDER"] == ("observability", "query", "provider")
+    assert fields["A13N_SERVICE_PROVIDER_PLUGIN_ENABLED"] == ("provider_plugins", "enabled")
 
 
 def test_arrays_use_native_toml_and_json_environment(tmp_path):
@@ -107,6 +108,9 @@ def test_arrays_use_native_toml_and_json_environment(tmp_path):
     assert load_settings(
         path, environ={"A13N_SERVICE_MODEL_PRIVATE_ENDPOINT_CIDRS": '["10.0.0.0/8"]'}
     ).models.private_endpoint_cidrs == ("10.0.0.0/8",)
+    assert load_settings(
+        path, environ={"A13N_SERVICE_PROVIDER_PLUGIN_ENABLED": '["acme"]'}
+    ).provider_plugins.enabled == ("acme",)
     with pytest.raises(ConfigurationError, match="Invalid JSON array"):
         load_settings(path, environ={"A13N_SERVICE_MODEL_PRIVATE_ENDPOINT_CIDRS": "hidden-invalid-value"})
 

@@ -18,10 +18,27 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Apply the schema change."""
-    # A constant database default also initializes retained providers. Keep it:
-    # removing it by rebuilding the SQLite parent could cascade-delete children.
-    op.add_column(
-        "connector_providers", sa.Column("setup_claims_json", sa.JSON(), nullable=False, server_default=sa.text("'{}'"))
+    op.create_table(
+        "connector_shared_setup_claims",
+        sa.Column("id", sa.String(length=72), nullable=False),
+        sa.Column("provider_id", sa.String(length=72), nullable=False),
+        sa.Column("connector_key", sa.String(length=128), nullable=False),
+        sa.Column("configuration_key", sa.String(length=128), nullable=False),
+        sa.Column("credential_generation", sa.BigInteger(), nullable=False),
+        sa.CheckConstraint(
+            "credential_generation >= 1",
+            name=op.f("ck_connector_shared_setup_claims_credential_generation_positive"),
+        ),
+        sa.ForeignKeyConstraint(
+            ["provider_id"],
+            ["connector_providers.id"],
+            name=op.f("fk_connector_shared_setup_claims_provider_id_connector_providers"),
+            ondelete="CASCADE",
+        ),
+        sa.PrimaryKeyConstraint("id", name=op.f("pk_connector_shared_setup_claims")),
+        sa.UniqueConstraint(
+            "provider_id", "connector_key", "configuration_key", name="uq_connector_shared_setup_claims_scope"
+        ),
     )
     op.add_column("connector_providers", sa.Column("directory_json", sa.JSON(), nullable=True))
     op.add_column("connector_providers", sa.Column("directory_updated_at", sa.DateTime(timezone=True), nullable=True))
@@ -31,4 +48,4 @@ def downgrade() -> None:
     """Reverse the schema change when it is safe to do so."""
     op.drop_column("connector_providers", "directory_updated_at")
     op.drop_column("connector_providers", "directory_json")
-    op.drop_column("connector_providers", "setup_claims_json")
+    op.drop_table("connector_shared_setup_claims")

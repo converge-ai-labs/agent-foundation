@@ -772,8 +772,10 @@ class ReviewView(SurfaceModel):
     lifecycle: Literal["pending", "running", "closed", "unavailable"]
     kind: Literal["json", "shell", "task", "child", "diff", "generic"]
     title: str = Field(min_length=1, max_length=512)
-    summary: str | None = Field(default=None, max_length=4096)
-    content: str | None = Field(default=None, max_length=256 * 1024)
+    # Review text reuses already selected source content; presentation length
+    # belongs to the reader, not a second validation cap on successful output.
+    summary: str | None = None
+    content: str | None = None
     value: JsonValue | None = None
     truncated: bool = False
     omitted: bool = False

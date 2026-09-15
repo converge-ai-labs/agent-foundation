@@ -57,12 +57,21 @@ class ConnectorProviderImplementation:
 
 
 class ConnectorProviderRegistry:
-    def __init__(self, implementations: Iterable[ConnectorProviderImplementation] = ()) -> None:
+    def __init__(
+        self,
+        implementations: Iterable[ConnectorProviderImplementation] = (),
+        *,
+        frozen: bool = False,
+    ) -> None:
         self._implementations: dict[str, ConnectorProviderImplementation] = {}
+        self._frozen = False
         for implementation in implementations:
             self.register(implementation)
+        self._frozen = frozen
 
     def register(self, implementation: ConnectorProviderImplementation) -> None:
+        if self._frozen:
+            raise RuntimeError("Connector Provider registry is frozen")
         if re.fullmatch(r"[a-z][a-z0-9_]{0,63}", implementation.type) is None:
             raise ValueError("invalid Connector Provider type")
         if implementation.type in self._implementations:
@@ -78,5 +87,5 @@ class ConnectorProviderRegistry:
     def definitions(self) -> tuple[ConnectorProviderDefinition, ...]:
         return tuple(self._implementations[key].definition() for key in sorted(self._implementations))
 
-    def copy(self) -> ConnectorProviderRegistry:
-        return ConnectorProviderRegistry(self._implementations.values())
+    def copy(self, *, frozen: bool = False) -> ConnectorProviderRegistry:
+        return ConnectorProviderRegistry(self._implementations.values(), frozen=frozen)

@@ -35,7 +35,15 @@ from sqlalchemy import delete, select
 
 from tests.lifecycle_support import test_lifecycle_writer
 
-from .conftest import AGENT_ID, AGENT_REVISION_ID, NOW, ORGANIZATION_ID, USER_ID, WORKSPACE_ID
+from .conftest import (
+    AGENT_ID,
+    AGENT_REVISION_ID,
+    NOW,
+    ORGANIZATION_ID,
+    USER_ID,
+    WORKSPACE_ID,
+    effective_agent_config,
+)
 from .test_attempt_execution import _accept_root, _authority, _worker
 from .test_harness_runtime import _environment
 from .worker_helpers import prepare_permissions
@@ -66,10 +74,11 @@ class PublicationFixture:
 
 
 async def _fixture(sessions, objects, tmp_path):
-    _, run, _ = await _accept_root(sessions, objects)
+    _, run, _ = await _accept_root(sessions, objects, config=effective_agent_config(assets_enabled=True))
     async with transaction(sessions) as session:
         revision = await session.get(AgentRevisionRecord, AGENT_REVISION_ID)
-        revision.config = {**revision.config, "asset_publication": {"enabled": True}}
+        assert revision is not None
+        assert not revision.config["toolsets"]["assets"]["enabled"]
         session.add(
             UserRecord(
                 id=USER_ID,
@@ -219,9 +228,7 @@ async def test_stale_or_unselected_publication_creates_no_asset(publication, tmp
             attempt = await session.get(RunAttemptRecord, publication.authority.run_attempt_id)
             attempt.lease_expires_at = NOW
     else:
-        async with transaction(publication.sessions) as session:
-            revision = await session.get(AgentRevisionRecord, AGENT_REVISION_ID)
-            revision.config = {**revision.config, "asset_publication": None}
+        publication.selection = replace(publication.selection, effective_config_digest="0" * 64)
     async with _files(tmp_path / "env") as environment:
         with pytest.raises((AttemptAuthorityError, AssetError)):
             await publication.publish(environment)
@@ -279,8 +286,13 @@ async def test_harness_supplies_trusted_invocation_and_returns_only_asset_ref(pu
     binding = _binding(tmp_path / "harness-env")
     (tmp_path / "harness-env" / "report.txt").write_text("tool publication")
     capability = AssetCapability(publication.runtime, lambda: publication.authority, publication.selection)
+    from a13n_harness.tools import ToolPermissions, ToolPermissionsCapability
+
     executable = HarnessBuilder().build(
-        AgentSpec(), output_type=str, model=FunctionModel(stream_function=model), capabilities=(capability,)
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=model),
+        capabilities=(capability, ToolPermissionsCapability(ToolPermissions(default="allow"))),
     )
     result = await executable.run("Publish the report", bindings=RunBindings.embedded(environment=binding))
     assert result.output_or_raise() == "done"
@@ -368,7 +380,7 @@ async def test_publication_capability_is_selected_independently_for_inline_child
     from contextlib import AsyncExitStack
     from types import SimpleNamespace
 
-    from a13n_service.agents.domain import AssetPublicationConfig, ChildAgentExecution, ResolvedSubagentEdge
+    from a13n_service.agents.domain import ChildAgentExecution, ResolvedSubagentEdge
     from a13n_service.interactions.agent_resources import prepare_agent_resources
     from a13n_service.interactions.models import RunRecord
     from a13n_service.skills.runtime import PreparedSkillRuntime
@@ -377,15 +389,24 @@ async def test_publication_capability_is_selected_independently_for_inline_child
 
     child_id = "ap_child123456789012"
     child_revision_id = "apr_child123456789012"
-    child = effective_agent_config().model_copy(
-        update={"asset_publication": AssetPublicationConfig() if child_enabled else None}
+    child = effective_agent_config()
+    child = child.model_copy(
+        update={
+            "toolsets": {
+                **child.toolsets,
+                "assets": child.toolsets["assets"].model_copy(update={"enabled": child_enabled}),
+            }
+        }
     )
     edge = ResolvedSubagentEdge(
         name="helper", child_agent_id=child_id, child_agent_revision_id=child_revision_id, context={}, environment={}
     )
     config = effective_agent_config().model_copy(
         update={
-            "asset_publication": AssetPublicationConfig() if root_enabled else None,
+            "toolsets": {
+                **effective_agent_config().toolsets,
+                "assets": effective_agent_config().toolsets["assets"].model_copy(update={"enabled": root_enabled}),
+            },
             "subagent_mode": "inline",
             "resolved_subagents": (edge,),
             "child_configs": {

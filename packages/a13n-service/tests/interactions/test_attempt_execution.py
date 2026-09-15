@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 
 import pytest
 from a13n_harness import SafeFailure
+from a13n_service.agents.domain import EffectiveAgentConfig
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
@@ -699,11 +700,12 @@ async def _accept_root(
     sessions: async_sessionmaker[AsyncSession],
     objects: ObjectStore,
     *,
+    config: EffectiveAgentConfig | None = None,
     max_attempts: int = 3,
     execution_policy_version: str = "1",
     execution_deadline_at: datetime | None = None,
 ) -> tuple[RunStateStore, Run, RunCheckpoint]:
-    config = effective_agent_config()
+    config = config or effective_agent_config()
     seed = RunStateSeed(
         run_id="run_5555555555555555",
         agent_id=AGENT_ID,

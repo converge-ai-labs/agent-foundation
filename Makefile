@@ -3,7 +3,7 @@
 A13N_SERVICE_IMAGE ?= a13n-service:local
 SANDBOX_IMAGE ?= a13n-sandbox:local
 A13N_HARNESS_UI_IMAGE ?= a13n-harness-ui:local
-EXAMPLE_DIRS := examples/agent-app examples/environment-provider examples/plugins
+EXAMPLE_DIRS := examples/agent-app examples/environment-provider examples/plugins examples/provider-plugin
 PYTHON_TEST_DIRS ?=
 PYTHON_TEST_WORKERS ?=
 SERVICE_CONFIG ?= dev/service/local.toml
@@ -229,7 +229,17 @@ live-test-check: sync ## Validate live-test support without contacting services
 	@uv run --locked mdformat --check --number dev/live_tests/README.md dev/live_tests/performance/REPORTING.md
 	@uv run --locked python -m pytest dev/live_tests -q
 
-dev-down: ## Stop local Service and Langfuse infrastructure, preserving all data
+.PHONY: mem0-up mem0-down mem0-logs
+mem0-up: sync ## Start and verify the local Mem0 OSS server using SERVICE_CONFIG
+	@$(SERVICE_DEV) mem0 up
+
+mem0-down: sync ## Stop local Mem0 OSS while preserving memories
+	@$(SERVICE_DEV) mem0 down
+
+mem0-logs: sync ## Inspect local Mem0 OSS startup and provider errors
+	@$(SERVICE_DEV) mem0 logs
+
+dev-down: ## Stop local Service, Mem0 OSS and Langfuse infrastructure, preserving all data
 	@$(SERVICE_DEV) stop
 
 .PHONY: langfuse-up langfuse-down langfuse-test langfuse-reset

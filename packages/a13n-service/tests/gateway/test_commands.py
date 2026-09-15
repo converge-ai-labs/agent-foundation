@@ -297,7 +297,7 @@ async def test_start_accepts_root_run_and_replays_before_resolution(
     assert repeated == first
     assert preparation.calls == 1
     assert freezing.calls == 2
-    assert first.thread_id.startswith("thread-")
+    assert first.thread_id.startswith("thread_")
     async with short_session(interaction_sessions) as database:
         run = await database.scalar(select(RunRecord).where(RunRecord.id == first.run_id))
         thread = await database.scalar(select(ThreadRecord).where(ThreadRecord.id == first.thread_id))

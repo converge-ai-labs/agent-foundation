@@ -155,7 +155,7 @@ class ListenerStatus(SurfaceModel):
 
 
 class CreateThreadRequest(SurfaceModel):
-    thread_id: str | None = Field(default=None, pattern=r"^thread-[0-9a-f]{32}$")
+    thread_id: str | None = Field(default=None, pattern=r"^thread[-_][0-9a-f]{32}$")
     defaults: NewThreadDefaults | None = None
     title: str | None = Field(default=None, min_length=1, max_length=200)
 

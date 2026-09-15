@@ -8051,8 +8051,7 @@
           "summary": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 4096
+                "type": "string"
               },
               {
                 "type": "null"
@@ -8063,8 +8062,7 @@
           "content": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 262144
+                "type": "string"
               },
               {
                 "type": "null"
@@ -8267,6 +8265,39 @@
           "status"
         ],
         "title": "RootExecutionView"
+      },
+      "RootOperationNotice": {
+        "properties": {
+          "receipt_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Receipt Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "completed",
+              "failed",
+              "suspended"
+            ],
+            "title": "Status"
+          },
+          "brief": {
+            "type": "string",
+            "maxLength": 320,
+            "minLength": 1,
+            "title": "Brief"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "receipt_id",
+          "status",
+          "brief"
+        ],
+        "title": "RootOperationNotice"
       },
       "RootOperationStatus": {
         "type": "string",
@@ -8732,6 +8763,30 @@
         ],
         "title": "SelectableResourceSummary"
       },
+      "SessionAffinityPreset": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "header": {
+            "type": "string",
+            "title": "Header"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "label",
+          "header",
+          "description"
+        ],
+        "title": "SessionAffinityPreset"
+      },
       "SetupApiKeyModel": {
         "properties": {
           "route": {
@@ -8789,6 +8844,11 @@
             },
             "type": "array",
             "title": "Models"
+          },
+          "supports_session_affinity": {
+            "type": "boolean",
+            "title": "Supports Session Affinity",
+            "default": true
           }
         },
         "additionalProperties": false,
@@ -8822,6 +8882,35 @@
             },
             "type": "array",
             "title": "Api Providers"
+          },
+          "session_affinity_presets": {
+            "items": {
+              "$ref": "#/components/schemas/SessionAffinityPreset"
+            },
+            "type": "array",
+            "title": "Session Affinity Presets",
+            "default": [
+              {
+                "label": "LiteLLM",
+                "header": "x-litellm-session-id",
+                "description": "Requires session affinity to be enabled on the gateway."
+              },
+              {
+                "label": "Conversation ID",
+                "header": "x-conversation-id",
+                "description": "For gateways configured to route by this header; configure the routing rule first."
+              },
+              {
+                "label": "Bifrost (API-key affinity)",
+                "header": "x-bf-session-id",
+                "description": "API-key affinity only; does not guarantee weighted provider or target pinning."
+              },
+              {
+                "label": "X-Session-ID (legacy / custom)",
+                "header": "x-session-id",
+                "description": "Use only when your gateway is configured to recognize this header."
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -9581,6 +9670,16 @@
               }
             ],
             "title": "Execution Id"
+          },
+          "notice": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RootOperationNotice"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -12420,7 +12519,7 @@
           "thread_id": {
             "anyOf": [
               {
-                "pattern": "^thread-[0-9a-f]{32}$",
+                "pattern": "^thread[-_][0-9a-f]{32}$",
                 "type": "string"
               },
               {

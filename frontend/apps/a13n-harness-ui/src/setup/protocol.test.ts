@@ -85,7 +85,7 @@ it("takes an untouched real App from offline choices to saved configuration and 
   expect(saved.needed).toBe(false);
   expect(saved.fresh).toBe(false);
   expect(saved.draft_scope).toBe(setup.draft_scope);
-  const id = `thread-${crypto.randomUUID().replaceAll("-", "")}`;
+  const id = `thread_${crypto.randomUUID().replaceAll("-", "")}`;
   const body = {
     thread_id: id,
     defaults: {
@@ -105,4 +105,26 @@ it("takes an untouched real App from offline choices to saved configuration and 
   expect(thread.thread.thread_id).toBe(id);
   expect(thread.thread.root_activity.state).toBe("inactive");
   expect((await (await request("/api/threads")).json()).total).toBe(1);
+
+  const legacyId = `thread-${crypto.randomUUID().replaceAll("-", "")}`;
+  expect(
+    (await request("/api/threads", { ...body, thread_id: legacyId })).ok,
+  ).toBe(true);
+  const legacy = await (await request(`/api/threads/${legacyId}`)).json();
+  expect(legacy.thread.thread_id).toBe(legacyId);
+  for (const separator of ["_", "-"]) {
+    for (const suffix of [
+      "a".repeat(31),
+      "a".repeat(33),
+      "A".repeat(32),
+      "g".repeat(32),
+    ]) {
+      const invalid = await request("/api/threads", {
+        ...body,
+        thread_id: `thread${separator}${suffix}`,
+      });
+      expect(invalid.status).toBe(400);
+      expect((await invalid.json()).error.code).toBe("request_invalid");
+    }
+  }
 }, 30000);

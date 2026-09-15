@@ -72,7 +72,7 @@ def test_ci_routes_contract_inputs_and_sdk_changes_without_fanout() -> None:
     jobs = workflow["jobs"]
     filters = yaml.safe_load(jobs["changes"]["steps"][1]["with"]["filters"])
     cases = {
-        "packages/a13n-service/a13n_service/search/router.py": {"generated"},
+        "packages/a13n-service/a13n_service/web/router.py": {"generated"},
         "packages/a13n-harness/a13n_harness/types.py": {"generated"},
         "packages/a13n-harness-ui/tests/test_cli_interactions.py": set(),
         "packages/a13n-environment/tests/test_direct_local.py": set(),

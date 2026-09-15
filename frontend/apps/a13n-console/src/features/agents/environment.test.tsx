@@ -18,7 +18,7 @@ vi.mock("../../layout/workspace", () => ({
     basePath: "/workspace/test",
   }),
 }));
-vi.mock("../search/selection", () => ({ AgentSearchSelection: () => null }));
+vi.mock("../web/selection", () => ({ AgentSearchSelection: () => null }));
 vi.mock("./choices", () => ({
   useAgentChoices: () => ({
     isPending: false,

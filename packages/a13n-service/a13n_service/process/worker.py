@@ -16,7 +16,7 @@ from a13n_service.assets.objects import AssetObjectStore
 from a13n_service.assets.publication import AssetPublisher
 from a13n_service.assets.runtime import AssetRuntime
 from a13n_service.assets.staging import AssetStaging
-from a13n_service.connectivity.connectors.providers import built_in_connector_provider_registry
+from a13n_service.connectivity.connectors.http import ConnectorHttpClient
 from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.connectivity.http import cookie_free_jar
@@ -37,9 +37,12 @@ from a13n_service.process.background import BackgroundTask
 from a13n_service.process.resources import ExecutionResources
 from a13n_service.process.runtime import SharedRuntime, WorkerRuntime
 from a13n_service.process.submission import build_input_commands
+from a13n_service.provider_plugins import ProviderCatalogs, load_provider_catalogs
+from a13n_service.provider_plugins.connectors import build_connector_provider_registry
 from a13n_service.run_stream import LifecycleRunStreamProjector, RedisRunStream, RunReplayStore
 from a13n_service.settings import Settings
 from a13n_service.skills.runtime import SkillRuntimePreparer
+from a13n_service.web.registry import WebProviderRegistry
 
 from .connectivity_clients import build_mcp_clients, connectivity_http_timeout
 
@@ -52,11 +55,14 @@ async def build_worker_runtime(
     stack: AsyncExitStack,
     connector_providers: ConnectorProviderRegistry | None = None,
     *,
+    provider_catalogs: ProviderCatalogs | None = None,
     plugin_catalog: HarnessPluginFactoryCatalog,
     invocations: AgentInvocationResolver,
     observability: ObservabilityRuntime | None = None,
 ) -> tuple[WorkerRuntime, tuple[BackgroundTask, ...]]:
     """Construct the components owned by a Worker-capable role."""
+
+    selected_provider_catalogs = provider_catalogs or load_provider_catalogs(())
 
     environments = EnvironmentLifecycle(
         shared.storage.sessions,
@@ -116,16 +122,16 @@ async def build_worker_runtime(
         )
     )
     clients = build_mcp_clients(settings, shared.storage.sessions, shared.secret_protector, http, endpoint_policy)
+    connector_http = ConnectorHttpClient(
+        http,
+        endpoint_policy,
+        response_max_bytes=settings.connectivity.response_max_bytes,
+        timeout_seconds=settings.connectivity.total_timeout_seconds,
+    )
     external_tools = ExternalToolRuntime(
         shared.storage.sessions,
         shared.secret_protector,
-        connector_providers
-        or built_in_connector_provider_registry(
-            http,
-            endpoint_policy,
-            response_max_bytes=settings.connectivity.response_max_bytes,
-            timeout_seconds=settings.connectivity.total_timeout_seconds,
-        ),
+        connector_providers or build_connector_provider_registry(selected_provider_catalogs.connector, connector_http),
         clients.transport,
         endpoint_policy,
         http,
@@ -167,6 +173,7 @@ async def build_worker_runtime(
             asset_publication=asset_publication,
             observability=observability,
             queue_drain=queue_drain,
+            web_registry=WebProviderRegistry(selected_provider_catalogs.web),
         ),
         build_id=settings.service.build_version,
         queue_name=settings.gateway.run_queue_name,

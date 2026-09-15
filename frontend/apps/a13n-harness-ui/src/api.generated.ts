@@ -2764,6 +2764,18 @@ export interface components {
                 [key: string]: components["schemas"]["JsonValue"];
             } | null;
         };
+        /** RootOperationNotice */
+        RootOperationNotice: {
+            /** Receipt Id */
+            receipt_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "completed" | "failed" | "suspended";
+            /** Brief */
+            brief: string;
+        };
         /**
          * RootOperationStatus
          * @enum {string}
@@ -2904,6 +2916,15 @@ export interface components {
             /** Source Path */
             source_path: string;
         };
+        /** SessionAffinityPreset */
+        SessionAffinityPreset: {
+            /** Label */
+            label: string;
+            /** Header */
+            header: string;
+            /** Description */
+            description: string;
+        };
         /** SetupApiKeyModel */
         SetupApiKeyModel: {
             /** Route */
@@ -2929,6 +2950,11 @@ export interface components {
             base_url: string;
             /** Models */
             models: string[];
+            /**
+             * Supports Session Affinity
+             * @default true
+             */
+            supports_session_affinity?: boolean;
         };
         /** SetupChoices */
         SetupChoices: {
@@ -2939,6 +2965,32 @@ export interface components {
             };
             /** Api Providers */
             api_providers: components["schemas"]["SetupApiProvider"][];
+            /**
+             * Session Affinity Presets
+             * @default [
+             *       {
+             *         "label": "LiteLLM",
+             *         "header": "x-litellm-session-id",
+             *         "description": "Requires session affinity to be enabled on the gateway."
+             *       },
+             *       {
+             *         "label": "Conversation ID",
+             *         "header": "x-conversation-id",
+             *         "description": "For gateways configured to route by this header; configure the routing rule first."
+             *       },
+             *       {
+             *         "label": "Bifrost (API-key affinity)",
+             *         "header": "x-bf-session-id",
+             *         "description": "API-key affinity only; does not guarantee weighted provider or target pinning."
+             *       },
+             *       {
+             *         "label": "X-Session-ID (legacy / custom)",
+             *         "header": "x-session-id",
+             *         "description": "Use only when your gateway is configured to recognize this header."
+             *       }
+             *     ]
+             */
+            session_affinity_presets?: components["schemas"]["SessionAffinityPreset"][];
         };
         /** SetupModelChoice */
         SetupModelChoice: {
@@ -3306,6 +3358,7 @@ export interface components {
             thread_id?: string | null;
             /** Execution Id */
             execution_id?: string | null;
+            notice?: components["schemas"]["RootOperationNotice"] | null;
         };
         /** SummaryOpenFrame */
         SummaryOpenFrame: {

@@ -1,6 +1,8 @@
-import type { ReactNode } from "react";
+import { useContext, type ReactNode } from "react";
 import { Button, FormField, Input, SettingsSection } from "a13n-ui";
-import { WarningCircle } from "@phosphor-icons/react";
+import { WarningCircleIcon } from "@phosphor-icons/react";
+import { isConnectionError } from "../transport/client";
+import { ConnectionNoticeContext } from "./connection";
 import styles from "./workbench.module.css";
 
 export function PageHeader({
@@ -45,15 +47,16 @@ export function ErrorNotice({
   error: unknown;
   retry?: () => void;
 }) {
-  if (!error) return null;
+  const connectionNotice = useContext(ConnectionNoticeContext);
+  if (!error || (connectionNotice && isConnectionError(error))) return null;
   return (
-    <div role="alert" className={styles.notice}>
-      <div className={styles.actions}>
-        <WarningCircle size={18} aria-hidden="true" />
+    <div role="alert" className={styles.errorNotice}>
+      <div className={styles.errorMessage}>
+        <WarningCircleIcon size={18} aria-hidden="true" />
         <span>{error instanceof Error ? error.message : String(error)}</span>
       </div>
       {retry && (
-        <Button variant="outline" onClick={retry}>
+        <Button variant="ghost" size="sm" onClick={retry}>
           Retry
         </Button>
       )}

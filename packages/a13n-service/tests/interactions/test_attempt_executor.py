@@ -354,7 +354,7 @@ def _terminal_receipt(context: AttemptContext) -> AttemptOutcome:
         (False, None, RunError),
         (True, None, RunError),
         (False, "environment_required", RunError),
-        (False, "search_provider_unavailable", RunError),
+        (False, "web_provider_unavailable", RunError),
         (False, "web_operation_unavailable", RunError),
         (False, "untrusted_provider_code", RunError),
         (False, "skill_materialization_invalid", DefinitionError),

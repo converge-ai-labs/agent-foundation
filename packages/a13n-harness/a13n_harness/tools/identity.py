@@ -39,7 +39,14 @@ def source_tool_id(source: str, name: str, *, kind: Literal["tool", "mcp"] = "to
     """Encode a source-local name without ambiguous separators or wildcard expansion."""
     if not source.strip() or not name.strip():
         raise ValueError("Tool source and original name must be non-blank")
-    return f"{kind}/{quote(source, safe='')}/{quote(name, safe='')}"
+    return f"{source_tool_prefix(source, kind=kind)}{quote(name, safe='')}"
+
+
+def source_tool_prefix(source: str, *, kind: Literal["tool", "mcp"] = "tool") -> str:
+    """Return the stable namespace prefix for all tools from one source."""
+    if not source.strip():
+        raise ValueError("Tool source must be non-blank")
+    return f"{kind}/{quote(source, safe='')}/"
 
 
 def tool_identity(tool_def: ToolDefinition) -> ToolIdentity:

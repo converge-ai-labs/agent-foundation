@@ -24,6 +24,7 @@ class ApiProvider:
     base_url: str
     credential_env: str
     transport: Literal["native", "openai-client", "xai"] = "native"
+    supports_session_affinity: bool = True
 
 
 API_PROVIDERS = (
@@ -38,13 +39,13 @@ API_PROVIDERS = (
         "moonshotai", "Moonshot AI / Kimi", "https://api.moonshot.ai/v1", "MOONSHOTAI_API_KEY", "openai-client"
     ),
     ApiProvider("groq", "Groq", "https://api.groq.com", "GROQ_API_KEY"),
-    ApiProvider("mistral", "Mistral", "https://api.mistral.ai", "MISTRAL_API_KEY"),
+    ApiProvider("mistral", "Mistral", "https://api.mistral.ai", "MISTRAL_API_KEY", supports_session_affinity=False),
     ApiProvider("together", "Together AI", "https://api.together.xyz/v1", "TOGETHER_API_KEY", "openai-client"),
     ApiProvider(
         "fireworks", "Fireworks AI", "https://api.fireworks.ai/inference/v1", "FIREWORKS_API_KEY", "openai-client"
     ),
     ApiProvider("grok", "xAI · Chat Completions", "https://api.x.ai/v1", "XAI_API_KEY", "openai-client"),
-    ApiProvider("xai", "xAI · Native SDK (gRPC)", "", "XAI_API_KEY", "xai"),
+    ApiProvider("xai", "xAI · Native SDK (gRPC)", "", "XAI_API_KEY", "xai", supports_session_affinity=False),
 )
 API_PROVIDER_BY_ROUTE = {provider.route: provider for provider in API_PROVIDERS}
 

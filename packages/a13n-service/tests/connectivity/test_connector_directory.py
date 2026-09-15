@@ -5,10 +5,13 @@ from datetime import timedelta
 
 import pytest
 from a13n_service.connectivity.connectors.contracts import ConnectorProviderError, DiscoveredConnector
+from a13n_service.connectivity.connectors.domain import ConnectorProvider
 from a13n_service.connectivity.connectors.errors import ConnectorError
 from a13n_service.connectivity.connectors.models import ConnectorProviderRecord
+from a13n_service.connectivity.connectors.service import ConnectorProviderService
 from a13n_service.connectivity.connectors.shared_setup import reserve_shared_setup
 from a13n_service.storage import short_session, transaction
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from .conftest import NOW, actor
 from .connector_helpers import FakeConnectorProvider
@@ -73,22 +76,41 @@ async def test_shared_setup_claim_is_single_use_and_survives_uncertain_outcome(
 ):
     providers, _ = connector_services
     provider = await create_connector(providers)
+    await _assert_shared_setup_claim_is_single_use(connectivity_sessions, provider)
+
+
+async def test_postgresql_shared_setup_claim_is_single_use(
+    postgres_connectivity_sessions, connector_registry, credential_protector
+):
+    providers = ConnectorProviderService(
+        postgres_connectivity_sessions,
+        connector_registry,
+        credential_protector,
+        clock=lambda: NOW,
+    )
+    provider = await create_connector(providers)
+    await _assert_shared_setup_claim_is_single_use(postgres_connectivity_sessions, provider)
+
+
+async def _assert_shared_setup_claim_is_single_use(
+    sessions: async_sessionmaker[AsyncSession], provider: ConnectorProvider
+) -> None:
 
     async def claim():
         await reserve_shared_setup(
-            connectivity_sessions,
+            sessions,
             configuration_key="oauth",
             provider_id=provider.id,
             credential_generation=provider.credential_generation,
             connector_key="github",
         )
 
-    results = await asyncio.gather(claim(), claim(), return_exceptions=True)
+    results = await asyncio.gather(*(claim() for _ in range(16)), return_exceptions=True)
     assert sum(result is None for result in results) == 1
-    assert sum(isinstance(result, ConnectorProviderError) for result in results) == 1
+    assert sum(isinstance(result, ConnectorProviderError) for result in results) == 15
     with pytest.raises(ConnectorProviderError, match="shared_setup_outcome_unknown"):
         await claim()
-    async with transaction(connectivity_sessions) as session:
+    async with transaction(sessions) as session:
         record = await session.get(ConnectorProviderRecord, provider.id)
         record.credential_generation += 1
     with pytest.raises(ConnectorProviderError, match="connector_provider_changed"):
@@ -96,7 +118,7 @@ async def test_shared_setup_claim_is_single_use_and_survives_uncertain_outcome(
 
     with pytest.raises(ConnectorProviderError, match="shared_setup_outcome_unknown"):
         await reserve_shared_setup(
-            connectivity_sessions,
+            sessions,
             configuration_key="oauth",
             provider_id=provider.id,
             credential_generation=provider.credential_generation + 1,

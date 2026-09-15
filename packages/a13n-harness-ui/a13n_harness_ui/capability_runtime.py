@@ -282,6 +282,8 @@ class DuckDuckGoSearchProvider:
 class HtmlScrapeProvider:
     """Fetch public HTML and convert its bounded main document to Markdown."""
 
+    supports_domain_restrictions = True
+
     def __init__(self, client: HttpxWebClient) -> None:
         self._client = client
 
@@ -292,7 +294,7 @@ class HtmlScrapeProvider:
                 purpose="scrape",
                 deadline_seconds=request.deadline_seconds,
                 max_redirects=request.max_redirects,
-                max_response_bytes=min(request.max_markdown_bytes * 4, 16 * 1024 * 1024),
+                max_response_bytes=min(request.max_content_bytes * 4, 16 * 1024 * 1024),
                 max_header_count=128,
                 max_header_bytes=64 * 1024,
                 max_stream_chunk_bytes=64 * 1024,
@@ -309,11 +311,11 @@ class HtmlScrapeProvider:
             from markdownify import markdownify
 
             converted = markdownify(source, heading_style="ATX").strip()
-            if len(converted.encode("utf-8")) > request.max_markdown_bytes:
+            if len(converted.encode("utf-8")) > request.max_content_bytes:
                 raise WebProviderError("web_body_too_large")
             return WebScrapeResult(
-                markdown=converted,
-                final_url=response.final_url,
+                content=converted,
+                source_url=response.final_url,
                 canonical_url=response.canonical_url,
             )
         finally:

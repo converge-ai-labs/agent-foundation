@@ -26,7 +26,9 @@ async def synchronize_local_providers(
     OSS bootstrap lock serializes startup across control replicas.
     """
     desired = {
-        key: catalog.require(key).provider_configuration_model.model_validate(value).model_dump(mode="json")
+        key: catalog.require(key)
+        .provider_configuration_model.model_validate(value)
+        .model_dump(mode="json", by_alias=True, exclude_none=False)
         for key, value in configurations.items()
     }
     async with transaction(sessions) as session:

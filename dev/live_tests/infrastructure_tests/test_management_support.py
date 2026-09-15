@@ -101,14 +101,16 @@ def test_managed_upload_and_agent_payloads_match_current_contracts():
     for definition in (
         agent_config(client_tools=[client_tool()]),
         agent_config(skills=[{"skill_key": "live-proof", "version": 1}]),
-        agent_config(asset_publication={"enabled": True}),
+        agent_config(toolsets={"assets": {"enabled": True, "tools": {"publish": {"permission": "allow"}}}}),
         agent_config(
             output_spec={
                 "name": "proof",
                 "schema": {"type": "object", "properties": {"answer": {"type": "string"}}, "required": ["answer"]},
             }
         ),
-        agent_config(connection_tools=[{"connection_id": "mcpc_" + "a" * 24, "tools": ["live_echo"]}]),
+        agent_config(
+            connection_tools=[{"connection_id": "mcpc_" + "a" * 24, "tools": ["live_echo"], "permission": "allow"}]
+        ),
     ):
         AgentConfig.model_validate(definition)
 

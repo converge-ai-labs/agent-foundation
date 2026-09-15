@@ -35,18 +35,47 @@ curl --fail-with-body "$SERVICE_URL/api/v1/workspaces/$WORKSPACE/agents" \
 
 The `201` representation contains `agent` and `revision`. Save their returned IDs; do not fabricate IDs from the display name. The input adapter is the installed `native` adapter. This minimal Agent requires no Environment or external tools; its prompt should contain the material to review.
 
+## Export and import an Agent
+
+In Console, open an Agent and choose **Export agent** to inspect the saved configuration, **Copy YAML**, or **Download YAML**. Save any pending edits first. The file includes its name, description, and complete Agent configuration:
+
+```yaml
+schema_version: 1
+name: Research assistant
+description: Research and summarize source material.
+config:
+  model:
+    model_key: research
+  instructions: Cite your sources and distinguish facts from inference.
+  input_adapter:
+    adapter_key: native
+  protocol:
+    public_name: Research assistant
+```
+
+To reuse it, open **Agents → Create agent → Import from YAML** in the destination Workspace. Upload a `.yaml` or `.yml` file, or paste its contents, then choose **Review import**. Files can contain up to 1 MiB of UTF-8 text.
+
+1. Review the name, description, and configuration preview.
+2. Match any unavailable dependencies to resources in the destination Workspace. Model keys, Skills, Connections, reviewer Models, subagents, child Environment revisions, and Web Providers for search and scrape are checked before creation. Settings, tool scopes, and pinned versions remain unchanged; use **Edit YAML** to adjust a version or other advanced fields.
+3. Choose **Create agent**. Console opens the new Agent after Service accepts the configuration. If creation fails, correct the draft or retry; an unchanged retry reuses the same request identity.
+
+The file contains dependency references, not the Models, Skill packages, Connections, or credentials themselves. Import those resources separately when needed. Matching a key or version in another Workspace does not guarantee identical contents or behavior. Service still validates configuration and authority, and plugin availability and Secret access retain their runtime checks.
+
+Import always creates a new Agent. It does not restore its original ID, URL key, avatar, labels, default Environment, or version history. Choose the new Agent's default Environment separately if required. The format is specific to Service `AgentConfig`; Harness UI YAML uses a different schema. Managed credentials are never fetched by export, while authored instructions and configuration text are preserved.
+
 ## Configure tool permissions and a reviewer
 
-Add optional `permissions` and `reviewer` objects to the Agent `config` when local tool calls need a front permission gate. The following is a fragment to merge into a complete config; replace the reviewer placeholder with a real managed Model **ID**, not a Model key or provider route:
+Each built-in Tool owns its permission in `toolsets`. Authored permissions default to persisted `inherit`; replace the reviewer placeholder with a real managed Model **ID**, not a Model key or provider route:
 
 ```json
 {
-  "permissions": {
-    "default": "auto",
-    "rules": {
-      "environment.shell_exec": "review",
-      "filesystem.remove": "ask",
-      "tool/reporting/*": "review"
+  "toolsets": {
+    "shell": {
+      "enabled": true,
+      "tools": {
+        "exec": {"enabled": true, "permission": "review", "config": {}},
+        "signal": {"enabled": true, "permission": "ask", "config": {}}
+      }
     }
   },
   "reviewer": {
@@ -64,13 +93,13 @@ Add optional `permissions` and `reviewer` objects to the Agent `config` when loc
 }
 ```
 
-Use actual stable tool IDs from the prepared surface, not display-name guesses. `inherit` uses the tool's declared default, which is `allow` unless explicitly overridden by trusted tool code. A reviewer or risk rule alone does not enable review; `allow` continues, `deny` blocks, `ask` requests human approval, and `review` consults the reviewer. Without a matching reviewer, review adds no restriction. These settings never widen Service IAM or Environment authority. See the [Harness permission guide](../a13n-harness/managed-tools.md#select-tool-permissions) for selectors, custom instructions, and distinct approval sources.
+Use actual stable tool IDs from the prepared surface, not display-name guesses. `inherit` uses the Tool's declared default, which is `allow` unless explicitly overridden by trusted Tool code. A reviewer or risk rule alone does not enable review; `allow` continues, `deny` blocks, `ask` requests human approval, and `review` consults the matching reviewer when configured. Without a matching reviewer, review adds no restriction. These settings never widen Service IAM or Environment authority. Code-first Harness consumers can still use stable-ID selectors; Service built-ins keep exact permission ownership in their Tool entries.
 
-Run acceptance freezes reviewer Model execution settings alongside the main Model. Later Model edits do not change an accepted Run; credentials still resolve through current managed authentication. In `config_override`, omission inherits either field, null clears it, and an object replaces it entirely. A reviewer approval may be followed by a separate tool-policy approval through the normal waiting/feedback flow.
+Run acceptance freezes configured reviewer Model execution settings alongside the main Model. Later Model edits do not change an accepted Run; credentials still resolve through current managed authentication. In `config_override`, each supplied Toolset entry replaces that whole entry while omitted entries inherit. Reviewer omission inherits and null clears it. A reviewer approval may be followed by a separate tool-policy approval through the normal waiting/feedback flow.
 
 Review usage enters the existing accounting records with tool/call correlation. The stream exposes `tool_review_result` custom events with a completed risk/reason/usage result and independently computed decision, or a safe error code and effective decision. Treat those as observations, not another billable record or proof of execution.
 
-For first-party Web access, `search.allow_domains` and `search.deny_domains` constrain returned search URLs and fetch/download/scrape destinations, including redirect hops. Use exact hosts or explicit `*.` subdomains; deny wins. Existing `include_domains` keeps its separate search-filter semantics. These settings do not sandbox shell or remote MCP network access.
+For first-party Web access, each selected operation has independent `allow_domains` and `deny_domains`. A bare host includes its apex and subdomains; wildcard syntax is invalid and deny wins. Search always filters returned result URLs locally. Fetch and download check every redirect, while restricted Provider scrape requires explicit adapter support. These settings do not sandbox shell or remote MCP network access.
 
 ## Accept a Run
 
@@ -170,14 +199,4 @@ A control-capable process reconciles sealed child results, configured cancellati
 
 ## Next steps
 
-[Manage resources](resources.md), [select external tools](external-tools.md), [use a language SDK](sdks.md), or inspect the [complete Native API](api-reference.md). The companion `a13n-service-cli` supports remote label reads and replacements; it cannot execute this Run workflow.
-
-## Resource labels
-
-Agents, Sessions, Threads, Runs, Skills, Environment Templates, and Environments support string-to-string `labels` for business classification. For example, `{"project":"support","batch":"eval-09"}` can identify a project and evaluation batch. Use repeated `label=key=value` parameters on collection requests to require all matching pairs. Existing authorization and pagination still apply.
-
-New Threads copy their Session labels; new Runs copy their Thread labels. New Environments copy their Template's current labels, including when a historical Template revision is selected. Explicit creation labels override matching inherited keys. Forked Threads and retried Runs copy their source instead. These are one-time copies: later parent edits do not update existing resources. Queued Run overrides are merged when execution is accepted, using the Thread labels at that time.
-
-Read `<resource-path>/labels` to obtain the label map and its `ETag`. Replace the entire map with `PUT` to that same path, a body of `{"labels": {...}}`, and the exact `If-Match` tag. Send `{"labels": {}}` to clear the map. A stale tag returns `412`; read current labels before resolving the conflict. Label edits update the resource timestamp without changing configuration revisions, execution versions, queue versions, or Environment generations.
-
-Each resource permits up to 32 labels. Keys use 1–63 ASCII letters, digits, underscores, hyphens, or dots and begin with a letter or digit. Values permit up to 256 Unicode characters, including empty strings, but no control characters. Matching is case-sensitive. Labels provide classification, not access control or Agent instructions.
+[Manage resources](resources.md), [select external tools](external-tools.md), [use a language SDK](sdks.md), or inspect the [complete Native API](api-reference.md). The companion `a13n-service-cli` currently has help/version only; it cannot execute this workflow.

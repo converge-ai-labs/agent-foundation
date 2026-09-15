@@ -128,7 +128,7 @@ class EnvironmentService:
                 workspace_id=workspace_id,
                 type=request.type,
                 name=request.name,
-                configuration=configuration.model_dump(mode="json"),
+                configuration=configuration.model_dump(mode="json", by_alias=True, exclude_none=False),
                 enabled=True,
                 credential_generation=0,
                 created_at=now,

@@ -2,14 +2,10 @@
 
 import httpx2
 
-from a13n_service.connectivity.connectors.providers.configuration import ApiKeyCredentials
 from a13n_service.connectivity.http import EndpointValidator
 
 from ..http import ConnectorHttpClient
-from ..registry import ConnectorProviderImplementation, ConnectorProviderRegistry
-from .composio.configuration import ComposioConfiguration
-from .composio.configuration import validate_setup as composio_setup
-from .composio.runtime import ComposioProvider
+from ..registry import ConnectorProviderRegistry
 
 
 def built_in_connector_provider_registry(
@@ -22,18 +18,7 @@ def built_in_connector_provider_registry(
     http = ConnectorHttpClient(
         http_client, endpoint_validator, response_max_bytes=response_max_bytes, timeout_seconds=timeout_seconds
     )
-    return ConnectorProviderRegistry(
-        (
-            ConnectorProviderImplementation(
-                type="composio",
-                display_name="Composio",
-                configuration_model=ComposioConfiguration,
-                credential_model=ApiKeyCredentials,
-                setup_validator=composio_setup,
-                factory=lambda configuration, credentials: ComposioProvider(
-                    http,
-                    ApiKeyCredentials.model_validate(credentials),
-                ),
-            ),
-        )
-    )
+    from a13n_service.provider_plugins import load_provider_catalogs
+    from a13n_service.provider_plugins.connectors import build_connector_provider_registry
+
+    return build_connector_provider_registry(load_provider_catalogs(()).connector, http)

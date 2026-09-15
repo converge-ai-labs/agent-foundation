@@ -4,60 +4,58 @@ use crate::*;
 /// Borrows the parent transport and shares its shutdown.
 pub struct WorkspaceClient<'a> {
     client: &'a Client,
-    scope: SearchScope,
+    scope: WebProviderScope,
 }
 impl<'a> WorkspaceClient<'a> {
     pub(crate) fn new(client: &'a Client, workspace_id: String) -> Self {
         Self {
             client,
-            scope: SearchScope::Workspace(workspace_id),
+            scope: WebProviderScope::Workspace(workspace_id),
         }
     }
-    pub async fn search_providers(
+    pub async fn web_providers(
         &self,
-        options: &SearchListOptions,
-    ) -> Result<Representation<Page<SearchProvider>>, Error> {
-        self.client.search_providers(&self.scope, options).await
+        options: &WebProviderListOptions,
+    ) -> Result<Representation<Page<WebProvider>>, Error> {
+        self.client.web_providers(&self.scope, options).await
     }
-    pub async fn search_provider(
+    pub async fn web_provider(
         &self,
         provider_id: &str,
-    ) -> Result<Representation<SearchProvider>, Error> {
-        self.client.search_provider(&self.scope, provider_id).await
+    ) -> Result<Representation<WebProvider>, Error> {
+        self.client.web_provider(&self.scope, provider_id).await
     }
-    pub async fn create_search_provider(
+    pub async fn create_web_provider(
         &self,
-        request: &CreateSearchProviderRequest,
-    ) -> Result<Representation<SearchProvider>, Error> {
-        self.client
-            .create_search_provider(&self.scope, request)
-            .await
+        request: &CreateWebProviderRequest,
+    ) -> Result<Representation<WebProvider>, Error> {
+        self.client.create_web_provider(&self.scope, request).await
     }
-    pub async fn update_search_provider(
+    pub async fn update_web_provider(
         &self,
         provider_id: &str,
         etag: &str,
-        request: &UpdateSearchProviderRequest,
-    ) -> Result<Representation<SearchProvider>, Error> {
+        request: &UpdateWebProviderRequest,
+    ) -> Result<Representation<WebProvider>, Error> {
         self.client
-            .update_search_provider(&self.scope, provider_id, etag, request)
+            .update_web_provider(&self.scope, provider_id, etag, request)
             .await
     }
-    pub async fn test_search_provider(
+    pub async fn test_web_provider(
         &self,
         provider_id: &str,
-    ) -> Result<Representation<SearchProviderTestResult>, Error> {
+    ) -> Result<Representation<WebProviderTestResult>, Error> {
         self.client
-            .test_search_provider(&self.scope, provider_id)
+            .test_web_provider(&self.scope, provider_id)
             .await
     }
-    pub async fn search_provider_references(
+    pub async fn web_provider_references(
         &self,
         provider_id: &str,
-        options: &SearchListOptions,
-    ) -> Result<Representation<Page<SearchProviderReference>>, Error> {
+        options: &WebProviderListOptions,
+    ) -> Result<Representation<Page<WebProviderReference>>, Error> {
         self.client
-            .search_provider_references(&self.scope, provider_id, options)
+            .web_provider_references(&self.scope, provider_id, options)
             .await
     }
 }

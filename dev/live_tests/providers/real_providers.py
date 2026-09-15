@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 async def provision_provider(journey, section, settings):
     if section == "search":
         return await journey.post(
-            journey.base + "/search-providers",
+            journey.base + "/web-providers",
             {
                 "name": "Configured live Search",
                 "type": settings.provider,

@@ -28,10 +28,12 @@ from a13n_service.process.components import Components
 from a13n_service.process.resources import ExecutionResources
 from a13n_service.process.runtime import ControlRuntime, SharedRuntime
 from a13n_service.process.submission import build_input_commands
+from a13n_service.provider_plugins import ProviderCatalogs
 from a13n_service.run_stream import RedisRunStream, RunReplayStore
-from a13n_service.search.service import SearchProviderService
 from a13n_service.settings import Settings
 from a13n_service.trace_query.provider import TraceQueryProviderRegistry
+from a13n_service.web.registry import WebProviderRegistry
+from a13n_service.web.service import WebProviderService
 
 from .agent import build_agent_management
 from .asset import build_asset_bundle
@@ -54,6 +56,7 @@ async def build_control_runtime(
     agent_resources: AgentResources,
     trace_query_provider_registry: TraceQueryProviderRegistry,
     stack: AsyncExitStack,
+    provider_catalogs: ProviderCatalogs,
 ) -> tuple[ControlRuntime, tuple[BackgroundTask, ...]]:
     """Construct the services owned by a Control-capable role."""
 
@@ -207,7 +210,11 @@ async def build_control_runtime(
         agents=agents,
         models=models.models,
         model_providers=models.providers,
-        search_providers=SearchProviderService(shared.storage.sessions, shared.secret_protector),
+        web_providers=WebProviderService(
+            shared.storage.sessions,
+            shared.secret_protector,
+            WebProviderRegistry(provider_catalogs.web),
+        ),
         assets=assets.catalog,
         asset_uploads=assets.uploads,
         hook_subscriptions=hooks.subscriptions,

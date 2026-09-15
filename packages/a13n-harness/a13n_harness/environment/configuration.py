@@ -10,6 +10,8 @@ class DynamicEnvironmentConfiguration(BaseModel):
 
     files_enabled: bool = True
     shell_enabled: bool = True
+    file_tools: frozenset[str] | None = None
+    shell_tools: frozenset[str] | None = None
 
 
 __all__ = ["DynamicEnvironmentConfiguration"]

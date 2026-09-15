@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { Button, ChoiceField } from "a13n-ui";
 import { ApiError, result, type Schema } from "../transport/client";
@@ -358,7 +358,10 @@ export function Child({
           {child.failure && <p role="alert">{child.failure.message}</p>}
           <details className={styles.activity} open={!live}>
             <summary>Latest activity snapshot</summary>
-            <MessageText text={child.activity.output_preview ?? ""} />
+            <DetailText
+              text={child.activity.output_preview ?? ""}
+              label="activity snapshot"
+            />
             {child.activity.output_truncated && (
               <p>
                 Activity preview truncated. Inspect retained child output below.
@@ -401,19 +404,7 @@ export function Child({
             executionId={child.execution_id}
           />
           <ErrorNotice error={review.error || controlState.error} />
-          {review.data && (
-            <details>
-              <summary>{review.data.title}</summary>
-              <p>{review.data.summary || review.data.unavailable_reason}</p>
-              <pre className={styles.code}>
-                {review.data.content ||
-                  JSON.stringify(review.data.value, null, 2)}
-              </pre>
-              {(review.data.truncated || review.data.omitted) && (
-                <p>Some content was omitted by the server.</p>
-              )}
-            </details>
-          )}
+          {review.data && <ReviewDetails review={review.data} />}
           {child.available_actions?.includes("steer") && (
             <div className={styles.form}>
               <TextField
@@ -476,6 +467,78 @@ export function Child({
                 ? "Control accepted."
                 : "This execution did not accept the control."}
             </p>
+          )}
+        </>
+      )}
+    </details>
+  );
+}
+function DetailText({
+  text,
+  label,
+  code = false,
+}: {
+  text: string;
+  label: string;
+  code?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const id = useId();
+  const preview = text.slice(0, 800).split("\n").slice(0, 8).join("\n");
+  const long = preview.length < text.length;
+  const visible = long && !expanded ? `${preview}…` : text;
+  return (
+    <div className={styles.detailText}>
+      <div
+        id={id}
+        className={styles.detailTextBody}
+        data-expanded={expanded}
+        role="region"
+        aria-label={label}
+        tabIndex={0}
+      >
+        {code ? (
+          <pre className={styles.code}>{visible}</pre>
+        ) : (
+          <MessageText text={visible} />
+        )}
+      </div>
+      {long && (
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-expanded={expanded}
+          aria-controls={id}
+          onClick={() => setExpanded((value) => !value)}
+        >
+          {expanded ? `Show less ${label}` : `Show full ${label}`}
+        </Button>
+      )}
+    </div>
+  );
+}
+function ReviewDetails({ review }: { review: Schema<"ReviewView"> }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <details onToggle={(event) => setOpen(event.currentTarget.open)}>
+      <summary>{review.title}</summary>
+      {open && (
+        <>
+          {review.summary && (
+            <DetailText text={review.summary} label="review summary" />
+          )}
+          {review.unavailable_reason && <p>{review.unavailable_reason}</p>}
+          {review.content ? (
+            <DetailText text={review.content} label="review content" />
+          ) : review.value != null ? (
+            <DetailText
+              text={JSON.stringify(review.value, null, 2)}
+              label="review data"
+              code
+            />
+          ) : null}
+          {(review.truncated || review.omitted) && (
+            <p>Some content was omitted by the server.</p>
           )}
         </>
       )}

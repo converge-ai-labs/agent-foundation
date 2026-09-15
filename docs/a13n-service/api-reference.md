@@ -2821,6 +2821,121 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
+## memory
+
+### `GET /api/v1/workspaces/{workspace}/memories`
+
+List Memories.
+
+| Parameter    | Location | Required | Type / schema  | Constraints and default            |
+| ------------ | -------- | -------- | -------------- | ---------------------------------- |
+| `workspace`  | path     | true     | string         | —                                  |
+| `limit`      | query    | false    | integer        | minimum=1; maximum=100; default=50 |
+| `cursor`     | query    | false    | string or null | —                                  |
+| `scope`      | query    | true     | Mem0Scope      | —                                  |
+| `subject_id` | query    | false    | string or null | —                                  |
+
+Responses:
+
+- **200** — Successful Response (`application/json: MemoryCollection`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/workspaces/{workspace}/memories`
+
+Add Memory.
+
+| Parameter    | Location | Required | Type / schema  | Constraints and default |
+| ------------ | -------- | -------- | -------------- | ----------------------- |
+| `workspace`  | path     | true     | string         | —                       |
+| `scope`      | query    | true     | Mem0Scope      | —                       |
+| `subject_id` | query    | false    | string or null | —                       |
+
+Request body: required.
+
+- `application/json`: `MemoryWrite`.
+
+Responses:
+
+- **201** — Successful Response (`application/json: Memory`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/workspaces/{workspace}/memories/search`
+
+Search Memories.
+
+| Parameter    | Location | Required | Type / schema  | Constraints and default |
+| ------------ | -------- | -------- | -------------- | ----------------------- |
+| `workspace`  | path     | true     | string         | —                       |
+| `scope`      | query    | true     | Mem0Scope      | —                       |
+| `subject_id` | query    | false    | string or null | —                       |
+
+Request body: required.
+
+- `application/json`: `MemorySearch`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: MemoryCollection`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `DELETE /api/v1/workspaces/{workspace}/memories/{memory_id}`
+
+Delete Memory.
+
+| Parameter    | Location | Required | Type / schema  | Constraints and default    |
+| ------------ | -------- | -------- | -------------- | -------------------------- |
+| `memory_id`  | path     | true     | string         | minLength=1; maxLength=512 |
+| `workspace`  | path     | true     | string         | —                          |
+| `scope`      | query    | true     | Mem0Scope      | —                          |
+| `subject_id` | query    | false    | string or null | —                          |
+
+Responses:
+
+- **204** — Successful Response.
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/workspaces/{workspace}/memories/{memory_id}`
+
+Get Memory.
+
+| Parameter    | Location | Required | Type / schema  | Constraints and default    |
+| ------------ | -------- | -------- | -------------- | -------------------------- |
+| `memory_id`  | path     | true     | string         | minLength=1; maxLength=512 |
+| `workspace`  | path     | true     | string         | —                          |
+| `scope`      | query    | true     | Mem0Scope      | —                          |
+| `subject_id` | query    | false    | string or null | —                          |
+
+Responses:
+
+- **200** — Successful Response (`application/json: Memory`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `PUT /api/v1/workspaces/{workspace}/memories/{memory_id}`
+
+Update Memory.
+
+| Parameter    | Location | Required | Type / schema  | Constraints and default    |
+| ------------ | -------- | -------- | -------------- | -------------------------- |
+| `memory_id`  | path     | true     | string         | minLength=1; maxLength=512 |
+| `workspace`  | path     | true     | string         | —                          |
+| `scope`      | query    | true     | Mem0Scope      | —                          |
+| `subject_id` | query    | false    | string or null | —                          |
+
+Request body: required.
+
+- `application/json`: `MemoryWrite`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: Memory`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
 ## model-management
 
 ### `GET /api/v1/model-provider-types`
@@ -3823,245 +3938,6 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
-## search-providers
-
-### `GET /api/v1/organizations/{organization}/search-providers`
-
-List Organization Provider.
-
-| Parameter      | Location | Required | Type / schema   | Constraints and default            |
-| -------------- | -------- | -------- | --------------- | ---------------------------------- |
-| `organization` | path     | true     | string          | —                                  |
-| `limit`        | query    | false    | integer         | minimum=1; maximum=100; default=50 |
-| `cursor`       | query    | false    | string or null  | —                                  |
-| `type`         | query    | false    | string or null  | —                                  |
-| `enabled`      | query    | false    | boolean or null | —                                  |
-
-Responses:
-
-- **200** — Successful Response (`application/json: SearchProviderCollection`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `POST /api/v1/organizations/{organization}/search-providers`
-
-Create Organization Provider.
-
-| Parameter      | Location | Required | Type / schema | Constraints and default |
-| -------------- | -------- | -------- | ------------- | ----------------------- |
-| `organization` | path     | true     | string        | —                       |
-
-Request body: required.
-
-- `application/json`: `CreateSearchProviderRequest`.
-
-Responses:
-
-- **201** — Successful Response (`application/json: SearchProvider`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `GET /api/v1/organizations/{organization}/search-providers/{provider_id}`
-
-Get Organization Provider.
-
-| Parameter      | Location | Required | Type / schema | Constraints and default |
-| -------------- | -------- | -------- | ------------- | ----------------------- |
-| `provider_id`  | path     | true     | string        | —                       |
-| `organization` | path     | true     | string        | —                       |
-
-Responses:
-
-- **200** — Successful Response (`application/json: SearchProvider`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `PATCH /api/v1/organizations/{organization}/search-providers/{provider_id}`
-
-Update Organization Provider.
-
-| Parameter      | Location | Required | Type / schema | Constraints and default    |
-| -------------- | -------- | -------- | ------------- | -------------------------- |
-| `provider_id`  | path     | true     | string        | —                          |
-| `organization` | path     | true     | string        | —                          |
-| `If-Match`     | header   | true     | string        | minLength=1; maxLength=256 |
-
-Request body: required.
-
-- `application/json`: `UpdateSearchProviderRequest`.
-
-Responses:
-
-- **200** — Successful Response (`application/json: SearchProvider`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `GET /api/v1/organizations/{organization}/search-providers/{provider_id}/references`
-
-References Organization Provider.
-
-| Parameter      | Location | Required | Type / schema  | Constraints and default            |
-| -------------- | -------- | -------- | -------------- | ---------------------------------- |
-| `provider_id`  | path     | true     | string         | —                                  |
-| `organization` | path     | true     | string         | —                                  |
-| `limit`        | query    | false    | integer        | minimum=1; maximum=100; default=50 |
-| `cursor`       | query    | false    | string or null | —                                  |
-
-Responses:
-
-- **200** — Successful Response (`application/json: SearchProviderReferenceCollection`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `POST /api/v1/organizations/{organization}/search-providers/{provider_id}/test`
-
-Test Organization Provider.
-
-| Parameter      | Location | Required | Type / schema | Constraints and default |
-| -------------- | -------- | -------- | ------------- | ----------------------- |
-| `provider_id`  | path     | true     | string        | —                       |
-| `organization` | path     | true     | string        | —                       |
-
-Request body: required.
-
-- `application/json`: `SearchConfiguration`.
-
-Responses:
-
-- **200** — Successful Response (`application/json: SearchProviderTestResult`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `GET /api/v1/search-provider-types`
-
-List Types.
-
-Responses:
-
-- **200** — Successful Response (`application/json: SearchProviderDefinitionCollection`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `GET /api/v1/search-provider-types/{provider_type}`
-
-Get Type.
-
-| Parameter       | Location | Required | Type / schema | Constraints and default |
-| --------------- | -------- | -------- | ------------- | ----------------------- |
-| `provider_type` | path     | true     | string        | —                       |
-
-Responses:
-
-- **200** — Successful Response (`application/json: SearchProviderDefinition`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `GET /api/v1/workspaces/{workspace}/search-providers`
-
-List Workspace Provider.
-
-| Parameter   | Location | Required | Type / schema   | Constraints and default            |
-| ----------- | -------- | -------- | --------------- | ---------------------------------- |
-| `workspace` | path     | true     | string          | —                                  |
-| `limit`     | query    | false    | integer         | minimum=1; maximum=100; default=50 |
-| `cursor`    | query    | false    | string or null  | —                                  |
-| `type`      | query    | false    | string or null  | —                                  |
-| `enabled`   | query    | false    | boolean or null | —                                  |
-
-Responses:
-
-- **200** — Successful Response (`application/json: SearchProviderCollection`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `POST /api/v1/workspaces/{workspace}/search-providers`
-
-Create Workspace Provider.
-
-| Parameter   | Location | Required | Type / schema | Constraints and default |
-| ----------- | -------- | -------- | ------------- | ----------------------- |
-| `workspace` | path     | true     | string        | —                       |
-
-Request body: required.
-
-- `application/json`: `CreateSearchProviderRequest`.
-
-Responses:
-
-- **201** — Successful Response (`application/json: SearchProvider`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `GET /api/v1/workspaces/{workspace}/search-providers/{provider_id}`
-
-Get Workspace Provider.
-
-| Parameter     | Location | Required | Type / schema | Constraints and default |
-| ------------- | -------- | -------- | ------------- | ----------------------- |
-| `provider_id` | path     | true     | string        | —                       |
-| `workspace`   | path     | true     | string        | —                       |
-
-Responses:
-
-- **200** — Successful Response (`application/json: SearchProvider`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `PATCH /api/v1/workspaces/{workspace}/search-providers/{provider_id}`
-
-Update Workspace Provider.
-
-| Parameter     | Location | Required | Type / schema | Constraints and default    |
-| ------------- | -------- | -------- | ------------- | -------------------------- |
-| `provider_id` | path     | true     | string        | —                          |
-| `workspace`   | path     | true     | string        | —                          |
-| `If-Match`    | header   | true     | string        | minLength=1; maxLength=256 |
-
-Request body: required.
-
-- `application/json`: `UpdateSearchProviderRequest`.
-
-Responses:
-
-- **200** — Successful Response (`application/json: SearchProvider`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `GET /api/v1/workspaces/{workspace}/search-providers/{provider_id}/references`
-
-References Workspace Provider.
-
-| Parameter     | Location | Required | Type / schema  | Constraints and default            |
-| ------------- | -------- | -------- | -------------- | ---------------------------------- |
-| `provider_id` | path     | true     | string         | —                                  |
-| `workspace`   | path     | true     | string         | —                                  |
-| `limit`       | query    | false    | integer        | minimum=1; maximum=100; default=50 |
-| `cursor`      | query    | false    | string or null | —                                  |
-
-Responses:
-
-- **200** — Successful Response (`application/json: SearchProviderReferenceCollection`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `POST /api/v1/workspaces/{workspace}/search-providers/{provider_id}/test`
-
-Test Workspace Provider.
-
-| Parameter     | Location | Required | Type / schema | Constraints and default |
-| ------------- | -------- | -------- | ------------- | ----------------------- |
-| `provider_id` | path     | true     | string        | —                       |
-| `workspace`   | path     | true     | string        | —                       |
-
-Request body: required.
-
-- `application/json`: `SearchConfiguration`.
-
-Responses:
-
-- **200** — Successful Response (`application/json: SearchProviderTestResult`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
 ## skill-management
 
 ### `GET /api/v1/skill-revisions/{skill_revision_id}`
@@ -4416,5 +4292,236 @@ List Trace Observations.
 Responses:
 
 - **200** — Successful Response (`application/json: ObservationCollection`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+## web-providers
+
+### `GET /api/v1/organizations/{organization}/web-providers`
+
+List Organization Provider.
+
+| Parameter      | Location | Required | Type / schema   | Constraints and default            |
+| -------------- | -------- | -------- | --------------- | ---------------------------------- |
+| `organization` | path     | true     | string          | —                                  |
+| `limit`        | query    | false    | integer         | minimum=1; maximum=100; default=50 |
+| `cursor`       | query    | false    | string or null  | —                                  |
+| `type`         | query    | false    | string or null  | —                                  |
+| `enabled`      | query    | false    | boolean or null | —                                  |
+
+Responses:
+
+- **200** — Successful Response (`application/json: WebProviderCollection`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/organizations/{organization}/web-providers`
+
+Create Organization Provider.
+
+| Parameter      | Location | Required | Type / schema | Constraints and default |
+| -------------- | -------- | -------- | ------------- | ----------------------- |
+| `organization` | path     | true     | string        | —                       |
+
+Request body: required.
+
+- `application/json`: `CreateWebProviderRequest`.
+
+Responses:
+
+- **201** — Successful Response (`application/json: WebProvider`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/organizations/{organization}/web-providers/{provider_id}`
+
+Get Organization Provider.
+
+| Parameter      | Location | Required | Type / schema | Constraints and default |
+| -------------- | -------- | -------- | ------------- | ----------------------- |
+| `provider_id`  | path     | true     | string        | —                       |
+| `organization` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: WebProvider`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `PATCH /api/v1/organizations/{organization}/web-providers/{provider_id}`
+
+Update Organization Provider.
+
+| Parameter      | Location | Required | Type / schema | Constraints and default    |
+| -------------- | -------- | -------- | ------------- | -------------------------- |
+| `provider_id`  | path     | true     | string        | —                          |
+| `organization` | path     | true     | string        | —                          |
+| `If-Match`     | header   | true     | string        | minLength=1; maxLength=256 |
+
+Request body: required.
+
+- `application/json`: `UpdateWebProviderRequest`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: WebProvider`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/organizations/{organization}/web-providers/{provider_id}/references`
+
+References Organization Provider.
+
+| Parameter      | Location | Required | Type / schema  | Constraints and default            |
+| -------------- | -------- | -------- | -------------- | ---------------------------------- |
+| `provider_id`  | path     | true     | string         | —                                  |
+| `organization` | path     | true     | string         | —                                  |
+| `limit`        | query    | false    | integer        | minimum=1; maximum=100; default=50 |
+| `cursor`       | query    | false    | string or null | —                                  |
+
+Responses:
+
+- **200** — Successful Response (`application/json: WebProviderReferenceCollection`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/organizations/{organization}/web-providers/{provider_id}/test`
+
+Test Organization Provider.
+
+| Parameter      | Location | Required | Type / schema | Constraints and default |
+| -------------- | -------- | -------- | ------------- | ----------------------- |
+| `provider_id`  | path     | true     | string        | —                       |
+| `organization` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: WebProviderTestResult`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/web-provider-types`
+
+List Types.
+
+Responses:
+
+- **200** — Successful Response (`application/json: WebProviderDefinitionCollection`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/web-provider-types/{provider_type}`
+
+Get Type.
+
+| Parameter       | Location | Required | Type / schema | Constraints and default |
+| --------------- | -------- | -------- | ------------- | ----------------------- |
+| `provider_type` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: WebProviderDefinition`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/workspaces/{workspace}/web-providers`
+
+List Workspace Provider.
+
+| Parameter   | Location | Required | Type / schema   | Constraints and default            |
+| ----------- | -------- | -------- | --------------- | ---------------------------------- |
+| `workspace` | path     | true     | string          | —                                  |
+| `limit`     | query    | false    | integer         | minimum=1; maximum=100; default=50 |
+| `cursor`    | query    | false    | string or null  | —                                  |
+| `type`      | query    | false    | string or null  | —                                  |
+| `enabled`   | query    | false    | boolean or null | —                                  |
+
+Responses:
+
+- **200** — Successful Response (`application/json: WebProviderCollection`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/workspaces/{workspace}/web-providers`
+
+Create Workspace Provider.
+
+| Parameter   | Location | Required | Type / schema | Constraints and default |
+| ----------- | -------- | -------- | ------------- | ----------------------- |
+| `workspace` | path     | true     | string        | —                       |
+
+Request body: required.
+
+- `application/json`: `CreateWebProviderRequest`.
+
+Responses:
+
+- **201** — Successful Response (`application/json: WebProvider`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/workspaces/{workspace}/web-providers/{provider_id}`
+
+Get Workspace Provider.
+
+| Parameter     | Location | Required | Type / schema | Constraints and default |
+| ------------- | -------- | -------- | ------------- | ----------------------- |
+| `provider_id` | path     | true     | string        | —                       |
+| `workspace`   | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: WebProvider`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `PATCH /api/v1/workspaces/{workspace}/web-providers/{provider_id}`
+
+Update Workspace Provider.
+
+| Parameter     | Location | Required | Type / schema | Constraints and default    |
+| ------------- | -------- | -------- | ------------- | -------------------------- |
+| `provider_id` | path     | true     | string        | —                          |
+| `workspace`   | path     | true     | string        | —                          |
+| `If-Match`    | header   | true     | string        | minLength=1; maxLength=256 |
+
+Request body: required.
+
+- `application/json`: `UpdateWebProviderRequest`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: WebProvider`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/workspaces/{workspace}/web-providers/{provider_id}/references`
+
+References Workspace Provider.
+
+| Parameter     | Location | Required | Type / schema  | Constraints and default            |
+| ------------- | -------- | -------- | -------------- | ---------------------------------- |
+| `provider_id` | path     | true     | string         | —                                  |
+| `workspace`   | path     | true     | string         | —                                  |
+| `limit`       | query    | false    | integer        | minimum=1; maximum=100; default=50 |
+| `cursor`      | query    | false    | string or null | —                                  |
+
+Responses:
+
+- **200** — Successful Response (`application/json: WebProviderReferenceCollection`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/workspaces/{workspace}/web-providers/{provider_id}/test`
+
+Test Workspace Provider.
+
+| Parameter     | Location | Required | Type / schema | Constraints and default |
+| ------------- | -------- | -------- | ------------- | ----------------------- |
+| `provider_id` | path     | true     | string        | —                       |
+| `workspace`   | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: WebProviderTestResult`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).

@@ -81,12 +81,12 @@ async def test_expired_agent_evidence_allows_reusing_the_key(
     [
         (
             "connection_tools",
-            ({"connection_id": "cconn_1234567890abcdef"},),
+            ({"connection_id": "cconn_1234567890abcdef", "permission": "allow"},),
             "connection_unavailable",
         ),
         (
             "connection_tools",
-            ({"connection_id": "mcpc_1234567890abcdef"},),
+            ({"connection_id": "mcpc_1234567890abcdef", "permission": "allow"},),
             "connection_unavailable",
         ),
     ],

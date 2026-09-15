@@ -218,7 +218,7 @@ class RunAttemptExecutor[OutputT]:
                     elif isinstance(error, RunError) and error.code in {
                         "execution_usage_exhausted",
                         "environment_required",
-                        "search_provider_unavailable",
+                        "web_provider_unavailable",
                         "web_operation_unavailable",
                     }:
                         code = error.code

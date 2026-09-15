@@ -7,7 +7,9 @@ from unittest.mock import AsyncMock, Mock
 import anyio
 import httpx2
 import pytest
+from a13n_harness import AgentSpec, HarnessBuilder, HarnessState, RunBindings
 from a13n_harness.errors import ModelResolutionError
+from a13n_harness.model_affinity import derive_model_affinity_id
 from a13n_service.etags import resource_etag
 from a13n_service.models import requests as model_requests
 from a13n_service.models.domain import (
@@ -85,10 +87,10 @@ async def _request(model, *, streaming=False, settings=None, parameters=None):
         await model.request(messages, settings, parameters)
 
 
-async def _live_model(client, *, provider_type="openai", harness_thread_id=None):
+async def _live_model(client, *, provider_type="openai", harness_thread_id=None, configuration=None):
     resolver = Mock(spec=LiveProviderResolver)
     resolver.resolve = AsyncMock(
-        return_value=RuntimeProvider(provider_type, {}, "https://api.openai.com/v1", "test-key")
+        return_value=RuntimeProvider(provider_type, configuration or {}, "https://api.openai.com/v1", "test-key")
     )
     factory = NativeModelFactory(client, built_in_provider_registry(), _AllowEndpoints())
     return await LiveProviderModel.create(
@@ -375,15 +377,139 @@ async def test_openrouter_accepts_only_exact_harness_correlation_defaults(stream
         return _reply(streaming)
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
-        model = await _live_model(client, provider_type="openrouter", harness_thread_id="thr_current")
-        settings = {"openai_prompt_cache_key": "thr_current", "extra_headers": {"x-session-id": "thr_current"}}
+        model = await _live_model(
+            client,
+            provider_type="openrouter",
+            harness_thread_id="thr_current",
+            configuration={"session_affinity_header": "x-conversation-id"},
+        )
+        settings = {"openai_prompt_cache_key": derive_model_affinity_id("thr_current")}
         await _request(model, streaming=streaming, settings=settings)
-        assert sent[0].headers["x-session-id"] == "thr_current"
-        assert json.loads(sent[0].content)["prompt_cache_key"] == "thr_current"
-        assert settings["openai_prompt_cache_key"] == "thr_current"
-        with pytest.raises(ModelError):
-            await _request(model, streaming=streaming, settings={"openai_prompt_cache_key": "caller-value"})
+        assert sent[0].headers["x-conversation-id"] == derive_model_affinity_id("thr_current")
+        assert "x-session-id" not in sent[0].headers
+        for header in ("x-conversation-id", "x-session-id"):
+            with pytest.raises(ModelError):
+                await _request(model, settings={"extra_headers": {header: "thr_current"}})
+        assert json.loads(sent[0].content)["prompt_cache_key"] == derive_model_affinity_id("thr_current")
+        assert settings["openai_prompt_cache_key"] == derive_model_affinity_id("thr_current")
+        for invalid_cache_key in ("caller-value", "thr_current"):
+            with pytest.raises(ModelError):
+                await _request(model, streaming=streaming, settings={"openai_prompt_cache_key": invalid_cache_key})
         unbound = await _live_model(client, provider_type="openrouter")
         with pytest.raises(ModelError):
             await _request(unbound, streaming=streaming, settings=settings)
         assert len(sent) == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("header", [None, "x-conversation-id"])
+async def test_harness_cache_and_live_provider_header_share_derived_affinity(header) -> None:
+    sent = []
+    state = HarnessState.new(thread_id="thr_current")
+
+    async def handler(request):
+        sent.append(request)
+        return _reply(streaming=True)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
+
+        async def resolve(context, model_id):
+            return await _live_model(
+                client,
+                provider_type="openrouter",
+                harness_thread_id=context.deps.thread_id,
+                configuration={"session_affinity_header": header},
+            )
+
+        executable = HarnessBuilder(x_session_id_enabled=False).build(
+            AgentSpec(model="logical:primary"), output_type=str
+        )
+        first = await executable.run(
+            "hello", bindings=RunBindings.embedded(model_resolver=resolve), previous_state=state
+        )
+        assert first.output_or_raise() == "OK"
+        assert first.state is not None and first.state.thread_id == state.thread_id
+        restored = HarnessState.model_validate_json(first.state.model_dump_json())
+        second = await executable.run(
+            "continue", bindings=RunBindings.embedded(model_resolver=resolve), previous_state=restored
+        )
+        assert second.output_or_raise() == "OK"
+
+    assert len(sent) == 2
+    for request in sent:
+        assert json.loads(request.content)["prompt_cache_key"] == derive_model_affinity_id(state.thread_id)
+        assert "x-session-id" not in request.headers
+        if header:
+            assert request.headers[header] == derive_model_affinity_id(state.thread_id)
+        else:
+            assert "x-conversation-id" not in request.headers
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("streaming", [False, True])
+@pytest.mark.parametrize("replacement", ["x-conversation-id", None])
+async def test_retry_refreshes_affinity_header_with_endpoint(
+    provider_service, model_service, model_sessions, streaming, replacement
+):
+    provider = await provider_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        request=CreateModelProviderRequest(
+            type="openai",
+            name="Gateway",
+            credential="test-key",
+            configuration={"base_url": "https://first.example/v1", "session_affinity_header": "x-session-id"},
+        ),
+    )
+    saved = await model_service.create(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        request=CreateModelRequest(
+            key="affinity",
+            provider_id=provider.id,
+            name="Affinity",
+            upstream_model="example-model",
+            model_api="openai.chat_completions",
+        ),
+    )
+    sent = []
+
+    async def handler(request):
+        sent.append(request)
+        if len(sent) == 1:
+            await provider_service.update(
+                actor=actor(),
+                workspace_id=WORKSPACE_ID,
+                provider_id=provider.id,
+                if_match=resource_etag(provider.id, provider.updated_at),
+                request=UpdateModelProviderRequest(
+                    configuration={
+                        "base_url": "https://second.example/v1",
+                        "session_affinity_header": replacement,
+                    }
+                ),
+            )
+            return httpx2.Response(503, headers={"retry-after": "0"}, json={"error": {"message": "busy"}})
+        return _reply(streaming)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
+        registry = built_in_provider_registry()
+        model = await LiveProviderModel.create(
+            snapshot=ModelExecutionSnapshot.freeze(saved),
+            organization_id=ORG_ID,
+            workspace_id=WORKSPACE_ID,
+            provider_resolver=LiveProviderResolver(model_sessions, registry, _AllowEndpoints(), protector()),
+            model_factory=NativeModelFactory(client, registry, _AllowEndpoints()),
+            harness_thread_id="thr_current",
+        )
+        settings = {"extra_headers": {"http-referer": "https://app.example"}}
+        await _request(model, streaming=streaming, settings=settings)
+    assert [request.url.host for request in sent] == ["first.example", "second.example"]
+    assert sent[0].headers["x-session-id"] == derive_model_affinity_id("thr_current")
+    assert "x-session-id" not in sent[1].headers
+    if replacement:
+        assert sent[1].headers[replacement] == derive_model_affinity_id("thr_current")
+    else:
+        assert "x-conversation-id" not in sent[1].headers
+    assert settings == {"extra_headers": {"http-referer": "https://app.example"}}
+    assert all(request.headers["http-referer"] == "https://app.example" for request in sent)

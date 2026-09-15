@@ -1,3 +1,4 @@
+import re
 from typing import Any, cast
 
 import pytest
@@ -57,18 +58,19 @@ def test_state_import_preserves_unclaimed_namespaces_as_opaque_values() -> None:
     assert snapshot.entries["plugin.private"].data == {"value": 2}
 
 
-def test_thread_identity_is_stable_on_copy_and_rotates_on_fork() -> None:
-    state = HarnessState.new(thread_id="thr_hostroot")
+@pytest.mark.parametrize("thread_id", ["thr_hostroot", "thread-" + "a" * 32, "thread_" + "b" * 32])
+def test_thread_identity_is_stable_on_copy_and_rotates_on_fork(thread_id: str) -> None:
+    state = HarnessState.new(thread_id=thread_id)
     copied = state.model_copy(deep=True)
     restored = HarnessState.model_validate_json(state.model_dump_json())
     forked = state.fork()
     host_forked = state.fork(thread_id="thr_hostfork")
 
     assert state.schema_version == "1"
-    assert state.thread_id == "thr_hostroot"
+    assert state.thread_id == thread_id
     assert copied.thread_id == state.thread_id
     assert restored.thread_id == state.thread_id
-    assert forked.thread_id.startswith("thread-")
+    assert re.fullmatch(r"thread_[0-9a-f]{32}", forked.thread_id)
     assert forked.thread_id != state.thread_id
     assert host_forked.thread_id == "thr_hostfork"
     for value in (forked, host_forked):
@@ -81,7 +83,9 @@ def test_thread_identity_is_stable_on_copy_and_rotates_on_fork() -> None:
 
 
 def test_independent_states_receive_distinct_thread_identities() -> None:
-    assert HarnessState.new().thread_id != HarnessState.new().thread_id
+    first = HarnessState.new().thread_id
+    assert re.fullmatch(r"thread_[0-9a-f]{32}", first)
+    assert first != HarnessState.new().thread_id
 
 
 @pytest.mark.parametrize(

@@ -37,7 +37,11 @@ async def connectivity(client: Client, base: str, catalog: dict, identity: dict,
         **agent_config("Local MCP review"),
         "instructions": "Use the local review fixture for fictional lookups.",
         "connection_tools": [
-            {"connection_id": scenarios["mcp_ready"], "tools": ["lookup_local_review", "fail_local_review"]}
+            {
+                "connection_id": scenarios["mcp_ready"],
+                "tools": ["lookup_local_review", "fail_local_review"],
+                "permission": "allow",
+            }
         ],
     }
     created = await client.request(

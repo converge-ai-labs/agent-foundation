@@ -13,6 +13,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     String,
+    UniqueConstraint,
     text,
 )
 from sqlalchemy.orm import Mapped, declared_attr, mapped_column
@@ -67,9 +68,6 @@ class ConnectorProviderRecord(ResourceCredential[str | None], Base):
     normalized_name: Mapped[str] = mapped_column(String(CASEFOLDED_NAME_MAX_LENGTH), nullable=False)
     type: Mapped[str] = mapped_column(String(64), nullable=False)
     configuration_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
-    setup_claims_json: Mapped[dict[str, int]] = mapped_column(
-        JSON, nullable=False, default=dict, server_default=text("'{}'")
-    )
     directory_json: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON)
     directory_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String(16), nullable=False)
@@ -95,6 +93,26 @@ class ConnectorProviderRecord(ResourceCredential[str | None], Base):
             created_at=assume_utc(self.created_at),
             updated_at=assume_utc(self.updated_at),
         )
+
+
+class ConnectorSharedSetupClaimRecord(Base):
+    __tablename__ = "connector_shared_setup_claims"
+    __table_args__ = (
+        ForeignKeyConstraint(("provider_id",), ("connector_providers.id",), ondelete="CASCADE"),
+        CheckConstraint("credential_generation >= 1", name="credential_generation_positive"),
+        UniqueConstraint(
+            "provider_id",
+            "connector_key",
+            "configuration_key",
+            name="uq_connector_shared_setup_claims_scope",
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    provider_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    connector_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    configuration_key: Mapped[str] = mapped_column(String(128), nullable=False)
+    credential_generation: Mapped[int] = mapped_column(BigInteger, nullable=False)
 
 
 class ConnectorConnectionRecord(ConnectionRecord):

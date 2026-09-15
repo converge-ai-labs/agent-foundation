@@ -9,6 +9,7 @@ export type WizardDraft = {
   apiProvider: string;
   modelId: string;
   baseUrl: string;
+  sessionAffinityHeader?: string;
   preset: string;
   apiContext?: number;
   credential: string;
@@ -30,9 +31,11 @@ export function readWizardDraft(scope: string): WizardDraft | undefined {
       typeof value.apiProvider === "string" &&
       typeof value.modelId === "string" &&
       typeof value.baseUrl === "string" &&
+      (value.sessionAffinityHeader === undefined ||
+        typeof value.sessionAffinityHeader === "string") &&
       typeof value.credential === "string" &&
       typeof value.preset === "string" &&
-      /^thread-[a-f0-9]{32}$/.test(value.threadId) &&
+      /^thread[-_][a-f0-9]{32}$/.test(value.threadId) &&
       Number.isInteger(value.step) &&
       value.step >= 0 &&
       value.step <= 2

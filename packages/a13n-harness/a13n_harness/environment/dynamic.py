@@ -123,6 +123,8 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
             if self.configuration.files_enabled
             else frozenset()
         )
+        if self.configuration.file_tools is not None:
+            file_names &= self.configuration.file_tools
         has_full_access = self.configuration.shell_enabled and EnvironmentAction.SHELL_EXEC in operations
         shell_supersedes_mutations = (
             self.configuration.shell_enabled
@@ -141,7 +143,9 @@ class _DynamicEnvironmentRunCapability(DynamicEnvironmentCapability):
         if self.configuration.shell_enabled and (
             has_full_access or any(action.value.startswith("environment.process.") for action in operations)
         ):
-            toolsets.append(self._shell_toolset.get_toolset())
+            shell = self._shell_toolset.get_toolset(allowed_names=self.configuration.shell_tools)
+            if shell.tools:
+                toolsets.append(shell)
         if not toolsets:
             return None
         return CombinedToolset(toolsets)

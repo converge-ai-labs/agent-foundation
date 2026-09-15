@@ -18,10 +18,27 @@
   min-height: 80px;
   scrollbar-gutter: stable;
 }
-.threadSkeletons {
-  display: grid;
-  gap: 8px;
+.initialLoading {
+  min-height: 32px;
   padding: 8px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.initialLoading > span {
+  animation: revealLoading 0s 180ms both;
+}
+@keyframes revealLoading {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.refreshingGroup {
+  align-self: center;
+  font-size: 10px;
+  color: var(--a13n-secondary);
 }
 .groupHeading {
   display: flex;
@@ -381,6 +398,30 @@
 }
 .childLive {
   margin: 12px 0;
+}
+.detailText {
+  min-width: 0;
+  margin-block: 12px;
+}
+.detailTextBody {
+  max-height: min(180px, 25dvh);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  scrollbar-gutter: stable;
+}
+.detailTextBody[data-expanded="true"] {
+  max-height: min(420px, 50dvh);
+}
+.detailTextBody:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: 2px;
+}
+.detailTextBody .code {
+  max-height: none;
+  margin: 0;
+}
+.detailText > button {
+  margin-top: 6px;
 }
 .composerHint summary {
   cursor: pointer;

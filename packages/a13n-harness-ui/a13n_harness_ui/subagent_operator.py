@@ -1837,7 +1837,9 @@ def _with_completion(display: CompactChildDisplay, *, output: object) -> Compact
 
 
 def _with_failure(display: CompactChildDisplay, failure: SafeFailure) -> CompactChildDisplay:
-    activities = [*display.activities, CompactChildActivity(kind="failure", text=failure.message)]
+    # Keep the original SafeFailure for settlement; only the compact display
+    # uses the existing explicitly marked failure preview.
+    activities = [*display.activities, CompactChildActivity(kind="failure", text=_surface_failure(failure).message)]
     return CompactChildDisplay(
         activities=tuple(activities[-_MAX_DISPLAY_ACTIVITIES:]),
         final_answer=display.final_answer,

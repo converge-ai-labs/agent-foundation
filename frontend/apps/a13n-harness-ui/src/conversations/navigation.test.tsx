@@ -58,6 +58,7 @@ let activity: URL[];
 let writes: Request[];
 let failMore: boolean;
 let failSave: boolean;
+let cwd: string;
 let pauseMore: Promise<void> | null;
 let pageAborted: boolean;
 let recentTitle: string;
@@ -68,6 +69,7 @@ beforeEach(() => {
   writes = [];
   failMore = false;
   failSave = false;
+  cwd = "/outside";
   pauseMore = null;
   pageAborted = false;
   recentTitle = "Recent 1";
@@ -104,6 +106,10 @@ beforeEach(() => {
         return json(thread("created"));
       }
       if (url.pathname === "/api/projects") return json(projects);
+      if (url.pathname === "/api/setup")
+        return json({ suggested_project_path: cwd });
+      if (url.pathname === "/api/status")
+        return json({ features: { host_files: false } });
       if (url.pathname === "/api/configuration/sources")
         return json({ sources: [] });
       if (url.pathname === "/api/selectors")
@@ -549,4 +555,144 @@ it("does not claim empty search results when the list fails", async () => {
   );
   expect(screen.queryByText("No matching conversations.")).toBeNull();
   expect(screen.queryByText("No conversations yet")).toBeNull();
+});
+
+it("keeps rows and DOM identity across an archive toggle and failed refresh without reusing old cursors", async () => {
+  mount();
+  fireEvent.click(await screen.findByRole("button", { name: "One" }));
+  const original = await screen.findByRole("link", { name: "Recent 1" });
+  const scroller = document.querySelector<HTMLElement>(
+    "[data-project-scroll]",
+  )!;
+  scroller.scrollTop = 40;
+  const originalFetch = vi.mocked(fetch).getMockImplementation()!;
+  let release!: () => void;
+  const pause = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    const request = input as Request;
+    if (request.url.includes("include_archived=true")) {
+      await pause;
+      return json({ error: { message: "Archive filter unavailable" } }, 503);
+    }
+    return originalFetch(input, init);
+  });
+  fireEvent.click(screen.getByRole("checkbox", { name: "Include archived" }));
+  expect(screen.getByRole("link", { name: "Recent 1" })).toBe(original);
+  expect(screen.queryByLabelText("Loading conversations")).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: "Show more conversations in One" }),
+  ).toBeNull();
+  expect(scroller.scrollTop).toBe(40);
+  await act(async () => release());
+  await screen.findByText("Archive filter unavailable");
+  expect(screen.getByRole("link", { name: "Recent 1" })).toBe(original);
+});
+
+it("hides archived rows immediately when filtering them out while retaining non-archived rows", async () => {
+  const originalFetch = vi.mocked(fetch).getMockImplementation()!;
+  let pause: Promise<void> | null = null;
+  let release!: () => void;
+  vi.mocked(fetch).mockImplementation(async (input, init) => {
+    const request = input as Request;
+    if (request.url.includes("/api/threads/activity")) {
+      if (pause) await pause;
+      return json({
+        rows: [
+          { thread: thread("Active") },
+          { thread: { ...thread("Archived"), archived: true } },
+        ],
+        next_cursor: null,
+      });
+    }
+    return originalFetch(input, init);
+  });
+  mount();
+  fireEvent.click(
+    await screen.findByRole("checkbox", { name: "Include archived" }),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "One" }));
+  await screen.findByRole("link", { name: /^Archived/ });
+  const active = screen.getByRole("link", { name: "Active" });
+  pause = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  fireEvent.click(screen.getByRole("checkbox", { name: "Include archived" }));
+  expect(screen.queryByRole("link", { name: /^Archived/ })).toBeNull();
+  expect(screen.getByRole("link", { name: "Active" })).toBe(active);
+  await act(async () => release());
+});
+
+it("targets execution refreshes without invalidating settings or native queries", async () => {
+  queryClient.setQueryData(["sources"], { sources: [] });
+  queryClient.setQueryData(["native", "files"], []);
+  queryClient.setQueryData(["thread", "thread-other", "detail"], {});
+  queryClient.setQueryData(["thread", "thread-changed", "detail"], {});
+  mount("/", true);
+  await screen.findByRole("button", { name: "One" });
+  act(() =>
+    vi.mocked(watchSummary).mock.calls.at(-1)![1]({
+      kind: "root_operation",
+      root_thread_id: "thread-changed",
+      thread_id: "thread-changed",
+      epoch: "epoch",
+      sequence: 1,
+    }),
+  );
+  expect(queryClient.getQueryState(["sources"])?.isInvalidated).toBe(false);
+  expect(queryClient.getQueryState(["native", "files"])?.isInvalidated).toBe(
+    false,
+  );
+  expect(
+    queryClient.getQueryState(["thread", "thread-other", "detail"])
+      ?.isInvalidated,
+  ).toBe(false);
+  expect(
+    queryClient.getQueryState(["thread", "thread-changed", "detail"])
+      ?.isInvalidated,
+  ).toBe(true);
+});
+
+it("puts the current server directory first by default and on reset, while respecting explicit browser order", async () => {
+  cwd = "/two";
+  const user = userEvent.setup();
+  const view = mount();
+  await waitFor(() => expect(groupNames()).toEqual(["Two", "One"]));
+  expect(writes).toHaveLength(0);
+  view.unmount();
+  localStorage.setItem(
+    "a13n-harness-ui.project-order",
+    JSON.stringify(["project-one", "project-two"]),
+  );
+  mount();
+  await screen.findByRole("button", { name: "Reorder One" });
+  expect(groupNames()).toEqual(["One", "Two"]);
+  await user.click(screen.getByRole("button", { name: "Actions for One" }));
+  await user.click(
+    await screen.findByRole("menuitem", {
+      name: "Reset project order in this browser",
+    }),
+  );
+  expect(groupNames()).toEqual(["Two", "One"]);
+  expect(writes).toHaveLength(0);
+});
+
+it("opens project rename directly from the secondary menu without expanding or navigating", async () => {
+  const user = userEvent.setup();
+  mount();
+  await user.click(
+    await screen.findByRole("button", { name: "Actions for One" }),
+  );
+  await user.click(
+    await screen.findByRole("menuitem", { name: "Rename project" }),
+  );
+  await screen.findByRole("dialog", { name: "Rename project" });
+  expect(
+    screen
+      .getByRole("button", { name: "One", hidden: true })
+      .getAttribute("aria-expanded"),
+  ).toBe("false");
+  expect(activity).toHaveLength(0);
+  expect(writes).toHaveLength(0);
 });

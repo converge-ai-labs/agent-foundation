@@ -9,7 +9,13 @@ from a13n_harness.tools.client import (
     ClientToolsSpec,
 )
 from a13n_harness.tools.deferred import DeferredToolResume
-from a13n_harness.tools.identity import ToolIdentity, ToolIdentityToolset, ToolPermissionMode, source_tool_id
+from a13n_harness.tools.identity import (
+    ToolIdentity,
+    ToolIdentityToolset,
+    ToolPermissionMode,
+    source_tool_id,
+    source_tool_prefix,
+)
 from a13n_harness.tools.invocation import ManagedToolProviderError, current_invocation_scope
 from a13n_harness.tools.metadata import (
     HARNESS_TOOL_METADATA_KEY,
@@ -23,7 +29,7 @@ from a13n_harness.tools.metadata import (
     ToolResourceResolver,
     recovery_retryable,
 )
-from a13n_harness.tools.permissions import ToolPermissions, ToolPermissionsCapability
+from a13n_harness.tools.permissions import ToolPermissions, ToolPermissionsCapability, ToolPermissionSetting
 from a13n_harness.tools.policy import (
     ApprovalVerifier,
     CredentialBroker,
@@ -68,10 +74,12 @@ __all__ = [
     "ToolInvocationContext",
     "ToolOutputPolicy",
     "ToolPermissionMode",
+    "ToolPermissionSetting",
     "ToolPermissions",
     "ToolPermissionsCapability",
     "ToolResourceResolver",
     "current_invocation_scope",
     "recovery_retryable",
     "source_tool_id",
+    "source_tool_prefix",
 ]

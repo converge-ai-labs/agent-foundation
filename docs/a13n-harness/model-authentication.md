@@ -49,7 +49,7 @@ The authorization exposes verification URI, user code, expiry, and polling inter
 
 ### Build the Model
 
-`CodexRequestModel(model_name, *, credential_source, http_client=None)` accepts the upstream `OpenAICodexCredentialSource` protocol (`async load()` / `async save(credentials)`). It adds Harness request affinity while upstream Pydantic AI owns authentication, refresh, retries, and Responses rendering.
+`CodexRequestModel(model_name, *, credential_source, http_client=None, thread_id=None)` accepts the upstream `OpenAICodexCredentialSource` protocol (`async load()` / `async save(credentials)`). In your Model resolver, pass `thread_id=context.deps.thread_id` to bind native Codex session headers for both streaming and non-streaming requests. The adapter applies the shared [UUID v5 affinity derivation](models.md#automatic-model-request-affinity) to that raw Thread ID; do not pre-derive it. Explicit native headers remain unchanged. These no longer derive from `x-session-id` or any other gateway header. Rebind from the current context for child Threads and forks; do not capture a parent's ID. Upstream Pydantic AI owns authentication, refresh, retries, and Responses rendering.
 
 The wrapper owns its HTTP client only when it creates one. An injected client stays caller-owned. Harness scopes the Model for a Run; the wrapper's request/response hooks must not outlive their owning model use. Reconstruct account selection for a new Run instead of swapping accounts behind an active request.
 

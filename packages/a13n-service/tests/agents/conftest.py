@@ -13,6 +13,7 @@ from a13n_service.agents.domain import (
 )
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
 from a13n_service.agents.resolution import AgentResolver
+from a13n_service.agents.toolsets import default_toolsets
 from a13n_service.iam import AuthenticatedActor, PrincipalRef
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
 from a13n_service.models.models import ModelProviderRecord, ModelRecord
@@ -53,8 +54,19 @@ def agent_config(
     connection_tools: tuple[dict[str, object], ...] | None = None,
     subagents: dict[str, object] | None = None,
 ) -> AgentConfig:
+    toolsets = default_toolsets()
+    for key in ("files", "shell"):
+        selected = toolsets[key]
+        toolsets[key] = selected.model_copy(
+            update={
+                "tools": {
+                    name: tool.model_copy(update={"permission": "allow"}) for name, tool in selected.tools.items()
+                }
+            }
+        )
     return AgentConfig.model_validate(
         {
+            "toolsets": toolsets,
             "model": {
                 "model_key": MODEL_KEY,
                 "settings": {"temperature": 0.2},
@@ -70,7 +82,6 @@ def agent_config(
             "output_spec": None,
             "retries": {"tools": 2, "output": 1},
             "secret_requirements": [],
-            "asset_publication": None,
             "protocol": {
                 "schema_version": "1",
                 "public_name": "Support",
@@ -244,6 +255,7 @@ async def agent_management(
         agent_sessions,
         resolver,
         invocation_resolver,
+        model_selector,
         clock=lambda: NOW,
     )
 

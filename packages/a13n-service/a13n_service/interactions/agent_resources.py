@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from a13n_service.agents.domain import EffectiveAgentConfig
 from a13n_service.agents.execution_graph import inline_child_executions
 from a13n_service.agents.reconstruction import AgentDefinitionReconstructionContext
+from a13n_service.agents.toolsets import enabled_tool
 from a13n_service.assets.runtime import AssetCapability, AssetRuntime, PublicationSelection
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.connectivity.selection_resolution import FrozenRunConnectivity
@@ -105,7 +106,7 @@ async def prepare_agent_resources(
         )
         configurations[revision_id] = child.effective_config
     for revision_id, selected in configurations.items():
-        if selected.asset_publication is not None:
+        if enabled_tool(selected.toolsets, "assets", "publish") is not None:
             agent_id = run.agent_id if revision_id == run.agent_revision_id else children[revision_id][0].child_agent_id
             capabilities[revision_id] = (
                 *capabilities[revision_id],

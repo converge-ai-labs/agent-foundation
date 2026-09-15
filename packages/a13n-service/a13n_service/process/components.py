@@ -56,7 +56,7 @@ def snapshot_components(settings: Settings, components: Components) -> Component
     if not (owns_control(settings.service.role) or owns_worker(settings.service.role)) or connector_providers is None:
         connector_providers = None
     else:
-        connector_providers = connector_providers.copy()
+        connector_providers = connector_providers.copy(frozen=True)
     return replace(
         components,
         ingress_adapter_registry=ingress_adapters,

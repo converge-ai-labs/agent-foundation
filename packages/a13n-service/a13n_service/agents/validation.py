@@ -10,7 +10,10 @@ from a13n_harness.tools.client import ClientToolDefinition
 from jsonschema import Draft202012Validator
 from jsonschema.exceptions import SchemaError
 
-from .domain import OutputSpec, ProtocolConfig
+from a13n_service.connectivity.selection_domain import ConnectionToolSelection
+
+from .domain import AgentReviewer, OutputSpec, ProtocolConfig
+from .toolsets import Toolsets, active_model_names, enabled_tool
 
 _DEFAULT_OUTPUT_MODES = frozenset({"text"})
 _DEFAULT_EVENT_VISIBILITY = frozenset(
@@ -55,6 +58,9 @@ class AgentConfigValidationInput(Protocol):
     output_spec: OutputSpec | None
     protocol: ProtocolConfig
     client_tools: tuple[ClientToolDefinition, ...]
+    connection_tools: tuple[ConnectionToolSelection, ...]
+    toolsets: Toolsets
+    reviewer: AgentReviewer | None
 
 
 def validate_agent_config(
@@ -66,6 +72,24 @@ def validate_agent_config(
 
     _validate_json_schemas(config)
     _validate_protocol(config, protocol_policy)
+    _validate_tool_policy(config)
+
+
+def _validate_tool_policy(config: AgentConfigValidationInput) -> None:
+    for operation in ("search", "scrape"):
+        selected = enabled_tool(config.toolsets, "web", operation)
+        if selected is not None and not selected.config.get("provider_id"):
+            raise AgentConfigValidationError(
+                "web_provider_required",
+                path=f"toolsets.web.tools.{operation}.config.provider_id",
+            )
+    built_in_names = active_model_names(config.toolsets)
+    for index, tool in enumerate(config.client_tools):
+        if tool.name in built_in_names:
+            raise AgentConfigValidationError(
+                "tool_name_conflict",
+                path=f"client_tools.{index}.name",
+            )
 
 
 def _validate_protocol(config: AgentConfigValidationInput, policy: AgentProtocolPolicy) -> None:

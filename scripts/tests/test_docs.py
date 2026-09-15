@@ -81,8 +81,8 @@ def test_theme_reuses_frontend_brand_and_bundles_license(built_site: Path) -> No
         "tokens.css": "styles/tokens.css",
     }.items():
         assert (assets / generated).read_bytes() == (ui / source).read_bytes()
-    assert (assets / "lucide-LICENSE").read_bytes() == (ROOT / "scripts/docs/lucide-LICENSE").read_bytes()
-    for icon in (ROOT / "scripts/docs/theme/.icons/lucide").glob("*.svg"):
+    assert (assets / "phosphor-LICENSE").read_bytes() == (ROOT / "scripts/docs/phosphor-LICENSE").read_bytes()
+    for icon in (ROOT / "scripts/docs/theme/.icons/phosphor").glob("*.svg"):
         assert (assets / "icons" / icon.name).read_bytes() == icon.read_bytes()
 
 
@@ -98,10 +98,25 @@ def test_overview_has_mermaid_markup_and_local_theme_assets(built_site: Path) ->
     assert "fonts.gstatic.com" not in html
     css = (built_site / "assets/a13n/theme.css").read_text(encoding="utf-8")
     assert 'url("icons/' not in css
-    assert '--md-clipboard-icon: url("data:image/svg+xml,' in css
+    assert '--md-code-copy-icon: url("data:image/svg+xml,' in css
     warning = (built_site / "a13n-harness-ui/index.html").read_text(encoding="utf-8")
     assert "Choose permissions deliberately." in warning
     assert "!!! warning" not in warning
+
+
+def test_mermaid_fences_disable_shrink_to_fit(built_site: Path) -> None:
+    diagrams = [
+        source
+        for page in built_site.rglob("*.html")
+        for source in re.findall(r'<pre class="mermaid"><code>(.*?)</code></pre>', page.read_text(), re.DOTALL)
+    ]
+    assert diagrams
+    for source in diagrams:
+        _, configuration, graph = source.split("---", 2)
+        settings = yaml.safe_load(configuration)["config"]
+        assert settings["flowchart"]["useMaxWidth"] is False
+        assert settings["sequence"]["useMaxWidth"] is False
+        assert graph.strip().startswith(("flowchart", "sequenceDiagram"))
 
 
 def test_envd_client_reference_covers_every_generated_method() -> None:

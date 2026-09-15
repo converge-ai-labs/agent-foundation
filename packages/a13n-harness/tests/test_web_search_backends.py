@@ -69,7 +69,7 @@ class _WebScrapeProvider:
         raise AssertionError(f"unexpected Web scrape: {request.url}")
 
 
-class _RecordingSearchProvider:
+class _RecordingWebProvider:
     def __init__(self, backend_id: str, calls: list[str], outcome: object) -> None:
         self.backend_id = backend_id
         self.calls = calls
@@ -220,7 +220,7 @@ def test_backend_selection_uses_binding_order_priority_and_exact_selection() -> 
     search_backends = tuple(
         WebSearchBackendBinding(
             backend_id,
-            _RecordingSearchProvider(backend_id, search_calls, WebSearchResponse(results=())),
+            _RecordingWebProvider(backend_id, search_calls, WebSearchResponse(results=())),
         )
         for backend_id in ("google", "brave", "tavily")
     )
@@ -231,8 +231,8 @@ def test_backend_selection_uses_binding_order_priority_and_exact_selection() -> 
                 backend_id,
                 scrape_calls,
                 WebScrapeResult(
-                    markdown="ok",
-                    final_url="https://example.com",
+                    content="ok",
+                    source_url="https://example.com",
                     canonical_url="https://example.com",
                 ),
             ),
@@ -270,8 +270,8 @@ async def test_public_web_toolset_applies_exact_and_priority_selection() -> None
     scrape_calls: list[str] = []
     search_response = WebSearchResponse(results=())
     scrape_response = WebScrapeResult(
-        markdown="selected",
-        final_url="https://example.com/selected",
+        content="selected",
+        source_url="https://example.com/selected",
         canonical_url="https://example.com/selected",
     )
     toolset = WebToolset(
@@ -285,11 +285,11 @@ async def test_public_web_toolset_applies_exact_and_priority_selection() -> None
         search_backends=(
             WebSearchBackendBinding(
                 "first",
-                _RecordingSearchProvider("first", search_calls, search_response),
+                _RecordingWebProvider("first", search_calls, search_response),
             ),
             WebSearchBackendBinding(
                 "second",
-                _RecordingSearchProvider("second", search_calls, search_response),
+                _RecordingWebProvider("second", search_calls, search_response),
             ),
         ),
         scrape_backends=(
@@ -320,7 +320,7 @@ async def test_public_web_toolset_applies_exact_and_priority_selection() -> None
             search_backends=(
                 WebSearchBackendBinding(
                     "available",
-                    _RecordingSearchProvider("available", search_calls, search_response),
+                    _RecordingWebProvider("available", search_calls, search_response),
                 ),
             ),
         )
@@ -332,7 +332,7 @@ def test_run_binding_accepts_many_backends_without_an_arbitrary_count_limit() ->
     backends = tuple(
         WebSearchBackendBinding(
             f"search-{index}",
-            _RecordingSearchProvider(f"search-{index}", calls, WebSearchResponse(results=())),
+            _RecordingWebProvider(f"search-{index}", calls, WebSearchResponse(results=())),
         )
         for index in range(40)
     )
@@ -458,8 +458,8 @@ async def test_search_and_scrape_fall_back_in_selected_backend_order() -> None:
         )
     )
     scrape_result = WebScrapeResult(
-        markdown="# Result",
-        final_url="https://example.com/final",
+        content="# Result",
+        source_url="https://example.com/final",
         canonical_url="https://example.com/final",
     )
     policy = _WebPolicy()
@@ -471,11 +471,11 @@ async def test_search_and_scrape_fall_back_in_selected_backend_order() -> None:
         search_backends=(
             WebSearchBackendBinding(
                 "first",
-                _RecordingSearchProvider("first", search_calls, WebProviderError("first_failed")),
+                _RecordingWebProvider("first", search_calls, WebProviderError("first_failed")),
             ),
             WebSearchBackendBinding(
                 "second",
-                _RecordingSearchProvider("second", search_calls, search_result),
+                _RecordingWebProvider("second", search_calls, search_result),
             ),
         ),
         scrape_backends=(
@@ -502,13 +502,13 @@ async def test_search_and_scrape_fall_back_in_selected_backend_order() -> None:
 async def test_oversized_scrape_response_falls_back() -> None:
     calls: list[str] = []
     oversized = WebScrapeResult(
-        markdown="too large",
-        final_url="https://example.com/oversized",
+        content="too large",
+        source_url="https://example.com/oversized",
         canonical_url="https://example.com/oversized",
     )
     valid = WebScrapeResult(
-        markdown="ok",
-        final_url="https://example.com/valid",
+        content="ok",
+        source_url="https://example.com/valid",
         canonical_url="https://example.com/valid",
     )
     toolset = WebToolset(
@@ -531,7 +531,7 @@ async def test_oversized_scrape_response_falls_back() -> None:
     result = await toolset.scrape(_run_context(), "https://example.com/start")
 
     assert result["ok"] is True
-    assert result["markdown"] == "ok"
+    assert result["content"] == "ok"
     assert calls == ["oversized", "valid"]
 
 
@@ -545,11 +545,11 @@ async def test_valid_empty_search_result_does_not_fall_back() -> None:
         search_backends=(
             WebSearchBackendBinding(
                 "empty",
-                _RecordingSearchProvider("empty", calls, WebSearchResponse(results=())),
+                _RecordingWebProvider("empty", calls, WebSearchResponse(results=())),
             ),
             WebSearchBackendBinding(
                 "unused",
-                _RecordingSearchProvider("unused", calls, WebProviderError("unexpected")),
+                _RecordingWebProvider("unused", calls, WebProviderError("unexpected")),
             ),
         ),
     )
@@ -571,11 +571,11 @@ async def test_search_timeout_does_not_fall_back() -> None:
         search_backends=(
             WebSearchBackendBinding(
                 "timeout",
-                _RecordingSearchProvider("timeout", calls, TimeoutError()),
+                _RecordingWebProvider("timeout", calls, TimeoutError()),
             ),
             WebSearchBackendBinding(
                 "unused",
-                _RecordingSearchProvider("unused", calls, WebSearchResponse(results=())),
+                _RecordingWebProvider("unused", calls, WebSearchResponse(results=())),
             ),
         ),
     )
@@ -623,8 +623,8 @@ async def test_scrape_policy_failure_does_not_fall_back(
             raise AssertionError("policy failure should have stopped the provider")
 
     fallback = WebScrapeResult(
-        markdown="unexpected",
-        final_url="https://example.com/fallback",
+        content="unexpected",
+        source_url="https://example.com/fallback",
         canonical_url="https://example.com/fallback",
     )
     toolset = WebToolset(

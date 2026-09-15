@@ -48,6 +48,8 @@ async def test_setup_previews_without_publication_and_seeds_both_providers(tmp_p
     assert yaml.safe_load(path.read_text())["tools"] == root["tools"]
     assert source.document.tools.enable_codeact is True
     assert len(source.agents) == 2
+    assert source.projects["project-local"].name == tmp_path.name
+    assert yaml.safe_load(preview.files["projects/project-local.yaml"])["name"] == tmp_path.name
 
 
 @pytest.mark.anyio

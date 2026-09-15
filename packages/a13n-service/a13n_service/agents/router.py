@@ -31,6 +31,8 @@ from .domain import (
 )
 from .errors import AgentError
 from .http_dependencies import AgentId
+from .toolset_service import ToolsetCandidate, ToolsetCandidateResult
+from .toolsets import ToolsetCatalog
 
 router = APIRouter(prefix="/api/v1", tags=["agent-management"])
 Actor = Annotated[AuthenticatedActor, Depends(workspace_actor)]
@@ -48,6 +50,25 @@ def _management(request: Request) -> AgentManagement:
 
 def _set_etag(response: Response, agent: Agent) -> None:
     response.headers["ETag"] = resource_etag(agent.id, agent.updated_at)
+
+
+@router.get("/workspaces/{workspace}/toolsets", response_model=ToolsetCatalog)
+async def get_toolsets(request: Request, actor: Actor, workspace_id: WorkspaceId) -> ToolsetCatalog:
+    return await _management(request).toolsets.definitions(actor=actor, workspace_id=workspace_id)
+
+
+@router.post("/workspaces/{workspace}/toolsets/validate", response_model=ToolsetCandidateResult)
+async def validate_toolsets(
+    request: Request,
+    actor: Actor,
+    workspace_id: WorkspaceId,
+    body: ToolsetCandidate,
+) -> ToolsetCandidateResult:
+    return await _management(request).toolsets.validate_candidate(
+        actor=actor,
+        workspace_id=workspace_id,
+        candidate=body,
+    )
 
 
 @router.get("/workspaces/{workspace}/agents", response_model=AgentCollection)

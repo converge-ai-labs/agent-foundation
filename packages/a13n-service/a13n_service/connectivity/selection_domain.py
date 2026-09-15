@@ -2,6 +2,7 @@
 
 from typing import Annotated, Literal
 
+from a13n_harness.tools import ToolPermissionSetting
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 from a13n_service.ids import ObjectId
@@ -23,6 +24,14 @@ class ConnectionToolSelection(BaseModel):
     connection_id: ObjectId
     tools: ToolSelection = None
     defer_loading: bool = False
+    permission: ToolPermissionSetting = "inherit"
+    permissions: dict[ToolKey, ToolPermissionSetting] = Field(default_factory=dict, max_length=2048)
+
+    @model_validator(mode="after")
+    def validate_permissions(self) -> "ConnectionToolSelection":
+        if self.tools is not None and not self.permissions.keys() <= set(self.tools):
+            raise ValueError("connection permissions must name selected tools")
+        return self
 
 
 class ConnectionRunSelection(ConnectionToolSelection):

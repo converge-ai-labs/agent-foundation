@@ -22,12 +22,12 @@ if TYPE_CHECKING:
     from a13n_service.interactions.lifecycle import LifecycleWriter
     from a13n_service.interactions.worker import WorkerExecutionLoop
     from a13n_service.lifecycle.service import LifecycleEventService
+    from a13n_service.memory.service import MemoryService
     from a13n_service.models.model_factory import NativeModelFactory
     from a13n_service.models.provider_service import ModelProviderService
     from a13n_service.models.service import ModelService
     from a13n_service.observability import ObservabilityRuntime
     from a13n_service.run_stream import RedisRunStream, RunReplayStore
-    from a13n_service.search.service import SearchProviderService
     from a13n_service.secrets import SecretProtector
     from a13n_service.settings import Settings
     from a13n_service.skills.catalog import SkillCatalogService
@@ -37,6 +37,7 @@ if TYPE_CHECKING:
     from a13n_service.storage import StorageResources
     from a13n_service.subagents.maintenance import SubagentMaintenance
     from a13n_service.trace_query.service import TraceQueryService
+    from a13n_service.web.service import WebProviderService
 
 logger = logging.getLogger("a13n_service.process.runtime")
 
@@ -48,6 +49,7 @@ class SharedRuntime:
     storage: StorageResources
     lifecycle: LifecycleWriter
     secret_protector: SecretProtector
+    memories: MemoryService | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,7 +70,7 @@ class ControlRuntime:
     lifecycle_events: LifecycleEventService
     gateway: GatewayRuntime
     subagent_maintenance: SubagentMaintenance
-    search_providers: SearchProviderService | None = None
+    web_providers: WebProviderService | None = None
     identity: IdentityRuntime | None = None
 
 

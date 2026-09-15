@@ -69,7 +69,10 @@ async def execution(client: Client, base: str, catalog: dict) -> dict:
         expected=201,
         json={
             "name": "Publish a retained review artifact",
-            "config": agent_config("Local artifact publisher", asset_publication={"enabled": True}),
+            "config": agent_config(
+                "Local artifact publisher",
+                toolsets={"assets": {"enabled": True, "tools": {"publish": {"permission": "allow"}}}},
+            ),
         },
     )
     published = await run(

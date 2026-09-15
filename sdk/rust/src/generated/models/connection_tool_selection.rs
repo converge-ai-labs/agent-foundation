@@ -19,6 +19,12 @@ pub struct ConnectionToolSelection {
     #[serde(rename = "defer_loading", skip_serializing_if = "Option::is_none")]
     pub defer_loading: Option<bool>,
 
+    #[serde(rename = "permission", skip_serializing_if = "Option::is_none")]
+    pub permission: Option<models::ToolPermissionSetting>,
+
+    #[serde(rename = "permissions", skip_serializing_if = "Option::is_none")]
+    pub permissions: Option<std::collections::HashMap<String, models::ToolPermissionSetting>>,
+
     #[serde(
         rename = "tools",
         default,
@@ -33,6 +39,8 @@ impl ConnectionToolSelection {
         ConnectionToolSelection {
             connection_id,
             defer_loading: None,
+            permission: None,
+            permissions: None,
             tools: None,
         }
     }

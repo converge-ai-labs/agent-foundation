@@ -2,6 +2,7 @@
 
 import json
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from a13n_environment.models import EnvironmentError
@@ -128,7 +129,8 @@ async def test_environment_details_and_retry_are_not_lost_by_content_tools(opera
 
 @pytest.mark.anyio
 async def test_mem0_keeps_safe_scope_error_message_and_details():
-    binding = _Mem0Binding(client=SimpleNamespace(), scopes=(), fixed_scope=None)
+    backend = SimpleNamespace(search=AsyncMock(side_effect=AssertionError("unexpected provider I/O")))
+    binding = _Mem0Binding(backend=backend, scopes=(), fixed_scope=None)
     for scope, reason, message in [
         (None, "scope_required", "A memory scope is required."),
         (Mem0Scope.USER, "scope_unavailable", "The selected memory scope is unavailable."),

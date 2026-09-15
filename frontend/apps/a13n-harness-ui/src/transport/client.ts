@@ -4,6 +4,21 @@ import type { components, paths } from "../api.generated";
 export type Schema<K extends keyof components["schemas"]> =
   components["schemas"][K];
 
+export class NetworkError extends Error {
+  constructor(cause: unknown) {
+    super("Unable to reach the server. Check your connection and try again.", {
+      cause,
+    });
+  }
+}
+
+export function isConnectionError(error: unknown): boolean {
+  return (
+    error instanceof NetworkError ||
+    (error instanceof ApiError && [502, 503, 504].includes(error.status))
+  );
+}
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -48,13 +63,17 @@ export function createTransport(key: string, onUnauthorized: () => void) {
     );
     const headers = new Headers(request.headers);
     if (key) headers.set("Authorization", `Bearer ${key}`);
-    const response = await fetch(
-      new Request(request, {
-        headers,
-        cache: "no-store",
-        signal: AbortSignal.any([lifetime.signal, request.signal]),
-      }),
-    );
+    const signal = AbortSignal.any([lifetime.signal, request.signal]);
+    let response: Response;
+    try {
+      response = await fetch(
+        new Request(request, { headers, cache: "no-store", signal }),
+      );
+    } catch (error) {
+      if (!signal.aborted && error instanceof TypeError)
+        throw new NetworkError(error);
+      throw error;
+    }
     lifetime.signal.throwIfAborted();
     if (!response.ok) {
       const error = await responseError(response);

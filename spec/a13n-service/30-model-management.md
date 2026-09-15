@@ -36,7 +36,7 @@ Ownership and automatic visibility follow [Organization-owned configuration](33-
 
 ## Trusted Provider-type and calling-API registry
 
-The distribution assembles a finite registry from trusted code. Public requests cannot register code, import a package, invent a calling API, or supply request transformations. Package installation alone grants no trust.
+The distribution assembles a finite registry from trusted code. It combines built-ins with Model integrations registered by deployment-selected `a13n.providers` entry points before readiness. Package installation alone grants no trust; selection names installed metadata rather than an import target. Public requests cannot register code, import a package, invent a calling API, or supply request transformations. Every selected integration still implements this native Model contract and uses the same management and per-request runtime construction path.
 
 Each safe `ModelProviderDefinition` exposes:
 
@@ -266,7 +266,11 @@ Provider values have different semantics. Immediately before every outbound mode
 4. authenticates/decrypts and validates the endpoint; and
 5. constructs the native Pydantic AI Model for the exact snapshotted calling API.
 
-Provider edits therefore affect the next outbound request, including a later request within the same Run or a replacement attempt. This applies to credential rotation, authentication mode, endpoint, region, project, and API version. An HTTP request already dispatched is not altered or cancelled.
+Provider edits therefore affect the next outbound request, including a later request within the same Run or a replacement attempt. This applies to credential rotation, authentication mode, endpoint, region, project, API version, and `configuration.session_affinity_header`.
+
+`session_affinity_header: str | None` belongs to the Provider connection, not to Model settings or `ModelExecutionSnapshot`. It is an optional normalized HTTP field name; absent/null disables gateway affinity, including on existing Providers. The value uses the shared [UUID v5 request-affinity derivation](../a13n-harness/16-input-model-and-output.md#automatic-request-affinity) of the current Harness `AgentContext.thread_id`, not a user-authored session value or Run ID. No derived value is persisted. Runtime settings validation recognizes the same derived automatic prompt-cache key without admitting raw Thread IDs or other caller cache keys. Service validates caller settings before binding the trusted header on each fresh native Model, outside database sessions. A rename replaces the previously configured header on the next attempt. Static Provider headers, authentication, attribution, and protocol headers cannot collide with the selected name. The strict native settings schema is not widened to accept arbitrary caller headers. Service disables Harness's legacy global header injection. The field is stored in existing Provider configuration JSON, with no new session record or snapshot column.
+
+Console's Provider advanced connection fields offer the shared Harness preset names and custom replacement; Models display the inherited setting with Provider navigation, without a per-Model override. Presets persist concrete names only and do not auto-detect or configure gateways. Sending a header does not guarantee provider pinning. Discovery and ordinary connection probes do not manufacture persistent session IDs or assert successful affinity. An HTTP request already dispatched is not altered or cancelled.
 
 Disabling either the Model or its Provider is a live kill switch: the next outbound request fails closed before dispatch, including a retry in the same Run. Re-enabling permits subsequent requests. Runtime never falls back to another Provider, Model, or calling API.
 

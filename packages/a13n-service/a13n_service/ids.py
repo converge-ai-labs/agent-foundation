@@ -29,6 +29,7 @@ _ID_RANDOM_BYTES = {
             "sa",
             "sk",
             "usr",
+            "wprov",
             "ws",
         ),
         10,
