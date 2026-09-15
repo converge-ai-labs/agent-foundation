@@ -21,6 +21,8 @@ This contract owns those caller- or responder-driven acceptance forms, their pub
 | Common Thread inbox persistence                                                               | [Agent Control: Active Execution](19-agent-control-active-execution.md#thread-inbox)                                       | Stores cross-kind FIFO, waiting-source binding, rollover, and later consumption evidence                                   |
 | Public API conventions and durable mutation evidence                                          | [Platform API Conventions](../api-conventions.md) and [Durable Operations and Outbox](06-durable-operations-and-outbox.md) | Own shared version, idempotency, retry, and unknown-commit behavior                                                        |
 
+Configuration-purpose entry and successors additionally obey [Agent Configuration Assistant](43-agent-configuration-assistant.md#continuing-after-application). Public start cannot select its hidden Agent. Generic continuation, retry, feedback, fork and queued-input consumption cannot remove or replace the protected owner/target/draft context. A source-preserving successor retains the source draft binding; only a new authorized configuration input can bind a successor open draft. These predicates supplement the eligibility and state-initialization rules below rather than defining a parallel control loop.
+
 ## Acceptance and Lineage
 
 This contract owns operation eligibility, input selection, and configuration inheritance. The following table is the canonical public operation matrix; [Run state initialization](12-run-persistence.md#state-initialization-matrix) owns how the selected source becomes a complete new Run-owned envelope.

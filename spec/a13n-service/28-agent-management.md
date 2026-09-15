@@ -49,6 +49,7 @@ class Agent:
     organization_id: OrganizationId
     workspace_id: WorkspaceId
     source: Literal["builtin", "custom"]
+    system_purpose: Literal["configuration_assistant"] | None
     name: str
     key: str
     description: str | None
@@ -69,6 +70,21 @@ class Agent:
 `Agent.version` starts at `1` and always equals the current `AgentRevision.version`. It advances only when a genuinely new immutable Revision becomes current. `current_revision_id` is always present; Service never exposes an Agent without an executable Revision.
 
 `name`, `key`, `description` and `default_environment_template_id` are mutable head metadata. Name changes preserve the key; explicit key changes follow the shared resource-key contract and preserve the Agent ID. The template default only seeds new Thread Environment allocation under [Environment Management](29-environment-management.md#thread-defaults-and-run-selection); it never changes an existing Thread or Run and does not publish an AgentRevision. `enabled` and `archived_at` are independent lifecycle axes. Their mutations change `updated_at` and the representation ETag without advancing `version` or rewriting a Revision.
+
+### System-Maintained Configuration Assistant
+
+`system_purpose` is protected durable metadata, absent on ordinary Agents and not writable through public create, import, update, label, or duplication inputs. `configuration_assistant` identifies a system-maintained `source=builtin` Agent; `(workspace_id, system_purpose)` is unique for non-null purposes. The field does not turn every built-in Agent into a hidden resource. [Agent Configuration Assistant](43-agent-configuration-assistant.md) owns provisioning, definition synchronization, configuration conversations and drafts.
+
+This Agent and its Revisions are unavailable through ordinary Agent product surfaces, including for Organization or Workspace administrators:
+
+- Lists, search, counts, selectors and discovery exclude it before ordering and pagination. Built-in, archived and label filters cannot expose it.
+- ID/key resolution, detail, Revision history/direct reads, configuration export, labels and avatar reads return the ordinary not-found result. A known ID is not a visibility exception.
+- Public metadata/configuration/Revision changes, Restore, lifecycle operations, deletion and Duplicate are rejected. It cannot be a configuration draft target or source.
+- Ordinary Run start, public protocol invocation, Account/Gateway/Schedule/Automation binding, subagent references and user-managed RoleBinding targets cannot select it.
+
+These predicates apply at shared query, mutation and reference boundaries, not just in Console. Source YAML and code are maintained only through the restricted internal distribution operation. Client-supplied flags cannot enable an internal bypass or copy the assistant's privileged host capabilities into another Agent.
+
+The configuration entry selects a real same-Workspace Agent and exact Revision under [configuration-purpose authority](33-identity-and-access-management.md#configuration-assistant-authority). It retains ordinary non-null Run foreign keys and immutable effective configuration. The assistant's Agent identity is separate from the business Agent being edited. Its hidden management resource does not hide the owner's authorized configuration Sessions, Threads, Runs, results, usage or Trace; those views do not link to an editable assistant definition.
 
 ### Avatar
 
@@ -386,7 +402,7 @@ Plugin selection is retained only in `config.plugins`; Worker-owned normalizatio
 
 ## Creation, Revision, and Restore
 
-Create Agent accepts `name`, optional `description`, and one complete `config`. Service authorizes and resolves every referenced dependency, then atomically creates the Agent and Revision v1. It never exposes an Agent without a current Revision.
+Create Agent accepts `name`, optional `description`, and one complete `config`. Service authorizes and resolves every referenced dependency, then atomically creates the Agent and Revision v1. It never exposes an Agent without a current Revision. ConfigurationDraft saving is a separate authoring boundary owned by [Agent Configuration Assistant](43-agent-configuration-assistant.md#draft-editing-and-validation); only its authenticated apply operation enters this Agent publication boundary.
 
 Create Revision accepts `expected_version` and one complete replacement `config`:
 
@@ -404,7 +420,7 @@ Restore Revision revalidates retained dependencies and copies the selected histo
 
 Duplicate revalidates the exact current Revision and atomically creates an independent custom Agent with its own v1 Revision. The new head records source Agent and Revision IDs. It never follows or merges later source changes.
 
-Built-in Agents use the same Revision validation and dependency-binding rules. Distribution registration creates v1 or advances to another Revision only when resolved content changes. Built-ins are invocable and readable but cannot be renamed, duplicated in place, archived, or otherwise mutated by ordinary users; Duplicate creates a custom Agent.
+Built-in Agents use the same Revision validation and dependency-binding rules. Distribution registration creates v1 or advances to another Revision only when resolved content changes. Ordinary built-ins with no system purpose are invocable and readable but cannot be renamed, duplicated in place, archived, or otherwise mutated by ordinary users; Duplicate creates a custom Agent. The system configuration assistant instead follows the stricter hidden-resource contract above.
 
 ## Metadata and Lifecycle
 
@@ -427,7 +443,7 @@ An asynchronous hosted child receives its own Thread, Run, RunAttempts, fresh `R
 
 ## Run Selection and Reconstruction
 
-A new root Run supplies an `agent_id` and may supply an exact `agent_revision_id`. Omission selects `current_revision_id`; exact selection never falls back. An optional `expected_current_revision_id` is an independent optimistic precondition rather than the selector itself.
+An ordinary new root Run supplies an `agent_id` and may supply an exact `agent_revision_id`. Public selection rejects system-hidden Agents; the configuration entry selects its assistant internally under its dedicated purpose contract. Omission selects `current_revision_id`; exact selection never falls back. An optional `expected_current_revision_id` is an independent optimistic precondition rather than the selector itself.
 
 Durable acceptance:
 
@@ -439,7 +455,7 @@ Durable acceptance:
 6. when an Environment is selected, fixes the Run's Environment ID and access ceiling independently of `EffectiveAgentConfig`, and updates the Thread default; and
 7. persists `agent_id`, exact `agent_revision_id`, selector kind, effective-config digest on the accepted execution state.
 
-Historical AgentRevisions remain invocable under the stable Agent's current lifecycle gate. Their pinned Skill selections remain exact; their unpinned selections resolve current Revisions within the `skill_id` bindings frozen in that historical AgentRevision. Account reception and Schedule definitions store the stable Agent identity and resolve the current AgentRevision for each occurrence. Retry, waiting feedback, and other successor operations preserve source Skill locks where required but still pass current Skill lifecycle gates before a new Run is accepted. Recovery and Worker replacement of an already accepted Run use its exact Revision and effective configuration.
+Historical AgentRevisions remain invocable under the stable Agent's current lifecycle and entry-path gates; hidden assistant Revisions remain restricted to configuration execution. Their pinned Skill selections remain exact; their unpinned selections resolve current Revisions within the `skill_id` bindings frozen in that historical AgentRevision. Account reception and Schedule definitions store the stable Agent identity and resolve the current AgentRevision for each occurrence. Retry, waiting feedback, and other successor operations preserve source Skill locks where required but still pass current Skill lifecycle gates before a new Run is accepted. Recovery and Worker replacement of an already accepted Run use its exact Revision and effective configuration.
 
 For each outbound model request, the Worker rechecks the current Model and Model Provider lifecycle and resolves the Provider's current configuration and credential as defined by Model Management. For each execution attempt, the current `RunAttemptExecutor` in the selected Worker validates frozen configuration and state against the installed build, records bounded compatibility identities, reauthorizes mutable authorities required by their owning contracts, constructs fresh Models, Plugins, `RunBindings`, and a ready or transparently lazy Environment operation object, and enters the Harness only after the current attempt fence authorizes effects. An accepted Run's exact Skill package locks remain internally readable even if the Skill is later deleted. Deployment code may change between attempts, but one accepted Run never silently changes its snapshotted upstream model, calling API, effective model settings, other managed-resource Revisions, child graph, external tool source selections and scopes, output contract, logical Environment selection, or retry budgets. Model catalog profile and limits remain descriptive metadata under Model Management rather than frozen execution settings.
 
@@ -451,7 +467,7 @@ For each outbound model request, the Worker rechecks the current Model and Model
 
 Creator and updater attribution use IAM `ActorRef`: human and Service Account Principals retain their actual kind, while builtin reconciliation records `system` with its stable system actor ID. System attribution never grants authentication or invocation authority.
 
-The `agents` table stores stable identity, organization ownership, name, key, description, `version`, `current_revision_id`, lifecycle axes, duplication provenance, actors, and timestamps. `(workspace_id, key)` is unique; display names may repeat. Agent keys follow [Readable Resource Keys](../data-conventions.md#readable-resource-keys).
+The `agents` table stores stable identity, organization ownership, protected `system_purpose`, name, key, description, `version`, `current_revision_id`, lifecycle axes, duplication provenance, actors, and timestamps. `(workspace_id, key)` is unique; display names may repeat. Agent keys follow [Readable Resource Keys](../data-conventions.md#readable-resource-keys).
 
 The `agent_revisions` table stores complete config, frozen resolution, digests, provenance, actor, and creation time. `(agent_id, version)` is unique. The Agent head and current Revision advance atomically. Runs and downstream records store `agent_revision_id`, not only an Agent ID or version.
 

@@ -68,6 +68,14 @@ Environment recipes use Provider-owned, versioned schemas for ordinary fields, a
 
 Mutations retain exact ETags or expected versions. A conflict keeps the draft and offers an explicit reload; Console does not silently overwrite newer data. Permission projections guide visible controls but never replace server authorization. Cache identity includes the authentication session and resource scope; sign-out clears sensitive state, and Workspace switching does not reuse another Workspace's resource data.
 
+## Configuration Assistant
+
+The [Agent Configuration Assistant contract](../a13n-service/43-agent-configuration-assistant.md) owns configuration conversations, relational drafts, validation, explicit application, and execution evidence. These drafts are separate from the ordinary Agent form's unsaved local edits. Saving a conversational draft does not save or publish the business Agent; application is a distinct authenticated user action bound to reviewed version/digest and target concurrency evidence.
+
+Before assistant execution, Console uses readiness to guide missing Model Provider/Model setup through the existing scoped settings entry. A setup link does not grant permission. A missing user Sandbox does not prevent assistant authoring because its knowledge uses the deployment's fixed read-only mount.
+
+The system assistant is absent from Agent collections, search, selectors and management details, and has no edit, copy, export or direct-invocation controls. These are server-enforced restrictions. Owners can still view and continue their configuration Sessions/Threads, inspect actual results and usage, and see the current draft and apply receipt. Run correlation to the assistant does not generate an Agent detail link. Post-apply continuation identifies the new draft and source instead of displaying the terminal draft as editable. This boundary imposes no particular conversation layout.
+
 ## Search Setup
 
 The Agent editor presents first-party search as an optional Web Provider selection with bounded per-Agent parameters. It lists currently visible Web Providers with their type and ownership under [Web Provider Management](../a13n-service/41-web-provider-management.md). Only enabled, credential-configured providers are offered for new selections; an existing unavailable reference remains visible with its configuration error and can be changed or cleared. Clearing search changes only the Agent selection. Provider creation and testing live exclusively in Providers, outside the Agent editor. The management link opens the Search category in a new tab with the current workspace, preserving the Agent draft. Returning to the draft refreshes available providers without automatically changing the selection.

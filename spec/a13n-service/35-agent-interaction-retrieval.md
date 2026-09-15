@@ -49,7 +49,9 @@ definition policy
   ∩ service limits and run deadline
 ```
 
-The reader checks each requested scope against the latest published [Attempt IAM snapshot](33-identity-and-access-management.md#attempt-iam-snapshot) and current resource eligibility on every call and page, without reloading Principal status or RoleBindings itself. Periodic Attempt refresh applies to subsequent reads and pages; a bound reader or cursor cannot retain an older permission set. The grant and cursors are not access tokens. The grant is never persisted or exposed to the model.
+The reader checks each requested scope against the latest published [Attempt IAM snapshot](33-identity-and-access-management.md#attempt-iam-snapshot) and current resource eligibility on every call and page, without reloading Principal status or RoleBindings itself. Periodic Attempt refresh applies to subsequent reads and pages; a bound reader or cursor cannot retain an older permission set. The [configuration assistant](43-agent-configuration-assistant.md#model-visible-tools-and-authority) narrows the exposed toolset to `read_interaction_run` and its host-selected evidence scope. Configuration-purpose targets additionally require their User owner and configuration read predicate; a shared hidden assistant Agent ID cannot grant access to another User's Run. Hiding the Agent management resource does not hide the owner's authorized interaction projection. This specialization does not permit raw Trace, state, or exact payload reads.
+
+The grant and cursors are not access tokens. The grant is never persisted or exposed to the model.
 
 ## Composition and Invocation
 

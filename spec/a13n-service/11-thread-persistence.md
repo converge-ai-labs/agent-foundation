@@ -8,6 +8,8 @@ The shared [Platform Interaction Model](../interaction-model.md) owns the cross-
 
 A root Thread can be created before its first Run. Creation records its Session, optional default Environment and inbox authority without provisioning a target. Combined root Run start, Fork and child acceptance create their Thread and first Run atomically. [Environment Management](29-environment-management.md#thread-defaults-and-run-selection) owns automatic allocation from a template and the mutable default selection.
 
+[Configuration conversations](43-agent-configuration-assistant.md#configuration-session-and-thread-scope) reuse these Session/Thread identities. Their protected configuration scope owns the current and latest draft associations and serializes them with Run acceptance or application. Changing an active draft does not change an accepted Run's immutable configuration context. Configuration ownership adds read/control predicates without creating another Thread lifecycle or history store.
+
 ## Boundaries
 
 | Concern                                                                            | Owner                                                                               | Contract                                                                                                                                    |
