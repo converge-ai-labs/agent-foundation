@@ -969,6 +969,34 @@
         }
       }
     },
+    "/api/setup/model-options": {
+      "post": {
+        "summary": "Model Options",
+        "operationId": "model_options_api_setup_model_options_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupModelOptionsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupModelOptions"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/setup/preview": {
       "post": {
         "summary": "Preview",
@@ -1275,6 +1303,30 @@
       }
     },
     "/api/auth/logins": {
+      "get": {
+        "summary": "Active Login",
+        "operationId": "active_login_api_auth_logins_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/LoginStatus"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Response Active Login Api Auth Logins Get"
+                }
+              }
+            }
+          }
+        }
+      },
       "post": {
         "summary": "Start Login",
         "operationId": "start_login_api_auth_logins_post",
@@ -2526,6 +2578,21 @@
                 }
               ],
               "title": "Project Id"
+            }
+          },
+          {
+            "name": "project_scope",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "all",
+                "projectless",
+                "unavailable"
+              ],
+              "type": "string",
+              "default": "all",
+              "title": "Project Scope"
             }
           },
           {
@@ -4058,6 +4125,44 @@
         "title": "AgentToolProxyView",
         "description": "Static source membership; never connects to MCP or discovers tools."
       },
+      "ApiKeyAuthentication": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "const": "api_key",
+            "title": "Kind"
+          },
+          "env": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 256,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Env"
+          },
+          "credential_ref": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "kind"
+        ],
+        "title": "ApiKeyAuthentication"
+      },
       "ApiKeyStatus": {
         "properties": {
           "credential_ref": {
@@ -4152,6 +4257,50 @@
         "title": "AppStatus",
         "description": "Detached application health and accepted-source projection."
       },
+      "AppliedEditView": {
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "title": "File Path"
+          },
+          "before": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 65536
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Before"
+          },
+          "after": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 65536
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "After"
+          },
+          "omitted": {
+            "type": "boolean",
+            "title": "Omitted",
+            "default": false
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "file_path"
+        ],
+        "title": "AppliedEditView",
+        "description": "Observed edit content, or an explicit omission when retention bounds were reached."
+      },
       "ApprovalRequestView": {
         "properties": {
           "request_id": {
@@ -4230,6 +4379,28 @@
         ],
         "title": "Availability"
       },
+      "CapabilitySelection": {
+        "properties": {
+          "capability": {
+            "$ref": "#/components/schemas/CatalogKey"
+          },
+          "configuration": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Configuration"
+          }
+        },
+        "additionalProperties": {
+          "$ref": "#/components/schemas/JsonValue"
+        },
+        "type": "object",
+        "required": [
+          "capability"
+        ],
+        "title": "CapabilitySelection"
+      },
       "CapturedAgentSelection": {
         "properties": {
           "name": {
@@ -4294,6 +4465,16 @@
             },
             "type": "array",
             "title": "Project Roots"
+          },
+          "webui_sidekick": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SidekickConfiguration"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "agent": {
             "$ref": "#/components/schemas/CapturedAgentSelection"
@@ -4419,6 +4600,12 @@
           "omitted_children"
         ],
         "title": "CapturedConfiguration"
+      },
+      "CatalogKey": {
+        "type": "string",
+        "maxLength": 200,
+        "minLength": 1,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
       },
       "CatalogReference": {
         "properties": {
@@ -6709,6 +6896,55 @@
         "type": "object",
         "title": "HTTPValidationError"
       },
+      "HarnessModelCharacteristics": {
+        "properties": {
+          "capabilities": {
+            "items": {
+              "$ref": "#/components/schemas/ModelCapability"
+            },
+            "type": "array",
+            "uniqueItems": true,
+            "title": "Capabilities"
+          },
+          "context_window": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Window"
+          },
+          "proactive_context_management_threshold": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Proactive Context Management Threshold",
+            "default": 0.65
+          },
+          "compact_threshold": {
+            "type": "number",
+            "maximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Compact Threshold",
+            "default": 0.9
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "HarnessModelCharacteristics",
+        "description": "Resolved Harness characteristics of the active Agent model."
+      },
       "JsonValue": {},
       "ListenerFeatures": {
         "properties": {
@@ -7025,6 +7261,19 @@
         ],
         "title": "MarkdownSubagentSource"
       },
+      "ModelCapability": {
+        "type": "string",
+        "enum": [
+          "image_understanding",
+          "video_understanding",
+          "audio_understanding"
+        ],
+        "title": "ModelCapability",
+        "description": "Harness-owned capabilities of the active Agent model."
+      },
+      "ModelCharacteristics": {
+        "$ref": "#/components/schemas/HarnessModelCharacteristics"
+      },
       "NotePage": {
         "properties": {
           "continuation_id": {
@@ -7239,6 +7488,11 @@
           "foreground": {
             "default": false,
             "title": "Foreground",
+            "type": "boolean"
+          },
+          "pointer_enabled": {
+            "default": false,
+            "title": "Pointer Enabled",
             "type": "boolean"
           },
           "participant_id": {
@@ -8478,6 +8732,160 @@
         ],
         "title": "SelectableResourceSummary"
       },
+      "SetupApiKeyModel": {
+        "properties": {
+          "route": {
+            "type": "string",
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Route"
+          },
+          "authentication": {
+            "$ref": "#/components/schemas/ApiKeyAuthentication"
+          },
+          "settings": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Settings"
+          },
+          "model_configuration": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Model Configuration"
+          },
+          "model_characteristics": {
+            "$ref": "#/components/schemas/ModelCharacteristics"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "route",
+          "authentication"
+        ],
+        "title": "SetupApiKeyModel"
+      },
+      "SetupApiProvider": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "base_url": {
+            "type": "string",
+            "title": "Base Url"
+          },
+          "models": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Models"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value",
+          "label",
+          "base_url",
+          "models"
+        ],
+        "title": "SetupApiProvider"
+      },
+      "SetupChoices": {
+        "properties": {
+          "defaults": {
+            "$ref": "#/components/schemas/SetupSelection"
+          },
+          "subscription_models": {
+            "additionalProperties": {
+              "items": {
+                "$ref": "#/components/schemas/SetupModelChoice"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Subscription Models"
+          },
+          "api_providers": {
+            "items": {
+              "$ref": "#/components/schemas/SetupApiProvider"
+            },
+            "type": "array",
+            "title": "Api Providers"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "defaults",
+          "subscription_models",
+          "api_providers"
+        ],
+        "title": "SetupChoices"
+      },
+      "SetupModelChoice": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value",
+          "label"
+        ],
+        "title": "SetupModelChoice"
+      },
+      "SetupModelOptions": {
+        "properties": {
+          "presets": {
+            "items": {
+              "$ref": "#/components/schemas/SetupSettingsChoice"
+            },
+            "type": "array",
+            "title": "Presets"
+          },
+          "context_window": {
+            "type": "integer",
+            "title": "Context Window"
+          },
+          "known_context_window": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Known Context Window"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "presets",
+          "context_window",
+          "known_context_window"
+        ],
+        "title": "SetupModelOptions"
+      },
       "SetupPreview": {
         "properties": {
           "files": {
@@ -8599,11 +9007,273 @@
         ],
         "title": "SetupPublication"
       },
+      "SetupSelection": {
+        "properties": {
+          "providers": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "codex",
+                "grok"
+              ]
+            },
+            "type": "array",
+            "title": "Providers",
+            "default": []
+          },
+          "api_key_model": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SetupApiKeyModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "instructions": {
+            "type": "string",
+            "maxLength": 1048576,
+            "title": "Instructions",
+            "default": ""
+          },
+          "new_agent_id": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "new_agent_name": {
+            "type": "string",
+            "maxLength": 128,
+            "title": "New Agent Name",
+            "default": ""
+          },
+          "new_model_id": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "new_model_name": {
+            "type": "string",
+            "maxLength": 128,
+            "title": "New Model Name",
+            "default": ""
+          },
+          "existing_model_id": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "connect_default": {
+            "type": "boolean",
+            "title": "Connect Default",
+            "default": false
+          },
+          "tool_capabilities": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CapabilitySelection"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Capabilities"
+          },
+          "default_agent": {
+            "$ref": "#/components/schemas/ResourceId",
+            "default": "agent-default"
+          },
+          "project": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "project_path": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 4096,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Path"
+          },
+          "environment_profile": {
+            "type": "string",
+            "enum": [
+              "environment-native",
+              "environment-sandbox"
+            ],
+            "title": "Environment Profile"
+          },
+          "shell_review": {
+            "type": "boolean",
+            "title": "Shell Review",
+            "default": true
+          },
+          "include_default_subagents": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Include Default Subagents"
+          },
+          "codex_model": {
+            "type": "string",
+            "enum": [
+              "gpt-5.6-terra",
+              "gpt-5.6-sol",
+              "gpt-6-astra"
+            ],
+            "title": "Codex Model",
+            "default": "gpt-5.6-sol"
+          },
+          "grok_model": {
+            "type": "string",
+            "enum": [
+              "grok-4.6",
+              "grok-4.5",
+              "grok-4.20-0309-reasoning"
+            ],
+            "title": "Grok Model",
+            "default": "grok-4.6"
+          },
+          "codex_thinking": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "xhigh"
+            ],
+            "title": "Codex Thinking",
+            "default": "high"
+          },
+          "codex_service_tier": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "priority",
+                  "default"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Codex Service Tier"
+          },
+          "codex_context_window": {
+            "type": "integer",
+            "maximum": 872000.0,
+            "minimum": 16000.0,
+            "title": "Codex Context Window",
+            "default": 350000
+          },
+          "proactive_context_management_threshold": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Proactive Context Management Threshold",
+            "default": 0.65
+          },
+          "compact_threshold": {
+            "type": "number",
+            "maximum": 1.0,
+            "exclusiveMinimum": 0.0,
+            "title": "Compact Threshold",
+            "default": 0.9
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "environment_profile"
+        ],
+        "title": "SetupSelection"
+      },
+      "SetupSettingsChoice": {
+        "properties": {
+          "value": {
+            "type": "string",
+            "title": "Value"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "settings": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Settings"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value",
+          "label",
+          "description",
+          "settings"
+        ],
+        "title": "SetupSettingsChoice"
+      },
       "SetupStatus": {
         "properties": {
           "needed": {
             "type": "boolean",
             "title": "Needed"
+          },
+          "fresh": {
+            "type": "boolean",
+            "title": "Fresh",
+            "default": false
+          },
+          "draft_scope": {
+            "type": "string",
+            "title": "Draft Scope",
+            "default": ""
+          },
+          "choices": {
+            "$ref": "#/components/schemas/SetupChoices"
           },
           "configuration_path": {
             "type": "string",
@@ -8701,6 +9371,36 @@
           "environment_profile"
         ],
         "title": "SetupStatus"
+      },
+      "SidekickConfiguration": {
+        "properties": {
+          "agent": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "model": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ResourceId"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": {
+          "$ref": "#/components/schemas/JsonValue"
+        },
+        "type": "object",
+        "title": "SidekickConfiguration",
+        "description": "Instruction-guided collaboration; omitted Agent inherits the calling Agent."
       },
       "StoreKind": {
         "type": "string",
@@ -10260,6 +10960,27 @@
             ],
             "title": "Outcome"
           },
+          "provider": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "applied_edit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AppliedEditView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "value": {
             "anyOf": [
               {
@@ -10701,9 +11422,105 @@
             "default": false,
             "title": "Foreground",
             "type": "boolean"
+          },
+          "pointer_enabled": {
+            "default": false,
+            "title": "Pointer Enabled",
+            "type": "boolean"
           }
         },
         "title": "PresenceReport",
+        "type": "object"
+      },
+      "PointerPosition": {
+        "additionalProperties": false,
+        "properties": {
+          "anchor": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Anchor",
+            "type": "string"
+          },
+          "x": {
+            "maximum": 1,
+            "minimum": 0,
+            "title": "X",
+            "type": "number"
+          },
+          "y": {
+            "maximum": 1,
+            "minimum": 0,
+            "title": "Y",
+            "type": "number"
+          }
+        },
+        "required": [
+          "anchor",
+          "x",
+          "y"
+        ],
+        "title": "PointerPosition",
+        "type": "object"
+      },
+      "PointerReport": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "pointer",
+            "default": "pointer",
+            "title": "Kind",
+            "type": "string"
+          },
+          "target": {
+            "$ref": "#/components/schemas/ConversationPage"
+          },
+          "pointer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PointerPosition"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "target"
+        ],
+        "title": "PointerReport",
+        "type": "object"
+      },
+      "PointerFrame": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "const": "pointers",
+            "default": "pointers",
+            "title": "Kind",
+            "type": "string"
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConversationPage"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "pointers": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/PointerPosition"
+            },
+            "title": "Pointers",
+            "type": "object"
+          }
+        },
+        "title": "PointerFrame",
         "type": "object"
       },
       "ErrorBody": {
@@ -11000,387 +11817,34 @@
         "title": "GitCaptureRequest",
         "type": "object"
       },
-      "ApiKeyAuthentication": {
+      "SetupModelOptionsRequest": {
         "properties": {
-          "kind": {
+          "provider": {
             "type": "string",
-            "const": "api_key",
-            "title": "Kind"
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Provider"
           },
-          "env": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 256,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Env"
-          },
-          "credential_ref": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ResourceId"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "kind"
-        ],
-        "title": "ApiKeyAuthentication"
-      },
-      "CapabilitySelection": {
-        "properties": {
-          "capability": {
-            "$ref": "#/components/schemas/CatalogKey"
-          },
-          "configuration": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/JsonValue"
-            },
-            "type": "object",
-            "title": "Configuration"
-          }
-        },
-        "additionalProperties": {
-          "$ref": "#/components/schemas/JsonValue"
-        },
-        "type": "object",
-        "required": [
-          "capability"
-        ],
-        "title": "CapabilitySelection"
-      },
-      "CatalogKey": {
-        "type": "string",
-        "maxLength": 200,
-        "minLength": 1,
-        "pattern": "^[A-Za-z0-9][A-Za-z0-9._:/-]*$"
-      },
-      "HarnessModelCharacteristics": {
-        "properties": {
-          "capabilities": {
-            "items": {
-              "$ref": "#/components/schemas/ModelCapability"
-            },
-            "type": "array",
-            "uniqueItems": true,
-            "title": "Capabilities"
-          },
-          "context_window": {
-            "anyOf": [
-              {
-                "type": "integer",
-                "exclusiveMinimum": 0.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Context Window"
-          },
-          "proactive_context_management_threshold": {
-            "anyOf": [
-              {
-                "type": "number",
-                "maximum": 1.0,
-                "minimum": 0.0
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Proactive Context Management Threshold",
-            "default": 0.65
-          },
-          "compact_threshold": {
-            "type": "number",
-            "maximum": 1.0,
-            "exclusiveMinimum": 0.0,
-            "title": "Compact Threshold",
-            "default": 0.9
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "title": "HarnessModelCharacteristics",
-        "description": "Resolved Harness characteristics of the active Agent model."
-      },
-      "ModelCapability": {
-        "type": "string",
-        "enum": [
-          "image_understanding",
-          "video_understanding",
-          "audio_understanding"
-        ],
-        "title": "ModelCapability",
-        "description": "Harness-owned capabilities of the active Agent model."
-      },
-      "ModelCharacteristics": {
-        "$ref": "#/components/schemas/HarnessModelCharacteristics"
-      },
-      "SetupApiKeyModel": {
-        "properties": {
-          "route": {
+          "model_id": {
             "type": "string",
             "maxLength": 512,
             "minLength": 1,
-            "title": "Route"
+            "title": "Model Id"
           },
-          "authentication": {
-            "$ref": "#/components/schemas/ApiKeyAuthentication"
-          },
-          "settings": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/JsonValue"
-            },
-            "type": "object",
-            "title": "Settings"
-          },
-          "model_configuration": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/JsonValue"
-            },
-            "type": "object",
-            "title": "Model Configuration"
-          },
-          "model_characteristics": {
-            "$ref": "#/components/schemas/ModelCharacteristics"
+          "base_url": {
+            "type": "string",
+            "maxLength": 4096,
+            "title": "Base Url",
+            "default": ""
           }
         },
         "additionalProperties": false,
         "type": "object",
         "required": [
-          "route",
-          "authentication"
+          "provider",
+          "model_id"
         ],
-        "title": "SetupApiKeyModel"
-      },
-      "SetupSelection": {
-        "properties": {
-          "providers": {
-            "items": {
-              "type": "string",
-              "enum": [
-                "codex",
-                "grok"
-              ]
-            },
-            "type": "array",
-            "title": "Providers",
-            "default": []
-          },
-          "api_key_model": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SetupApiKeyModel"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "instructions": {
-            "type": "string",
-            "maxLength": 1048576,
-            "title": "Instructions",
-            "default": ""
-          },
-          "new_agent_id": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ResourceId"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "new_agent_name": {
-            "type": "string",
-            "maxLength": 128,
-            "title": "New Agent Name",
-            "default": ""
-          },
-          "new_model_id": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ResourceId"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "new_model_name": {
-            "type": "string",
-            "maxLength": 128,
-            "title": "New Model Name",
-            "default": ""
-          },
-          "existing_model_id": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ResourceId"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "connect_default": {
-            "type": "boolean",
-            "title": "Connect Default",
-            "default": false
-          },
-          "tool_capabilities": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/CapabilitySelection"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Tool Capabilities"
-          },
-          "default_agent": {
-            "$ref": "#/components/schemas/ResourceId",
-            "default": "agent-default"
-          },
-          "project": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ResourceId"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "project_path": {
-            "anyOf": [
-              {
-                "type": "string",
-                "maxLength": 4096,
-                "minLength": 1
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Project Path"
-          },
-          "environment_profile": {
-            "type": "string",
-            "enum": [
-              "environment-native",
-              "environment-sandbox"
-            ],
-            "title": "Environment Profile"
-          },
-          "shell_review": {
-            "type": "boolean",
-            "title": "Shell Review",
-            "default": true
-          },
-          "include_default_subagents": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Include Default Subagents"
-          },
-          "codex_model": {
-            "type": "string",
-            "enum": [
-              "gpt-5.6-terra",
-              "gpt-5.6-sol",
-              "gpt-6-astra"
-            ],
-            "title": "Codex Model",
-            "default": "gpt-5.6-sol"
-          },
-          "grok_model": {
-            "type": "string",
-            "enum": [
-              "grok-4.6",
-              "grok-4.5",
-              "grok-4.20-0309-reasoning"
-            ],
-            "title": "Grok Model",
-            "default": "grok-4.6"
-          },
-          "codex_thinking": {
-            "type": "string",
-            "enum": [
-              "low",
-              "medium",
-              "high",
-              "xhigh"
-            ],
-            "title": "Codex Thinking",
-            "default": "high"
-          },
-          "codex_service_tier": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "priority",
-                  "default"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Codex Service Tier"
-          },
-          "codex_context_window": {
-            "type": "integer",
-            "maximum": 872000.0,
-            "minimum": 16000.0,
-            "title": "Codex Context Window",
-            "default": 350000
-          },
-          "proactive_context_management_threshold": {
-            "type": "number",
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "title": "Proactive Context Management Threshold",
-            "default": 0.65
-          },
-          "compact_threshold": {
-            "type": "number",
-            "maximum": 1.0,
-            "exclusiveMinimum": 0.0,
-            "title": "Compact Threshold",
-            "default": 0.9
-          }
-        },
-        "additionalProperties": false,
-        "type": "object",
-        "required": [
-          "environment_profile"
-        ],
-        "title": "SetupSelection"
+        "title": "SetupModelOptionsRequest"
       },
       "SetupApplyRequest": {
         "properties": {
@@ -11953,6 +12417,18 @@
       "CreateThreadRequest": {
         "additionalProperties": false,
         "properties": {
+          "thread_id": {
+            "anyOf": [
+              {
+                "pattern": "^thread-[0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id"
+          },
           "defaults": {
             "anyOf": [
               {
@@ -12147,6 +12623,12 @@
       },
       "output": {
         "$ref": "#/components/schemas/PresenceFrame"
+      },
+      "pointer_input": {
+        "$ref": "#/components/schemas/PointerReport"
+      },
+      "pointer_output": {
+        "$ref": "#/components/schemas/PointerFrame"
       },
       "error": {
         "$ref": "#/components/schemas/ErrorEnvelope"

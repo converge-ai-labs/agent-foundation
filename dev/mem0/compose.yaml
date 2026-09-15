@@ -1,0 +1,57 @@
+# Checkout-owned development infrastructure. All credentials below are public fixtures.
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.1-pg17
+    environment:
+      POSTGRES_DB: mem0
+      POSTGRES_USER: mem0
+      POSTGRES_PASSWORD: local-mem0-database
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U mem0 -d mem0"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+  embeddings:
+    image: python:3.13.12-slim
+    command: [python, /fixture_embeddings.py]
+    volumes:
+      - ./fixture_embeddings.py:/fixture_embeddings.py:ro
+    user: "10001:10001"
+    read_only: true
+    # No host port: the fixture is reachable only within this Compose project.
+  mem0:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+      embeddings:
+        condition: service_started
+    ports:
+      - "127.0.0.1:${MEM0_LOCAL_PORT:-18888}:8000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: mem0
+      POSTGRES_USER: mem0
+      POSTGRES_PASSWORD: local-mem0-database
+      APP_DB_NAME: mem0
+      POSTGRES_COLLECTION_NAME: "${MEM0_OSS_COLLECTION:-memories}"
+      ADMIN_API_KEY: "${MEM0_LOCAL_API_KEY:-local-mem0-api-key}"
+      JWT_SECRET: public-local-mem0-jwt-secret-not-for-production
+      MEM0_TELEMETRY: "false"
+      # Satisfy native first-start client construction. The dev helper configures
+      # actual model endpoints through POST /configure after the OpenAPI endpoint is ready.
+      OPENAI_API_KEY: local-unused-bootstrap-key
+    volumes:
+      - history:/app/history
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/openapi.json', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 36
+volumes:
+  postgres:
+  history:

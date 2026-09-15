@@ -204,6 +204,7 @@ class AgentInvocationFreezer:
             "output_spec": prepared.merged.output_spec,
             "retries": prepared.merged.retries,
             "secret_requirements": prepared.merged.secret_requirements,
+            "memory": prepared.merged.memory,
             "protocol": prepared.merged.protocol,
         }
         effective_without_digest = EffectiveAgentConfig(

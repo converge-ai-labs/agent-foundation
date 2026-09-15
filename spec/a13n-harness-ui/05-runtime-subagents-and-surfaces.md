@@ -190,7 +190,7 @@ No parent `AgentContext`, entered Environment facade, live state coordinator, Mo
 
 ### Observation and Checkpointing
 
-The operator consumes ordered public Harness stream items and compacts them into the bounded display owned by [Local Storage and Recovery](03-local-storage-and-recovery.md#compact-child-display). Closed activity is published live only at closed boundaries. Terminal success is acknowledged only after Environment cleanup, terminal checkpoint publication, and atomic head selection.
+The operator consumes ordered public Harness stream items and compacts them into the bounded display owned by [Local Storage and Recovery](03-local-storage-and-recovery.md#compact-child-display). Nonterminal public events, including incremental text, reasoning, and tool arguments/results, are published as provisional live observations without waiting for message or tool closure. The saved compact display still records closed activity; partial live delivery is neither a saved output target nor execution completion. Terminal success is acknowledged only after Environment cleanup, terminal checkpoint publication, and atomic head selection.
 
 Harness UI performs no automatic parent wake Run after child completion. A connected surface receives live completion, and a later parent Run reconciles through `subagent_info` or `wait_subagent` against saved heads.
 
@@ -279,20 +279,39 @@ Thread creation previews use the same per-axis resolution as creation and pre-Th
 The tools are conceptually:
 
 ```python
-list_threads(query=None, cursor=None, limit=20)
-get_thread(thread_id, history_cursor=None, history_limit=50)
-create_thread(prompt, title=None, agent_id=None)
-run_thread(thread_id, prompt)
+list_threads(query=None, cursor=None, limit=20, project_id=None, include_archived=False)
+get_thread(thread_id=None, history_cursor=None, history_limit=50)
+list_projects(query=None, cursor=None, limit=20)
+get_project(project_id)
+list_agents(query=None, cursor=None, limit=20)
+list_models(query=None, cursor=None, limit=20)
+create_thread(prompt, title=None, agent_id=None, project_id="current", model_id=None)
+run_thread(thread_id, prompt, model_id=None)
 steer_thread(thread_id, message)
+send_thread_message(thread_id, message)
 ```
 
-Listing and search cover the server's accepted root Threads with bounded retained history and process-local activity. `create_thread` creates a root in the source Thread's Project using accepted defaults and an optional accepted Agent ID, then admits its first prompt. It accepts no new Project, roots, credential, tool grants, or raw configuration. Creation and prompt admission are separate: if admission fails after creation, the response identifies the created Thread rather than silently creating another on retry.
+Listing and search cover the server's accepted root Threads with bounded retained history and process-local activity, optionally filtered by Project and including archived history. `get_thread()` defaults to the calling root. Its `current_run` identifies that Run's captured Project, roots, Agent, Model, and generation; the detached Thread configuration remains the next-Run selection, not evidence that a running Environment changed.
+
+Resource discovery reads the App's accepted configuration, independent of Sidekick. Project, Agent and Model lists support case-insensitive name/ID search and pages of 1–100 entries. Cursors bind to kind, normalized query and accepted generation; changing any of them requires a new listing. Project summaries identify root count and authored default Agent; `get_project` returns roots and authored creation defaults without entering an Environment. Agent summaries expose ID, name, Model ID and selected Capability IDs. Model summaries expose ID, name and route. These views contain no instructions, authentication, raw Model settings, MCP configuration or credentials, and do not claim connection readiness. Agent IDs are root resource selectors, not child roster names.
+
+`create_thread` creates an independent root, then admits its first prompt. `project_id="current"` selects the source Thread's Project, null selects no Project, and a configured Project ID selects that Project. With neither Project nor Agent explicitly selected, creation retains the source's sticky selections. Selecting a Project or Agent uses normal creation-default resolution for the selected Project/Agent instead of copying the source's environment or MCP selections. An optional `model_id` uses the existing per-operation Model override for the first Run. `run_thread` accepts the same override for a later explicit turn; neither changes the Agent resource or sticky Thread configuration. It accepts no new Project definitions, roots, credentials, tool grants, or raw configuration. Creation and prompt admission are separate: if admission fails after creation, the response identifies the created Thread rather than silently creating another on retry.
+
+The root instructions directly identify the calling Thread and its captured Project ID and roots; no discovery call is needed to identify the caller. The initial task prompt identifies the requesting Thread and captured Project, gives an explicit `send_thread_message(thread_id=<requester>, message=...)` return address, and tells the worker to ask for clarification or decisions, report blockers, and send final findings, changes and validation. The requester can answer through the same tool targeting the worker. Sending does not synchronously wait for a reply, and acknowledgement-only loops remain prohibited. This context is saved with ordinary input at normal continuation boundaries, not as child execution lineage or a separate delivery store. Independent roots retain `parent_thread_id=null`.
 
 `run_thread` accepts only another root, retains its sticky configuration, and returns the exact admission receipt without waiting for terminal completion. `create_thread` likewise returns the new identity and receipt. Callers inspect subsequent activity through `get_thread`; admission is not success. These nonblocking tools do not build a chain of waiting root Runs or a durable queue. Repeating a mutation is not idempotent; a caller must reconcile known identities and receipts rather than retry an uncertain write blindly.
 
-`steer_thread` resolves the target's current receipt once and controls that exact receipt; it never falls through to a replacement Run. Same-source recursive run or steer is rejected. A child uses the existing parent-scoped delegation controls, not cross-root tools. Scope checks bind every tool invocation to its source root. Tool results remain bounded detached values with safe errors and explicit pending, unavailable, or failed status.
+`send_thread_message` attributes its message to the calling root. For an active target, it selects one exact receipt and attempts steering; preparation, completion races or rejected steering never fall through into a new Run. For an idle target without pending decisions, it attempts ordinary prompt admission once. Concurrent admission can reject that attempt; no automatic retry occurs. Child or archived targets are rejected. Responses identify `mode=steer` with the exact control result, or `mode=run` with the admission receipt. Acceptance is not proof of processing or saved delivery. There is no offline inbox, durable acceptance, completion callback, or automatic acknowledgement loop.
+
+`steer_thread` resolves the target's current receipt once and controls that exact receipt; it never falls through to a replacement Run. Same-source recursive run, steer or message delivery is rejected. A child uses the existing parent-scoped delegation controls, not cross-root tools. Scope checks bind every tool invocation to its source root. Tool results remain bounded detached values with safe errors and explicit pending, unavailable, or failed status.
 
 The capability calls the same in-memory `HarnessUiApp` services as other adapters. There is no localhost HTTP client, IPC bridge, agent daemon, or supervisor. App shutdown remains the execution boundary; restart does not reacquire old receipts or automatically replay input.
+
+### Sidekick instructions
+
+The optional root `webui.sidekick` mapping selects collaboration preferences, not another execution system. Its optional `agent` inherits the calling Run's Agent when omitted/null; its optional `model` overrides the selected Agent's Model for the requested Run. An empty mapping enables instructions with inherited selections. Both preferences are frozen in the Run composition and exposed in captured configuration inspection. The existing WebUI root collaboration capability adds a small instruction specifying the corresponding generic `create_thread` arguments, bounded task/context, result inspection and reporting. A Thread already executing a request is instructed to complete and report rather than recursively delegate the same task. Other accepted Agent and Model IDs remain selectable.
+
+Sidekick is disabled when its mapping is absent or null. This removes only its conditional instructions; all generic collaboration and discovery tools remain available subject to normal tool visibility policy. Configuration changes affect future Run captures, not active requests. Terminal Runs and delegated children receive no WebUI collaboration capability or Sidekick instructions. There is no additional Skill, task launcher, startup execution, or supervisor.
 
 ## Live Presentation
 

@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { ChoiceField } from "a13n-ui";
+import { useId, useState } from "react";
+import { Checkbox, ChoiceField, FormField, Input, SettingsRow } from "a13n-ui";
 import styles from "../shell/workbench.module.css";
 
 // Absence inherits; an empty list explicitly selects nothing. Choosing Custom
@@ -15,7 +15,9 @@ export function SelectionField({
   options: { value: string; label: string }[];
   onChange: (value: string[] | undefined) => void;
 }) {
+  const id = useId();
   const [editing, setEditing] = useState(false);
+  const [search, setSearch] = useState("");
   const mode =
     value == null ? "default" : value.length || editing ? "custom" : "none";
   const selected = value ?? [];
@@ -25,45 +27,88 @@ export function SelectionField({
       .filter((id) => !options.some((option) => option.value === id))
       .map((id) => ({ value: id, label: `${id} (unavailable)` })),
   ];
+  const visible = choices.filter((option) =>
+    `${option.label} ${option.value}`
+      .toLocaleLowerCase()
+      .includes(search.toLocaleLowerCase()),
+  );
   return (
-    <div className={styles.stack}>
-      <ChoiceField
+    <div>
+      <SettingsRow
         label={label}
-        value={mode}
-        options={[
-          { value: "default", label: "Use default" },
-          { value: "none", label: "None" },
-          { value: "custom", label: "Custom selection" },
-        ]}
-        onValueChange={(mode) => {
-          setEditing(mode === "custom");
-          onChange(mode === "default" ? undefined : []);
-        }}
-      />
+        controlId={id}
+        description={
+          mode === "custom"
+            ? `${selected.length} selected · replaces the inherited list`
+            : mode === "none"
+              ? "No resources will be selected."
+              : "Inherit the default selection."
+        }
+      >
+        <ChoiceField
+          id={id}
+          label={label}
+          hideLabel
+          className={styles.settingControl}
+          aria-describedby={`${id}-description`}
+          value={mode}
+          options={[
+            { value: "default", label: "Use default" },
+            { value: "none", label: "None" },
+            { value: "custom", label: "Custom selection" },
+          ]}
+          onValueChange={(mode) => {
+            setEditing(mode === "custom");
+            setSearch("");
+            onChange(
+              mode === "default"
+                ? undefined
+                : mode === "custom"
+                  ? selected
+                  : [],
+            );
+          }}
+        />
+      </SettingsRow>
       {mode === "custom" && (
-        <div className={styles.checks}>
-          {!choices.length && (
-            <p>No configured choices. Create a resource first.</p>
-          )}
-          {choices.map((option) => (
-            <label key={option.value}>
-              <input
-                type="checkbox"
-                checked={selected.includes(option.value)}
-                onChange={(event) =>
-                  onChange(
-                    event.target.checked
-                      ? [...selected, option.value]
-                      : selected.filter((id) => id !== option.value),
-                  )
-                }
+        <div
+          className={styles.selectionOptions}
+          role="group"
+          aria-label={`${label} resources`}
+        >
+          {choices.length > 8 && (
+            <FormField label={`Find ${label.toLowerCase()}`} hideLabel>
+              <Input
+                type="search"
+                placeholder="Find resources…"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
               />
-              {option.label}
-            </label>
-          ))}
-          {!selected.length && !!choices.length && (
-            <small>No resources selected.</small>
+            </FormField>
           )}
+          <div className={`${styles.selectionList} a13n-scrollbar`}>
+            {!choices.length && (
+              <p>No configured choices. Create a resource first.</p>
+            )}
+            {!!choices.length && !visible.length && (
+              <p>No matching resources.</p>
+            )}
+            {visible.map((option) => (
+              <label key={option.value} className={styles.selectionOption}>
+                <Checkbox
+                  checked={selected.includes(option.value)}
+                  onCheckedChange={(checked) =>
+                    onChange(
+                      checked
+                        ? [...selected, option.value]
+                        : selected.filter((id) => id !== option.value),
+                    )
+                  }
+                />
+                <span>{option.label}</span>
+              </label>
+            ))}
+          </div>
         </div>
       )}
     </div>

@@ -193,3 +193,65 @@ async def test_inspection_accounts_and_notes_use_existing_owners(
             usage = await api.get(prefix + "/usage")
             assert usage.status_code == 200 and usage.json()["combined"]["model_requests"] == 0
             assert (await api.get("/api/configuration/sources/mcp/unknown.yaml")).status_code == 404
+
+
+async def test_sidekick_settings_save_applies_to_future_webui_runs_and_survives_restart(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pydantic_ai.models.function import DeltaToolCall
+
+    root = _write_configuration(tmp_path)
+    document = yaml.safe_load(root.read_text())
+    document["webui"] = {"sidekick": {"agent": "agent-assistant"}}
+    root.write_text(yaml.safe_dump(document))
+    started, release = Event(), Event()
+    seen = []
+
+    async def model(messages, info):
+        seen.append(info.instructions or "")
+        if len(seen) == 1:
+            started.set()
+            await release.wait()
+            yield {0: DeltaToolCall(name="get_thread", json_args="{}", tool_call_id="call-context")}
+        else:
+            yield "Settings inspected"
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    async with listener(tmp_path, configuration_path=root) as (http, _):
+        async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
+            created = (await api.post("/api/threads", json={})).json()
+            prefix = f"/api/threads/{created['thread_id']}"
+            first = (await api.post(prefix + "/submit", json={"prompt": "Inspect settings"})).json()["receipt_id"]
+            with fail_after(10):
+                await started.wait()
+            assert "Sidekick is enabled" in seen[0] and "agent_id='agent-assistant'" in seen[0]
+            captured = (await api.get(f"/api/operations/{first}/configuration")).json()
+            assert captured["webui_sidekick"] == {"agent": "agent-assistant", "model": None}
+            invalid = {**document, "webui": {"sidekick": {"agent": "agent-missing"}}}
+            assert (
+                await api.put(
+                    "/api/configuration/sources/a13n-harness-ui.yaml", json={"content": yaml.safe_dump(invalid)}
+                )
+            ).status_code == 400
+            document["webui"]["sidekick"] = None
+            saved = await api.put(
+                "/api/configuration/sources/a13n-harness-ui.yaml", json={"content": yaml.safe_dump(document)}
+            )
+            assert saved.status_code == 200, saved.text
+            assert (await api.get(f"/api/operations/{first}/configuration")).json() == captured
+            release.set()
+            assert (await settled(api, first))["status"] == "completed"
+            assert "Sidekick is enabled" in seen[1]  # Later requests in the same Run retain captured instructions.
+            second = (await api.post(prefix + "/submit", json={"prompt": "Inspect again"})).json()["receipt_id"]
+            assert (await settled(api, second))["status"] == "completed"
+            assert "Sidekick is enabled" not in seen[2]
+            assert (await api.get(f"/api/operations/{second}/configuration")).json()["webui_sidekick"] is None
+            assert (await api.get("/api/threads")).json()["total"] == 1  # Settings never create work.
+    async with listener(tmp_path, configuration_path=root) as (http, _):
+        async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
+            saved = (await api.get("/api/configuration/sources/a13n-harness-ui.yaml")).json()
+            assert yaml.safe_load(saved["content"])["webui"]["sidekick"] is None
+            assert (await api.get("/api/threads")).json()["total"] == 1

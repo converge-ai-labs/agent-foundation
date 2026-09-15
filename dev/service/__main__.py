@@ -15,6 +15,7 @@ from a13n_service.log import configure_logging
 from .docker import ensure_docker
 from .environment import LOCAL_CONFIG, ROOT, Environment
 from .langfuse import USER_EMAIL, USER_PASSWORD, Langfuse, local_traces
+from .mem0 import Mem0
 from .reset import reset
 
 
@@ -46,9 +47,11 @@ def setup(environment: Environment, langfuse: Langfuse, config: Path) -> None:
         if environment.incomplete.exists():
             raise ValueError("The previous reset did not complete; rerun make dev-reset with the intended STATE")
         langfuse.validate()
+        Mem0(environment).validate()
         ensure_docker()
         environment.compose("up", "-d", "--wait")
         langfuse.start()
+        Mem0(environment).start()
         DatabaseMigrator(environment.settings.database_config(), environment.settings.migration_config()).upgrade()
     print(f"Configuration: {config.resolve()}")
     print(f"Service: http://{environment.settings.service.host}:{environment.settings.service.port}")
@@ -78,6 +81,8 @@ def main() -> None:
     command.add_argument("state", choices=("empty", "seeded"))
     command = commands.add_parser("langfuse", help="Operate the selected checkout's local Langfuse")
     command.add_argument("action", choices=("up", "down", "reset", "test"))
+    command = commands.add_parser("mem0", help="Operate the checkout's local Mem0 OSS without deleting memories")
+    command.add_argument("action", choices=("up", "down", "logs"))
     args = parser.parse_args()
     try:
         settings = load_settings(args.config)
@@ -97,6 +102,16 @@ def main() -> None:
                 environment.require_stopped()
                 environment.compose("stop")
                 langfuse.compose("stop")
+                Mem0(environment).compose("stop")
+        elif args.command == "mem0":
+            mem0 = Mem0(environment)
+            if args.action == "up":
+                ensure_docker()
+                mem0.start()
+            elif args.action == "logs":
+                mem0.compose("logs", "--tail", "100", "mem0")
+            else:
+                mem0.compose("down")
         elif args.command == "langfuse":
             if not langfuse.enabled and args.action in {"up", "test"}:
                 raise ValueError("Select observability.query.provider = 'langfuse' in SERVICE_CONFIG first")

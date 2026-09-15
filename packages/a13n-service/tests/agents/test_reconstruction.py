@@ -343,12 +343,12 @@ def test_reconstructs_root_model_client_tools_output_and_fresh_capabilities() ->
 
 def test_reconstruction_preserves_root_and_child_connectivity_selections() -> None:
     connector = ConnectionToolSelection(
-        connection_id="cconn_1234567890abcdef",
+        connection_id="conn_1234567890abcdef",
         tools=("lookup_order",),
         defer_loading=False,
     )
     mcp = ConnectionToolSelection(
-        connection_id="mcpc_1234567890abcdef",
+        connection_id="conn_fedcba0987654321",
         tools=("search", "fetch"),
         defer_loading=True,
     )

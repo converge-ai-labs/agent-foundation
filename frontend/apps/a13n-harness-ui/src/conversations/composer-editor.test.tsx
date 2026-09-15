@@ -269,3 +269,58 @@ it("disposes thumbnail resources even when CodeMirror reuses DOM with an equal n
     vi.unstubAllGlobals();
   }
 });
+
+it("clears an idle editor cursor and does not revive it on remote updates or heartbeats", async () => {
+  vi.useFakeTimers();
+  const focused = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  const presence = vi.fn();
+  const draft = new ThreadDraft();
+  draft.doc.getText("text").insert(0, "Shared");
+  const editor: { current: EditorView | null } = { current: null };
+  const { unmount } = render(
+    <ComposerEditor
+      draft={draft}
+      editor={editor}
+      profile={{ display_name: "Alice", color: "#2563eb" }}
+      presence={presence}
+      submit={() => {}}
+    />,
+  );
+  try {
+    act(() => {
+      editor.current!.focus();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30);
+    });
+    expect(presence.mock.calls.at(-1)![0].anchor).toBeTruthy();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30000);
+    });
+    expect(presence.mock.calls.at(-1)![0].anchor).toBeNull();
+    presence.mockClear();
+    act(() => {
+      draft.doc.getText("text").insert(0, "Remote ");
+      draft.notify();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(16000);
+    });
+    expect(
+      presence.mock.calls.every(
+        ([value]) => value.anchor == null && value.head == null,
+      ),
+    ).toBe(true);
+    fireEvent.keyDown(screen.getByRole("textbox"), { key: "ArrowRight" });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30);
+    });
+    expect(presence.mock.calls.at(-1)![0].anchor).toBeTruthy();
+    fireEvent.blur(window);
+    expect(presence.mock.calls.at(-1)![0].anchor).toBeNull();
+  } finally {
+    unmount();
+    focused.mockRestore();
+    vi.useRealTimers();
+  }
+});

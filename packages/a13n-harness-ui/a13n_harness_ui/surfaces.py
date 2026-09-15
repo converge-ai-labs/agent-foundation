@@ -176,6 +176,15 @@ class ThreadDetail(SurfaceModel):
     available_actions: tuple[Literal["run", "respond", "wait", "steer", "cancel", "archive"], ...] = ()
 
 
+class AppliedEditView(SurfaceModel):
+    """Observed edit content, or an explicit omission when retention bounds were reached."""
+
+    file_path: str
+    before: str | None = Field(default=None, max_length=64 * 1024)
+    after: str | None = Field(default=None, max_length=64 * 1024)
+    omitted: bool = False
+
+
 class TranscriptPart(SurfaceModel):
     comment_target: SavedOutputTarget | None = None
     text_truncated: bool = False
@@ -196,6 +205,8 @@ class TranscriptPart(SurfaceModel):
     tool_name: str | None = Field(default=None, max_length=128)
     tool_call_id: str | None = Field(default=None, max_length=256)
     outcome: Literal["success", "failed", "denied", "interrupted"] | None = None
+    provider: str | None = None
+    applied_edit: AppliedEditView | None = None
     value: JsonValue | None = None
     value_omitted: bool = False
 

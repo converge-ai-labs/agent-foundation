@@ -178,6 +178,7 @@ class AgentConfig:
     toolsets: dict[Literal["files", "shell", "web", "assets"], ToolsetSelection]
     subagent_mode: Literal["inline", "async"] = "inline"
     model: AgentModel
+    memory: MemorySelection | None
     reviewer: AgentReviewer | None
     instructions: str
     input_adapter: InputAdapterConfig
@@ -199,6 +200,8 @@ Each built-in Tool owns its exact permission in `toolsets`; there is no second t
 Revision creation validates reviewer Model eligibility and settings without resolving credentials. The authored Model ID already freezes the stable reference; no separate reviewer Revision field is needed. Run acceptance resolves and freezes `resolved_reviewer_model` with the complete Model execution snapshot and merged Model-default/reviewer settings for every selected graph node. The worker reconstructs the reviewer from that accepted snapshot using the same managed Run Model resolver and current authentication path as the main Model. A missing required reviewer snapshot rejects reconstruction rather than falling back to ambient model inference. Main and reviewer may share a Model ID while retaining independent request settings. Optional absent fields remain absent from serialized legacy configurations and their digests.
 
 The `web` Toolset independently configures Provider-backed search and scrape and built-in fetch and download under [Web Provider Management](41-web-provider-management.md#agent-web-selection). Search and scrape may select the same compatible Provider explicitly or different Providers; fetch and download contain no Provider reference. The selection is Agent Revision content and is retained in each accepted graph node while Provider credentials and availability remain live.
+
+`memory` opts each Agent graph node into [long-term memory](42-memory.md). Absence or null disables memory. Its bounded behavior is immutable Revision content, not a backend endpoint or credential. Run override absence inherits, null disables, and an object replaces the whole selection; child nodes retain their own selection.
 
 `connection_tools` is an ordered list keyed semantically by managed connection IDs, with no caller-defined aliases. Duplicate connection IDs within the list are invalid. Omitted or null `tools` selects all currently available authorized source tools; an empty list selects none; explicit names select only those source-native tools. Duplicate tool names are invalid. `defer_loading` defaults to false and uses the [Harness loading contract](40-connectivity/04-agent-facing-tools.md#deferred-loading). These fields control one Agent or Run selection rather than the connection resource itself.
 
@@ -272,6 +275,7 @@ class RetryOverride:
 class AgentRunOverride:
     toolsets: dict[Literal["files", "shell", "web", "assets"], ToolsetSelection] | None
     model: ModelOverride | None
+    memory: MemorySelection | None
     reviewer: AgentReviewer | None  # May be absent.
     instructions: str | None
     plugins: tuple[PluginSelection, ...] | None
@@ -305,6 +309,7 @@ class EffectiveAgentConfig:
     model: EffectiveAgentModel
     resolved_reviewer_model: EffectiveAgentModel | None
     toolsets: dict[Literal["files", "shell", "web", "assets"], ToolsetSelection]
+    memory: MemorySelection | None
     reviewer: AgentReviewer | None
     instructions: str
     input_adapter: InputAdapterConfig

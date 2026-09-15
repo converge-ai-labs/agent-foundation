@@ -35,6 +35,7 @@ from .configuration.sections import (
     IamSettings,
     LifecycleSettings,
     LoggingSettings,
+    MemorySettings,
     MigrationSettings,
     ModelsSettings,
     ObjectsSettings,
@@ -79,6 +80,7 @@ class Settings(Section):
     observability: ObservabilitySettings = Field(default_factory=ObservabilitySettings)
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     models: ModelsSettings = Field(default_factory=ModelsSettings)
+    memory: MemorySettings = Field(default_factory=MemorySettings)
     webhooks: WebhooksSettings = Field(default_factory=WebhooksSettings)
     lifecycle: LifecycleSettings = Field(default_factory=LifecycleSettings)
     control: ControlSettings = Field(default_factory=ControlSettings)

@@ -1,6 +1,6 @@
 """A deterministic HTTP model fixture; Foundation still owns all Agent execution.
 
-This fixture implements just the OpenAI Chat Completions scenarios used below.
+This fixture implements the Chat Completions and Responses scenarios used below.
 It does not validate real-provider inference quality or provider compatibility.
 """
 
@@ -110,9 +110,11 @@ def fixture_router(root: Path, authenticate, *, long_session=None) -> APIRouter:
 
     @router.post("/model/v1/chat/completions")
     @router.post("/model-alternate/v1/chat/completions")
+    @router.post("/model/v1/responses")
     async def completion(request: Request):
         body = await request.json()
-        texts = [_message_text(message) for message in body["messages"]]
+        messages = body.get("messages", body.get("input", []))
+        texts = [_message_text(message) for message in messages if isinstance(message, dict)]
         matches = [match for text in texts for match in re.findall(r"^LIVE_TEST (\{[^\n]+\})$", text, re.MULTILINE)]
         if not matches:
             raise HTTPException(400, "Expected a LIVE_TEST scenario in the model context")
@@ -123,6 +125,12 @@ def fixture_router(root: Path, authenticate, *, long_session=None) -> APIRouter:
             raise HTTPException(400, "Scenario does not match its test-owned case")
         async with await anyio.open_file(path / "model_requests", "a") as output:
             await output.write("request\n")
+        if request.url.path.endswith("/responses"):
+            from ..model.response_faults import completion as response_completion
+
+            if case.scenario != "run_fault":
+                raise HTTPException(400, "Responses fault peer requires a run_fault scenario")
+            return await response_completion(case, path, body)
         if long_session is not None:
             from ..harness_integration.long_session_model import completion
 

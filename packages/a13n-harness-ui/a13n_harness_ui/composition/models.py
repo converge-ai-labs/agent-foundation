@@ -7,7 +7,7 @@ from typing import Literal, Self, get_args, get_origin
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from a13n_harness_ui.configuration import McpTransport, ModelAuthentication
-from a13n_harness_ui.configuration.models import AgentToolProxy, ModelCharacteristics
+from a13n_harness_ui.configuration.models import AgentToolProxy, ModelCharacteristics, SidekickConfiguration
 
 
 class CompositionModel(BaseModel):
@@ -141,6 +141,7 @@ class ResolvedRunComposition(CompositionModel):
     thread_configuration_version: int = Field(ge=1)
     project_id: str | None = Field(default=None, min_length=1, max_length=128)
     project_roots: tuple[str, ...] = Field(default=(), max_length=64)
+    webui_sidekick: SidekickConfiguration | None = None
     content_plugins: tuple[ResolvedContentPlugin, ...] = Field(default=(), max_length=256)
     root: ResolvedAgentNode
     environment_profile: ResolvedEnvironmentProfile

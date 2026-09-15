@@ -209,6 +209,42 @@ def test_webui_asset_failure_prevents_server_start(workspace: Path, monkeypatch)
     assert not any("dev.harness-ui.cli" in call for call in uv_calls(workspace))
 
 
+@pytest.mark.parametrize("interface", ["cli", "webui"])
+def test_landing_skips_development_environment_and_path_overrides(workspace: Path, interface) -> None:
+    result = run_make(
+        workspace,
+        f"{interface}-landing",
+        "HARNESS_UI_ENV=missing.env",
+        "CLI_ARGS=--config daily.yaml --data-root daily-data",
+        "WEBUI_ARGS=--port 9000 --no-share-computer",
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    calls = uv_calls(workspace)
+    assert calls[-1] == [
+        "run",
+        "--locked",
+        "python",
+        "-m",
+        "dev.harness-ui.landing",
+        interface,
+        *(["--port", "9000", "--no-share-computer"] if interface == "webui" else []),
+    ]
+    assert not (workspace / "dev/harness-ui/.env").exists()
+    if interface == "webui":
+        build = next(i for i, call in enumerate(calls) if "build" in call)
+        prepare = next(i for i, call in enumerate(calls) if "scripts/prepare-a13n-harness-ui-assets.py" in call)
+        assert build < prepare < len(calls) - 1
+    else:
+        assert len(calls) == 1
+
+
+def test_webui_landing_asset_failure_prevents_launch(workspace: Path, monkeypatch) -> None:
+    monkeypatch.setenv("FAIL_COMMAND", "build")
+    result = run_make(workspace, "webui-landing")
+    assert result.returncode != 0
+    assert not any("dev.harness-ui.landing" in call for call in uv_calls(workspace))
+
+
 def test_cli_configuration_and_data_are_git_ignored() -> None:
     paths = [
         "var/harness-ui/a13n-harness-ui.yaml",

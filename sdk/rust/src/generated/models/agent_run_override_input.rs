@@ -38,6 +38,14 @@ pub struct AgentRunOverrideInput {
     pub instructions: Option<Option<String>>,
 
     #[serde(
+        rename = "memory",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub memory: Option<Option<Box<models::MemorySelection>>>,
+
+    #[serde(
         rename = "model",
         default,
         with = "::serde_with::rust::double_option",
@@ -108,6 +116,7 @@ impl AgentRunOverrideInput {
             client_tools: None,
             connection_tools: None,
             instructions: None,
+            memory: None,
             model: None,
             output_spec: None,
             plugins: None,

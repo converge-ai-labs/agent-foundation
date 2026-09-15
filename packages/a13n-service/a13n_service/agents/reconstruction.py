@@ -45,8 +45,7 @@ from referencing import Registry, Resource
 from referencing.exceptions import CannotDetermineSpecification, Unresolvable
 from referencing.jsonschema import DRAFT202012
 
-from a13n_service.connectivity.selection_domain import connection_kind
-from a13n_service.connectivity.toolsets import source_key
+from a13n_service.connectivity.toolsets import connection_source_key
 from a13n_service.digests import digest_request
 from a13n_service.web.runtime import web_capability
 
@@ -381,7 +380,7 @@ def _permissions(config: EffectiveAgentConfig) -> ToolPermissions:
         rules[tool_id] = permission
 
     for selection in config.connection_tools:
-        key = source_key(connection_kind(selection.connection_id), selection.connection_id)
+        key = connection_source_key(selection.connection_id)
         if selection.tools is None:
             add(f"{source_tool_prefix(key, kind='mcp')}*", selection.permission)
             for name, permission in selection.permissions.items():

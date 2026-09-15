@@ -19,14 +19,6 @@ def _unique_tool_keys(value: tuple[str, ...] | None) -> tuple[str, ...] | None:
 ToolSelection = Annotated[tuple[ToolKey, ...] | None, Field(max_length=2048), AfterValidator(_unique_tool_keys)]
 
 
-def connection_kind(connection_id: str) -> Literal["connector", "mcp"]:
-    if connection_id.startswith("cconn_"):
-        return "connector"
-    if connection_id.startswith("mcpc_"):
-        return "mcp"
-    raise ValueError("unsupported connection ID kind")
-
-
 class ConnectionToolSelection(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     connection_id: ObjectId

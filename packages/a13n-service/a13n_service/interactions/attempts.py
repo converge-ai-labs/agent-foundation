@@ -38,6 +38,10 @@ class AttemptMutationError(RuntimeError):
     """The requested mutation is incompatible with the current Attempt lifecycle."""
 
 
+class AttemptUsageExceeded(AttemptMutationError):
+    """The accepted Run usage budget cannot admit another operation."""
+
+
 @dataclass(slots=True)
 class AttemptLease:
     """Local observation of a committed claim/renewal, shared by Attempt consumers."""
@@ -258,7 +262,16 @@ class AttemptExecutionService:
             projected = run.to_resource().usage_charged.plus(usage)
             maximum = run.to_resource().execution_budget.max_usage
             if maximum is not None and not maximum.permits(projected):
-                raise AttemptMutationError("usage increment would exceed the accepted Run budget")
+                raise AttemptUsageExceeded("usage increment would exceed the accepted Run budget")
+            # Tokens are charged by receipts after I/O. A new request requires
+            # remaining tokens, even though equality is valid for a final total.
+            if maximum is not None and delta.model_requests > 0:
+                token_limits = (
+                    (maximum.input_tokens, projected.input_tokens),
+                    (maximum.output_tokens, projected.output_tokens),
+                )
+                if any(limit is not None and consumed >= limit for limit, consumed in token_limits):
+                    raise AttemptUsageExceeded("the Run model token budget is exhausted")
             attempt.usage_json = usage.model_dump(mode="json")
             attempt.updated_at = now
             attempt.version += 1
@@ -643,4 +656,5 @@ __all__ = [
     "AttemptPreparationAccepted",
     "AttemptPreparationRejected",
     "AttemptPreparationResult",
+    "AttemptUsageExceeded",
 ]

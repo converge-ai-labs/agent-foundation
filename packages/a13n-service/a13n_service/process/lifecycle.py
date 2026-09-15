@@ -18,6 +18,7 @@ from a13n_service.gateway.a2a_push import append_matching_a2a_push_outbox
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.hooks.persistence import write_hook_lifecycle
 from a13n_service.interactions.lifecycle import LifecycleWriter
+from a13n_service.memory.composition import build_memory_service
 from a13n_service.models.providers import ProviderRegistry
 from a13n_service.object_retention.publication import PublicationObjectStore
 from a13n_service.observability import build_observability_runtime
@@ -84,6 +85,9 @@ async def open_process_runtime(
                     else (write_hook_lifecycle,)
                 ),
                 secret_protector=settings.secret_protector(),
+                memories=await build_memory_service(settings.memory, storage.sessions, stack)
+                if owns_control(settings.service.role) or owns_worker(settings.service.role)
+                else None,
             )
             agent_resources = build_agent_resources(
                 components,

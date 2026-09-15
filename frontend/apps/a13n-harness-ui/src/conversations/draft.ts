@@ -226,6 +226,7 @@ export class ThreadDraft {
     let stopped = false;
     let socket: WebSocket | undefined;
     let retry: ReturnType<typeof setTimeout> | undefined;
+    let presenceExpiry: ReturnType<typeof setTimeout> | undefined;
     let failures = 0;
     let joined = false;
     this.send = () => {
@@ -292,6 +293,12 @@ export class ThreadDraft {
           const first = !joined;
           joined = true;
           this.receive(frame as Schema<"DraftFrame">);
+          clearTimeout(presenceExpiry);
+          // A half-open receiver must not leave peer carets painted indefinitely.
+          presenceExpiry = setTimeout(() => {
+            this.participants = {};
+            this.notify();
+          }, 30000);
           failures = 0;
           if (first) this.send?.();
         } catch (error) {
@@ -306,6 +313,7 @@ export class ThreadDraft {
       ws.onclose = (event) => {
         if (stopped) return;
         joined = false;
+        clearTimeout(presenceExpiry);
         this.status = "Disconnected";
         this.participants = {};
         this.notify();
@@ -337,7 +345,9 @@ export class ThreadDraft {
         stopped = true;
         this.send = undefined;
         clearTimeout(retry);
+        clearTimeout(presenceExpiry);
         socket?.close();
+        this.participants = {};
         this.status = "Disconnected";
         this.notify();
       },

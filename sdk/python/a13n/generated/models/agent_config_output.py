@@ -16,6 +16,7 @@ if TYPE_CHECKING:
     from ..models.client_tool_definition import ClientToolDefinition
     from ..models.connection_tool_selection import ConnectionToolSelection
     from ..models.input_adapter_config import InputAdapterConfig
+    from ..models.memory_selection import MemorySelection
     from ..models.output_spec import OutputSpec
     from ..models.plugin_selection import PluginSelection
     from ..models.protocol_config import ProtocolConfig
@@ -37,6 +38,7 @@ class AgentConfigOutput:
         client_tools (list[ClientToolDefinition] | Unset):
         connection_tools (list[ConnectionToolSelection] | Unset):
         instructions (str | Unset):
+        memory (MemorySelection | None | Unset):
         output_spec (None | OutputSpec | Unset):
         plugins (list[PluginSelection] | Unset):
         retries (None | RetryConfig | Unset):
@@ -54,6 +56,7 @@ class AgentConfigOutput:
     client_tools: list[ClientToolDefinition] | Unset = UNSET
     connection_tools: list[ConnectionToolSelection] | Unset = UNSET
     instructions: str | Unset = UNSET
+    memory: MemorySelection | Unset | None = UNSET
     output_spec: OutputSpec | Unset | None = UNSET
     plugins: list[PluginSelection] | Unset = UNSET
     retries: RetryConfig | Unset | None = UNSET
@@ -66,6 +69,7 @@ class AgentConfigOutput:
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.agent_reviewer import AgentReviewer
+        from ..models.memory_selection import MemorySelection
         from ..models.output_spec import OutputSpec
         from ..models.retry_config import RetryConfig
 
@@ -90,6 +94,14 @@ class AgentConfigOutput:
                 connection_tools.append(connection_tools_item)
 
         instructions = self.instructions
+
+        memory: dict[str, Any] | Unset | None
+        if isinstance(self.memory, Unset):
+            memory = UNSET
+        elif isinstance(self.memory, MemorySelection):
+            memory = self.memory.to_dict()
+        else:
+            memory = self.memory
 
         output_spec: dict[str, Any] | Unset | None
         if isinstance(self.output_spec, Unset):
@@ -163,6 +175,8 @@ class AgentConfigOutput:
             field_dict["connection_tools"] = connection_tools
         if instructions is not UNSET:
             field_dict["instructions"] = instructions
+        if memory is not UNSET:
+            field_dict["memory"] = memory
         if output_spec is not UNSET:
             field_dict["output_spec"] = output_spec
         if plugins is not UNSET:
@@ -193,6 +207,7 @@ class AgentConfigOutput:
         from ..models.client_tool_definition import ClientToolDefinition
         from ..models.connection_tool_selection import ConnectionToolSelection
         from ..models.input_adapter_config import InputAdapterConfig
+        from ..models.memory_selection import MemorySelection
         from ..models.output_spec import OutputSpec
         from ..models.plugin_selection import PluginSelection
         from ..models.protocol_config import ProtocolConfig
@@ -226,6 +241,23 @@ class AgentConfigOutput:
                 connection_tools.append(connection_tools_item)
 
         instructions = d.pop("instructions", UNSET)
+
+        def _parse_memory(data: object) -> MemorySelection | Unset | None:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                memory_type_0 = MemorySelection.from_dict(data)
+
+                return memory_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(MemorySelection | Unset | None, data)
+
+        memory = _parse_memory(d.pop("memory", UNSET))
 
         def _parse_output_spec(data: object) -> OutputSpec | Unset | None:
             if data is None:
@@ -333,6 +365,7 @@ class AgentConfigOutput:
             client_tools=client_tools,
             connection_tools=connection_tools,
             instructions=instructions,
+            memory=memory,
             output_spec=output_spec,
             plugins=plugins,
             retries=retries,

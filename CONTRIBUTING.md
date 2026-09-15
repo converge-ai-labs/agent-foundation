@@ -74,6 +74,8 @@ Use the Makefile as the stable development interface:
 | `make env-init`               | Initialize missing Harness development `.env` files                |
 | `make cli`                    | Run Harness UI with Git-ignored config/data in `var/harness-ui/`   |
 | `make webui`                  | Build browser assets and start WebUI with a generated login link   |
+| `make cli-landing`            | Try CLI first-run setup in temporary state, deleted on exit        |
+| `make webui-landing`          | Try WebUI first-run setup in temporary state; Ctrl+C cleans up     |
 | `make harness-dev`            | Run SDK observation scenarios with `dev/harness/.env`              |
 | `make harness-ui-smoke`       | Run a scripted real-App observation smoke test                     |
 | `make langfuse-up`            | Start the isolated local Langfuse trace backend                    |

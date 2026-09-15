@@ -31,18 +31,15 @@ capabilities = (
 
 Embedding code constructs one fresh Provider `Environment` per independent Run and passes it through `run(..., environment=...)`, or supplies a named mapping of `Environment` and `EnvironmentMount` values through `environments=...`. The Host selects Provider configuration and current state before construction; Harness enters the adapters, owns only Run-local routing and access policy, exports cached state, and closes adapters without destroying backing targets. Only explicit Host policy constructs a fresh lifecycle adapter and calls `destroy()`. Ordinary calls can omit `RunBindings`; an advanced `EnvironmentRuntime` uses fresh `RunBindings.embedded()` values. General media URL reading, document conversion, and Web implementations stay behind typed run collaborators. Environment file multimedia understanding has built-in image, video, and audio Pydantic AI Agents selected by `A13N_HARNESS_*_UNDERSTANDING_MODEL`, with native support declared through the `model_characteristics` construction key and read from `AgentSpec.model_characteristics.capabilities`, plus a typed run collaborator available as an override. Static callers may import reusable Toolsets from `a13n_harness.toolsets`; their model-facing JSON results use named `TypedDict` contracts in the corresponding Toolset modules. Managed invocation policy and client-tool contracts are available from `a13n_harness.tools`.
 
-Long-term memory uses the first-party `Mem0Capability`. `mem0ai` is a default dependency, while the Capability itself is opt-in. Without an explicit native `AsyncMemoryClient`, each logical run reads `MEM0_API_KEY` and optional `MEM0_BASE_URL`, constructs the client off the event loop, and closes it during run cleanup. A supplied client is borrowed and remains caller-owned.
+Long-term memory uses the opt-in `Mem0Capability` with a required Host-owned backend. OSS is the primary native HTTP backend; Platform has a separate native SDK adapter. The Host opens and closes transports; the Capability has no environment fallback or Run-owned client. See the [memory guide](../../docs/a13n-harness/context-and-memory.md#mem0-long-term-memory).
 
 ```python
 from a13n_harness.capabilities import Mem0Capability, Mem0Scope
+from a13n_harness.capabilities.mem0_backends import open_mem0_oss
 
-capabilities = (
-    Mem0Capability(
-        scope=Mem0Scope.USER,
-        auto_recall=True,
-        toolset=True,
-    ),
-)
+async with open_mem0_oss(base_url=mem0_url, api_key=mem0_api_key) as backend:
+    capabilities = (Mem0Capability(backend=backend, scope=Mem0Scope.USER),)
+    # Build and execute Agents within this Host-owned lifetime.
 ```
 
 `thread`, `agent`, and `user` scopes resolve only from trusted run context and identity claims; the model never supplies entity IDs. Automatic recall is bounded and input-only, and the optional Toolset exposes only search, list, and explicit add. The Harness performs no automatic terminal transcript extraction; the embedding Host can dispatch extraction after its own durable checkpoint commit.

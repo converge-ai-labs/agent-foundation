@@ -30,6 +30,7 @@ from a13n_service.digests import Sha256Digest
 from a13n_service.iam.domain import ActorRef
 from a13n_service.ids import ObjectId, new_object_id
 from a13n_service.labels import Labels
+from a13n_service.memory.domain import MemorySelection
 from a13n_service.models.domain import ModelExecutionSnapshot, ModelKey
 from a13n_service.models.settings import validate_settings_bounds
 from a13n_service.resource_keys import ResourceKey
@@ -222,6 +223,7 @@ class AgentReviewer(ToolReviewConfig):
 
 class AgentConfig(StrictModel):
     toolsets: Toolsets = Field(default_factory=default_toolsets)
+    memory: MemorySelection | None = Field(default=None, exclude_if=lambda value: value is None)
     reviewer: AgentReviewer | None = Field(default=None, exclude_if=lambda value: value is None)
     subagent_mode: Literal["inline", "async"] = "inline"
     model: AgentModel
@@ -277,6 +279,7 @@ class RetryOverride(StrictModel):
 
 class AgentRunOverride(StrictModel):
     toolsets: ToolsetOverrides | None = None
+    memory: MemorySelection | None = None
     reviewer: AgentReviewer | None = None
     model: ModelOverride | None = None
     instructions: Annotated[str, StringConstraints(max_length=256 * 1024)] | None = None
@@ -341,6 +344,7 @@ class ChildAgentExecution(StrictModel):
 class EffectiveAgentConfig(_ResolvedContent[EffectiveAgentModel]):
     resolved_reviewer_model: EffectiveAgentModel | None = Field(default=None, exclude_if=lambda value: value is None)
     toolsets: Toolsets = Field(default_factory=default_toolsets)
+    memory: MemorySelection | None = Field(default=None, exclude_if=lambda value: value is None)
     reviewer: AgentReviewer | None = Field(default=None, exclude_if=lambda value: value is None)
     plugins: tuple[PluginSelection, ...] = Field(default=(), max_length=128)
     subagent_mode: Literal["inline", "async"] = "inline"

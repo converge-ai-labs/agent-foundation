@@ -33,6 +33,7 @@ from a13n_service.iam.http.profile_router import router as profile_router
 from a13n_service.iam.http.recovery_router import router as recovery_router
 from a13n_service.interactions.threads import router as thread_router
 from a13n_service.lifecycle.router import router as lifecycle_router
+from a13n_service.memory.router import router as memory_router
 from a13n_service.models.providers import ProviderRegistry
 from a13n_service.models.router import router as model_router
 from a13n_service.openapi import install_openapi
@@ -195,6 +196,7 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
         app.include_router(asset_router)
         app.include_router(model_router)
         app.include_router(web_router)
+        app.include_router(memory_router)
         app.include_router(skill_router)
         app.include_router(trace_query_router)
         # Match /targets before the Account lifecycle /{action} route.

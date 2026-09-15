@@ -193,6 +193,7 @@ class WorkerAttempts:
                 subagent_capability=subagent_capability,
                 secrets=self._secrets,
                 web=self._web,
+                memory=self._shared.memories,
             )
             projector = AttemptRunStreamProjector(self._stream, context)
             driver = HarnessDriver(

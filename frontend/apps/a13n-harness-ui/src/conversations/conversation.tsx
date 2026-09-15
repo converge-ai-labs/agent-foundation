@@ -18,11 +18,12 @@ import { readPreference, writePreference } from "../shell/preferences";
 import { Composer, useDraft } from "./composer";
 import { Decisions } from "./decisions";
 import { ConversationDetails } from "./details";
+import { WorkInspector } from "./work-inspector";
 import { Discussion } from "./comments";
-import { useHistory, useThread } from "./queries";
+import { refreshThreadLists, useHistory, useThread } from "./queries";
 import { FocusDisplay, showFocusedOutput, watchThread } from "./stream";
 import { LiveOutput, SavedEntry } from "./transcript";
-import { savedTools } from "./tool-presentation";
+import { savedToolGroups } from "./tool-presentation";
 import styles from "./conversation.module.css";
 
 export function ConversationPage(props: {
@@ -83,7 +84,8 @@ function Conversation({
   const [newOutput, setNewOutput] = useState(false);
   const reconcile = useCallback(() => {
     void queries.invalidateQueries({ queryKey: ["thread", threadId] });
-    void queries.invalidateQueries({ queryKey: ["threads"] });
+    void refreshThreadLists(queries);
+    void queries.invalidateQueries({ queryKey: ["child-saved-output"] });
   }, [queries, threadId]);
   useEffect(() => {
     let paint: ReturnType<typeof setTimeout> | undefined;
@@ -122,7 +124,7 @@ function Conversation({
         .flatMap((page) => page.entries) ?? [],
     [history.data],
   );
-  const toolViews = useMemo(() => savedTools(entries), [entries]);
+  const toolGroups = useMemo(() => savedToolGroups(entries), [entries]);
   const continuation = history.data?.pages[0]?.continuation_id;
   const operation = detail.data?.thread.root_activity;
   const [lastReceipt, setLastReceipt] = useState<string | null>(null);
@@ -339,13 +341,26 @@ function Conversation({
                 Load earlier messages
               </Button>
             )}
-            {entries.map((entry) => (
-              <SavedEntry
+            {entries.map((entry, index) => (
+              <div
                 key={`${continuation}:${entry.position}`}
-                entry={entry}
-                toolViews={toolViews}
-                threadId={threadId}
-              />
+                data-presence-anchor={`entry:${continuation}:${entry.position}`}
+              >
+                <SavedEntry
+                  entry={entry}
+                  continuation={
+                    index > 0 &&
+                    !entries[index - 1].parts.some(
+                      (part) => part.kind === "user" || part.kind === "media",
+                    ) &&
+                    !entry.parts.some(
+                      (part) => part.kind === "user" || part.kind === "media",
+                    )
+                  }
+                  toolGroups={toolGroups}
+                  threadId={threadId}
+                />
+              </div>
             ))}
             {showLive && (
               <LiveOutput
@@ -392,8 +407,16 @@ function Conversation({
             New output
           </Button>
         )}
+        <WorkInspector
+          threadId={threadId}
+          continuation={detail.data.continuation_id}
+          display={display}
+          live={showLive}
+          reconcile={reconcile}
+        />
         {!thread.archived && (
           <Composer
+            autoFocus={search.get("compose") === "1"}
             threadId={threadId}
             activity={thread.root_activity}
             canRun={detail.data.available_actions?.includes("run") ?? false}

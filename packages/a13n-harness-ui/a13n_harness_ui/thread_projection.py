@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
@@ -16,6 +17,8 @@ from pydantic_ai.messages import (
     ModelMessage,
     ModelRequest,
     ModelResponse,
+    NativeToolCallPart,
+    NativeToolReturnPart,
     RetryPromptPart,
     SystemPromptPart,
     TextPart,
@@ -53,6 +56,7 @@ from a13n_harness_ui.surfaces import (
     TranscriptPage,
     TranscriptPart,
 )
+from a13n_harness_ui.tool_evidence import applied_edit
 
 _MAX_CURSOR_BYTES = 3072
 _MAX_TEXT = 64 * 1024
@@ -69,6 +73,8 @@ class _ThreadCursor(SurfaceModel):
     query: str | None
     project_id: str | None = None
     project_ids: tuple[str, ...] | None = None
+    project_ids_digest: str | None = None
+    projectless: bool = False
     sort: Literal["updated", "activity"] = "updated"
     include_archived: bool
     updated_at: datetime
@@ -118,13 +124,19 @@ class ThreadProjectionService:
         project_id: str | None = None,
         include_archived: bool = False,
         project_ids: tuple[str, ...] | None = None,
+        projectless: bool = False,
         sort: Literal["updated", "activity"] = "updated",
         cursor: str | None = None,
         limit: int = 20,
     ) -> ThreadPage:
         normalized_query = _normalize_query(query)
+        if sum((project_id is not None, project_ids is not None, projectless)) > 1:
+            raise ThreadError("Choose only one Project filter.", code="thread_page_invalid")
         if project_ids is not None:
             project_ids = tuple(sorted(set(project_ids)))
+        project_ids_digest = (
+            hashlib.sha256(json.dumps(project_ids).encode()).hexdigest() if project_ids is not None else None
+        )
         if not 1 <= limit <= 100:
             raise ThreadError("Thread page is outside supported bounds.", code="thread_page_invalid")
         before: tuple[datetime, str] | None = None
@@ -134,7 +146,12 @@ class ThreadProjectionService:
                 decoded.query != normalized_query
                 or decoded.project_id != project_id
                 or decoded.include_archived is not include_archived
-                or decoded.project_ids != project_ids
+                or (
+                    decoded.project_ids_digest != project_ids_digest
+                    if decoded.project_ids_digest is not None
+                    else decoded.project_ids != project_ids
+                )
+                or decoded.projectless != projectless
                 or decoded.sort != sort
             ):
                 raise ThreadError("Thread cursor belongs to another query.", code="thread_cursor_mismatch")
@@ -144,6 +161,7 @@ class ThreadProjectionService:
             project_id=project_id,
             include_archived=include_archived,
             project_ids=project_ids,
+            projectless=projectless,
             sort=sort,
             before=before,
             limit=limit + 1,
@@ -162,7 +180,9 @@ class ThreadProjectionService:
                     project_id=project_id,
                     include_archived=include_archived,
                     updated_at=last.updated_at if sort == "updated" else (last.activity_at or last.created_at),
-                    project_ids=project_ids,
+                    # A filter can cover many unavailable Projects; keep its cursor bounded.
+                    project_ids_digest=project_ids_digest,
+                    projectless=projectless,
                     sort=sort,
                     thread_id=last.thread_id,
                 )
@@ -462,6 +482,7 @@ def _request_parts(part: object) -> tuple[TranscriptPart, ...]:
                 tool_name=part.tool_name,
                 tool_call_id=part.tool_call_id,
                 outcome=part.outcome,
+                applied_edit=applied_edit(part),
                 value=value,
                 value_omitted=omitted,
             ),
@@ -486,10 +507,22 @@ def _response_part(part: object) -> TranscriptPart:
         )
     if isinstance(part, ThinkingPart):
         return TranscriptPart(kind="thinking", text=_bounded_text(part.content))
-    if isinstance(part, ToolCallPart):
+    if isinstance(part, NativeToolReturnPart):
+        value, omitted = _bounded_json(part.content)
+        return TranscriptPart(
+            kind="tool_result",
+            tool_name=part.tool_name,
+            tool_call_id=part.tool_call_id,
+            provider=part.provider_name or "provider",
+            outcome=part.outcome,
+            value=value,
+            value_omitted=omitted,
+        )
+    if isinstance(part, (ToolCallPart, NativeToolCallPart)):
         value, omitted = _bounded_json(part.args)
         return TranscriptPart(
             kind="tool_call",
+            provider=(part.provider_name or "provider") if isinstance(part, NativeToolCallPart) else None,
             tool_name=part.tool_name,
             tool_call_id=part.tool_call_id,
             value=value,

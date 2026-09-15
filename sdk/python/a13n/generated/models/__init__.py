@@ -302,6 +302,13 @@ from .mcpo_auth_setup_action_grant_types_item import MCPOAuthSetupActionGrantTyp
 from .mcpo_auth_setup_action_token_endpoint_auth_methods_item import MCPOAuthSetupActionTokenEndpointAuthMethodsItem
 from .mcpo_auth_setup_action_type import MCPOAuthSetupActionType
 from .mcpo_auth_setup_request import MCPOAuthSetupRequest
+from .mem_0_scope import Mem0Scope
+from .memory import Memory
+from .memory_collection import MemoryCollection
+from .memory_pagination import MemoryPagination
+from .memory_search import MemorySearch
+from .memory_selection import MemorySelection
+from .memory_write import MemoryWrite
 from .model import Model
 from .model_candidate import ModelCandidate
 from .model_candidate_parameter_support import ModelCandidateParameterSupport
@@ -891,6 +898,13 @@ __all__ = (
     "MCPToolCollection",
     "MCPToolInputSchema",
     "MCPToolOutputSchemaType0",
+    "Mem0Scope",
+    "Memory",
+    "MemoryCollection",
+    "MemoryPagination",
+    "MemorySearch",
+    "MemorySelection",
+    "MemoryWrite",
     "Model",
     "ModelCandidate",
     "ModelCandidateParameterSupport",
