@@ -21,7 +21,8 @@ class AttemptRunStreamProjector:
         self._context = context
         self._writers: dict[str, HarnessAguiRunStreamWriter] = {}
         self._harness_run_id: str | None = None
-        self._environment: list[EnvironmentHookObservation] = []
+        self._environment: list[tuple[int, EnvironmentHookObservation]] = []
+        self._environment_sequence = 0
         self._incomplete = False
         self._closed = False
         self._authority_lost = False
@@ -32,7 +33,9 @@ class AttemptRunStreamProjector:
         if len(self._environment) >= 64:
             self._incomplete = True
         else:
-            self._environment.append(observation)
+            # Preparation can recur within one Attempt; retries retain this occurrence's identity.
+            self._environment_sequence += 1
+            self._environment.append((self._environment_sequence, observation))
 
     async def project(self, event: HarnessEvent | HarnessRunResultEvent[Any]) -> None:
         if self._authority_lost:
@@ -106,7 +109,7 @@ class AttemptRunStreamProjector:
     async def _flush_environment(self) -> None:
         context = self._context
         while self._environment:
-            item = self._environment.pop(0)
+            sequence, item = self._environment[0]
             if item.thread_id != context.thread_id:
                 raise ValueError("Environment observation names another Thread")
             await self._stream.append(
@@ -118,6 +121,7 @@ class AttemptRunStreamProjector:
                         item.harness_run_id,
                         item.mount_id,
                         item.event_type,
+                        str(sequence),
                     ),
                     event_type=item.event_type,
                     run_id=context.run_id,
@@ -129,3 +133,4 @@ class AttemptRunStreamProjector:
                 ),
                 attempt_number=context.attempt_number,
             )
+            self._environment.pop(0)

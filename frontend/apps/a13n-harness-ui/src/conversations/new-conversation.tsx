@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, ChoiceField, ModalFrame } from "a13n-ui";
+import { Button, ModalFrame } from "a13n-ui";
+import { ResourceChoice } from "../configuration/resource-choice";
 import { useProjects, useSelectors, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice, TextField } from "../shell/ui";
@@ -79,7 +80,7 @@ export function NewConversation({
           value={title}
           onChange={(value) => setTitle(value.slice(0, 200))}
         />
-        <ChoiceField
+        <ResourceChoice
           label="Project"
           value={project}
           onValueChange={setProject}
@@ -91,7 +92,7 @@ export function NewConversation({
             })),
           ]}
         />
-        <ChoiceField
+        <ResourceChoice
           label="Agent"
           value={agent}
           onValueChange={setAgent}
@@ -103,7 +104,7 @@ export function NewConversation({
             })),
           ]}
         />
-        <ChoiceField
+        <ResourceChoice
           label="Environment"
           value={environment}
           onValueChange={setEnvironment}

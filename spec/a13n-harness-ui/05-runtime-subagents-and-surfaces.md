@@ -190,7 +190,7 @@ No parent `AgentContext`, entered Environment facade, live state coordinator, Mo
 
 ### Observation and Checkpointing
 
-The operator consumes ordered public Harness stream items and compacts them into the bounded display owned by [Local Storage and Recovery](03-local-storage-and-recovery.md#compact-child-display). Closed activity is published live only at closed boundaries. Terminal success is acknowledged only after Environment cleanup, terminal checkpoint publication, and atomic head selection.
+The operator consumes ordered public Harness stream items and compacts them into the bounded display owned by [Local Storage and Recovery](03-local-storage-and-recovery.md#compact-child-display). Nonterminal public events, including incremental text, reasoning, and tool arguments/results, are published as provisional live observations without waiting for message or tool closure. The saved compact display still records closed activity; partial live delivery is neither a saved output target nor execution completion. Terminal success is acknowledged only after Environment cleanup, terminal checkpoint publication, and atomic head selection.
 
 Harness UI performs no automatic parent wake Run after child completion. A connected surface receives live completion, and a later parent Run reconciles through `subagent_info` or `wait_subagent` against saved heads.
 

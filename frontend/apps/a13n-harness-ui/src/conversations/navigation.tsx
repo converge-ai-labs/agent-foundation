@@ -1,6 +1,17 @@
 import { useEffect, useState } from "react";
 import { useMatch, useNavigate } from "react-router";
-import { Button, Menu, MenuTrigger, MenuPopup, MenuItem } from "a13n-ui";
+import {
+  Button,
+  Checkbox,
+  FormField,
+  Input,
+  SearchPicker,
+  Skeleton,
+  Menu,
+  MenuTrigger,
+  MenuPopup,
+  MenuItem,
+} from "a13n-ui";
 import {
   Plus,
   Folder,
@@ -13,7 +24,7 @@ import {
 } from "@phosphor-icons/react";
 import { useProjects } from "../transport/context";
 import type { Schema } from "../transport/client";
-import { ErrorNotice, TextField } from "../shell/ui";
+import { ErrorNotice } from "../shell/ui";
 import { useThread, useThreads } from "./queries";
 import { useProjectExpansion, useProjectOrder } from "./project-order";
 import { NewProject } from "./new-project";
@@ -41,6 +52,10 @@ export function ConversationNavigation({
   const selected = useThread(selectedId).data?.thread;
   const [query, setQuery] = useState("");
   const [archived, setArchived] = useState(false);
+  const [scope, setScope] = useState("");
+  const scopedProject = projects.data?.find(
+    (project) => project.project_id === scope,
+  );
   const [adding, setAdding] = useState(false);
   const [creating, setCreating] = useState<string | null | undefined>(
     undefined,
@@ -88,12 +103,37 @@ export function ConversationNavigation({
         <Plus />
         Add project
       </Button>
-      <TextField
-        type="search"
-        label="Find conversations"
-        value={query}
-        onChange={setQuery}
-      />
+      <div className={styles.navigationFilters}>
+        <FormField label="Find conversations" hideLabel>
+          <Input
+            type="search"
+            placeholder="Find conversations…"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+          />
+        </FormField>
+        <SearchPicker
+          label="Project scope"
+          placeholder="All Projects"
+          emptyMessage="No matching projects."
+          value={scopedProject?.project_id ?? ""}
+          onValueChange={setScope}
+          groups={[
+            {
+              label: "Projects",
+              options: [
+                { value: "", label: "All Projects", icon: <Folder /> },
+                ...(projects.data ?? []).map((project) => ({
+                  value: project.project_id,
+                  label: project.name,
+                  keywords: [project.project_id],
+                  icon: <Folder />,
+                })),
+              ],
+            },
+          ]}
+        />
+      </div>
       <ErrorNotice
         error={projects.error}
         retry={() => void projects.refetch()}
@@ -117,7 +157,13 @@ export function ConversationNavigation({
                     group.id === "@projectless"))
               }
               toggle={(open) => setExpanded(group.id, open)}
-              enabled={!searching}
+              hidden={
+                !!scopedProject && scopedProject.project_id !== group.projectId
+              }
+              enabled={
+                !searching &&
+                (!scopedProject || scopedProject.project_id === group.projectId)
+              }
               archived={archived}
               presence={presence}
               selected={activeGroup === group.id ? selected : undefined}
@@ -129,6 +175,7 @@ export function ConversationNavigation({
         {searching && (
           <SearchResults
             query={query.trim()}
+            project={scopedProject}
             archived={archived}
             presence={presence}
           />
@@ -138,11 +185,7 @@ export function ConversationNavigation({
         {order.announcement}
       </span>
       <label className={styles.archiveFilter}>
-        <input
-          type="checkbox"
-          checked={archived}
-          onChange={(event) => setArchived(event.target.checked)}
-        />
+        <Checkbox checked={archived} onCheckedChange={setArchived} />
         Include archived
       </label>
       {adding && (
@@ -166,6 +209,7 @@ function ProjectGroup({
   expanded,
   toggle,
   enabled,
+  hidden,
   archived,
   presence,
   selected,
@@ -176,6 +220,7 @@ function ProjectGroup({
   expanded: boolean;
   toggle: (open: boolean) => void;
   enabled: boolean;
+  hidden: boolean;
   archived: boolean;
   presence: Presence;
   selected?: Schema<"ThreadSummary">;
@@ -202,6 +247,7 @@ function ProjectGroup({
       : undefined;
   return (
     <section
+      hidden={hidden}
       data-project-key={group.projectId}
       aria-label={group.name}
       className={order.moving === group.id ? styles.movingProject : undefined}
@@ -298,9 +344,16 @@ function ProjectGroup({
           <ThreadRow key={row.thread.thread_id} row={row} presence={presence} />
         ))}
         {expanded && list.isPending && (
-          <small role="status" className={styles.emptyGroup}>
-            Loading conversations…
-          </small>
+          <div
+            role="status"
+            aria-label="Loading conversations"
+            aria-busy="true"
+            className={styles.threadSkeletons}
+          >
+            {[0, 1, 2].map((item) => (
+              <Skeleton key={item} className="h-8 w-full" />
+            ))}
+          </div>
         )}
         {list.isSuccess && !rows.length && (
           <small className={styles.emptyGroup}>No conversations yet</small>
@@ -324,14 +377,16 @@ function ProjectGroup({
 
 function SearchResults({
   query,
+  project,
   archived,
   presence,
 }: {
   query: string;
+  project?: { project_id: string; name: string };
   archived: boolean;
   presence: Presence;
 }) {
-  const list = useThreads(query, undefined, archived);
+  const list = useThreads(query, project?.project_id, archived);
   const rows = [
     ...new Map(
       (list.data?.pages.flatMap((page) => page.rows) ?? []).map((row) => [
@@ -342,7 +397,9 @@ function SearchResults({
   ];
   return (
     <section aria-label="Conversation search results">
-      <small className={styles.emptyGroup}>Results from all projects</small>
+      <small className={styles.emptyGroup}>
+        {project ? `Results from ${project.name}` : "Results from all projects"}
+      </small>
       {rows.map((row) => (
         <div key={row.thread.thread_id}>
           <small className={styles.emptyGroup}>{row.project_name}</small>

@@ -18,7 +18,9 @@ export const SavedEntry = memo(function SavedEntry({
   entry,
   threadId,
   toolGroups,
+  continuation = false,
 }: {
+  continuation?: boolean;
   toolGroups?: Map<Schema<"TranscriptPart">, ToolView[] | null>;
   entry: Schema<"TranscriptEntry">;
   threadId?: string;
@@ -55,7 +57,11 @@ export const SavedEntry = memo(function SavedEntry({
                   : undefined
               }
             >
-              <header>Assistant</header>
+              {!continuation &&
+                index ===
+                  parts.findIndex((item) => item.kind === "assistant") && (
+                  <header>Assistant</header>
+                )}
               <SavedOutput
                 target={part.comment_target}
                 text={part.text ?? ""}
@@ -86,14 +92,18 @@ export function LiveOutput({
   blocks,
   gap,
   threadId,
+  label = "Current output · not yet established as saved history",
 }: {
+  label?: string;
   blocks: DisplayBlock[];
   gap: boolean;
   threadId?: string;
 }) {
   const diagnostics = blocks.filter((block) => block.diagnostic);
   const items: (DisplayBlock | DisplayBlock[] | { tools: ToolView[] })[] = [];
-  for (const block of blocks.filter((block) => !block.diagnostic)) {
+  for (const block of blocks.filter(
+    (block) => !block.diagnostic && block.kind !== "task",
+  )) {
     if (block.kind === "user" || block.kind === "media") {
       const previous = items.at(-1);
       const turn = (id: string) =>
@@ -124,10 +134,8 @@ export function LiveOutput({
   }
   return (
     <section className={styles.liveOutput} aria-label="Current unsaved output">
-      {blocks.length > 0 && (
-        <small>Current output · not yet established as saved history</small>
-      )}
-      {items.map((block) =>
+      {blocks.length > 0 && <small>{label}</small>}
+      {items.map((block, index) =>
         Array.isArray(block) ? (
           <InputContent
             key={block[0].id}
@@ -146,7 +154,9 @@ export function LiveOutput({
           </div>
         ) : block.kind === "assistant" ? (
           <div key={block.id} className={styles.assistantMessage}>
-            <header>Assistant</header>
+            {(index === 0 || Array.isArray(items[index - 1])) && (
+              <header>Assistant</header>
+            )}
             <MessageText text={block.text} />
           </div>
         ) : (

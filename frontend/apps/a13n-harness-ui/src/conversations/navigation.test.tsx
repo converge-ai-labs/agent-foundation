@@ -10,6 +10,7 @@ import {
   within,
 } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
+import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { parse } from "yaml";
 import { TransportContext } from "../transport/context";
@@ -440,4 +441,112 @@ it("does not cancel an in-flight Show more when a summary event refreshes naviga
   expect(screen.getByText("Older two")).toBeTruthy();
   expect(activity).toHaveLength(4); // first + next, then one coalesced two-page refresh
   expect(pageAborted).toBe(false);
+});
+
+it("preserves project scope filtering and cached independent pages through scoped search", async () => {
+  mount();
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "One" }));
+  await screen.findByText("Recent 5");
+  await user.click(
+    screen.getByRole("button", { name: "Show more conversations in One" }),
+  );
+  await screen.findByText("Older two");
+  await user.click(screen.getByRole("button", { name: "Two" }));
+  await screen.findByText("Other project");
+  await user.click(screen.getByRole("combobox", { name: "Project scope" }));
+  await user.click(await screen.findByRole("option", { name: "Two" }));
+  expect(screen.queryByRole("button", { name: "One" })).toBeNull();
+  expect(screen.getByRole("link", { name: "Other project" })).toBeTruthy();
+  fireEvent.change(
+    screen.getByRole("searchbox", { name: "Find conversations" }),
+    { target: { value: "match" } },
+  );
+  await screen.findByText("Global match");
+  expect(activity.at(-1)?.searchParams.get("project_id")).toBe("project-two");
+  expect(screen.getByText("Results from Two")).toBeTruthy();
+  fireEvent.change(
+    screen.getByRole("searchbox", { name: "Find conversations" }),
+    { target: { value: "" } },
+  );
+  const calls = activity.length;
+  await user.click(screen.getByRole("combobox", { name: "Project scope" }));
+  await user.click(await screen.findByRole("option", { name: "All Projects" }));
+  expect(screen.getByRole("link", { name: "Older two" })).toBeTruthy();
+  expect(activity).toHaveLength(calls);
+});
+
+it("preserves status labels, title tooltips and independent action menus from the polished navigation", async () => {
+  vi.mocked(fetch).mockImplementation(async (input) => {
+    const url = new URL(input instanceof Request ? input.url : input);
+    if (url.pathname === "/api/projects") return json(projects);
+    if (url.pathname === "/api/threads/activity")
+      return json({
+        rows: [
+          { thread: thread("Review configuration"), pending_decision: true },
+          {
+            thread: {
+              ...thread("Implement settings"),
+              root_activity: { state: "running" },
+            },
+          },
+          {
+            thread: thread("Check provider"),
+            latest_operation: { status: "failed" },
+          },
+        ],
+        next_cursor: null,
+      });
+    throw new Error(`Unexpected request: ${url}`);
+  });
+  mount();
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "One" }));
+  expect(
+    await screen.findByRole("link", {
+      name: /Review configuration.*Needs your answer/,
+    }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("link", { name: /Implement settings.*Running/ }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("link", { name: /Check provider.*Failed/ }),
+  ).toBeTruthy();
+  expect(screen.getByTitle("Review configuration")).toBeTruthy();
+  await user.click(
+    screen.getByRole("button", { name: "Actions for Review configuration" }),
+  );
+  expect(
+    await screen.findByRole("menuitem", { name: "Rename conversation" }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("menuitem", { name: "Share conversation" }),
+  ).toBeTruthy();
+  await user.keyboard("{Escape}");
+  await user.click(screen.getByRole("button", { name: "Actions for One" }));
+  expect(
+    await screen.findByRole("menuitem", { name: "Project settings" }),
+  ).toBeTruthy();
+  await user.keyboard("{Escape}");
+  expect(
+    screen.getByRole("button", { name: "One" }).getAttribute("aria-expanded"),
+  ).toBe("true");
+});
+
+it("does not claim empty search results when the list fails", async () => {
+  mount();
+  await screen.findByRole("button", { name: "One" });
+  vi.mocked(fetch).mockResolvedValue(
+    json({ error: { message: "Conversations unavailable" } }, 503),
+  );
+  fireEvent.change(
+    screen.getByRole("searchbox", { name: "Find conversations" }),
+    { target: { value: "missing" } },
+  );
+  expect((await screen.findByRole("alert")).textContent).toContain(
+    "Conversations unavailable",
+  );
+  expect(screen.queryByText("No matching conversations.")).toBeNull();
+  expect(screen.queryByText("No conversations yet")).toBeNull();
 });

@@ -50,11 +50,30 @@ def install(faults):
 
     @wraps(original_publish)
     async def publish(self, files, destination, content):
+        ticket = await faults.take("skill.environment_stale", filename=destination.rsplit("/", 1)[-1])
+        if ticket is not None:
+            from a13n_harness.environment.models import EnvironmentError
+
+            await ticket.apply()
+            raise EnvironmentError("Injected stale test Environment mount", code="environment_stale_mount")
         result = await original_publish(self, files, destination, content)
         await faults.reach("skill.file_published", filename=destination.rsplit("/", 1)[-1], pid=os.getpid())
         return result
 
     EnvironmentSkillMaterializer._publish = publish
+
+    original_read = EnvironmentSkillMaterializer._read_package
+
+    @wraps(original_read)
+    async def read_package(self, selected):
+        await faults.reach("skill.before_package_read", skill_key=selected.lock.skill_key)
+        try:
+            return await original_read(self, selected)
+        except Exception:
+            await faults.reach("skill.package_read_failed", skill_key=selected.lock.skill_key)
+            raise
+
+    EnvironmentSkillMaterializer._read_package = read_package
 
     from a13n_service.skills.sources import SkillSourcePreparer
 
@@ -73,6 +92,31 @@ def install(faults):
         import traceback
 
         from a13n_service.process.attempts import WorkerAttempts
+        from a13n_service.run_stream.attempt_projection import AttemptRunStreamProjector
+
+        original_observation = AttemptRunStreamProjector.project_environment
+
+        @wraps(original_observation)
+        def environment_observation(self, observation):
+            if (faults.root / "observe-environment").exists():
+                path = faults.root / ("environment-" + self._context.run_attempt_id + ".jsonl")
+                # Correlation only; never serialize Environment configuration or credentials.
+                with path.open("a") as output:
+                    output.write(
+                        json.dumps(
+                            {
+                                "event_type": observation.event_type,
+                                "mount_id": observation.mount_id,
+                                "harness_run_id": observation.harness_run_id,
+                                "occurred_at": observation.occurred_at.isoformat(),
+                            }
+                        )
+                        + "\n"
+                    )
+                path.chmod(0o600)
+            return original_observation(self, observation)
+
+        AttemptRunStreamProjector.project_environment = environment_observation
 
         original_attempt = WorkerAttempts.run
 

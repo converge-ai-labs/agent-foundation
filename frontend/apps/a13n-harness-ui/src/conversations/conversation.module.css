@@ -8,11 +8,20 @@
 .navigation label {
   font-size: 12px;
 }
+.navigationFilters {
+  display: grid;
+  gap: 8px;
+}
 .threadGroups {
+  flex: 1;
   overflow: auto;
   min-height: 80px;
-  flex: 1;
   scrollbar-gutter: stable;
+}
+.threadSkeletons {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
 }
 .groupHeading {
   display: flex;
@@ -53,6 +62,7 @@
 }
 .groupToggle > svg {
   flex-shrink: 0;
+  transition: transform 0.15s;
 }
 .groupToggle:focus-visible {
   outline: 2px solid var(--ring);
@@ -106,15 +116,35 @@
   border-radius: 6px;
 }
 .threadRow:hover,
-.threadRow:has(.selected),
 .threadRow:has([data-popup-open]) {
-  background: var(--a13n-surface);
+  background: var(--a13n-hover);
+}
+.threadRow:has(.selected) {
+  background: var(--a13n-elevated);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 4%);
+}
+.threadRow:has(.selected) strong {
+  font-weight: 500;
 }
 .threadActions {
   flex-shrink: 0;
   margin-inline-end: 4px;
   color: var(--a13n-secondary);
   background: transparent;
+}
+@media (hover: hover) and (pointer: fine) {
+  .threadActions,
+  .groupActions {
+    opacity: 0;
+  }
+  .threadRow:hover .threadActions,
+  .threadRow:focus-within .threadActions,
+  .threadRow:has(.selected) .threadActions,
+  .threadActions[data-popup-open],
+  .groupHeading:hover .groupActions,
+  .groupHeading:focus-within .groupActions {
+    opacity: 1;
+  }
 }
 .threadActions:hover,
 .threadActions[data-popup-open] {
@@ -158,6 +188,17 @@
 .threadLink small {
   display: block;
   color: var(--a13n-secondary);
+  font-size: 11px;
+  margin-top: 2px;
+}
+.threadWaiting {
+  color: var(--warning-foreground);
+}
+.threadRunning {
+  color: var(--info-foreground);
+}
+.threadFailed {
+  color: var(--destructive-foreground);
 }
 .emptyGroup {
   display: block;
@@ -213,7 +254,7 @@
   margin: 0 auto;
 }
 .entry {
-  margin-bottom: 24px;
+  margin-bottom: 8px;
 }
 .userMessage {
   color: var(--a13n-text);
@@ -300,9 +341,9 @@
   color: var(--a13n-secondary);
 }
 .activity {
-  padding: 8px 12px;
-  margin: 8px 0;
-  background: var(--a13n-surface);
+  padding: 8px 10px;
+  margin: 4px 0;
+  background: color-mix(in srgb, var(--a13n-surface) 45%, transparent);
   border-radius: 6px;
   font-size: 13px;
 }
@@ -312,6 +353,37 @@
 }
 .activity details {
   margin: 10px 0;
+}
+.activity > summary {
+  color: var(--a13n-secondary);
+}
+.activity[open] > summary {
+  color: var(--a13n-text);
+  margin-bottom: 10px;
+}
+.activity > summary:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: 3px;
+}
+.children {
+  margin-top: 12px;
+}
+.children > details {
+  background: var(--a13n-surface);
+  padding: 10px 12px;
+}
+.children > details > summary {
+  color: var(--a13n-text);
+}
+.children small {
+  color: var(--a13n-secondary);
+  overflow-wrap: anywhere;
+}
+.childLive {
+  margin: 12px 0;
+}
+.composerHint summary {
+  cursor: pointer;
 }
 .rawSource {
   font-size: 12px;
@@ -327,11 +399,11 @@
   margin: 0 auto;
   border: 1px solid var(--a13n-border);
   border-radius: 12px;
-  padding: 12px 16px;
+  padding: 8px 12px;
   background: var(--a13n-canvas);
 }
 .composer:focus-within {
-  border-color: var(--a13n-secondary);
+  border-color: var(--ring);
 }
 .composerHeading {
   display: flex;
@@ -394,7 +466,7 @@
   font-size: 13px;
   color: var(--a13n-text);
   background: var(--a13n-surface);
-  border-left: 3px solid #d97706;
+  border-left: 3px solid var(--warning-foreground);
   padding: 10px 12px;
   margin: 10px 0;
 }
@@ -552,7 +624,7 @@
   list-style: decimal;
 }
 .form h3 {
-  font-weight: 600;
+  font-weight: 500;
   margin-bottom: 8px;
 }
 .form > section + section {

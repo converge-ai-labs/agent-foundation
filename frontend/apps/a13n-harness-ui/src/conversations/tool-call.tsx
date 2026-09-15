@@ -13,6 +13,8 @@ import {
   Wrench,
   Globe,
   Chats,
+  ListChecks,
+  UsersThree,
 } from "@phosphor-icons/react";
 import { structuredPatch } from "diff";
 import {
@@ -502,6 +504,8 @@ export const ToolActivity = memo(function ToolActivity({
     shell: TerminalWindow,
     web: Globe,
     edit: PencilSimple,
+    work: ListChecks,
+    subagents: UsersThree,
   }[kind];
   return (
     <section

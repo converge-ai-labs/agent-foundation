@@ -45,11 +45,25 @@ async def completion(case, path, body):
             )
         if mode == "timeout":
             await anyio.sleep(plan.get("delay_seconds", 2))
-        elif mode in {"truncated", "malformed"}:
+        elif mode in {"truncated", "malformed", "usage_truncated", "usage_timeout", "paused"}:
 
             async def broken():
                 if mode == "malformed":
                     yield "data: {invalid-model-json\n\n"
+                elif mode in {"usage_truncated", "usage_timeout", "paused"}:
+                    async for chunk in usage_chunks(case, path, "PARTIAL_MUST_NOT_COMPLETE", None, plan):
+                        if '"finish_reason": "stop"' in chunk:
+                            continue
+                        yield chunk
+                        if '"usage"' in chunk or (mode == "paused" and '"content"' in chunk):
+                            break
+                    if mode == "paused":
+                        await Faults(path.parent.parent / "faults", "control").reach(
+                            "model.stream_paused", case_id=case.case_id
+                        )
+                    if mode == "usage_timeout":
+                        await anyio.sleep(plan.get("delay_seconds", 10))
+                    raise RuntimeError("Injected disconnect after upstream usage")
                 else:
                     async for chunk in _chunks(case, path, "PARTIAL_MUST_NOT_COMPLETE", None):
                         yield chunk
@@ -84,4 +98,29 @@ async def completion(case, path, body):
         answer = "STEERS:" + ",".join(steers)
     else:
         answer = json.dumps(tool_results[-1]["content"]) if tool_results else case.token
-    return StreamingResponse(_chunks(case, path, answer, tool), media_type="text/event-stream")
+    if plan.get("inline_child"):
+        child = any(
+            message.get("role") == "user" and "LIVE_INLINE_CHILD" in _message_text(message)
+            for message in body["messages"]
+        )
+        if child:
+            answer = "CHILD_" + case.token
+        elif not tool_results:
+            tool = tool_call(
+                body,
+                "delegate",
+                {"subagent": "child", "prompt": "LIVE_TEST " + case.model_dump_json() + "\nLIVE_INLINE_CHILD"},
+            )
+    return StreamingResponse(usage_chunks(case, path, answer, tool, plan), media_type="text/event-stream")
+
+
+async def usage_chunks(case, path, answer, tool, plan):
+    from ..infrastructure.fixture_model import _chunks
+
+    async for chunk in _chunks(case, path, answer, tool):
+        if '"usage"' in chunk:
+            if "usage" in plan:
+                value = json.loads(chunk.removeprefix("data: "))
+                value["usage"] = plan["usage"]
+                chunk = "data: " + json.dumps(value) + "\n\n"
+        yield chunk

@@ -2,6 +2,10 @@ import { NavLink, useNavigate } from "react-router";
 import { Button, Menu, MenuTrigger, MenuPopup, MenuItem } from "a13n-ui";
 import {
   ChatCircle,
+  Question,
+  CircleNotch,
+  WarningCircle,
+  Archive,
   DotsThree,
   PencilSimple,
   ShareNetwork,
@@ -14,12 +18,37 @@ import {
 } from "../shell/participant-avatars";
 import styles from "./conversation.module.css";
 
+function threadState(row: ActivityRow) {
+  if (row.pending_decision) return "Needs your answer";
+  if (row.thread.root_activity.state === "preparing") return "Preparing";
+  if (row.thread.root_activity.state === "running") return "Running";
+  if (row.latest_operation?.status === "failed") return "Failed";
+  if (row.thread.archived) return "Archived";
+  return "";
+}
+
+function ThreadStateIcon({ row }: { row: ActivityRow }) {
+  if (row.pending_decision)
+    return <Question className={styles.threadWaiting} aria-hidden="true" />;
+  if (row.thread.root_activity.state !== "inactive")
+    return <CircleNotch className={styles.threadRunning} aria-hidden="true" />;
+  if (row.latest_operation?.status === "failed")
+    return <WarningCircle className={styles.threadFailed} aria-hidden="true" />;
+  return row.thread.archived ? (
+    <Archive aria-hidden="true" />
+  ) : (
+    <ChatCircle aria-hidden="true" />
+  );
+}
+
+type ActivityRow = Pick<Schema<"ThreadActivityView">, "thread"> &
+  Partial<Schema<"ThreadActivityView">>;
+
 export function ThreadRow({
   row,
   presence,
 }: {
-  row: Pick<Schema<"ThreadActivityView">, "thread"> &
-    Partial<Schema<"ThreadActivityView">>;
+  row: ActivityRow;
   presence: Schema<"PresenceFrame"> | null;
 }) {
   const navigate = useNavigate();
@@ -31,24 +60,20 @@ export function ThreadRow({
           `${styles.threadLink} ${isActive ? styles.selected : ""}`
         }
       >
-        <ChatCircle />
+        <ThreadStateIcon row={row} />
         <span>
-          <strong>
+          <strong
+            title={
+              row.thread.title ||
+              row.thread.excerpt?.first_input ||
+              "Untitled conversation"
+            }
+          >
             {row.thread.title ||
               row.thread.excerpt?.first_input ||
               "Untitled conversation"}
           </strong>
-          <small>
-            {row.pending_decision
-              ? "Needs your answer"
-              : row.thread.root_activity.state !== "inactive"
-                ? row.thread.root_activity.state
-                : row.latest_operation?.status === "failed"
-                  ? "Failed"
-                  : row.thread.archived
-                    ? "Archived"
-                    : ""}
-          </small>
+          {threadState(row) && <small>{threadState(row)}</small>}
         </span>
       </NavLink>
       <ParticipantAvatars
