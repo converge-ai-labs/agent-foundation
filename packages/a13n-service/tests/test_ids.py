@@ -2,6 +2,7 @@ import re
 
 import pytest
 from a13n_service.ids import ObjectId, new_object_id
+from a13n_service.interactions.domain import ThreadId, new_thread_id
 from pydantic import TypeAdapter, ValidationError
 
 
@@ -19,6 +20,7 @@ from pydantic import TypeAdapter, ValidationError
         ("csa", 32),
         ("key", 32),
         ("future", 32),
+        ("thread", 32),
     ],
 )
 def test_object_ids_use_hex_with_volume_and_security_budgets(kind: str, length: int) -> None:
@@ -28,6 +30,21 @@ def test_object_ids_use_hex_with_volume_and_security_budgets(kind: str, length: 
     assert first != second
     assert re.fullmatch(rf"{kind}_[0-9a-f]{{{length}}}", first)
     assert TypeAdapter(ObjectId).validate_python(first) == first
+
+
+def test_thread_ids_use_the_shared_128_bit_allocation() -> None:
+    first = new_thread_id()
+    assert first != new_thread_id()
+    assert re.fullmatch(r"thread_[0-9a-f]{32}", first)
+    assert TypeAdapter(ObjectId).validate_python(first) == first
+    assert TypeAdapter(ThreadId).validate_python(first) == first
+
+
+@pytest.mark.parametrize("value", ["thread-" + "a" * 32, "thread_" + "b" * 32, "thr_" + "z" * 16])
+def test_thread_identity_acceptance_preserves_existing_forms(value: str) -> None:
+    adapter = TypeAdapter(ThreadId)
+    assert adapter.validate_python(value) == value
+    assert adapter.validate_json(adapter.dump_json(value)) == value
 
 
 def test_existing_alphanumeric_identity_is_preserved() -> None:

@@ -226,6 +226,7 @@ it("uses server model choices, saves, reconciles and creates exactly one convers
   mount();
   await reviewConfiguration();
   const identity = readWizardDraft(status.draft_scope!)!.threadId;
+  expect(identity).toMatch(/^thread_[0-9a-f]{32}$/);
   fireEvent.click(
     screen.getByRole("button", { name: "Save and start chatting" }),
   );
@@ -241,6 +242,33 @@ it("uses server model choices, saves, reconciles and creates exactly one convers
   ).toBe(false);
   expect(readWizardDraft(status.draft_scope!)).toBeUndefined();
 });
+
+it.each(["_", "-"])(
+  "restores a retained thread%s identity without reallocating it",
+  async (separator) => {
+    const identity = `thread${separator}${"a".repeat(32)}`;
+    saveWizardDraft(status.draft_scope!, {
+      version: 1,
+      step: 0,
+      connection: "codex",
+      selection: status.choices!.defaults,
+      apiProvider: "openai-responses",
+      modelId: "gpt-5.4",
+      baseUrl: "https://api.openai.com/v1",
+      preset: "",
+      credential: "",
+      threadId: identity,
+    });
+    expect(readWizardDraft(status.draft_scope!)?.threadId).toBe(identity);
+    mount();
+    await reviewConfiguration();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Save and start chatting" }),
+    );
+    await screen.findByText("First conversation");
+    expect(creationId).toBe(identity);
+  },
+);
 
 it("recovers lost publication and creation acknowledgements through exact reads, without duplicate writes", async () => {
   override = async (request) => {

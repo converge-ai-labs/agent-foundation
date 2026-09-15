@@ -39,7 +39,7 @@ A checkpoint is stronger than ordinary state or a point-in-time snapshot: its ow
 
 ## Object Identity
 
-Every independently addressable Foundation-owned object has one stable opaque identifier in the form `<kind-prefix>_<random-suffix>`.
+Every independently addressable Foundation-owned object has one stable opaque identifier. Newly allocated identifiers use the canonical form `<kind-prefix>_<random-suffix>`.
 
 - The kind prefix is a short, stable, lowercase abbreviation of the object kind, such as `org` or `ag`.
 - Newly allocated random suffixes use lowercase hexadecimal (`0-9a-f`) from a cryptographically secure random generator. Length follows the owning subsystem's cumulative allocation volume and unpredictability requirements.
@@ -48,7 +48,9 @@ Every independently addressable Foundation-owned object has one stable opaque id
 - An identifier encodes no organization, region, time, ordering, parentage, storage, or routing information.
 - Possession or recognition of an identifier grants no authority.
 
-First-party Python code uses one shared object-ID generator rather than reimplementing prefix validation, alphabet selection, or randomness. Other languages follow the same observable format when they are responsible for creating Foundation-owned objects. Consumers treat IDs as opaque strings and do not derive behavior from their prefix or suffix.
+Service Python code uses one shared object-ID generator rather than reimplementing prefix validation, alphabet selection, or randomness. Independently embeddable libraries and other languages follow the same observable format when they are responsible for creating Foundation-owned objects; they do not depend on the Service allocator. Consumers treat IDs as opaque strings and do not derive behavior from their prefix, separator, or suffix.
+
+New Thread IDs use `thread_` plus 32 lowercase hexadecimal characters. Service allocation retains 128 random bits; the embeddable Harness and browser retain their existing UUID4 generation with only the separator changed. The legacy `thread-` plus 32 lowercase hexadecimal shape remains accepted permanently on every Thread acceptance surface, including persisted state, client-supplied identity, Hook references, and browser drafts. Existing IDs, references, and `threads/<thread-id>/` directories are never rewritten. Previously accepted host-supplied forms remain valid at their existing boundaries; allocation is narrower than acceptance.
 
 ### Service ID Allocation
 
@@ -63,12 +65,12 @@ Service allocates four suffix lengths. The table specifies capacity assumptions,
 
 The shared Service allocator owns these prefix assignments; callers cannot choose a shorter length:
 
-| Suffix length | Allocated prefixes                                                                                                                                                                                                                                   |
-| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 20            | `acct`, `ap`, `cconn`, `cnr`, `envp`, `envtpl`, `hsub`, `mcpc`, `mdl`, `mprov`, `org`, `sa`, `sk`, `usr`, `ws`                                                                                                                                       |
-| 24            | `a2actx`, `aguitb`, `apr`, `ast`, `bind`, `env`, `envrev`, `hsubr`, `img`, `inv`, `rb`, `sess`, `session`, `skr`, `sku`, `tgt`                                                                                                                       |
-| 28            | `a2amsg`, `a2apush`, `a2atask`, `aguirb`, `crr`, `envop`, `ibat`, `inb`, `qsub`, `rat`, `run`                                                                                                                                                        |
-| 32            | `ase`, `aud`, `audit`, `comment`, `csa`, `dlv`, `ect`, `effect`, `envowner`, `iadm`, `idem`, `key`, `lev`, `lsp`, `message`, `mos`, `mut`, `ntf`, `obx`, `opg`, `prt`, `reply`, `svc`, `tool`, `wrk`; every other valid kind defaults to this length |
+| Suffix length | Allocated prefixes                                                                                                                                                                                                                                             |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 20            | `acct`, `ap`, `cconn`, `cnr`, `envp`, `envtpl`, `hsub`, `mcpc`, `mdl`, `mprov`, `org`, `sa`, `sk`, `usr`, `ws`                                                                                                                                                 |
+| 24            | `a2actx`, `aguitb`, `apr`, `ast`, `bind`, `env`, `envrev`, `hsubr`, `img`, `inv`, `rb`, `sess`, `session`, `skr`, `sku`, `tgt`                                                                                                                                 |
+| 28            | `a2amsg`, `a2apush`, `a2atask`, `aguirb`, `crr`, `envop`, `ibat`, `inb`, `qsub`, `rat`, `run`                                                                                                                                                                  |
+| 32            | `ase`, `aud`, `audit`, `comment`, `csa`, `dlv`, `ect`, `effect`, `envowner`, `iadm`, `idem`, `key`, `lev`, `lsp`, `message`, `mos`, `mut`, `ntf`, `obx`, `opg`, `prt`, `reply`, `svc`, `thread`, `tool`, `wrk`; every other valid kind defaults to this length |
 
 Kinds used for claims, worker incarnations, publication generations, or authentication workflows retain at least 128 random bits regardless of their expected volume. New kinds start at 32 characters until their owner assigns a smaller tier against an explicit lifetime volume budget. A deployment expected to exceed a tier's budget must review allocation length before that growth; cleanup does not reset the budget. These probabilities apply per prefix, not to the aggregate probability across all kinds.
 

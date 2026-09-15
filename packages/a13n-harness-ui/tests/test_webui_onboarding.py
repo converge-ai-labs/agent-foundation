@@ -75,10 +75,11 @@ async def test_first_use_scope_is_stable_but_partial_sources_are_not_fresh(tmp_p
 
 
 @pytest.mark.anyio
-async def test_first_conversation_identity_is_create_only_and_survives_restart(tmp_path: Path) -> None:
+@pytest.mark.parametrize("separator", ["_", "-"])
+async def test_first_conversation_identity_is_create_only_and_survives_restart(tmp_path: Path, separator: str) -> None:
     path = tmp_path / "configuration" / "config.yaml"
     settings = HarnessUiSettings(storage=StorageSettings(data_root=tmp_path / "state"), pricing_auto_update=False)
-    identity = "thread-" + "a" * 32
+    identity = f"thread{separator}" + "a" * 32
     outcomes = []
     async with open_harness_ui_app(settings, configuration_path=path) as app:
         selection = SetupSelection(environment_profile="environment-native")

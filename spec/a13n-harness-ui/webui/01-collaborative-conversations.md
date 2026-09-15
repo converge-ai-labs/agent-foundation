@@ -26,7 +26,7 @@ Names and colors identify collaborators for interaction and attribution; they ar
 
 ## Create-Only Conversation Identity
 
-The existing Thread creation API accepts an optional `thread_id` in the canonical `thread-` plus 32 lowercase hexadecimal format. Omitting it retains server-generated identity. A browser may allocate and retain this identity before creating its first conversation so a lost acknowledgement can be resolved through the ordinary exact Thread read.
+The existing Thread creation API accepts an optional `thread_id` in the canonical `thread_` plus 32 lowercase hexadecimal format. The legacy `thread-` plus 32 lowercase hexadecimal shape remains accepted permanently under the [shared identity convention](../../data-conventions.md#object-identity). Omitting it retains server-generated identity. A browser allocates new identities in the canonical shape and may retain an identity before creating its first conversation so a lost acknowledgement can be resolved through the ordinary exact Thread read. Retained legacy identities are reused unchanged.
 
 Creation is create-only, not an upsert or a permanent request cache. The storage transaction rejects an existing identity without replacing its configuration, title, or initial state. Concurrent requests for one identity can create at most one Thread. A client receiving a conflict or uncertain result reads that exact identity; it never silently allocates another one. Current mutable Thread fields are not interpreted as an immutable creation-request receipt. Thread creation remains separate from prompt admission and starts no Run.
 

@@ -4330,7 +4330,7 @@
             "anyOf": [
               {
                 "maxLength": 39,
-                "pattern": "^thread-[a-f0-9]{32}$",
+                "pattern": "^thread[-_][a-f0-9]{32}$",
                 "type": "string"
               },
               {
@@ -6564,7 +6564,7 @@
             "anyOf": [
               {
                 "maxLength": 39,
-                "pattern": "^thread-[a-f0-9]{32}$",
+                "pattern": "^thread[-_][a-f0-9]{32}$",
                 "type": "string"
               },
               {
@@ -15736,7 +15736,7 @@
             "anyOf": [
               {
                 "maxLength": 39,
-                "pattern": "^thread-[a-f0-9]{32}$",
+                "pattern": "^thread[-_][a-f0-9]{32}$",
                 "type": "string"
               },
               {

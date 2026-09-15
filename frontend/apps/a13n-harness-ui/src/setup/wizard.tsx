@@ -51,7 +51,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
         baseUrl: choices.api_providers[0]!.base_url,
         preset: "",
         credential: "",
-        threadId: `thread-${crypto.randomUUID().replaceAll("-", "")}`,
+        threadId: `thread_${crypto.randomUUID().replaceAll("-", "")}`,
       },
   );
   const [secret, setSecret] = useState("");

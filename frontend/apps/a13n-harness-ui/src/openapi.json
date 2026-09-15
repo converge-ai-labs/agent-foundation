@@ -12478,7 +12478,7 @@
           "thread_id": {
             "anyOf": [
               {
-                "pattern": "^thread-[0-9a-f]{32}$",
+                "pattern": "^thread[-_][0-9a-f]{32}$",
                 "type": "string"
               },
               {

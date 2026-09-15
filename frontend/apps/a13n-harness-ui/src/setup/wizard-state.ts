@@ -35,7 +35,7 @@ export function readWizardDraft(scope: string): WizardDraft | undefined {
         typeof value.sessionAffinityHeader === "string") &&
       typeof value.credential === "string" &&
       typeof value.preset === "string" &&
-      /^thread-[a-f0-9]{32}$/.test(value.threadId) &&
+      /^thread[-_][a-f0-9]{32}$/.test(value.threadId) &&
       Number.isInteger(value.step) &&
       value.step >= 0 &&
       value.step <= 2

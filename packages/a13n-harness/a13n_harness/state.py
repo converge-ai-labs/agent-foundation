@@ -20,7 +20,7 @@ _EMPTY_MESSAGES_JSON = ModelMessagesTypeAdapter.dump_json([])
 
 
 def _new_thread_id() -> str:
-    return f"thread-{uuid4().hex}"
+    return f"thread_{uuid4().hex}"
 
 
 def encode_messages(messages: Any) -> bytes:

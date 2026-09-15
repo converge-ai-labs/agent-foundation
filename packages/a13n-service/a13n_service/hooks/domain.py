@@ -25,7 +25,7 @@ from a13n_service.temporal import require_aware_utc
 HookSubscriptionId = Annotated[str, StringConstraints(pattern=r"^hsub_[a-z0-9]{16,64}$")]
 HookSubscriptionRevisionId = Annotated[str, StringConstraints(pattern=r"^hsubr_[a-z0-9]{16,64}$")]
 HookName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$", max_length=128)]
-ThreadId = Annotated[str, StringConstraints(pattern=r"^thread-[a-f0-9]{32}$", max_length=39)]
+ThreadId = Annotated[str, StringConstraints(pattern=r"^thread[-_][a-f0-9]{32}$", max_length=39)]
 
 RUN_HOOK_NAMES = frozenset(
     {
