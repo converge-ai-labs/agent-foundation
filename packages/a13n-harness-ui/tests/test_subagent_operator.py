@@ -148,14 +148,20 @@ async def test_terminal_child_projection_does_not_expose_stale_local_control(
 
 
 def test_child_failure_projection_is_bounded() -> None:
-    projected = subagent_module._surface_failure(
-        SafeFailure(
-            code="x" * 300,
-            message="y" * (40 * 1024),
-            details={"value": "z" * (70 * 1024)},
-        )
+    failure = SafeFailure(
+        code="x" * 300,
+        message="y" * (40 * 1024),
+        details={"value": "z" * (70 * 1024)},
     )
+    projected = subagent_module._surface_failure(failure)
+    display = subagent_module._with_failure(CompactChildDisplay(final_answer="Earlier output"), failure)
 
     assert len(projected.code) == 256
     assert len(projected.message) <= 32 * 1024
     assert projected.details is None
+    assert display.activities[-1].kind == "failure"
+    assert display.activities[-1].text == projected.message
+    assert projected.message.endswith("[message truncated]")
+    assert display.final_answer == "Earlier output"
+    assert CompactChildDisplay.model_validate_json(display.model_dump_json()) == display
+    assert failure.message == "y" * (40 * 1024)

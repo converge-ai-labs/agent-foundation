@@ -54,7 +54,7 @@ export function useThreads(
   } = {},
 ) {
   const { client } = useTransport();
-  return useInfiniteQuery({
+  const list = useInfiniteQuery({
     queryKey: ["threads", query, projectId, archived, scope, limit],
     enabled,
     initialPageParam: undefined as string | undefined,
@@ -76,6 +76,38 @@ export function useThreads(
       ),
     getNextPageParam: (last) => last.next_cursor ?? undefined,
   });
+  // Archive toggles replace a query, not the visible list. Retain only the same
+  // search/project scope, including on failure; never reuse its pagination cursor.
+  const previous = useRef<{
+    client: typeof client;
+    identity: string;
+    data: typeof list.data;
+  }>(undefined);
+  const identity = JSON.stringify([query, projectId, scope, limit]);
+  useEffect(() => {
+    if (list.isSuccess)
+      previous.current = { client, identity, data: list.data };
+  }, [client, identity, list.data, list.isSuccess]);
+  const retained =
+    previous.current?.client === client &&
+    previous.current.identity === identity
+      ? previous.current.data
+      : undefined;
+  const data = list.data ?? retained;
+  return {
+    ...list,
+    data: data && {
+      ...data,
+      pages: data.pages.map((page) => ({
+        ...page,
+        rows: archived
+          ? page.rows
+          : page.rows.filter((row) => !row.thread.archived),
+      })),
+    },
+    isPreviousData: !list.data && !!retained,
+    hasNextPage: !!list.data && list.hasNextPage,
+  };
 }
 export function useThread(threadId: string) {
   const { client } = useTransport();

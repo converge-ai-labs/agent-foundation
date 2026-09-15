@@ -5,7 +5,6 @@ from a13n_harness.tools.client import (
     ClientToolDefinition,
     ClientToolsCapability,
     ClientToolsetDefinition,
-    ClientToolsRunCapability,
     ClientToolsSpec,
 )
 from a13n_harness.tools.deferred import DeferredToolResume
@@ -51,7 +50,6 @@ __all__ = [
     "CanonicalResource",
     "ClientToolDefinition",
     "ClientToolsCapability",
-    "ClientToolsRunCapability",
     "ClientToolsSpec",
     "ClientToolsetDefinition",
     "CredentialBroker",

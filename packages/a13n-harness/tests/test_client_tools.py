@@ -23,7 +23,6 @@ from a13n_harness.tools import (
     ClientToolDefinition,
     ClientToolsCapability,
     ClientToolsetDefinition,
-    ClientToolsRunCapability,
     ClientToolsSpec,
     HarnessTool,
     HarnessToolMetadata,
@@ -246,9 +245,7 @@ async def test_run_override_replaces_defaults_and_empty_override_clears_them() -
     replacement = _build(spec, tool_name="replacement_action", extra_capabilities=(CaptureTools(),))
     replaced = await replacement.run(
         "go",
-        bindings=RunBindings.embedded(
-            capabilities=(ClientToolsRunCapability(toolsets=(_toolset("replacement_action"),)),)
-        ),
+        bindings=RunBindings.embedded(client_toolsets=(_toolset("replacement_action"),)),
     )
     assert replaced.status == "suspended"
     assert replaced.deferred is not None
@@ -267,7 +264,7 @@ async def test_run_override_replaces_defaults_and_empty_override_clears_them() -
     )
     clear_result = await cleared.run(
         "go",
-        bindings=RunBindings.embedded(capabilities=(ClientToolsRunCapability(toolsets=()),)),
+        bindings=RunBindings.embedded(client_toolsets=()),
     )
     assert clear_result.status == "completed"
     assert "default_action" not in seen_names[-1]
@@ -279,9 +276,7 @@ async def test_override_policy_and_owner_are_fail_closed() -> None:
     with pytest.raises(DefinitionError) as forbidden:
         await executable.run(
             "go",
-            bindings=RunBindings.embedded(
-                capabilities=(ClientToolsRunCapability(toolsets=(_toolset("replacement_action"),)),)
-            ),
+            bindings=RunBindings.embedded(client_toolsets=(_toolset("replacement_action"),)),
         )
     assert forbidden.value.code == "client_tools_override_forbidden"
 
@@ -293,9 +288,7 @@ async def test_override_policy_and_owner_are_fail_closed() -> None:
     with pytest.raises(DefinitionError) as missing:
         await without_owner.run(
             "go",
-            bindings=RunBindings.embedded(
-                capabilities=(ClientToolsRunCapability(toolsets=(_toolset("replacement_action"),)),)
-            ),
+            bindings=RunBindings.embedded(client_toolsets=(_toolset("replacement_action"),)),
         )
     assert missing.value.code == "client_tools_owner_missing"
 

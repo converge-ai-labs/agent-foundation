@@ -32,6 +32,7 @@ import { AgentForm } from "./form";
 import { AgentEnvironment } from "./environment";
 import { AgentActions, AgentDetails } from "./settings";
 import { AgentVersions } from "./versions";
+import { ExportAgent } from "./export";
 
 export { CreateAgent } from "./create";
 
@@ -193,6 +194,7 @@ export function AgentDetail() {
       }
       context={
         <div className={styles.stack}>
+          <ExportAgent agent={agent} config={query.data.revision.config} />
           <ModalFrame
             trigger={
               <Button variant="ghost" type="button">

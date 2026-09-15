@@ -22,8 +22,9 @@ from .test_interactive_protocol import frame_until, listener
 pytestmark = pytest.mark.anyio
 
 
+@pytest.mark.parametrize("child_output", ["Child completed.", "Detailed finding.\n\n" * 600 + "End of review."])
 async def test_child_question_competing_response_history_and_restart(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, child_output: str
 ) -> None:
     root = _write_configuration(tmp_path)
     agent_path = tmp_path / "agents/assistant.yaml"
@@ -39,7 +40,7 @@ async def test_child_question_competing_response_history_and_restart(
 
     async def stream(messages, info):
         if "delegate" not in {tool.name for tool in info.function_tools}:
-            yield "Child completed."
+            yield child_output
             return
         returned = {
             part.tool_name
@@ -150,11 +151,13 @@ async def test_child_question_competing_response_history_and_restart(
                 and unavailable.json()["error"]["code"] == "subagent_execution_unavailable"
             )
             child_review = await api.get(prefix + f"/children/{child['execution_id']}/review")
-            assert child_review.status_code == 200 and "Child completed." in child_review.text
+            assert child_review.status_code == 200, child_review.text
+            assert child_review.json()["summary"] == child_output
+            assert child_review.json()["truncated"] is False
             output_page = await api.get(prefix + f"/children/{child['execution_id']}/saved-output", params={"limit": 1})
             assert output_page.status_code == 200, output_page.text
             output = output_page.json()["outputs"][0]
-            assert output["text"] == "Child completed."
+            assert output["text"] == child_output
             child_comment = publication(output["target"])
             posted = await api.post(prefix + "/comments", json=child_comment)
             assert posted.status_code == 200, posted.text
@@ -172,11 +175,14 @@ async def test_child_question_competing_response_history_and_restart(
             assert restored == history
             assert (await api.post(prefix + "/comments", json=child_comment)).json() == child_comment_record
             original = await api.post(prefix + "/saved-output", json=child_comment["target"])
-            assert original.status_code == 200 and original.json()["text"] == "Child completed."
+            assert original.status_code == 200 and original.json()["text"] == child_output
             assert (await api.get(prefix + "/children")).json()["executions"][0]["execution_id"] == child[
                 "execution_id"
             ]
-            assert "Child completed." in (await api.get(prefix + f"/children/{child['execution_id']}/review")).text
+            restored_review = await api.get(prefix + f"/children/{child['execution_id']}/review")
+            assert restored_review.status_code == 200, restored_review.text
+            assert restored_review.json()["summary"] == child_output
+            assert restored_review.json()["truncated"] is False
             assert (await api.get(prefix + "/decisions")).json() is None
 
 

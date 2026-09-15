@@ -213,7 +213,6 @@ Pass the manager to the definition-selected `SkillsCapability`. The Capability u
 ```python
 from a13n_harness import RunBindings
 from a13n_harness.capabilities import (
-    SkillSelectionRunCapability,
     SkillsCapability,
 )
 
@@ -221,17 +220,13 @@ skills = SkillsCapability(manager)
 
 bindings = RunBindings.embedded(
     environment=environment_binding,
-    capabilities=(
-        SkillSelectionRunCapability(
-            names=frozenset({"code-review", "release"})
-        ),
-    ),
+    skill_selection=frozenset({"code-review", "release"}),
 )
 ```
 
 Selection is exact and fresh for each root, resumed, or child run:
 
-- omit `SkillSelectionRunCapability` to expose the complete conflict-resolved catalog;
+- leave `RunBindings.skill_selection=None` to expose the complete conflict-resolved catalog;
 - provide a non-empty set to expose only those names;
 - provide an empty set to inject no Skill instructions or paths;
 - an unknown name fails run preparation with `skill_selection_unknown`.

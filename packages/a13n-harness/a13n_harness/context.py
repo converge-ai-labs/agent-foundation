@@ -21,7 +21,10 @@ from a13n_harness.observation import HarnessObservationContext
 from a13n_harness.state import AgentContextState, HarnessState
 
 if TYPE_CHECKING:
+    from a13n_harness.capabilities.media import MediaReader
     from a13n_harness.capabilities.steering import SteeringBridge
+    from a13n_harness.capabilities.web import WebBinding
+    from a13n_harness.capabilities.working_state import TaskStateBinding
     from a13n_harness.environment.models import EnvironmentPath
     from a13n_harness.environment.providers import BoundEnvironment as Environment
     from a13n_harness.environment.providers import EnvironmentRuntime, FileScopeSelection
@@ -38,8 +41,11 @@ if TYPE_CHECKING:
     from a13n_harness.recovery import ToolRecoveryPlan
     from a13n_harness.spec import HarnessModelCharacteristics
     from a13n_harness.tools.approval import ToolApprovalContext
+    from a13n_harness.tools.client import ClientToolsetDefinition
     from a13n_harness.tools.deferred import DeferredToolResume
     from a13n_harness.tools.permission_gate import PermissionCheck
+    from a13n_harness.toolsets.documents import DocumentConverter
+    from a13n_harness.toolsets.file_media import MediaUnderstandingProvider
     from a13n_harness.usage import ProviderUsage, ProviderUsageRecord, RunUsageLedger, UsageRecord
 
 
@@ -78,7 +84,7 @@ def _copy_subagent_declaration(declaration: SubagentDefinition) -> SubagentDefin
         context=declaration.context,
         identity=declaration.identity,
         usage_limits=declaration.usage_limits,
-        run_capability_factory=declaration.run_capability_factory,
+        run_bindings_factory=declaration.run_bindings_factory,
     )
 
 
@@ -128,6 +134,13 @@ class RunBindings:
     model_resolver: RunModelResolver | None = None
     toolset_instructions: bool | None = None
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
+    web: WebBinding | None = None
+    media_reader: MediaReader | None = None
+    document_converter: DocumentConverter | None = None
+    file_media_understanding: MediaUnderstandingProvider | None = None
+    skill_selection: frozenset[str] | None = None
+    task_state: TaskStateBinding | None = None
+    client_toolsets: tuple[ClientToolsetDefinition, ...] | None = None
     metadata: Mapping[str, JsonValue] = field(default_factory=dict)
     model_context: ModelContextMiddleware | None = None
     observation: HarnessObservationContext | None = None
@@ -142,6 +155,31 @@ class RunBindings:
             raise TypeError("toolset_instructions must be a boolean or None")
         if self.observation is not None and not isinstance(self.observation, HarnessObservationContext):
             raise TypeError("observation must be a HarnessObservationContext or None")
+        from a13n_harness.capabilities.media import MediaReader
+        from a13n_harness.capabilities.skills import _validate_skill_selection
+        from a13n_harness.capabilities.web import WebBinding
+        from a13n_harness.capabilities.working_state import TaskStateBinding
+        from a13n_harness.tools.client import ClientToolsetDefinition, _validate_toolsets
+        from a13n_harness.toolsets.documents import DocumentConverter
+        from a13n_harness.toolsets.file_media import MediaUnderstandingProvider
+
+        for name, value, expected in (
+            ("web", self.web, WebBinding),
+            ("media_reader", self.media_reader, MediaReader),
+            ("document_converter", self.document_converter, DocumentConverter),
+            ("file_media_understanding", self.file_media_understanding, MediaUnderstandingProvider),
+            ("task_state", self.task_state, TaskStateBinding),
+        ):
+            if value is not None and not isinstance(value, expected):
+                raise TypeError(f"RunBindings.{name} must implement {expected.__name__}")
+        if self.skill_selection is not None:
+            _validate_skill_selection(self.skill_selection)
+        if self.client_toolsets is not None:
+            toolsets = tuple(deepcopy(self.client_toolsets))
+            if not all(isinstance(item, ClientToolsetDefinition) for item in toolsets):
+                raise TypeError("RunBindings.client_toolsets must contain ClientToolsetDefinition values")
+            _validate_toolsets(toolsets)
+            object.__setattr__(self, "client_toolsets", toolsets)
         object.__setattr__(self, "capabilities", tuple(self.capabilities))
         object.__setattr__(self, "metadata", MappingProxyType(deepcopy(dict(self.metadata))))
 
@@ -155,6 +193,13 @@ class RunBindings:
         toolset_instructions: bool | None = None,
         model_context: ModelContextMiddleware | None = None,
         capabilities: Sequence[AbstractCapability[AgentContext]] = (),
+        web: WebBinding | None = None,
+        media_reader: MediaReader | None = None,
+        document_converter: DocumentConverter | None = None,
+        file_media_understanding: MediaUnderstandingProvider | None = None,
+        skill_selection: frozenset[str] | None = None,
+        task_state: TaskStateBinding | None = None,
+        client_toolsets: tuple[ClientToolsetDefinition, ...] | None = None,
         metadata: Mapping[str, JsonValue] | None = None,
         observation: HarnessObservationContext | None = None,
     ) -> RunBindings:
@@ -170,6 +215,13 @@ class RunBindings:
             toolset_instructions=toolset_instructions,
             model_context=model_context,
             capabilities=tuple(capabilities),
+            web=web,
+            media_reader=media_reader,
+            document_converter=document_converter,
+            file_media_understanding=file_media_understanding,
+            skill_selection=skill_selection,
+            task_state=task_state,
+            client_toolsets=client_toolsets,
             metadata=metadata or {},
             observation=observation,
         )
@@ -297,7 +349,13 @@ class AgentContext:
         compare=False,
     )
     _started_at_monotonic: float = field(default_factory=monotonic, repr=False, compare=False)
-    _skill_selection_names: frozenset[str] | None = field(default=None, repr=False, compare=False)
+    web: WebBinding | None = None
+    media_reader: MediaReader | None = None
+    document_converter: DocumentConverter | None = None
+    file_media_understanding: MediaUnderstandingProvider | None = None
+    skill_selection: frozenset[str] | None = None
+    task_state: TaskStateBinding | None = None
+    client_toolsets: tuple[ClientToolsetDefinition, ...] | None = None
     skill_paths: RunSkillPaths = field(default_factory=RunSkillPaths, compare=False)
     tool_metadata: ToolRuntimeMetadata = field(default_factory=ToolRuntimeMetadata, compare=False)
     _capability_provenance: _CapabilityProvenance = field(default_factory=_CapabilityProvenance, repr=False)

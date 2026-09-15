@@ -310,11 +310,12 @@ def _templates(selection: SetupSelection, *, existing_model: dict[str, object] |
             if resource["id"] == (selection.new_agent_id or selection.default_agent):
                 resource["instructions"] = selection.instructions
     if not selection.is_addition and selection.project is not None:
+        assert selection.project_path is not None
         resources[f"projects/{selection.project}.yaml"] = {
             "schema_version": "1",
             "kind": "project",
             "id": selection.project,
-            "name": "Local project",
+            "name": Path(selection.project_path).name or selection.project_path,
             "roots": [{"path": selection.project_path}],
         }
     return {name: yaml.safe_dump(value, sort_keys=False, allow_unicode=True) for name, value in resources.items()}

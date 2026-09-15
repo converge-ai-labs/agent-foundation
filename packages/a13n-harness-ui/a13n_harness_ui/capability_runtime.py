@@ -6,6 +6,7 @@ import ipaddress
 import socket
 import ssl
 from collections.abc import AsyncIterable, AsyncIterator, Collection, Iterable
+from dataclasses import replace
 from html.parser import HTMLParser
 from io import BytesIO
 from pathlib import Path
@@ -20,12 +21,11 @@ from a13n_harness.capabilities import (
     DocumentConversionError,
     DocumentConversionRequest,
     DocumentConversionResult,
-    DocumentsRunCapability,
+    WebBinding,
     WebPolicy,
     WebProviderError,
     WebRequest,
     WebResponse,
-    WebRunCapability,
     WebScrapeRequest,
     WebScrapeResult,
     WebSearchRequest,
@@ -34,10 +34,9 @@ from a13n_harness.capabilities import (
 )
 from a13n_harness.capabilities.documents import DOCUMENTS_CAPABILITY_ID
 from a13n_harness.capabilities.web import WEB_CAPABILITY_ID
-from a13n_harness.context import AgentContext
+from a13n_harness.context import AgentContext, RunBindings
 from anyio import getaddrinfo, to_thread
 from pydantic_ai import RunContext
-from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import FilePart
 
 _MAX_SEARCH_RESPONSE_BYTES = 2 * 1024 * 1024
@@ -329,26 +328,27 @@ class LocalDocumentConverter:
         return await to_thread.run_sync(_convert_document, request)
 
 
-def production_run_capabilities(
+def production_run_bindings(
+    bindings: RunBindings,
     owner_capability_ids: Collection[str],
-) -> tuple[AbstractCapability[Any], ...]:
-    """Create fresh Host collaborators required by one logical Harness Run."""
+) -> RunBindings:
+    """Supply fresh Host collaborators required by one logical Harness Run."""
 
-    capabilities: list[AbstractCapability[Any]] = []
     if WEB_CAPABILITY_ID in owner_capability_ids:
         client = HttpxWebClient()
         policy = PublicWebPolicy()
-        capabilities.append(
-            WebRunCapability(
+        bindings = replace(
+            bindings,
+            web=WebBinding(
                 client=client,
                 policy=policy,
                 search_provider=DuckDuckGoSearchProvider(client, policy),
                 scrape_provider=HtmlScrapeProvider(client),
-            )
+            ),
         )
     if DOCUMENTS_CAPABILITY_ID in owner_capability_ids:
-        capabilities.append(DocumentsRunCapability(converter=LocalDocumentConverter()))
-    return tuple(capabilities)
+        bindings = replace(bindings, document_converter=LocalDocumentConverter())
+    return bindings
 
 
 async def save_native_image(ctx: RunContext[AgentContext], image: FilePart) -> str:
@@ -569,5 +569,5 @@ __all__ = [
     "HttpxWebClient",
     "LocalDocumentConverter",
     "PublicWebPolicy",
-    "production_run_capabilities",
+    "production_run_bindings",
 ]

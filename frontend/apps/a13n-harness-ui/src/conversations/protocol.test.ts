@@ -243,3 +243,54 @@ it("an uncertain admission retains input and cannot silently retry", async () =>
     joined.close();
   }
 }, 15000);
+
+it("delivers actual final output over the global SSE after the Host settles the exact root receipt", async () => {
+  const { watchSummary } = await import("../transport/events");
+  const events: import("../transport/client").Schema<"SummaryInvalidation">[] =
+    [];
+  let connected = false;
+  const close = watchSummary(
+    transport,
+    (event) => {
+      if (event) events.push(event);
+    },
+    (state) => {
+      connected = state === "Live";
+    },
+  );
+  try {
+    await until(() => connected);
+    const thread = await result(
+      transport.client.POST("/api/threads", {
+        body: { title: "Notification protocol" },
+      }),
+    );
+    const receipt = await result(
+      transport.client.POST("/api/threads/{thread_id}/submit", {
+        params: { path: { thread_id: thread.thread_id } },
+        body: { parts: ["Complete this turn."] },
+      }),
+    );
+    await until(() =>
+      events.some((event) => event.notice?.receipt_id === receipt.receipt_id),
+    );
+    const notices = events.filter(
+      (event) => event.notice?.receipt_id === receipt.receipt_id,
+    );
+    expect(notices).toHaveLength(1);
+    expect(notices[0]).toMatchObject({
+      kind: "root_operation",
+      root_thread_id: thread.thread_id,
+      notice: { status: "completed", brief: "Protocol response" },
+    });
+    const operation = await result(
+      transport.client.GET("/api/operations/{receipt_id}", {
+        params: { path: { receipt_id: receipt.receipt_id } },
+      }),
+    );
+    expect(operation.status).toBe("completed");
+    expect(operation.outcome?.continuation.status).toBe("selected");
+  } finally {
+    close();
+  }
+});

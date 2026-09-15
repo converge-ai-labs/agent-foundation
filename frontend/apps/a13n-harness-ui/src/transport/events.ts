@@ -60,8 +60,34 @@ export function summaryFrame(value: unknown): SummaryFrame {
       value.event !== null &&
       "kind" in value.event &&
       typeof value.event.kind === "string"
-    )
+    ) {
+      const event = value.event;
+      if ("notice" in event && event.notice != null) {
+        const notice = event.notice;
+        if (
+          event.kind !== "root_operation" ||
+          !("root_thread_id" in event) ||
+          typeof event.root_thread_id !== "string" ||
+          !("epoch" in event) ||
+          typeof event.epoch !== "string" ||
+          typeof notice !== "object" ||
+          notice === null ||
+          !("receipt_id" in notice) ||
+          typeof notice.receipt_id !== "string" ||
+          !notice.receipt_id ||
+          !("status" in notice) ||
+          !["completed", "failed", "suspended"].includes(
+            String(notice.status),
+          ) ||
+          !("brief" in notice) ||
+          typeof notice.brief !== "string" ||
+          !notice.brief ||
+          Array.from(notice.brief).length > 320
+        )
+          throw new Error("Invalid root operation notice.");
+      }
       return value as SummaryFrame;
+    }
   }
   throw new Error("Invalid summary frame.");
 }
@@ -76,6 +102,7 @@ export function watchSummary(
   let cursor: string | undefined;
   let failures = 0;
   async function connect() {
+    timer = undefined;
     state(failures ? "Reconnecting" : "Connecting");
     try {
       const response = await transport.fetch(
@@ -92,23 +119,10 @@ export function watchSummary(
         cursor = frame.resume_cursor;
         failures = 0;
         state("Live");
-        if (frame.kind === "invalidation" && frame.event.kind === "comment") {
-          invalidate(frame.event);
-          return;
-        }
-        // Reconcile missed changes on every new subscription, even without a cursor.
-        if (
-          frame.kind === "open" ||
-          [
-            "configuration",
-            "catalog",
-            "project",
-            "thread",
-            "root_operation",
-            "child_execution",
-          ].includes(frame.event.kind)
-        )
-          invalidate();
+        // Only open/reset require full reconciliation. Keep event identity for
+        // targeted refreshes and terminal notices across all conversation views.
+        if (frame.kind === "open") invalidate();
+        else invalidate(frame.event);
       });
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) return;
@@ -121,9 +135,16 @@ export function watchSummary(
       );
     }
   }
-  void connect();
-  return () => {
+  const close = () => {
     controller.abort();
     clearTimeout(timer);
   };
+  // Skip only a pending backoff, retaining the cursor and any in-flight request.
+  close.retry = () => {
+    if (timer === undefined || controller.signal.aborted) return;
+    clearTimeout(timer);
+    void connect();
+  };
+  void connect();
+  return close;
 }

@@ -4,7 +4,7 @@ import {
   ChatCircle,
   Question,
   CircleNotch,
-  WarningCircle,
+  WarningCircleIcon,
   Archive,
   DotsThree,
   PencilSimple,
@@ -33,7 +33,9 @@ function ThreadStateIcon({ row }: { row: ActivityRow }) {
   if (row.thread.root_activity.state !== "inactive")
     return <CircleNotch className={styles.threadRunning} aria-hidden="true" />;
   if (row.latest_operation?.status === "failed")
-    return <WarningCircle className={styles.threadFailed} aria-hidden="true" />;
+    return (
+      <WarningCircleIcon className={styles.threadFailed} aria-hidden="true" />
+    );
   return row.thread.archived ? (
     <Archive aria-hidden="true" />
   ) : (

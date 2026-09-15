@@ -5,6 +5,7 @@ import { useTransport } from "../transport/context";
 import { result } from "../transport/client";
 import { template, updateDocument } from "../configuration/documents";
 import { ErrorNotice, TextField } from "../shell/ui";
+import { ProjectFolders } from "../configuration/project-folders";
 import styles from "./conversation.module.css";
 
 export function NewProject({
@@ -18,8 +19,9 @@ export function NewProject({
   const queries = useQueryClient();
   const [id] = useState(() => `project-${crypto.randomUUID()}`);
   const [name, setName] = useState("");
-  const [directory, setDirectory] = useState("");
-  const [roots, setRoots] = useState<string[]>([]);
+  const [roots, setRoots] = useState([{ path: "" }]);
+  const validRoots =
+    roots.length > 0 && roots.every((root) => root.path.trim());
   const save = useMutation({
     mutationFn: () => {
       let content = updateDocument(
@@ -30,9 +32,7 @@ export function NewProject({
       content = updateDocument(
         content,
         ["roots"],
-        [directory, ...roots]
-          .filter((path) => path.trim())
-          .map((path) => ({ path: path.trim() })),
+        roots.map((root) => ({ path: root.path.trim() })),
       );
       // The existing source publication validates the whole configuration before saving.
       return result(
@@ -62,57 +62,20 @@ export function NewProject({
         className={styles.form}
         onSubmit={(event) => {
           event.preventDefault();
-          if (name.trim() && directory.trim() && !save.isPending) save.mutate();
+          if (name.trim() && validRoots && !save.isPending) save.mutate();
         }}
       >
         <TextField label="Project name" value={name} onChange={setName} />
-        <TextField
-          label="Server directory"
-          value={directory}
-          onChange={setDirectory}
-          description="A path on the server or container running Harness UI, not on this browser's computer."
-        />
-        <details>
-          <summary>Additional roots</summary>
-          <div className={styles.form}>
-            {roots.map((root, index) => (
-              <div key={index}>
-                <TextField
-                  label={`Additional server directory ${index + 1}`}
-                  value={root}
-                  onChange={(value) =>
-                    setRoots((current) =>
-                      current.map((item, i) => (i === index ? value : item)),
-                    )
-                  }
-                />
-                <Button
-                  variant="ghost"
-                  onClick={() =>
-                    setRoots((current) => current.filter((_, i) => i !== index))
-                  }
-                >
-                  Remove directory {index + 1}
-                </Button>
-              </div>
-            ))}
-            <Button
-              variant="outline"
-              onClick={() => setRoots((current) => [...current, ""])}
-            >
-              Add another directory
-            </Button>
-            <small>
-              Agent, Environment, and other defaults can be changed in Project
-              settings after saving.
-            </small>
-          </div>
-        </details>
+        <ProjectFolders roots={roots} onChange={setRoots} />
+        <small>
+          Agent, Environment, and other defaults can be changed in Project
+          settings after saving.
+        </small>
         <ErrorNotice error={save.error} />
         <Button
           type="submit"
           loading={save.isPending}
-          disabled={!name.trim() || !directory.trim()}
+          disabled={!name.trim() || !validRoots}
         >
           Add project
         </Button>

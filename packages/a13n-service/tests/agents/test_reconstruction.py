@@ -544,3 +544,56 @@ def test_recovery_accepts_compatible_repackaged_factory_without_constructing_plu
     )
     reconstructor.validate(**arguments)
     assert factory.created == []
+
+
+def test_child_run_bindings_use_exact_node_context_and_fresh_web_collaborators() -> None:
+    from dataclasses import replace
+
+    from a13n_harness import RunBindings
+    from a13n_harness.capabilities import WebBinding
+    from a13n_service.interactions.harness_runtime import HarnessCollaborators
+
+    contexts = []
+
+    class Web:
+        async def request(self, request, *, policy):
+            raise AssertionError("Construction must not make requests")
+
+        async def authorize(self, url, *, purpose):
+            raise AssertionError("Construction must not authorize requests")
+
+    transport = Web()
+
+    def run_bindings(context, baseline):
+        contexts.append(context)
+        return replace(baseline, web=WebBinding(client=transport, policy=Web()))
+
+    child = _revision()
+    effective = _with_children(
+        _effective(_config(), subagents=(_edge("reviewer"),)),
+        {CHILD_REVISION_ID: child},
+    )
+    definition = AgentReconstructor(HarnessPluginFactoryCatalog(()), run_bindings_provider=run_bindings).reconstruct(
+        agent_id=ROOT_AGENT_ID,
+        agent_revision_id=ROOT_REVISION_ID,
+        effective_config=effective,
+        prepared_plugins=_prepared(effective),
+        subagent_capability=SubagentCapability(),
+    )
+    assert contexts == []
+    factory = definition.subagents[0].run_bindings_factory
+    assert factory is not None
+    baseline = RunBindings.embedded()
+    first, resumed = factory(baseline), factory(baseline)
+    assert all(not context.is_root and context.agent_id == CHILD_AGENT_ID for context in contexts)
+    assert all(context.agent_revision_id == CHILD_REVISION_ID for context in contexts)
+    assert all(context.content_digest == child.content_digest for context in contexts)
+    assert first.instance is baseline.instance and resumed.instance is baseline.instance
+    assert first.web is not None and resumed.web is not None and first.web is not resumed.web
+    assert first.web.policy is not resumed.web.policy
+    assert first.web.client is resumed.web.client is transport
+    assert first.capabilities == resumed.capabilities == ()
+
+    collaborators = HarnessCollaborators(instance=baseline.instance, web=first.web)
+    root_bindings = collaborators.create_bindings()
+    assert root_bindings.web is first.web and root_bindings.capabilities == ()

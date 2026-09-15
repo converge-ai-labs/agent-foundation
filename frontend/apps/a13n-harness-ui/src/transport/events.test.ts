@@ -143,3 +143,90 @@ it("rejoins summary streams with cursors, discards reset cursors and cancels ret
     vi.useRealTimers();
   }
 });
+
+it("retains root identity and bounded notices rather than reducing every event to a global refresh", async () => {
+  const event = {
+    kind: "root_operation",
+    epoch: "epoch",
+    sequence: 2,
+    root_thread_id: "thread-1",
+    notice: {
+      receipt_id: "receipt-1",
+      status: "completed",
+      brief: "Fixed the sidebar.",
+    },
+  };
+  const envelope = { kind: "invalidation", resume_cursor: "epoch:2", event };
+  expect(summaryFrame(envelope)).toEqual(envelope);
+  for (const notice of [
+    { ...event.notice, status: "running" },
+    { ...event.notice, brief: "x".repeat(321) },
+    { ...event.notice, receipt_id: null },
+  ]) {
+    expect(() =>
+      summaryFrame({ ...envelope, event: { ...event, notice } }),
+    ).toThrow("Invalid root operation notice");
+  }
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async () => new Response(`data: ${JSON.stringify(envelope)}\n\n`)),
+  );
+  const { watchSummary } = await import("./events");
+  const received = vi.fn();
+  const transport = createTransport("test", () => {});
+  const stop = watchSummary(transport, received, () => {});
+  try {
+    await vi.waitFor(() => expect(received).toHaveBeenCalledWith(event));
+  } finally {
+    stop();
+    transport.close();
+  }
+});
+
+it("manual retry retains the summary cursor and receives missed notices without overlapping requests", async () => {
+  vi.useFakeTimers();
+  const notice = {
+    kind: "root_operation",
+    epoch: "epoch",
+    sequence: 8,
+    root_thread_id: "thread-1",
+    notice: {
+      receipt_id: "receipt-1",
+      status: "completed",
+      brief: "Finished while disconnected.",
+    },
+  };
+  const requests: string[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (request: Request) => {
+      requests.push(request.url);
+      const frame =
+        requests.length === 1
+          ? { kind: "open", resume_cursor: "epoch:7" }
+          : { kind: "invalidation", resume_cursor: "epoch:8", event: notice };
+      return new Response(`data: ${JSON.stringify(frame)}\n\n`);
+    }),
+  );
+  const { watchSummary } = await import("./events");
+  const transport = createTransport("", vi.fn());
+  const receive = vi.fn();
+  const close = watchSummary(transport, receive, vi.fn());
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    close.retry();
+    close.retry();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toContain("after=epoch%3A7");
+    expect(receive).toHaveBeenCalledWith(notice);
+    close();
+    close.retry();
+    await vi.advanceTimersByTimeAsync(30000);
+    expect(requests).toHaveLength(2);
+  } finally {
+    close();
+    transport.close();
+    vi.useRealTimers();
+  }
+});

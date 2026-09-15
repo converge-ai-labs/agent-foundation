@@ -21,7 +21,8 @@ from pydantic_ai.usage import RunUsage
 
 from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.errors import HarnessUiError, RunCoordinationError
-from a13n_harness_ui.live import HarnessUiSummaryHub
+from a13n_harness_ui.live import HarnessUiSummaryHub, RootOperationNotice
+from a13n_harness_ui.notifications import root_operation_notice
 from a13n_harness_ui.observation import UiObservation, finish_operation, record_input, record_output
 from a13n_harness_ui.root_execution import RootRunExecutor, RootRunOutcome
 from a13n_harness_ui.root_input import RootInputFiles, detach_input
@@ -466,7 +467,19 @@ class RootRunCoordinator:
                     expired_receipt, _ = self._terminal_receipts.popitem(last=False)
                     self._operations.pop(expired_receipt, None)
                 operation.done.set()
-            await self._publish_change(operation)
+            # Notify only after the Host has settled execution and continuation selection.
+            # Projection and delivery are best effort, never part of execution success.
+            try:
+                notice = root_operation_notice(
+                    _view(operation),
+                    output=outcome.result.output
+                    if outcome is not None and isinstance(outcome.result.output, str)
+                    else None,
+                    deferred=outcome.result.deferred if outcome is not None else None,
+                )
+            except Exception:
+                notice = None
+            await self._publish_change(operation, notice=notice)
 
     async def composition_reference(self, receipt_id: str) -> ObjectRef | None:
         async with self._lock:
@@ -499,7 +512,7 @@ class RootRunCoordinator:
         if cancel_requested:
             stream.cancel()
 
-    async def _publish_change(self, operation: _RootOperation) -> None:
+    async def _publish_change(self, operation: _RootOperation, *, notice: RootOperationNotice | None = None) -> None:
         if self._summary_hub is None:
             return
         try:
@@ -507,6 +520,7 @@ class RootRunCoordinator:
                 kind="root_operation",
                 root_thread_id=operation.receipt.thread_id,
                 thread_id=operation.receipt.thread_id,
+                notice=notice,
             )
             if operation.status is not RootOperationStatus.preparing:
                 await self._summary_hub.publish(

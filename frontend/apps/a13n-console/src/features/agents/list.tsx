@@ -1,10 +1,10 @@
-import { Button, ChoiceField, FormField, Input } from "a13n-ui";
+import { ChoiceField, FormField, Input } from "a13n-ui";
 
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useNavigate } from "react-router";
 
-import { StackIcon, PlusIcon } from "@phosphor-icons/react";
+import { StackIcon } from "@phosphor-icons/react";
 import { AgentAvatar } from "./avatar";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -27,6 +27,7 @@ import {
 } from "../../shared/feedback";
 import shared from "../../shared/shared.module.css";
 import styles from "./agents.module.css";
+import { AgentCreationMenu } from "./import";
 
 export function Agents() {
   const { t } = useTranslation(),
@@ -53,12 +54,7 @@ export function Agents() {
         })
         .then(data),
   });
-  const create = can("agent.create") ? (
-    <Button variant="default" onClick={() => navigate("new")} type="button">
-      {<PlusIcon size={15} />}
-      {t("Create agent")}
-    </Button>
-  ) : undefined;
+  const create = can("agent.create") ? <AgentCreationMenu /> : undefined;
   const visible =
     query.data?.items.filter((item) =>
       `${item.name} ${item.description ?? ""}`

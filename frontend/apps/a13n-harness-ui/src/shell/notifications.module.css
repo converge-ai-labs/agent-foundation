@@ -1,0 +1,78 @@
+.frame {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--a13n-canvas);
+}
+.frame > :first-child {
+  flex: 1;
+  min-height: 0;
+  height: auto;
+}
+.permissionToast {
+  position: fixed;
+  inset-inline-end: 20px;
+  bottom: 20px;
+  z-index: 90;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  width: min(420px, calc(100vw - 32px));
+  padding: 16px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 12px;
+  background: var(--popover);
+  color: var(--popover-foreground);
+  box-shadow: 0 8px 28px rgb(0 0 0 / 12%);
+}
+.permissionToast > svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--a13n-secondary);
+}
+.permissionToast h2 {
+  margin: 0;
+  font-size: 13px;
+  line-height: 20px;
+  font-weight: 500;
+}
+.permissionToast p {
+  margin: 6px 0 12px;
+  font-size: 12px;
+  line-height: 18px;
+  color: var(--a13n-secondary);
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.actions a {
+  font-size: 12px;
+  text-underline-offset: 3px;
+}
+.settingRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+.settingRow label {
+  font-weight: 500;
+}
+.settingRow p {
+  margin: 6px 0 0;
+  color: var(--a13n-secondary);
+}
+@media (max-width: 640px) {
+  .permissionToast {
+    position: static;
+    flex-shrink: 0;
+    width: auto;
+    margin: 8px 12px max(12px, env(safe-area-inset-bottom));
+    padding: 12px;
+    box-shadow: none;
+  }
+}

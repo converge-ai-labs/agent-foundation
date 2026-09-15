@@ -254,11 +254,46 @@ output: offline capability response
 ### Real custom-Capability checklist
 
 - Use one directly declared dataclass with a stable non-colliding serialization name.
-- Keep declarative fields deterministic and serializable; put live clients, credentials, and current policy in fresh run Capabilities.
+- Keep declarative fields deterministic and serializable. Supply first-party feature clients and overrides through their documented typed `RunBindings` fields; only invocation-policy and MCP Capabilities belong in `RunBindings.capabilities`.
 - Let trusted Host code construct the exact `CapabilityTypeCatalog`; do not discover classes from package metadata or serialized import targets.
 - Treat catalog membership as availability and `AgentSpec.capabilities` as selection.
 - Use direct definition composition when the caller already owns a trusted concrete instance.
 - Use a Harness plugin only when behavior must wrap the complete semantic-input-to-result boundary.
+
+### Middleware and feature with Host bindings
+
+[`demo_web.py`](src/a13n_plugin_examples/demo_web.py) composes `RunRecorderPlugin` middleware with one definition-owned `WebCapability`. The Host selects this reserved first-party feature in the Agent definition and supplies the current `WebBinding` through `RunBindings.web`, not a second Capability or a plugin contribution:
+
+```python
+executable = HarnessBuilder().build(
+    AgentSpec(),
+    output_type=str,
+    model=model,
+    plugins=(RunRecorderPlugin(plugin_id="recorder-web"),),
+    capabilities=(
+        WebCapability(
+            WebConfiguration(
+                search=WebSearchConfiguration(mode="off"),
+                scrape=WebScrapeConfiguration(mode="off"),
+            ),
+        ),
+    ),
+)
+result = await executable.run(
+    "Fetch the offline fixture.",
+    bindings=RunBindings.embedded(
+        web=WebBinding(client=provider, policy=provider),
+    ),
+)
+```
+
+Run the complete offline path with:
+
+```bash
+uv run --locked python -m a13n_plugin_examples.demo_web
+```
+
+It invokes the standard `fetch` tool against a fixture-only client and prints `Host-owned offline Web response`. No network, credentials, or Environment are needed. The definition selects feature behavior, middleware observes the completed Run, the Host owns provider lifetime, and fresh binding values never enter continuation State. The same separation applies to Media, Documents, file-media understanding, Skill selection, task state, and client-tool overrides; see the [Capability guide](../../docs/a13n-harness/capabilities.md).
 
 ## Harness Plugin
 

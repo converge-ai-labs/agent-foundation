@@ -21,6 +21,7 @@ import styles from "../shell/workbench.module.css";
 
 const sections = [
   { path: "/settings", label: "General" },
+  { path: "/settings/notifications", label: "Notifications" },
   { path: "/settings/agents", label: "Agents & models" },
   { path: "/settings/capabilities", label: "Capabilities" },
   { path: "/settings/environments", label: "Environments" },

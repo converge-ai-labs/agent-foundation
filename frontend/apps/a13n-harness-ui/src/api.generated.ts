@@ -2764,6 +2764,18 @@ export interface components {
                 [key: string]: components["schemas"]["JsonValue"];
             } | null;
         };
+        /** RootOperationNotice */
+        RootOperationNotice: {
+            /** Receipt Id */
+            receipt_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "completed" | "failed" | "suspended";
+            /** Brief */
+            brief: string;
+        };
         /**
          * RootOperationStatus
          * @enum {string}
@@ -3346,6 +3358,7 @@ export interface components {
             thread_id?: string | null;
             /** Execution Id */
             execution_id?: string | null;
+            notice?: components["schemas"]["RootOperationNotice"] | null;
         };
         /** SummaryOpenFrame */
         SummaryOpenFrame: {

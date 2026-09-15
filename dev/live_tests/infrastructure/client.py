@@ -120,6 +120,20 @@ class LiveClient:
             seen.add(cursor)
         raise AssertionError("Collection exceeded 100 pages")
 
+    async def retained_items(self, run_id: str) -> list[dict]:
+        """Wait for the immutable replay object, which is published after stream closure."""
+        path = f"/api/v1/runs/{run_id}/items"
+
+        async def published():
+            response = await self.http.get(path)
+            if response.status_code == 409 and response.json().get("error", {}).get("code") == "items_unavailable":
+                return {"ready": False}
+            assert response.status_code == 200, f"Items {run_id}: HTTP {response.status_code}"
+            return {"ready": True}
+
+        await self.wait(published, lambda value: value["ready"], f"retained Items publication: {run_id}")
+        return await self.collection(path)
+
     async def wait(self, fetch, predicate: Callable[[dict], bool], description: str) -> dict:
         deadline = monotonic() + self.timeout
         while monotonic() < deadline:

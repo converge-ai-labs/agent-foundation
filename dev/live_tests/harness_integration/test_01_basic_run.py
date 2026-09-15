@@ -24,7 +24,7 @@ async def test_basic_run(live):
     assert {"run.accepted", "run.running", "run.completed"} <= kinds
     completed = next(event for event in events if event.kind == "run.completed")
     assert completed.data["payload"]["data"]["usage"]["model_requests"] >= 1
-    items = await live.collection(f"/api/v1/runs/{run['id']}/items")
+    items = await live.retained_items(run["id"])
     assistant_items = [
         item
         for item in items

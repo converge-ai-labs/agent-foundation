@@ -32,9 +32,16 @@ export function useSelectors() {
 }
 export function useProjects() {
   const { client } = useTransport();
+  const setup = useSetup();
+  const cwd = setup.data?.suggested_project_path;
   return useQuery({
     queryKey: ["projects"],
     queryFn: ({ signal }) => result(client.GET("/api/projects", { signal })),
+    // Default presentation only; explicit browser ordering still takes precedence.
+    select: (projects) =>
+      [...projects].sort(
+        (a, b) => Number(b.roots[0] === cwd) - Number(a.roots[0] === cwd),
+      ),
   });
 }
 export function useSetup() {

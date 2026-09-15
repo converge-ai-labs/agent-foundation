@@ -13,6 +13,7 @@ from a13n_harness import (
     AgentDefinition,
     AgentSpec,
     ModelRecoveryPolicy,
+    RunBindings,
     SubagentDefinition,
 )
 from a13n_harness import (
@@ -94,6 +95,17 @@ class AgentDefinitionCapabilityProvider(Protocol):
     ) -> Sequence[AbstractCapability[AgentContext]]: ...
 
 
+class AgentRunBindingsProvider(Protocol):
+    """Supply typed Run collaborators for one frozen graph node."""
+
+    def __call__(
+        self,
+        context: AgentDefinitionReconstructionContext,
+        bindings: RunBindings,
+        /,
+    ) -> RunBindings: ...
+
+
 class AgentReconstructor:
     """Rebuild exact process-local Harness definitions without mutable lookups or I/O."""
 
@@ -102,13 +114,13 @@ class AgentReconstructor:
         plugin_catalog: HarnessPluginFactoryCatalog,
         *,
         capability_provider: AgentDefinitionCapabilityProvider | None = None,
-        run_capability_provider: AgentDefinitionCapabilityProvider | None = None,
+        run_bindings_provider: AgentRunBindingsProvider | None = None,
     ) -> None:
         if not isinstance(plugin_catalog, HarnessPluginFactoryCatalog):
             raise TypeError("plugin_catalog must be a HarnessPluginFactoryCatalog")
         self._plugin_catalog = plugin_catalog
         self._capability_provider = capability_provider
-        self._run_capability_provider = run_capability_provider
+        self._run_bindings_provider = run_bindings_provider
 
     def reconstruct(
         self,
@@ -227,9 +239,9 @@ class AgentReconstructor:
                         task_state=edge.context.task_state,
                     ),
                     usage_limits=edge.usage_limits,
-                    run_capability_factory=(
+                    run_bindings_factory=(
                         partial(
-                            self._run_capability_provider,
+                            self._run_bindings_provider,
                             AgentDefinitionReconstructionContext(
                                 agent_id=edge.child_agent_id,
                                 agent_revision_id=edge.child_agent_revision_id,
@@ -238,7 +250,7 @@ class AgentReconstructor:
                                 config=child.effective_config,
                             ),
                         )
-                        if self._run_capability_provider is not None
+                        if self._run_bindings_provider is not None
                         else None
                     ),
                 )

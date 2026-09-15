@@ -35,6 +35,34 @@ curl --fail-with-body "$SERVICE_URL/api/v1/workspaces/$WORKSPACE/agents" \
 
 The `201` representation contains `agent` and `revision`. Save their returned IDs; do not fabricate IDs from the display name. The input adapter is the installed `native` adapter. This minimal Agent requires no Environment or external tools; its prompt should contain the material to review.
 
+## Export and import an Agent
+
+In Console, open an Agent and choose **Export agent** to inspect the saved configuration, **Copy YAML**, or **Download YAML**. Save any pending edits first. The file includes its name, description, and complete Agent configuration:
+
+```yaml
+schema_version: 1
+name: Research assistant
+description: Research and summarize source material.
+config:
+  model:
+    model_key: research
+  instructions: Cite your sources and distinguish facts from inference.
+  input_adapter:
+    adapter_key: native
+  protocol:
+    public_name: Research assistant
+```
+
+To reuse it, open **Agents → Create agent → Import from YAML** in the destination Workspace. Upload a `.yaml` or `.yml` file, or paste its contents, then choose **Review import**. Files can contain up to 1 MiB of UTF-8 text.
+
+1. Review the name, description, and configuration preview.
+2. Match any unavailable dependencies to resources in the destination Workspace. Model keys, Skills, Connections, reviewer Models, subagents, child Environment revisions, and Web Providers for search and scrape are checked before creation. Settings, tool scopes, and pinned versions remain unchanged; use **Edit YAML** to adjust a version or other advanced fields.
+3. Choose **Create agent**. Console opens the new Agent after Service accepts the configuration. If creation fails, correct the draft or retry; an unchanged retry reuses the same request identity.
+
+The file contains dependency references, not the Models, Skill packages, Connections, or credentials themselves. Import those resources separately when needed. Matching a key or version in another Workspace does not guarantee identical contents or behavior. Service still validates configuration and authority, and plugin availability and Secret access retain their runtime checks.
+
+Import always creates a new Agent. It does not restore its original ID, URL key, avatar, labels, default Environment, or version history. Choose the new Agent's default Environment separately if required. The format is specific to Service `AgentConfig`; Harness UI YAML uses a different schema. Managed credentials are never fetched by export, while authored instructions and configuration text are preserved.
+
 ## Configure tool permissions and a reviewer
 
 Each built-in Tool owns its permission in `toolsets`. Authored permissions default to persisted `inherit`; replace the reviewer placeholder with a real managed Model **ID**, not a Model key or provider route:

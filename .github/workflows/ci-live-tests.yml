@@ -1,0 +1,206 @@
+name: Live Tests CI
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - ".github/workflows/ci-live-tests.yml"
+      - "Makefile"
+      - "conftest.py"
+      - "dev/live_tests/**"
+      - "packages/a13n-service/**"
+      - "packages/a13n-harness/**"
+      - "packages/a13n-environment/**"
+      - "packages/a13n-envd-client/**"
+      - "packages/a13n-stream-protocol/**"
+      - "packages/a13n-logging/**"
+      - "pyproject.toml"
+      - "uv.lock"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/ci-live-tests.yml"
+      - "Makefile"
+      - "conftest.py"
+      - "dev/live_tests/**"
+      - "packages/a13n-service/**"
+      - "packages/a13n-harness/**"
+      - "packages/a13n-environment/**"
+      - "packages/a13n-envd-client/**"
+      - "packages/a13n-stream-protocol/**"
+      - "packages/a13n-logging/**"
+      - "pyproject.toml"
+      - "uv.lock"
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  support:
+    name: Live test support
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Validate fixtures and reviewed selections
+        run: make live-test-check
+
+  smoke:
+    name: Live smoke (${{ matrix.name }}, ${{ matrix.cases }} cases)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04-8core
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      max-parallel: 3
+      matrix:
+        include:
+          - group: core
+            name: Core
+            cases: 20
+            workers: 2
+          - group: round-two
+            name: Queue/IAM
+            cases: 4
+            workers: 1
+          - group: management
+            name: Management
+            cases: 10
+            workers: 1
+    env:
+      SMOKE_GROUP: ${{ matrix.group }}
+      EXPECTED_TESTS: ${{ matrix.cases }}
+      PYTEST_WORKERS: ${{ matrix.workers }}
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: live
+          POSTGRES_PASSWORD: live-ci-password
+          POSTGRES_DB: postgres
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U live -d postgres"
+          --health-interval 2s --health-timeout 5s --health-retries 30
+      redis:
+        image: redis:8-alpine
+        ports:
+          - 6379/tcp
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s --health-timeout 5s --health-retries 30
+      rustfs:
+        image: rustfs/rustfs@sha256:b7014e0ce2bc703c1316b3ef760e29dfae61fe4a50d1a66fa89638e0f8ea211f
+        env:
+          RUSTFS_ACCESS_KEY: live-ci-access
+          RUSTFS_SECRET_KEY: live-ci-secret
+          RUSTFS_CONSOLE_ENABLE: "false"
+          RUSTFS_VOLUMES: /data
+        ports:
+          - 9000/tcp
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+      - name: Configure job-owned infrastructure
+        env:
+          PG_PORT: ${{ job.services.postgres.ports['5432'] }}
+          REDIS_PORT: ${{ job.services.redis.ports['6379'] }}
+          S3_PORT: ${{ job.services.rustfs.ports['9000'] }}
+        run: |
+          umask 077
+          INFRA_CONFIG="$RUNNER_TEMP/live-infrastructure.toml"
+          printf 'INFRA_CONFIG=%s\nREPORT=%s\nPYTEST_TEMP=%s\n' \
+            "$INFRA_CONFIG" "$RUNNER_TEMP/live-results/smoke.xml" "$RUNNER_TEMP/live-pytest/smoke" >> "$GITHUB_ENV"
+          cat > "$INFRA_CONFIG" <<EOF
+          postgres_admin_url = "postgresql://live:live-ci-password@127.0.0.1:$PG_PORT/postgres"
+          redis_url = "redis://127.0.0.1:$REDIS_PORT/0"
+          object_endpoint_url = "http://127.0.0.1:$S3_PORT"
+          aws_access_key_id = "live-ci-access"
+          aws_secret_access_key = "live-ci-secret"
+          EOF
+      - name: Run shared smoke journeys against prepared services
+        # Core workers own separate labs against the same job services.
+        # Each worker reuses its lab and executes its assigned cases serially.
+        run: >-
+          make live-test-ci suite=smoke
+          LIVE_TEST_ARGS="--smoke-group=$SMOKE_GROUP
+          --workers=$PYTEST_WORKERS
+          --infrastructure=external --infrastructure-config=$INFRA_CONFIG
+          --junitxml=$REPORT --basetemp=$PYTEST_TEMP"
+      - name: Summarize test timing and require every group case
+        if: always()
+        run: |
+          python - <<'PY'
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          report = Path(os.environ["REPORT"])
+          if not report.exists():
+              raise SystemExit("Smoke report missing; inspect the journey step and process logs")
+          suites = ET.parse(report).getroot().findall("testsuite")
+          counts = {key: sum(int(suite.get(key, "0")) for suite in suites)
+                    for key in ("tests", "failures", "errors", "skipped")}
+          seconds = sum(float(suite.get("time", "0")) for suite in suites)
+          expected = int(os.environ["EXPECTED_TESTS"])
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              summary.write(f"Live smoke ({os.environ['SMOKE_GROUP']}): {counts}; pytest wall time: {seconds:.2f}s\n\n")
+              summary.write("| Slowest case (setup + call + teardown) | Seconds |\n| --- | ---: |\n")
+              cases = [case for suite in suites for case in suite.findall("testcase")]
+              for case in sorted(cases, key=lambda case: float(case.get("time", "0")), reverse=True)[:10]:
+                  summary.write(f"| {case.get('classname')}.{case.get('name')} | {float(case.get('time', '0')):.2f} |\n")
+          assert counts == {"tests": expected, "failures": 0, "errors": 0, "skipped": 0}, counts
+          PY
+      - name: Retain reports and process logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-smoke-${{ matrix.group }}
+          retention-days: 7
+          include-hidden-files: true
+          if-no-files-found: warn
+          path: |
+            ${{ runner.temp }}/live-results/*.xml
+            ${{ runner.temp }}/live-pytest/**/*.log
+            dev/live_tests/.state/**/*.log
+
+  validation:
+    name: Live tests
+    needs: [support, smoke]
+    if: always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require fixture support and every smoke journey
+        env:
+          SUPPORT_RESULT: ${{ needs.support.result }}
+          SMOKE_RESULT: ${{ needs.smoke.result }}
+        run: |
+          test "$SUPPORT_RESULT" = success
+          test "$SMOKE_RESULT" = success

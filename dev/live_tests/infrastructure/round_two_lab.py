@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import logging
 import os
 import secrets
 import signal
@@ -23,16 +24,20 @@ from uuid import uuid4
 
 import anyio
 import httpx2
+from a13n_service.configuration.sources import load_settings
 from a13n_service.ids import new_object_id
-from a13n_service.settings import Settings
 
+from .bootstrap import bootstrap
 from .client import LiveClient
 from .config import STATE
+from .core_resources import provision as provision_core
+from .dependencies import external_database, load_external_dependencies
 from .local_storage import open_object_storage
 from .round_two_resources import provision
 from .tcp_proxy import TCPProxy
 
 REPOSITORY = Path(__file__).resolve().parents[3]
+logger = logging.getLogger(__name__)
 
 
 def identity():
@@ -182,6 +187,7 @@ class RoundTwoLab:
 async def open_lab(
     *,
     suite="round-two",
+    smoke=False,
     websocket_envd=False,
     e2b_lifecycle=False,
     docker_lifecycle=False,
@@ -197,38 +203,51 @@ async def open_lab(
     state = REPOSITORY / "dev" / "live_tests" / ".state" if suite == "core" else STATE
     root = state / suite / uuid4().hex
     root.mkdir(parents=True, mode=0o700)
+    started = monotonic()
     async with AsyncExitStack() as stack:
+        # xdist captures successful workers' live logs. Retain phase timings with
+        # each owned lab so parallel startup and cleanup remain inspectable.
+        phase_log = logging.FileHandler(root / "lab.log")
+        phase_log.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+        logger.addHandler(phase_log)
+        stack.callback(phase_log.close)
+        stack.callback(logger.removeHandler, phase_log)
+        stack.callback(lambda: logger.info("live_lab_closed suite=%s total_seconds=%.2f", suite, monotonic() - started))
         print(f"Preparing {suite} lab; private logs: {root}", flush=True)
+        logger.info("live_lab_start suite=%s pytest_worker=%s", suite, os.environ.get("PYTEST_XDIST_WORKER", "main"))
+        external = load_external_dependencies()
         storage_options = {}
-        if suite != "core" and performance is None:
-            settings = Settings()
-            storage_options = {"endpoint_url": settings.objects.endpoint_url, "region": settings.objects.region}
+        if external is not None:
+            storage_options = external.object_options()
         object_environment = await stack.enter_async_context(open_object_storage(**storage_options))
         endpoint = object_environment["A13N_SERVICE_OBJECT_ENDPOINT_URL"]
 
-        from testcontainers.postgres import PostgresContainer
-        from testcontainers.redis import RedisContainer
+        if external is not None:
+            database_url = await stack.enter_async_context(external_database(external))
+            redis_url = external.redis_url.get_secret_value()
+        else:
+            from testcontainers.postgres import PostgresContainer
+            from testcontainers.redis import RedisContainer
 
-        postgres = PostgresContainer("postgres:17-alpine")
-        if performance is not None:
-            # Leave room for the preparation-only Control and administrative connections.
-            postgres.with_command(["postgres", "-c", f"max_connections={max(100, performance.pg_pool_size + 16)}"])
-        redis = RedisContainer("redis:8-alpine")
-        for container in (postgres, redis):
-            stack.push_async_callback(anyio.to_thread.run_sync, container.stop)
-            await anyio.to_thread.run_sync(container.start)
+            postgres = PostgresContainer("postgres:17-alpine")
+            if performance is not None:
+                postgres.with_command(["postgres", "-c", f"max_connections={max(100, performance.pg_pool_size + 16)}"])
+            redis = RedisContainer("redis:8-alpine")
+            for container in (postgres, redis):
+                stack.push_async_callback(anyio.to_thread.run_sync, container.stop)
+                await anyio.to_thread.run_sync(container.start)
 
-        async def retain_database_log():
-            # Keep SQL error diagnostics before the owned disposable DB is removed.
-            stdout, stderr = await anyio.to_thread.run_sync(postgres.get_logs)
-            (root / "postgres.log").write_bytes(stdout + stderr)
+            async def retain_database_log():
+                stdout, stderr = await anyio.to_thread.run_sync(postgres.get_logs)
+                (root / "postgres.log").write_bytes(stdout + stderr)
 
-        stack.push_async_callback(retain_database_log)
-        database_url = (
-            f"postgresql+psycopg://{postgres.username}:{postgres.password}@"
-            f"{postgres.get_container_host_ip()}:{postgres.get_exposed_port(5432)}/{postgres.dbname}"
-        )
-        redis_url = f"redis://{redis.get_container_host_ip()}:{redis.get_exposed_port(6379)}/0"
+            stack.push_async_callback(retain_database_log)
+            database_url = (
+                f"postgresql+psycopg://{postgres.username}:{postgres.password}@"
+                f"{postgres.get_container_host_ip()}:{postgres.get_exposed_port(5432)}/{postgres.dbname}"
+            )
+            redis_url = f"redis://{redis.get_container_host_ip()}:{redis.get_exposed_port(6379)}/0"
+        logger.info("live_lab_dependencies_ready suite=%s seconds=%.2f", suite, monotonic() - started)
         config = {
             **identity(),
             "control_url": free_origin(),
@@ -237,6 +256,8 @@ async def open_lab(
             "timeout_seconds": 120,
             "encryption_key": base64.b64encode(secrets.token_bytes(32)).decode(),
         }
+        if smoke:
+            config["smoke"] = True
         if websocket_envd:
             config["websocket_envd"] = True
         if e2b_lifecycle:
@@ -330,10 +351,16 @@ async def open_lab(
         if management:
             peer = await lab.spawn("dev.live_tests.infrastructure.fixture_peer")
             await lab.ready(peer, config["peer_url"], verify=certificate_context(config))
-        await lab.command("dev.live_tests.manage", "bootstrap")
+        phase = monotonic()
+        async with asyncio.timeout(120):
+            await bootstrap(load_settings(environ=environment), config)
+        logger.info("live_lab_bootstrap_ready suite=%s seconds=%.2f", suite, monotonic() - phase)
+        phase = monotonic()
         control = await lab.spawn("dev.live_tests.manage", "control")
         lab.control = control
         await lab.ready(control, config["control_url"])
+        logger.info("live_lab_control_ready suite=%s seconds=%.2f", suite, monotonic() - phase)
+        phase = monotonic()
         http_options = {}
         if performance is not None:
             http_options["limits"] = httpx2.Limits(
@@ -353,13 +380,17 @@ async def open_lab(
         )
         lab.client = LiveClient(config, http)
         if suite == "core":
-            await lab.command("dev.live_tests.manage", "setup")
-            config.update(json.loads(config_path.read_text()))
+            async with asyncio.timeout(120):
+                await provision_core(lab.client, on_created=lambda value: private_json(config_path, value))
         else:
             await provision(lab.client)
         private_json(config_path, config)
+        logger.info("live_lab_resources_ready suite=%s seconds=%.2f", suite, monotonic() - phase)
+        phase = monotonic()
         if performance is None:
             await lab.start_worker()
+            logger.info("live_lab_worker_ready suite=%s seconds=%.2f", suite, monotonic() - phase)
+        logger.info("live_lab_ready suite=%s setup_seconds=%.2f", suite, monotonic() - started)
         try:
             yield lab
         finally:

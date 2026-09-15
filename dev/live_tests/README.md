@@ -47,6 +47,46 @@ uv run --locked python -m pytest dev/live_tests/control --live-round-two
 uv run --locked python -m pytest dev/live_tests/model --live-management
 ```
 
+## CI smoke suite
+
+[Live Tests CI](../../.github/workflows/ci-live-tests.yml) runs three parallel matrix jobs on relevant non-draft pull requests, pushes to `main`, and manual dispatch. Each runs `make live-test-ci suite=smoke` with one `--smoke-group`. Offline support validation runs independently. The final `Live tests` check requires support and all three smoke jobs to succeed. Each group's report must contain its exact case count without skips, covering all 34 cases. Matrix fail-fast is disabled so a failing group does not cancel the other groups or their timing reports.
+
+| Shared lab group | Cases | Selection                                                                                                                |
+| ---------------- | ----: | ------------------------------------------------------------------------------------------------------------------------ |
+| Core             |    20 | Basic execution, continuation, shell/file effects, Native/Hosted streams, reconnect, idempotency, Interrupt and Approval |
+| Queue/IAM        |     4 | Case 13 Queue/Retry/Fork and case 16 Workspace isolation                                                                 |
+| Management       |    10 | Case 18 Plugin configuration/validation and case 26 structured output/client-tool feedback                               |
+
+The explicit function selections in `ci.py:SMOKE_GROUPS` are the only journeys permitted to share labs. Cases run sequentially within each pytest worker. Each worker owns a Control, Worker, database, bucket, Workspace and directory; CI uses two pytest workers for Core and one for each other group. Each case gets a separate Run/case cleanup ledger, and a failed case or failed cleanup retires only its worker's lab before reuse. CI groups run concurrently on separate runners with separate service containers and lab resources. A local `suite=smoke` invocation without `--smoke-group` still runs all three groups sequentially, closing the previous group's processes before starting the next. The full `core` suite still includes the separate 2-second Steer stability check; `smoke` excludes it. These selections have no dedicated lease-expiry or deadline-window assertions. Readiness, HTTP and event polling remain real. The explicit shared-smoke Host preserves the model recovery enablement, five-attempt budget, history handling and failure events, but uses 10 ms initial and 50 ms maximum jitter ceilings. Only the smoke Worker installs this override; ordinary suites and dedicated recovery/fault tests retain the production backoff.
+
+Each CI matrix job starts PostgreSQL, Redis and RustFS once as job services and selects `external` infrastructure mode. It does not build sandbox images or a native daemon. Each job has a 15-minute limit, retains each lab's `lab.log` with its pytest worker identity and dependency/bootstrap/Control/resource/Worker/setup/total durations, retains JUnit and process logs in a group-specific artifact, and summarizes pytest wall time plus the slowest case durations. Pytest durations include setup and teardown; each worker's shared setup is charged to its first case. Service-container startup and dependency installation remain visible as separate GitHub Actions phases.
+
+To reproduce one CI group locally, pass `LIVE_TEST_ARGS='--smoke-group=core --workers=2'`, `--smoke-group=round-two` (Queue/IAM), or `--smoke-group=management`. The group selector requires `suite=smoke` and combines with either infrastructure mode. `--workers=1` is the local default and runs without xdist. Values 2–4 require an explicit Core smoke group and schedule individual cases across independent labs; other suites remain unchanged. Compare Core with `--workers=1` and `--workers=2` against the same prepared dependencies before increasing concurrency. A pytest worker crash fails the run without automatically restarting or replaying its cases.
+
+## Infrastructure modes
+
+`docker` is the default for owned lab launchers. Each lab starts and removes its own PostgreSQL, Redis and RustFS containers. Shared smoke groups amortize that setup across their cases; existing fault fixtures still create one lab per case. Ambient Service/S3 settings do not select these dependencies.
+
+`external` starts no infrastructure containers. Supply an explicit TOML file with the fields in [infrastructure.example.toml](infrastructure.example.toml). Endpoints must be loopback test services; PostgreSQL credentials need `CREATEDB`. Each lab creates a randomly named database, applies the real migrations, and creates a unique S3 bucket with explicit credentials. Cleanup stops its processes, drops only that database, and deletes only that bucket. It never migrates/drops the administrative database, flushes Redis, or stops the supplied servers. Redis Run/Thread keys use the lab's unique identifiers and their normal TTLs, so unrelated keys are preserved. Use a test Redis instance; this mode is not a production connectivity profile.
+
+```sh
+# Default: all dependencies owned by the test launcher.
+make live-test-ci suite=smoke
+# Prepare a private configuration for already-running local/CI test services.
+mkdir -p dev/live_tests/.state
+cp dev/live_tests/infrastructure.example.toml dev/live_tests/.state/infrastructure.toml
+chmod 600 dev/live_tests/.state/infrastructure.toml
+# Edit the copied endpoints and credentials, then run without creating infrastructure containers.
+make live-test-ci suite=smoke LIVE_TEST_ARGS='--infrastructure=external --infrastructure-config=dev/live_tests/.state/infrastructure.toml'
+# The same mode is available to direct pytest and the isolated first-round launcher.
+make live-test-management LIVE_TEST_ARGS='--infrastructure=external --infrastructure-config=dev/live_tests/.state/infrastructure.toml'
+make live-test-local LIVE_TEST_ARGS='--infrastructure=external --infrastructure-config=dev/live_tests/.state/infrastructure.toml'
+```
+
+Missing or invalid external configuration fails without falling back to Docker. `--collect-only` reads neither the infrastructure file nor private Provider settings and starts no resources. The suite launcher ignores ambient `LIVE_TEST_*` infrastructure overrides; pass its explicit flags. Direct lab callers may select `LIVE_TEST_INFRASTRUCTURE=external` and an absolute `LIVE_TEST_INFRASTRUCTURE_CONFIG` path. The ordinary `make live-test` command continues to connect to an already-running Control/Worker installation.
+
+Infrastructure ownership is separate from the system under test: manual Docker/ENOSPC Environment journeys still create their own sandbox containers in either mode. Those journeys are outside the 34-case smoke selection. External mode keeps fault databases, buckets, TCP proxies, workspace directories and Service process groups isolated; sharing servers does not imply sharing a fault lab.
+
 ## Model Management end-to-end coverage
 
 The model suite uses real Control and Worker processes, Native HTTP APIs, migrated PostgreSQL, Redis and S3-compatible storage. An owned loopback upstream records actual SDK requests and supplies independently authored Chat Completions, Responses, Anthropic Messages and Gemini GenerateContent wire responses. This deterministic suite checks Service integration and native SDK serialization; it does not establish compatibility with every cloud account or model. Only selected credential/header hashes are recorded, never their values.
@@ -137,7 +177,7 @@ If a configured local proxy returns non-global DNS addresses, narrowly allow onl
 
 ## Manual correctness suites
 
-Live tests are opt-in local checks. No GitHub Actions workflow runs these suites. The existing `make live-test-ci` command and `ci.py` module remain the manual entry points for the 490 selected cases across seven suites; the full parameter matrices remain available through the ordinary live-test opt-ins below. Each invocation runs serially with its own dependencies and processes. Optional sharding keeps every selected node from a module together, preserving module-scoped backend setup.
+The other seven reviewed suites contain 490 distinct cases and remain available through `make live-test-ci`; `smoke` is a 34-case subset, not additional coverage. The full parameter matrices remain available through the ordinary live-test opt-ins below. These other suites run serially, using either infrastructure mode. Optional sharding keeps every selected node from a module together, preserving module-scoped backend setup. Independent invocations, shards and Core smoke pytest workers each own their lab resources.
 
 | Suite                 | Selected cases | Coverage                                                                                                                                                                                                                               |
 | --------------------- | -------------: | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -149,7 +189,7 @@ Live tests are opt-in local checks. No GitHub Actions workflow runs these suites
 | `environment-native`  |            112 | Local/Docker/envd files, lifecycle, transport failures, bootstrap boundaries and real ENOSPC                                                                                                                                           |
 | `environment-service` |             65 | Docker case-21 variants, backend conformance and multi-Worker Environment lifecycle, sharing, policy, dependency and authority boundaries                                                                                              |
 
-The reviewed suites use scripted local model endpoints and local MCP/Connector fixtures. Each invocation creates its own PostgreSQL, Redis and RustFS, starts real Control/Worker processes, and uses real direct-local, Local Envd, Docker, HTTP Envd and reverse-WebSocket Envd targets. Model-update case 23, real Model/Connector/Search account tests, E2B, and performance benchmarks are excluded. E2B parameters in mixed Environment modules are deselected before fixture setup, so private Provider configuration is not read. Five selected unsupported Environment combinations remain explicitly skipped because external daemons have no managed creation, some providers admit only one concurrent Session, and Docker has no native TTL renewal; these skips are not passing lifecycle coverage.
+The reviewed suites use scripted local model endpoints and local MCP/Connector fixtures. Depending on the selection, labs start real Control/Worker processes and use real direct-local, Local Envd, Docker, HTTP Envd and reverse-WebSocket Envd targets. Model-update case 23, real Model/Connector/Search account tests, E2B, and performance benchmarks are excluded. E2B parameters in mixed Environment modules are deselected before fixture setup, so private Provider configuration is not read. Five selected unsupported Environment combinations remain explicitly skipped because external daemons have no managed creation, some providers admit only one concurrent Session, and Docker has no native TTL renewal; these skips are not passing lifecycle coverage.
 
 The reduced combinations preserve these representative boundaries:
 
@@ -161,7 +201,7 @@ The reduced combinations preserve these representative boundaries:
 - Environment sharing: first preparation with both `on_run`/`on_use` for direct-local and Docker (4); Docker cancellation/crash, Worker crash with HTTP Envd and cancellation with WebSocket Envd (4). Tools/access, template and lifecycle conformance still exercise all four non-cloud Service backends. Both principal-disable and role-revocation tests check the request-11 IAM refresh boundary and the other Worker's independent authority.
 - Native file failures: every missing-file operation and wrong-type operation remains represented, distributed across backends instead of their full Cartesian products (10 and 8). Traversal, symlink escape, read-only denial, real OS permissions and aborted writes retain every backend. Docker bootstrap corruption covers all four operations and four corruption kinds in four representative pairs.
 
-Lab setup migrates the disposable database and initializes both isolated identities in one bootstrap process, replacing three interpreter startups (two in core). Function-scoped fault labs own fresh databases, buckets, fault relays and Service processes. `--basetemp` creates missing parent directories before pytest starts. The local Composio Host supplies its HTTPS peer through trusted composition while provider requests retain the production empty configuration schema; Docker file evidence is read as the container user through Docker, independently of Harness tools.
+Lab setup calls the committed migrations and identity seeding directly with explicit lab settings, using one database engine for both identities. Core resource provisioning also runs directly through Control HTTP. Control and Worker remain separate processes; setup no longer starts bootstrap or provisioning interpreters. The manual `init`, `bootstrap`, and `setup` commands use the same helpers. Function-scoped fault labs own fresh databases, buckets, fault relays and Service processes. `--basetemp` creates missing parent directories before pytest starts. The local Composio Host supplies its HTTPS peer through trusted composition while provider requests retain the production empty configuration schema; Docker file evidence is read as the container user through Docker, independently of Harness tools.
 
 Run the suites locally:
 

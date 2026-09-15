@@ -317,6 +317,11 @@ export function SourceDocument({
     enabled: !!path && !isNew,
   });
   const dirty = !!draft && draft.content !== draft.base;
+  const sharedDraft = drafts.get(path);
+  useEffect(() => {
+    // Quick actions can publish this source while its clean editor stays mounted.
+    if (!dirty && sharedDraft && sharedDraft !== draft) setDraft(sharedDraft);
+  }, [dirty, sharedDraft, draft]);
   const external =
     !!source.data &&
     !!draft?.digest &&

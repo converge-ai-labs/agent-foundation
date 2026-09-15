@@ -4,10 +4,12 @@ import argparse
 import os
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 
 from .. import ci
+from ..conftest import pytest_collection_modifyitems
 
 
 @pytest.fixture(scope="module")
@@ -37,6 +39,8 @@ def collected_suites():
 def test_reviewed_ci_journeys_collect_once_without_external_or_stress_cases(collected_suites):
     seen = set()
     for suite, cases in collected_suites.items():
+        if suite == "smoke":
+            continue
         assert not (seen & cases), f"Repeated cases in {suite}: {seen & cases}"
         seen.update(cases)
         assert not any(
@@ -47,6 +51,9 @@ def test_reviewed_ci_journeys_collect_once_without_external_or_stress_cases(coll
     assert len(collected_suites["core"]) == 21
     assert len(collected_suites["functional"]) == 121
     assert len(seen) == 490
+    assert len(collected_suites["smoke"]) == 34
+    assert collected_suites["smoke"] <= seen
+    assert not any("test_06_steer" in case for case in collected_suites["smoke"])
     files = {case.split("::")[0] for case in seen}
     root = ci.TEST_ROOT
     # All requested control/fault files and every non-cloud Environment module
@@ -76,6 +83,124 @@ def test_narrowing_environment_selection_cannot_enable_e2b():
         timeout=60,
     )
     assert result.returncode == pytest.ExitCode.NO_TESTS_COLLECTED, result.stdout + result.stderr
+
+
+def test_external_smoke_collection_never_reads_infrastructure_or_starts_docker():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "dev.live_tests.ci",
+            "smoke",
+            "--collect-only",
+            "--infrastructure=external",
+            "--infrastructure-config=/must-not-read-infrastructure.toml",
+        ],
+        cwd=ci.REPOSITORY,
+        env={**os.environ, "DOCKER_HOST": "unix:///must-not-use-docker.sock"},
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "34 tests collected" in result.stdout
+
+
+def test_smoke_groups_partition_all_cases_without_overlap(collected_suites):
+    seen = set()
+    for group, expected in (("core", 20), ("round-two", 4), ("management", 10)):
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "dev.live_tests.ci",
+                "smoke",
+                f"--smoke-group={group}",
+                "--collect-only",
+                "--infrastructure=external",
+                "--infrastructure-config=/must-not-read-infrastructure.toml",
+            ],
+            cwd=ci.REPOSITORY,
+            env={**os.environ, "DOCKER_HOST": "unix:///must-not-use-docker.sock"},
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        cases = {line for line in result.stdout.splitlines() if line.startswith("dev/live_tests/") and "::" in line}
+        assert len(cases) == expected
+        assert not seen & cases
+        seen.update(cases)
+    assert seen == collected_suites["smoke"]
+
+
+def test_smoke_group_cannot_silently_replace_another_suite(monkeypatch):
+    def forbidden(*args, **kwargs):
+        pytest.fail("An invalid group must not invoke pytest")
+
+    monkeypatch.setattr(ci.subprocess, "call", forbidden)
+    with pytest.raises(SystemExit) as caught:
+        ci.main(["core", "--smoke-group=core"])
+    assert caught.value.code == 2
+
+
+@pytest.mark.parametrize("workers,collect", [(1, False), (2, False), (2, True)])
+def test_core_parallelism_keeps_collection_offline_and_uses_case_scheduling(workers, collect):
+    options = ci.parser().parse_args(
+        ["smoke", "--smoke-group=core", f"--workers={workers}", *(["--collect-only"] if collect else [])]
+    )
+    arguments = ci.pytest_arguments(options)
+    parallel = workers > 1 and not collect
+    assert arguments[arguments.index("-n") + 1] == (str(workers) if parallel else "0")
+    assert ("--dist=load" in arguments) == parallel
+    assert ("--max-worker-restart=0" in arguments) == parallel
+
+
+@pytest.mark.parametrize("selection", [["core"], ["smoke"], ["smoke", "--smoke-group=management"]])
+def test_parallelism_cannot_enable_non_core_shared_labs(monkeypatch, selection):
+    def forbidden(*args, **kwargs):
+        pytest.fail("Invalid parallel selection must not invoke pytest")
+
+    monkeypatch.setattr(ci.subprocess, "call", forbidden)
+    with pytest.raises(SystemExit) as caught:
+        ci.main([*selection, "--workers=2"])
+    assert caught.value.code == 2
+
+
+@pytest.mark.parametrize("worker", [False, True])
+@pytest.mark.parametrize("group", ["core", "round-two", "management"])
+def test_distributed_collection_checks_core_allowlist_in_controller_and_workers(worker, group):
+    config = SimpleNamespace(option=SimpleNamespace(numprocesses=0 if worker else 2), getoption=lambda name: True)
+    if worker:
+        config.workerinput = {"workerid": "gw0"}
+    selection = ci.SMOKE_GROUPS[group][0]
+    path, name = selection.split("::")
+    item = SimpleNamespace(path=ci.TEST_ROOT / path, originalname=name, nodeid=selection)
+    if group == "core":
+        pytest_collection_modifyitems(config, [item])
+    else:
+        with pytest.raises(pytest.UsageError, match="only reviewed Core"):
+            pytest_collection_modifyitems(config, [item])
+
+
+def test_shared_lab_opt_in_rejects_unreviewed_fault_cases():
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "dev/live_tests/run_recovery/test_39_run_budgets_and_drain.py",
+            "--live-shared-labs",
+            "--collect-only",
+            "-q",
+        ],
+        cwd=ci.REPOSITORY,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == pytest.ExitCode.USAGE_ERROR
+    assert "unreviewed journey" in result.stderr
 
 
 def test_ci_environment_drops_ambient_accounts_and_pytest_selection(monkeypatch):

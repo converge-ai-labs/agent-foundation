@@ -76,7 +76,7 @@ from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.tools import DeferredToolApprovalResult, DeferredToolRequests, DeferredToolResults
 from pydantic_ai.usage import UsageLimits
 
-from a13n_harness_ui.capability_runtime import production_run_capabilities
+from a13n_harness_ui.capability_runtime import production_run_bindings
 from a13n_harness_ui.composition import (
     AgentReconstructor,
     CompositionAcceptanceService,
@@ -911,8 +911,8 @@ class HarnessUiSubagentOperator(SubagentOperator):
             ),
             environment=environment.runtime,
             model_resolver=reconstructed.model_resolver.fresh(),
-            capabilities=production_run_capabilities(reconstructed.definition_capability_ids),
         )
+        bindings = production_run_bindings(bindings, reconstructed.definition_capability_ids)
         return reconstructed.executable.stream(
             input if deferred_resume is None else None,
             bindings=bindings,
@@ -1837,7 +1837,9 @@ def _with_completion(display: CompactChildDisplay, *, output: object) -> Compact
 
 
 def _with_failure(display: CompactChildDisplay, failure: SafeFailure) -> CompactChildDisplay:
-    activities = [*display.activities, CompactChildActivity(kind="failure", text=failure.message)]
+    # Keep the original SafeFailure for settlement; only the compact display
+    # uses the existing explicitly marked failure preview.
+    activities = [*display.activities, CompactChildActivity(kind="failure", text=_surface_failure(failure).message)]
     return CompactChildDisplay(
         activities=tuple(activities[-_MAX_DISPLAY_ACTIVITIES:]),
         final_answer=display.final_answer,

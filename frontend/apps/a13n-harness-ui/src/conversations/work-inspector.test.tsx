@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -250,4 +251,63 @@ it("retains pending and unknown child controls when inspection unmounts and reop
     screen.getByRole("button", { name: "Send child instruction" }),
   );
   expect(POST).toHaveBeenCalledOnce();
+});
+
+it("expands long child review text locally without losing the returned content", async () => {
+  const text =
+    "A detailed finding.\n\n".repeat(600) + "Final review paragraph.";
+  const GET = vi.fn(async () => ({
+    data: {
+      title: "Execution record",
+      summary: text,
+      content: "Review content.\n\n".repeat(600) + "Final content paragraph.",
+      truncated: false,
+      omitted: false,
+    },
+  }));
+  const child = {
+    execution_id: "long-review",
+    root_thread_id: "root",
+    parent_thread_id: "root",
+    subagent_name: "Reviewer",
+    persisted_status: "succeeded",
+    local_status: "unavailable",
+    created_at: "2026-09-14T00:00:00Z",
+    activity: { output_preview: text },
+    available_actions: [],
+  } as unknown as Schema<"ChildExecutionView">;
+  render(<Child child={child} reconcile={vi.fn()} />, harness(GET));
+  const user = userEvent.setup();
+  await user.click(screen.getByText("Reviewer · succeeded"));
+  await screen.findByText("Execution record");
+  expect(screen.queryByRole("region", { name: "review summary" })).toBeNull();
+  const snapshot = screen.getByRole("region", { name: "activity snapshot" });
+  expect(within(snapshot).queryByText("Final review paragraph.")).toBeNull();
+  await user.click(
+    screen.getByRole("button", { name: "Show full activity snapshot" }),
+  );
+  expect(within(snapshot).getByText("Final review paragraph.")).toBeTruthy();
+  expect(snapshot.tabIndex).toBe(0);
+  await user.click(screen.getByText("Execution record"));
+  const summary = await screen.findByRole("region", { name: "review summary" });
+  expect(within(summary).queryByText("Final review paragraph.")).toBeNull();
+  const expand = screen.getByRole("button", {
+    name: "Show full review summary",
+  });
+  expect(expand.getAttribute("aria-expanded")).toBe("false");
+  expect(expand.getAttribute("aria-controls")).toBe(summary.id);
+  await user.click(expand);
+  expect(within(summary).getByText("Final review paragraph.")).toBeTruthy();
+  await user.click(
+    screen.getByRole("button", { name: "Show full review content" }),
+  );
+  expect(screen.getByText("Final content paragraph.")).toBeTruthy();
+  await user.click(
+    screen.getByRole("button", { name: "Show less review summary" }),
+  );
+  expect(within(summary).queryByText("Final review paragraph.")).toBeNull();
+  expect(
+    screen.queryByText("Some content was omitted by the server."),
+  ).toBeNull();
+  expect(GET).toHaveBeenCalledOnce();
 });

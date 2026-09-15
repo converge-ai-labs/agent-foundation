@@ -284,19 +284,15 @@ class ClientToolsSpec(BaseModel):
     default_toolsets: tuple[ClientToolsetDefinition, ...] = ()
     allow_run_override: bool = False
 
-
-@dataclass(frozen=True)
-class ClientToolsRunCapability(AbstractCapability[AgentContext]):
-    toolsets: tuple[ClientToolsetDefinition, ...]
 ```
 
-`ClientToolsRunCapability` is a typed fresh run attachment carried in `RunBindings.capabilities`; it contributes no independent tools or authority. The definition-selected Client Tools Capability resolves exactly zero or one instance by its stable Capability ID and expected public type, applies the replacement policy below, and contributes the resulting native Toolsets. This uses Pydantic's finalized run Capability mapping rather than adding a feature field or class-free role registry to `RunBindings`.
+`RunBindings.client_toolsets: tuple[ClientToolsetDefinition, ...] | None` is a typed optional override; it contributes no independent tools or authority. The definition-selected `ClientToolsCapability` reads the field, applies the replacement policy below, and contributes the resulting native Toolsets. `None` retains the defaults; an empty tuple explicitly clears them. Binding construction validates and copies the declarations.
 
 The declaration codec is not a second executable Toolset API. For each run, the Capability resolves the complete effective declaration list and composes one Client Tools Toolset. That Toolset converts each effective definition one-to-one into an upstream `ToolDefinition`, groups it in an upstream `ExternalToolset(id=toolset_id)`, and supplies optional bounded native Pydantic instruction parts. The declared name is the required final model-visible name; the outer Harness wrapper rejects another wrapper's attempted prefix or rename of a marked client definition instead of silently changing Host correlation.
 
 Toolset IDs and model-visible names are unique in the effective client surface. The Harness validates bounded JSON Schema objects with `type="object"`, while upstream `ExternalToolset` deliberately uses an unconstrained local validator and treats that schema as model-facing guidance. Descriptions, instructions, and metadata are bounded JSON-safe content. Final collision detection remains Pydantic-owned across the complete assembled surface, including native, Capability, MCP, Environment, external, discovered, and output tools. Client metadata is non-authoritative public data. It cannot contain a credential, invocation grant, policy claim, server-only correlation value, or reserved `HarnessToolMetadata`; external tools never masquerade as Harness-managed function tools.
 
-For each run, `ClientToolsRunCapability` has deterministic whole-list semantics:
+For each run, `RunBindings.client_toolsets` has deterministic whole-list semantics:
 
 | Definition and run attachment                      | Effective client surface                                                        |
 | -------------------------------------------------- | ------------------------------------------------------------------------------- |
@@ -305,7 +301,7 @@ For each run, `ClientToolsRunCapability` has deterministic whole-list semantics:
 | Capability present; attachment absent              | `default_toolsets`                                                              |
 | Attachment present; `allow_run_override=false`     | Run setup fails                                                                 |
 | Attachment present; `allow_run_override=true`      | Attachment toolsets replace the complete default list; an empty tuple clears it |
-| Duplicate or incompatible typed run attachments    | Run setup fails                                                                 |
+| Incompatible typed declarations                    | Run setup fails                                                                 |
 
 The run attachment is trusted Host input for one run, but its descriptions, schemas, instructions, and metadata remain untrusted model content. It carries no Python handler, client credential, connection, callback, or side-effect authority. The effective surface is fixed before the first model request and cannot change through enqueue or Environment mount-set mutations. A child receives no client surface from its parent unless the child definition independently enables the Capability and the Host supplies the child's fresh typed run attachment.
 

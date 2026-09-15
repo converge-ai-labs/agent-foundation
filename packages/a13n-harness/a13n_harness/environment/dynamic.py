@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 from pydantic_ai import RunContext
@@ -31,23 +31,6 @@ from .models import EnvironmentAction
 from .providers import BoundEnvironment
 
 DYNAMIC_ENVIRONMENT_CAPABILITY_ID = "a13n.dynamic-environment"
-FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID = "a13n.dynamic-environment.file-media-understanding.run"
-
-
-@dataclass(kw_only=True)
-class FileMediaUnderstandingRunCapability(AbstractCapability[AgentContext]):
-    """Fresh run attachment carrying file media-understanding authority."""
-
-    id: str | None = FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID
-    provider: MediaUnderstandingProvider = field()
-
-    def __post_init__(self) -> None:
-        if self.id != FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID:
-            raise ValueError(
-                f"FileMediaUnderstandingRunCapability.id must be {FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID!r}"
-            )
-        if not isinstance(self.provider, MediaUnderstandingProvider):
-            raise TypeError("provider must implement MediaUnderstandingProvider")
 
 
 @dataclass(init=False)
@@ -183,24 +166,11 @@ def _resolve_file_media_understanding(
     ctx: RunContext[AgentContext],
     kind: NativeInputMediaKind,
 ) -> MediaUnderstandingProvider | None:
-    attachment = ctx.capabilities.get(FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID)
-    if attachment is None:
-        return AgentMediaUnderstandingProvider.from_environment(kind=kind)
-    if type(attachment) is not FileMediaUnderstandingRunCapability:
-        raise DefinitionError(
-            "File media understanding has an incompatible run attachment.",
-            code="capability_type_mismatch",
-        )
-    if FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID not in ctx.deps._capability_provenance.run_ids:
-        raise DefinitionError(
-            "FileMediaUnderstandingRunCapability must originate from RunBindings.",
-            code="capability_scope_invalid",
-        )
-    return attachment.provider
+    provider = ctx.deps.file_media_understanding
+    return provider if provider is not None else AgentMediaUnderstandingProvider.from_environment(kind=kind)
 
 
 __all__ = [
     "DynamicEnvironmentCapability",
     "DynamicEnvironmentConfiguration",
-    "FileMediaUnderstandingRunCapability",
 ]
