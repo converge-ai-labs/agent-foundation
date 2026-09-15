@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from pathlib import Path
-from typing import Literal
+from typing import Literal, get_args
 
 from a13n_environment import EnvironmentError, EnvironmentProviderError
 from a13n_environment.local_envd import (
@@ -13,13 +13,24 @@ from a13n_environment.local_envd import (
     LocalEnvdWorkspaceConfiguration,
     validate_local_envd_runtime,
 )
+from a13n_harness.model_affinity import SESSION_AFFINITY_PRESETS, SessionAffinityPreset
 from anyio import fail_after
-from pydantic import Field
+from pydantic import Field, JsonValue
 
 from a13n_harness_ui.configuration.models import StrictModel
+from a13n_harness_ui.configuration.setup import SetupSelection
 from a13n_harness_ui.environment_profiles import WINDOWS_EXECUTION_NOTICE, local_sandbox_supported
 from a13n_harness_ui.errors import HarnessUiError
+from a13n_harness_ui.model_presets import (
+    API_MODEL_SUGGESTIONS,
+    API_PROVIDER_BY_ROUTE,
+    API_PROVIDERS,
+    known_context_window,
+    settings_presets,
+    validate_base_url,
+)
 from a13n_harness_ui.prompts import DEFAULT_SYSTEM_PROMPT
+from a13n_harness_ui.resource_names import model_name
 
 
 class SetupProvider(StrictModel):
@@ -30,8 +41,98 @@ class SetupProvider(StrictModel):
     diagnostic: str | None = None
 
 
+class SetupModelChoice(StrictModel):
+    value: str
+    label: str
+
+
+class SetupApiProvider(StrictModel):
+    value: str
+    label: str
+    base_url: str
+    models: tuple[str, ...]
+    supports_session_affinity: bool = True
+
+
+class SetupChoices(StrictModel):
+    defaults: SetupSelection
+    subscription_models: dict[str, tuple[SetupModelChoice, ...]]
+    api_providers: tuple[SetupApiProvider, ...]
+    session_affinity_presets: tuple[SessionAffinityPreset, ...] = SESSION_AFFINITY_PRESETS
+
+
+def setup_choices() -> SetupChoices:
+    """Project the release's existing authoring catalogs, without provider I/O."""
+    return SetupChoices(
+        defaults=SetupSelection(environment_profile="environment-native"),
+        subscription_models={
+            provider: tuple(
+                SetupModelChoice(value=value, label=model_name(naming_provider, value))
+                for value in get_args(SetupSelection.model_fields[f"{provider}_model"].annotation)
+            )
+            for provider, naming_provider in (("codex", "codex"), ("grok", "grok-subscription"))
+        },
+        api_providers=tuple(
+            SetupApiProvider(
+                value=provider.route,
+                label=provider.label,
+                base_url=provider.base_url,
+                models=API_MODEL_SUGGESTIONS[provider.route],
+                supports_session_affinity=provider.supports_session_affinity,
+            )
+            for provider in API_PROVIDERS
+        ),
+    )
+
+
+class SetupModelOptionsRequest(StrictModel):
+    provider: str = Field(min_length=1, max_length=128)
+    model_id: str = Field(min_length=1, max_length=512)
+    base_url: str = Field(default="", max_length=4096)
+
+
+class SetupSettingsChoice(StrictModel):
+    value: str
+    label: str
+    description: str
+    settings: dict[str, JsonValue]
+
+
+class SetupModelOptions(StrictModel):
+    presets: tuple[SetupSettingsChoice, ...]
+    context_window: int
+    known_context_window: int | None
+
+
+def setup_model_options(request: SetupModelOptionsRequest) -> SetupModelOptions:
+    provider = API_PROVIDER_BY_ROUTE.get(request.provider)
+    if provider is None:
+        raise HarnessUiError("Choose a supported API provider.", code="setup_provider_unknown")
+    if provider.transport != "xai":
+        try:
+            validate_base_url(request.base_url)
+        except ValueError as exc:
+            raise HarnessUiError(str(exc), code="setup_base_url_invalid") from exc
+    elif request.base_url:
+        raise HarnessUiError("The native xAI SDK uses its default endpoint.", code="setup_base_url_unsupported")
+    known = known_context_window(provider.route, request.model_id, request.base_url)
+    return SetupModelOptions(
+        presets=tuple(
+            SetupSettingsChoice(
+                value=preset.key, label=preset.label, description=preset.description, settings=preset.settings
+            )
+            for preset in settings_presets(provider.route, request.model_id)
+        ),
+        context_window=min(350000, known) if known else 350000,
+        known_context_window=known,
+    )
+
+
 class SetupStatus(StrictModel):
     needed: bool
+    fresh: bool = False
+    draft_scope: str = ""
+    choices: SetupChoices = Field(default_factory=setup_choices)
     configuration_path: str
     suggested_project_path: str = "."
     providers: tuple[SetupProvider, ...]

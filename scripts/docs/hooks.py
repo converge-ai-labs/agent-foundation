@@ -3,12 +3,36 @@
 from pathlib import Path
 from urllib.parse import quote
 
+from markdown import Markdown
 from mkdocs.config.defaults import MkDocsConfig
 from mkdocs.structure.files import File, Files
+from pymdownx.superfences import fence_code_format
 
 ROOT = Path(__file__).resolve().parents[2]
 UI = ROOT / "frontend/packages/a13n-ui/src"
 THEME = Path(__file__).resolve().parent
+
+
+def _format_mermaid(
+    source: str,
+    language: str,
+    class_name: str,
+    options: dict[str, object],
+    md: Markdown,
+    **kwargs: object,
+) -> str:
+    # Material renders into a closed shadow root. Size the SVG through Mermaid,
+    # not an unreachable CSS selector, so the outer region can scroll naturally.
+    configuration = "---\nconfig:\n  flowchart:\n    useMaxWidth: false\n  sequence:\n    useMaxWidth: false\n---\n"
+    return fence_code_format(configuration + source, language, class_name, options, md, **kwargs)
+
+
+def on_config(config: MkDocsConfig) -> MkDocsConfig:
+    """Keep diagram labels readable instead of shrinking wide graphs to fit."""
+    for fence in config.mdx_configs["pymdownx.superfences"]["custom_fences"]:
+        if fence["name"] == "mermaid":
+            fence["format"] = _format_mermaid
+    return config
 
 
 def on_files(files: Files, config: MkDocsConfig) -> Files:
@@ -18,13 +42,13 @@ def on_files(files: Files, config: MkDocsConfig) -> Files:
         "assets/a13n/logo.svg": UI / "brand/a13n-logo.svg",
         "assets/a13n/SpaceGrotesk-Bold.woff2": UI / "brand/SpaceGrotesk-Bold.woff2",
         "assets/a13n/SpaceGrotesk-OFL.txt": UI / "brand/SpaceGrotesk-OFL.txt",
-        "assets/a13n/lucide-LICENSE": THEME / "lucide-LICENSE",
+        "assets/a13n/phosphor-LICENSE": THEME / "phosphor-LICENSE",
         "assets/reference/service-openapi.json": ROOT / "sdk/typescript/openapi.json",
         "assets/reference/harness-ui-openapi.json": ROOT / "frontend/apps/a13n-harness-ui/src/openapi.json",
         "assets/reference/service-settings.json": THEME / "service-settings.schema.json",
     }
     stylesheet = (THEME / "theme.css").read_text(encoding="utf-8")
-    for icon in sorted((THEME / "theme/.icons/lucide").glob("*.svg")):
+    for icon in sorted((THEME / "theme/.icons/phosphor").glob("*.svg")):
         assets[f"assets/a13n/icons/{icon.name}"] = icon
         # CSS-variable URLs resolve at their use site in Material's stylesheet.
         # Embed mask icons so nested pages and site URL prefixes both work.

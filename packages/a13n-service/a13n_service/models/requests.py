@@ -9,6 +9,8 @@ from random import uniform
 from typing import Any, cast
 
 from a13n_harness.errors import ModelResolutionError
+from a13n_harness.model_affinity import derive_model_affinity_id
+from a13n_harness.models.inference import RequestHeadersModel
 from a13n_logging import get_logger
 from anyio import current_time, fail_after, sleep
 from pydantic_ai.exceptions import ModelHTTPError
@@ -64,7 +66,13 @@ class LiveProviderModel(WrapperModel):
             workspace_id=self._workspace_id,
             snapshot=self._snapshot,
         )
-        return await self._model_factory.build(self._snapshot, provider)
+        model = await self._model_factory.build(self._snapshot, provider)
+        header = provider.configuration.get("session_affinity_header")
+        if isinstance(header, str) and self._harness_thread_id is not None:
+            return RequestHeadersModel(
+                model, common_headers={header: derive_model_affinity_id(self._harness_thread_id)}
+            )
+        return model
 
     @classmethod
     async def create(
@@ -146,16 +154,12 @@ class LiveProviderModel(WrapperModel):
 
     def _validate_request_settings(self, settings: ModelSettings | None) -> None:
         value = dict(settings or {})
-        if self._harness_thread_id is not None and value.get("openai_prompt_cache_key") == self._harness_thread_id:
+        if self._harness_thread_id is not None and value.get("openai_prompt_cache_key") == derive_model_affinity_id(
+            self._harness_thread_id
+        ):
             del value["openai_prompt_cache_key"]
-        headers = value.get("extra_headers")
-        if isinstance(headers, dict) and self._harness_thread_id is not None:
-            headers = dict(headers)
-            if headers.get("x-session-id") == self._harness_thread_id:
-                del headers["x-session-id"]
-            value["extra_headers"] = headers
-        # Accepted caller settings retain the strict schema. Only Harness's exact
-        # fresh Thread correlation is permitted in addition at the outbound boundary.
+        # Caller settings retain the strict schema. Gateway affinity is injected
+        # only after validation, using the live Provider configuration.
         validate_settings(self._snapshot.model_api, cast(JsonObject, value))
 
     def _validate_thinking(self, settings: ModelSettings | None, profile: ModelProfile) -> None:

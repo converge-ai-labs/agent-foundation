@@ -1317,7 +1317,7 @@ async def test_proxy_target_permission_gate_precedes_business_dispatch(codeact: 
 
     capabilities = (
         _group(forbidden),
-        ToolPermissionsCapability(ToolPermissions(rules={"tool/native/forbidden": mode})),
+        ToolPermissionsCapability(ToolPermissions(default="allow", rules={"tool/native/forbidden": mode})),
     )
     call = ("call_proxy_tool", {"group": "crm", "tool": "forbidden", "arguments": {}})
     if codeact:

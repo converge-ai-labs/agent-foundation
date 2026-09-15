@@ -230,21 +230,6 @@ func (e AssetBinarySourceType) Valid() bool {
 	}
 }
 
-// Defines values for AssetPublicationConfigEnabled.
-const (
-	AssetPublicationConfigEnabledTrue AssetPublicationConfigEnabled = true
-)
-
-// Valid indicates whether the value is a known member of the AssetPublicationConfigEnabled enum.
-func (e AssetPublicationConfigEnabled) Valid() bool {
-	switch e {
-	case AssetPublicationConfigEnabledTrue:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for AssetSourceKind.
 const (
 	AssetSourceKindRunOutput AssetSourceKind = "run_output"
@@ -449,6 +434,27 @@ func (e ChildEnvironmentPolicyMode) Valid() bool {
 	case ChildEnvironmentPolicyModeNone:
 		return true
 	case ChildEnvironmentPolicyModeShared:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ClientToolDefinitionPermission.
+const (
+	ClientToolDefinitionPermissionAllow   ClientToolDefinitionPermission = "allow"
+	ClientToolDefinitionPermissionDeny    ClientToolDefinitionPermission = "deny"
+	ClientToolDefinitionPermissionInherit ClientToolDefinitionPermission = "inherit"
+)
+
+// Valid indicates whether the value is a known member of the ClientToolDefinitionPermission enum.
+func (e ClientToolDefinitionPermission) Valid() bool {
+	switch e {
+	case ClientToolDefinitionPermissionAllow:
+		return true
+	case ClientToolDefinitionPermissionDeny:
+		return true
+	case ClientToolDefinitionPermissionInherit:
 		return true
 	default:
 		return false
@@ -674,24 +680,6 @@ func (e CreateAuthorizationRequestMethod) Valid() bool {
 	case CreateAuthorizationRequestMethodClientCredentials:
 		return true
 	case CreateAuthorizationRequestMethodCredentials:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for CreateSearchProviderRequestType.
-const (
-	Brave CreateSearchProviderRequestType = "brave"
-	Exa   CreateSearchProviderRequestType = "exa"
-)
-
-// Valid indicates whether the value is a known member of the CreateSearchProviderRequestType enum.
-func (e CreateSearchProviderRequestType) Valid() bool {
-	switch e {
-	case Brave:
-		return true
-	case Exa:
 		return true
 	default:
 		return false
@@ -1586,6 +1574,27 @@ func (e MCPSourceKind) Valid() bool {
 	}
 }
 
+// Defines values for Mem0Scope.
+const (
+	Mem0ScopeAgent  Mem0Scope = "agent"
+	Mem0ScopeThread Mem0Scope = "thread"
+	Mem0ScopeUser   Mem0Scope = "user"
+)
+
+// Valid indicates whether the value is a known member of the Mem0Scope enum.
+func (e Mem0Scope) Valid() bool {
+	switch e {
+	case Mem0ScopeAgent:
+		return true
+	case Mem0ScopeThread:
+		return true
+	case Mem0ScopeUser:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ModelCandidateParameterSupport.
 const (
 	ModelCandidateParameterSupportSupported   ModelCandidateParameterSupport = "supported"
@@ -1660,13 +1669,13 @@ func (e ModelCatalogMatchSource) Valid() bool {
 
 // Defines values for ModelConnectionTestResultMayConsumeQuotaOrIncurCost.
 const (
-	ModelConnectionTestResultMayConsumeQuotaOrIncurCostTrue ModelConnectionTestResultMayConsumeQuotaOrIncurCost = true
+	True ModelConnectionTestResultMayConsumeQuotaOrIncurCost = true
 )
 
 // Valid indicates whether the value is a known member of the ModelConnectionTestResultMayConsumeQuotaOrIncurCost enum.
 func (e ModelConnectionTestResultMayConsumeQuotaOrIncurCost) Valid() bool {
 	switch e {
-	case ModelConnectionTestResultMayConsumeQuotaOrIncurCostTrue:
+	case True:
 		return true
 	default:
 		return false
@@ -2420,6 +2429,33 @@ func (e ToolCallType) Valid() bool {
 	}
 }
 
+// Defines values for ToolDefinitionSupportedPermissions.
+const (
+	ToolDefinitionSupportedPermissionsAllow   ToolDefinitionSupportedPermissions = "allow"
+	ToolDefinitionSupportedPermissionsAsk     ToolDefinitionSupportedPermissions = "ask"
+	ToolDefinitionSupportedPermissionsDeny    ToolDefinitionSupportedPermissions = "deny"
+	ToolDefinitionSupportedPermissionsInherit ToolDefinitionSupportedPermissions = "inherit"
+	ToolDefinitionSupportedPermissionsReview  ToolDefinitionSupportedPermissions = "review"
+)
+
+// Valid indicates whether the value is a known member of the ToolDefinitionSupportedPermissions enum.
+func (e ToolDefinitionSupportedPermissions) Valid() bool {
+	switch e {
+	case ToolDefinitionSupportedPermissionsAllow:
+		return true
+	case ToolDefinitionSupportedPermissionsAsk:
+		return true
+	case ToolDefinitionSupportedPermissionsDeny:
+		return true
+	case ToolDefinitionSupportedPermissionsInherit:
+		return true
+	case ToolDefinitionSupportedPermissionsReview:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ToolMessageRole.
 const (
 	ToolMessageRoleTool ToolMessageRole = "tool"
@@ -2461,13 +2497,46 @@ func (e ToolPermissionMode) Valid() bool {
 
 // Defines values for ToolPermissionSetting1.
 const (
-	Inherit ToolPermissionSetting1 = "inherit"
+	ToolPermissionSetting1Inherit ToolPermissionSetting1 = "inherit"
 )
 
 // Valid indicates whether the value is a known member of the ToolPermissionSetting1 enum.
 func (e ToolPermissionSetting1) Valid() bool {
 	switch e {
-	case Inherit:
+	case ToolPermissionSetting1Inherit:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ToolResourceSelectorKind.
+const (
+	ToolResourceSelectorKindWebProvider ToolResourceSelectorKind = "web_provider"
+)
+
+// Valid indicates whether the value is a known member of the ToolResourceSelectorKind enum.
+func (e ToolResourceSelectorKind) Valid() bool {
+	switch e {
+	case ToolResourceSelectorKindWebProvider:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ToolResourceSelectorOperation.
+const (
+	ToolResourceSelectorOperationScrape ToolResourceSelectorOperation = "scrape"
+	ToolResourceSelectorOperationSearch ToolResourceSelectorOperation = "search"
+)
+
+// Valid indicates whether the value is a known member of the ToolResourceSelectorOperation enum.
+func (e ToolResourceSelectorOperation) Valid() bool {
+	switch e {
+	case ToolResourceSelectorOperationScrape:
+		return true
+	case ToolResourceSelectorOperationSearch:
 		return true
 	default:
 		return false
@@ -2510,6 +2579,66 @@ func (e ToolRiskLevel) Valid() bool {
 	case ToolRiskLevelLow:
 		return true
 	case ToolRiskLevelMedium:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ToolSetupDestinationKind.
+const (
+	ToolSetupDestinationKindReviewer    ToolSetupDestinationKind = "reviewer"
+	ToolSetupDestinationKindWebProvider ToolSetupDestinationKind = "web_provider"
+)
+
+// Valid indicates whether the value is a known member of the ToolSetupDestinationKind enum.
+func (e ToolSetupDestinationKind) Valid() bool {
+	switch e {
+	case ToolSetupDestinationKindReviewer:
+		return true
+	case ToolSetupDestinationKindWebProvider:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ToolSetupDestinationOperation.
+const (
+	ToolSetupDestinationOperationScrape ToolSetupDestinationOperation = "scrape"
+	ToolSetupDestinationOperationSearch ToolSetupDestinationOperation = "search"
+)
+
+// Valid indicates whether the value is a known member of the ToolSetupDestinationOperation enum.
+func (e ToolSetupDestinationOperation) Valid() bool {
+	switch e {
+	case ToolSetupDestinationOperationScrape:
+		return true
+	case ToolSetupDestinationOperationSearch:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ToolsetDefinitionKey.
+const (
+	Assets ToolsetDefinitionKey = "assets"
+	Files  ToolsetDefinitionKey = "files"
+	Shell  ToolsetDefinitionKey = "shell"
+	Web    ToolsetDefinitionKey = "web"
+)
+
+// Valid indicates whether the value is a known member of the ToolsetDefinitionKey enum.
+func (e ToolsetDefinitionKey) Valid() bool {
+	switch e {
+	case Assets:
+		return true
+	case Files:
+		return true
+	case Shell:
+		return true
+	case Web:
 		return true
 	default:
 		return false
@@ -2642,6 +2771,24 @@ const (
 func (e WaitingResolutionDefaultsMode) Valid() bool {
 	switch e {
 	case Defaults:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for WebProviderDefinitionOperations.
+const (
+	WebProviderDefinitionOperationsScrape WebProviderDefinitionOperations = "scrape"
+	WebProviderDefinitionOperationsSearch WebProviderDefinitionOperations = "search"
+)
+
+// Valid indicates whether the value is a known member of the WebProviderDefinitionOperations enum.
+func (e WebProviderDefinitionOperations) Valid() bool {
+	switch e {
+	case WebProviderDefinitionOperationsScrape:
+		return true
+	case WebProviderDefinitionOperationsSearch:
 		return true
 	default:
 		return false
@@ -2944,23 +3091,22 @@ type AgentCollection struct {
 
 // AgentConfigInput defines model for AgentConfig-Input.
 type AgentConfigInput struct {
-	AssetPublication   nullable.Nullable[AssetPublicationConfig] `json:"asset_publication,omitempty"`
-	ClientTools        *[]ClientToolDefinition                   `json:"client_tools,omitempty"`
-	ConnectionTools    *[]ConnectionToolSelection                `json:"connection_tools,omitempty"`
-	InputAdapter       InputAdapterConfig                        `json:"input_adapter"`
-	Instructions       *string                                   `json:"instructions,omitempty"`
-	Model              AgentModel                                `json:"model"`
-	OutputSpec         nullable.Nullable[OutputSpec]             `json:"output_spec,omitempty"`
-	Permissions        nullable.Nullable[ToolPermissions]        `json:"permissions,omitempty"`
-	Plugins            *[]PluginSelection                        `json:"plugins,omitempty"`
-	Protocol           ProtocolConfig                            `json:"protocol"`
-	Retries            nullable.Nullable[RetryConfig]            `json:"retries,omitempty"`
-	Reviewer           nullable.Nullable[AgentReviewer]          `json:"reviewer,omitempty"`
-	Search             nullable.Nullable[SearchSelection]        `json:"search,omitempty"`
-	SecretRequirements *[]SecretRequirement                      `json:"secret_requirements,omitempty"`
-	Skills             *[]SkillSelection                         `json:"skills,omitempty"`
-	SubagentMode       *AgentConfigInputSubagentMode             `json:"subagent_mode,omitempty"`
-	Subagents          *map[string]interface{}                   `json:"subagents,omitempty"`
+	ClientTools        *[]ClientToolDefinition            `json:"client_tools,omitempty"`
+	ConnectionTools    *[]ConnectionToolSelection         `json:"connection_tools,omitempty"`
+	InputAdapter       InputAdapterConfig                 `json:"input_adapter"`
+	Instructions       *string                            `json:"instructions,omitempty"`
+	Memory             nullable.Nullable[MemorySelection] `json:"memory,omitempty"`
+	Model              AgentModel                         `json:"model"`
+	OutputSpec         nullable.Nullable[OutputSpec]      `json:"output_spec,omitempty"`
+	Plugins            *[]PluginSelection                 `json:"plugins,omitempty"`
+	Protocol           ProtocolConfig                     `json:"protocol"`
+	Retries            nullable.Nullable[RetryConfig]     `json:"retries,omitempty"`
+	Reviewer           nullable.Nullable[AgentReviewer]   `json:"reviewer,omitempty"`
+	SecretRequirements *[]SecretRequirement               `json:"secret_requirements,omitempty"`
+	Skills             *[]SkillSelection                  `json:"skills,omitempty"`
+	SubagentMode       *AgentConfigInputSubagentMode      `json:"subagent_mode,omitempty"`
+	Subagents          *map[string]interface{}            `json:"subagents,omitempty"`
+	Toolsets           *map[string]ToolsetSelection       `json:"toolsets,omitempty"`
 }
 
 // AgentConfigInputSubagentMode defines model for AgentConfigInput.SubagentMode.
@@ -2968,23 +3114,22 @@ type AgentConfigInputSubagentMode string
 
 // AgentConfigOutput defines model for AgentConfig-Output.
 type AgentConfigOutput struct {
-	AssetPublication   nullable.Nullable[AssetPublicationConfig] `json:"asset_publication,omitempty"`
-	ClientTools        *[]ClientToolDefinition                   `json:"client_tools,omitempty"`
-	ConnectionTools    *[]ConnectionToolSelection                `json:"connection_tools,omitempty"`
-	InputAdapter       InputAdapterConfig                        `json:"input_adapter"`
-	Instructions       *string                                   `json:"instructions,omitempty"`
-	Model              AgentModel                                `json:"model"`
-	OutputSpec         nullable.Nullable[OutputSpec]             `json:"output_spec,omitempty"`
-	Permissions        nullable.Nullable[ToolPermissions]        `json:"permissions,omitempty"`
-	Plugins            *[]PluginSelection                        `json:"plugins,omitempty"`
-	Protocol           ProtocolConfig                            `json:"protocol"`
-	Retries            nullable.Nullable[RetryConfig]            `json:"retries,omitempty"`
-	Reviewer           nullable.Nullable[AgentReviewer]          `json:"reviewer,omitempty"`
-	Search             nullable.Nullable[SearchSelection]        `json:"search,omitempty"`
-	SecretRequirements *[]SecretRequirement                      `json:"secret_requirements,omitempty"`
-	Skills             *[]SkillSelection                         `json:"skills,omitempty"`
-	SubagentMode       *AgentConfigOutputSubagentMode            `json:"subagent_mode,omitempty"`
-	Subagents          *map[string]interface{}                   `json:"subagents,omitempty"`
+	ClientTools        *[]ClientToolDefinition            `json:"client_tools,omitempty"`
+	ConnectionTools    *[]ConnectionToolSelection         `json:"connection_tools,omitempty"`
+	InputAdapter       InputAdapterConfig                 `json:"input_adapter"`
+	Instructions       *string                            `json:"instructions,omitempty"`
+	Memory             nullable.Nullable[MemorySelection] `json:"memory,omitempty"`
+	Model              AgentModel                         `json:"model"`
+	OutputSpec         nullable.Nullable[OutputSpec]      `json:"output_spec,omitempty"`
+	Plugins            *[]PluginSelection                 `json:"plugins,omitempty"`
+	Protocol           ProtocolConfig                     `json:"protocol"`
+	Retries            nullable.Nullable[RetryConfig]     `json:"retries,omitempty"`
+	Reviewer           nullable.Nullable[AgentReviewer]   `json:"reviewer,omitempty"`
+	SecretRequirements *[]SecretRequirement               `json:"secret_requirements,omitempty"`
+	Skills             *[]SkillSelection                  `json:"skills,omitempty"`
+	SubagentMode       *AgentConfigOutputSubagentMode     `json:"subagent_mode,omitempty"`
+	Subagents          *map[string]interface{}            `json:"subagents,omitempty"`
+	Toolsets           *map[string]ToolsetSelection       `json:"toolsets,omitempty"`
 }
 
 // AgentConfigOutputSubagentMode defines model for AgentConfigOutput.SubagentMode.
@@ -3073,34 +3218,34 @@ type AgentRevisionCreateResult struct {
 
 // AgentRunOverrideInput defines model for AgentRunOverride-Input.
 type AgentRunOverrideInput struct {
-	ClientTools     nullable.Nullable[[]ClientToolDefinition]    `json:"client_tools,omitempty"`
-	ConnectionTools nullable.Nullable[[]ConnectionToolSelection] `json:"connection_tools,omitempty"`
-	Instructions    nullable.Nullable[string]                    `json:"instructions,omitempty"`
-	Model           nullable.Nullable[ModelOverride]             `json:"model,omitempty"`
-	OutputSpec      nullable.Nullable[OutputSpec]                `json:"output_spec,omitempty"`
-	Permissions     nullable.Nullable[ToolPermissions]           `json:"permissions,omitempty"`
-	Plugins         nullable.Nullable[[]PluginSelection]         `json:"plugins,omitempty"`
-	Retries         nullable.Nullable[RetryOverride]             `json:"retries,omitempty"`
-	Reviewer        nullable.Nullable[AgentReviewer]             `json:"reviewer,omitempty"`
-	Search          nullable.Nullable[SearchSelection]           `json:"search,omitempty"`
-	Skills          nullable.Nullable[[]SkillSelection]          `json:"skills,omitempty"`
-	Subagents       nullable.Nullable[map[string]interface{}]    `json:"subagents,omitempty"`
+	ClientTools     nullable.Nullable[[]ClientToolDefinition]      `json:"client_tools,omitempty"`
+	ConnectionTools nullable.Nullable[[]ConnectionToolSelection]   `json:"connection_tools,omitempty"`
+	Instructions    nullable.Nullable[string]                      `json:"instructions,omitempty"`
+	Memory          nullable.Nullable[MemorySelection]             `json:"memory,omitempty"`
+	Model           nullable.Nullable[ModelOverride]               `json:"model,omitempty"`
+	OutputSpec      nullable.Nullable[OutputSpec]                  `json:"output_spec,omitempty"`
+	Plugins         nullable.Nullable[[]PluginSelection]           `json:"plugins,omitempty"`
+	Retries         nullable.Nullable[RetryOverride]               `json:"retries,omitempty"`
+	Reviewer        nullable.Nullable[AgentReviewer]               `json:"reviewer,omitempty"`
+	Skills          nullable.Nullable[[]SkillSelection]            `json:"skills,omitempty"`
+	Subagents       nullable.Nullable[map[string]interface{}]      `json:"subagents,omitempty"`
+	Toolsets        nullable.Nullable[map[string]ToolsetSelection] `json:"toolsets,omitempty"`
 }
 
 // AgentRunOverrideOutput defines model for AgentRunOverride-Output.
 type AgentRunOverrideOutput struct {
-	ClientTools     nullable.Nullable[[]ClientToolDefinition]    `json:"client_tools,omitempty"`
-	ConnectionTools nullable.Nullable[[]ConnectionToolSelection] `json:"connection_tools,omitempty"`
-	Instructions    nullable.Nullable[string]                    `json:"instructions,omitempty"`
-	Model           nullable.Nullable[ModelOverride]             `json:"model,omitempty"`
-	OutputSpec      nullable.Nullable[OutputSpec]                `json:"output_spec,omitempty"`
-	Permissions     nullable.Nullable[ToolPermissions]           `json:"permissions,omitempty"`
-	Plugins         nullable.Nullable[[]PluginSelection]         `json:"plugins,omitempty"`
-	Retries         nullable.Nullable[RetryOverride]             `json:"retries,omitempty"`
-	Reviewer        nullable.Nullable[AgentReviewer]             `json:"reviewer,omitempty"`
-	Search          nullable.Nullable[SearchSelection]           `json:"search,omitempty"`
-	Skills          nullable.Nullable[[]SkillSelection]          `json:"skills,omitempty"`
-	Subagents       nullable.Nullable[map[string]interface{}]    `json:"subagents,omitempty"`
+	ClientTools     nullable.Nullable[[]ClientToolDefinition]      `json:"client_tools,omitempty"`
+	ConnectionTools nullable.Nullable[[]ConnectionToolSelection]   `json:"connection_tools,omitempty"`
+	Instructions    nullable.Nullable[string]                      `json:"instructions,omitempty"`
+	Memory          nullable.Nullable[MemorySelection]             `json:"memory,omitempty"`
+	Model           nullable.Nullable[ModelOverride]               `json:"model,omitempty"`
+	OutputSpec      nullable.Nullable[OutputSpec]                  `json:"output_spec,omitempty"`
+	Plugins         nullable.Nullable[[]PluginSelection]           `json:"plugins,omitempty"`
+	Retries         nullable.Nullable[RetryOverride]               `json:"retries,omitempty"`
+	Reviewer        nullable.Nullable[AgentReviewer]               `json:"reviewer,omitempty"`
+	Skills          nullable.Nullable[[]SkillSelection]            `json:"skills,omitempty"`
+	Subagents       nullable.Nullable[map[string]interface{}]      `json:"subagents,omitempty"`
+	Toolsets        nullable.Nullable[map[string]ToolsetSelection] `json:"toolsets,omitempty"`
 }
 
 // AgentSecretBinding Bind one declared requirement to a non-secret, owner-scoped lookup intent.
@@ -3174,14 +3319,6 @@ type AssetCollection struct {
 	Items      []Asset                   `json:"items"`
 	NextCursor nullable.Nullable[string] `json:"next_cursor"`
 }
-
-// AssetPublicationConfig defines model for AssetPublicationConfig.
-type AssetPublicationConfig struct {
-	Enabled *AssetPublicationConfigEnabled `json:"enabled,omitempty"`
-}
-
-// AssetPublicationConfigEnabled defines model for AssetPublicationConfig.Enabled.
-type AssetPublicationConfigEnabled bool
 
 // AssetSourceKind defines model for AssetSourceKind.
 type AssetSourceKind string
@@ -3335,12 +3472,16 @@ type ChildEnvironmentPolicyMode string
 
 // ClientToolDefinition Portable model guidance for one externally executed client tool.
 type ClientToolDefinition struct {
-	Description          string                    `json:"description"`
-	Instruction          nullable.Nullable[string] `json:"instruction,omitempty"`
-	Metadata             *map[string]JsonValue     `json:"metadata,omitempty"`
-	Name                 string                    `json:"name"`
-	ParametersJsonSchema map[string]JsonValue      `json:"parameters_json_schema"`
+	Description          string                          `json:"description"`
+	Instruction          nullable.Nullable[string]       `json:"instruction,omitempty"`
+	Metadata             *map[string]JsonValue           `json:"metadata,omitempty"`
+	Name                 string                          `json:"name"`
+	ParametersJsonSchema map[string]JsonValue            `json:"parameters_json_schema"`
+	Permission           *ClientToolDefinitionPermission `json:"permission,omitempty"`
 }
+
+// ClientToolDefinitionPermission defines model for ClientToolDefinition.Permission.
+type ClientToolDefinitionPermission string
 
 // ClientToolPolicy defines model for ClientToolPolicy.
 type ClientToolPolicy struct {
@@ -3485,9 +3626,11 @@ type ConnectionStatusReason string
 
 // ConnectionToolSelection defines model for ConnectionToolSelection.
 type ConnectionToolSelection struct {
-	ConnectionId string                      `json:"connection_id"`
-	DeferLoading *bool                       `json:"defer_loading,omitempty"`
-	Tools        nullable.Nullable[[]string] `json:"tools,omitempty"`
+	ConnectionId string                            `json:"connection_id"`
+	DeferLoading *bool                             `json:"defer_loading,omitempty"`
+	Permission   *ToolPermissionSetting            `json:"permission,omitempty"`
+	Permissions  *map[string]ToolPermissionSetting `json:"permissions,omitempty"`
+	Tools        nullable.Nullable[[]string]       `json:"tools,omitempty"`
 }
 
 // Connector defines model for Connector.
@@ -3758,18 +3901,6 @@ type CreateProviderRequest struct {
 	Type          string                                  `json:"type"`
 }
 
-// CreateSearchProviderRequest defines model for CreateSearchProviderRequest.
-type CreateSearchProviderRequest struct {
-	Configuration *SearchConfiguration            `json:"configuration,omitempty"`
-	Credential    *string                         `json:"credential,omitempty"`
-	Enabled       *bool                           `json:"enabled,omitempty"`
-	Name          string                          `json:"name"`
-	Type          CreateSearchProviderRequestType `json:"type"`
-}
-
-// CreateSearchProviderRequestType defines model for CreateSearchProviderRequest.Type.
-type CreateSearchProviderRequestType string
-
 // CreateServiceAccountRequest defines model for CreateServiceAccountRequest.
 type CreateServiceAccountRequest struct {
 	Description nullable.Nullable[string]       `json:"description,omitempty"`
@@ -3840,6 +3971,15 @@ type CreateThreadRequest struct {
 	Labels        *map[string]interface{}                 `json:"labels,omitempty"`
 	SessionId     nullable.Nullable[string]               `json:"session_id,omitempty"`
 	SessionLabels *map[string]interface{}                 `json:"session_labels,omitempty"`
+}
+
+// CreateWebProviderRequest defines model for CreateWebProviderRequest.
+type CreateWebProviderRequest struct {
+	Configuration *map[string]interface{} `json:"configuration,omitempty"`
+	Credential    *map[string]interface{} `json:"credential,omitempty"`
+	Enabled       *bool                   `json:"enabled,omitempty"`
+	Name          string                  `json:"name"`
+	Type          string                  `json:"type"`
 }
 
 // CreateWorkspaceRequest defines model for CreateWorkspaceRequest.
@@ -4554,6 +4694,52 @@ type MCPToolCollection struct {
 	Items []MCPTool `json:"items"`
 }
 
+// Mem0Scope Trusted Harness identity boundary used for Mem0 records.
+type Mem0Scope string
+
+// Memory defines model for Memory.
+type Memory struct {
+	Id     string                     `json:"id"`
+	Memory string                     `json:"memory"`
+	Score  nullable.Nullable[float32] `json:"score,omitempty"`
+}
+
+// MemoryCollection defines model for MemoryCollection.
+type MemoryCollection struct {
+	Items []Memory `json:"items"`
+
+	// Pagination Native pagination when available. Null means a bounded result, not a complete collection.
+	Pagination nullable.Nullable[MemoryPagination] `json:"pagination,omitempty"`
+}
+
+// MemoryPagination Native traversal; a null cursor means the final page of that traversal.
+type MemoryPagination struct {
+	NextCursor nullable.Nullable[string] `json:"next_cursor"`
+}
+
+// MemorySearch defines model for MemorySearch.
+type MemorySearch struct {
+	Limit     *int                       `json:"limit,omitempty"`
+	Query     string                     `json:"query"`
+	Threshold nullable.Nullable[float32] `json:"threshold,omitempty"`
+}
+
+// MemorySelection Opt-in Agent behavior; backend credentials and subject IDs are host-owned.
+type MemorySelection struct {
+	AutoRecall      *bool                        `json:"auto_recall,omitempty"`
+	RecallLimit     *int                         `json:"recall_limit,omitempty"`
+	RecallRequired  *bool                        `json:"recall_required,omitempty"`
+	RecallThreshold nullable.Nullable[float32]   `json:"recall_threshold,omitempty"`
+	RecallTimeout   *float32                     `json:"recall_timeout,omitempty"`
+	Scope           nullable.Nullable[Mem0Scope] `json:"scope,omitempty"`
+	Toolset         *bool                        `json:"toolset,omitempty"`
+}
+
+// MemoryWrite defines model for MemoryWrite.
+type MemoryWrite struct {
+	Text string `json:"text"`
+}
+
 // Model defines model for Model.
 type Model struct {
 	BaseModel nullable.Nullable[string] `json:"base_model,omitempty"`
@@ -5061,6 +5247,7 @@ type RegisterEnvironmentRequest struct {
 type RejectPendingResolution struct {
 	Action *RejectPendingResolutionAction `json:"action,omitempty"`
 	CallId string                         `json:"call_id"`
+	Reason nullable.Nullable[string]      `json:"reason,omitempty"`
 }
 
 // RejectPendingResolutionAction defines model for RejectPendingResolution.Action.
@@ -5380,78 +5567,8 @@ type SafeFailure struct {
 // SafeFailureRetryHint defines model for SafeFailure.RetryHint.
 type SafeFailureRetryHint string
 
-// SearchConfiguration defines model for SearchConfiguration.
-type SearchConfiguration = map[string]interface{}
-
 // SearchIn defines model for SearchIn.
 type SearchIn string
-
-// SearchProvider defines model for SearchProvider.
-type SearchProvider struct {
-	Configuration        map[string]interface{}    `json:"configuration"`
-	CreatedAt            time.Time                 `json:"created_at"`
-	CreatedBy            PrincipalRef              `json:"created_by"`
-	CredentialConfigured bool                      `json:"credential_configured"`
-	Enabled              bool                      `json:"enabled"`
-	Id                   string                    `json:"id"`
-	Name                 string                    `json:"name"`
-	OrganizationId       string                    `json:"organization_id"`
-	Type                 string                    `json:"type"`
-	UpdatedAt            time.Time                 `json:"updated_at"`
-	UpdatedBy            PrincipalRef              `json:"updated_by"`
-	WorkspaceId          nullable.Nullable[string] `json:"workspace_id"`
-}
-
-// SearchProviderCollection defines model for SearchProviderCollection.
-type SearchProviderCollection struct {
-	Items      []SearchProvider          `json:"items"`
-	NextCursor nullable.Nullable[string] `json:"next_cursor,omitempty"`
-}
-
-// SearchProviderDefinition defines model for SearchProviderDefinition.
-type SearchProviderDefinition struct {
-	ConfigurationSchema map[string]interface{} `json:"configuration_schema"`
-	CredentialRequired  *bool                  `json:"credential_required,omitempty"`
-	CredentialSchema    map[string]interface{} `json:"credential_schema"`
-	DisplayName         string                 `json:"display_name"`
-	SetupUrl            string                 `json:"setup_url"`
-	Type                string                 `json:"type"`
-}
-
-// SearchProviderDefinitionCollection defines model for SearchProviderDefinitionCollection.
-type SearchProviderDefinitionCollection struct {
-	Items []SearchProviderDefinition `json:"items"`
-}
-
-// SearchProviderReference defines model for SearchProviderReference.
-type SearchProviderReference struct {
-	AgentId         string `json:"agent_id"`
-	AgentRevisionId string `json:"agent_revision_id"`
-	IsCurrent       bool   `json:"is_current"`
-	Version         int    `json:"version"`
-}
-
-// SearchProviderReferenceCollection defines model for SearchProviderReferenceCollection.
-type SearchProviderReferenceCollection struct {
-	Items      []SearchProviderReference `json:"items"`
-	NextCursor nullable.Nullable[string] `json:"next_cursor,omitempty"`
-}
-
-// SearchProviderTestResult defines model for SearchProviderTestResult.
-type SearchProviderTestResult struct {
-	CheckedAt time.Time                 `json:"checked_at"`
-	Code      nullable.Nullable[string] `json:"code"`
-	Success   bool                      `json:"success"`
-}
-
-// SearchSelection defines model for SearchSelection.
-type SearchSelection struct {
-	AllowDomains   *[]string `json:"allow_domains,omitempty"`
-	DenyDomains    *[]string `json:"deny_domains,omitempty"`
-	IncludeDomains *[]string `json:"include_domains,omitempty"`
-	MaxResults     *int      `json:"max_results,omitempty"`
-	ProviderId     string    `json:"provider_id"`
-}
 
 // SecretRequirement defines model for SecretRequirement.
 type SecretRequirement struct {
@@ -5947,6 +6064,23 @@ type ToolCall struct {
 // ToolCallType defines model for ToolCall.Type.
 type ToolCallType string
 
+// ToolDefinition defines model for ToolDefinition.
+type ToolDefinition struct {
+	ConfigSchema         map[string]interface{}                  `json:"config_schema"`
+	DefaultEnabled       bool                                    `json:"default_enabled"`
+	DefaultPermission    ToolPermissionMode                      `json:"default_permission"`
+	DeploymentSupported  *bool                                   `json:"deployment_supported,omitempty"`
+	DisplayName          string                                  `json:"display_name"`
+	ExecutionId          string                                  `json:"execution_id"`
+	Key                  string                                  `json:"key"`
+	ModelName            string                                  `json:"model_name"`
+	ResourceSelector     nullable.Nullable[ToolResourceSelector] `json:"resource_selector,omitempty"`
+	SupportedPermissions []ToolDefinitionSupportedPermissions    `json:"supported_permissions"`
+}
+
+// ToolDefinitionSupportedPermissions defines model for ToolDefinition.SupportedPermissions.
+type ToolDefinitionSupportedPermissions string
+
 // ToolMessage A tool result message.
 type ToolMessage struct {
 	Content              string                    `json:"content"`
@@ -5972,11 +6106,17 @@ type ToolPermissionSetting struct {
 // ToolPermissionSetting1 defines model for ToolPermissionSetting.1.
 type ToolPermissionSetting1 string
 
-// ToolPermissions Portable configuration. Inherit resolves a tool default, never an execution decision.
-type ToolPermissions struct {
-	Default *ToolPermissionSetting            `json:"default,omitempty"`
-	Rules   *map[string]ToolPermissionSetting `json:"rules,omitempty"`
+// ToolResourceSelector defines model for ToolResourceSelector.
+type ToolResourceSelector struct {
+	Kind      ToolResourceSelectorKind      `json:"kind"`
+	Operation ToolResourceSelectorOperation `json:"operation"`
 }
+
+// ToolResourceSelectorKind defines model for ToolResourceSelector.Kind.
+type ToolResourceSelectorKind string
+
+// ToolResourceSelectorOperation defines model for ToolResourceSelector.Operation.
+type ToolResourceSelectorOperation string
 
 // ToolReviewRule A matching rule overrides the supplied fields of the global policy.
 type ToolReviewRule struct {
@@ -5989,6 +6129,69 @@ type ToolReviewRuleOnFlagged string
 
 // ToolRiskLevel defines model for ToolRiskLevel.
 type ToolRiskLevel string
+
+// ToolSelection defines model for ToolSelection.
+type ToolSelection struct {
+	Config     *map[string]JsonValue  `json:"config,omitempty"`
+	Enabled    *bool                  `json:"enabled,omitempty"`
+	Permission *ToolPermissionSetting `json:"permission,omitempty"`
+}
+
+// ToolSetupDestination defines model for ToolSetupDestination.
+type ToolSetupDestination struct {
+	Kind      ToolSetupDestinationKind                         `json:"kind"`
+	Operation nullable.Nullable[ToolSetupDestinationOperation] `json:"operation,omitempty"`
+}
+
+// ToolSetupDestinationKind defines model for ToolSetupDestination.Kind.
+type ToolSetupDestinationKind string
+
+// ToolSetupDestinationOperation defines model for ToolSetupDestination.Operation.
+type ToolSetupDestinationOperation string
+
+// ToolsetCandidate defines model for ToolsetCandidate.
+type ToolsetCandidate struct {
+	Reviewer nullable.Nullable[AgentReviewer] `json:"reviewer,omitempty"`
+	Toolsets *map[string]ToolsetSelection     `json:"toolsets,omitempty"`
+}
+
+// ToolsetCandidateError defines model for ToolsetCandidateError.
+type ToolsetCandidateError struct {
+	Code             string                                  `json:"code"`
+	Path             string                                  `json:"path"`
+	SetupDestination nullable.Nullable[ToolSetupDestination] `json:"setup_destination,omitempty"`
+}
+
+// ToolsetCandidateResult defines model for ToolsetCandidateResult.
+type ToolsetCandidateResult struct {
+	Errors   []ToolsetCandidateError     `json:"errors"`
+	Toolsets map[string]ToolsetSelection `json:"toolsets"`
+	Valid    bool                        `json:"valid"`
+}
+
+// ToolsetCatalog defines model for ToolsetCatalog.
+type ToolsetCatalog struct {
+	Items []ToolsetDefinition `json:"items"`
+}
+
+// ToolsetDefinition defines model for ToolsetDefinition.
+type ToolsetDefinition struct {
+	ConfigSchema   map[string]interface{} `json:"config_schema"`
+	DefaultEnabled bool                   `json:"default_enabled"`
+	DisplayName    string                 `json:"display_name"`
+	Key            ToolsetDefinitionKey   `json:"key"`
+	Tools          []ToolDefinition       `json:"tools"`
+}
+
+// ToolsetDefinitionKey defines model for ToolsetDefinition.Key.
+type ToolsetDefinitionKey string
+
+// ToolsetSelection defines model for ToolsetSelection.
+type ToolsetSelection struct {
+	Config  *map[string]JsonValue   `json:"config,omitempty"`
+	Enabled *bool                   `json:"enabled,omitempty"`
+	Tools   *map[string]interface{} `json:"tools,omitempty"`
+}
 
 // Trace defines model for Trace.
 type Trace struct {
@@ -6125,14 +6328,6 @@ type UpdateResourceProfileRequest struct {
 	Name nullable.Nullable[string] `json:"name,omitempty"`
 }
 
-// UpdateSearchProviderRequest defines model for UpdateSearchProviderRequest.
-type UpdateSearchProviderRequest struct {
-	Configuration nullable.Nullable[SearchConfiguration] `json:"configuration,omitempty"`
-	Credential    nullable.Nullable[string]              `json:"credential,omitempty"`
-	Enabled       nullable.Nullable[bool]                `json:"enabled,omitempty"`
-	Name          nullable.Nullable[string]              `json:"name,omitempty"`
-}
-
 // UpdateServiceAccountRequest defines model for UpdateServiceAccountRequest.
 type UpdateServiceAccountRequest struct {
 	Description     nullable.Nullable[string]         `json:"description,omitempty"`
@@ -6158,6 +6353,14 @@ type UpdateTemplateRequest struct {
 	Archived    nullable.Nullable[bool]   `json:"archived,omitempty"`
 	Description nullable.Nullable[string] `json:"description,omitempty"`
 	Name        nullable.Nullable[string] `json:"name,omitempty"`
+}
+
+// UpdateWebProviderRequest defines model for UpdateWebProviderRequest.
+type UpdateWebProviderRequest struct {
+	Configuration nullable.Nullable[map[string]interface{}] `json:"configuration,omitempty"`
+	Credential    nullable.Nullable[map[string]interface{}] `json:"credential,omitempty"`
+	Enabled       nullable.Nullable[bool]                   `json:"enabled,omitempty"`
+	Name          nullable.Nullable[string]                 `json:"name,omitempty"`
 }
 
 // UploadedAssetSource defines model for UploadedAssetSource.
@@ -6321,6 +6524,69 @@ type WaitingRunFeedbackRequest struct {
 // WaitingRunFeedbackRequest_Resolutions_Item defines model for WaitingRunFeedbackRequest.resolutions.Item.
 type WaitingRunFeedbackRequest_Resolutions_Item struct {
 	union json.RawMessage
+}
+
+// WebProvider defines model for WebProvider.
+type WebProvider struct {
+	Configuration        map[string]interface{}    `json:"configuration"`
+	CreatedAt            time.Time                 `json:"created_at"`
+	CreatedBy            PrincipalRef              `json:"created_by"`
+	CredentialConfigured bool                      `json:"credential_configured"`
+	Enabled              bool                      `json:"enabled"`
+	Id                   string                    `json:"id"`
+	Name                 string                    `json:"name"`
+	OrganizationId       string                    `json:"organization_id"`
+	Type                 string                    `json:"type"`
+	UpdatedAt            time.Time                 `json:"updated_at"`
+	UpdatedBy            PrincipalRef              `json:"updated_by"`
+	WorkspaceId          nullable.Nullable[string] `json:"workspace_id"`
+}
+
+// WebProviderCollection defines model for WebProviderCollection.
+type WebProviderCollection struct {
+	Items      []WebProvider             `json:"items"`
+	NextCursor nullable.Nullable[string] `json:"next_cursor,omitempty"`
+}
+
+// WebProviderDefinition defines model for WebProviderDefinition.
+type WebProviderDefinition struct {
+	ConfigurationSchema      map[string]interface{}            `json:"configuration_schema"`
+	CredentialRequired       *bool                             `json:"credential_required,omitempty"`
+	CredentialSchema         map[string]interface{}            `json:"credential_schema"`
+	DisplayName              string                            `json:"display_name"`
+	Operations               []WebProviderDefinitionOperations `json:"operations"`
+	SetupUrl                 string                            `json:"setup_url"`
+	SupportsRestrictedScrape *bool                             `json:"supports_restricted_scrape,omitempty"`
+	Type                     string                            `json:"type"`
+}
+
+// WebProviderDefinitionOperations defines model for WebProviderDefinition.Operations.
+type WebProviderDefinitionOperations string
+
+// WebProviderDefinitionCollection defines model for WebProviderDefinitionCollection.
+type WebProviderDefinitionCollection struct {
+	Items []WebProviderDefinition `json:"items"`
+}
+
+// WebProviderReference defines model for WebProviderReference.
+type WebProviderReference struct {
+	AgentId         string `json:"agent_id"`
+	AgentRevisionId string `json:"agent_revision_id"`
+	IsCurrent       bool   `json:"is_current"`
+	Version         int    `json:"version"`
+}
+
+// WebProviderReferenceCollection defines model for WebProviderReferenceCollection.
+type WebProviderReferenceCollection struct {
+	Items      []WebProviderReference    `json:"items"`
+	NextCursor nullable.Nullable[string] `json:"next_cursor,omitempty"`
+}
+
+// WebProviderTestResult defines model for WebProviderTestResult.
+type WebProviderTestResult struct {
+	CheckedAt time.Time                 `json:"checked_at"`
+	Code      nullable.Nullable[string] `json:"code"`
+	Success   bool                      `json:"success"`
 }
 
 // WebhookDestinationConfig defines model for WebhookDestinationConfig.
@@ -6620,25 +6886,6 @@ type GetOrganizationsOrganizationRoleBindingsParams struct {
 	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
-// GetOrganizationsOrganizationSearchProvidersParams defines parameters for GetOrganizationsOrganizationSearchProviders.
-type GetOrganizationsOrganizationSearchProvidersParams struct {
-	Limit   *int    `form:"limit,omitempty" json:"limit,omitempty"`
-	Cursor  *string `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Type    *string `form:"type,omitempty" json:"type,omitempty"`
-	Enabled *bool   `form:"enabled,omitempty" json:"enabled,omitempty"`
-}
-
-// PatchOrganizationsOrganizationSearchProvidersProviderIdParams defines parameters for PatchOrganizationsOrganizationSearchProvidersProviderId.
-type PatchOrganizationsOrganizationSearchProvidersProviderIdParams struct {
-	IfMatch string `json:"If-Match"`
-}
-
-// GetOrganizationsOrganizationSearchProvidersProviderIdReferencesParams defines parameters for GetOrganizationsOrganizationSearchProvidersProviderIdReferences.
-type GetOrganizationsOrganizationSearchProvidersProviderIdReferencesParams struct {
-	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
-	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
-}
-
 // GetOrganizationsOrganizationSecurityAuditEventsParams defines parameters for GetOrganizationsOrganizationSecurityAuditEvents.
 type GetOrganizationsOrganizationSecurityAuditEventsParams struct {
 	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
@@ -6647,6 +6894,25 @@ type GetOrganizationsOrganizationSecurityAuditEventsParams struct {
 
 // GetOrganizationsOrganizationUsersParams defines parameters for GetOrganizationsOrganizationUsers.
 type GetOrganizationsOrganizationUsersParams struct {
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// GetOrganizationsOrganizationWebProvidersParams defines parameters for GetOrganizationsOrganizationWebProviders.
+type GetOrganizationsOrganizationWebProvidersParams struct {
+	Limit   *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor  *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Type    *string `form:"type,omitempty" json:"type,omitempty"`
+	Enabled *bool   `form:"enabled,omitempty" json:"enabled,omitempty"`
+}
+
+// PatchOrganizationsOrganizationWebProvidersProviderIdParams defines parameters for PatchOrganizationsOrganizationWebProvidersProviderId.
+type PatchOrganizationsOrganizationWebProvidersProviderIdParams struct {
+	IfMatch string `json:"If-Match"`
+}
+
+// GetOrganizationsOrganizationWebProvidersProviderIdReferencesParams defines parameters for GetOrganizationsOrganizationWebProvidersProviderIdReferences.
+type GetOrganizationsOrganizationWebProvidersProviderIdReferencesParams struct {
 	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
 	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
@@ -7050,6 +7316,45 @@ type GetWorkspacesWorkspaceMembersParams struct {
 	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
+// GetWorkspacesWorkspaceMemoriesParams defines parameters for GetWorkspacesWorkspaceMemories.
+type GetWorkspacesWorkspaceMemoriesParams struct {
+	// Limit Maximum loaded records, not a total count.
+	Limit     *int      `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor    *string   `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Scope     Mem0Scope `form:"scope" json:"scope"`
+	SubjectId *string   `form:"subject_id,omitempty" json:"subject_id,omitempty"`
+}
+
+// PostWorkspacesWorkspaceMemoriesParams defines parameters for PostWorkspacesWorkspaceMemories.
+type PostWorkspacesWorkspaceMemoriesParams struct {
+	Scope     Mem0Scope `form:"scope" json:"scope"`
+	SubjectId *string   `form:"subject_id,omitempty" json:"subject_id,omitempty"`
+}
+
+// PostWorkspacesWorkspaceMemoriesSearchParams defines parameters for PostWorkspacesWorkspaceMemoriesSearch.
+type PostWorkspacesWorkspaceMemoriesSearchParams struct {
+	Scope     Mem0Scope `form:"scope" json:"scope"`
+	SubjectId *string   `form:"subject_id,omitempty" json:"subject_id,omitempty"`
+}
+
+// DeleteWorkspacesWorkspaceMemoriesMemoryIdParams defines parameters for DeleteWorkspacesWorkspaceMemoriesMemoryId.
+type DeleteWorkspacesWorkspaceMemoriesMemoryIdParams struct {
+	Scope     Mem0Scope `form:"scope" json:"scope"`
+	SubjectId *string   `form:"subject_id,omitempty" json:"subject_id,omitempty"`
+}
+
+// GetWorkspacesWorkspaceMemoriesMemoryIdParams defines parameters for GetWorkspacesWorkspaceMemoriesMemoryId.
+type GetWorkspacesWorkspaceMemoriesMemoryIdParams struct {
+	Scope     Mem0Scope `form:"scope" json:"scope"`
+	SubjectId *string   `form:"subject_id,omitempty" json:"subject_id,omitempty"`
+}
+
+// PutWorkspacesWorkspaceMemoriesMemoryIdParams defines parameters for PutWorkspacesWorkspaceMemoriesMemoryId.
+type PutWorkspacesWorkspaceMemoriesMemoryIdParams struct {
+	Scope     Mem0Scope `form:"scope" json:"scope"`
+	SubjectId *string   `form:"subject_id,omitempty" json:"subject_id,omitempty"`
+}
+
 // GetWorkspacesWorkspaceModelProvidersParams defines parameters for GetWorkspacesWorkspaceModelProviders.
 type GetWorkspacesWorkspaceModelProvidersParams struct {
 	Limit        *int    `form:"limit,omitempty" json:"limit,omitempty"`
@@ -7107,25 +7412,6 @@ type GetWorkspacesWorkspaceRunsParams struct {
 // PostWorkspacesWorkspaceRunsParams defines parameters for PostWorkspacesWorkspaceRuns.
 type PostWorkspacesWorkspaceRunsParams struct {
 	IdempotencyKey string `json:"Idempotency-Key"`
-}
-
-// GetWorkspacesWorkspaceSearchProvidersParams defines parameters for GetWorkspacesWorkspaceSearchProviders.
-type GetWorkspacesWorkspaceSearchProvidersParams struct {
-	Limit   *int    `form:"limit,omitempty" json:"limit,omitempty"`
-	Cursor  *string `form:"cursor,omitempty" json:"cursor,omitempty"`
-	Type    *string `form:"type,omitempty" json:"type,omitempty"`
-	Enabled *bool   `form:"enabled,omitempty" json:"enabled,omitempty"`
-}
-
-// PatchWorkspacesWorkspaceSearchProvidersProviderIdParams defines parameters for PatchWorkspacesWorkspaceSearchProvidersProviderId.
-type PatchWorkspacesWorkspaceSearchProvidersProviderIdParams struct {
-	IfMatch string `json:"If-Match"`
-}
-
-// GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesParams defines parameters for GetWorkspacesWorkspaceSearchProvidersProviderIdReferences.
-type GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesParams struct {
-	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
-	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
 // GetWorkspacesWorkspaceSecurityAuditEventsParams defines parameters for GetWorkspacesWorkspaceSecurityAuditEvents.
@@ -7204,6 +7490,25 @@ type GetWorkspacesWorkspaceTracesTraceIdObservationsParams struct {
 	View   *TraceView `form:"view,omitempty" json:"view,omitempty"`
 	Limit  *int       `form:"limit,omitempty" json:"limit,omitempty"`
 	Cursor *string    `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// GetWorkspacesWorkspaceWebProvidersParams defines parameters for GetWorkspacesWorkspaceWebProviders.
+type GetWorkspacesWorkspaceWebProvidersParams struct {
+	Limit   *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor  *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Type    *string `form:"type,omitempty" json:"type,omitempty"`
+	Enabled *bool   `form:"enabled,omitempty" json:"enabled,omitempty"`
+}
+
+// PatchWorkspacesWorkspaceWebProvidersProviderIdParams defines parameters for PatchWorkspacesWorkspaceWebProvidersProviderId.
+type PatchWorkspacesWorkspaceWebProvidersProviderIdParams struct {
+	IfMatch string `json:"If-Match"`
+}
+
+// GetWorkspacesWorkspaceWebProvidersProviderIdReferencesParams defines parameters for GetWorkspacesWorkspaceWebProvidersProviderIdReferences.
+type GetWorkspacesWorkspaceWebProvidersProviderIdReferencesParams struct {
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
 // PatchApplicationAccountsAccountIdJSONRequestBody defines body for PatchApplicationAccountsAccountId for application/json ContentType.
@@ -7353,14 +7658,11 @@ type PostOrganizationsOrganizationModelsModelIdTestJSONRequestBody = PostOrganiz
 // PostOrganizationsOrganizationRoleBindingsJSONRequestBody defines body for PostOrganizationsOrganizationRoleBindings for application/json ContentType.
 type PostOrganizationsOrganizationRoleBindingsJSONRequestBody = SetRoleRequest
 
-// PostOrganizationsOrganizationSearchProvidersJSONRequestBody defines body for PostOrganizationsOrganizationSearchProviders for application/json ContentType.
-type PostOrganizationsOrganizationSearchProvidersJSONRequestBody = CreateSearchProviderRequest
+// PostOrganizationsOrganizationWebProvidersJSONRequestBody defines body for PostOrganizationsOrganizationWebProviders for application/json ContentType.
+type PostOrganizationsOrganizationWebProvidersJSONRequestBody = CreateWebProviderRequest
 
-// PatchOrganizationsOrganizationSearchProvidersProviderIdJSONRequestBody defines body for PatchOrganizationsOrganizationSearchProvidersProviderId for application/json ContentType.
-type PatchOrganizationsOrganizationSearchProvidersProviderIdJSONRequestBody = UpdateSearchProviderRequest
-
-// PostOrganizationsOrganizationSearchProvidersProviderIdTestJSONRequestBody defines body for PostOrganizationsOrganizationSearchProvidersProviderIdTest for application/json ContentType.
-type PostOrganizationsOrganizationSearchProvidersProviderIdTestJSONRequestBody = SearchConfiguration
+// PatchOrganizationsOrganizationWebProvidersProviderIdJSONRequestBody defines body for PatchOrganizationsOrganizationWebProvidersProviderId for application/json ContentType.
+type PatchOrganizationsOrganizationWebProvidersProviderIdJSONRequestBody = UpdateWebProviderRequest
 
 // PostOrganizationsOrganizationWorkspacesJSONRequestBody defines body for PostOrganizationsOrganizationWorkspaces for application/json ContentType.
 type PostOrganizationsOrganizationWorkspacesJSONRequestBody = CreateWorkspaceRequest
@@ -7485,6 +7787,15 @@ type PostWorkspacesWorkspaceHookSubscriptionsJSONRequestBody = CreateHookSubscri
 // PostWorkspacesWorkspaceInvitationsJSONRequestBody defines body for PostWorkspacesWorkspaceInvitations for application/json ContentType.
 type PostWorkspacesWorkspaceInvitationsJSONRequestBody = InviteWorkspaceRequest
 
+// PostWorkspacesWorkspaceMemoriesJSONRequestBody defines body for PostWorkspacesWorkspaceMemories for application/json ContentType.
+type PostWorkspacesWorkspaceMemoriesJSONRequestBody = MemoryWrite
+
+// PostWorkspacesWorkspaceMemoriesSearchJSONRequestBody defines body for PostWorkspacesWorkspaceMemoriesSearch for application/json ContentType.
+type PostWorkspacesWorkspaceMemoriesSearchJSONRequestBody = MemorySearch
+
+// PutWorkspacesWorkspaceMemoriesMemoryIdJSONRequestBody defines body for PutWorkspacesWorkspaceMemoriesMemoryId for application/json ContentType.
+type PutWorkspacesWorkspaceMemoriesMemoryIdJSONRequestBody = MemoryWrite
+
 // PostWorkspacesWorkspaceModelCatalogSuggestionsJSONRequestBody defines body for PostWorkspacesWorkspaceModelCatalogSuggestions for application/json ContentType.
 type PostWorkspacesWorkspaceModelCatalogSuggestionsJSONRequestBody = ModelCatalogSuggestionRequest
 
@@ -7512,15 +7823,6 @@ type PostWorkspacesWorkspaceRoleBindingsJSONRequestBody = SetRoleRequest
 // PostWorkspacesWorkspaceRunsJSONRequestBody defines body for PostWorkspacesWorkspaceRuns for application/json ContentType.
 type PostWorkspacesWorkspaceRunsJSONRequestBody = StartRunRequest
 
-// PostWorkspacesWorkspaceSearchProvidersJSONRequestBody defines body for PostWorkspacesWorkspaceSearchProviders for application/json ContentType.
-type PostWorkspacesWorkspaceSearchProvidersJSONRequestBody = CreateSearchProviderRequest
-
-// PatchWorkspacesWorkspaceSearchProvidersProviderIdJSONRequestBody defines body for PatchWorkspacesWorkspaceSearchProvidersProviderId for application/json ContentType.
-type PatchWorkspacesWorkspaceSearchProvidersProviderIdJSONRequestBody = UpdateSearchProviderRequest
-
-// PostWorkspacesWorkspaceSearchProvidersProviderIdTestJSONRequestBody defines body for PostWorkspacesWorkspaceSearchProvidersProviderIdTest for application/json ContentType.
-type PostWorkspacesWorkspaceSearchProvidersProviderIdTestJSONRequestBody = SearchConfiguration
-
 // PostWorkspacesWorkspaceServiceAccountsJSONRequestBody defines body for PostWorkspacesWorkspaceServiceAccounts for application/json ContentType.
 type PostWorkspacesWorkspaceServiceAccountsJSONRequestBody = CreateServiceAccountRequest
 
@@ -7529,6 +7831,15 @@ type PostWorkspacesWorkspaceSkillsJSONRequestBody = CreateSkillRequest
 
 // PostWorkspacesWorkspaceThreadsJSONRequestBody defines body for PostWorkspacesWorkspaceThreads for application/json ContentType.
 type PostWorkspacesWorkspaceThreadsJSONRequestBody = CreateThreadRequest
+
+// PostWorkspacesWorkspaceToolsetsValidateJSONRequestBody defines body for PostWorkspacesWorkspaceToolsetsValidate for application/json ContentType.
+type PostWorkspacesWorkspaceToolsetsValidateJSONRequestBody = ToolsetCandidate
+
+// PostWorkspacesWorkspaceWebProvidersJSONRequestBody defines body for PostWorkspacesWorkspaceWebProviders for application/json ContentType.
+type PostWorkspacesWorkspaceWebProvidersJSONRequestBody = CreateWebProviderRequest
+
+// PatchWorkspacesWorkspaceWebProvidersProviderIdJSONRequestBody defines body for PatchWorkspacesWorkspaceWebProvidersProviderId for application/json ContentType.
+type PatchWorkspacesWorkspaceWebProvidersProviderIdJSONRequestBody = UpdateWebProviderRequest
 
 // Getter for additional properties for ActivityMessage. Returns the specified
 // element and whether it was found
@@ -13366,63 +13677,6 @@ type ClientInterface interface {
 	// Corresponds with POST /api/v1/organizations/{organization}/role-bindings (the `PostOrganizationsOrganizationRoleBindings` operationId).
 	PostOrganizationsOrganizationRoleBindings(ctx context.Context, organization string, body PostOrganizationsOrganizationRoleBindingsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetOrganizationsOrganizationSearchProviders List Organization Provider
-	//
-	// Corresponds with GET /api/v1/organizations/{organization}/search-providers (the `GetOrganizationsOrganizationSearchProviders` operationId).
-	GetOrganizationsOrganizationSearchProviders(ctx context.Context, organization string, params *GetOrganizationsOrganizationSearchProvidersParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PostOrganizationsOrganizationSearchProvidersWithBody Create Organization Provider
-	//
-	// Takes any type of body and a specified content type.
-	//
-	// Corresponds with POST /api/v1/organizations/{organization}/search-providers (the `PostOrganizationsOrganizationSearchProviders` operationId).
-	PostOrganizationsOrganizationSearchProvidersWithBody(ctx context.Context, organization string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PostOrganizationsOrganizationSearchProviders Create Organization Provider
-	//
-	// Takes a body of the `application/json` content type.
-	//
-	// Corresponds with POST /api/v1/organizations/{organization}/search-providers (the `PostOrganizationsOrganizationSearchProviders` operationId).
-	PostOrganizationsOrganizationSearchProviders(ctx context.Context, organization string, body PostOrganizationsOrganizationSearchProvidersJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetOrganizationsOrganizationSearchProvidersProviderId Get Organization Provider
-	//
-	// Corresponds with GET /api/v1/organizations/{organization}/search-providers/{provider_id} (the `GetOrganizationsOrganizationSearchProvidersProviderId` operationId).
-	GetOrganizationsOrganizationSearchProvidersProviderId(ctx context.Context, organization string, providerId string, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PatchOrganizationsOrganizationSearchProvidersProviderIdWithBody Update Organization Provider
-	//
-	// Takes any type of body and a specified content type.
-	//
-	// Corresponds with PATCH /api/v1/organizations/{organization}/search-providers/{provider_id} (the `PatchOrganizationsOrganizationSearchProvidersProviderId` operationId).
-	PatchOrganizationsOrganizationSearchProvidersProviderIdWithBody(ctx context.Context, organization string, providerId string, params *PatchOrganizationsOrganizationSearchProvidersProviderIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PatchOrganizationsOrganizationSearchProvidersProviderId Update Organization Provider
-	//
-	// Takes a body of the `application/json` content type.
-	//
-	// Corresponds with PATCH /api/v1/organizations/{organization}/search-providers/{provider_id} (the `PatchOrganizationsOrganizationSearchProvidersProviderId` operationId).
-	PatchOrganizationsOrganizationSearchProvidersProviderId(ctx context.Context, organization string, providerId string, params *PatchOrganizationsOrganizationSearchProvidersProviderIdParams, body PatchOrganizationsOrganizationSearchProvidersProviderIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetOrganizationsOrganizationSearchProvidersProviderIdReferences References Organization Provider
-	//
-	// Corresponds with GET /api/v1/organizations/{organization}/search-providers/{provider_id}/references (the `GetOrganizationsOrganizationSearchProvidersProviderIdReferences` operationId).
-	GetOrganizationsOrganizationSearchProvidersProviderIdReferences(ctx context.Context, organization string, providerId string, params *GetOrganizationsOrganizationSearchProvidersProviderIdReferencesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PostOrganizationsOrganizationSearchProvidersProviderIdTestWithBody Test Organization Provider
-	//
-	// Takes any type of body and a specified content type.
-	//
-	// Corresponds with POST /api/v1/organizations/{organization}/search-providers/{provider_id}/test (the `PostOrganizationsOrganizationSearchProvidersProviderIdTest` operationId).
-	PostOrganizationsOrganizationSearchProvidersProviderIdTestWithBody(ctx context.Context, organization string, providerId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PostOrganizationsOrganizationSearchProvidersProviderIdTest Test Organization Provider
-	//
-	// Takes a body of the `application/json` content type.
-	//
-	// Corresponds with POST /api/v1/organizations/{organization}/search-providers/{provider_id}/test (the `PostOrganizationsOrganizationSearchProvidersProviderIdTest` operationId).
-	PostOrganizationsOrganizationSearchProvidersProviderIdTest(ctx context.Context, organization string, providerId string, body PostOrganizationsOrganizationSearchProvidersProviderIdTestJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
 	// GetOrganizationsOrganizationSecurityAuditEvents Organization Security Events
 	//
 	// Corresponds with GET /api/v1/organizations/{organization}/security-audit-events (the `GetOrganizationsOrganizationSecurityAuditEvents` operationId).
@@ -13432,6 +13686,54 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /api/v1/organizations/{organization}/users (the `GetOrganizationsOrganizationUsers` operationId).
 	GetOrganizationsOrganizationUsers(ctx context.Context, organization string, params *GetOrganizationsOrganizationUsersParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetOrganizationsOrganizationWebProviders List Organization Provider
+	//
+	// Corresponds with GET /api/v1/organizations/{organization}/web-providers (the `GetOrganizationsOrganizationWebProviders` operationId).
+	GetOrganizationsOrganizationWebProviders(ctx context.Context, organization string, params *GetOrganizationsOrganizationWebProvidersParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostOrganizationsOrganizationWebProvidersWithBody Create Organization Provider
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v1/organizations/{organization}/web-providers (the `PostOrganizationsOrganizationWebProviders` operationId).
+	PostOrganizationsOrganizationWebProvidersWithBody(ctx context.Context, organization string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostOrganizationsOrganizationWebProviders Create Organization Provider
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v1/organizations/{organization}/web-providers (the `PostOrganizationsOrganizationWebProviders` operationId).
+	PostOrganizationsOrganizationWebProviders(ctx context.Context, organization string, body PostOrganizationsOrganizationWebProvidersJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetOrganizationsOrganizationWebProvidersProviderId Get Organization Provider
+	//
+	// Corresponds with GET /api/v1/organizations/{organization}/web-providers/{provider_id} (the `GetOrganizationsOrganizationWebProvidersProviderId` operationId).
+	GetOrganizationsOrganizationWebProvidersProviderId(ctx context.Context, organization string, providerId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PatchOrganizationsOrganizationWebProvidersProviderIdWithBody Update Organization Provider
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PATCH /api/v1/organizations/{organization}/web-providers/{provider_id} (the `PatchOrganizationsOrganizationWebProvidersProviderId` operationId).
+	PatchOrganizationsOrganizationWebProvidersProviderIdWithBody(ctx context.Context, organization string, providerId string, params *PatchOrganizationsOrganizationWebProvidersProviderIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PatchOrganizationsOrganizationWebProvidersProviderId Update Organization Provider
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PATCH /api/v1/organizations/{organization}/web-providers/{provider_id} (the `PatchOrganizationsOrganizationWebProvidersProviderId` operationId).
+	PatchOrganizationsOrganizationWebProvidersProviderId(ctx context.Context, organization string, providerId string, params *PatchOrganizationsOrganizationWebProvidersProviderIdParams, body PatchOrganizationsOrganizationWebProvidersProviderIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetOrganizationsOrganizationWebProvidersProviderIdReferences References Organization Provider
+	//
+	// Corresponds with GET /api/v1/organizations/{organization}/web-providers/{provider_id}/references (the `GetOrganizationsOrganizationWebProvidersProviderIdReferences` operationId).
+	GetOrganizationsOrganizationWebProvidersProviderIdReferences(ctx context.Context, organization string, providerId string, params *GetOrganizationsOrganizationWebProvidersProviderIdReferencesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostOrganizationsOrganizationWebProvidersProviderIdTest Test Organization Provider
+	//
+	// Corresponds with POST /api/v1/organizations/{organization}/web-providers/{provider_id}/test (the `PostOrganizationsOrganizationWebProvidersProviderIdTest` operationId).
+	PostOrganizationsOrganizationWebProvidersProviderIdTest(ctx context.Context, organization string, providerId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetOrganizationsOrganizationWorkspaces Workspaces
 	//
@@ -13661,16 +13963,6 @@ type ClientInterface interface {
 	//
 	// Corresponds with POST /api/v1/runs/{source_run_id}/continue (the `PostRunsSourceRunIdContinue` operationId).
 	PostRunsSourceRunIdContinue(ctx context.Context, sourceRunId string, params *PostRunsSourceRunIdContinueParams, body PostRunsSourceRunIdContinueJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetSearchProviderTypes List Types
-	//
-	// Corresponds with GET /api/v1/search-provider-types (the `GetSearchProviderTypes` operationId).
-	GetSearchProviderTypes(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetSearchProviderTypesProviderType Get Type
-	//
-	// Corresponds with GET /api/v1/search-provider-types/{provider_type} (the `GetSearchProviderTypesProviderType` operationId).
-	GetSearchProviderTypesProviderType(ctx context.Context, providerType string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// DeleteServiceAccountsAccountIdWithBody Delete Account
 	//
@@ -14003,6 +14295,16 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /api/v1/users/{user_id}/avatar/{image_id} (the `GetUsersUserIdAvatarImageId` operationId).
 	GetUsersUserIdAvatarImageId(ctx context.Context, userId string, imageId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetWebProviderTypes List Types
+	//
+	// Corresponds with GET /api/v1/web-provider-types (the `GetWebProviderTypes` operationId).
+	GetWebProviderTypes(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetWebProviderTypesProviderType Get Type
+	//
+	// Corresponds with GET /api/v1/web-provider-types/{provider_type} (the `GetWebProviderTypesProviderType` operationId).
+	GetWebProviderTypesProviderType(ctx context.Context, providerType string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// DeleteWorkspacesWorkspace Delete Workspace
 	//
@@ -14355,6 +14657,63 @@ type ClientInterface interface {
 	// Corresponds with GET /api/v1/workspaces/{workspace}/members (the `GetWorkspacesWorkspaceMembers` operationId).
 	GetWorkspacesWorkspaceMembers(ctx context.Context, workspace string, params *GetWorkspacesWorkspaceMembersParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetWorkspacesWorkspaceMemories List Memories
+	//
+	// Corresponds with GET /api/v1/workspaces/{workspace}/memories (the `GetWorkspacesWorkspaceMemories` operationId).
+	GetWorkspacesWorkspaceMemories(ctx context.Context, workspace string, params *GetWorkspacesWorkspaceMemoriesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostWorkspacesWorkspaceMemoriesWithBody Add Memory
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v1/workspaces/{workspace}/memories (the `PostWorkspacesWorkspaceMemories` operationId).
+	PostWorkspacesWorkspaceMemoriesWithBody(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceMemoriesParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostWorkspacesWorkspaceMemories Add Memory
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v1/workspaces/{workspace}/memories (the `PostWorkspacesWorkspaceMemories` operationId).
+	PostWorkspacesWorkspaceMemories(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceMemoriesParams, body PostWorkspacesWorkspaceMemoriesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostWorkspacesWorkspaceMemoriesSearchWithBody Search Memories
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v1/workspaces/{workspace}/memories/search (the `PostWorkspacesWorkspaceMemoriesSearch` operationId).
+	PostWorkspacesWorkspaceMemoriesSearchWithBody(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceMemoriesSearchParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostWorkspacesWorkspaceMemoriesSearch Search Memories
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v1/workspaces/{workspace}/memories/search (the `PostWorkspacesWorkspaceMemoriesSearch` operationId).
+	PostWorkspacesWorkspaceMemoriesSearch(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceMemoriesSearchParams, body PostWorkspacesWorkspaceMemoriesSearchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteWorkspacesWorkspaceMemoriesMemoryId Delete Memory
+	//
+	// Corresponds with DELETE /api/v1/workspaces/{workspace}/memories/{memory_id} (the `DeleteWorkspacesWorkspaceMemoriesMemoryId` operationId).
+	DeleteWorkspacesWorkspaceMemoriesMemoryId(ctx context.Context, workspace string, memoryId string, params *DeleteWorkspacesWorkspaceMemoriesMemoryIdParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetWorkspacesWorkspaceMemoriesMemoryId Get Memory
+	//
+	// Corresponds with GET /api/v1/workspaces/{workspace}/memories/{memory_id} (the `GetWorkspacesWorkspaceMemoriesMemoryId` operationId).
+	GetWorkspacesWorkspaceMemoriesMemoryId(ctx context.Context, workspace string, memoryId string, params *GetWorkspacesWorkspaceMemoriesMemoryIdParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutWorkspacesWorkspaceMemoriesMemoryIdWithBody Update Memory
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /api/v1/workspaces/{workspace}/memories/{memory_id} (the `PutWorkspacesWorkspaceMemoriesMemoryId` operationId).
+	PutWorkspacesWorkspaceMemoriesMemoryIdWithBody(ctx context.Context, workspace string, memoryId string, params *PutWorkspacesWorkspaceMemoriesMemoryIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutWorkspacesWorkspaceMemoriesMemoryId Update Memory
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /api/v1/workspaces/{workspace}/memories/{memory_id} (the `PutWorkspacesWorkspaceMemoriesMemoryId` operationId).
+	PutWorkspacesWorkspaceMemoriesMemoryId(ctx context.Context, workspace string, memoryId string, params *PutWorkspacesWorkspaceMemoriesMemoryIdParams, body PutWorkspacesWorkspaceMemoriesMemoryIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// PostWorkspacesWorkspaceModelCatalogSuggestionsWithBody Suggest Workspace Model Declarations
 	//
 	// Takes any type of body and a specified content type.
@@ -14531,63 +14890,6 @@ type ClientInterface interface {
 	// Corresponds with POST /api/v1/workspaces/{workspace}/runs (the `PostWorkspacesWorkspaceRuns` operationId).
 	PostWorkspacesWorkspaceRuns(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceRunsParams, body PostWorkspacesWorkspaceRunsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetWorkspacesWorkspaceSearchProviders List Workspace Provider
-	//
-	// Corresponds with GET /api/v1/workspaces/{workspace}/search-providers (the `GetWorkspacesWorkspaceSearchProviders` operationId).
-	GetWorkspacesWorkspaceSearchProviders(ctx context.Context, workspace string, params *GetWorkspacesWorkspaceSearchProvidersParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PostWorkspacesWorkspaceSearchProvidersWithBody Create Workspace Provider
-	//
-	// Takes any type of body and a specified content type.
-	//
-	// Corresponds with POST /api/v1/workspaces/{workspace}/search-providers (the `PostWorkspacesWorkspaceSearchProviders` operationId).
-	PostWorkspacesWorkspaceSearchProvidersWithBody(ctx context.Context, workspace string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PostWorkspacesWorkspaceSearchProviders Create Workspace Provider
-	//
-	// Takes a body of the `application/json` content type.
-	//
-	// Corresponds with POST /api/v1/workspaces/{workspace}/search-providers (the `PostWorkspacesWorkspaceSearchProviders` operationId).
-	PostWorkspacesWorkspaceSearchProviders(ctx context.Context, workspace string, body PostWorkspacesWorkspaceSearchProvidersJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetWorkspacesWorkspaceSearchProvidersProviderId Get Workspace Provider
-	//
-	// Corresponds with GET /api/v1/workspaces/{workspace}/search-providers/{provider_id} (the `GetWorkspacesWorkspaceSearchProvidersProviderId` operationId).
-	GetWorkspacesWorkspaceSearchProvidersProviderId(ctx context.Context, workspace string, providerId string, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PatchWorkspacesWorkspaceSearchProvidersProviderIdWithBody Update Workspace Provider
-	//
-	// Takes any type of body and a specified content type.
-	//
-	// Corresponds with PATCH /api/v1/workspaces/{workspace}/search-providers/{provider_id} (the `PatchWorkspacesWorkspaceSearchProvidersProviderId` operationId).
-	PatchWorkspacesWorkspaceSearchProvidersProviderIdWithBody(ctx context.Context, workspace string, providerId string, params *PatchWorkspacesWorkspaceSearchProvidersProviderIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PatchWorkspacesWorkspaceSearchProvidersProviderId Update Workspace Provider
-	//
-	// Takes a body of the `application/json` content type.
-	//
-	// Corresponds with PATCH /api/v1/workspaces/{workspace}/search-providers/{provider_id} (the `PatchWorkspacesWorkspaceSearchProvidersProviderId` operationId).
-	PatchWorkspacesWorkspaceSearchProvidersProviderId(ctx context.Context, workspace string, providerId string, params *PatchWorkspacesWorkspaceSearchProvidersProviderIdParams, body PatchWorkspacesWorkspaceSearchProvidersProviderIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// GetWorkspacesWorkspaceSearchProvidersProviderIdReferences References Workspace Provider
-	//
-	// Corresponds with GET /api/v1/workspaces/{workspace}/search-providers/{provider_id}/references (the `GetWorkspacesWorkspaceSearchProvidersProviderIdReferences` operationId).
-	GetWorkspacesWorkspaceSearchProvidersProviderIdReferences(ctx context.Context, workspace string, providerId string, params *GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PostWorkspacesWorkspaceSearchProvidersProviderIdTestWithBody Test Workspace Provider
-	//
-	// Takes any type of body and a specified content type.
-	//
-	// Corresponds with POST /api/v1/workspaces/{workspace}/search-providers/{provider_id}/test (the `PostWorkspacesWorkspaceSearchProvidersProviderIdTest` operationId).
-	PostWorkspacesWorkspaceSearchProvidersProviderIdTestWithBody(ctx context.Context, workspace string, providerId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PostWorkspacesWorkspaceSearchProvidersProviderIdTest Test Workspace Provider
-	//
-	// Takes a body of the `application/json` content type.
-	//
-	// Corresponds with POST /api/v1/workspaces/{workspace}/search-providers/{provider_id}/test (the `PostWorkspacesWorkspaceSearchProvidersProviderIdTest` operationId).
-	PostWorkspacesWorkspaceSearchProvidersProviderIdTest(ctx context.Context, workspace string, providerId string, body PostWorkspacesWorkspaceSearchProvidersProviderIdTestJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
 	// GetWorkspacesWorkspaceSecurityAuditEvents Workspace Security Events
 	//
 	// Corresponds with GET /api/v1/workspaces/{workspace}/security-audit-events (the `GetWorkspacesWorkspaceSecurityAuditEvents` operationId).
@@ -14662,6 +14964,25 @@ type ClientInterface interface {
 	// Corresponds with POST /api/v1/workspaces/{workspace}/threads (the `PostWorkspacesWorkspaceThreads` operationId).
 	PostWorkspacesWorkspaceThreads(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceThreadsParams, body PostWorkspacesWorkspaceThreadsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetWorkspacesWorkspaceToolsets Get Toolsets
+	//
+	// Corresponds with GET /api/v1/workspaces/{workspace}/toolsets (the `GetWorkspacesWorkspaceToolsets` operationId).
+	GetWorkspacesWorkspaceToolsets(ctx context.Context, workspace string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostWorkspacesWorkspaceToolsetsValidateWithBody Validate Toolsets
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v1/workspaces/{workspace}/toolsets/validate (the `PostWorkspacesWorkspaceToolsetsValidate` operationId).
+	PostWorkspacesWorkspaceToolsetsValidateWithBody(ctx context.Context, workspace string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostWorkspacesWorkspaceToolsetsValidate Validate Toolsets
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v1/workspaces/{workspace}/toolsets/validate (the `PostWorkspacesWorkspaceToolsetsValidate` operationId).
+	PostWorkspacesWorkspaceToolsetsValidate(ctx context.Context, workspace string, body PostWorkspacesWorkspaceToolsetsValidateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetWorkspacesWorkspaceTraceQuery Get Trace Query
 	//
 	// Corresponds with GET /api/v1/workspaces/{workspace}/trace-query (the `GetWorkspacesWorkspaceTraceQuery` operationId).
@@ -14681,6 +15002,54 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /api/v1/workspaces/{workspace}/traces/{trace_id}/observations (the `GetWorkspacesWorkspaceTracesTraceIdObservations` operationId).
 	GetWorkspacesWorkspaceTracesTraceIdObservations(ctx context.Context, workspace string, traceId string, params *GetWorkspacesWorkspaceTracesTraceIdObservationsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetWorkspacesWorkspaceWebProviders List Workspace Provider
+	//
+	// Corresponds with GET /api/v1/workspaces/{workspace}/web-providers (the `GetWorkspacesWorkspaceWebProviders` operationId).
+	GetWorkspacesWorkspaceWebProviders(ctx context.Context, workspace string, params *GetWorkspacesWorkspaceWebProvidersParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostWorkspacesWorkspaceWebProvidersWithBody Create Workspace Provider
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v1/workspaces/{workspace}/web-providers (the `PostWorkspacesWorkspaceWebProviders` operationId).
+	PostWorkspacesWorkspaceWebProvidersWithBody(ctx context.Context, workspace string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostWorkspacesWorkspaceWebProviders Create Workspace Provider
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v1/workspaces/{workspace}/web-providers (the `PostWorkspacesWorkspaceWebProviders` operationId).
+	PostWorkspacesWorkspaceWebProviders(ctx context.Context, workspace string, body PostWorkspacesWorkspaceWebProvidersJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetWorkspacesWorkspaceWebProvidersProviderId Get Workspace Provider
+	//
+	// Corresponds with GET /api/v1/workspaces/{workspace}/web-providers/{provider_id} (the `GetWorkspacesWorkspaceWebProvidersProviderId` operationId).
+	GetWorkspacesWorkspaceWebProvidersProviderId(ctx context.Context, workspace string, providerId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PatchWorkspacesWorkspaceWebProvidersProviderIdWithBody Update Workspace Provider
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PATCH /api/v1/workspaces/{workspace}/web-providers/{provider_id} (the `PatchWorkspacesWorkspaceWebProvidersProviderId` operationId).
+	PatchWorkspacesWorkspaceWebProvidersProviderIdWithBody(ctx context.Context, workspace string, providerId string, params *PatchWorkspacesWorkspaceWebProvidersProviderIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PatchWorkspacesWorkspaceWebProvidersProviderId Update Workspace Provider
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PATCH /api/v1/workspaces/{workspace}/web-providers/{provider_id} (the `PatchWorkspacesWorkspaceWebProvidersProviderId` operationId).
+	PatchWorkspacesWorkspaceWebProvidersProviderId(ctx context.Context, workspace string, providerId string, params *PatchWorkspacesWorkspaceWebProvidersProviderIdParams, body PatchWorkspacesWorkspaceWebProvidersProviderIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetWorkspacesWorkspaceWebProvidersProviderIdReferences References Workspace Provider
+	//
+	// Corresponds with GET /api/v1/workspaces/{workspace}/web-providers/{provider_id}/references (the `GetWorkspacesWorkspaceWebProvidersProviderIdReferences` operationId).
+	GetWorkspacesWorkspaceWebProvidersProviderIdReferences(ctx context.Context, workspace string, providerId string, params *GetWorkspacesWorkspaceWebProvidersProviderIdReferencesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostWorkspacesWorkspaceWebProvidersProviderIdTest Test Workspace Provider
+	//
+	// Corresponds with POST /api/v1/workspaces/{workspace}/web-providers/{provider_id}/test (the `PostWorkspacesWorkspaceWebProvidersProviderIdTest` operationId).
+	PostWorkspacesWorkspaceWebProvidersProviderIdTest(ctx context.Context, workspace string, providerId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 // GetAgentRevisionsAgentRevisionId Get Agent Revision
@@ -17266,153 +17635,6 @@ func (c *Client) PostOrganizationsOrganizationRoleBindings(ctx context.Context, 
 	return c.Client.Do(req)
 }
 
-// GetOrganizationsOrganizationSearchProviders List Organization Provider
-//
-// Corresponds with GET /api/v1/organizations/{organization}/search-providers (the `GetOrganizationsOrganizationSearchProviders` operationId).
-func (c *Client) GetOrganizationsOrganizationSearchProviders(ctx context.Context, organization string, params *GetOrganizationsOrganizationSearchProvidersParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetOrganizationsOrganizationSearchProvidersRequest(c.Server, organization, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// PostOrganizationsOrganizationSearchProvidersWithBody Create Organization Provider
-//
-// Takes any type of body and a specified content type.
-//
-// Corresponds with POST /api/v1/organizations/{organization}/search-providers (the `PostOrganizationsOrganizationSearchProviders` operationId).
-func (c *Client) PostOrganizationsOrganizationSearchProvidersWithBody(ctx context.Context, organization string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostOrganizationsOrganizationSearchProvidersRequestWithBody(c.Server, organization, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// PostOrganizationsOrganizationSearchProviders Create Organization Provider
-//
-// Takes a body of the `application/json` content type.
-//
-// Corresponds with POST /api/v1/organizations/{organization}/search-providers (the `PostOrganizationsOrganizationSearchProviders` operationId).
-func (c *Client) PostOrganizationsOrganizationSearchProviders(ctx context.Context, organization string, body PostOrganizationsOrganizationSearchProvidersJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostOrganizationsOrganizationSearchProvidersRequest(c.Server, organization, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// GetOrganizationsOrganizationSearchProvidersProviderId Get Organization Provider
-//
-// Corresponds with GET /api/v1/organizations/{organization}/search-providers/{provider_id} (the `GetOrganizationsOrganizationSearchProvidersProviderId` operationId).
-func (c *Client) GetOrganizationsOrganizationSearchProvidersProviderId(ctx context.Context, organization string, providerId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetOrganizationsOrganizationSearchProvidersProviderIdRequest(c.Server, organization, providerId)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// PatchOrganizationsOrganizationSearchProvidersProviderIdWithBody Update Organization Provider
-//
-// Takes any type of body and a specified content type.
-//
-// Corresponds with PATCH /api/v1/organizations/{organization}/search-providers/{provider_id} (the `PatchOrganizationsOrganizationSearchProvidersProviderId` operationId).
-func (c *Client) PatchOrganizationsOrganizationSearchProvidersProviderIdWithBody(ctx context.Context, organization string, providerId string, params *PatchOrganizationsOrganizationSearchProvidersProviderIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPatchOrganizationsOrganizationSearchProvidersProviderIdRequestWithBody(c.Server, organization, providerId, params, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// PatchOrganizationsOrganizationSearchProvidersProviderId Update Organization Provider
-//
-// Takes a body of the `application/json` content type.
-//
-// Corresponds with PATCH /api/v1/organizations/{organization}/search-providers/{provider_id} (the `PatchOrganizationsOrganizationSearchProvidersProviderId` operationId).
-func (c *Client) PatchOrganizationsOrganizationSearchProvidersProviderId(ctx context.Context, organization string, providerId string, params *PatchOrganizationsOrganizationSearchProvidersProviderIdParams, body PatchOrganizationsOrganizationSearchProvidersProviderIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPatchOrganizationsOrganizationSearchProvidersProviderIdRequest(c.Server, organization, providerId, params, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// GetOrganizationsOrganizationSearchProvidersProviderIdReferences References Organization Provider
-//
-// Corresponds with GET /api/v1/organizations/{organization}/search-providers/{provider_id}/references (the `GetOrganizationsOrganizationSearchProvidersProviderIdReferences` operationId).
-func (c *Client) GetOrganizationsOrganizationSearchProvidersProviderIdReferences(ctx context.Context, organization string, providerId string, params *GetOrganizationsOrganizationSearchProvidersProviderIdReferencesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetOrganizationsOrganizationSearchProvidersProviderIdReferencesRequest(c.Server, organization, providerId, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// PostOrganizationsOrganizationSearchProvidersProviderIdTestWithBody Test Organization Provider
-//
-// Takes any type of body and a specified content type.
-//
-// Corresponds with POST /api/v1/organizations/{organization}/search-providers/{provider_id}/test (the `PostOrganizationsOrganizationSearchProvidersProviderIdTest` operationId).
-func (c *Client) PostOrganizationsOrganizationSearchProvidersProviderIdTestWithBody(ctx context.Context, organization string, providerId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostOrganizationsOrganizationSearchProvidersProviderIdTestRequestWithBody(c.Server, organization, providerId, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// PostOrganizationsOrganizationSearchProvidersProviderIdTest Test Organization Provider
-//
-// Takes a body of the `application/json` content type.
-//
-// Corresponds with POST /api/v1/organizations/{organization}/search-providers/{provider_id}/test (the `PostOrganizationsOrganizationSearchProvidersProviderIdTest` operationId).
-func (c *Client) PostOrganizationsOrganizationSearchProvidersProviderIdTest(ctx context.Context, organization string, providerId string, body PostOrganizationsOrganizationSearchProvidersProviderIdTestJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostOrganizationsOrganizationSearchProvidersProviderIdTestRequest(c.Server, organization, providerId, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
 // GetOrganizationsOrganizationSecurityAuditEvents Organization Security Events
 //
 // Corresponds with GET /api/v1/organizations/{organization}/security-audit-events (the `GetOrganizationsOrganizationSecurityAuditEvents` operationId).
@@ -17433,6 +17655,134 @@ func (c *Client) GetOrganizationsOrganizationSecurityAuditEvents(ctx context.Con
 // Corresponds with GET /api/v1/organizations/{organization}/users (the `GetOrganizationsOrganizationUsers` operationId).
 func (c *Client) GetOrganizationsOrganizationUsers(ctx context.Context, organization string, params *GetOrganizationsOrganizationUsersParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetOrganizationsOrganizationUsersRequest(c.Server, organization, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetOrganizationsOrganizationWebProviders List Organization Provider
+//
+// Corresponds with GET /api/v1/organizations/{organization}/web-providers (the `GetOrganizationsOrganizationWebProviders` operationId).
+func (c *Client) GetOrganizationsOrganizationWebProviders(ctx context.Context, organization string, params *GetOrganizationsOrganizationWebProvidersParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetOrganizationsOrganizationWebProvidersRequest(c.Server, organization, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostOrganizationsOrganizationWebProvidersWithBody Create Organization Provider
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v1/organizations/{organization}/web-providers (the `PostOrganizationsOrganizationWebProviders` operationId).
+func (c *Client) PostOrganizationsOrganizationWebProvidersWithBody(ctx context.Context, organization string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostOrganizationsOrganizationWebProvidersRequestWithBody(c.Server, organization, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostOrganizationsOrganizationWebProviders Create Organization Provider
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v1/organizations/{organization}/web-providers (the `PostOrganizationsOrganizationWebProviders` operationId).
+func (c *Client) PostOrganizationsOrganizationWebProviders(ctx context.Context, organization string, body PostOrganizationsOrganizationWebProvidersJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostOrganizationsOrganizationWebProvidersRequest(c.Server, organization, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetOrganizationsOrganizationWebProvidersProviderId Get Organization Provider
+//
+// Corresponds with GET /api/v1/organizations/{organization}/web-providers/{provider_id} (the `GetOrganizationsOrganizationWebProvidersProviderId` operationId).
+func (c *Client) GetOrganizationsOrganizationWebProvidersProviderId(ctx context.Context, organization string, providerId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetOrganizationsOrganizationWebProvidersProviderIdRequest(c.Server, organization, providerId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PatchOrganizationsOrganizationWebProvidersProviderIdWithBody Update Organization Provider
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PATCH /api/v1/organizations/{organization}/web-providers/{provider_id} (the `PatchOrganizationsOrganizationWebProvidersProviderId` operationId).
+func (c *Client) PatchOrganizationsOrganizationWebProvidersProviderIdWithBody(ctx context.Context, organization string, providerId string, params *PatchOrganizationsOrganizationWebProvidersProviderIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPatchOrganizationsOrganizationWebProvidersProviderIdRequestWithBody(c.Server, organization, providerId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PatchOrganizationsOrganizationWebProvidersProviderId Update Organization Provider
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PATCH /api/v1/organizations/{organization}/web-providers/{provider_id} (the `PatchOrganizationsOrganizationWebProvidersProviderId` operationId).
+func (c *Client) PatchOrganizationsOrganizationWebProvidersProviderId(ctx context.Context, organization string, providerId string, params *PatchOrganizationsOrganizationWebProvidersProviderIdParams, body PatchOrganizationsOrganizationWebProvidersProviderIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPatchOrganizationsOrganizationWebProvidersProviderIdRequest(c.Server, organization, providerId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetOrganizationsOrganizationWebProvidersProviderIdReferences References Organization Provider
+//
+// Corresponds with GET /api/v1/organizations/{organization}/web-providers/{provider_id}/references (the `GetOrganizationsOrganizationWebProvidersProviderIdReferences` operationId).
+func (c *Client) GetOrganizationsOrganizationWebProvidersProviderIdReferences(ctx context.Context, organization string, providerId string, params *GetOrganizationsOrganizationWebProvidersProviderIdReferencesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetOrganizationsOrganizationWebProvidersProviderIdReferencesRequest(c.Server, organization, providerId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostOrganizationsOrganizationWebProvidersProviderIdTest Test Organization Provider
+//
+// Corresponds with POST /api/v1/organizations/{organization}/web-providers/{provider_id}/test (the `PostOrganizationsOrganizationWebProvidersProviderIdTest` operationId).
+func (c *Client) PostOrganizationsOrganizationWebProvidersProviderIdTest(ctx context.Context, organization string, providerId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostOrganizationsOrganizationWebProvidersProviderIdTestRequest(c.Server, organization, providerId)
 	if err != nil {
 		return nil, err
 	}
@@ -18032,36 +18382,6 @@ func (c *Client) PostRunsSourceRunIdContinueWithBody(ctx context.Context, source
 // Corresponds with POST /api/v1/runs/{source_run_id}/continue (the `PostRunsSourceRunIdContinue` operationId).
 func (c *Client) PostRunsSourceRunIdContinue(ctx context.Context, sourceRunId string, params *PostRunsSourceRunIdContinueParams, body PostRunsSourceRunIdContinueJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPostRunsSourceRunIdContinueRequest(c.Server, sourceRunId, params, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// GetSearchProviderTypes List Types
-//
-// Corresponds with GET /api/v1/search-provider-types (the `GetSearchProviderTypes` operationId).
-func (c *Client) GetSearchProviderTypes(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetSearchProviderTypesRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// GetSearchProviderTypesProviderType Get Type
-//
-// Corresponds with GET /api/v1/search-provider-types/{provider_type} (the `GetSearchProviderTypesProviderType` operationId).
-func (c *Client) GetSearchProviderTypesProviderType(ctx context.Context, providerType string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetSearchProviderTypesProviderTypeRequest(c.Server, providerType)
 	if err != nil {
 		return nil, err
 	}
@@ -18934,6 +19254,36 @@ func (c *Client) GetUsersMeSecurityActivity(ctx context.Context, params *GetUser
 // Corresponds with GET /api/v1/users/{user_id}/avatar/{image_id} (the `GetUsersUserIdAvatarImageId` operationId).
 func (c *Client) GetUsersUserIdAvatarImageId(ctx context.Context, userId string, imageId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetUsersUserIdAvatarImageIdRequest(c.Server, userId, imageId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetWebProviderTypes List Types
+//
+// Corresponds with GET /api/v1/web-provider-types (the `GetWebProviderTypes` operationId).
+func (c *Client) GetWebProviderTypes(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWebProviderTypesRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetWebProviderTypesProviderType Get Type
+//
+// Corresponds with GET /api/v1/web-provider-types/{provider_type} (the `GetWebProviderTypesProviderType` operationId).
+func (c *Client) GetWebProviderTypesProviderType(ctx context.Context, providerType string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWebProviderTypesProviderTypeRequest(c.Server, providerType)
 	if err != nil {
 		return nil, err
 	}
@@ -19865,6 +20215,153 @@ func (c *Client) GetWorkspacesWorkspaceMembers(ctx context.Context, workspace st
 	return c.Client.Do(req)
 }
 
+// GetWorkspacesWorkspaceMemories List Memories
+//
+// Corresponds with GET /api/v1/workspaces/{workspace}/memories (the `GetWorkspacesWorkspaceMemories` operationId).
+func (c *Client) GetWorkspacesWorkspaceMemories(ctx context.Context, workspace string, params *GetWorkspacesWorkspaceMemoriesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkspacesWorkspaceMemoriesRequest(c.Server, workspace, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostWorkspacesWorkspaceMemoriesWithBody Add Memory
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v1/workspaces/{workspace}/memories (the `PostWorkspacesWorkspaceMemories` operationId).
+func (c *Client) PostWorkspacesWorkspaceMemoriesWithBody(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceMemoriesParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostWorkspacesWorkspaceMemoriesRequestWithBody(c.Server, workspace, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostWorkspacesWorkspaceMemories Add Memory
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v1/workspaces/{workspace}/memories (the `PostWorkspacesWorkspaceMemories` operationId).
+func (c *Client) PostWorkspacesWorkspaceMemories(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceMemoriesParams, body PostWorkspacesWorkspaceMemoriesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostWorkspacesWorkspaceMemoriesRequest(c.Server, workspace, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostWorkspacesWorkspaceMemoriesSearchWithBody Search Memories
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v1/workspaces/{workspace}/memories/search (the `PostWorkspacesWorkspaceMemoriesSearch` operationId).
+func (c *Client) PostWorkspacesWorkspaceMemoriesSearchWithBody(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceMemoriesSearchParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostWorkspacesWorkspaceMemoriesSearchRequestWithBody(c.Server, workspace, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostWorkspacesWorkspaceMemoriesSearch Search Memories
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v1/workspaces/{workspace}/memories/search (the `PostWorkspacesWorkspaceMemoriesSearch` operationId).
+func (c *Client) PostWorkspacesWorkspaceMemoriesSearch(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceMemoriesSearchParams, body PostWorkspacesWorkspaceMemoriesSearchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostWorkspacesWorkspaceMemoriesSearchRequest(c.Server, workspace, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteWorkspacesWorkspaceMemoriesMemoryId Delete Memory
+//
+// Corresponds with DELETE /api/v1/workspaces/{workspace}/memories/{memory_id} (the `DeleteWorkspacesWorkspaceMemoriesMemoryId` operationId).
+func (c *Client) DeleteWorkspacesWorkspaceMemoriesMemoryId(ctx context.Context, workspace string, memoryId string, params *DeleteWorkspacesWorkspaceMemoriesMemoryIdParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteWorkspacesWorkspaceMemoriesMemoryIdRequest(c.Server, workspace, memoryId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetWorkspacesWorkspaceMemoriesMemoryId Get Memory
+//
+// Corresponds with GET /api/v1/workspaces/{workspace}/memories/{memory_id} (the `GetWorkspacesWorkspaceMemoriesMemoryId` operationId).
+func (c *Client) GetWorkspacesWorkspaceMemoriesMemoryId(ctx context.Context, workspace string, memoryId string, params *GetWorkspacesWorkspaceMemoriesMemoryIdParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkspacesWorkspaceMemoriesMemoryIdRequest(c.Server, workspace, memoryId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutWorkspacesWorkspaceMemoriesMemoryIdWithBody Update Memory
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /api/v1/workspaces/{workspace}/memories/{memory_id} (the `PutWorkspacesWorkspaceMemoriesMemoryId` operationId).
+func (c *Client) PutWorkspacesWorkspaceMemoriesMemoryIdWithBody(ctx context.Context, workspace string, memoryId string, params *PutWorkspacesWorkspaceMemoriesMemoryIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutWorkspacesWorkspaceMemoriesMemoryIdRequestWithBody(c.Server, workspace, memoryId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutWorkspacesWorkspaceMemoriesMemoryId Update Memory
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /api/v1/workspaces/{workspace}/memories/{memory_id} (the `PutWorkspacesWorkspaceMemoriesMemoryId` operationId).
+func (c *Client) PutWorkspacesWorkspaceMemoriesMemoryId(ctx context.Context, workspace string, memoryId string, params *PutWorkspacesWorkspaceMemoriesMemoryIdParams, body PutWorkspacesWorkspaceMemoriesMemoryIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutWorkspacesWorkspaceMemoriesMemoryIdRequest(c.Server, workspace, memoryId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // PostWorkspacesWorkspaceModelCatalogSuggestionsWithBody Suggest Workspace Model Declarations
 //
 // Takes any type of body and a specified content type.
@@ -20321,153 +20818,6 @@ func (c *Client) PostWorkspacesWorkspaceRuns(ctx context.Context, workspace stri
 	return c.Client.Do(req)
 }
 
-// GetWorkspacesWorkspaceSearchProviders List Workspace Provider
-//
-// Corresponds with GET /api/v1/workspaces/{workspace}/search-providers (the `GetWorkspacesWorkspaceSearchProviders` operationId).
-func (c *Client) GetWorkspacesWorkspaceSearchProviders(ctx context.Context, workspace string, params *GetWorkspacesWorkspaceSearchProvidersParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetWorkspacesWorkspaceSearchProvidersRequest(c.Server, workspace, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// PostWorkspacesWorkspaceSearchProvidersWithBody Create Workspace Provider
-//
-// Takes any type of body and a specified content type.
-//
-// Corresponds with POST /api/v1/workspaces/{workspace}/search-providers (the `PostWorkspacesWorkspaceSearchProviders` operationId).
-func (c *Client) PostWorkspacesWorkspaceSearchProvidersWithBody(ctx context.Context, workspace string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostWorkspacesWorkspaceSearchProvidersRequestWithBody(c.Server, workspace, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// PostWorkspacesWorkspaceSearchProviders Create Workspace Provider
-//
-// Takes a body of the `application/json` content type.
-//
-// Corresponds with POST /api/v1/workspaces/{workspace}/search-providers (the `PostWorkspacesWorkspaceSearchProviders` operationId).
-func (c *Client) PostWorkspacesWorkspaceSearchProviders(ctx context.Context, workspace string, body PostWorkspacesWorkspaceSearchProvidersJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostWorkspacesWorkspaceSearchProvidersRequest(c.Server, workspace, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// GetWorkspacesWorkspaceSearchProvidersProviderId Get Workspace Provider
-//
-// Corresponds with GET /api/v1/workspaces/{workspace}/search-providers/{provider_id} (the `GetWorkspacesWorkspaceSearchProvidersProviderId` operationId).
-func (c *Client) GetWorkspacesWorkspaceSearchProvidersProviderId(ctx context.Context, workspace string, providerId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetWorkspacesWorkspaceSearchProvidersProviderIdRequest(c.Server, workspace, providerId)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// PatchWorkspacesWorkspaceSearchProvidersProviderIdWithBody Update Workspace Provider
-//
-// Takes any type of body and a specified content type.
-//
-// Corresponds with PATCH /api/v1/workspaces/{workspace}/search-providers/{provider_id} (the `PatchWorkspacesWorkspaceSearchProvidersProviderId` operationId).
-func (c *Client) PatchWorkspacesWorkspaceSearchProvidersProviderIdWithBody(ctx context.Context, workspace string, providerId string, params *PatchWorkspacesWorkspaceSearchProvidersProviderIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPatchWorkspacesWorkspaceSearchProvidersProviderIdRequestWithBody(c.Server, workspace, providerId, params, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// PatchWorkspacesWorkspaceSearchProvidersProviderId Update Workspace Provider
-//
-// Takes a body of the `application/json` content type.
-//
-// Corresponds with PATCH /api/v1/workspaces/{workspace}/search-providers/{provider_id} (the `PatchWorkspacesWorkspaceSearchProvidersProviderId` operationId).
-func (c *Client) PatchWorkspacesWorkspaceSearchProvidersProviderId(ctx context.Context, workspace string, providerId string, params *PatchWorkspacesWorkspaceSearchProvidersProviderIdParams, body PatchWorkspacesWorkspaceSearchProvidersProviderIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPatchWorkspacesWorkspaceSearchProvidersProviderIdRequest(c.Server, workspace, providerId, params, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// GetWorkspacesWorkspaceSearchProvidersProviderIdReferences References Workspace Provider
-//
-// Corresponds with GET /api/v1/workspaces/{workspace}/search-providers/{provider_id}/references (the `GetWorkspacesWorkspaceSearchProvidersProviderIdReferences` operationId).
-func (c *Client) GetWorkspacesWorkspaceSearchProvidersProviderIdReferences(ctx context.Context, workspace string, providerId string, params *GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetWorkspacesWorkspaceSearchProvidersProviderIdReferencesRequest(c.Server, workspace, providerId, params)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// PostWorkspacesWorkspaceSearchProvidersProviderIdTestWithBody Test Workspace Provider
-//
-// Takes any type of body and a specified content type.
-//
-// Corresponds with POST /api/v1/workspaces/{workspace}/search-providers/{provider_id}/test (the `PostWorkspacesWorkspaceSearchProvidersProviderIdTest` operationId).
-func (c *Client) PostWorkspacesWorkspaceSearchProvidersProviderIdTestWithBody(ctx context.Context, workspace string, providerId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostWorkspacesWorkspaceSearchProvidersProviderIdTestRequestWithBody(c.Server, workspace, providerId, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// PostWorkspacesWorkspaceSearchProvidersProviderIdTest Test Workspace Provider
-//
-// Takes a body of the `application/json` content type.
-//
-// Corresponds with POST /api/v1/workspaces/{workspace}/search-providers/{provider_id}/test (the `PostWorkspacesWorkspaceSearchProvidersProviderIdTest` operationId).
-func (c *Client) PostWorkspacesWorkspaceSearchProvidersProviderIdTest(ctx context.Context, workspace string, providerId string, body PostWorkspacesWorkspaceSearchProvidersProviderIdTestJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostWorkspacesWorkspaceSearchProvidersProviderIdTestRequest(c.Server, workspace, providerId, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
 // GetWorkspacesWorkspaceSecurityAuditEvents Workspace Security Events
 //
 // Corresponds with GET /api/v1/workspaces/{workspace}/security-audit-events (the `GetWorkspacesWorkspaceSecurityAuditEvents` operationId).
@@ -20662,6 +21012,55 @@ func (c *Client) PostWorkspacesWorkspaceThreads(ctx context.Context, workspace s
 	return c.Client.Do(req)
 }
 
+// GetWorkspacesWorkspaceToolsets Get Toolsets
+//
+// Corresponds with GET /api/v1/workspaces/{workspace}/toolsets (the `GetWorkspacesWorkspaceToolsets` operationId).
+func (c *Client) GetWorkspacesWorkspaceToolsets(ctx context.Context, workspace string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkspacesWorkspaceToolsetsRequest(c.Server, workspace)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostWorkspacesWorkspaceToolsetsValidateWithBody Validate Toolsets
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v1/workspaces/{workspace}/toolsets/validate (the `PostWorkspacesWorkspaceToolsetsValidate` operationId).
+func (c *Client) PostWorkspacesWorkspaceToolsetsValidateWithBody(ctx context.Context, workspace string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostWorkspacesWorkspaceToolsetsValidateRequestWithBody(c.Server, workspace, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostWorkspacesWorkspaceToolsetsValidate Validate Toolsets
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v1/workspaces/{workspace}/toolsets/validate (the `PostWorkspacesWorkspaceToolsetsValidate` operationId).
+func (c *Client) PostWorkspacesWorkspaceToolsetsValidate(ctx context.Context, workspace string, body PostWorkspacesWorkspaceToolsetsValidateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostWorkspacesWorkspaceToolsetsValidateRequest(c.Server, workspace, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // GetWorkspacesWorkspaceTraceQuery Get Trace Query
 //
 // Corresponds with GET /api/v1/workspaces/{workspace}/trace-query (the `GetWorkspacesWorkspaceTraceQuery` operationId).
@@ -20712,6 +21111,134 @@ func (c *Client) GetWorkspacesWorkspaceTracesTraceId(ctx context.Context, worksp
 // Corresponds with GET /api/v1/workspaces/{workspace}/traces/{trace_id}/observations (the `GetWorkspacesWorkspaceTracesTraceIdObservations` operationId).
 func (c *Client) GetWorkspacesWorkspaceTracesTraceIdObservations(ctx context.Context, workspace string, traceId string, params *GetWorkspacesWorkspaceTracesTraceIdObservationsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetWorkspacesWorkspaceTracesTraceIdObservationsRequest(c.Server, workspace, traceId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetWorkspacesWorkspaceWebProviders List Workspace Provider
+//
+// Corresponds with GET /api/v1/workspaces/{workspace}/web-providers (the `GetWorkspacesWorkspaceWebProviders` operationId).
+func (c *Client) GetWorkspacesWorkspaceWebProviders(ctx context.Context, workspace string, params *GetWorkspacesWorkspaceWebProvidersParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkspacesWorkspaceWebProvidersRequest(c.Server, workspace, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostWorkspacesWorkspaceWebProvidersWithBody Create Workspace Provider
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v1/workspaces/{workspace}/web-providers (the `PostWorkspacesWorkspaceWebProviders` operationId).
+func (c *Client) PostWorkspacesWorkspaceWebProvidersWithBody(ctx context.Context, workspace string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostWorkspacesWorkspaceWebProvidersRequestWithBody(c.Server, workspace, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostWorkspacesWorkspaceWebProviders Create Workspace Provider
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v1/workspaces/{workspace}/web-providers (the `PostWorkspacesWorkspaceWebProviders` operationId).
+func (c *Client) PostWorkspacesWorkspaceWebProviders(ctx context.Context, workspace string, body PostWorkspacesWorkspaceWebProvidersJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostWorkspacesWorkspaceWebProvidersRequest(c.Server, workspace, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetWorkspacesWorkspaceWebProvidersProviderId Get Workspace Provider
+//
+// Corresponds with GET /api/v1/workspaces/{workspace}/web-providers/{provider_id} (the `GetWorkspacesWorkspaceWebProvidersProviderId` operationId).
+func (c *Client) GetWorkspacesWorkspaceWebProvidersProviderId(ctx context.Context, workspace string, providerId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkspacesWorkspaceWebProvidersProviderIdRequest(c.Server, workspace, providerId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PatchWorkspacesWorkspaceWebProvidersProviderIdWithBody Update Workspace Provider
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PATCH /api/v1/workspaces/{workspace}/web-providers/{provider_id} (the `PatchWorkspacesWorkspaceWebProvidersProviderId` operationId).
+func (c *Client) PatchWorkspacesWorkspaceWebProvidersProviderIdWithBody(ctx context.Context, workspace string, providerId string, params *PatchWorkspacesWorkspaceWebProvidersProviderIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPatchWorkspacesWorkspaceWebProvidersProviderIdRequestWithBody(c.Server, workspace, providerId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PatchWorkspacesWorkspaceWebProvidersProviderId Update Workspace Provider
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PATCH /api/v1/workspaces/{workspace}/web-providers/{provider_id} (the `PatchWorkspacesWorkspaceWebProvidersProviderId` operationId).
+func (c *Client) PatchWorkspacesWorkspaceWebProvidersProviderId(ctx context.Context, workspace string, providerId string, params *PatchWorkspacesWorkspaceWebProvidersProviderIdParams, body PatchWorkspacesWorkspaceWebProvidersProviderIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPatchWorkspacesWorkspaceWebProvidersProviderIdRequest(c.Server, workspace, providerId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetWorkspacesWorkspaceWebProvidersProviderIdReferences References Workspace Provider
+//
+// Corresponds with GET /api/v1/workspaces/{workspace}/web-providers/{provider_id}/references (the `GetWorkspacesWorkspaceWebProvidersProviderIdReferences` operationId).
+func (c *Client) GetWorkspacesWorkspaceWebProvidersProviderIdReferences(ctx context.Context, workspace string, providerId string, params *GetWorkspacesWorkspaceWebProvidersProviderIdReferencesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkspacesWorkspaceWebProvidersProviderIdReferencesRequest(c.Server, workspace, providerId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostWorkspacesWorkspaceWebProvidersProviderIdTest Test Workspace Provider
+//
+// Corresponds with POST /api/v1/workspaces/{workspace}/web-providers/{provider_id}/test (the `PostWorkspacesWorkspaceWebProvidersProviderIdTest` operationId).
+func (c *Client) PostWorkspacesWorkspaceWebProvidersProviderIdTest(ctx context.Context, workspace string, providerId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostWorkspacesWorkspaceWebProvidersProviderIdTestRequest(c.Server, workspace, providerId)
 	if err != nil {
 		return nil, err
 	}
@@ -26117,392 +26644,6 @@ func NewPostOrganizationsOrganizationRoleBindingsRequestWithBody(server string, 
 	return req, nil
 }
 
-// NewGetOrganizationsOrganizationSearchProvidersRequest constructs an http.Request for the GetOrganizationsOrganizationSearchProviders method
-func NewGetOrganizationsOrganizationSearchProvidersRequest(server string, organization string, params *GetOrganizationsOrganizationSearchProvidersParams) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "organization", organization, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/organizations/%s/search-providers", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-		// queryValues collects non-styled parameters (passthrough, JSON)
-		// that are safe to round-trip through url.Values.Encode().
-		queryValues := queryURL.Query()
-		// rawQueryFragments collects pre-encoded query fragments from
-		// styled parameters, preserving literal commas as delimiters
-		// per the OpenAPI spec (e.g. "color=blue,black,brown").
-		var rawQueryFragments []string
-
-		if params.Limit != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.Cursor != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.Type != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "type", *params.Type, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.Enabled != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "enabled", *params.Enabled, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if encoded := queryValues.Encode(); encoded != "" {
-			rawQueryFragments = append(rawQueryFragments, encoded)
-		}
-		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewPostOrganizationsOrganizationSearchProvidersRequest calls the generic PostOrganizationsOrganizationSearchProviders builder with application/json body
-func NewPostOrganizationsOrganizationSearchProvidersRequest(server string, organization string, body PostOrganizationsOrganizationSearchProvidersJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewPostOrganizationsOrganizationSearchProvidersRequestWithBody(server, organization, "application/json", bodyReader)
-}
-
-// NewPostOrganizationsOrganizationSearchProvidersRequestWithBody constructs an http.Request for the PostOrganizationsOrganizationSearchProviders method, with any body, and a specified content type
-func NewPostOrganizationsOrganizationSearchProvidersRequestWithBody(server string, organization string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "organization", organization, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/organizations/%s/search-providers", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewGetOrganizationsOrganizationSearchProvidersProviderIdRequest constructs an http.Request for the GetOrganizationsOrganizationSearchProvidersProviderId method
-func NewGetOrganizationsOrganizationSearchProvidersProviderIdRequest(server string, organization string, providerId string) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "organization", organization, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider_id", providerId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/organizations/%s/search-providers/%s", pathParam0, pathParam1)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewPatchOrganizationsOrganizationSearchProvidersProviderIdRequest calls the generic PatchOrganizationsOrganizationSearchProvidersProviderId builder with application/json body
-func NewPatchOrganizationsOrganizationSearchProvidersProviderIdRequest(server string, organization string, providerId string, params *PatchOrganizationsOrganizationSearchProvidersProviderIdParams, body PatchOrganizationsOrganizationSearchProvidersProviderIdJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewPatchOrganizationsOrganizationSearchProvidersProviderIdRequestWithBody(server, organization, providerId, params, "application/json", bodyReader)
-}
-
-// NewPatchOrganizationsOrganizationSearchProvidersProviderIdRequestWithBody constructs an http.Request for the PatchOrganizationsOrganizationSearchProvidersProviderId method, with any body, and a specified content type
-func NewPatchOrganizationsOrganizationSearchProvidersProviderIdRequestWithBody(server string, organization string, providerId string, params *PatchOrganizationsOrganizationSearchProvidersProviderIdParams, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "organization", organization, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider_id", providerId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/organizations/%s/search-providers/%s", pathParam0, pathParam1)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	if params != nil {
-
-		var headerParam0 string
-
-		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "If-Match", params.IfMatch, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
-		if err != nil {
-			return nil, err
-		}
-
-		req.Header.Set("If-Match", headerParam0)
-
-	}
-
-	return req, nil
-}
-
-// NewGetOrganizationsOrganizationSearchProvidersProviderIdReferencesRequest constructs an http.Request for the GetOrganizationsOrganizationSearchProvidersProviderIdReferences method
-func NewGetOrganizationsOrganizationSearchProvidersProviderIdReferencesRequest(server string, organization string, providerId string, params *GetOrganizationsOrganizationSearchProvidersProviderIdReferencesParams) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "organization", organization, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider_id", providerId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/organizations/%s/search-providers/%s/references", pathParam0, pathParam1)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-		// queryValues collects non-styled parameters (passthrough, JSON)
-		// that are safe to round-trip through url.Values.Encode().
-		queryValues := queryURL.Query()
-		// rawQueryFragments collects pre-encoded query fragments from
-		// styled parameters, preserving literal commas as delimiters
-		// per the OpenAPI spec (e.g. "color=blue,black,brown").
-		var rawQueryFragments []string
-
-		if params.Limit != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.Cursor != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if encoded := queryValues.Encode(); encoded != "" {
-			rawQueryFragments = append(rawQueryFragments, encoded)
-		}
-		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewPostOrganizationsOrganizationSearchProvidersProviderIdTestRequest calls the generic PostOrganizationsOrganizationSearchProvidersProviderIdTest builder with application/json body
-func NewPostOrganizationsOrganizationSearchProvidersProviderIdTestRequest(server string, organization string, providerId string, body PostOrganizationsOrganizationSearchProvidersProviderIdTestJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewPostOrganizationsOrganizationSearchProvidersProviderIdTestRequestWithBody(server, organization, providerId, "application/json", bodyReader)
-}
-
-// NewPostOrganizationsOrganizationSearchProvidersProviderIdTestRequestWithBody constructs an http.Request for the PostOrganizationsOrganizationSearchProvidersProviderIdTest method, with any body, and a specified content type
-func NewPostOrganizationsOrganizationSearchProvidersProviderIdTestRequestWithBody(server string, organization string, providerId string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "organization", organization, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider_id", providerId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/organizations/%s/search-providers/%s/test", pathParam0, pathParam1)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
 // NewGetOrganizationsOrganizationSecurityAuditEventsRequest constructs an http.Request for the GetOrganizationsOrganizationSecurityAuditEvents method
 func NewGetOrganizationsOrganizationSecurityAuditEventsRequest(server string, organization string, params *GetOrganizationsOrganizationSecurityAuditEventsParams) (*http.Request, error) {
 	var err error
@@ -26642,6 +26783,379 @@ func NewGetOrganizationsOrganizationUsersRequest(server string, organization str
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetOrganizationsOrganizationWebProvidersRequest constructs an http.Request for the GetOrganizationsOrganizationWebProviders method
+func NewGetOrganizationsOrganizationWebProvidersRequest(server string, organization string, params *GetOrganizationsOrganizationWebProvidersParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "organization", organization, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/organizations/%s/web-providers", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Type != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "type", *params.Type, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Enabled != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "enabled", *params.Enabled, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostOrganizationsOrganizationWebProvidersRequest calls the generic PostOrganizationsOrganizationWebProviders builder with application/json body
+func NewPostOrganizationsOrganizationWebProvidersRequest(server string, organization string, body PostOrganizationsOrganizationWebProvidersJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostOrganizationsOrganizationWebProvidersRequestWithBody(server, organization, "application/json", bodyReader)
+}
+
+// NewPostOrganizationsOrganizationWebProvidersRequestWithBody constructs an http.Request for the PostOrganizationsOrganizationWebProviders method, with any body, and a specified content type
+func NewPostOrganizationsOrganizationWebProvidersRequestWithBody(server string, organization string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "organization", organization, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/organizations/%s/web-providers", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetOrganizationsOrganizationWebProvidersProviderIdRequest constructs an http.Request for the GetOrganizationsOrganizationWebProvidersProviderId method
+func NewGetOrganizationsOrganizationWebProvidersProviderIdRequest(server string, organization string, providerId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "organization", organization, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider_id", providerId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/organizations/%s/web-providers/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPatchOrganizationsOrganizationWebProvidersProviderIdRequest calls the generic PatchOrganizationsOrganizationWebProvidersProviderId builder with application/json body
+func NewPatchOrganizationsOrganizationWebProvidersProviderIdRequest(server string, organization string, providerId string, params *PatchOrganizationsOrganizationWebProvidersProviderIdParams, body PatchOrganizationsOrganizationWebProvidersProviderIdJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPatchOrganizationsOrganizationWebProvidersProviderIdRequestWithBody(server, organization, providerId, params, "application/json", bodyReader)
+}
+
+// NewPatchOrganizationsOrganizationWebProvidersProviderIdRequestWithBody constructs an http.Request for the PatchOrganizationsOrganizationWebProvidersProviderId method, with any body, and a specified content type
+func NewPatchOrganizationsOrganizationWebProvidersProviderIdRequestWithBody(server string, organization string, providerId string, params *PatchOrganizationsOrganizationWebProvidersProviderIdParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "organization", organization, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider_id", providerId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/organizations/%s/web-providers/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "If-Match", params.IfMatch, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("If-Match", headerParam0)
+
+	}
+
+	return req, nil
+}
+
+// NewGetOrganizationsOrganizationWebProvidersProviderIdReferencesRequest constructs an http.Request for the GetOrganizationsOrganizationWebProvidersProviderIdReferences method
+func NewGetOrganizationsOrganizationWebProvidersProviderIdReferencesRequest(server string, organization string, providerId string, params *GetOrganizationsOrganizationWebProvidersProviderIdReferencesParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "organization", organization, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider_id", providerId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/organizations/%s/web-providers/%s/references", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostOrganizationsOrganizationWebProvidersProviderIdTestRequest constructs an http.Request for the PostOrganizationsOrganizationWebProvidersProviderIdTest method
+func NewPostOrganizationsOrganizationWebProvidersProviderIdTestRequest(server string, organization string, providerId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "organization", organization, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider_id", providerId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/organizations/%s/web-providers/%s/test", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -28042,67 +28556,6 @@ func NewPostRunsSourceRunIdContinueRequestWithBody(server string, sourceRunId st
 
 		req.Header.Set("Idempotency-Key", headerParam0)
 
-	}
-
-	return req, nil
-}
-
-// NewGetSearchProviderTypesRequest constructs an http.Request for the GetSearchProviderTypes method
-func NewGetSearchProviderTypesRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/search-provider-types")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewGetSearchProviderTypesProviderTypeRequest constructs an http.Request for the GetSearchProviderTypesProviderType method
-func NewGetSearchProviderTypesProviderTypeRequest(server string, providerType string) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider_type", providerType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/search-provider-types/%s", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
 	}
 
 	return req, nil
@@ -30050,6 +30503,67 @@ func NewGetUsersUserIdAvatarImageIdRequest(server string, userId string, imageId
 	}
 
 	operationPath := fmt.Sprintf("/api/v1/users/%s/avatar/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetWebProviderTypesRequest constructs an http.Request for the GetWebProviderTypes method
+func NewGetWebProviderTypesRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/web-provider-types")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetWebProviderTypesProviderTypeRequest constructs an http.Request for the GetWebProviderTypesProviderType method
+func NewGetWebProviderTypesProviderTypeRequest(server string, providerType string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "provider_type", providerType, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/web-provider-types/%s", pathParam0)
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -32741,6 +33255,504 @@ func NewGetWorkspacesWorkspaceMembersRequest(server string, workspace string, pa
 	return req, nil
 }
 
+// NewGetWorkspacesWorkspaceMemoriesRequest constructs an http.Request for the GetWorkspacesWorkspaceMemories method
+func NewGetWorkspacesWorkspaceMemoriesRequest(server string, workspace string, params *GetWorkspacesWorkspaceMemoriesParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/memories", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "scope", params.Scope, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if params.SubjectId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "subject_id", *params.SubjectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostWorkspacesWorkspaceMemoriesRequest calls the generic PostWorkspacesWorkspaceMemories builder with application/json body
+func NewPostWorkspacesWorkspaceMemoriesRequest(server string, workspace string, params *PostWorkspacesWorkspaceMemoriesParams, body PostWorkspacesWorkspaceMemoriesJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostWorkspacesWorkspaceMemoriesRequestWithBody(server, workspace, params, "application/json", bodyReader)
+}
+
+// NewPostWorkspacesWorkspaceMemoriesRequestWithBody constructs an http.Request for the PostWorkspacesWorkspaceMemories method, with any body, and a specified content type
+func NewPostWorkspacesWorkspaceMemoriesRequestWithBody(server string, workspace string, params *PostWorkspacesWorkspaceMemoriesParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/memories", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "scope", params.Scope, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if params.SubjectId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "subject_id", *params.SubjectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPostWorkspacesWorkspaceMemoriesSearchRequest calls the generic PostWorkspacesWorkspaceMemoriesSearch builder with application/json body
+func NewPostWorkspacesWorkspaceMemoriesSearchRequest(server string, workspace string, params *PostWorkspacesWorkspaceMemoriesSearchParams, body PostWorkspacesWorkspaceMemoriesSearchJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostWorkspacesWorkspaceMemoriesSearchRequestWithBody(server, workspace, params, "application/json", bodyReader)
+}
+
+// NewPostWorkspacesWorkspaceMemoriesSearchRequestWithBody constructs an http.Request for the PostWorkspacesWorkspaceMemoriesSearch method, with any body, and a specified content type
+func NewPostWorkspacesWorkspaceMemoriesSearchRequestWithBody(server string, workspace string, params *PostWorkspacesWorkspaceMemoriesSearchParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/memories/search", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "scope", params.Scope, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if params.SubjectId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "subject_id", *params.SubjectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteWorkspacesWorkspaceMemoriesMemoryIdRequest constructs an http.Request for the DeleteWorkspacesWorkspaceMemoriesMemoryId method
+func NewDeleteWorkspacesWorkspaceMemoriesMemoryIdRequest(server string, workspace string, memoryId string, params *DeleteWorkspacesWorkspaceMemoriesMemoryIdParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "memory_id", memoryId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/memories/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "scope", params.Scope, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if params.SubjectId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "subject_id", *params.SubjectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetWorkspacesWorkspaceMemoriesMemoryIdRequest constructs an http.Request for the GetWorkspacesWorkspaceMemoriesMemoryId method
+func NewGetWorkspacesWorkspaceMemoriesMemoryIdRequest(server string, workspace string, memoryId string, params *GetWorkspacesWorkspaceMemoriesMemoryIdParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "memory_id", memoryId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/memories/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "scope", params.Scope, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if params.SubjectId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "subject_id", *params.SubjectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPutWorkspacesWorkspaceMemoriesMemoryIdRequest calls the generic PutWorkspacesWorkspaceMemoriesMemoryId builder with application/json body
+func NewPutWorkspacesWorkspaceMemoriesMemoryIdRequest(server string, workspace string, memoryId string, params *PutWorkspacesWorkspaceMemoriesMemoryIdParams, body PutWorkspacesWorkspaceMemoriesMemoryIdJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPutWorkspacesWorkspaceMemoriesMemoryIdRequestWithBody(server, workspace, memoryId, params, "application/json", bodyReader)
+}
+
+// NewPutWorkspacesWorkspaceMemoriesMemoryIdRequestWithBody constructs an http.Request for the PutWorkspacesWorkspaceMemoriesMemoryId method, with any body, and a specified content type
+func NewPutWorkspacesWorkspaceMemoriesMemoryIdRequestWithBody(server string, workspace string, memoryId string, params *PutWorkspacesWorkspaceMemoriesMemoryIdParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "memory_id", memoryId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/memories/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "scope", params.Scope, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if params.SubjectId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "subject_id", *params.SubjectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewPostWorkspacesWorkspaceModelCatalogSuggestionsRequest calls the generic PostWorkspacesWorkspaceModelCatalogSuggestions builder with application/json body
 func NewPostWorkspacesWorkspaceModelCatalogSuggestionsRequest(server string, workspace string, body PostWorkspacesWorkspaceModelCatalogSuggestionsJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -33883,392 +34895,6 @@ func NewPostWorkspacesWorkspaceRunsRequestWithBody(server string, workspace stri
 	return req, nil
 }
 
-// NewGetWorkspacesWorkspaceSearchProvidersRequest constructs an http.Request for the GetWorkspacesWorkspaceSearchProviders method
-func NewGetWorkspacesWorkspaceSearchProvidersRequest(server string, workspace string, params *GetWorkspacesWorkspaceSearchProvidersParams) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/search-providers", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-		// queryValues collects non-styled parameters (passthrough, JSON)
-		// that are safe to round-trip through url.Values.Encode().
-		queryValues := queryURL.Query()
-		// rawQueryFragments collects pre-encoded query fragments from
-		// styled parameters, preserving literal commas as delimiters
-		// per the OpenAPI spec (e.g. "color=blue,black,brown").
-		var rawQueryFragments []string
-
-		if params.Limit != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.Cursor != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.Type != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "type", *params.Type, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.Enabled != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "enabled", *params.Enabled, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if encoded := queryValues.Encode(); encoded != "" {
-			rawQueryFragments = append(rawQueryFragments, encoded)
-		}
-		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewPostWorkspacesWorkspaceSearchProvidersRequest calls the generic PostWorkspacesWorkspaceSearchProviders builder with application/json body
-func NewPostWorkspacesWorkspaceSearchProvidersRequest(server string, workspace string, body PostWorkspacesWorkspaceSearchProvidersJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewPostWorkspacesWorkspaceSearchProvidersRequestWithBody(server, workspace, "application/json", bodyReader)
-}
-
-// NewPostWorkspacesWorkspaceSearchProvidersRequestWithBody constructs an http.Request for the PostWorkspacesWorkspaceSearchProviders method, with any body, and a specified content type
-func NewPostWorkspacesWorkspaceSearchProvidersRequestWithBody(server string, workspace string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/search-providers", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewGetWorkspacesWorkspaceSearchProvidersProviderIdRequest constructs an http.Request for the GetWorkspacesWorkspaceSearchProvidersProviderId method
-func NewGetWorkspacesWorkspaceSearchProvidersProviderIdRequest(server string, workspace string, providerId string) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider_id", providerId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/search-providers/%s", pathParam0, pathParam1)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewPatchWorkspacesWorkspaceSearchProvidersProviderIdRequest calls the generic PatchWorkspacesWorkspaceSearchProvidersProviderId builder with application/json body
-func NewPatchWorkspacesWorkspaceSearchProvidersProviderIdRequest(server string, workspace string, providerId string, params *PatchWorkspacesWorkspaceSearchProvidersProviderIdParams, body PatchWorkspacesWorkspaceSearchProvidersProviderIdJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewPatchWorkspacesWorkspaceSearchProvidersProviderIdRequestWithBody(server, workspace, providerId, params, "application/json", bodyReader)
-}
-
-// NewPatchWorkspacesWorkspaceSearchProvidersProviderIdRequestWithBody constructs an http.Request for the PatchWorkspacesWorkspaceSearchProvidersProviderId method, with any body, and a specified content type
-func NewPatchWorkspacesWorkspaceSearchProvidersProviderIdRequestWithBody(server string, workspace string, providerId string, params *PatchWorkspacesWorkspaceSearchProvidersProviderIdParams, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider_id", providerId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/search-providers/%s", pathParam0, pathParam1)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	if params != nil {
-
-		var headerParam0 string
-
-		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "If-Match", params.IfMatch, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
-		if err != nil {
-			return nil, err
-		}
-
-		req.Header.Set("If-Match", headerParam0)
-
-	}
-
-	return req, nil
-}
-
-// NewGetWorkspacesWorkspaceSearchProvidersProviderIdReferencesRequest constructs an http.Request for the GetWorkspacesWorkspaceSearchProvidersProviderIdReferences method
-func NewGetWorkspacesWorkspaceSearchProvidersProviderIdReferencesRequest(server string, workspace string, providerId string, params *GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesParams) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider_id", providerId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/search-providers/%s/references", pathParam0, pathParam1)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	if params != nil {
-		// queryValues collects non-styled parameters (passthrough, JSON)
-		// that are safe to round-trip through url.Values.Encode().
-		queryValues := queryURL.Query()
-		// rawQueryFragments collects pre-encoded query fragments from
-		// styled parameters, preserving literal commas as delimiters
-		// per the OpenAPI spec (e.g. "color=blue,black,brown").
-		var rawQueryFragments []string
-
-		if params.Limit != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.Cursor != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if encoded := queryValues.Encode(); encoded != "" {
-			rawQueryFragments = append(rawQueryFragments, encoded)
-		}
-		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
-// NewPostWorkspacesWorkspaceSearchProvidersProviderIdTestRequest calls the generic PostWorkspacesWorkspaceSearchProvidersProviderIdTest builder with application/json body
-func NewPostWorkspacesWorkspaceSearchProvidersProviderIdTestRequest(server string, workspace string, providerId string, body PostWorkspacesWorkspaceSearchProvidersProviderIdTestJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewPostWorkspacesWorkspaceSearchProvidersProviderIdTestRequestWithBody(server, workspace, providerId, "application/json", bodyReader)
-}
-
-// NewPostWorkspacesWorkspaceSearchProvidersProviderIdTestRequestWithBody constructs an http.Request for the PostWorkspacesWorkspaceSearchProvidersProviderIdTest method, with any body, and a specified content type
-func NewPostWorkspacesWorkspaceSearchProvidersProviderIdTestRequestWithBody(server string, workspace string, providerId string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider_id", providerId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/search-providers/%s/test", pathParam0, pathParam1)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
 // NewGetWorkspacesWorkspaceSecurityAuditEventsRequest constructs an http.Request for the GetWorkspacesWorkspaceSecurityAuditEvents method
 func NewGetWorkspacesWorkspaceSecurityAuditEventsRequest(server string, workspace string, params *GetWorkspacesWorkspaceSecurityAuditEventsParams) (*http.Request, error) {
 	var err error
@@ -34938,6 +35564,87 @@ func NewPostWorkspacesWorkspaceThreadsRequestWithBody(server string, workspace s
 	return req, nil
 }
 
+// NewGetWorkspacesWorkspaceToolsetsRequest constructs an http.Request for the GetWorkspacesWorkspaceToolsets method
+func NewGetWorkspacesWorkspaceToolsetsRequest(server string, workspace string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/toolsets", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostWorkspacesWorkspaceToolsetsValidateRequest calls the generic PostWorkspacesWorkspaceToolsetsValidate builder with application/json body
+func NewPostWorkspacesWorkspaceToolsetsValidateRequest(server string, workspace string, body PostWorkspacesWorkspaceToolsetsValidateJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostWorkspacesWorkspaceToolsetsValidateRequestWithBody(server, workspace, "application/json", bodyReader)
+}
+
+// NewPostWorkspacesWorkspaceToolsetsValidateRequestWithBody constructs an http.Request for the PostWorkspacesWorkspaceToolsetsValidate method, with any body, and a specified content type
+func NewPostWorkspacesWorkspaceToolsetsValidateRequestWithBody(server string, workspace string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/toolsets/validate", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewGetWorkspacesWorkspaceTraceQueryRequest constructs an http.Request for the GetWorkspacesWorkspaceTraceQuery method
 func NewGetWorkspacesWorkspaceTraceQueryRequest(server string, workspace string) (*http.Request, error) {
 	var err error
@@ -35294,6 +36001,379 @@ func NewGetWorkspacesWorkspaceTracesTraceIdObservationsRequest(server string, wo
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetWorkspacesWorkspaceWebProvidersRequest constructs an http.Request for the GetWorkspacesWorkspaceWebProviders method
+func NewGetWorkspacesWorkspaceWebProvidersRequest(server string, workspace string, params *GetWorkspacesWorkspaceWebProvidersParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/web-providers", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Type != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "type", *params.Type, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Enabled != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "enabled", *params.Enabled, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostWorkspacesWorkspaceWebProvidersRequest calls the generic PostWorkspacesWorkspaceWebProviders builder with application/json body
+func NewPostWorkspacesWorkspaceWebProvidersRequest(server string, workspace string, body PostWorkspacesWorkspaceWebProvidersJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostWorkspacesWorkspaceWebProvidersRequestWithBody(server, workspace, "application/json", bodyReader)
+}
+
+// NewPostWorkspacesWorkspaceWebProvidersRequestWithBody constructs an http.Request for the PostWorkspacesWorkspaceWebProviders method, with any body, and a specified content type
+func NewPostWorkspacesWorkspaceWebProvidersRequestWithBody(server string, workspace string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/web-providers", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetWorkspacesWorkspaceWebProvidersProviderIdRequest constructs an http.Request for the GetWorkspacesWorkspaceWebProvidersProviderId method
+func NewGetWorkspacesWorkspaceWebProvidersProviderIdRequest(server string, workspace string, providerId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider_id", providerId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/web-providers/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPatchWorkspacesWorkspaceWebProvidersProviderIdRequest calls the generic PatchWorkspacesWorkspaceWebProvidersProviderId builder with application/json body
+func NewPatchWorkspacesWorkspaceWebProvidersProviderIdRequest(server string, workspace string, providerId string, params *PatchWorkspacesWorkspaceWebProvidersProviderIdParams, body PatchWorkspacesWorkspaceWebProvidersProviderIdJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPatchWorkspacesWorkspaceWebProvidersProviderIdRequestWithBody(server, workspace, providerId, params, "application/json", bodyReader)
+}
+
+// NewPatchWorkspacesWorkspaceWebProvidersProviderIdRequestWithBody constructs an http.Request for the PatchWorkspacesWorkspaceWebProvidersProviderId method, with any body, and a specified content type
+func NewPatchWorkspacesWorkspaceWebProvidersProviderIdRequestWithBody(server string, workspace string, providerId string, params *PatchWorkspacesWorkspaceWebProvidersProviderIdParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider_id", providerId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/web-providers/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "If-Match", params.IfMatch, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("If-Match", headerParam0)
+
+	}
+
+	return req, nil
+}
+
+// NewGetWorkspacesWorkspaceWebProvidersProviderIdReferencesRequest constructs an http.Request for the GetWorkspacesWorkspaceWebProvidersProviderIdReferences method
+func NewGetWorkspacesWorkspaceWebProvidersProviderIdReferencesRequest(server string, workspace string, providerId string, params *GetWorkspacesWorkspaceWebProvidersProviderIdReferencesParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider_id", providerId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/web-providers/%s/references", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostWorkspacesWorkspaceWebProvidersProviderIdTestRequest constructs an http.Request for the PostWorkspacesWorkspaceWebProvidersProviderIdTest method
+func NewPostWorkspacesWorkspaceWebProvidersProviderIdTestRequest(server string, workspace string, providerId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider_id", providerId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/web-providers/%s/test", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -36458,69 +37538,6 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /api/v1/organizations/{organization}/role-bindings (the `PostOrganizationsOrganizationRoleBindings` operationId).
 	PostOrganizationsOrganizationRoleBindingsWithResponse(ctx context.Context, organization string, body PostOrganizationsOrganizationRoleBindingsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostOrganizationsOrganizationRoleBindingsResponse, error)
 
-	// GetOrganizationsOrganizationSearchProvidersWithResponse List Organization Provider
-	//
-	// Returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with GET /api/v1/organizations/{organization}/search-providers (the `GetOrganizationsOrganizationSearchProviders` operationId).
-	GetOrganizationsOrganizationSearchProvidersWithResponse(ctx context.Context, organization string, params *GetOrganizationsOrganizationSearchProvidersParams, reqEditors ...RequestEditorFn) (*GetOrganizationsOrganizationSearchProvidersResponse, error)
-
-	// PostOrganizationsOrganizationSearchProvidersWithBodyWithResponse Create Organization Provider
-	//
-	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with POST /api/v1/organizations/{organization}/search-providers (the `PostOrganizationsOrganizationSearchProviders` operationId).
-	PostOrganizationsOrganizationSearchProvidersWithBodyWithResponse(ctx context.Context, organization string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostOrganizationsOrganizationSearchProvidersResponse, error)
-
-	// PostOrganizationsOrganizationSearchProvidersWithResponse Create Organization Provider
-	//
-	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with POST /api/v1/organizations/{organization}/search-providers (the `PostOrganizationsOrganizationSearchProviders` operationId).
-	PostOrganizationsOrganizationSearchProvidersWithResponse(ctx context.Context, organization string, body PostOrganizationsOrganizationSearchProvidersJSONRequestBody, reqEditors ...RequestEditorFn) (*PostOrganizationsOrganizationSearchProvidersResponse, error)
-
-	// GetOrganizationsOrganizationSearchProvidersProviderIdWithResponse Get Organization Provider
-	//
-	// Returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with GET /api/v1/organizations/{organization}/search-providers/{provider_id} (the `GetOrganizationsOrganizationSearchProvidersProviderId` operationId).
-	GetOrganizationsOrganizationSearchProvidersProviderIdWithResponse(ctx context.Context, organization string, providerId string, reqEditors ...RequestEditorFn) (*GetOrganizationsOrganizationSearchProvidersProviderIdResponse, error)
-
-	// PatchOrganizationsOrganizationSearchProvidersProviderIdWithBodyWithResponse Update Organization Provider
-	//
-	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with PATCH /api/v1/organizations/{organization}/search-providers/{provider_id} (the `PatchOrganizationsOrganizationSearchProvidersProviderId` operationId).
-	PatchOrganizationsOrganizationSearchProvidersProviderIdWithBodyWithResponse(ctx context.Context, organization string, providerId string, params *PatchOrganizationsOrganizationSearchProvidersProviderIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchOrganizationsOrganizationSearchProvidersProviderIdResponse, error)
-
-	// PatchOrganizationsOrganizationSearchProvidersProviderIdWithResponse Update Organization Provider
-	//
-	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with PATCH /api/v1/organizations/{organization}/search-providers/{provider_id} (the `PatchOrganizationsOrganizationSearchProvidersProviderId` operationId).
-	PatchOrganizationsOrganizationSearchProvidersProviderIdWithResponse(ctx context.Context, organization string, providerId string, params *PatchOrganizationsOrganizationSearchProvidersProviderIdParams, body PatchOrganizationsOrganizationSearchProvidersProviderIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchOrganizationsOrganizationSearchProvidersProviderIdResponse, error)
-
-	// GetOrganizationsOrganizationSearchProvidersProviderIdReferencesWithResponse References Organization Provider
-	//
-	// Returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with GET /api/v1/organizations/{organization}/search-providers/{provider_id}/references (the `GetOrganizationsOrganizationSearchProvidersProviderIdReferences` operationId).
-	GetOrganizationsOrganizationSearchProvidersProviderIdReferencesWithResponse(ctx context.Context, organization string, providerId string, params *GetOrganizationsOrganizationSearchProvidersProviderIdReferencesParams, reqEditors ...RequestEditorFn) (*GetOrganizationsOrganizationSearchProvidersProviderIdReferencesResponse, error)
-
-	// PostOrganizationsOrganizationSearchProvidersProviderIdTestWithBodyWithResponse Test Organization Provider
-	//
-	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with POST /api/v1/organizations/{organization}/search-providers/{provider_id}/test (the `PostOrganizationsOrganizationSearchProvidersProviderIdTest` operationId).
-	PostOrganizationsOrganizationSearchProvidersProviderIdTestWithBodyWithResponse(ctx context.Context, organization string, providerId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostOrganizationsOrganizationSearchProvidersProviderIdTestResponse, error)
-
-	// PostOrganizationsOrganizationSearchProvidersProviderIdTestWithResponse Test Organization Provider
-	//
-	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with POST /api/v1/organizations/{organization}/search-providers/{provider_id}/test (the `PostOrganizationsOrganizationSearchProvidersProviderIdTest` operationId).
-	PostOrganizationsOrganizationSearchProvidersProviderIdTestWithResponse(ctx context.Context, organization string, providerId string, body PostOrganizationsOrganizationSearchProvidersProviderIdTestJSONRequestBody, reqEditors ...RequestEditorFn) (*PostOrganizationsOrganizationSearchProvidersProviderIdTestResponse, error)
-
 	// GetOrganizationsOrganizationSecurityAuditEventsWithResponse Organization Security Events
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -36534,6 +37551,62 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /api/v1/organizations/{organization}/users (the `GetOrganizationsOrganizationUsers` operationId).
 	GetOrganizationsOrganizationUsersWithResponse(ctx context.Context, organization string, params *GetOrganizationsOrganizationUsersParams, reqEditors ...RequestEditorFn) (*GetOrganizationsOrganizationUsersResponse, error)
+
+	// GetOrganizationsOrganizationWebProvidersWithResponse List Organization Provider
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/organizations/{organization}/web-providers (the `GetOrganizationsOrganizationWebProviders` operationId).
+	GetOrganizationsOrganizationWebProvidersWithResponse(ctx context.Context, organization string, params *GetOrganizationsOrganizationWebProvidersParams, reqEditors ...RequestEditorFn) (*GetOrganizationsOrganizationWebProvidersResponse, error)
+
+	// PostOrganizationsOrganizationWebProvidersWithBodyWithResponse Create Organization Provider
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/organizations/{organization}/web-providers (the `PostOrganizationsOrganizationWebProviders` operationId).
+	PostOrganizationsOrganizationWebProvidersWithBodyWithResponse(ctx context.Context, organization string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostOrganizationsOrganizationWebProvidersResponse, error)
+
+	// PostOrganizationsOrganizationWebProvidersWithResponse Create Organization Provider
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/organizations/{organization}/web-providers (the `PostOrganizationsOrganizationWebProviders` operationId).
+	PostOrganizationsOrganizationWebProvidersWithResponse(ctx context.Context, organization string, body PostOrganizationsOrganizationWebProvidersJSONRequestBody, reqEditors ...RequestEditorFn) (*PostOrganizationsOrganizationWebProvidersResponse, error)
+
+	// GetOrganizationsOrganizationWebProvidersProviderIdWithResponse Get Organization Provider
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/organizations/{organization}/web-providers/{provider_id} (the `GetOrganizationsOrganizationWebProvidersProviderId` operationId).
+	GetOrganizationsOrganizationWebProvidersProviderIdWithResponse(ctx context.Context, organization string, providerId string, reqEditors ...RequestEditorFn) (*GetOrganizationsOrganizationWebProvidersProviderIdResponse, error)
+
+	// PatchOrganizationsOrganizationWebProvidersProviderIdWithBodyWithResponse Update Organization Provider
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /api/v1/organizations/{organization}/web-providers/{provider_id} (the `PatchOrganizationsOrganizationWebProvidersProviderId` operationId).
+	PatchOrganizationsOrganizationWebProvidersProviderIdWithBodyWithResponse(ctx context.Context, organization string, providerId string, params *PatchOrganizationsOrganizationWebProvidersProviderIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchOrganizationsOrganizationWebProvidersProviderIdResponse, error)
+
+	// PatchOrganizationsOrganizationWebProvidersProviderIdWithResponse Update Organization Provider
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /api/v1/organizations/{organization}/web-providers/{provider_id} (the `PatchOrganizationsOrganizationWebProvidersProviderId` operationId).
+	PatchOrganizationsOrganizationWebProvidersProviderIdWithResponse(ctx context.Context, organization string, providerId string, params *PatchOrganizationsOrganizationWebProvidersProviderIdParams, body PatchOrganizationsOrganizationWebProvidersProviderIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchOrganizationsOrganizationWebProvidersProviderIdResponse, error)
+
+	// GetOrganizationsOrganizationWebProvidersProviderIdReferencesWithResponse References Organization Provider
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/organizations/{organization}/web-providers/{provider_id}/references (the `GetOrganizationsOrganizationWebProvidersProviderIdReferences` operationId).
+	GetOrganizationsOrganizationWebProvidersProviderIdReferencesWithResponse(ctx context.Context, organization string, providerId string, params *GetOrganizationsOrganizationWebProvidersProviderIdReferencesParams, reqEditors ...RequestEditorFn) (*GetOrganizationsOrganizationWebProvidersProviderIdReferencesResponse, error)
+
+	// PostOrganizationsOrganizationWebProvidersProviderIdTestWithResponse Test Organization Provider
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/organizations/{organization}/web-providers/{provider_id}/test (the `PostOrganizationsOrganizationWebProvidersProviderIdTest` operationId).
+	PostOrganizationsOrganizationWebProvidersProviderIdTestWithResponse(ctx context.Context, organization string, providerId string, reqEditors ...RequestEditorFn) (*PostOrganizationsOrganizationWebProvidersProviderIdTestResponse, error)
 
 	// GetOrganizationsOrganizationWorkspacesWithResponse Workspaces
 	//
@@ -36793,20 +37866,6 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /api/v1/runs/{source_run_id}/continue (the `PostRunsSourceRunIdContinue` operationId).
 	PostRunsSourceRunIdContinueWithResponse(ctx context.Context, sourceRunId string, params *PostRunsSourceRunIdContinueParams, body PostRunsSourceRunIdContinueJSONRequestBody, reqEditors ...RequestEditorFn) (*PostRunsSourceRunIdContinueResponse, error)
-
-	// GetSearchProviderTypesWithResponse List Types
-	//
-	// Returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with GET /api/v1/search-provider-types (the `GetSearchProviderTypes` operationId).
-	GetSearchProviderTypesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSearchProviderTypesResponse, error)
-
-	// GetSearchProviderTypesProviderTypeWithResponse Get Type
-	//
-	// Returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with GET /api/v1/search-provider-types/{provider_type} (the `GetSearchProviderTypesProviderType` operationId).
-	GetSearchProviderTypesProviderTypeWithResponse(ctx context.Context, providerType string, reqEditors ...RequestEditorFn) (*GetSearchProviderTypesProviderTypeResponse, error)
 
 	// DeleteServiceAccountsAccountIdWithBodyWithResponse Delete Account
 	//
@@ -37185,6 +38244,20 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /api/v1/users/{user_id}/avatar/{image_id} (the `GetUsersUserIdAvatarImageId` operationId).
 	GetUsersUserIdAvatarImageIdWithResponse(ctx context.Context, userId string, imageId string, reqEditors ...RequestEditorFn) (*GetUsersUserIdAvatarImageIdResponse, error)
+
+	// GetWebProviderTypesWithResponse List Types
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/web-provider-types (the `GetWebProviderTypes` operationId).
+	GetWebProviderTypesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetWebProviderTypesResponse, error)
+
+	// GetWebProviderTypesProviderTypeWithResponse Get Type
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/web-provider-types/{provider_type} (the `GetWebProviderTypesProviderType` operationId).
+	GetWebProviderTypesProviderTypeWithResponse(ctx context.Context, providerType string, reqEditors ...RequestEditorFn) (*GetWebProviderTypesProviderTypeResponse, error)
 
 	// DeleteWorkspacesWorkspaceWithResponse Delete Workspace
 	//
@@ -37585,6 +38658,69 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /api/v1/workspaces/{workspace}/members (the `GetWorkspacesWorkspaceMembers` operationId).
 	GetWorkspacesWorkspaceMembersWithResponse(ctx context.Context, workspace string, params *GetWorkspacesWorkspaceMembersParams, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceMembersResponse, error)
 
+	// GetWorkspacesWorkspaceMemoriesWithResponse List Memories
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/workspaces/{workspace}/memories (the `GetWorkspacesWorkspaceMemories` operationId).
+	GetWorkspacesWorkspaceMemoriesWithResponse(ctx context.Context, workspace string, params *GetWorkspacesWorkspaceMemoriesParams, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceMemoriesResponse, error)
+
+	// PostWorkspacesWorkspaceMemoriesWithBodyWithResponse Add Memory
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/workspaces/{workspace}/memories (the `PostWorkspacesWorkspaceMemories` operationId).
+	PostWorkspacesWorkspaceMemoriesWithBodyWithResponse(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceMemoriesParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceMemoriesResponse, error)
+
+	// PostWorkspacesWorkspaceMemoriesWithResponse Add Memory
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/workspaces/{workspace}/memories (the `PostWorkspacesWorkspaceMemories` operationId).
+	PostWorkspacesWorkspaceMemoriesWithResponse(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceMemoriesParams, body PostWorkspacesWorkspaceMemoriesJSONRequestBody, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceMemoriesResponse, error)
+
+	// PostWorkspacesWorkspaceMemoriesSearchWithBodyWithResponse Search Memories
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/workspaces/{workspace}/memories/search (the `PostWorkspacesWorkspaceMemoriesSearch` operationId).
+	PostWorkspacesWorkspaceMemoriesSearchWithBodyWithResponse(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceMemoriesSearchParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceMemoriesSearchResponse, error)
+
+	// PostWorkspacesWorkspaceMemoriesSearchWithResponse Search Memories
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/workspaces/{workspace}/memories/search (the `PostWorkspacesWorkspaceMemoriesSearch` operationId).
+	PostWorkspacesWorkspaceMemoriesSearchWithResponse(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceMemoriesSearchParams, body PostWorkspacesWorkspaceMemoriesSearchJSONRequestBody, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceMemoriesSearchResponse, error)
+
+	// DeleteWorkspacesWorkspaceMemoriesMemoryIdWithResponse Delete Memory
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /api/v1/workspaces/{workspace}/memories/{memory_id} (the `DeleteWorkspacesWorkspaceMemoriesMemoryId` operationId).
+	DeleteWorkspacesWorkspaceMemoriesMemoryIdWithResponse(ctx context.Context, workspace string, memoryId string, params *DeleteWorkspacesWorkspaceMemoriesMemoryIdParams, reqEditors ...RequestEditorFn) (*DeleteWorkspacesWorkspaceMemoriesMemoryIdResponse, error)
+
+	// GetWorkspacesWorkspaceMemoriesMemoryIdWithResponse Get Memory
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/workspaces/{workspace}/memories/{memory_id} (the `GetWorkspacesWorkspaceMemoriesMemoryId` operationId).
+	GetWorkspacesWorkspaceMemoriesMemoryIdWithResponse(ctx context.Context, workspace string, memoryId string, params *GetWorkspacesWorkspaceMemoriesMemoryIdParams, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceMemoriesMemoryIdResponse, error)
+
+	// PutWorkspacesWorkspaceMemoriesMemoryIdWithBodyWithResponse Update Memory
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/v1/workspaces/{workspace}/memories/{memory_id} (the `PutWorkspacesWorkspaceMemoriesMemoryId` operationId).
+	PutWorkspacesWorkspaceMemoriesMemoryIdWithBodyWithResponse(ctx context.Context, workspace string, memoryId string, params *PutWorkspacesWorkspaceMemoriesMemoryIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutWorkspacesWorkspaceMemoriesMemoryIdResponse, error)
+
+	// PutWorkspacesWorkspaceMemoriesMemoryIdWithResponse Update Memory
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/v1/workspaces/{workspace}/memories/{memory_id} (the `PutWorkspacesWorkspaceMemoriesMemoryId` operationId).
+	PutWorkspacesWorkspaceMemoriesMemoryIdWithResponse(ctx context.Context, workspace string, memoryId string, params *PutWorkspacesWorkspaceMemoriesMemoryIdParams, body PutWorkspacesWorkspaceMemoriesMemoryIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PutWorkspacesWorkspaceMemoriesMemoryIdResponse, error)
+
 	// PostWorkspacesWorkspaceModelCatalogSuggestionsWithBodyWithResponse Suggest Workspace Model Declarations
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
@@ -37781,69 +38917,6 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /api/v1/workspaces/{workspace}/runs (the `PostWorkspacesWorkspaceRuns` operationId).
 	PostWorkspacesWorkspaceRunsWithResponse(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceRunsParams, body PostWorkspacesWorkspaceRunsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceRunsResponse, error)
 
-	// GetWorkspacesWorkspaceSearchProvidersWithResponse List Workspace Provider
-	//
-	// Returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with GET /api/v1/workspaces/{workspace}/search-providers (the `GetWorkspacesWorkspaceSearchProviders` operationId).
-	GetWorkspacesWorkspaceSearchProvidersWithResponse(ctx context.Context, workspace string, params *GetWorkspacesWorkspaceSearchProvidersParams, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceSearchProvidersResponse, error)
-
-	// PostWorkspacesWorkspaceSearchProvidersWithBodyWithResponse Create Workspace Provider
-	//
-	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with POST /api/v1/workspaces/{workspace}/search-providers (the `PostWorkspacesWorkspaceSearchProviders` operationId).
-	PostWorkspacesWorkspaceSearchProvidersWithBodyWithResponse(ctx context.Context, workspace string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceSearchProvidersResponse, error)
-
-	// PostWorkspacesWorkspaceSearchProvidersWithResponse Create Workspace Provider
-	//
-	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with POST /api/v1/workspaces/{workspace}/search-providers (the `PostWorkspacesWorkspaceSearchProviders` operationId).
-	PostWorkspacesWorkspaceSearchProvidersWithResponse(ctx context.Context, workspace string, body PostWorkspacesWorkspaceSearchProvidersJSONRequestBody, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceSearchProvidersResponse, error)
-
-	// GetWorkspacesWorkspaceSearchProvidersProviderIdWithResponse Get Workspace Provider
-	//
-	// Returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with GET /api/v1/workspaces/{workspace}/search-providers/{provider_id} (the `GetWorkspacesWorkspaceSearchProvidersProviderId` operationId).
-	GetWorkspacesWorkspaceSearchProvidersProviderIdWithResponse(ctx context.Context, workspace string, providerId string, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceSearchProvidersProviderIdResponse, error)
-
-	// PatchWorkspacesWorkspaceSearchProvidersProviderIdWithBodyWithResponse Update Workspace Provider
-	//
-	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with PATCH /api/v1/workspaces/{workspace}/search-providers/{provider_id} (the `PatchWorkspacesWorkspaceSearchProvidersProviderId` operationId).
-	PatchWorkspacesWorkspaceSearchProvidersProviderIdWithBodyWithResponse(ctx context.Context, workspace string, providerId string, params *PatchWorkspacesWorkspaceSearchProvidersProviderIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchWorkspacesWorkspaceSearchProvidersProviderIdResponse, error)
-
-	// PatchWorkspacesWorkspaceSearchProvidersProviderIdWithResponse Update Workspace Provider
-	//
-	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with PATCH /api/v1/workspaces/{workspace}/search-providers/{provider_id} (the `PatchWorkspacesWorkspaceSearchProvidersProviderId` operationId).
-	PatchWorkspacesWorkspaceSearchProvidersProviderIdWithResponse(ctx context.Context, workspace string, providerId string, params *PatchWorkspacesWorkspaceSearchProvidersProviderIdParams, body PatchWorkspacesWorkspaceSearchProvidersProviderIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchWorkspacesWorkspaceSearchProvidersProviderIdResponse, error)
-
-	// GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesWithResponse References Workspace Provider
-	//
-	// Returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with GET /api/v1/workspaces/{workspace}/search-providers/{provider_id}/references (the `GetWorkspacesWorkspaceSearchProvidersProviderIdReferences` operationId).
-	GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesWithResponse(ctx context.Context, workspace string, providerId string, params *GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesParams, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesResponse, error)
-
-	// PostWorkspacesWorkspaceSearchProvidersProviderIdTestWithBodyWithResponse Test Workspace Provider
-	//
-	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with POST /api/v1/workspaces/{workspace}/search-providers/{provider_id}/test (the `PostWorkspacesWorkspaceSearchProvidersProviderIdTest` operationId).
-	PostWorkspacesWorkspaceSearchProvidersProviderIdTestWithBodyWithResponse(ctx context.Context, workspace string, providerId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceSearchProvidersProviderIdTestResponse, error)
-
-	// PostWorkspacesWorkspaceSearchProvidersProviderIdTestWithResponse Test Workspace Provider
-	//
-	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with POST /api/v1/workspaces/{workspace}/search-providers/{provider_id}/test (the `PostWorkspacesWorkspaceSearchProvidersProviderIdTest` operationId).
-	PostWorkspacesWorkspaceSearchProvidersProviderIdTestWithResponse(ctx context.Context, workspace string, providerId string, body PostWorkspacesWorkspaceSearchProvidersProviderIdTestJSONRequestBody, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceSearchProvidersProviderIdTestResponse, error)
-
 	// GetWorkspacesWorkspaceSecurityAuditEventsWithResponse Workspace Security Events
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -37928,6 +39001,27 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /api/v1/workspaces/{workspace}/threads (the `PostWorkspacesWorkspaceThreads` operationId).
 	PostWorkspacesWorkspaceThreadsWithResponse(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceThreadsParams, body PostWorkspacesWorkspaceThreadsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceThreadsResponse, error)
 
+	// GetWorkspacesWorkspaceToolsetsWithResponse Get Toolsets
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/workspaces/{workspace}/toolsets (the `GetWorkspacesWorkspaceToolsets` operationId).
+	GetWorkspacesWorkspaceToolsetsWithResponse(ctx context.Context, workspace string, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceToolsetsResponse, error)
+
+	// PostWorkspacesWorkspaceToolsetsValidateWithBodyWithResponse Validate Toolsets
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/workspaces/{workspace}/toolsets/validate (the `PostWorkspacesWorkspaceToolsetsValidate` operationId).
+	PostWorkspacesWorkspaceToolsetsValidateWithBodyWithResponse(ctx context.Context, workspace string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceToolsetsValidateResponse, error)
+
+	// PostWorkspacesWorkspaceToolsetsValidateWithResponse Validate Toolsets
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/workspaces/{workspace}/toolsets/validate (the `PostWorkspacesWorkspaceToolsetsValidate` operationId).
+	PostWorkspacesWorkspaceToolsetsValidateWithResponse(ctx context.Context, workspace string, body PostWorkspacesWorkspaceToolsetsValidateJSONRequestBody, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceToolsetsValidateResponse, error)
+
 	// GetWorkspacesWorkspaceTraceQueryWithResponse Get Trace Query
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -37955,6 +39049,62 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /api/v1/workspaces/{workspace}/traces/{trace_id}/observations (the `GetWorkspacesWorkspaceTracesTraceIdObservations` operationId).
 	GetWorkspacesWorkspaceTracesTraceIdObservationsWithResponse(ctx context.Context, workspace string, traceId string, params *GetWorkspacesWorkspaceTracesTraceIdObservationsParams, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceTracesTraceIdObservationsResponse, error)
+
+	// GetWorkspacesWorkspaceWebProvidersWithResponse List Workspace Provider
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/workspaces/{workspace}/web-providers (the `GetWorkspacesWorkspaceWebProviders` operationId).
+	GetWorkspacesWorkspaceWebProvidersWithResponse(ctx context.Context, workspace string, params *GetWorkspacesWorkspaceWebProvidersParams, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceWebProvidersResponse, error)
+
+	// PostWorkspacesWorkspaceWebProvidersWithBodyWithResponse Create Workspace Provider
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/workspaces/{workspace}/web-providers (the `PostWorkspacesWorkspaceWebProviders` operationId).
+	PostWorkspacesWorkspaceWebProvidersWithBodyWithResponse(ctx context.Context, workspace string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceWebProvidersResponse, error)
+
+	// PostWorkspacesWorkspaceWebProvidersWithResponse Create Workspace Provider
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/workspaces/{workspace}/web-providers (the `PostWorkspacesWorkspaceWebProviders` operationId).
+	PostWorkspacesWorkspaceWebProvidersWithResponse(ctx context.Context, workspace string, body PostWorkspacesWorkspaceWebProvidersJSONRequestBody, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceWebProvidersResponse, error)
+
+	// GetWorkspacesWorkspaceWebProvidersProviderIdWithResponse Get Workspace Provider
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/workspaces/{workspace}/web-providers/{provider_id} (the `GetWorkspacesWorkspaceWebProvidersProviderId` operationId).
+	GetWorkspacesWorkspaceWebProvidersProviderIdWithResponse(ctx context.Context, workspace string, providerId string, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceWebProvidersProviderIdResponse, error)
+
+	// PatchWorkspacesWorkspaceWebProvidersProviderIdWithBodyWithResponse Update Workspace Provider
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /api/v1/workspaces/{workspace}/web-providers/{provider_id} (the `PatchWorkspacesWorkspaceWebProvidersProviderId` operationId).
+	PatchWorkspacesWorkspaceWebProvidersProviderIdWithBodyWithResponse(ctx context.Context, workspace string, providerId string, params *PatchWorkspacesWorkspaceWebProvidersProviderIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchWorkspacesWorkspaceWebProvidersProviderIdResponse, error)
+
+	// PatchWorkspacesWorkspaceWebProvidersProviderIdWithResponse Update Workspace Provider
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /api/v1/workspaces/{workspace}/web-providers/{provider_id} (the `PatchWorkspacesWorkspaceWebProvidersProviderId` operationId).
+	PatchWorkspacesWorkspaceWebProvidersProviderIdWithResponse(ctx context.Context, workspace string, providerId string, params *PatchWorkspacesWorkspaceWebProvidersProviderIdParams, body PatchWorkspacesWorkspaceWebProvidersProviderIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchWorkspacesWorkspaceWebProvidersProviderIdResponse, error)
+
+	// GetWorkspacesWorkspaceWebProvidersProviderIdReferencesWithResponse References Workspace Provider
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/workspaces/{workspace}/web-providers/{provider_id}/references (the `GetWorkspacesWorkspaceWebProvidersProviderIdReferences` operationId).
+	GetWorkspacesWorkspaceWebProvidersProviderIdReferencesWithResponse(ctx context.Context, workspace string, providerId string, params *GetWorkspacesWorkspaceWebProvidersProviderIdReferencesParams, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceWebProvidersProviderIdReferencesResponse, error)
+
+	// PostWorkspacesWorkspaceWebProvidersProviderIdTestWithResponse Test Workspace Provider
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/workspaces/{workspace}/web-providers/{provider_id}/test (the `PostWorkspacesWorkspaceWebProvidersProviderIdTest` operationId).
+	PostWorkspacesWorkspaceWebProvidersProviderIdTestWithResponse(ctx context.Context, workspace string, providerId string, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceWebProvidersProviderIdTestResponse, error)
 }
 
 // GetAgentRevisionsAgentRevisionIdResponse200Headers the declared response headers of an HTTP 200 response for GetAgentRevisionsAgentRevisionId
@@ -46239,471 +47389,6 @@ func (r PostOrganizationsOrganizationRoleBindingsResponse) ContentType() string 
 	return ""
 }
 
-// GetOrganizationsOrganizationSearchProvidersResponse200Headers the declared response headers of an HTTP 200 response for GetOrganizationsOrganizationSearchProviders
-type GetOrganizationsOrganizationSearchProvidersResponse200Headers struct {
-	XRequestID *string
-}
-
-// GetOrganizationsOrganizationSearchProvidersResponse400Headers the declared response headers of an HTTP 400 response for GetOrganizationsOrganizationSearchProviders
-type GetOrganizationsOrganizationSearchProvidersResponse400Headers struct {
-	XRequestID *string
-}
-
-// GetOrganizationsOrganizationSearchProvidersResponseDefaultHeaders the declared response headers of an HTTP default response for GetOrganizationsOrganizationSearchProviders
-type GetOrganizationsOrganizationSearchProvidersResponseDefaultHeaders struct {
-	RetryAfter *string
-	XRequestID *string
-}
-
-type GetOrganizationsOrganizationSearchProvidersResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *SearchProviderCollection
-	// JSON400 the response for an HTTP 400 `application/json` response
-	JSON400 *ErrorResponse
-	// JSONDefault the response for an HTTP default `application/json` response
-	JSONDefault *ErrorResponse
-	// Headers200 the parsed response headers for an HTTP 200 response
-	Headers200 *GetOrganizationsOrganizationSearchProvidersResponse200Headers
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *GetOrganizationsOrganizationSearchProvidersResponse400Headers
-	// HeadersDefault the parsed response headers for an HTTP default response
-	HeadersDefault *GetOrganizationsOrganizationSearchProvidersResponseDefaultHeaders
-}
-
-// GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r GetOrganizationsOrganizationSearchProvidersResponse) GetJSON200() *SearchProviderCollection {
-	return r.JSON200
-}
-
-// GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r GetOrganizationsOrganizationSearchProvidersResponse) GetJSON400() *ErrorResponse {
-	return r.JSON400
-}
-
-// GetJSONDefault returns the response for an HTTP default `application/json` response
-func (r GetOrganizationsOrganizationSearchProvidersResponse) GetJSONDefault() *ErrorResponse {
-	return r.JSONDefault
-}
-
-// GetBody returns the raw response body bytes
-func (r GetOrganizationsOrganizationSearchProvidersResponse) GetBody() []byte {
-	return r.Body
-}
-
-// Status returns HTTPResponse.Status
-func (r GetOrganizationsOrganizationSearchProvidersResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetOrganizationsOrganizationSearchProvidersResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetOrganizationsOrganizationSearchProvidersResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-// PostOrganizationsOrganizationSearchProvidersResponse201Headers the declared response headers of an HTTP 201 response for PostOrganizationsOrganizationSearchProviders
-type PostOrganizationsOrganizationSearchProvidersResponse201Headers struct {
-	ETag       *string
-	XRequestID *string
-}
-
-// PostOrganizationsOrganizationSearchProvidersResponse400Headers the declared response headers of an HTTP 400 response for PostOrganizationsOrganizationSearchProviders
-type PostOrganizationsOrganizationSearchProvidersResponse400Headers struct {
-	XRequestID *string
-}
-
-// PostOrganizationsOrganizationSearchProvidersResponseDefaultHeaders the declared response headers of an HTTP default response for PostOrganizationsOrganizationSearchProviders
-type PostOrganizationsOrganizationSearchProvidersResponseDefaultHeaders struct {
-	RetryAfter *string
-	XRequestID *string
-}
-
-type PostOrganizationsOrganizationSearchProvidersResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	// JSON201 the response for an HTTP 201 `application/json` response
-	JSON201 *SearchProvider
-	// JSON400 the response for an HTTP 400 `application/json` response
-	JSON400 *ErrorResponse
-	// JSONDefault the response for an HTTP default `application/json` response
-	JSONDefault *ErrorResponse
-	// Headers201 the parsed response headers for an HTTP 201 response
-	Headers201 *PostOrganizationsOrganizationSearchProvidersResponse201Headers
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *PostOrganizationsOrganizationSearchProvidersResponse400Headers
-	// HeadersDefault the parsed response headers for an HTTP default response
-	HeadersDefault *PostOrganizationsOrganizationSearchProvidersResponseDefaultHeaders
-}
-
-// GetJSON201 returns the response for an HTTP 201 `application/json` response
-func (r PostOrganizationsOrganizationSearchProvidersResponse) GetJSON201() *SearchProvider {
-	return r.JSON201
-}
-
-// GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r PostOrganizationsOrganizationSearchProvidersResponse) GetJSON400() *ErrorResponse {
-	return r.JSON400
-}
-
-// GetJSONDefault returns the response for an HTTP default `application/json` response
-func (r PostOrganizationsOrganizationSearchProvidersResponse) GetJSONDefault() *ErrorResponse {
-	return r.JSONDefault
-}
-
-// GetBody returns the raw response body bytes
-func (r PostOrganizationsOrganizationSearchProvidersResponse) GetBody() []byte {
-	return r.Body
-}
-
-// Status returns HTTPResponse.Status
-func (r PostOrganizationsOrganizationSearchProvidersResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r PostOrganizationsOrganizationSearchProvidersResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r PostOrganizationsOrganizationSearchProvidersResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-// GetOrganizationsOrganizationSearchProvidersProviderIdResponse200Headers the declared response headers of an HTTP 200 response for GetOrganizationsOrganizationSearchProvidersProviderId
-type GetOrganizationsOrganizationSearchProvidersProviderIdResponse200Headers struct {
-	ETag       *string
-	XRequestID *string
-}
-
-// GetOrganizationsOrganizationSearchProvidersProviderIdResponse400Headers the declared response headers of an HTTP 400 response for GetOrganizationsOrganizationSearchProvidersProviderId
-type GetOrganizationsOrganizationSearchProvidersProviderIdResponse400Headers struct {
-	XRequestID *string
-}
-
-// GetOrganizationsOrganizationSearchProvidersProviderIdResponseDefaultHeaders the declared response headers of an HTTP default response for GetOrganizationsOrganizationSearchProvidersProviderId
-type GetOrganizationsOrganizationSearchProvidersProviderIdResponseDefaultHeaders struct {
-	RetryAfter *string
-	XRequestID *string
-}
-
-type GetOrganizationsOrganizationSearchProvidersProviderIdResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *SearchProvider
-	// JSON400 the response for an HTTP 400 `application/json` response
-	JSON400 *ErrorResponse
-	// JSONDefault the response for an HTTP default `application/json` response
-	JSONDefault *ErrorResponse
-	// Headers200 the parsed response headers for an HTTP 200 response
-	Headers200 *GetOrganizationsOrganizationSearchProvidersProviderIdResponse200Headers
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *GetOrganizationsOrganizationSearchProvidersProviderIdResponse400Headers
-	// HeadersDefault the parsed response headers for an HTTP default response
-	HeadersDefault *GetOrganizationsOrganizationSearchProvidersProviderIdResponseDefaultHeaders
-}
-
-// GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r GetOrganizationsOrganizationSearchProvidersProviderIdResponse) GetJSON200() *SearchProvider {
-	return r.JSON200
-}
-
-// GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r GetOrganizationsOrganizationSearchProvidersProviderIdResponse) GetJSON400() *ErrorResponse {
-	return r.JSON400
-}
-
-// GetJSONDefault returns the response for an HTTP default `application/json` response
-func (r GetOrganizationsOrganizationSearchProvidersProviderIdResponse) GetJSONDefault() *ErrorResponse {
-	return r.JSONDefault
-}
-
-// GetBody returns the raw response body bytes
-func (r GetOrganizationsOrganizationSearchProvidersProviderIdResponse) GetBody() []byte {
-	return r.Body
-}
-
-// Status returns HTTPResponse.Status
-func (r GetOrganizationsOrganizationSearchProvidersProviderIdResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetOrganizationsOrganizationSearchProvidersProviderIdResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetOrganizationsOrganizationSearchProvidersProviderIdResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-// PatchOrganizationsOrganizationSearchProvidersProviderIdResponse200Headers the declared response headers of an HTTP 200 response for PatchOrganizationsOrganizationSearchProvidersProviderId
-type PatchOrganizationsOrganizationSearchProvidersProviderIdResponse200Headers struct {
-	ETag       *string
-	XRequestID *string
-}
-
-// PatchOrganizationsOrganizationSearchProvidersProviderIdResponse400Headers the declared response headers of an HTTP 400 response for PatchOrganizationsOrganizationSearchProvidersProviderId
-type PatchOrganizationsOrganizationSearchProvidersProviderIdResponse400Headers struct {
-	XRequestID *string
-}
-
-// PatchOrganizationsOrganizationSearchProvidersProviderIdResponseDefaultHeaders the declared response headers of an HTTP default response for PatchOrganizationsOrganizationSearchProvidersProviderId
-type PatchOrganizationsOrganizationSearchProvidersProviderIdResponseDefaultHeaders struct {
-	RetryAfter *string
-	XRequestID *string
-}
-
-type PatchOrganizationsOrganizationSearchProvidersProviderIdResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *SearchProvider
-	// JSON400 the response for an HTTP 400 `application/json` response
-	JSON400 *ErrorResponse
-	// JSONDefault the response for an HTTP default `application/json` response
-	JSONDefault *ErrorResponse
-	// Headers200 the parsed response headers for an HTTP 200 response
-	Headers200 *PatchOrganizationsOrganizationSearchProvidersProviderIdResponse200Headers
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *PatchOrganizationsOrganizationSearchProvidersProviderIdResponse400Headers
-	// HeadersDefault the parsed response headers for an HTTP default response
-	HeadersDefault *PatchOrganizationsOrganizationSearchProvidersProviderIdResponseDefaultHeaders
-}
-
-// GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r PatchOrganizationsOrganizationSearchProvidersProviderIdResponse) GetJSON200() *SearchProvider {
-	return r.JSON200
-}
-
-// GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r PatchOrganizationsOrganizationSearchProvidersProviderIdResponse) GetJSON400() *ErrorResponse {
-	return r.JSON400
-}
-
-// GetJSONDefault returns the response for an HTTP default `application/json` response
-func (r PatchOrganizationsOrganizationSearchProvidersProviderIdResponse) GetJSONDefault() *ErrorResponse {
-	return r.JSONDefault
-}
-
-// GetBody returns the raw response body bytes
-func (r PatchOrganizationsOrganizationSearchProvidersProviderIdResponse) GetBody() []byte {
-	return r.Body
-}
-
-// Status returns HTTPResponse.Status
-func (r PatchOrganizationsOrganizationSearchProvidersProviderIdResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r PatchOrganizationsOrganizationSearchProvidersProviderIdResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r PatchOrganizationsOrganizationSearchProvidersProviderIdResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-// GetOrganizationsOrganizationSearchProvidersProviderIdReferencesResponse200Headers the declared response headers of an HTTP 200 response for GetOrganizationsOrganizationSearchProvidersProviderIdReferences
-type GetOrganizationsOrganizationSearchProvidersProviderIdReferencesResponse200Headers struct {
-	XRequestID *string
-}
-
-// GetOrganizationsOrganizationSearchProvidersProviderIdReferencesResponse400Headers the declared response headers of an HTTP 400 response for GetOrganizationsOrganizationSearchProvidersProviderIdReferences
-type GetOrganizationsOrganizationSearchProvidersProviderIdReferencesResponse400Headers struct {
-	XRequestID *string
-}
-
-// GetOrganizationsOrganizationSearchProvidersProviderIdReferencesResponseDefaultHeaders the declared response headers of an HTTP default response for GetOrganizationsOrganizationSearchProvidersProviderIdReferences
-type GetOrganizationsOrganizationSearchProvidersProviderIdReferencesResponseDefaultHeaders struct {
-	RetryAfter *string
-	XRequestID *string
-}
-
-type GetOrganizationsOrganizationSearchProvidersProviderIdReferencesResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *SearchProviderReferenceCollection
-	// JSON400 the response for an HTTP 400 `application/json` response
-	JSON400 *ErrorResponse
-	// JSONDefault the response for an HTTP default `application/json` response
-	JSONDefault *ErrorResponse
-	// Headers200 the parsed response headers for an HTTP 200 response
-	Headers200 *GetOrganizationsOrganizationSearchProvidersProviderIdReferencesResponse200Headers
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *GetOrganizationsOrganizationSearchProvidersProviderIdReferencesResponse400Headers
-	// HeadersDefault the parsed response headers for an HTTP default response
-	HeadersDefault *GetOrganizationsOrganizationSearchProvidersProviderIdReferencesResponseDefaultHeaders
-}
-
-// GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r GetOrganizationsOrganizationSearchProvidersProviderIdReferencesResponse) GetJSON200() *SearchProviderReferenceCollection {
-	return r.JSON200
-}
-
-// GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r GetOrganizationsOrganizationSearchProvidersProviderIdReferencesResponse) GetJSON400() *ErrorResponse {
-	return r.JSON400
-}
-
-// GetJSONDefault returns the response for an HTTP default `application/json` response
-func (r GetOrganizationsOrganizationSearchProvidersProviderIdReferencesResponse) GetJSONDefault() *ErrorResponse {
-	return r.JSONDefault
-}
-
-// GetBody returns the raw response body bytes
-func (r GetOrganizationsOrganizationSearchProvidersProviderIdReferencesResponse) GetBody() []byte {
-	return r.Body
-}
-
-// Status returns HTTPResponse.Status
-func (r GetOrganizationsOrganizationSearchProvidersProviderIdReferencesResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetOrganizationsOrganizationSearchProvidersProviderIdReferencesResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetOrganizationsOrganizationSearchProvidersProviderIdReferencesResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-// PostOrganizationsOrganizationSearchProvidersProviderIdTestResponse200Headers the declared response headers of an HTTP 200 response for PostOrganizationsOrganizationSearchProvidersProviderIdTest
-type PostOrganizationsOrganizationSearchProvidersProviderIdTestResponse200Headers struct {
-	XRequestID *string
-}
-
-// PostOrganizationsOrganizationSearchProvidersProviderIdTestResponse400Headers the declared response headers of an HTTP 400 response for PostOrganizationsOrganizationSearchProvidersProviderIdTest
-type PostOrganizationsOrganizationSearchProvidersProviderIdTestResponse400Headers struct {
-	XRequestID *string
-}
-
-// PostOrganizationsOrganizationSearchProvidersProviderIdTestResponseDefaultHeaders the declared response headers of an HTTP default response for PostOrganizationsOrganizationSearchProvidersProviderIdTest
-type PostOrganizationsOrganizationSearchProvidersProviderIdTestResponseDefaultHeaders struct {
-	RetryAfter *string
-	XRequestID *string
-}
-
-type PostOrganizationsOrganizationSearchProvidersProviderIdTestResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *SearchProviderTestResult
-	// JSON400 the response for an HTTP 400 `application/json` response
-	JSON400 *ErrorResponse
-	// JSONDefault the response for an HTTP default `application/json` response
-	JSONDefault *ErrorResponse
-	// Headers200 the parsed response headers for an HTTP 200 response
-	Headers200 *PostOrganizationsOrganizationSearchProvidersProviderIdTestResponse200Headers
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *PostOrganizationsOrganizationSearchProvidersProviderIdTestResponse400Headers
-	// HeadersDefault the parsed response headers for an HTTP default response
-	HeadersDefault *PostOrganizationsOrganizationSearchProvidersProviderIdTestResponseDefaultHeaders
-}
-
-// GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r PostOrganizationsOrganizationSearchProvidersProviderIdTestResponse) GetJSON200() *SearchProviderTestResult {
-	return r.JSON200
-}
-
-// GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r PostOrganizationsOrganizationSearchProvidersProviderIdTestResponse) GetJSON400() *ErrorResponse {
-	return r.JSON400
-}
-
-// GetJSONDefault returns the response for an HTTP default `application/json` response
-func (r PostOrganizationsOrganizationSearchProvidersProviderIdTestResponse) GetJSONDefault() *ErrorResponse {
-	return r.JSONDefault
-}
-
-// GetBody returns the raw response body bytes
-func (r PostOrganizationsOrganizationSearchProvidersProviderIdTestResponse) GetBody() []byte {
-	return r.Body
-}
-
-// Status returns HTTPResponse.Status
-func (r PostOrganizationsOrganizationSearchProvidersProviderIdTestResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r PostOrganizationsOrganizationSearchProvidersProviderIdTestResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r PostOrganizationsOrganizationSearchProvidersProviderIdTestResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
 // GetOrganizationsOrganizationSecurityAuditEventsResponse200Headers the declared response headers of an HTTP 200 response for GetOrganizationsOrganizationSecurityAuditEvents
 type GetOrganizationsOrganizationSecurityAuditEventsResponse200Headers struct {
 	XRequestID *string
@@ -46852,6 +47537,471 @@ func (r GetOrganizationsOrganizationUsersResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetOrganizationsOrganizationUsersResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetOrganizationsOrganizationWebProvidersResponse200Headers the declared response headers of an HTTP 200 response for GetOrganizationsOrganizationWebProviders
+type GetOrganizationsOrganizationWebProvidersResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetOrganizationsOrganizationWebProvidersResponse400Headers the declared response headers of an HTTP 400 response for GetOrganizationsOrganizationWebProviders
+type GetOrganizationsOrganizationWebProvidersResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetOrganizationsOrganizationWebProvidersResponseDefaultHeaders the declared response headers of an HTTP default response for GetOrganizationsOrganizationWebProviders
+type GetOrganizationsOrganizationWebProvidersResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetOrganizationsOrganizationWebProvidersResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebProviderCollection
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetOrganizationsOrganizationWebProvidersResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetOrganizationsOrganizationWebProvidersResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetOrganizationsOrganizationWebProvidersResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetOrganizationsOrganizationWebProvidersResponse) GetJSON200() *WebProviderCollection {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetOrganizationsOrganizationWebProvidersResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetOrganizationsOrganizationWebProvidersResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetOrganizationsOrganizationWebProvidersResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetOrganizationsOrganizationWebProvidersResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetOrganizationsOrganizationWebProvidersResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetOrganizationsOrganizationWebProvidersResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PostOrganizationsOrganizationWebProvidersResponse201Headers the declared response headers of an HTTP 201 response for PostOrganizationsOrganizationWebProviders
+type PostOrganizationsOrganizationWebProvidersResponse201Headers struct {
+	ETag       *string
+	XRequestID *string
+}
+
+// PostOrganizationsOrganizationWebProvidersResponse400Headers the declared response headers of an HTTP 400 response for PostOrganizationsOrganizationWebProviders
+type PostOrganizationsOrganizationWebProvidersResponse400Headers struct {
+	XRequestID *string
+}
+
+// PostOrganizationsOrganizationWebProvidersResponseDefaultHeaders the declared response headers of an HTTP default response for PostOrganizationsOrganizationWebProviders
+type PostOrganizationsOrganizationWebProvidersResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PostOrganizationsOrganizationWebProvidersResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *WebProvider
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers201 the parsed response headers for an HTTP 201 response
+	Headers201 *PostOrganizationsOrganizationWebProvidersResponse201Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PostOrganizationsOrganizationWebProvidersResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PostOrganizationsOrganizationWebProvidersResponseDefaultHeaders
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r PostOrganizationsOrganizationWebProvidersResponse) GetJSON201() *WebProvider {
+	return r.JSON201
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PostOrganizationsOrganizationWebProvidersResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PostOrganizationsOrganizationWebProvidersResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PostOrganizationsOrganizationWebProvidersResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostOrganizationsOrganizationWebProvidersResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostOrganizationsOrganizationWebProvidersResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostOrganizationsOrganizationWebProvidersResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetOrganizationsOrganizationWebProvidersProviderIdResponse200Headers the declared response headers of an HTTP 200 response for GetOrganizationsOrganizationWebProvidersProviderId
+type GetOrganizationsOrganizationWebProvidersProviderIdResponse200Headers struct {
+	ETag       *string
+	XRequestID *string
+}
+
+// GetOrganizationsOrganizationWebProvidersProviderIdResponse400Headers the declared response headers of an HTTP 400 response for GetOrganizationsOrganizationWebProvidersProviderId
+type GetOrganizationsOrganizationWebProvidersProviderIdResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetOrganizationsOrganizationWebProvidersProviderIdResponseDefaultHeaders the declared response headers of an HTTP default response for GetOrganizationsOrganizationWebProvidersProviderId
+type GetOrganizationsOrganizationWebProvidersProviderIdResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetOrganizationsOrganizationWebProvidersProviderIdResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebProvider
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetOrganizationsOrganizationWebProvidersProviderIdResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetOrganizationsOrganizationWebProvidersProviderIdResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetOrganizationsOrganizationWebProvidersProviderIdResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetOrganizationsOrganizationWebProvidersProviderIdResponse) GetJSON200() *WebProvider {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetOrganizationsOrganizationWebProvidersProviderIdResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetOrganizationsOrganizationWebProvidersProviderIdResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetOrganizationsOrganizationWebProvidersProviderIdResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetOrganizationsOrganizationWebProvidersProviderIdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetOrganizationsOrganizationWebProvidersProviderIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetOrganizationsOrganizationWebProvidersProviderIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PatchOrganizationsOrganizationWebProvidersProviderIdResponse200Headers the declared response headers of an HTTP 200 response for PatchOrganizationsOrganizationWebProvidersProviderId
+type PatchOrganizationsOrganizationWebProvidersProviderIdResponse200Headers struct {
+	ETag       *string
+	XRequestID *string
+}
+
+// PatchOrganizationsOrganizationWebProvidersProviderIdResponse400Headers the declared response headers of an HTTP 400 response for PatchOrganizationsOrganizationWebProvidersProviderId
+type PatchOrganizationsOrganizationWebProvidersProviderIdResponse400Headers struct {
+	XRequestID *string
+}
+
+// PatchOrganizationsOrganizationWebProvidersProviderIdResponseDefaultHeaders the declared response headers of an HTTP default response for PatchOrganizationsOrganizationWebProvidersProviderId
+type PatchOrganizationsOrganizationWebProvidersProviderIdResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PatchOrganizationsOrganizationWebProvidersProviderIdResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebProvider
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PatchOrganizationsOrganizationWebProvidersProviderIdResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PatchOrganizationsOrganizationWebProvidersProviderIdResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PatchOrganizationsOrganizationWebProvidersProviderIdResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PatchOrganizationsOrganizationWebProvidersProviderIdResponse) GetJSON200() *WebProvider {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PatchOrganizationsOrganizationWebProvidersProviderIdResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PatchOrganizationsOrganizationWebProvidersProviderIdResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PatchOrganizationsOrganizationWebProvidersProviderIdResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PatchOrganizationsOrganizationWebProvidersProviderIdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PatchOrganizationsOrganizationWebProvidersProviderIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PatchOrganizationsOrganizationWebProvidersProviderIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetOrganizationsOrganizationWebProvidersProviderIdReferencesResponse200Headers the declared response headers of an HTTP 200 response for GetOrganizationsOrganizationWebProvidersProviderIdReferences
+type GetOrganizationsOrganizationWebProvidersProviderIdReferencesResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetOrganizationsOrganizationWebProvidersProviderIdReferencesResponse400Headers the declared response headers of an HTTP 400 response for GetOrganizationsOrganizationWebProvidersProviderIdReferences
+type GetOrganizationsOrganizationWebProvidersProviderIdReferencesResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetOrganizationsOrganizationWebProvidersProviderIdReferencesResponseDefaultHeaders the declared response headers of an HTTP default response for GetOrganizationsOrganizationWebProvidersProviderIdReferences
+type GetOrganizationsOrganizationWebProvidersProviderIdReferencesResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetOrganizationsOrganizationWebProvidersProviderIdReferencesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebProviderReferenceCollection
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetOrganizationsOrganizationWebProvidersProviderIdReferencesResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetOrganizationsOrganizationWebProvidersProviderIdReferencesResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetOrganizationsOrganizationWebProvidersProviderIdReferencesResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetOrganizationsOrganizationWebProvidersProviderIdReferencesResponse) GetJSON200() *WebProviderReferenceCollection {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetOrganizationsOrganizationWebProvidersProviderIdReferencesResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetOrganizationsOrganizationWebProvidersProviderIdReferencesResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetOrganizationsOrganizationWebProvidersProviderIdReferencesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetOrganizationsOrganizationWebProvidersProviderIdReferencesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetOrganizationsOrganizationWebProvidersProviderIdReferencesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetOrganizationsOrganizationWebProvidersProviderIdReferencesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PostOrganizationsOrganizationWebProvidersProviderIdTestResponse200Headers the declared response headers of an HTTP 200 response for PostOrganizationsOrganizationWebProvidersProviderIdTest
+type PostOrganizationsOrganizationWebProvidersProviderIdTestResponse200Headers struct {
+	XRequestID *string
+}
+
+// PostOrganizationsOrganizationWebProvidersProviderIdTestResponse400Headers the declared response headers of an HTTP 400 response for PostOrganizationsOrganizationWebProvidersProviderIdTest
+type PostOrganizationsOrganizationWebProvidersProviderIdTestResponse400Headers struct {
+	XRequestID *string
+}
+
+// PostOrganizationsOrganizationWebProvidersProviderIdTestResponseDefaultHeaders the declared response headers of an HTTP default response for PostOrganizationsOrganizationWebProvidersProviderIdTest
+type PostOrganizationsOrganizationWebProvidersProviderIdTestResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PostOrganizationsOrganizationWebProvidersProviderIdTestResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebProviderTestResult
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PostOrganizationsOrganizationWebProvidersProviderIdTestResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PostOrganizationsOrganizationWebProvidersProviderIdTestResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PostOrganizationsOrganizationWebProvidersProviderIdTestResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PostOrganizationsOrganizationWebProvidersProviderIdTestResponse) GetJSON200() *WebProviderTestResult {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PostOrganizationsOrganizationWebProvidersProviderIdTestResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PostOrganizationsOrganizationWebProvidersProviderIdTestResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PostOrganizationsOrganizationWebProvidersProviderIdTestResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostOrganizationsOrganizationWebProvidersProviderIdTestResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostOrganizationsOrganizationWebProvidersProviderIdTestResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostOrganizationsOrganizationWebProvidersProviderIdTestResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -48840,146 +49990,6 @@ func (r PostRunsSourceRunIdContinueResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r PostRunsSourceRunIdContinueResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-// GetSearchProviderTypesResponse200Headers the declared response headers of an HTTP 200 response for GetSearchProviderTypes
-type GetSearchProviderTypesResponse200Headers struct {
-	XRequestID *string
-}
-
-// GetSearchProviderTypesResponseDefaultHeaders the declared response headers of an HTTP default response for GetSearchProviderTypes
-type GetSearchProviderTypesResponseDefaultHeaders struct {
-	RetryAfter *string
-	XRequestID *string
-}
-
-type GetSearchProviderTypesResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *SearchProviderDefinitionCollection
-	// JSONDefault the response for an HTTP default `application/json` response
-	JSONDefault *ErrorResponse
-	// Headers200 the parsed response headers for an HTTP 200 response
-	Headers200 *GetSearchProviderTypesResponse200Headers
-	// HeadersDefault the parsed response headers for an HTTP default response
-	HeadersDefault *GetSearchProviderTypesResponseDefaultHeaders
-}
-
-// GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r GetSearchProviderTypesResponse) GetJSON200() *SearchProviderDefinitionCollection {
-	return r.JSON200
-}
-
-// GetJSONDefault returns the response for an HTTP default `application/json` response
-func (r GetSearchProviderTypesResponse) GetJSONDefault() *ErrorResponse {
-	return r.JSONDefault
-}
-
-// GetBody returns the raw response body bytes
-func (r GetSearchProviderTypesResponse) GetBody() []byte {
-	return r.Body
-}
-
-// Status returns HTTPResponse.Status
-func (r GetSearchProviderTypesResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetSearchProviderTypesResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetSearchProviderTypesResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-// GetSearchProviderTypesProviderTypeResponse200Headers the declared response headers of an HTTP 200 response for GetSearchProviderTypesProviderType
-type GetSearchProviderTypesProviderTypeResponse200Headers struct {
-	XRequestID *string
-}
-
-// GetSearchProviderTypesProviderTypeResponse400Headers the declared response headers of an HTTP 400 response for GetSearchProviderTypesProviderType
-type GetSearchProviderTypesProviderTypeResponse400Headers struct {
-	XRequestID *string
-}
-
-// GetSearchProviderTypesProviderTypeResponseDefaultHeaders the declared response headers of an HTTP default response for GetSearchProviderTypesProviderType
-type GetSearchProviderTypesProviderTypeResponseDefaultHeaders struct {
-	RetryAfter *string
-	XRequestID *string
-}
-
-type GetSearchProviderTypesProviderTypeResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *SearchProviderDefinition
-	// JSON400 the response for an HTTP 400 `application/json` response
-	JSON400 *ErrorResponse
-	// JSONDefault the response for an HTTP default `application/json` response
-	JSONDefault *ErrorResponse
-	// Headers200 the parsed response headers for an HTTP 200 response
-	Headers200 *GetSearchProviderTypesProviderTypeResponse200Headers
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *GetSearchProviderTypesProviderTypeResponse400Headers
-	// HeadersDefault the parsed response headers for an HTTP default response
-	HeadersDefault *GetSearchProviderTypesProviderTypeResponseDefaultHeaders
-}
-
-// GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r GetSearchProviderTypesProviderTypeResponse) GetJSON200() *SearchProviderDefinition {
-	return r.JSON200
-}
-
-// GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r GetSearchProviderTypesProviderTypeResponse) GetJSON400() *ErrorResponse {
-	return r.JSON400
-}
-
-// GetJSONDefault returns the response for an HTTP default `application/json` response
-func (r GetSearchProviderTypesProviderTypeResponse) GetJSONDefault() *ErrorResponse {
-	return r.JSONDefault
-}
-
-// GetBody returns the raw response body bytes
-func (r GetSearchProviderTypesProviderTypeResponse) GetBody() []byte {
-	return r.Body
-}
-
-// Status returns HTTPResponse.Status
-func (r GetSearchProviderTypesProviderTypeResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetSearchProviderTypesProviderTypeResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetSearchProviderTypesProviderTypeResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -51920,6 +52930,146 @@ func (r GetUsersUserIdAvatarImageIdResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetUsersUserIdAvatarImageIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetWebProviderTypesResponse200Headers the declared response headers of an HTTP 200 response for GetWebProviderTypes
+type GetWebProviderTypesResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetWebProviderTypesResponseDefaultHeaders the declared response headers of an HTTP default response for GetWebProviderTypes
+type GetWebProviderTypesResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetWebProviderTypesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebProviderDefinitionCollection
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetWebProviderTypesResponse200Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetWebProviderTypesResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetWebProviderTypesResponse) GetJSON200() *WebProviderDefinitionCollection {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetWebProviderTypesResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetWebProviderTypesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWebProviderTypesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWebProviderTypesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetWebProviderTypesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetWebProviderTypesProviderTypeResponse200Headers the declared response headers of an HTTP 200 response for GetWebProviderTypesProviderType
+type GetWebProviderTypesProviderTypeResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetWebProviderTypesProviderTypeResponse400Headers the declared response headers of an HTTP 400 response for GetWebProviderTypesProviderType
+type GetWebProviderTypesProviderTypeResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetWebProviderTypesProviderTypeResponseDefaultHeaders the declared response headers of an HTTP default response for GetWebProviderTypesProviderType
+type GetWebProviderTypesProviderTypeResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetWebProviderTypesProviderTypeResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebProviderDefinition
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetWebProviderTypesProviderTypeResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetWebProviderTypesProviderTypeResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetWebProviderTypesProviderTypeResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetWebProviderTypesProviderTypeResponse) GetJSON200() *WebProviderDefinition {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetWebProviderTypesProviderTypeResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetWebProviderTypesProviderTypeResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetWebProviderTypesProviderTypeResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWebProviderTypesProviderTypeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWebProviderTypesProviderTypeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetWebProviderTypesProviderTypeResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -55146,6 +56296,461 @@ func (r GetWorkspacesWorkspaceMembersResponse) ContentType() string {
 	return ""
 }
 
+// GetWorkspacesWorkspaceMemoriesResponse200Headers the declared response headers of an HTTP 200 response for GetWorkspacesWorkspaceMemories
+type GetWorkspacesWorkspaceMemoriesResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetWorkspacesWorkspaceMemoriesResponse400Headers the declared response headers of an HTTP 400 response for GetWorkspacesWorkspaceMemories
+type GetWorkspacesWorkspaceMemoriesResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetWorkspacesWorkspaceMemoriesResponseDefaultHeaders the declared response headers of an HTTP default response for GetWorkspacesWorkspaceMemories
+type GetWorkspacesWorkspaceMemoriesResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetWorkspacesWorkspaceMemoriesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MemoryCollection
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetWorkspacesWorkspaceMemoriesResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetWorkspacesWorkspaceMemoriesResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetWorkspacesWorkspaceMemoriesResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetWorkspacesWorkspaceMemoriesResponse) GetJSON200() *MemoryCollection {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetWorkspacesWorkspaceMemoriesResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetWorkspacesWorkspaceMemoriesResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetWorkspacesWorkspaceMemoriesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkspacesWorkspaceMemoriesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkspacesWorkspaceMemoriesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetWorkspacesWorkspaceMemoriesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PostWorkspacesWorkspaceMemoriesResponse201Headers the declared response headers of an HTTP 201 response for PostWorkspacesWorkspaceMemories
+type PostWorkspacesWorkspaceMemoriesResponse201Headers struct {
+	XRequestID *string
+}
+
+// PostWorkspacesWorkspaceMemoriesResponse400Headers the declared response headers of an HTTP 400 response for PostWorkspacesWorkspaceMemories
+type PostWorkspacesWorkspaceMemoriesResponse400Headers struct {
+	XRequestID *string
+}
+
+// PostWorkspacesWorkspaceMemoriesResponseDefaultHeaders the declared response headers of an HTTP default response for PostWorkspacesWorkspaceMemories
+type PostWorkspacesWorkspaceMemoriesResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PostWorkspacesWorkspaceMemoriesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *Memory
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers201 the parsed response headers for an HTTP 201 response
+	Headers201 *PostWorkspacesWorkspaceMemoriesResponse201Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PostWorkspacesWorkspaceMemoriesResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PostWorkspacesWorkspaceMemoriesResponseDefaultHeaders
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r PostWorkspacesWorkspaceMemoriesResponse) GetJSON201() *Memory {
+	return r.JSON201
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PostWorkspacesWorkspaceMemoriesResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PostWorkspacesWorkspaceMemoriesResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PostWorkspacesWorkspaceMemoriesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostWorkspacesWorkspaceMemoriesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostWorkspacesWorkspaceMemoriesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostWorkspacesWorkspaceMemoriesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PostWorkspacesWorkspaceMemoriesSearchResponse200Headers the declared response headers of an HTTP 200 response for PostWorkspacesWorkspaceMemoriesSearch
+type PostWorkspacesWorkspaceMemoriesSearchResponse200Headers struct {
+	XRequestID *string
+}
+
+// PostWorkspacesWorkspaceMemoriesSearchResponse400Headers the declared response headers of an HTTP 400 response for PostWorkspacesWorkspaceMemoriesSearch
+type PostWorkspacesWorkspaceMemoriesSearchResponse400Headers struct {
+	XRequestID *string
+}
+
+// PostWorkspacesWorkspaceMemoriesSearchResponseDefaultHeaders the declared response headers of an HTTP default response for PostWorkspacesWorkspaceMemoriesSearch
+type PostWorkspacesWorkspaceMemoriesSearchResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PostWorkspacesWorkspaceMemoriesSearchResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MemoryCollection
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PostWorkspacesWorkspaceMemoriesSearchResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PostWorkspacesWorkspaceMemoriesSearchResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PostWorkspacesWorkspaceMemoriesSearchResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PostWorkspacesWorkspaceMemoriesSearchResponse) GetJSON200() *MemoryCollection {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PostWorkspacesWorkspaceMemoriesSearchResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PostWorkspacesWorkspaceMemoriesSearchResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PostWorkspacesWorkspaceMemoriesSearchResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostWorkspacesWorkspaceMemoriesSearchResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostWorkspacesWorkspaceMemoriesSearchResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostWorkspacesWorkspaceMemoriesSearchResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// DeleteWorkspacesWorkspaceMemoriesMemoryIdResponse204Headers the declared response headers of an HTTP 204 response for DeleteWorkspacesWorkspaceMemoriesMemoryId
+type DeleteWorkspacesWorkspaceMemoriesMemoryIdResponse204Headers struct {
+	XRequestID *string
+}
+
+// DeleteWorkspacesWorkspaceMemoriesMemoryIdResponse400Headers the declared response headers of an HTTP 400 response for DeleteWorkspacesWorkspaceMemoriesMemoryId
+type DeleteWorkspacesWorkspaceMemoriesMemoryIdResponse400Headers struct {
+	XRequestID *string
+}
+
+// DeleteWorkspacesWorkspaceMemoriesMemoryIdResponseDefaultHeaders the declared response headers of an HTTP default response for DeleteWorkspacesWorkspaceMemoriesMemoryId
+type DeleteWorkspacesWorkspaceMemoriesMemoryIdResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type DeleteWorkspacesWorkspaceMemoriesMemoryIdResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers204 the parsed response headers for an HTTP 204 response
+	Headers204 *DeleteWorkspacesWorkspaceMemoriesMemoryIdResponse204Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *DeleteWorkspacesWorkspaceMemoriesMemoryIdResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *DeleteWorkspacesWorkspaceMemoriesMemoryIdResponseDefaultHeaders
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r DeleteWorkspacesWorkspaceMemoriesMemoryIdResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r DeleteWorkspacesWorkspaceMemoriesMemoryIdResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteWorkspacesWorkspaceMemoriesMemoryIdResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteWorkspacesWorkspaceMemoriesMemoryIdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteWorkspacesWorkspaceMemoriesMemoryIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteWorkspacesWorkspaceMemoriesMemoryIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetWorkspacesWorkspaceMemoriesMemoryIdResponse200Headers the declared response headers of an HTTP 200 response for GetWorkspacesWorkspaceMemoriesMemoryId
+type GetWorkspacesWorkspaceMemoriesMemoryIdResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetWorkspacesWorkspaceMemoriesMemoryIdResponse400Headers the declared response headers of an HTTP 400 response for GetWorkspacesWorkspaceMemoriesMemoryId
+type GetWorkspacesWorkspaceMemoriesMemoryIdResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetWorkspacesWorkspaceMemoriesMemoryIdResponseDefaultHeaders the declared response headers of an HTTP default response for GetWorkspacesWorkspaceMemoriesMemoryId
+type GetWorkspacesWorkspaceMemoriesMemoryIdResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetWorkspacesWorkspaceMemoriesMemoryIdResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Memory
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetWorkspacesWorkspaceMemoriesMemoryIdResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetWorkspacesWorkspaceMemoriesMemoryIdResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetWorkspacesWorkspaceMemoriesMemoryIdResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetWorkspacesWorkspaceMemoriesMemoryIdResponse) GetJSON200() *Memory {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetWorkspacesWorkspaceMemoriesMemoryIdResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetWorkspacesWorkspaceMemoriesMemoryIdResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetWorkspacesWorkspaceMemoriesMemoryIdResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkspacesWorkspaceMemoriesMemoryIdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkspacesWorkspaceMemoriesMemoryIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetWorkspacesWorkspaceMemoriesMemoryIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PutWorkspacesWorkspaceMemoriesMemoryIdResponse200Headers the declared response headers of an HTTP 200 response for PutWorkspacesWorkspaceMemoriesMemoryId
+type PutWorkspacesWorkspaceMemoriesMemoryIdResponse200Headers struct {
+	XRequestID *string
+}
+
+// PutWorkspacesWorkspaceMemoriesMemoryIdResponse400Headers the declared response headers of an HTTP 400 response for PutWorkspacesWorkspaceMemoriesMemoryId
+type PutWorkspacesWorkspaceMemoriesMemoryIdResponse400Headers struct {
+	XRequestID *string
+}
+
+// PutWorkspacesWorkspaceMemoriesMemoryIdResponseDefaultHeaders the declared response headers of an HTTP default response for PutWorkspacesWorkspaceMemoriesMemoryId
+type PutWorkspacesWorkspaceMemoriesMemoryIdResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PutWorkspacesWorkspaceMemoriesMemoryIdResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Memory
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PutWorkspacesWorkspaceMemoriesMemoryIdResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PutWorkspacesWorkspaceMemoriesMemoryIdResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PutWorkspacesWorkspaceMemoriesMemoryIdResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PutWorkspacesWorkspaceMemoriesMemoryIdResponse) GetJSON200() *Memory {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PutWorkspacesWorkspaceMemoriesMemoryIdResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PutWorkspacesWorkspaceMemoriesMemoryIdResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PutWorkspacesWorkspaceMemoriesMemoryIdResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PutWorkspacesWorkspaceMemoriesMemoryIdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutWorkspacesWorkspaceMemoriesMemoryIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PutWorkspacesWorkspaceMemoriesMemoryIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // PostWorkspacesWorkspaceModelCatalogSuggestionsResponse200Headers the declared response headers of an HTTP 200 response for PostWorkspacesWorkspaceModelCatalogSuggestions
 type PostWorkspacesWorkspaceModelCatalogSuggestionsResponse200Headers struct {
 	XRequestID *string
@@ -56609,471 +58214,6 @@ func (r PostWorkspacesWorkspaceRunsResponse) ContentType() string {
 	return ""
 }
 
-// GetWorkspacesWorkspaceSearchProvidersResponse200Headers the declared response headers of an HTTP 200 response for GetWorkspacesWorkspaceSearchProviders
-type GetWorkspacesWorkspaceSearchProvidersResponse200Headers struct {
-	XRequestID *string
-}
-
-// GetWorkspacesWorkspaceSearchProvidersResponse400Headers the declared response headers of an HTTP 400 response for GetWorkspacesWorkspaceSearchProviders
-type GetWorkspacesWorkspaceSearchProvidersResponse400Headers struct {
-	XRequestID *string
-}
-
-// GetWorkspacesWorkspaceSearchProvidersResponseDefaultHeaders the declared response headers of an HTTP default response for GetWorkspacesWorkspaceSearchProviders
-type GetWorkspacesWorkspaceSearchProvidersResponseDefaultHeaders struct {
-	RetryAfter *string
-	XRequestID *string
-}
-
-type GetWorkspacesWorkspaceSearchProvidersResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *SearchProviderCollection
-	// JSON400 the response for an HTTP 400 `application/json` response
-	JSON400 *ErrorResponse
-	// JSONDefault the response for an HTTP default `application/json` response
-	JSONDefault *ErrorResponse
-	// Headers200 the parsed response headers for an HTTP 200 response
-	Headers200 *GetWorkspacesWorkspaceSearchProvidersResponse200Headers
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *GetWorkspacesWorkspaceSearchProvidersResponse400Headers
-	// HeadersDefault the parsed response headers for an HTTP default response
-	HeadersDefault *GetWorkspacesWorkspaceSearchProvidersResponseDefaultHeaders
-}
-
-// GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r GetWorkspacesWorkspaceSearchProvidersResponse) GetJSON200() *SearchProviderCollection {
-	return r.JSON200
-}
-
-// GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r GetWorkspacesWorkspaceSearchProvidersResponse) GetJSON400() *ErrorResponse {
-	return r.JSON400
-}
-
-// GetJSONDefault returns the response for an HTTP default `application/json` response
-func (r GetWorkspacesWorkspaceSearchProvidersResponse) GetJSONDefault() *ErrorResponse {
-	return r.JSONDefault
-}
-
-// GetBody returns the raw response body bytes
-func (r GetWorkspacesWorkspaceSearchProvidersResponse) GetBody() []byte {
-	return r.Body
-}
-
-// Status returns HTTPResponse.Status
-func (r GetWorkspacesWorkspaceSearchProvidersResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetWorkspacesWorkspaceSearchProvidersResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetWorkspacesWorkspaceSearchProvidersResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-// PostWorkspacesWorkspaceSearchProvidersResponse201Headers the declared response headers of an HTTP 201 response for PostWorkspacesWorkspaceSearchProviders
-type PostWorkspacesWorkspaceSearchProvidersResponse201Headers struct {
-	ETag       *string
-	XRequestID *string
-}
-
-// PostWorkspacesWorkspaceSearchProvidersResponse400Headers the declared response headers of an HTTP 400 response for PostWorkspacesWorkspaceSearchProviders
-type PostWorkspacesWorkspaceSearchProvidersResponse400Headers struct {
-	XRequestID *string
-}
-
-// PostWorkspacesWorkspaceSearchProvidersResponseDefaultHeaders the declared response headers of an HTTP default response for PostWorkspacesWorkspaceSearchProviders
-type PostWorkspacesWorkspaceSearchProvidersResponseDefaultHeaders struct {
-	RetryAfter *string
-	XRequestID *string
-}
-
-type PostWorkspacesWorkspaceSearchProvidersResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	// JSON201 the response for an HTTP 201 `application/json` response
-	JSON201 *SearchProvider
-	// JSON400 the response for an HTTP 400 `application/json` response
-	JSON400 *ErrorResponse
-	// JSONDefault the response for an HTTP default `application/json` response
-	JSONDefault *ErrorResponse
-	// Headers201 the parsed response headers for an HTTP 201 response
-	Headers201 *PostWorkspacesWorkspaceSearchProvidersResponse201Headers
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *PostWorkspacesWorkspaceSearchProvidersResponse400Headers
-	// HeadersDefault the parsed response headers for an HTTP default response
-	HeadersDefault *PostWorkspacesWorkspaceSearchProvidersResponseDefaultHeaders
-}
-
-// GetJSON201 returns the response for an HTTP 201 `application/json` response
-func (r PostWorkspacesWorkspaceSearchProvidersResponse) GetJSON201() *SearchProvider {
-	return r.JSON201
-}
-
-// GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r PostWorkspacesWorkspaceSearchProvidersResponse) GetJSON400() *ErrorResponse {
-	return r.JSON400
-}
-
-// GetJSONDefault returns the response for an HTTP default `application/json` response
-func (r PostWorkspacesWorkspaceSearchProvidersResponse) GetJSONDefault() *ErrorResponse {
-	return r.JSONDefault
-}
-
-// GetBody returns the raw response body bytes
-func (r PostWorkspacesWorkspaceSearchProvidersResponse) GetBody() []byte {
-	return r.Body
-}
-
-// Status returns HTTPResponse.Status
-func (r PostWorkspacesWorkspaceSearchProvidersResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r PostWorkspacesWorkspaceSearchProvidersResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r PostWorkspacesWorkspaceSearchProvidersResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-// GetWorkspacesWorkspaceSearchProvidersProviderIdResponse200Headers the declared response headers of an HTTP 200 response for GetWorkspacesWorkspaceSearchProvidersProviderId
-type GetWorkspacesWorkspaceSearchProvidersProviderIdResponse200Headers struct {
-	ETag       *string
-	XRequestID *string
-}
-
-// GetWorkspacesWorkspaceSearchProvidersProviderIdResponse400Headers the declared response headers of an HTTP 400 response for GetWorkspacesWorkspaceSearchProvidersProviderId
-type GetWorkspacesWorkspaceSearchProvidersProviderIdResponse400Headers struct {
-	XRequestID *string
-}
-
-// GetWorkspacesWorkspaceSearchProvidersProviderIdResponseDefaultHeaders the declared response headers of an HTTP default response for GetWorkspacesWorkspaceSearchProvidersProviderId
-type GetWorkspacesWorkspaceSearchProvidersProviderIdResponseDefaultHeaders struct {
-	RetryAfter *string
-	XRequestID *string
-}
-
-type GetWorkspacesWorkspaceSearchProvidersProviderIdResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *SearchProvider
-	// JSON400 the response for an HTTP 400 `application/json` response
-	JSON400 *ErrorResponse
-	// JSONDefault the response for an HTTP default `application/json` response
-	JSONDefault *ErrorResponse
-	// Headers200 the parsed response headers for an HTTP 200 response
-	Headers200 *GetWorkspacesWorkspaceSearchProvidersProviderIdResponse200Headers
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *GetWorkspacesWorkspaceSearchProvidersProviderIdResponse400Headers
-	// HeadersDefault the parsed response headers for an HTTP default response
-	HeadersDefault *GetWorkspacesWorkspaceSearchProvidersProviderIdResponseDefaultHeaders
-}
-
-// GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r GetWorkspacesWorkspaceSearchProvidersProviderIdResponse) GetJSON200() *SearchProvider {
-	return r.JSON200
-}
-
-// GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r GetWorkspacesWorkspaceSearchProvidersProviderIdResponse) GetJSON400() *ErrorResponse {
-	return r.JSON400
-}
-
-// GetJSONDefault returns the response for an HTTP default `application/json` response
-func (r GetWorkspacesWorkspaceSearchProvidersProviderIdResponse) GetJSONDefault() *ErrorResponse {
-	return r.JSONDefault
-}
-
-// GetBody returns the raw response body bytes
-func (r GetWorkspacesWorkspaceSearchProvidersProviderIdResponse) GetBody() []byte {
-	return r.Body
-}
-
-// Status returns HTTPResponse.Status
-func (r GetWorkspacesWorkspaceSearchProvidersProviderIdResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetWorkspacesWorkspaceSearchProvidersProviderIdResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetWorkspacesWorkspaceSearchProvidersProviderIdResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-// PatchWorkspacesWorkspaceSearchProvidersProviderIdResponse200Headers the declared response headers of an HTTP 200 response for PatchWorkspacesWorkspaceSearchProvidersProviderId
-type PatchWorkspacesWorkspaceSearchProvidersProviderIdResponse200Headers struct {
-	ETag       *string
-	XRequestID *string
-}
-
-// PatchWorkspacesWorkspaceSearchProvidersProviderIdResponse400Headers the declared response headers of an HTTP 400 response for PatchWorkspacesWorkspaceSearchProvidersProviderId
-type PatchWorkspacesWorkspaceSearchProvidersProviderIdResponse400Headers struct {
-	XRequestID *string
-}
-
-// PatchWorkspacesWorkspaceSearchProvidersProviderIdResponseDefaultHeaders the declared response headers of an HTTP default response for PatchWorkspacesWorkspaceSearchProvidersProviderId
-type PatchWorkspacesWorkspaceSearchProvidersProviderIdResponseDefaultHeaders struct {
-	RetryAfter *string
-	XRequestID *string
-}
-
-type PatchWorkspacesWorkspaceSearchProvidersProviderIdResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *SearchProvider
-	// JSON400 the response for an HTTP 400 `application/json` response
-	JSON400 *ErrorResponse
-	// JSONDefault the response for an HTTP default `application/json` response
-	JSONDefault *ErrorResponse
-	// Headers200 the parsed response headers for an HTTP 200 response
-	Headers200 *PatchWorkspacesWorkspaceSearchProvidersProviderIdResponse200Headers
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *PatchWorkspacesWorkspaceSearchProvidersProviderIdResponse400Headers
-	// HeadersDefault the parsed response headers for an HTTP default response
-	HeadersDefault *PatchWorkspacesWorkspaceSearchProvidersProviderIdResponseDefaultHeaders
-}
-
-// GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r PatchWorkspacesWorkspaceSearchProvidersProviderIdResponse) GetJSON200() *SearchProvider {
-	return r.JSON200
-}
-
-// GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r PatchWorkspacesWorkspaceSearchProvidersProviderIdResponse) GetJSON400() *ErrorResponse {
-	return r.JSON400
-}
-
-// GetJSONDefault returns the response for an HTTP default `application/json` response
-func (r PatchWorkspacesWorkspaceSearchProvidersProviderIdResponse) GetJSONDefault() *ErrorResponse {
-	return r.JSONDefault
-}
-
-// GetBody returns the raw response body bytes
-func (r PatchWorkspacesWorkspaceSearchProvidersProviderIdResponse) GetBody() []byte {
-	return r.Body
-}
-
-// Status returns HTTPResponse.Status
-func (r PatchWorkspacesWorkspaceSearchProvidersProviderIdResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r PatchWorkspacesWorkspaceSearchProvidersProviderIdResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r PatchWorkspacesWorkspaceSearchProvidersProviderIdResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-// GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesResponse200Headers the declared response headers of an HTTP 200 response for GetWorkspacesWorkspaceSearchProvidersProviderIdReferences
-type GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesResponse200Headers struct {
-	XRequestID *string
-}
-
-// GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesResponse400Headers the declared response headers of an HTTP 400 response for GetWorkspacesWorkspaceSearchProvidersProviderIdReferences
-type GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesResponse400Headers struct {
-	XRequestID *string
-}
-
-// GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesResponseDefaultHeaders the declared response headers of an HTTP default response for GetWorkspacesWorkspaceSearchProvidersProviderIdReferences
-type GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesResponseDefaultHeaders struct {
-	RetryAfter *string
-	XRequestID *string
-}
-
-type GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *SearchProviderReferenceCollection
-	// JSON400 the response for an HTTP 400 `application/json` response
-	JSON400 *ErrorResponse
-	// JSONDefault the response for an HTTP default `application/json` response
-	JSONDefault *ErrorResponse
-	// Headers200 the parsed response headers for an HTTP 200 response
-	Headers200 *GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesResponse200Headers
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesResponse400Headers
-	// HeadersDefault the parsed response headers for an HTTP default response
-	HeadersDefault *GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesResponseDefaultHeaders
-}
-
-// GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesResponse) GetJSON200() *SearchProviderReferenceCollection {
-	return r.JSON200
-}
-
-// GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesResponse) GetJSON400() *ErrorResponse {
-	return r.JSON400
-}
-
-// GetJSONDefault returns the response for an HTTP default `application/json` response
-func (r GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesResponse) GetJSONDefault() *ErrorResponse {
-	return r.JSONDefault
-}
-
-// GetBody returns the raw response body bytes
-func (r GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesResponse) GetBody() []byte {
-	return r.Body
-}
-
-// Status returns HTTPResponse.Status
-func (r GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-// PostWorkspacesWorkspaceSearchProvidersProviderIdTestResponse200Headers the declared response headers of an HTTP 200 response for PostWorkspacesWorkspaceSearchProvidersProviderIdTest
-type PostWorkspacesWorkspaceSearchProvidersProviderIdTestResponse200Headers struct {
-	XRequestID *string
-}
-
-// PostWorkspacesWorkspaceSearchProvidersProviderIdTestResponse400Headers the declared response headers of an HTTP 400 response for PostWorkspacesWorkspaceSearchProvidersProviderIdTest
-type PostWorkspacesWorkspaceSearchProvidersProviderIdTestResponse400Headers struct {
-	XRequestID *string
-}
-
-// PostWorkspacesWorkspaceSearchProvidersProviderIdTestResponseDefaultHeaders the declared response headers of an HTTP default response for PostWorkspacesWorkspaceSearchProvidersProviderIdTest
-type PostWorkspacesWorkspaceSearchProvidersProviderIdTestResponseDefaultHeaders struct {
-	RetryAfter *string
-	XRequestID *string
-}
-
-type PostWorkspacesWorkspaceSearchProvidersProviderIdTestResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *SearchProviderTestResult
-	// JSON400 the response for an HTTP 400 `application/json` response
-	JSON400 *ErrorResponse
-	// JSONDefault the response for an HTTP default `application/json` response
-	JSONDefault *ErrorResponse
-	// Headers200 the parsed response headers for an HTTP 200 response
-	Headers200 *PostWorkspacesWorkspaceSearchProvidersProviderIdTestResponse200Headers
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *PostWorkspacesWorkspaceSearchProvidersProviderIdTestResponse400Headers
-	// HeadersDefault the parsed response headers for an HTTP default response
-	HeadersDefault *PostWorkspacesWorkspaceSearchProvidersProviderIdTestResponseDefaultHeaders
-}
-
-// GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r PostWorkspacesWorkspaceSearchProvidersProviderIdTestResponse) GetJSON200() *SearchProviderTestResult {
-	return r.JSON200
-}
-
-// GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r PostWorkspacesWorkspaceSearchProvidersProviderIdTestResponse) GetJSON400() *ErrorResponse {
-	return r.JSON400
-}
-
-// GetJSONDefault returns the response for an HTTP default `application/json` response
-func (r PostWorkspacesWorkspaceSearchProvidersProviderIdTestResponse) GetJSONDefault() *ErrorResponse {
-	return r.JSONDefault
-}
-
-// GetBody returns the raw response body bytes
-func (r PostWorkspacesWorkspaceSearchProvidersProviderIdTestResponse) GetBody() []byte {
-	return r.Body
-}
-
-// Status returns HTTPResponse.Status
-func (r PostWorkspacesWorkspaceSearchProvidersProviderIdTestResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r PostWorkspacesWorkspaceSearchProvidersProviderIdTestResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r PostWorkspacesWorkspaceSearchProvidersProviderIdTestResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
 // GetWorkspacesWorkspaceSecurityAuditEventsResponse200Headers the declared response headers of an HTTP 200 response for GetWorkspacesWorkspaceSecurityAuditEvents
 type GetWorkspacesWorkspaceSecurityAuditEventsResponse200Headers struct {
 	XRequestID *string
@@ -57767,6 +58907,160 @@ func (r PostWorkspacesWorkspaceThreadsResponse) ContentType() string {
 	return ""
 }
 
+// GetWorkspacesWorkspaceToolsetsResponse200Headers the declared response headers of an HTTP 200 response for GetWorkspacesWorkspaceToolsets
+type GetWorkspacesWorkspaceToolsetsResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetWorkspacesWorkspaceToolsetsResponse400Headers the declared response headers of an HTTP 400 response for GetWorkspacesWorkspaceToolsets
+type GetWorkspacesWorkspaceToolsetsResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetWorkspacesWorkspaceToolsetsResponseDefaultHeaders the declared response headers of an HTTP default response for GetWorkspacesWorkspaceToolsets
+type GetWorkspacesWorkspaceToolsetsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetWorkspacesWorkspaceToolsetsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ToolsetCatalog
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetWorkspacesWorkspaceToolsetsResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetWorkspacesWorkspaceToolsetsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetWorkspacesWorkspaceToolsetsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetWorkspacesWorkspaceToolsetsResponse) GetJSON200() *ToolsetCatalog {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetWorkspacesWorkspaceToolsetsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetWorkspacesWorkspaceToolsetsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetWorkspacesWorkspaceToolsetsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkspacesWorkspaceToolsetsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkspacesWorkspaceToolsetsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetWorkspacesWorkspaceToolsetsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PostWorkspacesWorkspaceToolsetsValidateResponse200Headers the declared response headers of an HTTP 200 response for PostWorkspacesWorkspaceToolsetsValidate
+type PostWorkspacesWorkspaceToolsetsValidateResponse200Headers struct {
+	XRequestID *string
+}
+
+// PostWorkspacesWorkspaceToolsetsValidateResponse400Headers the declared response headers of an HTTP 400 response for PostWorkspacesWorkspaceToolsetsValidate
+type PostWorkspacesWorkspaceToolsetsValidateResponse400Headers struct {
+	XRequestID *string
+}
+
+// PostWorkspacesWorkspaceToolsetsValidateResponseDefaultHeaders the declared response headers of an HTTP default response for PostWorkspacesWorkspaceToolsetsValidate
+type PostWorkspacesWorkspaceToolsetsValidateResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PostWorkspacesWorkspaceToolsetsValidateResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ToolsetCandidateResult
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PostWorkspacesWorkspaceToolsetsValidateResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PostWorkspacesWorkspaceToolsetsValidateResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PostWorkspacesWorkspaceToolsetsValidateResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PostWorkspacesWorkspaceToolsetsValidateResponse) GetJSON200() *ToolsetCandidateResult {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PostWorkspacesWorkspaceToolsetsValidateResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PostWorkspacesWorkspaceToolsetsValidateResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PostWorkspacesWorkspaceToolsetsValidateResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostWorkspacesWorkspaceToolsetsValidateResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostWorkspacesWorkspaceToolsetsValidateResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostWorkspacesWorkspaceToolsetsValidateResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // GetWorkspacesWorkspaceTraceQueryResponse200Headers the declared response headers of an HTTP 200 response for GetWorkspacesWorkspaceTraceQuery
 type GetWorkspacesWorkspaceTraceQueryResponse200Headers struct {
 	XRequestID *string
@@ -58069,6 +59363,471 @@ func (r GetWorkspacesWorkspaceTracesTraceIdObservationsResponse) StatusCode() in
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetWorkspacesWorkspaceTracesTraceIdObservationsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetWorkspacesWorkspaceWebProvidersResponse200Headers the declared response headers of an HTTP 200 response for GetWorkspacesWorkspaceWebProviders
+type GetWorkspacesWorkspaceWebProvidersResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetWorkspacesWorkspaceWebProvidersResponse400Headers the declared response headers of an HTTP 400 response for GetWorkspacesWorkspaceWebProviders
+type GetWorkspacesWorkspaceWebProvidersResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetWorkspacesWorkspaceWebProvidersResponseDefaultHeaders the declared response headers of an HTTP default response for GetWorkspacesWorkspaceWebProviders
+type GetWorkspacesWorkspaceWebProvidersResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetWorkspacesWorkspaceWebProvidersResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebProviderCollection
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetWorkspacesWorkspaceWebProvidersResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetWorkspacesWorkspaceWebProvidersResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetWorkspacesWorkspaceWebProvidersResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetWorkspacesWorkspaceWebProvidersResponse) GetJSON200() *WebProviderCollection {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetWorkspacesWorkspaceWebProvidersResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetWorkspacesWorkspaceWebProvidersResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetWorkspacesWorkspaceWebProvidersResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkspacesWorkspaceWebProvidersResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkspacesWorkspaceWebProvidersResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetWorkspacesWorkspaceWebProvidersResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PostWorkspacesWorkspaceWebProvidersResponse201Headers the declared response headers of an HTTP 201 response for PostWorkspacesWorkspaceWebProviders
+type PostWorkspacesWorkspaceWebProvidersResponse201Headers struct {
+	ETag       *string
+	XRequestID *string
+}
+
+// PostWorkspacesWorkspaceWebProvidersResponse400Headers the declared response headers of an HTTP 400 response for PostWorkspacesWorkspaceWebProviders
+type PostWorkspacesWorkspaceWebProvidersResponse400Headers struct {
+	XRequestID *string
+}
+
+// PostWorkspacesWorkspaceWebProvidersResponseDefaultHeaders the declared response headers of an HTTP default response for PostWorkspacesWorkspaceWebProviders
+type PostWorkspacesWorkspaceWebProvidersResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PostWorkspacesWorkspaceWebProvidersResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *WebProvider
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers201 the parsed response headers for an HTTP 201 response
+	Headers201 *PostWorkspacesWorkspaceWebProvidersResponse201Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PostWorkspacesWorkspaceWebProvidersResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PostWorkspacesWorkspaceWebProvidersResponseDefaultHeaders
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r PostWorkspacesWorkspaceWebProvidersResponse) GetJSON201() *WebProvider {
+	return r.JSON201
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PostWorkspacesWorkspaceWebProvidersResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PostWorkspacesWorkspaceWebProvidersResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PostWorkspacesWorkspaceWebProvidersResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostWorkspacesWorkspaceWebProvidersResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostWorkspacesWorkspaceWebProvidersResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostWorkspacesWorkspaceWebProvidersResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetWorkspacesWorkspaceWebProvidersProviderIdResponse200Headers the declared response headers of an HTTP 200 response for GetWorkspacesWorkspaceWebProvidersProviderId
+type GetWorkspacesWorkspaceWebProvidersProviderIdResponse200Headers struct {
+	ETag       *string
+	XRequestID *string
+}
+
+// GetWorkspacesWorkspaceWebProvidersProviderIdResponse400Headers the declared response headers of an HTTP 400 response for GetWorkspacesWorkspaceWebProvidersProviderId
+type GetWorkspacesWorkspaceWebProvidersProviderIdResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetWorkspacesWorkspaceWebProvidersProviderIdResponseDefaultHeaders the declared response headers of an HTTP default response for GetWorkspacesWorkspaceWebProvidersProviderId
+type GetWorkspacesWorkspaceWebProvidersProviderIdResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetWorkspacesWorkspaceWebProvidersProviderIdResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebProvider
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetWorkspacesWorkspaceWebProvidersProviderIdResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetWorkspacesWorkspaceWebProvidersProviderIdResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetWorkspacesWorkspaceWebProvidersProviderIdResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetWorkspacesWorkspaceWebProvidersProviderIdResponse) GetJSON200() *WebProvider {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetWorkspacesWorkspaceWebProvidersProviderIdResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetWorkspacesWorkspaceWebProvidersProviderIdResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetWorkspacesWorkspaceWebProvidersProviderIdResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkspacesWorkspaceWebProvidersProviderIdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkspacesWorkspaceWebProvidersProviderIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetWorkspacesWorkspaceWebProvidersProviderIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PatchWorkspacesWorkspaceWebProvidersProviderIdResponse200Headers the declared response headers of an HTTP 200 response for PatchWorkspacesWorkspaceWebProvidersProviderId
+type PatchWorkspacesWorkspaceWebProvidersProviderIdResponse200Headers struct {
+	ETag       *string
+	XRequestID *string
+}
+
+// PatchWorkspacesWorkspaceWebProvidersProviderIdResponse400Headers the declared response headers of an HTTP 400 response for PatchWorkspacesWorkspaceWebProvidersProviderId
+type PatchWorkspacesWorkspaceWebProvidersProviderIdResponse400Headers struct {
+	XRequestID *string
+}
+
+// PatchWorkspacesWorkspaceWebProvidersProviderIdResponseDefaultHeaders the declared response headers of an HTTP default response for PatchWorkspacesWorkspaceWebProvidersProviderId
+type PatchWorkspacesWorkspaceWebProvidersProviderIdResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PatchWorkspacesWorkspaceWebProvidersProviderIdResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebProvider
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PatchWorkspacesWorkspaceWebProvidersProviderIdResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PatchWorkspacesWorkspaceWebProvidersProviderIdResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PatchWorkspacesWorkspaceWebProvidersProviderIdResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PatchWorkspacesWorkspaceWebProvidersProviderIdResponse) GetJSON200() *WebProvider {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PatchWorkspacesWorkspaceWebProvidersProviderIdResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PatchWorkspacesWorkspaceWebProvidersProviderIdResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PatchWorkspacesWorkspaceWebProvidersProviderIdResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PatchWorkspacesWorkspaceWebProvidersProviderIdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PatchWorkspacesWorkspaceWebProvidersProviderIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PatchWorkspacesWorkspaceWebProvidersProviderIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetWorkspacesWorkspaceWebProvidersProviderIdReferencesResponse200Headers the declared response headers of an HTTP 200 response for GetWorkspacesWorkspaceWebProvidersProviderIdReferences
+type GetWorkspacesWorkspaceWebProvidersProviderIdReferencesResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetWorkspacesWorkspaceWebProvidersProviderIdReferencesResponse400Headers the declared response headers of an HTTP 400 response for GetWorkspacesWorkspaceWebProvidersProviderIdReferences
+type GetWorkspacesWorkspaceWebProvidersProviderIdReferencesResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetWorkspacesWorkspaceWebProvidersProviderIdReferencesResponseDefaultHeaders the declared response headers of an HTTP default response for GetWorkspacesWorkspaceWebProvidersProviderIdReferences
+type GetWorkspacesWorkspaceWebProvidersProviderIdReferencesResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetWorkspacesWorkspaceWebProvidersProviderIdReferencesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebProviderReferenceCollection
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetWorkspacesWorkspaceWebProvidersProviderIdReferencesResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetWorkspacesWorkspaceWebProvidersProviderIdReferencesResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetWorkspacesWorkspaceWebProvidersProviderIdReferencesResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetWorkspacesWorkspaceWebProvidersProviderIdReferencesResponse) GetJSON200() *WebProviderReferenceCollection {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetWorkspacesWorkspaceWebProvidersProviderIdReferencesResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetWorkspacesWorkspaceWebProvidersProviderIdReferencesResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetWorkspacesWorkspaceWebProvidersProviderIdReferencesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkspacesWorkspaceWebProvidersProviderIdReferencesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkspacesWorkspaceWebProvidersProviderIdReferencesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetWorkspacesWorkspaceWebProvidersProviderIdReferencesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PostWorkspacesWorkspaceWebProvidersProviderIdTestResponse200Headers the declared response headers of an HTTP 200 response for PostWorkspacesWorkspaceWebProvidersProviderIdTest
+type PostWorkspacesWorkspaceWebProvidersProviderIdTestResponse200Headers struct {
+	XRequestID *string
+}
+
+// PostWorkspacesWorkspaceWebProvidersProviderIdTestResponse400Headers the declared response headers of an HTTP 400 response for PostWorkspacesWorkspaceWebProvidersProviderIdTest
+type PostWorkspacesWorkspaceWebProvidersProviderIdTestResponse400Headers struct {
+	XRequestID *string
+}
+
+// PostWorkspacesWorkspaceWebProvidersProviderIdTestResponseDefaultHeaders the declared response headers of an HTTP default response for PostWorkspacesWorkspaceWebProvidersProviderIdTest
+type PostWorkspacesWorkspaceWebProvidersProviderIdTestResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PostWorkspacesWorkspaceWebProvidersProviderIdTestResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *WebProviderTestResult
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PostWorkspacesWorkspaceWebProvidersProviderIdTestResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PostWorkspacesWorkspaceWebProvidersProviderIdTestResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PostWorkspacesWorkspaceWebProvidersProviderIdTestResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PostWorkspacesWorkspaceWebProvidersProviderIdTestResponse) GetJSON200() *WebProviderTestResult {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PostWorkspacesWorkspaceWebProvidersProviderIdTestResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PostWorkspacesWorkspaceWebProvidersProviderIdTestResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PostWorkspacesWorkspaceWebProvidersProviderIdTestResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostWorkspacesWorkspaceWebProvidersProviderIdTestResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostWorkspacesWorkspaceWebProvidersProviderIdTestResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostWorkspacesWorkspaceWebProvidersProviderIdTestResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -60142,123 +61901,6 @@ func (c *ClientWithResponses) PostOrganizationsOrganizationRoleBindingsWithRespo
 	return ParsePostOrganizationsOrganizationRoleBindingsResponse(rsp)
 }
 
-// GetOrganizationsOrganizationSearchProvidersWithResponse List Organization Provider
-//
-// Returns a wrapper object for the known response body format(s).
-//
-// Corresponds with GET /api/v1/organizations/{organization}/search-providers (the `GetOrganizationsOrganizationSearchProviders` operationId).
-func (c *ClientWithResponses) GetOrganizationsOrganizationSearchProvidersWithResponse(ctx context.Context, organization string, params *GetOrganizationsOrganizationSearchProvidersParams, reqEditors ...RequestEditorFn) (*GetOrganizationsOrganizationSearchProvidersResponse, error) {
-	rsp, err := c.GetOrganizationsOrganizationSearchProviders(ctx, organization, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetOrganizationsOrganizationSearchProvidersResponse(rsp)
-}
-
-// PostOrganizationsOrganizationSearchProvidersWithBodyWithResponse Create Organization Provider
-//
-// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
-//
-// Corresponds with POST /api/v1/organizations/{organization}/search-providers (the `PostOrganizationsOrganizationSearchProviders` operationId).
-func (c *ClientWithResponses) PostOrganizationsOrganizationSearchProvidersWithBodyWithResponse(ctx context.Context, organization string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostOrganizationsOrganizationSearchProvidersResponse, error) {
-	rsp, err := c.PostOrganizationsOrganizationSearchProvidersWithBody(ctx, organization, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostOrganizationsOrganizationSearchProvidersResponse(rsp)
-}
-
-// PostOrganizationsOrganizationSearchProvidersWithResponse Create Organization Provider
-//
-// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
-//
-// Corresponds with POST /api/v1/organizations/{organization}/search-providers (the `PostOrganizationsOrganizationSearchProviders` operationId).
-func (c *ClientWithResponses) PostOrganizationsOrganizationSearchProvidersWithResponse(ctx context.Context, organization string, body PostOrganizationsOrganizationSearchProvidersJSONRequestBody, reqEditors ...RequestEditorFn) (*PostOrganizationsOrganizationSearchProvidersResponse, error) {
-	rsp, err := c.PostOrganizationsOrganizationSearchProviders(ctx, organization, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostOrganizationsOrganizationSearchProvidersResponse(rsp)
-}
-
-// GetOrganizationsOrganizationSearchProvidersProviderIdWithResponse Get Organization Provider
-//
-// Returns a wrapper object for the known response body format(s).
-//
-// Corresponds with GET /api/v1/organizations/{organization}/search-providers/{provider_id} (the `GetOrganizationsOrganizationSearchProvidersProviderId` operationId).
-func (c *ClientWithResponses) GetOrganizationsOrganizationSearchProvidersProviderIdWithResponse(ctx context.Context, organization string, providerId string, reqEditors ...RequestEditorFn) (*GetOrganizationsOrganizationSearchProvidersProviderIdResponse, error) {
-	rsp, err := c.GetOrganizationsOrganizationSearchProvidersProviderId(ctx, organization, providerId, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetOrganizationsOrganizationSearchProvidersProviderIdResponse(rsp)
-}
-
-// PatchOrganizationsOrganizationSearchProvidersProviderIdWithBodyWithResponse Update Organization Provider
-//
-// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
-//
-// Corresponds with PATCH /api/v1/organizations/{organization}/search-providers/{provider_id} (the `PatchOrganizationsOrganizationSearchProvidersProviderId` operationId).
-func (c *ClientWithResponses) PatchOrganizationsOrganizationSearchProvidersProviderIdWithBodyWithResponse(ctx context.Context, organization string, providerId string, params *PatchOrganizationsOrganizationSearchProvidersProviderIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchOrganizationsOrganizationSearchProvidersProviderIdResponse, error) {
-	rsp, err := c.PatchOrganizationsOrganizationSearchProvidersProviderIdWithBody(ctx, organization, providerId, params, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePatchOrganizationsOrganizationSearchProvidersProviderIdResponse(rsp)
-}
-
-// PatchOrganizationsOrganizationSearchProvidersProviderIdWithResponse Update Organization Provider
-//
-// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
-//
-// Corresponds with PATCH /api/v1/organizations/{organization}/search-providers/{provider_id} (the `PatchOrganizationsOrganizationSearchProvidersProviderId` operationId).
-func (c *ClientWithResponses) PatchOrganizationsOrganizationSearchProvidersProviderIdWithResponse(ctx context.Context, organization string, providerId string, params *PatchOrganizationsOrganizationSearchProvidersProviderIdParams, body PatchOrganizationsOrganizationSearchProvidersProviderIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchOrganizationsOrganizationSearchProvidersProviderIdResponse, error) {
-	rsp, err := c.PatchOrganizationsOrganizationSearchProvidersProviderId(ctx, organization, providerId, params, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePatchOrganizationsOrganizationSearchProvidersProviderIdResponse(rsp)
-}
-
-// GetOrganizationsOrganizationSearchProvidersProviderIdReferencesWithResponse References Organization Provider
-//
-// Returns a wrapper object for the known response body format(s).
-//
-// Corresponds with GET /api/v1/organizations/{organization}/search-providers/{provider_id}/references (the `GetOrganizationsOrganizationSearchProvidersProviderIdReferences` operationId).
-func (c *ClientWithResponses) GetOrganizationsOrganizationSearchProvidersProviderIdReferencesWithResponse(ctx context.Context, organization string, providerId string, params *GetOrganizationsOrganizationSearchProvidersProviderIdReferencesParams, reqEditors ...RequestEditorFn) (*GetOrganizationsOrganizationSearchProvidersProviderIdReferencesResponse, error) {
-	rsp, err := c.GetOrganizationsOrganizationSearchProvidersProviderIdReferences(ctx, organization, providerId, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetOrganizationsOrganizationSearchProvidersProviderIdReferencesResponse(rsp)
-}
-
-// PostOrganizationsOrganizationSearchProvidersProviderIdTestWithBodyWithResponse Test Organization Provider
-//
-// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
-//
-// Corresponds with POST /api/v1/organizations/{organization}/search-providers/{provider_id}/test (the `PostOrganizationsOrganizationSearchProvidersProviderIdTest` operationId).
-func (c *ClientWithResponses) PostOrganizationsOrganizationSearchProvidersProviderIdTestWithBodyWithResponse(ctx context.Context, organization string, providerId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostOrganizationsOrganizationSearchProvidersProviderIdTestResponse, error) {
-	rsp, err := c.PostOrganizationsOrganizationSearchProvidersProviderIdTestWithBody(ctx, organization, providerId, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostOrganizationsOrganizationSearchProvidersProviderIdTestResponse(rsp)
-}
-
-// PostOrganizationsOrganizationSearchProvidersProviderIdTestWithResponse Test Organization Provider
-//
-// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
-//
-// Corresponds with POST /api/v1/organizations/{organization}/search-providers/{provider_id}/test (the `PostOrganizationsOrganizationSearchProvidersProviderIdTest` operationId).
-func (c *ClientWithResponses) PostOrganizationsOrganizationSearchProvidersProviderIdTestWithResponse(ctx context.Context, organization string, providerId string, body PostOrganizationsOrganizationSearchProvidersProviderIdTestJSONRequestBody, reqEditors ...RequestEditorFn) (*PostOrganizationsOrganizationSearchProvidersProviderIdTestResponse, error) {
-	rsp, err := c.PostOrganizationsOrganizationSearchProvidersProviderIdTest(ctx, organization, providerId, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostOrganizationsOrganizationSearchProvidersProviderIdTestResponse(rsp)
-}
-
 // GetOrganizationsOrganizationSecurityAuditEventsWithResponse Organization Security Events
 //
 // Returns a wrapper object for the known response body format(s).
@@ -60283,6 +61925,110 @@ func (c *ClientWithResponses) GetOrganizationsOrganizationUsersWithResponse(ctx 
 		return nil, err
 	}
 	return ParseGetOrganizationsOrganizationUsersResponse(rsp)
+}
+
+// GetOrganizationsOrganizationWebProvidersWithResponse List Organization Provider
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/organizations/{organization}/web-providers (the `GetOrganizationsOrganizationWebProviders` operationId).
+func (c *ClientWithResponses) GetOrganizationsOrganizationWebProvidersWithResponse(ctx context.Context, organization string, params *GetOrganizationsOrganizationWebProvidersParams, reqEditors ...RequestEditorFn) (*GetOrganizationsOrganizationWebProvidersResponse, error) {
+	rsp, err := c.GetOrganizationsOrganizationWebProviders(ctx, organization, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetOrganizationsOrganizationWebProvidersResponse(rsp)
+}
+
+// PostOrganizationsOrganizationWebProvidersWithBodyWithResponse Create Organization Provider
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/organizations/{organization}/web-providers (the `PostOrganizationsOrganizationWebProviders` operationId).
+func (c *ClientWithResponses) PostOrganizationsOrganizationWebProvidersWithBodyWithResponse(ctx context.Context, organization string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostOrganizationsOrganizationWebProvidersResponse, error) {
+	rsp, err := c.PostOrganizationsOrganizationWebProvidersWithBody(ctx, organization, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostOrganizationsOrganizationWebProvidersResponse(rsp)
+}
+
+// PostOrganizationsOrganizationWebProvidersWithResponse Create Organization Provider
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/organizations/{organization}/web-providers (the `PostOrganizationsOrganizationWebProviders` operationId).
+func (c *ClientWithResponses) PostOrganizationsOrganizationWebProvidersWithResponse(ctx context.Context, organization string, body PostOrganizationsOrganizationWebProvidersJSONRequestBody, reqEditors ...RequestEditorFn) (*PostOrganizationsOrganizationWebProvidersResponse, error) {
+	rsp, err := c.PostOrganizationsOrganizationWebProviders(ctx, organization, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostOrganizationsOrganizationWebProvidersResponse(rsp)
+}
+
+// GetOrganizationsOrganizationWebProvidersProviderIdWithResponse Get Organization Provider
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/organizations/{organization}/web-providers/{provider_id} (the `GetOrganizationsOrganizationWebProvidersProviderId` operationId).
+func (c *ClientWithResponses) GetOrganizationsOrganizationWebProvidersProviderIdWithResponse(ctx context.Context, organization string, providerId string, reqEditors ...RequestEditorFn) (*GetOrganizationsOrganizationWebProvidersProviderIdResponse, error) {
+	rsp, err := c.GetOrganizationsOrganizationWebProvidersProviderId(ctx, organization, providerId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetOrganizationsOrganizationWebProvidersProviderIdResponse(rsp)
+}
+
+// PatchOrganizationsOrganizationWebProvidersProviderIdWithBodyWithResponse Update Organization Provider
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /api/v1/organizations/{organization}/web-providers/{provider_id} (the `PatchOrganizationsOrganizationWebProvidersProviderId` operationId).
+func (c *ClientWithResponses) PatchOrganizationsOrganizationWebProvidersProviderIdWithBodyWithResponse(ctx context.Context, organization string, providerId string, params *PatchOrganizationsOrganizationWebProvidersProviderIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchOrganizationsOrganizationWebProvidersProviderIdResponse, error) {
+	rsp, err := c.PatchOrganizationsOrganizationWebProvidersProviderIdWithBody(ctx, organization, providerId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePatchOrganizationsOrganizationWebProvidersProviderIdResponse(rsp)
+}
+
+// PatchOrganizationsOrganizationWebProvidersProviderIdWithResponse Update Organization Provider
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /api/v1/organizations/{organization}/web-providers/{provider_id} (the `PatchOrganizationsOrganizationWebProvidersProviderId` operationId).
+func (c *ClientWithResponses) PatchOrganizationsOrganizationWebProvidersProviderIdWithResponse(ctx context.Context, organization string, providerId string, params *PatchOrganizationsOrganizationWebProvidersProviderIdParams, body PatchOrganizationsOrganizationWebProvidersProviderIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchOrganizationsOrganizationWebProvidersProviderIdResponse, error) {
+	rsp, err := c.PatchOrganizationsOrganizationWebProvidersProviderId(ctx, organization, providerId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePatchOrganizationsOrganizationWebProvidersProviderIdResponse(rsp)
+}
+
+// GetOrganizationsOrganizationWebProvidersProviderIdReferencesWithResponse References Organization Provider
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/organizations/{organization}/web-providers/{provider_id}/references (the `GetOrganizationsOrganizationWebProvidersProviderIdReferences` operationId).
+func (c *ClientWithResponses) GetOrganizationsOrganizationWebProvidersProviderIdReferencesWithResponse(ctx context.Context, organization string, providerId string, params *GetOrganizationsOrganizationWebProvidersProviderIdReferencesParams, reqEditors ...RequestEditorFn) (*GetOrganizationsOrganizationWebProvidersProviderIdReferencesResponse, error) {
+	rsp, err := c.GetOrganizationsOrganizationWebProvidersProviderIdReferences(ctx, organization, providerId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetOrganizationsOrganizationWebProvidersProviderIdReferencesResponse(rsp)
+}
+
+// PostOrganizationsOrganizationWebProvidersProviderIdTestWithResponse Test Organization Provider
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/organizations/{organization}/web-providers/{provider_id}/test (the `PostOrganizationsOrganizationWebProvidersProviderIdTest` operationId).
+func (c *ClientWithResponses) PostOrganizationsOrganizationWebProvidersProviderIdTestWithResponse(ctx context.Context, organization string, providerId string, reqEditors ...RequestEditorFn) (*PostOrganizationsOrganizationWebProvidersProviderIdTestResponse, error) {
+	rsp, err := c.PostOrganizationsOrganizationWebProvidersProviderIdTest(ctx, organization, providerId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostOrganizationsOrganizationWebProvidersProviderIdTestResponse(rsp)
 }
 
 // GetOrganizationsOrganizationWorkspacesWithResponse Workspaces
@@ -60764,32 +62510,6 @@ func (c *ClientWithResponses) PostRunsSourceRunIdContinueWithResponse(ctx contex
 		return nil, err
 	}
 	return ParsePostRunsSourceRunIdContinueResponse(rsp)
-}
-
-// GetSearchProviderTypesWithResponse List Types
-//
-// Returns a wrapper object for the known response body format(s).
-//
-// Corresponds with GET /api/v1/search-provider-types (the `GetSearchProviderTypes` operationId).
-func (c *ClientWithResponses) GetSearchProviderTypesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetSearchProviderTypesResponse, error) {
-	rsp, err := c.GetSearchProviderTypes(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetSearchProviderTypesResponse(rsp)
-}
-
-// GetSearchProviderTypesProviderTypeWithResponse Get Type
-//
-// Returns a wrapper object for the known response body format(s).
-//
-// Corresponds with GET /api/v1/search-provider-types/{provider_type} (the `GetSearchProviderTypesProviderType` operationId).
-func (c *ClientWithResponses) GetSearchProviderTypesProviderTypeWithResponse(ctx context.Context, providerType string, reqEditors ...RequestEditorFn) (*GetSearchProviderTypesProviderTypeResponse, error) {
-	rsp, err := c.GetSearchProviderTypesProviderType(ctx, providerType, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetSearchProviderTypesProviderTypeResponse(rsp)
 }
 
 // DeleteServiceAccountsAccountIdWithBodyWithResponse Delete Account
@@ -61492,6 +63212,32 @@ func (c *ClientWithResponses) GetUsersUserIdAvatarImageIdWithResponse(ctx contex
 		return nil, err
 	}
 	return ParseGetUsersUserIdAvatarImageIdResponse(rsp)
+}
+
+// GetWebProviderTypesWithResponse List Types
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/web-provider-types (the `GetWebProviderTypes` operationId).
+func (c *ClientWithResponses) GetWebProviderTypesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetWebProviderTypesResponse, error) {
+	rsp, err := c.GetWebProviderTypes(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWebProviderTypesResponse(rsp)
+}
+
+// GetWebProviderTypesProviderTypeWithResponse Get Type
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/web-provider-types/{provider_type} (the `GetWebProviderTypesProviderType` operationId).
+func (c *ClientWithResponses) GetWebProviderTypesProviderTypeWithResponse(ctx context.Context, providerType string, reqEditors ...RequestEditorFn) (*GetWebProviderTypesProviderTypeResponse, error) {
+	rsp, err := c.GetWebProviderTypesProviderType(ctx, providerType, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWebProviderTypesProviderTypeResponse(rsp)
 }
 
 // DeleteWorkspacesWorkspaceWithResponse Delete Workspace
@@ -62235,6 +63981,123 @@ func (c *ClientWithResponses) GetWorkspacesWorkspaceMembersWithResponse(ctx cont
 	return ParseGetWorkspacesWorkspaceMembersResponse(rsp)
 }
 
+// GetWorkspacesWorkspaceMemoriesWithResponse List Memories
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/workspaces/{workspace}/memories (the `GetWorkspacesWorkspaceMemories` operationId).
+func (c *ClientWithResponses) GetWorkspacesWorkspaceMemoriesWithResponse(ctx context.Context, workspace string, params *GetWorkspacesWorkspaceMemoriesParams, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceMemoriesResponse, error) {
+	rsp, err := c.GetWorkspacesWorkspaceMemories(ctx, workspace, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkspacesWorkspaceMemoriesResponse(rsp)
+}
+
+// PostWorkspacesWorkspaceMemoriesWithBodyWithResponse Add Memory
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/workspaces/{workspace}/memories (the `PostWorkspacesWorkspaceMemories` operationId).
+func (c *ClientWithResponses) PostWorkspacesWorkspaceMemoriesWithBodyWithResponse(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceMemoriesParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceMemoriesResponse, error) {
+	rsp, err := c.PostWorkspacesWorkspaceMemoriesWithBody(ctx, workspace, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostWorkspacesWorkspaceMemoriesResponse(rsp)
+}
+
+// PostWorkspacesWorkspaceMemoriesWithResponse Add Memory
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/workspaces/{workspace}/memories (the `PostWorkspacesWorkspaceMemories` operationId).
+func (c *ClientWithResponses) PostWorkspacesWorkspaceMemoriesWithResponse(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceMemoriesParams, body PostWorkspacesWorkspaceMemoriesJSONRequestBody, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceMemoriesResponse, error) {
+	rsp, err := c.PostWorkspacesWorkspaceMemories(ctx, workspace, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostWorkspacesWorkspaceMemoriesResponse(rsp)
+}
+
+// PostWorkspacesWorkspaceMemoriesSearchWithBodyWithResponse Search Memories
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/workspaces/{workspace}/memories/search (the `PostWorkspacesWorkspaceMemoriesSearch` operationId).
+func (c *ClientWithResponses) PostWorkspacesWorkspaceMemoriesSearchWithBodyWithResponse(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceMemoriesSearchParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceMemoriesSearchResponse, error) {
+	rsp, err := c.PostWorkspacesWorkspaceMemoriesSearchWithBody(ctx, workspace, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostWorkspacesWorkspaceMemoriesSearchResponse(rsp)
+}
+
+// PostWorkspacesWorkspaceMemoriesSearchWithResponse Search Memories
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/workspaces/{workspace}/memories/search (the `PostWorkspacesWorkspaceMemoriesSearch` operationId).
+func (c *ClientWithResponses) PostWorkspacesWorkspaceMemoriesSearchWithResponse(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceMemoriesSearchParams, body PostWorkspacesWorkspaceMemoriesSearchJSONRequestBody, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceMemoriesSearchResponse, error) {
+	rsp, err := c.PostWorkspacesWorkspaceMemoriesSearch(ctx, workspace, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostWorkspacesWorkspaceMemoriesSearchResponse(rsp)
+}
+
+// DeleteWorkspacesWorkspaceMemoriesMemoryIdWithResponse Delete Memory
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /api/v1/workspaces/{workspace}/memories/{memory_id} (the `DeleteWorkspacesWorkspaceMemoriesMemoryId` operationId).
+func (c *ClientWithResponses) DeleteWorkspacesWorkspaceMemoriesMemoryIdWithResponse(ctx context.Context, workspace string, memoryId string, params *DeleteWorkspacesWorkspaceMemoriesMemoryIdParams, reqEditors ...RequestEditorFn) (*DeleteWorkspacesWorkspaceMemoriesMemoryIdResponse, error) {
+	rsp, err := c.DeleteWorkspacesWorkspaceMemoriesMemoryId(ctx, workspace, memoryId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteWorkspacesWorkspaceMemoriesMemoryIdResponse(rsp)
+}
+
+// GetWorkspacesWorkspaceMemoriesMemoryIdWithResponse Get Memory
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/workspaces/{workspace}/memories/{memory_id} (the `GetWorkspacesWorkspaceMemoriesMemoryId` operationId).
+func (c *ClientWithResponses) GetWorkspacesWorkspaceMemoriesMemoryIdWithResponse(ctx context.Context, workspace string, memoryId string, params *GetWorkspacesWorkspaceMemoriesMemoryIdParams, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceMemoriesMemoryIdResponse, error) {
+	rsp, err := c.GetWorkspacesWorkspaceMemoriesMemoryId(ctx, workspace, memoryId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkspacesWorkspaceMemoriesMemoryIdResponse(rsp)
+}
+
+// PutWorkspacesWorkspaceMemoriesMemoryIdWithBodyWithResponse Update Memory
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/v1/workspaces/{workspace}/memories/{memory_id} (the `PutWorkspacesWorkspaceMemoriesMemoryId` operationId).
+func (c *ClientWithResponses) PutWorkspacesWorkspaceMemoriesMemoryIdWithBodyWithResponse(ctx context.Context, workspace string, memoryId string, params *PutWorkspacesWorkspaceMemoriesMemoryIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutWorkspacesWorkspaceMemoriesMemoryIdResponse, error) {
+	rsp, err := c.PutWorkspacesWorkspaceMemoriesMemoryIdWithBody(ctx, workspace, memoryId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutWorkspacesWorkspaceMemoriesMemoryIdResponse(rsp)
+}
+
+// PutWorkspacesWorkspaceMemoriesMemoryIdWithResponse Update Memory
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/v1/workspaces/{workspace}/memories/{memory_id} (the `PutWorkspacesWorkspaceMemoriesMemoryId` operationId).
+func (c *ClientWithResponses) PutWorkspacesWorkspaceMemoriesMemoryIdWithResponse(ctx context.Context, workspace string, memoryId string, params *PutWorkspacesWorkspaceMemoriesMemoryIdParams, body PutWorkspacesWorkspaceMemoriesMemoryIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PutWorkspacesWorkspaceMemoriesMemoryIdResponse, error) {
+	rsp, err := c.PutWorkspacesWorkspaceMemoriesMemoryId(ctx, workspace, memoryId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutWorkspacesWorkspaceMemoriesMemoryIdResponse(rsp)
+}
+
 // PostWorkspacesWorkspaceModelCatalogSuggestionsWithBodyWithResponse Suggest Workspace Model Declarations
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
@@ -62599,123 +64462,6 @@ func (c *ClientWithResponses) PostWorkspacesWorkspaceRunsWithResponse(ctx contex
 	return ParsePostWorkspacesWorkspaceRunsResponse(rsp)
 }
 
-// GetWorkspacesWorkspaceSearchProvidersWithResponse List Workspace Provider
-//
-// Returns a wrapper object for the known response body format(s).
-//
-// Corresponds with GET /api/v1/workspaces/{workspace}/search-providers (the `GetWorkspacesWorkspaceSearchProviders` operationId).
-func (c *ClientWithResponses) GetWorkspacesWorkspaceSearchProvidersWithResponse(ctx context.Context, workspace string, params *GetWorkspacesWorkspaceSearchProvidersParams, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceSearchProvidersResponse, error) {
-	rsp, err := c.GetWorkspacesWorkspaceSearchProviders(ctx, workspace, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetWorkspacesWorkspaceSearchProvidersResponse(rsp)
-}
-
-// PostWorkspacesWorkspaceSearchProvidersWithBodyWithResponse Create Workspace Provider
-//
-// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
-//
-// Corresponds with POST /api/v1/workspaces/{workspace}/search-providers (the `PostWorkspacesWorkspaceSearchProviders` operationId).
-func (c *ClientWithResponses) PostWorkspacesWorkspaceSearchProvidersWithBodyWithResponse(ctx context.Context, workspace string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceSearchProvidersResponse, error) {
-	rsp, err := c.PostWorkspacesWorkspaceSearchProvidersWithBody(ctx, workspace, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostWorkspacesWorkspaceSearchProvidersResponse(rsp)
-}
-
-// PostWorkspacesWorkspaceSearchProvidersWithResponse Create Workspace Provider
-//
-// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
-//
-// Corresponds with POST /api/v1/workspaces/{workspace}/search-providers (the `PostWorkspacesWorkspaceSearchProviders` operationId).
-func (c *ClientWithResponses) PostWorkspacesWorkspaceSearchProvidersWithResponse(ctx context.Context, workspace string, body PostWorkspacesWorkspaceSearchProvidersJSONRequestBody, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceSearchProvidersResponse, error) {
-	rsp, err := c.PostWorkspacesWorkspaceSearchProviders(ctx, workspace, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostWorkspacesWorkspaceSearchProvidersResponse(rsp)
-}
-
-// GetWorkspacesWorkspaceSearchProvidersProviderIdWithResponse Get Workspace Provider
-//
-// Returns a wrapper object for the known response body format(s).
-//
-// Corresponds with GET /api/v1/workspaces/{workspace}/search-providers/{provider_id} (the `GetWorkspacesWorkspaceSearchProvidersProviderId` operationId).
-func (c *ClientWithResponses) GetWorkspacesWorkspaceSearchProvidersProviderIdWithResponse(ctx context.Context, workspace string, providerId string, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceSearchProvidersProviderIdResponse, error) {
-	rsp, err := c.GetWorkspacesWorkspaceSearchProvidersProviderId(ctx, workspace, providerId, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetWorkspacesWorkspaceSearchProvidersProviderIdResponse(rsp)
-}
-
-// PatchWorkspacesWorkspaceSearchProvidersProviderIdWithBodyWithResponse Update Workspace Provider
-//
-// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
-//
-// Corresponds with PATCH /api/v1/workspaces/{workspace}/search-providers/{provider_id} (the `PatchWorkspacesWorkspaceSearchProvidersProviderId` operationId).
-func (c *ClientWithResponses) PatchWorkspacesWorkspaceSearchProvidersProviderIdWithBodyWithResponse(ctx context.Context, workspace string, providerId string, params *PatchWorkspacesWorkspaceSearchProvidersProviderIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchWorkspacesWorkspaceSearchProvidersProviderIdResponse, error) {
-	rsp, err := c.PatchWorkspacesWorkspaceSearchProvidersProviderIdWithBody(ctx, workspace, providerId, params, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePatchWorkspacesWorkspaceSearchProvidersProviderIdResponse(rsp)
-}
-
-// PatchWorkspacesWorkspaceSearchProvidersProviderIdWithResponse Update Workspace Provider
-//
-// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
-//
-// Corresponds with PATCH /api/v1/workspaces/{workspace}/search-providers/{provider_id} (the `PatchWorkspacesWorkspaceSearchProvidersProviderId` operationId).
-func (c *ClientWithResponses) PatchWorkspacesWorkspaceSearchProvidersProviderIdWithResponse(ctx context.Context, workspace string, providerId string, params *PatchWorkspacesWorkspaceSearchProvidersProviderIdParams, body PatchWorkspacesWorkspaceSearchProvidersProviderIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchWorkspacesWorkspaceSearchProvidersProviderIdResponse, error) {
-	rsp, err := c.PatchWorkspacesWorkspaceSearchProvidersProviderId(ctx, workspace, providerId, params, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePatchWorkspacesWorkspaceSearchProvidersProviderIdResponse(rsp)
-}
-
-// GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesWithResponse References Workspace Provider
-//
-// Returns a wrapper object for the known response body format(s).
-//
-// Corresponds with GET /api/v1/workspaces/{workspace}/search-providers/{provider_id}/references (the `GetWorkspacesWorkspaceSearchProvidersProviderIdReferences` operationId).
-func (c *ClientWithResponses) GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesWithResponse(ctx context.Context, workspace string, providerId string, params *GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesParams, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesResponse, error) {
-	rsp, err := c.GetWorkspacesWorkspaceSearchProvidersProviderIdReferences(ctx, workspace, providerId, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseGetWorkspacesWorkspaceSearchProvidersProviderIdReferencesResponse(rsp)
-}
-
-// PostWorkspacesWorkspaceSearchProvidersProviderIdTestWithBodyWithResponse Test Workspace Provider
-//
-// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
-//
-// Corresponds with POST /api/v1/workspaces/{workspace}/search-providers/{provider_id}/test (the `PostWorkspacesWorkspaceSearchProvidersProviderIdTest` operationId).
-func (c *ClientWithResponses) PostWorkspacesWorkspaceSearchProvidersProviderIdTestWithBodyWithResponse(ctx context.Context, workspace string, providerId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceSearchProvidersProviderIdTestResponse, error) {
-	rsp, err := c.PostWorkspacesWorkspaceSearchProvidersProviderIdTestWithBody(ctx, workspace, providerId, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostWorkspacesWorkspaceSearchProvidersProviderIdTestResponse(rsp)
-}
-
-// PostWorkspacesWorkspaceSearchProvidersProviderIdTestWithResponse Test Workspace Provider
-//
-// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
-//
-// Corresponds with POST /api/v1/workspaces/{workspace}/search-providers/{provider_id}/test (the `PostWorkspacesWorkspaceSearchProvidersProviderIdTest` operationId).
-func (c *ClientWithResponses) PostWorkspacesWorkspaceSearchProvidersProviderIdTestWithResponse(ctx context.Context, workspace string, providerId string, body PostWorkspacesWorkspaceSearchProvidersProviderIdTestJSONRequestBody, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceSearchProvidersProviderIdTestResponse, error) {
-	rsp, err := c.PostWorkspacesWorkspaceSearchProvidersProviderIdTest(ctx, workspace, providerId, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostWorkspacesWorkspaceSearchProvidersProviderIdTestResponse(rsp)
-}
-
 // GetWorkspacesWorkspaceSecurityAuditEventsWithResponse Workspace Security Events
 //
 // Returns a wrapper object for the known response body format(s).
@@ -62872,6 +64618,45 @@ func (c *ClientWithResponses) PostWorkspacesWorkspaceThreadsWithResponse(ctx con
 	return ParsePostWorkspacesWorkspaceThreadsResponse(rsp)
 }
 
+// GetWorkspacesWorkspaceToolsetsWithResponse Get Toolsets
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/workspaces/{workspace}/toolsets (the `GetWorkspacesWorkspaceToolsets` operationId).
+func (c *ClientWithResponses) GetWorkspacesWorkspaceToolsetsWithResponse(ctx context.Context, workspace string, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceToolsetsResponse, error) {
+	rsp, err := c.GetWorkspacesWorkspaceToolsets(ctx, workspace, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkspacesWorkspaceToolsetsResponse(rsp)
+}
+
+// PostWorkspacesWorkspaceToolsetsValidateWithBodyWithResponse Validate Toolsets
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/workspaces/{workspace}/toolsets/validate (the `PostWorkspacesWorkspaceToolsetsValidate` operationId).
+func (c *ClientWithResponses) PostWorkspacesWorkspaceToolsetsValidateWithBodyWithResponse(ctx context.Context, workspace string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceToolsetsValidateResponse, error) {
+	rsp, err := c.PostWorkspacesWorkspaceToolsetsValidateWithBody(ctx, workspace, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostWorkspacesWorkspaceToolsetsValidateResponse(rsp)
+}
+
+// PostWorkspacesWorkspaceToolsetsValidateWithResponse Validate Toolsets
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/workspaces/{workspace}/toolsets/validate (the `PostWorkspacesWorkspaceToolsetsValidate` operationId).
+func (c *ClientWithResponses) PostWorkspacesWorkspaceToolsetsValidateWithResponse(ctx context.Context, workspace string, body PostWorkspacesWorkspaceToolsetsValidateJSONRequestBody, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceToolsetsValidateResponse, error) {
+	rsp, err := c.PostWorkspacesWorkspaceToolsetsValidate(ctx, workspace, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostWorkspacesWorkspaceToolsetsValidateResponse(rsp)
+}
+
 // GetWorkspacesWorkspaceTraceQueryWithResponse Get Trace Query
 //
 // Returns a wrapper object for the known response body format(s).
@@ -62922,6 +64707,110 @@ func (c *ClientWithResponses) GetWorkspacesWorkspaceTracesTraceIdObservationsWit
 		return nil, err
 	}
 	return ParseGetWorkspacesWorkspaceTracesTraceIdObservationsResponse(rsp)
+}
+
+// GetWorkspacesWorkspaceWebProvidersWithResponse List Workspace Provider
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/workspaces/{workspace}/web-providers (the `GetWorkspacesWorkspaceWebProviders` operationId).
+func (c *ClientWithResponses) GetWorkspacesWorkspaceWebProvidersWithResponse(ctx context.Context, workspace string, params *GetWorkspacesWorkspaceWebProvidersParams, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceWebProvidersResponse, error) {
+	rsp, err := c.GetWorkspacesWorkspaceWebProviders(ctx, workspace, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkspacesWorkspaceWebProvidersResponse(rsp)
+}
+
+// PostWorkspacesWorkspaceWebProvidersWithBodyWithResponse Create Workspace Provider
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/workspaces/{workspace}/web-providers (the `PostWorkspacesWorkspaceWebProviders` operationId).
+func (c *ClientWithResponses) PostWorkspacesWorkspaceWebProvidersWithBodyWithResponse(ctx context.Context, workspace string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceWebProvidersResponse, error) {
+	rsp, err := c.PostWorkspacesWorkspaceWebProvidersWithBody(ctx, workspace, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostWorkspacesWorkspaceWebProvidersResponse(rsp)
+}
+
+// PostWorkspacesWorkspaceWebProvidersWithResponse Create Workspace Provider
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/workspaces/{workspace}/web-providers (the `PostWorkspacesWorkspaceWebProviders` operationId).
+func (c *ClientWithResponses) PostWorkspacesWorkspaceWebProvidersWithResponse(ctx context.Context, workspace string, body PostWorkspacesWorkspaceWebProvidersJSONRequestBody, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceWebProvidersResponse, error) {
+	rsp, err := c.PostWorkspacesWorkspaceWebProviders(ctx, workspace, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostWorkspacesWorkspaceWebProvidersResponse(rsp)
+}
+
+// GetWorkspacesWorkspaceWebProvidersProviderIdWithResponse Get Workspace Provider
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/workspaces/{workspace}/web-providers/{provider_id} (the `GetWorkspacesWorkspaceWebProvidersProviderId` operationId).
+func (c *ClientWithResponses) GetWorkspacesWorkspaceWebProvidersProviderIdWithResponse(ctx context.Context, workspace string, providerId string, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceWebProvidersProviderIdResponse, error) {
+	rsp, err := c.GetWorkspacesWorkspaceWebProvidersProviderId(ctx, workspace, providerId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkspacesWorkspaceWebProvidersProviderIdResponse(rsp)
+}
+
+// PatchWorkspacesWorkspaceWebProvidersProviderIdWithBodyWithResponse Update Workspace Provider
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /api/v1/workspaces/{workspace}/web-providers/{provider_id} (the `PatchWorkspacesWorkspaceWebProvidersProviderId` operationId).
+func (c *ClientWithResponses) PatchWorkspacesWorkspaceWebProvidersProviderIdWithBodyWithResponse(ctx context.Context, workspace string, providerId string, params *PatchWorkspacesWorkspaceWebProvidersProviderIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchWorkspacesWorkspaceWebProvidersProviderIdResponse, error) {
+	rsp, err := c.PatchWorkspacesWorkspaceWebProvidersProviderIdWithBody(ctx, workspace, providerId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePatchWorkspacesWorkspaceWebProvidersProviderIdResponse(rsp)
+}
+
+// PatchWorkspacesWorkspaceWebProvidersProviderIdWithResponse Update Workspace Provider
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /api/v1/workspaces/{workspace}/web-providers/{provider_id} (the `PatchWorkspacesWorkspaceWebProvidersProviderId` operationId).
+func (c *ClientWithResponses) PatchWorkspacesWorkspaceWebProvidersProviderIdWithResponse(ctx context.Context, workspace string, providerId string, params *PatchWorkspacesWorkspaceWebProvidersProviderIdParams, body PatchWorkspacesWorkspaceWebProvidersProviderIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchWorkspacesWorkspaceWebProvidersProviderIdResponse, error) {
+	rsp, err := c.PatchWorkspacesWorkspaceWebProvidersProviderId(ctx, workspace, providerId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePatchWorkspacesWorkspaceWebProvidersProviderIdResponse(rsp)
+}
+
+// GetWorkspacesWorkspaceWebProvidersProviderIdReferencesWithResponse References Workspace Provider
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/workspaces/{workspace}/web-providers/{provider_id}/references (the `GetWorkspacesWorkspaceWebProvidersProviderIdReferences` operationId).
+func (c *ClientWithResponses) GetWorkspacesWorkspaceWebProvidersProviderIdReferencesWithResponse(ctx context.Context, workspace string, providerId string, params *GetWorkspacesWorkspaceWebProvidersProviderIdReferencesParams, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceWebProvidersProviderIdReferencesResponse, error) {
+	rsp, err := c.GetWorkspacesWorkspaceWebProvidersProviderIdReferences(ctx, workspace, providerId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkspacesWorkspaceWebProvidersProviderIdReferencesResponse(rsp)
+}
+
+// PostWorkspacesWorkspaceWebProvidersProviderIdTestWithResponse Test Workspace Provider
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/workspaces/{workspace}/web-providers/{provider_id}/test (the `PostWorkspacesWorkspaceWebProvidersProviderIdTest` operationId).
+func (c *ClientWithResponses) PostWorkspacesWorkspaceWebProvidersProviderIdTestWithResponse(ctx context.Context, workspace string, providerId string, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceWebProvidersProviderIdTestResponse, error) {
+	rsp, err := c.PostWorkspacesWorkspaceWebProvidersProviderIdTest(ctx, workspace, providerId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostWorkspacesWorkspaceWebProvidersProviderIdTestResponse(rsp)
 }
 
 // ParseGetAgentRevisionsAgentRevisionIdResponse parses an HTTP response from a GetAgentRevisionsAgentRevisionIdWithResponse call
@@ -71536,507 +73425,6 @@ func ParsePostOrganizationsOrganizationRoleBindingsResponse(rsp *http.Response) 
 	return response, nil
 }
 
-// ParseGetOrganizationsOrganizationSearchProvidersResponse parses an HTTP response from a GetOrganizationsOrganizationSearchProvidersWithResponse call
-func ParseGetOrganizationsOrganizationSearchProvidersResponse(rsp *http.Response) (*GetOrganizationsOrganizationSearchProvidersResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetOrganizationsOrganizationSearchProvidersResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SearchProviderCollection
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	switch {
-	case rsp.StatusCode == 200:
-		var headers GetOrganizationsOrganizationSearchProvidersResponse200Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers200 = &headers
-	case rsp.StatusCode == 400:
-		var headers GetOrganizationsOrganizationSearchProvidersResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers400 = &headers
-	case true:
-		var headers GetOrganizationsOrganizationSearchProvidersResponseDefaultHeaders
-		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.RetryAfter = &value
-		}
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.HeadersDefault = &headers
-	}
-
-	return response, nil
-}
-
-// ParsePostOrganizationsOrganizationSearchProvidersResponse parses an HTTP response from a PostOrganizationsOrganizationSearchProvidersWithResponse call
-func ParsePostOrganizationsOrganizationSearchProvidersResponse(rsp *http.Response) (*PostOrganizationsOrganizationSearchProvidersResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &PostOrganizationsOrganizationSearchProvidersResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
-		var dest SearchProvider
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON201 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	switch {
-	case rsp.StatusCode == 201:
-		var headers PostOrganizationsOrganizationSearchProvidersResponse201Headers
-		if values := rsp.Header.Values("ETag"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "ETag", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.ETag = &value
-		}
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers201 = &headers
-	case rsp.StatusCode == 400:
-		var headers PostOrganizationsOrganizationSearchProvidersResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers400 = &headers
-	case true:
-		var headers PostOrganizationsOrganizationSearchProvidersResponseDefaultHeaders
-		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.RetryAfter = &value
-		}
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.HeadersDefault = &headers
-	}
-
-	return response, nil
-}
-
-// ParseGetOrganizationsOrganizationSearchProvidersProviderIdResponse parses an HTTP response from a GetOrganizationsOrganizationSearchProvidersProviderIdWithResponse call
-func ParseGetOrganizationsOrganizationSearchProvidersProviderIdResponse(rsp *http.Response) (*GetOrganizationsOrganizationSearchProvidersProviderIdResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetOrganizationsOrganizationSearchProvidersProviderIdResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SearchProvider
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	switch {
-	case rsp.StatusCode == 200:
-		var headers GetOrganizationsOrganizationSearchProvidersProviderIdResponse200Headers
-		if values := rsp.Header.Values("ETag"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "ETag", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.ETag = &value
-		}
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers200 = &headers
-	case rsp.StatusCode == 400:
-		var headers GetOrganizationsOrganizationSearchProvidersProviderIdResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers400 = &headers
-	case true:
-		var headers GetOrganizationsOrganizationSearchProvidersProviderIdResponseDefaultHeaders
-		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.RetryAfter = &value
-		}
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.HeadersDefault = &headers
-	}
-
-	return response, nil
-}
-
-// ParsePatchOrganizationsOrganizationSearchProvidersProviderIdResponse parses an HTTP response from a PatchOrganizationsOrganizationSearchProvidersProviderIdWithResponse call
-func ParsePatchOrganizationsOrganizationSearchProvidersProviderIdResponse(rsp *http.Response) (*PatchOrganizationsOrganizationSearchProvidersProviderIdResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &PatchOrganizationsOrganizationSearchProvidersProviderIdResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SearchProvider
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	switch {
-	case rsp.StatusCode == 200:
-		var headers PatchOrganizationsOrganizationSearchProvidersProviderIdResponse200Headers
-		if values := rsp.Header.Values("ETag"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "ETag", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.ETag = &value
-		}
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers200 = &headers
-	case rsp.StatusCode == 400:
-		var headers PatchOrganizationsOrganizationSearchProvidersProviderIdResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers400 = &headers
-	case true:
-		var headers PatchOrganizationsOrganizationSearchProvidersProviderIdResponseDefaultHeaders
-		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.RetryAfter = &value
-		}
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.HeadersDefault = &headers
-	}
-
-	return response, nil
-}
-
-// ParseGetOrganizationsOrganizationSearchProvidersProviderIdReferencesResponse parses an HTTP response from a GetOrganizationsOrganizationSearchProvidersProviderIdReferencesWithResponse call
-func ParseGetOrganizationsOrganizationSearchProvidersProviderIdReferencesResponse(rsp *http.Response) (*GetOrganizationsOrganizationSearchProvidersProviderIdReferencesResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetOrganizationsOrganizationSearchProvidersProviderIdReferencesResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SearchProviderReferenceCollection
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	switch {
-	case rsp.StatusCode == 200:
-		var headers GetOrganizationsOrganizationSearchProvidersProviderIdReferencesResponse200Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers200 = &headers
-	case rsp.StatusCode == 400:
-		var headers GetOrganizationsOrganizationSearchProvidersProviderIdReferencesResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers400 = &headers
-	case true:
-		var headers GetOrganizationsOrganizationSearchProvidersProviderIdReferencesResponseDefaultHeaders
-		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.RetryAfter = &value
-		}
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.HeadersDefault = &headers
-	}
-
-	return response, nil
-}
-
-// ParsePostOrganizationsOrganizationSearchProvidersProviderIdTestResponse parses an HTTP response from a PostOrganizationsOrganizationSearchProvidersProviderIdTestWithResponse call
-func ParsePostOrganizationsOrganizationSearchProvidersProviderIdTestResponse(rsp *http.Response) (*PostOrganizationsOrganizationSearchProvidersProviderIdTestResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &PostOrganizationsOrganizationSearchProvidersProviderIdTestResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SearchProviderTestResult
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	switch {
-	case rsp.StatusCode == 200:
-		var headers PostOrganizationsOrganizationSearchProvidersProviderIdTestResponse200Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers200 = &headers
-	case rsp.StatusCode == 400:
-		var headers PostOrganizationsOrganizationSearchProvidersProviderIdTestResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers400 = &headers
-	case true:
-		var headers PostOrganizationsOrganizationSearchProvidersProviderIdTestResponseDefaultHeaders
-		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.RetryAfter = &value
-		}
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.HeadersDefault = &headers
-	}
-
-	return response, nil
-}
-
 // ParseGetOrganizationsOrganizationSecurityAuditEventsResponse parses an HTTP response from a GetOrganizationsOrganizationSecurityAuditEventsWithResponse call
 func ParseGetOrganizationsOrganizationSecurityAuditEventsResponse(rsp *http.Response) (*GetOrganizationsOrganizationSecurityAuditEventsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -72177,6 +73565,507 @@ func ParseGetOrganizationsOrganizationUsersResponse(rsp *http.Response) (*GetOrg
 		response.Headers400 = &headers
 	case true:
 		var headers GetOrganizationsOrganizationUsersResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetOrganizationsOrganizationWebProvidersResponse parses an HTTP response from a GetOrganizationsOrganizationWebProvidersWithResponse call
+func ParseGetOrganizationsOrganizationWebProvidersResponse(rsp *http.Response) (*GetOrganizationsOrganizationWebProvidersResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetOrganizationsOrganizationWebProvidersResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebProviderCollection
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetOrganizationsOrganizationWebProvidersResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetOrganizationsOrganizationWebProvidersResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetOrganizationsOrganizationWebProvidersResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePostOrganizationsOrganizationWebProvidersResponse parses an HTTP response from a PostOrganizationsOrganizationWebProvidersWithResponse call
+func ParsePostOrganizationsOrganizationWebProvidersResponse(rsp *http.Response) (*PostOrganizationsOrganizationWebProvidersResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostOrganizationsOrganizationWebProvidersResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest WebProvider
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 201:
+		var headers PostOrganizationsOrganizationWebProvidersResponse201Headers
+		if values := rsp.Header.Values("ETag"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "ETag", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.ETag = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers201 = &headers
+	case rsp.StatusCode == 400:
+		var headers PostOrganizationsOrganizationWebProvidersResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PostOrganizationsOrganizationWebProvidersResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetOrganizationsOrganizationWebProvidersProviderIdResponse parses an HTTP response from a GetOrganizationsOrganizationWebProvidersProviderIdWithResponse call
+func ParseGetOrganizationsOrganizationWebProvidersProviderIdResponse(rsp *http.Response) (*GetOrganizationsOrganizationWebProvidersProviderIdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetOrganizationsOrganizationWebProvidersProviderIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebProvider
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetOrganizationsOrganizationWebProvidersProviderIdResponse200Headers
+		if values := rsp.Header.Values("ETag"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "ETag", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.ETag = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetOrganizationsOrganizationWebProvidersProviderIdResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetOrganizationsOrganizationWebProvidersProviderIdResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePatchOrganizationsOrganizationWebProvidersProviderIdResponse parses an HTTP response from a PatchOrganizationsOrganizationWebProvidersProviderIdWithResponse call
+func ParsePatchOrganizationsOrganizationWebProvidersProviderIdResponse(rsp *http.Response) (*PatchOrganizationsOrganizationWebProvidersProviderIdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PatchOrganizationsOrganizationWebProvidersProviderIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebProvider
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PatchOrganizationsOrganizationWebProvidersProviderIdResponse200Headers
+		if values := rsp.Header.Values("ETag"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "ETag", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.ETag = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PatchOrganizationsOrganizationWebProvidersProviderIdResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PatchOrganizationsOrganizationWebProvidersProviderIdResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetOrganizationsOrganizationWebProvidersProviderIdReferencesResponse parses an HTTP response from a GetOrganizationsOrganizationWebProvidersProviderIdReferencesWithResponse call
+func ParseGetOrganizationsOrganizationWebProvidersProviderIdReferencesResponse(rsp *http.Response) (*GetOrganizationsOrganizationWebProvidersProviderIdReferencesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetOrganizationsOrganizationWebProvidersProviderIdReferencesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebProviderReferenceCollection
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetOrganizationsOrganizationWebProvidersProviderIdReferencesResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetOrganizationsOrganizationWebProvidersProviderIdReferencesResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetOrganizationsOrganizationWebProvidersProviderIdReferencesResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePostOrganizationsOrganizationWebProvidersProviderIdTestResponse parses an HTTP response from a PostOrganizationsOrganizationWebProvidersProviderIdTestWithResponse call
+func ParsePostOrganizationsOrganizationWebProvidersProviderIdTestResponse(rsp *http.Response) (*PostOrganizationsOrganizationWebProvidersProviderIdTestResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostOrganizationsOrganizationWebProvidersProviderIdTestResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebProviderTestResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PostOrganizationsOrganizationWebProvidersProviderIdTestResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PostOrganizationsOrganizationWebProvidersProviderIdTestResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PostOrganizationsOrganizationWebProvidersProviderIdTestResponseDefaultHeaders
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
@@ -74246,149 +76135,6 @@ func ParsePostRunsSourceRunIdContinueResponse(rsp *http.Response) (*PostRunsSour
 		response.Headers400 = &headers
 	case true:
 		var headers PostRunsSourceRunIdContinueResponseDefaultHeaders
-		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.RetryAfter = &value
-		}
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.HeadersDefault = &headers
-	}
-
-	return response, nil
-}
-
-// ParseGetSearchProviderTypesResponse parses an HTTP response from a GetSearchProviderTypesWithResponse call
-func ParseGetSearchProviderTypesResponse(rsp *http.Response) (*GetSearchProviderTypesResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetSearchProviderTypesResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SearchProviderDefinitionCollection
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	switch {
-	case rsp.StatusCode == 200:
-		var headers GetSearchProviderTypesResponse200Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers200 = &headers
-	case true:
-		var headers GetSearchProviderTypesResponseDefaultHeaders
-		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.RetryAfter = &value
-		}
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.HeadersDefault = &headers
-	}
-
-	return response, nil
-}
-
-// ParseGetSearchProviderTypesProviderTypeResponse parses an HTTP response from a GetSearchProviderTypesProviderTypeWithResponse call
-func ParseGetSearchProviderTypesProviderTypeResponse(rsp *http.Response) (*GetSearchProviderTypesProviderTypeResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetSearchProviderTypesProviderTypeResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SearchProviderDefinition
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	switch {
-	case rsp.StatusCode == 200:
-		var headers GetSearchProviderTypesProviderTypeResponse200Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers200 = &headers
-	case rsp.StatusCode == 400:
-		var headers GetSearchProviderTypesProviderTypeResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers400 = &headers
-	case true:
-		var headers GetSearchProviderTypesProviderTypeResponseDefaultHeaders
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
@@ -77461,6 +79207,149 @@ func ParseGetUsersUserIdAvatarImageIdResponse(rsp *http.Response) (*GetUsersUser
 		response.Headers400 = &headers
 	case true:
 		var headers GetUsersUserIdAvatarImageIdResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetWebProviderTypesResponse parses an HTTP response from a GetWebProviderTypesWithResponse call
+func ParseGetWebProviderTypesResponse(rsp *http.Response) (*GetWebProviderTypesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWebProviderTypesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebProviderDefinitionCollection
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetWebProviderTypesResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case true:
+		var headers GetWebProviderTypesResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetWebProviderTypesProviderTypeResponse parses an HTTP response from a GetWebProviderTypesProviderTypeWithResponse call
+func ParseGetWebProviderTypesProviderTypeResponse(rsp *http.Response) (*GetWebProviderTypesProviderTypeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWebProviderTypesProviderTypeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebProviderDefinition
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetWebProviderTypesProviderTypeResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetWebProviderTypesProviderTypeResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetWebProviderTypesProviderTypeResponseDefaultHeaders
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
@@ -80830,6 +82719,482 @@ func ParseGetWorkspacesWorkspaceMembersResponse(rsp *http.Response) (*GetWorkspa
 	return response, nil
 }
 
+// ParseGetWorkspacesWorkspaceMemoriesResponse parses an HTTP response from a GetWorkspacesWorkspaceMemoriesWithResponse call
+func ParseGetWorkspacesWorkspaceMemoriesResponse(rsp *http.Response) (*GetWorkspacesWorkspaceMemoriesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkspacesWorkspaceMemoriesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MemoryCollection
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetWorkspacesWorkspaceMemoriesResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetWorkspacesWorkspaceMemoriesResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetWorkspacesWorkspaceMemoriesResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePostWorkspacesWorkspaceMemoriesResponse parses an HTTP response from a PostWorkspacesWorkspaceMemoriesWithResponse call
+func ParsePostWorkspacesWorkspaceMemoriesResponse(rsp *http.Response) (*PostWorkspacesWorkspaceMemoriesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostWorkspacesWorkspaceMemoriesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest Memory
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 201:
+		var headers PostWorkspacesWorkspaceMemoriesResponse201Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers201 = &headers
+	case rsp.StatusCode == 400:
+		var headers PostWorkspacesWorkspaceMemoriesResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PostWorkspacesWorkspaceMemoriesResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePostWorkspacesWorkspaceMemoriesSearchResponse parses an HTTP response from a PostWorkspacesWorkspaceMemoriesSearchWithResponse call
+func ParsePostWorkspacesWorkspaceMemoriesSearchResponse(rsp *http.Response) (*PostWorkspacesWorkspaceMemoriesSearchResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostWorkspacesWorkspaceMemoriesSearchResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MemoryCollection
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PostWorkspacesWorkspaceMemoriesSearchResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PostWorkspacesWorkspaceMemoriesSearchResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PostWorkspacesWorkspaceMemoriesSearchResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseDeleteWorkspacesWorkspaceMemoriesMemoryIdResponse parses an HTTP response from a DeleteWorkspacesWorkspaceMemoriesMemoryIdWithResponse call
+func ParseDeleteWorkspacesWorkspaceMemoriesMemoryIdResponse(rsp *http.Response) (*DeleteWorkspacesWorkspaceMemoriesMemoryIdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteWorkspacesWorkspaceMemoriesMemoryIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		var headers DeleteWorkspacesWorkspaceMemoriesMemoryIdResponse204Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers204 = &headers
+	case rsp.StatusCode == 400:
+		var headers DeleteWorkspacesWorkspaceMemoriesMemoryIdResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers DeleteWorkspacesWorkspaceMemoriesMemoryIdResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetWorkspacesWorkspaceMemoriesMemoryIdResponse parses an HTTP response from a GetWorkspacesWorkspaceMemoriesMemoryIdWithResponse call
+func ParseGetWorkspacesWorkspaceMemoriesMemoryIdResponse(rsp *http.Response) (*GetWorkspacesWorkspaceMemoriesMemoryIdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkspacesWorkspaceMemoriesMemoryIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Memory
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetWorkspacesWorkspaceMemoriesMemoryIdResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetWorkspacesWorkspaceMemoriesMemoryIdResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetWorkspacesWorkspaceMemoriesMemoryIdResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePutWorkspacesWorkspaceMemoriesMemoryIdResponse parses an HTTP response from a PutWorkspacesWorkspaceMemoriesMemoryIdWithResponse call
+func ParsePutWorkspacesWorkspaceMemoriesMemoryIdResponse(rsp *http.Response) (*PutWorkspacesWorkspaceMemoriesMemoryIdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutWorkspacesWorkspaceMemoriesMemoryIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Memory
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PutWorkspacesWorkspaceMemoriesMemoryIdResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PutWorkspacesWorkspaceMemoriesMemoryIdResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PutWorkspacesWorkspaceMemoriesMemoryIdResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
 // ParsePostWorkspacesWorkspaceModelCatalogSuggestionsResponse parses an HTTP response from a PostWorkspacesWorkspaceModelCatalogSuggestionsWithResponse call
 func ParsePostWorkspacesWorkspaceModelCatalogSuggestionsResponse(rsp *http.Response) (*PostWorkspacesWorkspaceModelCatalogSuggestionsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -82350,507 +84715,6 @@ func ParsePostWorkspacesWorkspaceRunsResponse(rsp *http.Response) (*PostWorkspac
 	return response, nil
 }
 
-// ParseGetWorkspacesWorkspaceSearchProvidersResponse parses an HTTP response from a GetWorkspacesWorkspaceSearchProvidersWithResponse call
-func ParseGetWorkspacesWorkspaceSearchProvidersResponse(rsp *http.Response) (*GetWorkspacesWorkspaceSearchProvidersResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetWorkspacesWorkspaceSearchProvidersResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SearchProviderCollection
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	switch {
-	case rsp.StatusCode == 200:
-		var headers GetWorkspacesWorkspaceSearchProvidersResponse200Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers200 = &headers
-	case rsp.StatusCode == 400:
-		var headers GetWorkspacesWorkspaceSearchProvidersResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers400 = &headers
-	case true:
-		var headers GetWorkspacesWorkspaceSearchProvidersResponseDefaultHeaders
-		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.RetryAfter = &value
-		}
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.HeadersDefault = &headers
-	}
-
-	return response, nil
-}
-
-// ParsePostWorkspacesWorkspaceSearchProvidersResponse parses an HTTP response from a PostWorkspacesWorkspaceSearchProvidersWithResponse call
-func ParsePostWorkspacesWorkspaceSearchProvidersResponse(rsp *http.Response) (*PostWorkspacesWorkspaceSearchProvidersResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &PostWorkspacesWorkspaceSearchProvidersResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
-		var dest SearchProvider
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON201 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	switch {
-	case rsp.StatusCode == 201:
-		var headers PostWorkspacesWorkspaceSearchProvidersResponse201Headers
-		if values := rsp.Header.Values("ETag"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "ETag", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.ETag = &value
-		}
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers201 = &headers
-	case rsp.StatusCode == 400:
-		var headers PostWorkspacesWorkspaceSearchProvidersResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers400 = &headers
-	case true:
-		var headers PostWorkspacesWorkspaceSearchProvidersResponseDefaultHeaders
-		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.RetryAfter = &value
-		}
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.HeadersDefault = &headers
-	}
-
-	return response, nil
-}
-
-// ParseGetWorkspacesWorkspaceSearchProvidersProviderIdResponse parses an HTTP response from a GetWorkspacesWorkspaceSearchProvidersProviderIdWithResponse call
-func ParseGetWorkspacesWorkspaceSearchProvidersProviderIdResponse(rsp *http.Response) (*GetWorkspacesWorkspaceSearchProvidersProviderIdResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetWorkspacesWorkspaceSearchProvidersProviderIdResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SearchProvider
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	switch {
-	case rsp.StatusCode == 200:
-		var headers GetWorkspacesWorkspaceSearchProvidersProviderIdResponse200Headers
-		if values := rsp.Header.Values("ETag"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "ETag", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.ETag = &value
-		}
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers200 = &headers
-	case rsp.StatusCode == 400:
-		var headers GetWorkspacesWorkspaceSearchProvidersProviderIdResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers400 = &headers
-	case true:
-		var headers GetWorkspacesWorkspaceSearchProvidersProviderIdResponseDefaultHeaders
-		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.RetryAfter = &value
-		}
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.HeadersDefault = &headers
-	}
-
-	return response, nil
-}
-
-// ParsePatchWorkspacesWorkspaceSearchProvidersProviderIdResponse parses an HTTP response from a PatchWorkspacesWorkspaceSearchProvidersProviderIdWithResponse call
-func ParsePatchWorkspacesWorkspaceSearchProvidersProviderIdResponse(rsp *http.Response) (*PatchWorkspacesWorkspaceSearchProvidersProviderIdResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &PatchWorkspacesWorkspaceSearchProvidersProviderIdResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SearchProvider
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	switch {
-	case rsp.StatusCode == 200:
-		var headers PatchWorkspacesWorkspaceSearchProvidersProviderIdResponse200Headers
-		if values := rsp.Header.Values("ETag"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "ETag", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.ETag = &value
-		}
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers200 = &headers
-	case rsp.StatusCode == 400:
-		var headers PatchWorkspacesWorkspaceSearchProvidersProviderIdResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers400 = &headers
-	case true:
-		var headers PatchWorkspacesWorkspaceSearchProvidersProviderIdResponseDefaultHeaders
-		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.RetryAfter = &value
-		}
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.HeadersDefault = &headers
-	}
-
-	return response, nil
-}
-
-// ParseGetWorkspacesWorkspaceSearchProvidersProviderIdReferencesResponse parses an HTTP response from a GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesWithResponse call
-func ParseGetWorkspacesWorkspaceSearchProvidersProviderIdReferencesResponse(rsp *http.Response) (*GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SearchProviderReferenceCollection
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	switch {
-	case rsp.StatusCode == 200:
-		var headers GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesResponse200Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers200 = &headers
-	case rsp.StatusCode == 400:
-		var headers GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers400 = &headers
-	case true:
-		var headers GetWorkspacesWorkspaceSearchProvidersProviderIdReferencesResponseDefaultHeaders
-		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.RetryAfter = &value
-		}
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.HeadersDefault = &headers
-	}
-
-	return response, nil
-}
-
-// ParsePostWorkspacesWorkspaceSearchProvidersProviderIdTestResponse parses an HTTP response from a PostWorkspacesWorkspaceSearchProvidersProviderIdTestWithResponse call
-func ParsePostWorkspacesWorkspaceSearchProvidersProviderIdTestResponse(rsp *http.Response) (*PostWorkspacesWorkspaceSearchProvidersProviderIdTestResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &PostWorkspacesWorkspaceSearchProvidersProviderIdTestResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest SearchProviderTestResult
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	switch {
-	case rsp.StatusCode == 200:
-		var headers PostWorkspacesWorkspaceSearchProvidersProviderIdTestResponse200Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers200 = &headers
-	case rsp.StatusCode == 400:
-		var headers PostWorkspacesWorkspaceSearchProvidersProviderIdTestResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers400 = &headers
-	case true:
-		var headers PostWorkspacesWorkspaceSearchProvidersProviderIdTestResponseDefaultHeaders
-		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.RetryAfter = &value
-		}
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.HeadersDefault = &headers
-	}
-
-	return response, nil
-}
-
 // ParseGetWorkspacesWorkspaceSecurityAuditEventsResponse parses an HTTP response from a GetWorkspacesWorkspaceSecurityAuditEventsWithResponse call
 func ParseGetWorkspacesWorkspaceSecurityAuditEventsResponse(rsp *http.Response) (*GetWorkspacesWorkspaceSecurityAuditEventsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -83571,6 +85435,166 @@ func ParsePostWorkspacesWorkspaceThreadsResponse(rsp *http.Response) (*PostWorks
 	return response, nil
 }
 
+// ParseGetWorkspacesWorkspaceToolsetsResponse parses an HTTP response from a GetWorkspacesWorkspaceToolsetsWithResponse call
+func ParseGetWorkspacesWorkspaceToolsetsResponse(rsp *http.Response) (*GetWorkspacesWorkspaceToolsetsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkspacesWorkspaceToolsetsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ToolsetCatalog
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetWorkspacesWorkspaceToolsetsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetWorkspacesWorkspaceToolsetsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetWorkspacesWorkspaceToolsetsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePostWorkspacesWorkspaceToolsetsValidateResponse parses an HTTP response from a PostWorkspacesWorkspaceToolsetsValidateWithResponse call
+func ParsePostWorkspacesWorkspaceToolsetsValidateResponse(rsp *http.Response) (*PostWorkspacesWorkspaceToolsetsValidateResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostWorkspacesWorkspaceToolsetsValidateResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ToolsetCandidateResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PostWorkspacesWorkspaceToolsetsValidateResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PostWorkspacesWorkspaceToolsetsValidateResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PostWorkspacesWorkspaceToolsetsValidateResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
 // ParseGetWorkspacesWorkspaceTraceQueryResponse parses an HTTP response from a GetWorkspacesWorkspaceTraceQueryWithResponse call
 func ParseGetWorkspacesWorkspaceTraceQueryResponse(rsp *http.Response) (*GetWorkspacesWorkspaceTraceQueryResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -83871,6 +85895,507 @@ func ParseGetWorkspacesWorkspaceTracesTraceIdObservationsResponse(rsp *http.Resp
 		response.Headers400 = &headers
 	case true:
 		var headers GetWorkspacesWorkspaceTracesTraceIdObservationsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetWorkspacesWorkspaceWebProvidersResponse parses an HTTP response from a GetWorkspacesWorkspaceWebProvidersWithResponse call
+func ParseGetWorkspacesWorkspaceWebProvidersResponse(rsp *http.Response) (*GetWorkspacesWorkspaceWebProvidersResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkspacesWorkspaceWebProvidersResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebProviderCollection
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetWorkspacesWorkspaceWebProvidersResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetWorkspacesWorkspaceWebProvidersResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetWorkspacesWorkspaceWebProvidersResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePostWorkspacesWorkspaceWebProvidersResponse parses an HTTP response from a PostWorkspacesWorkspaceWebProvidersWithResponse call
+func ParsePostWorkspacesWorkspaceWebProvidersResponse(rsp *http.Response) (*PostWorkspacesWorkspaceWebProvidersResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostWorkspacesWorkspaceWebProvidersResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest WebProvider
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 201:
+		var headers PostWorkspacesWorkspaceWebProvidersResponse201Headers
+		if values := rsp.Header.Values("ETag"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "ETag", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.ETag = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers201 = &headers
+	case rsp.StatusCode == 400:
+		var headers PostWorkspacesWorkspaceWebProvidersResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PostWorkspacesWorkspaceWebProvidersResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetWorkspacesWorkspaceWebProvidersProviderIdResponse parses an HTTP response from a GetWorkspacesWorkspaceWebProvidersProviderIdWithResponse call
+func ParseGetWorkspacesWorkspaceWebProvidersProviderIdResponse(rsp *http.Response) (*GetWorkspacesWorkspaceWebProvidersProviderIdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkspacesWorkspaceWebProvidersProviderIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebProvider
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetWorkspacesWorkspaceWebProvidersProviderIdResponse200Headers
+		if values := rsp.Header.Values("ETag"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "ETag", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.ETag = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetWorkspacesWorkspaceWebProvidersProviderIdResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetWorkspacesWorkspaceWebProvidersProviderIdResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePatchWorkspacesWorkspaceWebProvidersProviderIdResponse parses an HTTP response from a PatchWorkspacesWorkspaceWebProvidersProviderIdWithResponse call
+func ParsePatchWorkspacesWorkspaceWebProvidersProviderIdResponse(rsp *http.Response) (*PatchWorkspacesWorkspaceWebProvidersProviderIdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PatchWorkspacesWorkspaceWebProvidersProviderIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebProvider
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PatchWorkspacesWorkspaceWebProvidersProviderIdResponse200Headers
+		if values := rsp.Header.Values("ETag"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "ETag", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.ETag = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PatchWorkspacesWorkspaceWebProvidersProviderIdResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PatchWorkspacesWorkspaceWebProvidersProviderIdResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetWorkspacesWorkspaceWebProvidersProviderIdReferencesResponse parses an HTTP response from a GetWorkspacesWorkspaceWebProvidersProviderIdReferencesWithResponse call
+func ParseGetWorkspacesWorkspaceWebProvidersProviderIdReferencesResponse(rsp *http.Response) (*GetWorkspacesWorkspaceWebProvidersProviderIdReferencesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkspacesWorkspaceWebProvidersProviderIdReferencesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebProviderReferenceCollection
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetWorkspacesWorkspaceWebProvidersProviderIdReferencesResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetWorkspacesWorkspaceWebProvidersProviderIdReferencesResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetWorkspacesWorkspaceWebProvidersProviderIdReferencesResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePostWorkspacesWorkspaceWebProvidersProviderIdTestResponse parses an HTTP response from a PostWorkspacesWorkspaceWebProvidersProviderIdTestWithResponse call
+func ParsePostWorkspacesWorkspaceWebProvidersProviderIdTestResponse(rsp *http.Response) (*PostWorkspacesWorkspaceWebProvidersProviderIdTestResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostWorkspacesWorkspaceWebProvidersProviderIdTestResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest WebProviderTestResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PostWorkspacesWorkspaceWebProvidersProviderIdTestResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PostWorkspacesWorkspaceWebProvidersProviderIdTestResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PostWorkspacesWorkspaceWebProvidersProviderIdTestResponseDefaultHeaders
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {

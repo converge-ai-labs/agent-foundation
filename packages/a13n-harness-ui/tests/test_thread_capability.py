@@ -67,4 +67,5 @@ async def test_thread_capability_rejects_reuse_in_a_child_scope() -> None:
     assert controller.calls == []
     tools = capability.get_toolset().tools
     assert "create_thread" in tools
-    assert "project_id" not in tools["create_thread"].function_schema.json_schema.get("properties", {})
+    assert "project_id" in tools["create_thread"].function_schema.json_schema.get("properties", {})
+    assert {"list_projects", "get_project", "list_agents", "list_models", "send_thread_message"} <= tools.keys()

@@ -33,7 +33,16 @@ AGENT_NAMES = (
 
 
 def agent_config(name: str, **values) -> dict:
+    toolsets = {
+        key: {"tools": {tool: {"permission": "allow"} for tool in tools}}
+        for key, tools in {
+            "files": ("view", "write", "edit", "multi_edit", "mkdir", "move", "copy", "delete", "ls", "glob", "grep"),
+            "shell": ("exec", "info", "wait", "input", "signal"),
+        }.items()
+    }
+    toolsets.update(values.pop("toolsets", {}))
     return {
+        "toolsets": toolsets,
         "model": {"model_key": "local-scripted", "characteristics": {"context_window_tokens": 32768}},
         "instructions": "Review fictional project materials using the scripted local development model.",
         "input_adapter": {"adapter_key": "native", "config": {}},

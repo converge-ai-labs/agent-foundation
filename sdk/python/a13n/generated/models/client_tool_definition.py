@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from attrs import define as _attrs_define
 
+from ..models.client_tool_definition_permission import ClientToolDefinitionPermission
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
@@ -25,6 +26,7 @@ class ClientToolDefinition:
         parameters_json_schema (ClientToolDefinitionParametersJsonSchema):
         instruction (None | str | Unset):
         metadata (ClientToolDefinitionMetadata | Unset):
+        permission (ClientToolDefinitionPermission | Unset):
     """
 
     description: str
@@ -32,6 +34,7 @@ class ClientToolDefinition:
     parameters_json_schema: ClientToolDefinitionParametersJsonSchema
     instruction: str | Unset | None = UNSET
     metadata: ClientToolDefinitionMetadata | Unset = UNSET
+    permission: ClientToolDefinitionPermission | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         description = self.description
@@ -50,6 +53,10 @@ class ClientToolDefinition:
         if not isinstance(self.metadata, Unset):
             metadata = self.metadata.to_dict()
 
+        permission: str | Unset = UNSET
+        if not isinstance(self.permission, Unset):
+            permission = self.permission.value
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update(
@@ -63,6 +70,8 @@ class ClientToolDefinition:
             field_dict["instruction"] = instruction
         if metadata is not UNSET:
             field_dict["metadata"] = metadata
+        if permission is not UNSET:
+            field_dict["permission"] = permission
 
         return field_dict
 
@@ -96,12 +105,20 @@ class ClientToolDefinition:
         else:
             metadata = ClientToolDefinitionMetadata.from_dict(_metadata)
 
+        _permission = d.pop("permission", UNSET)
+        permission: ClientToolDefinitionPermission | Unset
+        if isinstance(_permission, Unset):
+            permission = UNSET
+        else:
+            permission = ClientToolDefinitionPermission(_permission)
+
         client_tool_definition = cls(
             description=description,
             name=name,
             parameters_json_schema=parameters_json_schema,
             instruction=instruction,
             metadata=metadata,
+            permission=permission,
         )
 
         return client_tool_definition

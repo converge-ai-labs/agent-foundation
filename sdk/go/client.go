@@ -29,7 +29,7 @@ var ErrProtocol = errors.New("invalid or oversized Service response")
 var ErrClosed = errors.New("client is closed")
 
 // Client owns its HTTP transport. Close cancels local requests, never server Runs.
-// The current client implements the Native Search Provider management surface.
+// The current client implements the Native Web Provider management surface.
 type Client struct {
 	baseURL  string
 	token    Secret
@@ -147,51 +147,51 @@ func request[T any](ctx context.Context, client *Client, method, path, etag stri
 	}
 	return result, nil
 }
-func (client *Client) SearchProviderTypes(ctx context.Context) (Representation[Page[SearchProviderDefinition]], error) {
-	return request[Page[SearchProviderDefinition]](ctx, client, "GET", "/search-provider-types", "", nil, nil)
+func (client *Client) WebProviderTypes(ctx context.Context) (Representation[Page[WebProviderDefinition]], error) {
+	return request[Page[WebProviderDefinition]](ctx, client, "GET", "/web-provider-types", "", nil, nil)
 }
-func (client *Client) SearchProviderType(ctx context.Context, providerType string) (Representation[SearchProviderDefinition], error) {
+func (client *Client) WebProviderType(ctx context.Context, providerType string) (Representation[WebProviderDefinition], error) {
 	id, err := segment(providerType)
 	if err != nil {
-		return Representation[SearchProviderDefinition]{}, err
+		return Representation[WebProviderDefinition]{}, err
 	}
-	return request[SearchProviderDefinition](ctx, client, "GET", "/search-provider-types/"+id, "", nil, nil)
+	return request[WebProviderDefinition](ctx, client, "GET", "/web-provider-types/"+id, "", nil, nil)
 }
-func (client *Client) SearchProviders(ctx context.Context, scope SearchScope, options SearchListOptions) (Representation[Page[SearchProvider]], error) {
+func (client *Client) WebProviders(ctx context.Context, scope WebProviderScope, options WebProviderListOptions) (Representation[Page[WebProvider]], error) {
 	path, err := scope.path()
 	if err != nil {
-		return Representation[Page[SearchProvider]]{}, err
+		return Representation[Page[WebProvider]]{}, err
 	}
-	return request[Page[SearchProvider]](ctx, client, "GET", path, "", options.query(), nil)
+	return request[Page[WebProvider]](ctx, client, "GET", path, "", options.query(), nil)
 }
-func (client *Client) SearchProvider(ctx context.Context, scope SearchScope, providerID string) (Representation[SearchProvider], error) {
-	path, err := searchPath(scope, providerID, "")
+func (client *Client) WebProvider(ctx context.Context, scope WebProviderScope, providerID string) (Representation[WebProvider], error) {
+	path, err := webProviderPath(scope, providerID, "")
 	if err != nil {
-		return Representation[SearchProvider]{}, err
+		return Representation[WebProvider]{}, err
 	}
-	return request[SearchProvider](ctx, client, "GET", path, "", nil, nil)
+	return request[WebProvider](ctx, client, "GET", path, "", nil, nil)
 }
-func (client *Client) CreateSearchProvider(ctx context.Context, scope SearchScope, value CreateSearchProviderRequest) (Representation[SearchProvider], error) {
+func (client *Client) CreateWebProvider(ctx context.Context, scope WebProviderScope, value CreateWebProviderRequest) (Representation[WebProvider], error) {
 	path, err := scope.path()
 	if err != nil {
-		return Representation[SearchProvider]{}, err
+		return Representation[WebProvider]{}, err
 	}
-	body := map[string]any{"type": value.Type, "name": value.Name, "credential": value.Credential.value}
+	body := map[string]any{"type": value.Type, "name": value.Name, "credential": value.Credential.reveal()}
 	if value.Configuration != nil {
 		body["configuration"] = value.Configuration
 	}
 	if value.Enabled != nil {
 		body["enabled"] = *value.Enabled
 	}
-	return request[SearchProvider](ctx, client, "POST", path, "", nil, body)
+	return request[WebProvider](ctx, client, "POST", path, "", nil, body)
 }
-func (client *Client) UpdateSearchProvider(ctx context.Context, scope SearchScope, providerID, etag string, value UpdateSearchProviderRequest) (Representation[SearchProvider], error) {
+func (client *Client) UpdateWebProvider(ctx context.Context, scope WebProviderScope, providerID, etag string, value UpdateWebProviderRequest) (Representation[WebProvider], error) {
 	if etag == "" || strings.HasPrefix(etag, "W/") {
-		return Representation[SearchProvider]{}, errors.New("a strong account ETag is required")
+		return Representation[WebProvider]{}, errors.New("a strong account ETag is required")
 	}
-	path, err := searchPath(scope, providerID, "")
+	path, err := webProviderPath(scope, providerID, "")
 	if err != nil {
-		return Representation[SearchProvider]{}, err
+		return Representation[WebProvider]{}, err
 	}
 	body := map[string]any{}
 	if value.Name != nil {
@@ -204,24 +204,24 @@ func (client *Client) UpdateSearchProvider(ctx context.Context, scope SearchScop
 		body["enabled"] = *value.Enabled
 	}
 	if value.Credential != nil {
-		body["credential"] = value.Credential.value
+		body["credential"] = value.Credential.reveal()
 	}
-	return request[SearchProvider](ctx, client, "PATCH", path, etag, nil, body)
+	return request[WebProvider](ctx, client, "PATCH", path, etag, nil, body)
 }
-func (client *Client) TestSearchProvider(ctx context.Context, scope SearchScope, providerID string) (Representation[SearchProviderTestResult], error) {
-	path, err := searchPath(scope, providerID, "/test")
+func (client *Client) TestWebProvider(ctx context.Context, scope WebProviderScope, providerID string) (Representation[WebProviderTestResult], error) {
+	path, err := webProviderPath(scope, providerID, "/test")
 	if err != nil {
-		return Representation[SearchProviderTestResult]{}, err
+		return Representation[WebProviderTestResult]{}, err
 	}
-	return request[SearchProviderTestResult](ctx, client, "POST", path, "", nil, struct{}{})
+	return request[WebProviderTestResult](ctx, client, "POST", path, "", nil, struct{}{})
 }
-func (client *Client) SearchProviderReferences(ctx context.Context, scope SearchScope, providerID string, options SearchListOptions) (Representation[Page[SearchProviderReference]], error) {
-	path, err := searchPath(scope, providerID, "/references")
+func (client *Client) WebProviderReferences(ctx context.Context, scope WebProviderScope, providerID string, options WebProviderListOptions) (Representation[Page[WebProviderReference]], error) {
+	path, err := webProviderPath(scope, providerID, "/references")
 	if err != nil {
-		return Representation[Page[SearchProviderReference]]{}, err
+		return Representation[Page[WebProviderReference]]{}, err
 	}
 	query := options.query()
 	query.Del("type")
 	query.Del("enabled")
-	return request[Page[SearchProviderReference]](ctx, client, "GET", path, "", query, nil)
+	return request[Page[WebProviderReference]](ctx, client, "GET", path, "", query, nil)
 }

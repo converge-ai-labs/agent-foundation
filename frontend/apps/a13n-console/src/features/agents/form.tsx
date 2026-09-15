@@ -25,11 +25,17 @@ import { TextAreaField } from "../../shared/form";
 import { ResourceReference } from "../../shared/resource-reference";
 import { jsonObject } from "../../shared/validation";
 import styles from "./agents.module.css";
-import { AgentSearchSelection } from "../search/selection";
+import { AgentSearchSelection } from "../web/selection";
 import { AgentAvatar } from "./avatar";
 import { AgentCapabilities } from "./capabilities";
 import { useAgentChoices } from "./choices";
-import { advancedConfig, buildConfig, type AgentConfig } from "./configuration";
+import {
+  advancedConfig,
+  buildConfig,
+  searchSelection,
+  type AgentConfig,
+  withSearchSelection,
+} from "./configuration";
 
 export function AgentForm({
   initial: providedInitial,
@@ -93,7 +99,7 @@ export function AgentForm({
     [expanded, setExpanded] = useState(false),
     [modelExpanded, setModelExpanded] = useState(false),
     [validation, setValidation] = useState<Error>();
-  const [search, setSearch] = useState(initial.search ?? null);
+  const [search, setSearch] = useState(searchSelection(initial));
   const [skills, setSkills] = useState(initial.skills ?? []),
     [connections, setConnections] = useState(initial.connection_tools ?? []);
   const choices = useAgentChoices();
@@ -111,7 +117,7 @@ export function AgentForm({
         initial,
         {
           instructions,
-          search,
+          toolsets: withSearchSelection(initial.toolsets, search),
           model: {
             ...initial.model,
             model_key: model,
@@ -136,7 +142,7 @@ export function AgentForm({
   }
   const dirty =
     creating ||
-    JSON.stringify(search) !== JSON.stringify(initial.search ?? null) ||
+    JSON.stringify(search) !== JSON.stringify(searchSelection(initial)) ||
     instructions !== (initial.instructions ?? "") ||
     model !== initial.model.model_key ||
     settings !== JSON.stringify(initial.model.settings ?? {}, null, 2) ||

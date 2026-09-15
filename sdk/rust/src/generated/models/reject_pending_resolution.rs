@@ -18,6 +18,14 @@ pub struct RejectPendingResolution {
 
     #[serde(rename = "call_id")]
     pub call_id: String,
+
+    #[serde(
+        rename = "reason",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub reason: Option<Option<String>>,
 }
 
 impl RejectPendingResolution {
@@ -25,6 +33,7 @@ impl RejectPendingResolution {
         RejectPendingResolution {
             action: None,
             call_id,
+            reason: None,
         }
     }
 }

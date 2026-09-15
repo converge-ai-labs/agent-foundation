@@ -53,6 +53,21 @@ function mount() {
               additionalProperties: false,
               properties: {
                 base_url: { type: "string" },
+                session_affinity_header: {
+                  anyOf: [
+                    {
+                      type: "string",
+                      "x-session-affinity-presets": [
+                        {
+                          label: "LiteLLM",
+                          header: "x-litellm-session-id",
+                          description: "Requires gateway configuration.",
+                        },
+                      ],
+                    },
+                    { type: "null" },
+                  ],
+                },
                 extra_headers: {
                   type: "object",
                   additionalProperties: { type: "string" },
@@ -121,4 +136,51 @@ it("stages header deletion with the trash button until save", async () => {
   expect(state.PATCH.mock.calls[0][1].body.extra_headers).toEqual({
     "x-gateway": null,
   });
+});
+
+it("fills a preset, replaces it with a custom name and saves only the header name", async () => {
+  mount();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: /Advanced settings/ }));
+  const input = screen.getByLabelText(
+    "Session affinity header",
+  ) as HTMLInputElement;
+  expect(input.value).toBe("");
+  await user.click(
+    screen.getByRole("combobox", { name: "Gateway session affinity" }),
+  );
+  await user.click(await screen.findByRole("option", { name: /LiteLLM/ }));
+  expect(input.value).toBe("x-litellm-session-id");
+  await user.clear(input);
+  await user.type(input, "x-company-session");
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(state.close).toHaveBeenCalled());
+  const body = state.PATCH.mock.calls[0][1].body;
+  expect(body.configuration).toEqual({
+    ...provider.configuration,
+    session_affinity_header: "x-company-session",
+  });
+  expect(body.extra_headers).toEqual({});
+});
+
+it("clears a preset without changing the endpoint or static headers", async () => {
+  mount();
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: /Advanced settings/ }));
+  const input = screen.getByLabelText(
+    "Session affinity header",
+  ) as HTMLInputElement;
+  await user.type(input, "x-company-session");
+  await user.click(
+    screen.getByRole("combobox", { name: "Gateway session affinity" }),
+  );
+  await user.click(
+    await screen.findByRole("option", { name: "Disabled (default)" }),
+  );
+  expect(input.value).toBe("");
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(state.close).toHaveBeenCalled());
+  expect(state.PATCH.mock.calls[0][1].body.configuration).toEqual(
+    provider.configuration,
+  );
 });

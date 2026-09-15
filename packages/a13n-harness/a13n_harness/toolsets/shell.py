@@ -80,7 +80,7 @@ class ShellToolset:
         self._execution_guard = execution_guard
         self._process_controller = _ProcessController(environment, execution_guard=self._guard_execution)
 
-    def get_toolset(self) -> FunctionToolset[AgentContext]:
+    def get_toolset(self, *, allowed_names: frozenset[str] | None = None) -> FunctionToolset[AgentContext]:
         arbitrary_command_effects: set[ToolEffect] = {
             "read",
             "write",
@@ -145,6 +145,8 @@ class ShellToolset:
                     resources=self._process_resources,
                 )
             )
+        if allowed_names is not None:
+            tools = [tool for tool in tools if tool.name in allowed_names]
         return InstructionFunctionToolset(
             tools=tools,
             id="a13n-shell-tools",

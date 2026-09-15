@@ -3,7 +3,7 @@
 A13N_SERVICE_IMAGE ?= a13n-service:local
 SANDBOX_IMAGE ?= a13n-sandbox:local
 A13N_HARNESS_UI_IMAGE ?= a13n-harness-ui:local
-EXAMPLE_DIRS := examples/agent-app examples/environment-provider examples/plugins
+EXAMPLE_DIRS := examples/agent-app examples/environment-provider examples/plugins examples/provider-plugin
 PYTHON_TEST_DIRS ?=
 PYTHON_TEST_WORKERS ?=
 SERVICE_CONFIG ?= dev/service/local.toml
@@ -131,6 +131,13 @@ cli: harness-ui-env ## Run Harness UI with workspace-local config/data (CLI_ARGS
 webui: harness-ui-env a13n-harness-ui-assets ## Build and start WebUI with a generated login link (WEBUI_ARGS forwards options)
 	@uv run --locked --env-file "$(HARNESS_UI_ENV)" python -m dev.harness-ui.cli $(CLI_ARGS) webui $(WEBUI_ARGS)
 
+.PHONY: cli-landing webui-landing
+cli-landing: ## Try CLI first-run setup with disposable home/config/data; clean up on exit
+	@uv run --locked python -m dev.harness-ui.landing cli
+
+webui-landing: a13n-harness-ui-assets ## Try WebUI first-run setup with disposable state (WEBUI_ARGS forwards options); Ctrl+C cleans up
+	@uv run --locked python -m dev.harness-ui.landing webui $(WEBUI_ARGS)
+
 harness-dev: harness-env ## Run SDK observation scenarios; initialize .env if missing (HARNESS_ARGS selects a scenario)
 	@uv run --locked --env-file "$(HARNESS_ENV)" opentelemetry-instrument python dev/observation-demo/agent.py $(HARNESS_ARGS)
 
@@ -222,7 +229,17 @@ live-test-check: sync ## Validate live-test support without contacting services
 	@uv run --locked mdformat --check --number dev/live_tests/README.md dev/live_tests/performance/REPORTING.md
 	@uv run --locked python -m pytest dev/live_tests -q
 
-dev-down: ## Stop local Service and Langfuse infrastructure, preserving all data
+.PHONY: mem0-up mem0-down mem0-logs
+mem0-up: sync ## Start and verify the local Mem0 OSS server using SERVICE_CONFIG
+	@$(SERVICE_DEV) mem0 up
+
+mem0-down: sync ## Stop local Mem0 OSS while preserving memories
+	@$(SERVICE_DEV) mem0 down
+
+mem0-logs: sync ## Inspect local Mem0 OSS startup and provider errors
+	@$(SERVICE_DEV) mem0 logs
+
+dev-down: ## Stop local Service, Mem0 OSS and Langfuse infrastructure, preserving all data
 	@$(SERVICE_DEV) stop
 
 .PHONY: langfuse-up langfuse-down langfuse-test langfuse-reset

@@ -33,6 +33,14 @@ The store supports local restart and inspection, not durable work scheduling. Ha
 | Root receipts, active tasks, Models, credentials, clients, adapters, streams, and shell processes | Process memory                | Current App only                                                         |
 | Logs and OpenTelemetry                                                                            | Configured process outputs    | Diagnostics only                                                         |
 
+## Tool Presentation Evidence
+
+Root Runs can retain observed filesystem edit evidence in the corresponding tool-return's application-only metadata, under `a13n.harness-ui.applied_edit`. It contains the observed `file_path`, `before`, `after`, and an explicit `omitted` flag. The existing selected `HarnessState` continuation serializes this metadata; it is not added to model-facing tool content, stored in a new event log, or published as a separate execution authority. Other tool metadata remains unchanged.
+
+Association uses the exact Run and tool-call identity. The root collector retains at most 64 KiB of combined UTF-8 before/after text per edit and 512 KiB per Run. An edit beyond either bound retains its path and omission marker, not misleading truncated content. A later failed result can still carry an earlier observed edit. An event without a corresponding retained tool-return remains live-only. Existing opaque non-mapping tool metadata is preserved rather than replaced. Compaction and history replacement determine which result parts remain in the selected transcript; this is not an independent permanent audit history.
+
+Saved transcript projection exposes only the recognized bounded evidence through optional `applied_edit`, not arbitrary metadata. Older continuations remain readable without migration. The UI never reconstructs applied evidence from requested replacements or current Host files. Native provider tool calls and returns use the existing transcript call/result shapes with an optional provider identifier, separate from local function-call identity.
+
 ## Project Model Preferences
 
 The App stores the last explicit terminal Model choice as one Model resource ID per Project ID in the data root's SQLite database. This is user interaction state, not a resource definition, Project YAML default, Thread configuration axis, or continuation authority. The preference can precede creation of a cwd-derived Project resource using the same deterministic identity. Resource definitions and credentials continue to resolve from the accepted configuration.

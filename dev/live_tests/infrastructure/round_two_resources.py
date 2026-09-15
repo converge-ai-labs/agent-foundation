@@ -4,7 +4,16 @@ from uuid import uuid4
 
 
 def agent_config(model_key="live-fixture", **values):
+    toolsets = {
+        key: {"tools": {tool: {"permission": "allow"} for tool in tools}}
+        for key, tools in {
+            "files": ("view", "write", "edit", "multi_edit", "mkdir", "move", "copy", "delete", "ls", "glob", "grep"),
+            "shell": ("exec", "info", "wait", "input", "signal"),
+        }.items()
+    }
+    toolsets.update(values.pop("toolsets", {}))
     return {
+        "toolsets": toolsets,
         "model": {"model_key": model_key, "characteristics": {"context_window_tokens": 32768}},
         "instructions": "Execute the live-test scenario and preserve full conversation history.",
         "input_adapter": {"adapter_key": "native", "config": {}},

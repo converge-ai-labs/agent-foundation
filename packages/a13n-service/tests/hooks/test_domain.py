@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import pytest
 from a13n_service.hooks import InlineHookSubscriptionInput, WebhookDestinationConfig
-from pydantic import ValidationError
+from a13n_service.hooks.domain import ThreadId
+from pydantic import TypeAdapter, ValidationError
 
 
 def _webhook(endpoint_url: str = "https://EXAMPLE.com/hooks/") -> WebhookDestinationConfig:
@@ -10,6 +11,21 @@ def _webhook(endpoint_url: str = "https://EXAMPLE.com/hooks/") -> WebhookDestina
         endpoint_url=endpoint_url,
         signing_secret_id="sec_1234567890abcdef",
     )
+
+
+@pytest.mark.parametrize("separator", ["_", "-"])
+def test_hook_thread_identity_preserves_canonical_and_legacy_forms(separator: str) -> None:
+    identity = f"thread{separator}" + "a" * 32
+    adapter = TypeAdapter(ThreadId)
+    assert adapter.validate_python(identity) == identity
+    assert adapter.validate_json(adapter.dump_json(identity)) == identity
+
+
+@pytest.mark.parametrize("separator", ["_", "-"])
+@pytest.mark.parametrize("suffix", ["a" * 31, "a" * 33, "A" * 32, "g" * 32])
+def test_hook_thread_identity_rejects_malformed_suffixes(separator: str, suffix: str) -> None:
+    with pytest.raises(ValidationError):
+        TypeAdapter(ThreadId).validate_python(f"thread{separator}{suffix}")
 
 
 def test_canonicalizes_hook_names_and_host_but_preserves_endpoint_path() -> None:

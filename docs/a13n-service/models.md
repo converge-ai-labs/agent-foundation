@@ -34,6 +34,31 @@ Content-Type: application/json
 
 Keep the returned Provider `id`. Reads expose `credential_configured`, never the credential itself. A successful save validates configuration; use the Provider's `/test` endpoint to check its current connection and authentication. A list-based test reads only the first page. If the integration has no safe Provider-level probe, the result is `connection_test_unsupported`; test a saved Model to check inference instead.
 
+### Gateway session affinity
+
+Configure **Provider → Advanced settings → Gateway session affinity** in Console. Choose a preset, or type a custom replacement in **Session affinity header**. Models display the inherited setting and link back to Provider management; there is no per-Model override.
+
+The HTTP field belongs to the Provider's `configuration`, next to its endpoint:
+
+```json
+{
+  "configuration": {
+    "base_url": "https://gateway.example.com/v1",
+    "session_affinity_header": "x-litellm-session-id"
+  }
+}
+```
+
+Only the **name** is configured. Service supplies a stable UUID v5 derived from the current Harness Thread ID as its value on inference requests, using the [shared Harness derivation](../a13n-harness/models.md#automatic-model-request-affinity). The derived value is not persisted. Do not add a fixed session value to the secret `extra_headers` mapping or Model request settings. Static headers, authentication, and protocol fields cannot claim the selected affinity name.
+
+The [shared preset guide](../a13n-harness-ui/models-and-authentication.md#gateway-session-affinity) describes LiteLLM, Conversation ID, Bifrost API-key affinity, and the legacy `x-session-id` choice. Presets store a concrete, freely editable name; they do not configure gateway routing. Verify affinity using gateway target information, not a successful connection test. Discovery and ordinary connection probes do not invent a persistent session.
+
+Leave the field absent or set it to `null` to disable it. Provider updates replace `configuration`, so retain other connection fields when updating it. The next outbound attempt reads the current header together with the current endpoint, including retries within a Run. It keeps the same derived affinity value but stops sending the old header. Independent Threads, child Threads, and forks have distinct IDs. OpenAI prompt caching remains independently controlled.
+
+**Affinity value upgrade:** automatic gateway headers and prompt-cache keys now use the derived UUID rather than the raw Thread ID. Existing Threads switch outbound values once, which may reset upstream cache or routing affinity. Internal Thread IDs and history remain unchanged; no state migration is needed.
+
+**Upgrade note:** the previous implicit `x-session-id` default is removed. Explicitly select `session_affinity_header: x-session-id` on existing Providers that need it. No database migration or automatic Provider rewrite is performed. Service ignores the legacy global header switch; Provider connection configuration is authoritative, including for retained Runs.
+
 ### Custom endpoints and headers
 
 Choose the native Provider type, such as DeepSeek or Anthropic, and expand **Advanced settings** in Console to override its base URL or add headers. Leaving the URL empty uses the Provider's default endpoint. Native authentication and model behavior are preserved.

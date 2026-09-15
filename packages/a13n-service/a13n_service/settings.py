@@ -35,12 +35,14 @@ from .configuration.sections import (
     IamSettings,
     LifecycleSettings,
     LoggingSettings,
+    MemorySettings,
     MigrationSettings,
     ModelsSettings,
     ObjectsSettings,
     ObservabilitySettings,
     PluginsSettings,
     PricingSettings,
+    ProviderPluginsSettings,
     RedisSettings,
     RunsSettings,
     SecretsSettings,
@@ -70,6 +72,7 @@ class Settings(Section):
     service: ServiceSettings = Field(default_factory=ServiceSettings)
     iam: IamSettings = Field(default_factory=IamSettings)
     plugins: PluginsSettings = Field(default_factory=PluginsSettings)
+    provider_plugins: ProviderPluginsSettings = Field(default_factory=ProviderPluginsSettings)
     worker: WorkerSettings = Field(default_factory=WorkerSettings)
     subagents: SubagentsSettings = Field(default_factory=SubagentsSettings)
     environments: EnvironmentsSettings = Field(default_factory=EnvironmentsSettings)
@@ -77,6 +80,7 @@ class Settings(Section):
     observability: ObservabilitySettings = Field(default_factory=ObservabilitySettings)
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     models: ModelsSettings = Field(default_factory=ModelsSettings)
+    memory: MemorySettings = Field(default_factory=MemorySettings)
     webhooks: WebhooksSettings = Field(default_factory=WebhooksSettings)
     lifecycle: LifecycleSettings = Field(default_factory=LifecycleSettings)
     control: ControlSettings = Field(default_factory=ControlSettings)

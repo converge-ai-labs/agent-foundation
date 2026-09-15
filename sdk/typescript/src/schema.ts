@@ -1437,76 +1437,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/organizations/{organization}/search-providers": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Organization Provider */
-    get: operations["get_organizations_organization_search_providers"];
-    put?: never;
-    /** Create Organization Provider */
-    post: operations["post_organizations_organization_search_providers"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/organizations/{organization}/search-providers/{provider_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Organization Provider */
-    get: operations["get_organizations_organization_search_providers_provider_id"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /** Update Organization Provider */
-    patch: operations["patch_organizations_organization_search_providers_provider_id"];
-    trace?: never;
-  };
-  "/api/v1/organizations/{organization}/search-providers/{provider_id}/references": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** References Organization Provider */
-    get: operations["get_organizations_organization_search_providers_provider_id_references"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/organizations/{organization}/search-providers/{provider_id}/test": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Test Organization Provider */
-    post: operations["post_organizations_organization_search_providers_provider_id_test"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   "/api/v1/organizations/{organization}/security-audit-events": {
     parameters: {
       query?: never;
@@ -1535,6 +1465,76 @@ export interface paths {
     get: operations["get_organizations_organization_users"];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/organizations/{organization}/web-providers": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Organization Provider */
+    get: operations["get_organizations_organization_web_providers"];
+    put?: never;
+    /** Create Organization Provider */
+    post: operations["post_organizations_organization_web_providers"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/organizations/{organization}/web-providers/{provider_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Organization Provider */
+    get: operations["get_organizations_organization_web_providers_provider_id"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Update Organization Provider */
+    patch: operations["patch_organizations_organization_web_providers_provider_id"];
+    trace?: never;
+  };
+  "/api/v1/organizations/{organization}/web-providers/{provider_id}/references": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** References Organization Provider */
+    get: operations["get_organizations_organization_web_providers_provider_id_references"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/organizations/{organization}/web-providers/{provider_id}/test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Test Organization Provider */
+    post: operations["post_organizations_organization_web_providers_provider_id_test"];
     delete?: never;
     options?: never;
     head?: never;
@@ -1881,40 +1881,6 @@ export interface paths {
     put?: never;
     /** Continue From Run */
     post: operations["post_runs_source_run_id_continue"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/search-provider-types": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Types */
-    get: operations["get_search_provider_types"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/search-provider-types/{provider_type}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Type */
-    get: operations["get_search_provider_types_provider_type"];
-    put?: never;
-    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -2376,6 +2342,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/web-provider-types": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Types */
+    get: operations["get_web_provider_types"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/web-provider-types/{provider_type}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Type */
+    get: operations["get_web_provider_types_provider_type"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/workspaces/{workspace}": {
     parameters: {
       query?: never;
@@ -2818,6 +2818,60 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/workspaces/{workspace}/memories": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Memories */
+    get: operations["get_workspaces_workspace_memories"];
+    put?: never;
+    /** Add Memory */
+    post: operations["post_workspaces_workspace_memories"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace}/memories/search": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Search Memories */
+    post: operations["post_workspaces_workspace_memories_search"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace}/memories/{memory_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Memory */
+    get: operations["get_workspaces_workspace_memories_memory_id"];
+    /** Update Memory */
+    put: operations["put_workspaces_workspace_memories_memory_id"];
+    post?: never;
+    /** Delete Memory */
+    delete: operations["delete_workspaces_workspace_memories_memory_id"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/workspaces/{workspace}/model-catalog/suggestions": {
     parameters: {
       query?: never;
@@ -3029,76 +3083,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/workspaces/{workspace}/search-providers": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** List Workspace Provider */
-    get: operations["get_workspaces_workspace_search_providers"];
-    put?: never;
-    /** Create Workspace Provider */
-    post: operations["post_workspaces_workspace_search_providers"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace}/search-providers/{provider_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Get Workspace Provider */
-    get: operations["get_workspaces_workspace_search_providers_provider_id"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /** Update Workspace Provider */
-    patch: operations["patch_workspaces_workspace_search_providers_provider_id"];
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace}/search-providers/{provider_id}/references": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** References Workspace Provider */
-    get: operations["get_workspaces_workspace_search_providers_provider_id_references"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/workspaces/{workspace}/search-providers/{provider_id}/test": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Test Workspace Provider */
-    post: operations["post_workspaces_workspace_search_providers_provider_id_test"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   "/api/v1/workspaces/{workspace}/security-audit-events": {
     parameters: {
       query?: never;
@@ -3220,6 +3204,40 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/workspaces/{workspace}/toolsets": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Toolsets */
+    get: operations["get_workspaces_workspace_toolsets"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace}/toolsets/validate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Validate Toolsets */
+    post: operations["post_workspaces_workspace_toolsets_validate"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/workspaces/{workspace}/trace-query": {
     parameters: {
       query?: never;
@@ -3282,6 +3300,76 @@ export interface paths {
     get: operations["get_workspaces_workspace_traces_trace_id_observations"];
     put?: never;
     post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace}/web-providers": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Workspace Provider */
+    get: operations["get_workspaces_workspace_web_providers"];
+    put?: never;
+    /** Create Workspace Provider */
+    post: operations["post_workspaces_workspace_web_providers"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace}/web-providers/{provider_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Workspace Provider */
+    get: operations["get_workspaces_workspace_web_providers_provider_id"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Update Workspace Provider */
+    patch: operations["patch_workspaces_workspace_web_providers_provider_id"];
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace}/web-providers/{provider_id}/references": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** References Workspace Provider */
+    get: operations["get_workspaces_workspace_web_providers_provider_id_references"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace}/web-providers/{provider_id}/test": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Test Workspace Provider */
+    post: operations["post_workspaces_workspace_web_providers_provider_id_test"];
     delete?: never;
     options?: never;
     head?: never;
@@ -3536,8 +3624,6 @@ export interface components {
     };
     /** AgentConfig-Input */
     "AgentConfig-Input": {
-      asset_publication?:
-        components["schemas"]["AssetPublicationConfig"] | null;
       /**
        * Client Tools
        * @default []
@@ -3554,9 +3640,9 @@ export interface components {
        * @default
        */
       instructions?: string;
+      memory?: components["schemas"]["MemorySelection"] | null;
       model: components["schemas"]["AgentModel"];
       output_spec?: components["schemas"]["OutputSpec"] | null;
-      permissions?: components["schemas"]["ToolPermissions"] | null;
       /**
        * Plugins
        * @default []
@@ -3565,7 +3651,6 @@ export interface components {
       protocol: components["schemas"]["ProtocolConfig"];
       retries?: components["schemas"]["RetryConfig"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
-      search?: components["schemas"]["SearchSelection"] | null;
       /**
        * Secret Requirements
        * @default []
@@ -3586,11 +3671,13 @@ export interface components {
       subagents?: {
         [key: string]: components["schemas"]["SubagentSelection-Input"];
       };
+      /** Toolsets */
+      toolsets?: {
+        [key: string]: components["schemas"]["ToolsetSelection"];
+      };
     };
     /** AgentConfig-Output */
     "AgentConfig-Output": {
-      asset_publication?:
-        components["schemas"]["AssetPublicationConfig"] | null;
       /**
        * Client Tools
        * @default []
@@ -3607,9 +3694,9 @@ export interface components {
        * @default
        */
       instructions?: string;
+      memory?: components["schemas"]["MemorySelection"] | null;
       model: components["schemas"]["AgentModel"];
       output_spec?: components["schemas"]["OutputSpec"] | null;
-      permissions?: components["schemas"]["ToolPermissions"] | null;
       /**
        * Plugins
        * @default []
@@ -3618,7 +3705,6 @@ export interface components {
       protocol: components["schemas"]["ProtocolConfig"];
       retries?: components["schemas"]["RetryConfig"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
-      search?: components["schemas"]["SearchSelection"] | null;
       /**
        * Secret Requirements
        * @default []
@@ -3638,6 +3724,10 @@ export interface components {
       /** Subagents */
       subagents?: {
         [key: string]: components["schemas"]["SubagentSelection-Output"];
+      };
+      /** Toolsets */
+      toolsets?: {
+        [key: string]: components["schemas"]["ToolsetSelection"];
       };
     };
     /**
@@ -3789,19 +3879,22 @@ export interface components {
         components["schemas"]["ConnectionToolSelection"][] | null;
       /** Instructions */
       instructions?: string | null;
+      memory?: components["schemas"]["MemorySelection"] | null;
       model?: components["schemas"]["ModelOverride"] | null;
       output_spec?: components["schemas"]["OutputSpec"] | null;
-      permissions?: components["schemas"]["ToolPermissions"] | null;
       /** Plugins */
       plugins?: components["schemas"]["PluginSelection"][] | null;
       retries?: components["schemas"]["RetryOverride"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
-      search?: components["schemas"]["SearchSelection"] | null;
       /** Skills */
       skills?: components["schemas"]["SkillSelection"][] | null;
       /** Subagents */
       subagents?: {
         [key: string]: components["schemas"]["SubagentOverride-Input"] | null;
+      } | null;
+      /** Toolsets */
+      toolsets?: {
+        [key: string]: components["schemas"]["ToolsetSelection"];
       } | null;
     };
     /** AgentRunOverride-Output */
@@ -3813,19 +3906,22 @@ export interface components {
         components["schemas"]["ConnectionToolSelection"][] | null;
       /** Instructions */
       instructions?: string | null;
+      memory?: components["schemas"]["MemorySelection"] | null;
       model?: components["schemas"]["ModelOverride"] | null;
       output_spec?: components["schemas"]["OutputSpec"] | null;
-      permissions?: components["schemas"]["ToolPermissions"] | null;
       /** Plugins */
       plugins?: components["schemas"]["PluginSelection"][] | null;
       retries?: components["schemas"]["RetryOverride"] | null;
       reviewer?: components["schemas"]["AgentReviewer"] | null;
-      search?: components["schemas"]["SearchSelection"] | null;
       /** Skills */
       skills?: components["schemas"]["SkillSelection"][] | null;
       /** Subagents */
       subagents?: {
         [key: string]: components["schemas"]["SubagentOverride-Output"] | null;
+      } | null;
+      /** Toolsets */
+      toolsets?: {
+        [key: string]: components["schemas"]["ToolsetSelection"];
       } | null;
     };
     /**
@@ -3933,15 +4029,6 @@ export interface components {
       items: components["schemas"]["Asset"][];
       /** Next Cursor */
       next_cursor: string | null;
-    };
-    /** AssetPublicationConfig */
-    AssetPublicationConfig: {
-      /**
-       * Enabled
-       * @default true
-       * @constant
-       */
-      enabled?: true;
     };
     /**
      * AssetSourceKind
@@ -4197,6 +4284,12 @@ export interface components {
       parameters_json_schema: {
         [key: string]: components["schemas"]["JsonValue"];
       };
+      /**
+       * Permission
+       * @default inherit
+       * @enum {string}
+       */
+      permission?: "inherit" | "allow" | "deny";
     };
     /** ClientToolPolicy */
     ClientToolPolicy: {
@@ -4401,6 +4494,12 @@ export interface components {
        * @default false
        */
       defer_loading?: boolean;
+      /** @default inherit */
+      permission?: components["schemas"]["ToolPermissionSetting"];
+      /** Permissions */
+      permissions?: {
+        [key: string]: components["schemas"]["ToolPermissionSetting"];
+      };
       /** Tools */
       tools?: string[] | null;
     };
@@ -4830,27 +4929,6 @@ export interface components {
       /** Type */
       type: string;
     };
-    /** CreateSearchProviderRequest */
-    CreateSearchProviderRequest: {
-      configuration?: components["schemas"]["SearchConfiguration"];
-      /**
-       * Credential
-       * Format: password
-       */
-      credential: string;
-      /**
-       * Enabled
-       * @default true
-       */
-      enabled?: boolean;
-      /** Name */
-      name: string;
-      /**
-       * Type
-       * @enum {string}
-       */
-      type: "brave" | "exa";
-    };
     /** CreateServiceAccountRequest */
     CreateServiceAccountRequest: {
       /** Description */
@@ -4956,6 +5034,26 @@ export interface components {
       session_labels?: {
         [key: string]: string;
       };
+    };
+    /** CreateWebProviderRequest */
+    CreateWebProviderRequest: {
+      /** Configuration */
+      configuration?: {
+        [key: string]: unknown;
+      };
+      /** Credential */
+      credential: {
+        [key: string]: unknown;
+      };
+      /**
+       * Enabled
+       * @default true
+       */
+      enabled?: boolean;
+      /** Name */
+      name: string;
+      /** Type */
+      type: string;
     };
     /** CreateWorkspaceRequest */
     CreateWorkspaceRequest: {
@@ -6058,6 +6156,87 @@ export interface components {
       /** Items */
       items: components["schemas"]["MCPTool"][];
     };
+    /**
+     * Mem0Scope
+     * @description Trusted Harness identity boundary used for Mem0 records.
+     * @enum {string}
+     */
+    Mem0Scope: "thread" | "agent" | "user";
+    /** Memory */
+    Memory: {
+      /** Id */
+      id: string;
+      /** Memory */
+      memory: string;
+      /** Score */
+      score?: number | null;
+    };
+    /** MemoryCollection */
+    MemoryCollection: {
+      /** Items */
+      items: components["schemas"]["Memory"][];
+      /** @description Native pagination when available. Null means a bounded result, not a complete collection. */
+      pagination?: components["schemas"]["MemoryPagination"] | null;
+    };
+    /**
+     * MemoryPagination
+     * @description Native traversal; a null cursor means the final page of that traversal.
+     */
+    MemoryPagination: {
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
+    /** MemorySearch */
+    MemorySearch: {
+      /**
+       * Limit
+       * @default 20
+       */
+      limit?: number;
+      /** Query */
+      query: string;
+      /** Threshold */
+      threshold?: number | null;
+    };
+    /**
+     * MemorySelection
+     * @description Opt-in Agent behavior; backend credentials and subject IDs are host-owned.
+     */
+    MemorySelection: {
+      /**
+       * Auto Recall
+       * @default true
+       */
+      auto_recall?: boolean;
+      /**
+       * Recall Limit
+       * @default 5
+       */
+      recall_limit?: number;
+      /**
+       * Recall Required
+       * @default false
+       */
+      recall_required?: boolean;
+      /** Recall Threshold */
+      recall_threshold?: number | null;
+      /**
+       * Recall Timeout
+       * @default 2
+       */
+      recall_timeout?: number;
+      scope?: components["schemas"]["Mem0Scope"] | null;
+      /**
+       * Toolset
+       * @default true
+       */
+      toolset?: boolean;
+    };
+    /** MemoryWrite */
+    MemoryWrite: {
+      /** Text */
+      text: string;
+    };
     /** Model */
     Model: {
       /** Base Model */
@@ -6858,6 +7037,8 @@ export interface components {
       action: "reject";
       /** Call Id */
       call_id: string;
+      /** Reason */
+      reason?: string | null;
     };
     /** ReorderQueuedSubmissionsRequest */
     ReorderQueuedSubmissionsRequest: {
@@ -7368,135 +7549,11 @@ export interface components {
        */
       retry_hint?: "none" | "new_run" | "dependency_change";
     };
-    /** SearchConfiguration */
-    SearchConfiguration: Record<string, never>;
     /**
      * SearchIn
      * @enum {string}
      */
     SearchIn: "input" | "output" | "input_output";
-    /** SearchProvider */
-    SearchProvider: {
-      /** Configuration */
-      configuration: {
-        [key: string]: unknown;
-      };
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at: string;
-      created_by: components["schemas"]["PrincipalRef"];
-      /** Credential Configured */
-      credential_configured: boolean;
-      /** Enabled */
-      enabled: boolean;
-      /** Id */
-      id: string;
-      /** Name */
-      name: string;
-      /** Organization Id */
-      organization_id: string;
-      /** Type */
-      type: string;
-      /**
-       * Updated At
-       * Format: date-time
-       */
-      updated_at: string;
-      updated_by: components["schemas"]["PrincipalRef"];
-      /** Workspace Id */
-      workspace_id: string | null;
-    };
-    /** SearchProviderCollection */
-    SearchProviderCollection: {
-      /** Items */
-      items: components["schemas"]["SearchProvider"][];
-      /** Next Cursor */
-      next_cursor?: string | null;
-    };
-    /** SearchProviderDefinition */
-    SearchProviderDefinition: {
-      /** Configuration Schema */
-      configuration_schema: {
-        [key: string]: unknown;
-      };
-      /**
-       * Credential Required
-       * @default true
-       */
-      credential_required?: boolean;
-      /** Credential Schema */
-      credential_schema: {
-        [key: string]: unknown;
-      };
-      /** Display Name */
-      display_name: string;
-      /** Setup Url */
-      setup_url: string;
-      /** Type */
-      type: string;
-    };
-    /** SearchProviderDefinitionCollection */
-    SearchProviderDefinitionCollection: {
-      /** Items */
-      items: components["schemas"]["SearchProviderDefinition"][];
-    };
-    /** SearchProviderReference */
-    SearchProviderReference: {
-      /** Agent Id */
-      agent_id: string;
-      /** Agent Revision Id */
-      agent_revision_id: string;
-      /** Is Current */
-      is_current: boolean;
-      /** Version */
-      version: number;
-    };
-    /** SearchProviderReferenceCollection */
-    SearchProviderReferenceCollection: {
-      /** Items */
-      items: components["schemas"]["SearchProviderReference"][];
-      /** Next Cursor */
-      next_cursor?: string | null;
-    };
-    /** SearchProviderTestResult */
-    SearchProviderTestResult: {
-      /**
-       * Checked At
-       * Format: date-time
-       */
-      checked_at: string;
-      /** Code */
-      code: string | null;
-      /** Success */
-      success: boolean;
-    };
-    /** SearchSelection */
-    SearchSelection: {
-      /**
-       * Allow Domains
-       * @default []
-       */
-      allow_domains?: string[];
-      /**
-       * Deny Domains
-       * @default []
-       */
-      deny_domains?: string[];
-      /**
-       * Include Domains
-       * @default []
-       */
-      include_domains?: string[];
-      /**
-       * Max Results
-       * @default 5
-       */
-      max_results?: number;
-      /** Provider Id */
-      provider_id: string;
-    };
     /** SecretRequirement */
     SecretRequirement: {
       /** Description */
@@ -8260,6 +8317,34 @@ export interface components {
     } & {
       [key: string]: unknown;
     };
+    /** ToolDefinition */
+    ToolDefinition: {
+      /** Config Schema */
+      config_schema: {
+        [key: string]: unknown;
+      };
+      /** Default Enabled */
+      default_enabled: boolean;
+      default_permission: components["schemas"]["ToolPermissionMode"];
+      /**
+       * Deployment Supported
+       * @default true
+       */
+      deployment_supported?: boolean;
+      /** Display Name */
+      display_name: string;
+      /** Execution Id */
+      execution_id: string;
+      /** Key */
+      key: string;
+      /** Model Name */
+      model_name: string;
+      resource_selector?: components["schemas"]["ToolResourceSelector"] | null;
+      /** Supported Permissions */
+      supported_permissions: (
+        "inherit" | "allow" | "ask" | "deny" | "review"
+      )[];
+    };
     /**
      * ToolMessage
      * @description A tool result message.
@@ -8291,17 +8376,18 @@ export interface components {
     /** ToolPermissionSetting */
     ToolPermissionSetting:
       components["schemas"]["ToolPermissionMode"] | "inherit";
-    /**
-     * ToolPermissions
-     * @description Portable configuration. Inherit resolves a tool default, never an execution decision.
-     */
-    ToolPermissions: {
-      /** @default inherit */
-      default?: components["schemas"]["ToolPermissionSetting"];
-      /** Rules */
-      rules?: {
-        [key: string]: components["schemas"]["ToolPermissionSetting"];
-      };
+    /** ToolResourceSelector */
+    ToolResourceSelector: {
+      /**
+       * Kind
+       * @constant
+       */
+      kind: "web_provider";
+      /**
+       * Operation
+       * @enum {string}
+       */
+      operation: "search" | "scrape";
     };
     /**
      * ToolReviewRule
@@ -8317,6 +8403,96 @@ export interface components {
      * @enum {string}
      */
     ToolRiskLevel: "low" | "medium" | "high" | "extra_high";
+    /** ToolSelection */
+    ToolSelection: {
+      /** Config */
+      config?: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+      /**
+       * Enabled
+       * @default true
+       */
+      enabled?: boolean;
+      /** @default inherit */
+      permission?: components["schemas"]["ToolPermissionSetting"];
+    };
+    /** ToolSetupDestination */
+    ToolSetupDestination: {
+      /**
+       * Kind
+       * @enum {string}
+       */
+      kind: "web_provider" | "reviewer";
+      /** Operation */
+      operation?: ("search" | "scrape") | null;
+    };
+    /** ToolsetCandidate */
+    ToolsetCandidate: {
+      reviewer?: components["schemas"]["AgentReviewer"] | null;
+      /** Toolsets */
+      toolsets?: {
+        [key: string]: components["schemas"]["ToolsetSelection"];
+      };
+    };
+    /** ToolsetCandidateError */
+    ToolsetCandidateError: {
+      /** Code */
+      code: string;
+      /** Path */
+      path: string;
+      setup_destination?: components["schemas"]["ToolSetupDestination"] | null;
+    };
+    /** ToolsetCandidateResult */
+    ToolsetCandidateResult: {
+      /** Errors */
+      errors: components["schemas"]["ToolsetCandidateError"][];
+      /** Toolsets */
+      toolsets: {
+        [key: string]: components["schemas"]["ToolsetSelection"];
+      };
+      /** Valid */
+      valid: boolean;
+    };
+    /** ToolsetCatalog */
+    ToolsetCatalog: {
+      /** Items */
+      items: components["schemas"]["ToolsetDefinition"][];
+    };
+    /** ToolsetDefinition */
+    ToolsetDefinition: {
+      /** Config Schema */
+      config_schema: {
+        [key: string]: unknown;
+      };
+      /** Default Enabled */
+      default_enabled: boolean;
+      /** Display Name */
+      display_name: string;
+      /**
+       * Key
+       * @enum {string}
+       */
+      key: "files" | "shell" | "web" | "assets";
+      /** Tools */
+      tools: components["schemas"]["ToolDefinition"][];
+    };
+    /** ToolsetSelection */
+    ToolsetSelection: {
+      /** Config */
+      config?: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+      /**
+       * Enabled
+       * @default true
+       */
+      enabled?: boolean;
+      /** Tools */
+      tools?: {
+        [key: string]: components["schemas"]["ToolSelection"];
+      };
+    };
     /** Trace */
     Trace: {
       correlation: components["schemas"]["TraceCorrelation"];
@@ -8508,16 +8684,6 @@ export interface components {
       /** Name */
       name?: string | null;
     };
-    /** UpdateSearchProviderRequest */
-    UpdateSearchProviderRequest: {
-      configuration?: components["schemas"]["SearchConfiguration"] | null;
-      /** Credential */
-      credential?: string | null;
-      /** Enabled */
-      enabled?: boolean | null;
-      /** Name */
-      name?: string | null;
-    };
     /** UpdateServiceAccountRequest */
     UpdateServiceAccountRequest: {
       /** Description */
@@ -8548,6 +8714,21 @@ export interface components {
       archived?: boolean | null;
       /** Description */
       description?: string | null;
+      /** Name */
+      name?: string | null;
+    };
+    /** UpdateWebProviderRequest */
+    UpdateWebProviderRequest: {
+      /** Configuration */
+      configuration?: {
+        [key: string]: unknown;
+      } | null;
+      /** Credential */
+      credential?: {
+        [key: string]: unknown;
+      } | null;
+      /** Enabled */
+      enabled?: boolean | null;
       /** Name */
       name?: string | null;
     };
@@ -8756,6 +8937,110 @@ export interface components {
       )[];
       /** Sealed State Digest Sha256 */
       sealed_state_digest_sha256: string;
+    };
+    /** WebProvider */
+    WebProvider: {
+      /** Configuration */
+      configuration: {
+        [key: string]: unknown;
+      };
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      created_by: components["schemas"]["PrincipalRef"];
+      /** Credential Configured */
+      credential_configured: boolean;
+      /** Enabled */
+      enabled: boolean;
+      /** Id */
+      id: string;
+      /** Name */
+      name: string;
+      /** Organization Id */
+      organization_id: string;
+      /** Type */
+      type: string;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      updated_by: components["schemas"]["PrincipalRef"];
+      /** Workspace Id */
+      workspace_id: string | null;
+    };
+    /** WebProviderCollection */
+    WebProviderCollection: {
+      /** Items */
+      items: components["schemas"]["WebProvider"][];
+      /** Next Cursor */
+      next_cursor?: string | null;
+    };
+    /** WebProviderDefinition */
+    WebProviderDefinition: {
+      /** Configuration Schema */
+      configuration_schema: {
+        [key: string]: unknown;
+      };
+      /**
+       * Credential Required
+       * @default true
+       */
+      credential_required?: boolean;
+      /** Credential Schema */
+      credential_schema: {
+        [key: string]: unknown;
+      };
+      /** Display Name */
+      display_name: string;
+      /** Operations */
+      operations: ("search" | "scrape")[];
+      /** Setup Url */
+      setup_url: string;
+      /**
+       * Supports Restricted Scrape
+       * @default false
+       */
+      supports_restricted_scrape?: boolean;
+      /** Type */
+      type: string;
+    };
+    /** WebProviderDefinitionCollection */
+    WebProviderDefinitionCollection: {
+      /** Items */
+      items: components["schemas"]["WebProviderDefinition"][];
+    };
+    /** WebProviderReference */
+    WebProviderReference: {
+      /** Agent Id */
+      agent_id: string;
+      /** Agent Revision Id */
+      agent_revision_id: string;
+      /** Is Current */
+      is_current: boolean;
+      /** Version */
+      version: number;
+    };
+    /** WebProviderReferenceCollection */
+    WebProviderReferenceCollection: {
+      /** Items */
+      items: components["schemas"]["WebProviderReference"][];
+      /** Next Cursor */
+      next_cursor?: string | null;
+    };
+    /** WebProviderTestResult */
+    WebProviderTestResult: {
+      /**
+       * Checked At
+       * Format: date-time
+       */
+      checked_at: string;
+      /** Code */
+      code: string | null;
+      /** Success */
+      success: boolean;
     };
     /** WebhookDestinationConfig */
     WebhookDestinationConfig: {
@@ -13881,302 +14166,6 @@ export interface operations {
       };
     };
   };
-  get_organizations_organization_search_providers: {
-    parameters: {
-      query?: {
-        limit?: number;
-        cursor?: string | null;
-        type?: string | null;
-        enabled?: boolean | null;
-      };
-      header?: never;
-      path: {
-        organization: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SearchProviderCollection"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  post_organizations_organization_search_providers: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        organization: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["CreateSearchProviderRequest"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          /** @description Strong representation precondition. */
-          ETag?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SearchProvider"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  get_organizations_organization_search_providers_provider_id: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider_id: string;
-        organization: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          /** @description Strong representation precondition. */
-          ETag?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SearchProvider"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  patch_organizations_organization_search_providers_provider_id: {
-    parameters: {
-      query?: never;
-      header: {
-        "If-Match": string;
-      };
-      path: {
-        provider_id: string;
-        organization: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["UpdateSearchProviderRequest"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          /** @description Strong representation precondition. */
-          ETag?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SearchProvider"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  get_organizations_organization_search_providers_provider_id_references: {
-    parameters: {
-      query?: {
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        provider_id: string;
-        organization: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SearchProviderReferenceCollection"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  post_organizations_organization_search_providers_provider_id_test: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider_id: string;
-        organization: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["SearchConfiguration"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SearchProviderTestResult"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
   get_organizations_organization_security_audit_events: {
     parameters: {
       query?: {
@@ -14246,6 +14235,298 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["Page_User_"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_organizations_organization_web_providers: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+        type?: string | null;
+        enabled?: boolean | null;
+      };
+      header?: never;
+      path: {
+        organization: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["WebProviderCollection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_organizations_organization_web_providers: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        organization: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateWebProviderRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          /** @description Strong representation precondition. */
+          ETag?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["WebProvider"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_organizations_organization_web_providers_provider_id: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        provider_id: string;
+        organization: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          /** @description Strong representation precondition. */
+          ETag?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["WebProvider"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  patch_organizations_organization_web_providers_provider_id: {
+    parameters: {
+      query?: never;
+      header: {
+        "If-Match": string;
+      };
+      path: {
+        provider_id: string;
+        organization: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateWebProviderRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          /** @description Strong representation precondition. */
+          ETag?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["WebProvider"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_organizations_organization_web_providers_provider_id_references: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path: {
+        provider_id: string;
+        organization: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["WebProviderReferenceCollection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_organizations_organization_web_providers_provider_id_test: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        provider_id: string;
+        organization: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["WebProviderTestResult"];
         };
       };
       /** @description Invalid request. */
@@ -15473,82 +15754,6 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["RunAcceptanceReceipt"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  get_search_provider_types: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SearchProviderDefinitionCollection"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  get_search_provider_types_provider_type: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider_type: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SearchProviderDefinition"];
         };
       };
       /** @description Invalid request. */
@@ -17340,6 +17545,82 @@ export interface operations {
         };
         content: {
           "image/webp": Binary;
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_web_provider_types: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["WebProviderDefinitionCollection"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_web_provider_types_provider_type: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        provider_type: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["WebProviderDefinition"];
         };
       };
       /** @description Invalid request. */
@@ -19393,6 +19674,304 @@ export interface operations {
       };
     };
   };
+  get_workspaces_workspace_memories: {
+    parameters: {
+      query: {
+        /** @description Maximum loaded records, not a total count. */
+        limit?: number;
+        cursor?: string | null;
+        scope: components["schemas"]["Mem0Scope"];
+        subject_id?: string | null;
+      };
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryCollection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_workspaces_workspace_memories: {
+    parameters: {
+      query: {
+        scope: components["schemas"]["Mem0Scope"];
+        subject_id?: string | null;
+      };
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MemoryWrite"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Memory"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_workspaces_workspace_memories_search: {
+    parameters: {
+      query: {
+        scope: components["schemas"]["Mem0Scope"];
+        subject_id?: string | null;
+      };
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MemorySearch"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryCollection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_workspaces_workspace_memories_memory_id: {
+    parameters: {
+      query: {
+        scope: components["schemas"]["Mem0Scope"];
+        subject_id?: string | null;
+      };
+      header?: never;
+      path: {
+        memory_id: string;
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Memory"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  put_workspaces_workspace_memories_memory_id: {
+    parameters: {
+      query: {
+        scope: components["schemas"]["Mem0Scope"];
+        subject_id?: string | null;
+      };
+      header?: never;
+      path: {
+        memory_id: string;
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["MemoryWrite"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Memory"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  delete_workspaces_workspace_memories_memory_id: {
+    parameters: {
+      query: {
+        scope: components["schemas"]["Mem0Scope"];
+        subject_id?: string | null;
+      };
+      header?: never;
+      path: {
+        memory_id: string;
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
   post_workspaces_workspace_model_catalog_suggestions: {
     parameters: {
       query?: never;
@@ -20301,302 +20880,6 @@ export interface operations {
       };
     };
   };
-  get_workspaces_workspace_search_providers: {
-    parameters: {
-      query?: {
-        limit?: number;
-        cursor?: string | null;
-        type?: string | null;
-        enabled?: boolean | null;
-      };
-      header?: never;
-      path: {
-        workspace: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SearchProviderCollection"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  post_workspaces_workspace_search_providers: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        workspace: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["CreateSearchProviderRequest"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          /** @description Strong representation precondition. */
-          ETag?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SearchProvider"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  get_workspaces_workspace_search_providers_provider_id: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider_id: string;
-        workspace: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          /** @description Strong representation precondition. */
-          ETag?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SearchProvider"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  patch_workspaces_workspace_search_providers_provider_id: {
-    parameters: {
-      query?: never;
-      header: {
-        "If-Match": string;
-      };
-      path: {
-        provider_id: string;
-        workspace: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["UpdateSearchProviderRequest"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          /** @description Strong representation precondition. */
-          ETag?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SearchProvider"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  get_workspaces_workspace_search_providers_provider_id_references: {
-    parameters: {
-      query?: {
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        provider_id: string;
-        workspace: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SearchProviderReferenceCollection"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  post_workspaces_workspace_search_providers_provider_id_test: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        provider_id: string;
-        workspace: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["SearchConfiguration"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SearchProviderTestResult"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
   get_workspaces_workspace_security_audit_events: {
     parameters: {
       query?: {
@@ -21038,6 +21321,98 @@ export interface operations {
       };
     };
   };
+  get_workspaces_workspace_toolsets: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ToolsetCatalog"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_workspaces_workspace_toolsets_validate: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ToolsetCandidate"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ToolsetCandidateResult"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
   get_workspaces_workspace_trace_query: {
     parameters: {
       query?: never;
@@ -21208,6 +21583,298 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ObservationCollection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_workspaces_workspace_web_providers: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+        type?: string | null;
+        enabled?: boolean | null;
+      };
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["WebProviderCollection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_workspaces_workspace_web_providers: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateWebProviderRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          /** @description Strong representation precondition. */
+          ETag?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["WebProvider"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_workspaces_workspace_web_providers_provider_id: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        provider_id: string;
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          /** @description Strong representation precondition. */
+          ETag?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["WebProvider"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  patch_workspaces_workspace_web_providers_provider_id: {
+    parameters: {
+      query?: never;
+      header: {
+        "If-Match": string;
+      };
+      path: {
+        provider_id: string;
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateWebProviderRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          /** @description Strong representation precondition. */
+          ETag?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["WebProvider"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_workspaces_workspace_web_providers_provider_id_references: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path: {
+        provider_id: string;
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["WebProviderReferenceCollection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_workspaces_workspace_web_providers_provider_id_test: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        provider_id: string;
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["WebProviderTestResult"];
         };
       };
       /** @description Invalid request. */

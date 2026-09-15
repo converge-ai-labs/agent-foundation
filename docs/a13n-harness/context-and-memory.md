@@ -45,35 +45,36 @@ For context lifecycle features, callers supply Harness-managed policy through th
 
 ## Mem0 Long-Term Memory
 
-`mem0ai` is a default Harness dependency, so no package extra is required. The integration remains behaviorally opt-in: add `Mem0Capability` to an Agent definition and either configure `MEM0_API_KEY` (plus optional `MEM0_BASE_URL`) or pass a native `AsyncMemoryClient`. Environment-created clients defer the SDK's eager remote validation to the first bounded recall or memory-tool operation, so optional recall still fails open when authentication or the provider is unavailable.
+Memory is opt-in. OSS is the primary backend: open a native transport at Host startup and pass it to `Mem0Capability`. The [Service memory guide](../a13n-service/memory.md) covers hosted authorization and deployment. The OSS adapter calls public native endpoints on an existing deployment; no source patch or special server image is required. Its list operation is bounded, not paginated.
 
 ```python
 from a13n_harness.capabilities import Mem0Capability, Mem0Scope
+from a13n_harness.capabilities.mem0_backends import open_mem0_oss
 
-capabilities = (
-    Mem0Capability(
-        scope=Mem0Scope.USER,
-        auto_recall=True,
-        toolset=True,
-        recall_limit=5,
-    ),
-)
+async with open_mem0_oss(base_url=mem0_url, api_key=mem0_api_key) as backend:
+    capabilities = (
+        Mem0Capability(backend=backend, scope=Mem0Scope.USER, recall_limit=5),
+    )
+    # Build and execute Agents inside this Host-owned transport lifetime.
 ```
 
 A fixed scope exposes `memory_search`, `memory_list`, and `memory_add` without an entity or scope argument. The Harness resolves `thread` from the current `thread_id`, `agent` from the `agent_id` identity claim, and `user` from the `user_id` claim. With `scope=None`, one automatic recall searches all available scopes and each memory tool accepts only the `thread`, `agent`, or `user` selector; the model never supplies the underlying ID.
 
-The first eligible input in each logical run performs at most one bounded recall. Recalled records enter only as an untrusted input preamble and are removed from exported history. Internal model recovery reuses the same result. `memory_add` stores exactly the supplied bounded text with Mem0 inference disabled; update and delete are not model-visible.
+The first eligible input in each logical run performs at most one bounded recall. Recalled records enter only as an untrusted input preamble. They can remain in history as a record of what the model observed, not as restored memory authority. Internal model recovery reuses the same result. `memory_add` stores exactly the supplied bounded text with Mem0 inference disabled; update and delete are not model-visible.
 
-When no client is supplied, the Harness constructs the native async client off the event loop and closes it at logical-run cleanup. A supplied client is borrowed and is never entered or closed by the Harness:
+There is no implicit environment configuration or Run-owned client. Hosts can pass trusted `scope_ids` to replace claim-derived values with their own tenant-isolated IDs. OSS performs bounded concurrent per-scope searches and combines the results; a failed scope never yields successful partial recall. OSS listing uses native `GET /memories` with a result limit and no cursor; Platform supports native cursor pages. Neither tool results nor a short OSS list prove that the full memory collection was loaded.
+
+Platform is an independent adapter, not an OSS compatibility mode:
 
 ```python
-from mem0 import AsyncMemoryClient
+from a13n_harness.capabilities.mem0_backends import open_mem0_platform
 
-mem0_client = AsyncMemoryClient(api_key="...")
-capabilities = (Mem0Capability(client=mem0_client, scope=Mem0Scope.USER),)
+async with open_mem0_platform(api_key=platform_api_key) as backend:
+    capabilities = (Mem0Capability(backend=backend, scope=Mem0Scope.USER),)
+    # Build and execute Agents here.
 ```
 
-The Host owns the borrowed client's lifecycle. The Harness does not automatically write terminal transcripts to memory because a process-local result does not prove durable checkpoint acceptance. Applications that need extraction should enqueue it only after their own successful durable commit.
+Both context managers own one Host lifetime. The Capability borrows the backend and never closes it. Optional recall failures omit recalled context; required recall fails before model work. An unconfirmed write is not safe to repeat blindly: inspect the memory first. The Harness does not automatically write terminal transcripts to memory because a process-local result does not prove durable checkpoint acceptance. Applications that need extraction should enqueue it only after their own successful durable commit.
 
 ## Working State
 

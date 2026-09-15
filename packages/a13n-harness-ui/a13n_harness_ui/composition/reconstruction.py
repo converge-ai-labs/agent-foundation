@@ -217,9 +217,11 @@ class AgentReconstructor:
                     and environment_profile.adapter_key == FULL_CONTROL_PROFILE.adapter_key
                 ),
             )
-            executable = HarnessBuilder(configured_plugins_enabled=False, instrumentation=self._instrumentation).build(
-                definition, pricing_catalog=pricing_catalog
-            )
+            executable = HarnessBuilder(
+                configured_plugins_enabled=False,
+                instrumentation=self._instrumentation,
+                x_session_id_enabled=False,  # Each immutable Model recipe owns gateway affinity.
+            ).build(definition, pricing_catalog=pricing_catalog)
         except CompositionError:
             raise
         except (HarnessError, PluginError, ValueError, TypeError) as exc:

@@ -12,6 +12,7 @@ import anyio
 import httpx2
 import jwt
 import pytest
+from a13n_harness.model_affinity import derive_model_affinity_id
 from a13n_harness.model_auth import (
     CodexRequestModel,
     CredentialPersistenceError,
@@ -1061,7 +1062,7 @@ def _unsigned_jwt(payload: dict[str, object]) -> str:
     return f"header.{encoded}.signature"
 
 
-def test_codex_subscription_settings_use_harness_thread_affinity() -> None:
+async def test_codex_subscription_settings_use_bound_thread_not_gateway_header() -> None:
     original = ModelSettings(
         max_tokens=123,
         temperature=0.4,
@@ -1075,7 +1076,10 @@ def test_codex_subscription_settings_use_harness_thread_affinity() -> None:
         },
     )
 
-    settings = CodexRequestModel._affinity_settings(original)
+    source = _CodexSource(_codex_credentials(marker="current", expires_at=datetime.now(UTC) + timedelta(hours=1)))
+    async with httpx2.AsyncClient() as client:
+        model = CodexRequestModel("gpt-5", credential_source=source, http_client=client, thread_id="bound-thread")
+        settings = model._affinity_settings(original)
 
     assert settings["openai_store"] is True
     assert settings["max_tokens"] == original["max_tokens"]
@@ -1086,8 +1090,8 @@ def test_codex_subscription_settings_use_harness_thread_affinity() -> None:
         "X-Session-ID": "thread-1",
         "Thread-ID": "explicit-thread",
         "X-Custom": "custom",
-        "session-id": "thread-1",
-        "x-client-request-id": "thread-1",
+        "session-id": derive_model_affinity_id("bound-thread"),
+        "x-client-request-id": derive_model_affinity_id("bound-thread"),
     }
     assert original["openai_store"] is True
     assert original["extra_headers"] == {
@@ -1170,7 +1174,8 @@ async def test_codex_device_unsupported_expiry_and_cancellation(monkeypatch: pyt
         assert scope.cancel_called
 
 
-async def test_codex_official_dialect_and_cached_credentials_are_used_for_nonstreaming_calls() -> None:
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_codex_official_dialect_and_cached_credentials_are_used_without_gateway_affinity(streaming) -> None:
     from pydantic_ai.providers.openai_codex import OpenAICodexProvider
 
     source = _CodexSource(_codex_credentials(marker="current", expires_at=datetime.now(UTC) + timedelta(hours=1)))
@@ -1179,21 +1184,28 @@ async def test_codex_official_dialect_and_cached_credentials_are_used_for_nonstr
     def handle(request: httpx2.Request) -> httpx2.Response:
         bodies.append(json.loads(request.content))
         assert request.headers["originator"] == "pydantic-ai"
-        assert request.headers["session-id"] == "thread-native"
+        assert request.headers["session-id"] == derive_model_affinity_id("thread-native")
+        assert request.headers["thread-id"] == derive_model_affinity_id("thread-native")
+        assert request.headers["x-client-request-id"] == derive_model_affinity_id("thread-native")
+        assert "x-session-id" not in request.headers
         return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=_responses_sse())
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
-        model = CodexRequestModel("gpt-5", credential_source=source, http_client=client)
+        model = CodexRequestModel("gpt-5", credential_source=source, http_client=client, thread_id="thread-native")
         assert isinstance(model.provider, OpenAICodexProvider)
         settings = OpenAIResponsesModelSettings(
             max_tokens=10,
             temperature=0.1,
             top_p=0.1,
             openai_store=True,
-            extra_headers={"x-session-id": "thread-native"},
         )
         for _ in range(2):
-            await model.request([], settings, ModelRequestParameters())
+            if streaming:
+                async with model.request_stream([], settings, ModelRequestParameters()) as stream:
+                    async for _ in stream:
+                        pass
+            else:
+                await model.request([], settings, ModelRequestParameters())
         with pytest.raises(UserError):
             await model.count_tokens([], None, ModelRequestParameters())
         async with model:

@@ -52,6 +52,7 @@ class DatabaseAttemptCommitter:
             "object_store_unavailable",
             "environment_unavailable",
             "skill_materialization_unavailable",
+            "skill_materialization_stale",
         }
         await self._execution.fail(authority, failure, retryable=retryable, retry_after=timedelta(seconds=1))
         return await self._read_terminal(authority)

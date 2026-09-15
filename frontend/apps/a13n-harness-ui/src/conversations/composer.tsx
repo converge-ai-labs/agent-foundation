@@ -133,6 +133,7 @@ export async function submitDraft(
 }
 
 export function Composer({
+  autoFocus = false,
   threadId,
   activity,
   canRun,
@@ -146,6 +147,7 @@ export function Composer({
   profile: Profile;
   unauthorized: () => void;
   reconcile: () => void;
+  autoFocus?: boolean;
 }) {
   const draft = useDraft(threadId);
   const transport = useTransport();
@@ -364,11 +366,14 @@ export function Composer({
     >
       <div className={styles.composerHeading}>
         <strong>{busy ? "Next message" : "Message"}</strong>
-        <span role="status">
+        <span
+          role="status"
+          title="Shared draft synchronization is not a durable save."
+        >
           {draft.replacement
             ? "Server restarted"
             : draft.synchronized
-              ? "Synchronized in this instance"
+              ? "Synchronized"
               : draft.status === "Connected"
                 ? "Synchronizing edits"
                 : `${draft.status} · local edits retained`}
@@ -399,6 +404,7 @@ export function Composer({
         </div>
       )}
       <ComposerEditor
+        autoFocus={autoFocus}
         draft={draft}
         profile={profile}
         presence={(value) => connection.current?.presence(value)}
@@ -520,6 +526,7 @@ export function Composer({
           />
           <Button
             variant="ghost"
+            size="sm"
             loading={uploading}
             onClick={() => upload.current?.click()}
           >
@@ -537,6 +544,7 @@ export function Composer({
             </Button>
           )}
           <Button
+            size="sm"
             disabled={!canSend}
             loading={pending}
             onClick={() => void submit("send")}
@@ -546,10 +554,16 @@ export function Composer({
           </Button>
         </div>
       </div>
-      <small className={styles.composerHint}>
-        {busy ? "Next message is not queued. " : ""}Enter adds a line ·
-        Ctrl/⌘+Enter sends · Drafts are not saved across server restarts.
-      </small>
+      <details className={styles.composerHint}>
+        <summary>Enter for a new line · Ctrl/⌘+Enter to send</summary>
+        Drafts are synchronized in this instance, not saved across server
+        restarts.
+      </details>
+      {busy && (
+        <small className={styles.composerHint}>
+          Next message is not queued.
+        </small>
+      )}
       <ModalFrame
         open={!!preview}
         onOpenChange={(open) => {

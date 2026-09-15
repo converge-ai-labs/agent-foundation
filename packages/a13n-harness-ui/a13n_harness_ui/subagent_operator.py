@@ -130,7 +130,6 @@ _MAX_ACTIVITY_TEXT = 32 * 1024
 _MAX_FINAL_ANSWER = 64 * 1024
 _MAX_DISPLAY_ACTIVITIES = 512
 _MAX_TOOL_VALUE_TEXT = 8 * 1024
-_MAX_LIVE_ACTIVITY_EVENTS = 2048
 _MAX_FAILURE_CODE = 256
 _MAX_FAILURE_MESSAGE = 32 * 1024
 _MAX_FAILURE_DETAILS_BYTES = 64 * 1024
@@ -1084,7 +1083,6 @@ class HarnessUiSubagentOperator(SubagentOperator):
     ) -> tuple[HarnessRunResult[Any], CompactChildDisplay, tuple[AguiEvent, ...]]:
         observer = HarnessAguiObserver()
         compactor = _DisplayCompactor(prepared.display)
-        live_buffer = _LiveBoundaryBuffer()
         result: HarnessRunResult[Any] | None = None
         terminal_events: tuple[AguiEvent, ...] = ()
         run_error: BaseException | None = None
@@ -1111,11 +1109,14 @@ class HarnessUiSubagentOperator(SubagentOperator):
                         compactor.observe(events)
                         async with self._lock:
                             active.display = compactor.snapshot()
-                        for closed in live_buffer.observe(events):
-                            await self._publish_live(prepared, closed)
                         if isinstance(item, HarnessRunResultEvent):
+                            # Completion remains fenced by cleanup and checkpoint
+                            # publication in _finish_result; token delivery is not
+                            # evidence of a saved child outcome.
                             result = item.result
                             terminal_events = events
+                        else:
+                            await self._publish_live(prepared, events)
         except BaseException as exc:
             run_error = exc
 
@@ -1693,69 +1694,6 @@ class _DisplayCompactor:
         self._activities.append(activity)
         if len(self._activities) > _MAX_DISPLAY_ACTIVITIES:
             del self._activities[: len(self._activities) - _MAX_DISPLAY_ACTIVITIES]
-
-
-class _LiveBoundaryBuffer:
-    """Release public AG-UI activity only when its close boundary arrives."""
-
-    def __init__(self) -> None:
-        self._messages: dict[tuple[str, str], list[AguiEvent]] = {}
-        self._tools: dict[str, list[AguiEvent]] = {}
-        self._tool_results: set[str] = set()
-        self._tool_ends: set[str] = set()
-
-    def observe(self, events: Sequence[AguiEvent]) -> tuple[tuple[AguiEvent, ...], ...]:
-        closed: list[tuple[AguiEvent, ...]] = []
-        for event in events:
-            if isinstance(event, TextMessageStartEvent):
-                self._messages[("text", event.message_id)] = [event]
-            elif isinstance(event, TextMessageContentEvent):
-                self._append(self._messages.setdefault(("text", event.message_id), []), event)
-            elif isinstance(event, TextMessageEndEvent):
-                key = ("text", event.message_id)
-                values = self._messages.pop(key, [])
-                self._append(values, event)
-                closed.append(tuple(values))
-            elif isinstance(event, ReasoningMessageStartEvent):
-                self._messages[("reasoning", event.message_id)] = [event]
-            elif isinstance(event, ReasoningMessageContentEvent):
-                self._append(
-                    self._messages.setdefault(("reasoning", event.message_id), []),
-                    event,
-                )
-            elif isinstance(event, ReasoningMessageEndEvent):
-                key = ("reasoning", event.message_id)
-                values = self._messages.pop(key, [])
-                self._append(values, event)
-                closed.append(tuple(values))
-            elif isinstance(event, ToolCallStartEvent | ToolCallArgsEvent):
-                self._append(self._tools.setdefault(event.tool_call_id, []), event)
-            elif isinstance(event, ToolCallResultEvent):
-                self._append(self._tools.setdefault(event.tool_call_id, []), event)
-                self._tool_results.add(event.tool_call_id)
-                completed = self._complete_tool(event.tool_call_id)
-                if completed:
-                    closed.append(completed)
-            elif isinstance(event, ToolCallEndEvent):
-                self._append(self._tools.setdefault(event.tool_call_id, []), event)
-                self._tool_ends.add(event.tool_call_id)
-                completed = self._complete_tool(event.tool_call_id)
-                if completed:
-                    closed.append(completed)
-        return tuple(closed)
-
-    @staticmethod
-    def _append(values: list[AguiEvent], event: AguiEvent) -> None:
-        values.append(event)
-        if len(values) > _MAX_LIVE_ACTIVITY_EVENTS:
-            del values[1 : len(values) - _MAX_LIVE_ACTIVITY_EVENTS + 1]
-
-    def _complete_tool(self, tool_call_id: str) -> tuple[AguiEvent, ...]:
-        if tool_call_id not in self._tool_results or tool_call_id not in self._tool_ends:
-            return ()
-        self._tool_results.discard(tool_call_id)
-        self._tool_ends.discard(tool_call_id)
-        return tuple(self._tools.pop(tool_call_id, []))
 
 
 async def _finalize_rejected(

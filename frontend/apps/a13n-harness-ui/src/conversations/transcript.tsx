@@ -1,6 +1,11 @@
 import { memo } from "react";
-import { ToolCall } from "./tool-call";
-import { savedTools, type ToolView } from "./tool-presentation";
+import { ToolActivity } from "./tool-call";
+import {
+  activityKind,
+  MAX_ACTIVITY_TOOLS,
+  savedToolGroups,
+  type ToolView,
+} from "./tool-presentation";
 import { MessageText } from "./message-text";
 import { SavedOutput } from "./comments";
 export { MessageText } from "./message-text";
@@ -12,15 +17,18 @@ import styles from "./conversation.module.css";
 export const SavedEntry = memo(function SavedEntry({
   entry,
   threadId,
-  toolViews,
+  toolGroups,
+  continuation = false,
 }: {
-  toolViews?: Map<Schema<"TranscriptPart">, ToolView | null>;
+  continuation?: boolean;
+  toolGroups?: Map<Schema<"TranscriptPart">, ToolView[] | null>;
   entry: Schema<"TranscriptEntry">;
   threadId?: string;
 }) {
   const parts = entry.parts.filter((part) => part.metadata?.display !== false);
   if (!parts.length) return null;
-  const tools = toolViews ?? savedTools([entry]);
+  const tools = toolGroups ?? savedToolGroups([entry]);
+  if (parts.every((part) => tools.get(part) === null)) return null;
   return (
     <article className={styles.entry} data-position={entry.position}>
       {parts.some((part) => part.kind === "user" || part.kind === "media") && (
@@ -36,7 +44,7 @@ export const SavedEntry = memo(function SavedEntry({
         if (part.kind === "user" || part.kind === "media") return null;
         if (tools.has(part)) {
           const tool = tools.get(part);
-          return tool ? <ToolCall key={index} tool={tool} /> : null;
+          return tool ? <ToolActivity key={index} tools={tool} /> : null;
         }
         if (part.kind === "assistant")
           return (
@@ -49,7 +57,11 @@ export const SavedEntry = memo(function SavedEntry({
                   : undefined
               }
             >
-              <header>Assistant</header>
+              {!continuation &&
+                index ===
+                  parts.findIndex((item) => item.kind === "assistant") && (
+                  <header>Assistant</header>
+                )}
               <SavedOutput
                 target={part.comment_target}
                 text={part.text ?? ""}
@@ -80,14 +92,18 @@ export function LiveOutput({
   blocks,
   gap,
   threadId,
+  label = "Current output · not yet established as saved history",
 }: {
+  label?: string;
   blocks: DisplayBlock[];
   gap: boolean;
   threadId?: string;
 }) {
   const diagnostics = blocks.filter((block) => block.diagnostic);
-  const items: (DisplayBlock | DisplayBlock[])[] = [];
-  for (const block of blocks.filter((block) => !block.diagnostic)) {
+  const items: (DisplayBlock | DisplayBlock[] | { tools: ToolView[] })[] = [];
+  for (const block of blocks.filter(
+    (block) => !block.diagnostic && block.kind !== "task",
+  )) {
     if (block.kind === "user" || block.kind === "media") {
       const previous = items.at(-1);
       const turn = (id: string) =>
@@ -95,14 +111,31 @@ export function LiveOutput({
       if (Array.isArray(previous) && turn(previous[0].id) === turn(block.id))
         previous.push(block);
       else items.push([block]);
+    } else if (block.kind === "tool") {
+      const tool: ToolView = {
+        ...block,
+        name: block.name || "Tool",
+        input: block.text || undefined,
+        inputComplete: block.done,
+      };
+      const previous = items.at(-1);
+      const kind = activityKind(tool);
+      if (
+        previous &&
+        !Array.isArray(previous) &&
+        "tools" in previous &&
+        previous.tools.length < MAX_ACTIVITY_TOOLS &&
+        kind &&
+        activityKind(previous.tools[0]) === kind
+      )
+        previous.tools.push(tool);
+      else items.push({ tools: [tool] });
     } else items.push(block);
   }
   return (
     <section className={styles.liveOutput} aria-label="Current unsaved output">
-      {blocks.length > 0 && (
-        <small>Current output · not yet established as saved history</small>
-      )}
-      {items.map((block) =>
+      {blocks.length > 0 && <small>{label}</small>}
+      {items.map((block, index) =>
         Array.isArray(block) ? (
           <InputContent
             key={block[0].id}
@@ -110,16 +143,8 @@ export function LiveOutput({
             parts={block}
             renderText={(text) => <MessageText text={text} />}
           />
-        ) : block.kind === "tool" ? (
-          <ToolCall
-            key={block.id}
-            tool={{
-              ...block,
-              name: block.name || "Tool",
-              input: block.text || undefined,
-              inputComplete: block.done,
-            }}
-          />
+        ) : "tools" in block ? (
+          <ToolActivity key={block.tools[0].id} tools={block.tools} />
         ) : block.kind === "task" ? (
           <div key={block.id} className={styles.activity}>
             <strong>{block.text}</strong>
@@ -129,7 +154,9 @@ export function LiveOutput({
           </div>
         ) : block.kind === "assistant" ? (
           <div key={block.id} className={styles.assistantMessage}>
-            <header>Assistant</header>
+            {(index === 0 || Array.isArray(items[index - 1])) && (
+              <header>Assistant</header>
+            )}
             <MessageText text={block.text} />
           </div>
         ) : (

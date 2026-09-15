@@ -1,8 +1,16 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearchParams } from "react-router";
-import { Button, ChoiceField, ModalFrame } from "a13n-ui";
-import { Plus, ArrowLeft } from "@phosphor-icons/react";
+import {
+  Button,
+  ChoiceField,
+  Menu,
+  MenuTrigger,
+  MenuPopup,
+  MenuItem,
+  ModalFrame,
+} from "a13n-ui";
+import { Plus, ArrowLeft, DotsThree, Trash } from "@phosphor-icons/react";
 import { useSources, useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 import { ErrorNotice, PageHeader, Panel, TextField } from "../shell/ui";
@@ -431,16 +439,6 @@ export function SourceDocument({
                 Discard draft
               </Button>
             )}
-            {!capabilitiesOnly &&
-              source.data?.writable &&
-              source.data.resource_kind !== "root" && (
-                <Button
-                  variant="destructive-outline"
-                  onClick={() => setDeleting(true)}
-                >
-                  Delete configuration
-                </Button>
-              )}
             {canEdit && (
               <>
                 <Button
@@ -459,6 +457,27 @@ export function SourceDocument({
                 </Button>
               </>
             )}
+            {!capabilitiesOnly &&
+              source.data?.writable &&
+              source.data.resource_kind !== "root" && (
+                <Menu>
+                  <MenuTrigger
+                    aria-label="More configuration actions"
+                    render={<Button variant="ghost" size="icon" />}
+                  >
+                    <DotsThree />
+                  </MenuTrigger>
+                  <MenuPopup align="end">
+                    <MenuItem
+                      variant="destructive"
+                      onClick={() => setDeleting(true)}
+                    >
+                      <Trash />
+                      Delete configuration
+                    </MenuItem>
+                  </MenuPopup>
+                </Menu>
+              )}
           </>
         }
       />
@@ -506,7 +525,7 @@ export function SourceDocument({
         </Panel>
       )}
       {canEdit && (
-        <Panel>
+        <div className={styles.configurationForm}>
           {capabilitiesOnly ? (
             <AgentFields
               source={draft!.content}
@@ -536,7 +555,7 @@ export function SourceDocument({
               onChange={(content) => update({ ...draft!, content })}
             />
           </details>
-        </Panel>
+        </div>
       )}
       {source.data?.content_available && !writable && (
         <Panel>

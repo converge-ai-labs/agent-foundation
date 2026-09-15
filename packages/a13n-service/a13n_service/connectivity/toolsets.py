@@ -27,6 +27,10 @@ def source_key(kind: str, identifier: str) -> str:
     return f"{kind}_{hashlib.sha256(identifier.encode()).hexdigest()[:16]}"
 
 
+def connection_source_key(connection_id: str) -> str:
+    return source_key("connection", connection_id)
+
+
 def portable_tool_name(name: str) -> str:
     stem = re.sub(r"[^a-zA-Z0-9_-]", "_", name)[:20]
     return f"{stem}_{hashlib.sha256(name.encode()).hexdigest()[:16]}"

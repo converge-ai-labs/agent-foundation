@@ -1,9 +1,11 @@
-"""Native Search Provider values and lossless Agent search configuration."""
+"""Native Web Provider values and lossless Agent Web configuration."""
 
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, Secret
+
+type WebProviderCredential = Secret[dict[str, JsonValue]]
 
 
 class Resource(BaseModel):
@@ -11,29 +13,64 @@ class Resource(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
-class SearchSelection(BaseModel):
+class SearchToolConfiguration(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
-    provider_id: str
+    provider_id: str | None = None
     max_results: int = Field(default=5, ge=1, le=10)
-    include_domains: list[str] = Field(default_factory=list, max_length=20)
+    allow_domains: list[str] = Field(default_factory=list, max_length=256)
+    deny_domains: list[str] = Field(default_factory=list, max_length=256)
+
+
+class ScrapeToolConfiguration(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+    provider_id: str | None = None
+    max_content_bytes: int = Field(default=512 * 1024, ge=1, le=4 * 1024 * 1024)
+    allow_domains: list[str] = Field(default_factory=list, max_length=256)
+    deny_domains: list[str] = Field(default_factory=list, max_length=256)
+
+
+class FetchToolConfiguration(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+    max_content_bytes: int = Field(default=256 * 1024, ge=1, le=256 * 1024)
+    allow_domains: list[str] = Field(default_factory=list, max_length=256)
+    deny_domains: list[str] = Field(default_factory=list, max_length=256)
+
+
+class DownloadToolConfiguration(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+    allow_domains: list[str] = Field(default_factory=list, max_length=256)
+    deny_domains: list[str] = Field(default_factory=list, max_length=256)
+
+
+class ToolSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+    enabled: bool = True
+    permission: Literal["inherit", "allow", "ask", "deny", "review"] = "inherit"
+    config: dict[str, JsonValue] = Field(default_factory=dict)
+
+
+class ToolsetSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+    enabled: bool = True
+    config: dict[str, JsonValue] = Field(default_factory=dict)
+    tools: dict[str, ToolSelection] = Field(default_factory=dict)
 
 
 class AgentConfig(BaseModel):
-    """Lossless Agent configuration; non-search fields remain Service-owned JSON.
+    """Lossless Agent configuration with typed built-in Toolset selections.
 
-    Other Agent fields are preserved verbatim and validated by Service. This SDK
-    currently supplies typed validation for the search surface only.
+    Other Agent fields are preserved verbatim and validated by Service.
     """
 
     model_config = ConfigDict(extra="allow")
-    search: SearchSelection | None = None
+    toolsets: dict[Literal["files", "shell", "web", "assets"], ToolsetSelection] = Field(default_factory=dict)
 
     def to_wire(self) -> dict[str, JsonValue]:
         return self.model_dump(mode="json", exclude_unset=True)
 
 
 class AgentRunOverride(AgentConfig):
-    """Omitted search inherits; explicit None disables; an object replaces."""
+    """Each submitted Toolset entry replaces that complete inherited entry."""
 
 
 class PrincipalRef(Resource):
@@ -41,7 +78,7 @@ class PrincipalRef(Resource):
     principal_id: str
 
 
-class SearchProvider(Resource):
+class WebProvider(Resource):
     id: str
     organization_id: str
     workspace_id: str | None
@@ -56,23 +93,25 @@ class SearchProvider(Resource):
     updated_by: PrincipalRef
 
 
-class SearchProviderDefinition(Resource):
+class WebProviderDefinition(Resource):
     type: str
     display_name: str
     configuration_schema: dict[str, JsonValue]
     credential_schema: dict[str, JsonValue]
     credential_required: bool = True
     setup_url: str
+    operations: list[Literal["search", "scrape"]]
+    supports_restricted_scrape: bool = False
 
 
-class SearchProviderReference(Resource):
+class WebProviderReference(Resource):
     agent_id: str
     agent_revision_id: str
     version: int
     is_current: bool
 
 
-class SearchProviderTestResult(Resource):
+class WebProviderTestResult(Resource):
     success: bool
     code: str | None
     checked_at: datetime
@@ -89,18 +128,18 @@ class Representation[T](Resource):
     request_id: str | None
 
 
-class CreateSearchProviderRequest(BaseModel):
+class CreateWebProviderRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
-    type: Literal["brave", "exa"]
+    type: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
     name: str
-    credential: SecretStr = Field(repr=False)
+    credential: WebProviderCredential = Field(repr=False)
     configuration: dict[str, JsonValue] = Field(default_factory=dict)
     enabled: bool = True
 
 
-class UpdateSearchProviderRequest(BaseModel):
+class UpdateWebProviderRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     name: str | None = None
     configuration: dict[str, JsonValue] | None = None
     enabled: bool | None = None
-    credential: SecretStr | None = Field(default=None, repr=False)
+    credential: WebProviderCredential | None = Field(default=None, repr=False)

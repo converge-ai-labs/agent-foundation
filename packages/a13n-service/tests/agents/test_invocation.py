@@ -292,11 +292,11 @@ async def test_run_acceptance_uses_latest_model_without_revising_agent(
     ("override", "reason"),
     [
         (
-            {"connection_tools": [{"connection_id": "cconn_1234567890abcdef"}]},
+            {"connection_tools": [{"connection_id": "cconn_1234567890abcdef", "permission": "allow"}]},
             "connection_unavailable",
         ),
         (
-            {"connection_tools": [{"connection_id": "mcpc_1234567890abcdef"}]},
+            {"connection_tools": [{"connection_id": "mcpc_1234567890abcdef", "permission": "allow"}]},
             "connection_unavailable",
         ),
     ],
@@ -559,18 +559,23 @@ async def test_parent_acceptance_freezes_child_model_defaults_and_detects_child_
     assert accepted_child.effective_config.resolved_model.settings["max_tokens"] == 321
 
 
-def test_permission_and_reviewer_overrides_inherit_replace_and_clear() -> None:
+def test_toolset_and_reviewer_overrides_inherit_replace_and_clear() -> None:
     from a13n_service.agents.domain import AgentConfig
 
     base = AgentConfig.model_validate(
         {
             **agent_config().model_dump(),
-            "permissions": {"default": "deny"},
+            "toolsets": {
+                "shell": {
+                    "enabled": True,
+                    "tools": {"exec": {"permission": "review"}},
+                }
+            },
             "reviewer": {"model": MODEL_ID, "instruction": "Review writes."},
         }
     )
     inherited = merge_agent_run_override(base, AgentRunOverride(instructions="Changed task"))
-    assert inherited.permissions == base.permissions and inherited.reviewer == base.reviewer
+    assert inherited.toolsets == base.toolsets and inherited.reviewer == base.reviewer
     assert inherited.reviewer.risk_threshold == "extra_high"
     assert inherited.reviewer.on_flagged == "deny"
     changed = merge_agent_run_override(
@@ -588,12 +593,17 @@ def test_permission_and_reviewer_overrides_inherit_replace_and_clear() -> None:
     assert changed.reviewer.on_flagged == "approval_required"
     assert changed.reviewer.rules["environment.shell_exec"].risk_threshold == "high"
     assert changed.reviewer.instruction is None
-    cleared = merge_agent_run_override(base, AgentRunOverride(permissions=None, reviewer=None))
-    assert cleared.permissions is None and cleared.reviewer is None
+    cleared = merge_agent_run_override(base, AgentRunOverride(reviewer=None))
+    assert cleared.reviewer is None
     replaced = merge_agent_run_override(
-        base, AgentRunOverride.model_validate({"permissions": {"rules": {"web.search": "review"}}})
+        base,
+        AgentRunOverride.model_validate(
+            {"toolsets": {"shell": {"enabled": False, "tools": {"exec": {"permission": "deny"}}}}}
+        ),
     )
-    assert replaced.permissions.default == "inherit" and replaced.permissions.rules == {"web.search": "review"}
+    assert not replaced.toolsets["shell"].enabled
+    assert replaced.toolsets["shell"].tools["exec"].permission == "deny"
+    assert replaced.toolsets["shell"].tools["wait"].permission == "inherit"
 
 
 @pytest.mark.anyio
@@ -611,7 +621,12 @@ async def test_permissions_and_managed_reviewer_survive_acceptance_and_reconstru
     config = AgentConfig.model_validate(
         {
             **agent_config().model_dump(),
-            "permissions": {"rules": {"web.search": "review"}},
+            "toolsets": {
+                "files": {
+                    "enabled": True,
+                    "tools": {"view": {"permission": "review"}},
+                }
+            },
             "reviewer": {
                 "model": MODEL_ID,
                 "instruction": "Review writes.",
@@ -632,7 +647,7 @@ async def test_permissions_and_managed_reviewer_survive_acceptance_and_reconstru
     async with transaction(agent_sessions) as session:
         frozen = await agent_invocation_resolver.freezing.freeze_in_transaction(session, prepared=prepared)
     effective = EffectiveAgentConfig.model_validate_json(frozen.effective_config.model_dump_json())
-    assert effective.permissions == config.permissions and effective.reviewer == config.reviewer
+    assert effective.toolsets == config.toolsets and effective.reviewer == config.reviewer
     assert effective.resolved_reviewer_model is not None
     assert effective.resolved_reviewer_model.execution.model_id == MODEL_ID
     assert effective.resolved_reviewer_model.execution.base_model == "openai:gpt-5.6-terra"
@@ -649,10 +664,9 @@ async def test_permissions_and_managed_reviewer_survive_acceptance_and_reconstru
         subagent_capability=SubagentCapability(),
         prepared_plugins=PreparedAgentPlugins(plugins=()),
     )
-    assert any(isinstance(capability, ToolPermissionsCapability) for capability in definition.capabilities)
-    review = next(
+    permissions = next(
         capability for capability in definition.capabilities if isinstance(capability, ToolPermissionsCapability)
     )
-    assert review.policy.risk_threshold == "extra_high"
-    assert review.policy.on_flagged == "approval_required"
-    assert review.policy.rules["environment.shell_exec"].risk_threshold == "high"
+    assert permissions.policy.risk_threshold == "extra_high"
+    assert permissions.policy.on_flagged == "approval_required"
+    assert permissions.policy.rules["environment.shell_exec"].risk_threshold == "high"

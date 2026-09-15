@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 
 import pytest
 from a13n_harness import SafeFailure
+from a13n_service.agents.domain import EffectiveAgentConfig
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
@@ -35,6 +36,7 @@ from a13n_service.interactions.domain import (
     ThreadOriginKind,
     ThreadRole,
 )
+from a13n_service.interactions.harness_results import AttemptDisposition
 from a13n_service.interactions.initialization import RunStateSeed, initialize_start_state
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord, ThreadRecord
 from a13n_service.interactions.objects import RunObjectIntegrityError, RunPayloadStore, RunStateStore
@@ -47,6 +49,7 @@ from a13n_service.interactions.state import (
     RunCheckpoint,
     RunPayloadEnvelope,
 )
+from a13n_service.interactions.terminal_committer import DatabaseAttemptCommitter
 from a13n_service.lifecycle import LifecycleEventRecord
 from a13n_service.storage import ObjectStore, short_session
 from anyio import Event, create_task_group, fail_after
@@ -384,6 +387,60 @@ async def test_retryable_failure_backoff_and_stale_authority_are_enforced(
         assert (current.attempts_started, current.attempts_charged) == (2, 2)
 
 
+@pytest.mark.parametrize(
+    ("failure_code", "deadline_seconds", "retries"),
+    [
+        ("skill_materialization_stale", None, True),
+        ("skill_materialization_unavailable", None, True),
+        ("skill_materialization_invalid", None, False),
+        ("skill_materialization_stale", 3, False),
+    ],
+)
+async def test_skill_failure_recovery_respects_budget_and_fencing(
+    interaction_sessions: async_sessionmaker[AsyncSession],
+    interaction_object_store: ObjectStore,
+    failure_code: str,
+    deadline_seconds: int | None,
+    retries: bool,
+) -> None:
+    _, run, _ = await _accept_root(
+        interaction_sessions,
+        interaction_object_store,
+        max_attempts=2,
+        execution_deadline_at=NOW + timedelta(seconds=deadline_seconds) if deadline_seconds else None,
+    )
+    now = NOW + timedelta(seconds=1)
+    scheduler = AttemptScheduler(interaction_sessions, clock=lambda: now, lifecycle=test_lifecycle_writer())
+    execution = AttemptExecutionService(interaction_sessions, clock=lambda: now, lifecycle=test_lifecycle_writer())
+    outcomes = RunOutcomeService(
+        interaction_sessions, RunPayloadStore(interaction_object_store), lifecycle=test_lifecycle_writer()
+    )
+    committer = DatabaseAttemptCommitter(interaction_sessions, outcomes, execution)
+    claim = await scheduler.claim(run.id, _worker())
+    assert isinstance(claim, ClaimedAttempt)
+    now += timedelta(seconds=1)
+    failure = SafeFailure(code=failure_code, message="Skill preparation failed.")
+    result = await committer.commit_failure(_authority(claim), failure)
+    assert result.disposition is (AttemptDisposition.retrying if retries else AttemptDisposition.failed)
+    if retries:
+        now += timedelta(seconds=2)
+        replacement = await scheduler.claim(run.id, _worker(worker_id="worker-2"))
+        assert isinstance(replacement, ClaimedAttempt)
+        assert replacement.attempt.replaces_run_attempt_id == claim.attempt.id
+        with pytest.raises(AttemptAuthorityError):
+            await committer.commit_failure(_authority(claim), failure)
+        await execution.validate(_authority(replacement))
+        result = await committer.commit_failure(_authority(replacement), failure)
+        assert result.disposition is AttemptDisposition.failed
+    async with short_session(interaction_sessions) as database:
+        current = await database.get(RunRecord, run.id)
+        assert current is not None
+        assert current.status == "failed"
+        assert current.current_run_attempt_id is None
+        assert current.attempts_started == current.attempts_charged == (2 if retries else 1)
+        assert current.failure_json["code"] == failure_code
+
+
 async def test_zero_execution_budget_seals_without_creating_an_attempt(
     interaction_sessions: async_sessionmaker[AsyncSession],
     interaction_object_store: ObjectStore,
@@ -643,11 +700,12 @@ async def _accept_root(
     sessions: async_sessionmaker[AsyncSession],
     objects: ObjectStore,
     *,
+    config: EffectiveAgentConfig | None = None,
     max_attempts: int = 3,
     execution_policy_version: str = "1",
     execution_deadline_at: datetime | None = None,
 ) -> tuple[RunStateStore, Run, RunCheckpoint]:
-    config = effective_agent_config()
+    config = config or effective_agent_config()
     seed = RunStateSeed(
         run_id="run_5555555555555555",
         agent_id=AGENT_ID,

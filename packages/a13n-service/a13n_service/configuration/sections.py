@@ -49,6 +49,34 @@ class Section(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
 
 
+class MemorySettings(Section):
+    provider: Literal["none", "platform", "oss"] = "none"
+    base_url: str | None = Field(default=None, min_length=1, max_length=2048)
+    api_key: SecretStr | None = Field(default=None, min_length=1, max_length=4096, repr=False)
+    timeout_seconds: float = Field(default=30, gt=0, le=300)
+
+    @model_validator(mode="after")
+    def validate_backend(self) -> Self:
+        if self.provider != "none" and self.api_key is None:
+            raise ValueError("memory.api_key is required when memory.provider is enabled")
+        if self.provider == "oss" and self.base_url is None:
+            raise ValueError("memory.base_url is required for the OSS server")
+        if self.base_url is not None:
+            from urllib.parse import urlsplit
+
+            url = urlsplit(self.base_url)
+            if (
+                url.scheme not in {"http", "https"}
+                or not url.hostname
+                or url.username
+                or url.password
+                or url.query
+                or url.fragment
+            ):
+                raise ValueError("memory.base_url must be an HTTP(S) URL without credentials, query, or fragment")
+        return self
+
+
 class ObservabilityQuerySettings(Section):
     logfire_base_url: str | None = Field(default=None, min_length=1, max_length=2048)
     logfire_read_token: SecretStr | None = Field(default=None, min_length=1, max_length=4096, repr=False)
@@ -96,6 +124,10 @@ class PluginsSettings(Section):
     keys: tuple[PluginKey, ...] = Field(default=(), max_length=128)
 
 
+class ProviderPluginsSettings(Section):
+    enabled: tuple[str, ...] = Field(default=(), max_length=128)
+
+
 class WorkerSettings(Section):
     concurrency: int = Field(default=8, ge=1, le=1024)
     poll_interval_seconds: float = Field(default=1, gt=0, le=60)
@@ -112,7 +144,6 @@ class SubagentsSettings(Section):
 class EnvironmentsSettings(Section):
     provider_builtins: tuple[str, ...] = ("a13n.e2b", "a13n.http-envd")
     local_providers: dict[LocalProviderType, JsonObject] = Field(default_factory=dict)
-    provider_extensions: tuple[str, ...] = ()
     maintenance_interval_seconds: float = Field(default=5, gt=0, le=300)
     operation_timeout_seconds: float = Field(default=60, gt=0, le=3600)
     max_targets_per_workspace: int = Field(default=DEFAULT_MAX_TARGETS, ge=1)

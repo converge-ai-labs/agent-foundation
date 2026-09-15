@@ -8,17 +8,19 @@ A Connection is a Workspace resource for an authorized external account or a rem
     {
       "connection_id": "conn_1234567890abcdef",
       "tools": ["search"],
+      "permission": "inherit",
       "defer_loading": false
     },
     {
       "connection_id": "conn_fedcba0987654321",
+      "permission": "inherit",
       "defer_loading": true
     }
   ]
 }
 ```
 
-Tool names are exact source names. Omit `tools` or use `null` to allow all authorized tools from that source; `[]` selects none. Each Connection can appear only once. Run overrides inherit an omitted `connection_tools` list; a supplied list replaces the whole selection, and `[]` clears it. A null list, aliases, inline endpoints, and credentials are rejected.
+Tool names are exact source names. Omit `tools` or use `null` to select all authorized tools from that source; `[]` selects none. `permission` defaults to persisted `inherit`, and `permissions` can override exact selected tool names. An effective `review` consults a matching configured reviewer; without one, the review layer adds no restriction. Each Connection can appear only once. Run overrides inherit an omitted `connection_tools` list; a supplied list replaces the whole selection, and `[]` clears it. A null list, aliases, inline endpoints, and credentials are rejected.
 
 `defer_loading` defaults to `false`, which makes selected definitions immediately visible. With `true`, the Harness exposes the group through `load_capability`. Discovery and authorization still run during preparation. Tools execute only inside an accepted Agent Run; there is no standalone connection execute endpoint.
 

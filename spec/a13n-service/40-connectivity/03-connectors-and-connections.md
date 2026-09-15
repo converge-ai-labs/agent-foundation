@@ -8,7 +8,7 @@ The external integration service owns third-party account authorization, OAuth c
 
 ## Connector Provider definitions
 
-The distribution registers trusted Connector Provider implementations explicitly. Installation alone grants no trust. Each implementation supplies one safe definition:
+The distribution registers trusted Connector Provider implementations explicitly. Built-ins and Connector registrations from deployment-selected `a13n.providers` entry points form one immutable definition catalog at startup. Installation alone grants no trust, and package loading creates no network client: each owning process later binds the selected implementation factory to its bounded Connector transport. Each implementation supplies one safe definition:
 
 ```python
 class ConnectorProviderDefinition:
@@ -154,7 +154,7 @@ Checks cannot restore an old binding while authorization is active. Publishing a
 
 ## Assignment and effective selection
 
-[Agent configuration](../28-agent-management.md#agentconfig) and narrow AccountTarget overrides use one `connection_tools` list. Each entry names `connection_id`, the source-native `tools` selection, and `defer_loading`. Omitted or null tools means all currently available authorized tools; an empty list means none. Duplicate Connection IDs are invalid, including across source kinds.
+[Agent configuration](../28-agent-management.md#agentconfig) and narrow AccountTarget overrides use one `connection_tools` list. Each entry names `connection_id`, the source-native `tools` selection, `defer_loading`, a default `permission`, and optional exact per-tool `permissions`. The default permission is persisted `inherit`; exact entries override it. Omitted or null tools means all currently available authorized tools; an empty list means none. Duplicate Connection IDs are invalid, including across source kinds.
 
 Run acceptance resolves each Connection and freezes its kind, Connection ID, authorization generation, tool scope, and deferred-loading policy. Connector selections additionally retain the resolved Provider ID. [Run persistence](../12-run-persistence.md) owns the single `connection_selections` snapshot. These are accepted authorization facts, not a catalog of discovered tool definitions.
 

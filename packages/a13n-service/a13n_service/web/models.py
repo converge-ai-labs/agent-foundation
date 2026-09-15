@@ -1,0 +1,93 @@
+"""Relational Web Provider accounts."""
+
+from __future__ import annotations
+
+from datetime import datetime
+
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    ForeignKeyConstraint,
+    Index,
+    String,
+    text,
+)
+from sqlalchemy.orm import Mapped, mapped_column
+
+from a13n_service.credentials import ResourceCredential
+from a13n_service.database import Base
+from a13n_service.iam.domain import PrincipalRef, PrincipalType
+from a13n_service.names import CASEFOLDED_NAME_MAX_LENGTH
+from a13n_service.temporal import assume_utc
+
+from .domain import WebProvider
+
+
+class WebProviderRecord(ResourceCredential[str | None], Base):
+    credential_owner_type = "web_provider"
+    __tablename__ = "web_providers"
+    __table_args__ = (
+        ForeignKeyConstraint(("organization_id",), ("organizations.id",), ondelete="CASCADE"),
+        Index(
+            "uq_web_providers_organization_normalized_name",
+            "organization_id",
+            "normalized_name",
+            unique=True,
+            postgresql_where=text("workspace_id IS NULL"),
+            sqlite_where=text("workspace_id IS NULL"),
+        ),
+        ForeignKeyConstraint(
+            ("workspace_id", "organization_id"),
+            ("workspaces.id", "workspaces.organization_id"),
+            ondelete="CASCADE",
+        ),
+        CheckConstraint("length(name) BETWEEN 1 AND 128", name="name_bounded"),
+        CheckConstraint("credential_generation >= 0", name="credential_generation_nonnegative"),
+        CheckConstraint("created_by_type IN ('user', 'service_account')", name="created_by_type_valid"),
+        CheckConstraint("updated_by_type IN ('user', 'service_account')", name="updated_by_type_valid"),
+        CheckConstraint(
+            "(ciphertext IS NULL AND nonce IS NULL AND encryption_key_id IS NULL) OR "
+            "(ciphertext IS NOT NULL AND nonce IS NOT NULL AND encryption_key_id IS NOT NULL)",
+            name="credential_material_consistent",
+        ),
+        Index("uq_web_providers_identity_scope", "id", "organization_id", unique=True),
+        Index("uq_web_providers_workspace_name", "workspace_id", "normalized_name", unique=True),
+        Index("ix_web_providers_workspace_updated", "workspace_id", "updated_at", "id"),
+    )
+
+    id: Mapped[str] = mapped_column(String(72), primary_key=True)
+    organization_id: Mapped[str] = mapped_column(String(72))
+    workspace_id: Mapped[str | None] = mapped_column(String(72))
+    type: Mapped[str] = mapped_column(String(64))
+    name: Mapped[str] = mapped_column(String(128))
+    normalized_name: Mapped[str] = mapped_column(String(CASEFOLDED_NAME_MAX_LENGTH))
+    configuration: Mapped[dict[str, object]] = mapped_column(JSON)
+    enabled: Mapped[bool] = mapped_column(Boolean)
+    created_by_type: Mapped[str] = mapped_column(String(32))
+    created_by_id: Mapped[str] = mapped_column(String(72))
+    updated_by_type: Mapped[str] = mapped_column(String(32))
+    updated_by_id: Mapped[str] = mapped_column(String(72))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+    def to_resource(self) -> WebProvider:
+        return WebProvider(
+            id=self.id,
+            organization_id=self.organization_id,
+            workspace_id=self.workspace_id,
+            type=self.type,
+            name=self.name,
+            configuration=self.configuration,
+            credential_configured=self.ciphertext is not None,
+            enabled=self.enabled,
+            created_by=_principal(self.created_by_type, self.created_by_id),
+            updated_by=_principal(self.updated_by_type, self.updated_by_id),
+            created_at=assume_utc(self.created_at),
+            updated_at=assume_utc(self.updated_at),
+        )
+
+
+def _principal(principal_type: str, principal_id: str) -> PrincipalRef:
+    return PrincipalRef(principal_type=PrincipalType(principal_type), principal_id=principal_id)

@@ -14,34 +14,33 @@ export const runSubmission: Schema["ThreadRunSubmissionRequest"] = {
   input: ordinaryInput,
 };
 
-export const searchSelection: Schema["SearchSelection"] = {
-  provider_id: "sp_test",
+export const searchSelection: Schema["ToolSelection"] = {
+  config: { provider_id: "wprov_test" },
 };
 export const searchOverrides: Schema["AgentRunOverride-Input"][] = [
   {},
-  { search: null },
-  { search: searchSelection },
+  { toolsets: null },
+  { toolsets: { web: { tools: { search: searchSelection } } } },
 ];
 export const searchableAgent: Schema["AgentConfig-Input"] = {
   ...agentConfig,
-  search: searchSelection,
+  toolsets: { web: { tools: { search: searchSelection } } },
 };
-export const searchProviderRequest: Schema["CreateSearchProviderRequest"] = {
+export const searchProviderRequest: Schema["CreateWebProviderRequest"] = {
   type: "brave",
   name: "Research",
-  credential: "test-secret",
+  credential: { api_key: "test-secret" },
 };
 // @ts-expect-error Credentials are not a readable resource field.
-export type ReadableSearchCredential = Schema["SearchProvider"]["credential"];
+export type ReadableSearchCredential = Schema["WebProvider"]["credential"];
 import type { Client } from "../src/client.js";
 
 export async function scopedHttpContract(client: Client) {
   const http = await client.workspaceHttp();
   await http.GET("/agents");
-  await http.GET("/search-providers");
-  await http.POST("/search-providers/{provider_id}/test", {
-    params: { path: { provider_id: "sprov_test" } },
-    body: {},
+  await http.GET("/web-providers");
+  await http.POST("/web-providers/{provider_id}/test", {
+    params: { path: { provider_id: "wprov_test" } },
   });
   await http.GET("/agents/{agent}", {
     params: { path: { agent: "reviewer" } },

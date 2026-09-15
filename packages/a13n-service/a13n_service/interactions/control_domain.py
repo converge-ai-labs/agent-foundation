@@ -138,6 +138,14 @@ class ApprovePendingResolution(StrictModel):
 class RejectPendingResolution(StrictModel):
     call_id: BoundedText
     action: Literal[SubmittedPendingAction.reject] = SubmittedPendingAction.reject
+    reason: Annotated[str, StringConstraints(min_length=1, max_length=2000)] | None = None
+
+    @field_validator("reason")
+    @classmethod
+    def validate_reason(cls, value: str | None) -> str | None:
+        if value is not None and (not value.strip() or "\x00" in value):
+            raise ValueError("denial reason must be nonblank text without NUL")
+        return value
 
 
 class CompletePendingResolution(StrictModel):
@@ -189,6 +197,17 @@ class AcceptedPendingResolution(StrictModel):
     kind: PendingCallKind
     outcome: PendingResolutionOutcome
     result: JsonValue | None = None
+    reason: Annotated[str, StringConstraints(min_length=1, max_length=2000)] | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+
+    @field_validator("reason")
+    @classmethod
+    def validate_reason(cls, value: str | None) -> str | None:
+        if value is not None and (not value.strip() or "\x00" in value):
+            raise ValueError("denial reason must be nonblank text without NUL")
+        return value
 
     @model_validator(mode="after")
     def outcome_matches_kind(self) -> AcceptedPendingResolution:
@@ -218,6 +237,9 @@ class AcceptedPendingResolution(StrictModel):
             and self.result is not None
         ):
             raise ValueError("accepted feedback outcome cannot carry a result")
+        if (self.outcome is PendingResolutionOutcome.reject) != (self.reason is not None):
+            if self.reason is not None:
+                raise ValueError("only rejected approval feedback can carry a denial reason")
         return self
 
 
@@ -299,6 +321,7 @@ def _normalize_resolution(
             kind=pending.kind,
             outcome=PendingResolutionOutcome(submitted.action.value),
             result=None,
+            reason=submitted.reason if isinstance(submitted, RejectPendingResolution) else None,
         )
     if isinstance(submitted, CompletePendingResolution):
         if pending.kind is not PendingCallKind.client_tool:

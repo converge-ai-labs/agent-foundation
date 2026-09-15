@@ -38,6 +38,14 @@ pub struct AgentRunOverrideInput {
     pub instructions: Option<Option<String>>,
 
     #[serde(
+        rename = "memory",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub memory: Option<Option<Box<models::MemorySelection>>>,
+
+    #[serde(
         rename = "model",
         default,
         with = "::serde_with::rust::double_option",
@@ -52,14 +60,6 @@ pub struct AgentRunOverrideInput {
         skip_serializing_if = "Option::is_none"
     )]
     pub output_spec: Option<Option<Box<models::OutputSpec>>>,
-
-    #[serde(
-        rename = "permissions",
-        default,
-        with = "::serde_with::rust::double_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub permissions: Option<Option<Box<models::ToolPermissions>>>,
 
     #[serde(
         rename = "plugins",
@@ -86,14 +86,6 @@ pub struct AgentRunOverrideInput {
     pub reviewer: Option<Option<Box<models::AgentReviewer>>>,
 
     #[serde(
-        rename = "search",
-        default,
-        with = "::serde_with::rust::double_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub search: Option<Option<Box<models::SearchSelection>>>,
-
-    #[serde(
         rename = "skills",
         default,
         with = "::serde_with::rust::double_option",
@@ -108,6 +100,14 @@ pub struct AgentRunOverrideInput {
         skip_serializing_if = "Option::is_none"
     )]
     pub subagents: Option<Option<serde_json::Value>>,
+
+    #[serde(
+        rename = "toolsets",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub toolsets: Option<Option<std::collections::HashMap<String, models::ToolsetSelection>>>,
 }
 
 impl AgentRunOverrideInput {
@@ -116,15 +116,15 @@ impl AgentRunOverrideInput {
             client_tools: None,
             connection_tools: None,
             instructions: None,
+            memory: None,
             model: None,
             output_spec: None,
-            permissions: None,
             plugins: None,
             retries: None,
             reviewer: None,
-            search: None,
             skills: None,
             subagents: None,
+            toolsets: None,
         }
     }
 }

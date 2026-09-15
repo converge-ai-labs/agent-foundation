@@ -31,7 +31,7 @@ from a13n_harness_ui.configuration import (
     ModelResource,
     canonical_digest,
 )
-from a13n_harness_ui.configuration.models import CapabilitySelection, MarkdownSubagentSelection
+from a13n_harness_ui.configuration.models import CapabilitySelection, MarkdownSubagentSelection, SidekickConfiguration
 from a13n_harness_ui.environment_profiles import (
     FULL_CONTROL_PROFILE_ID,
     built_in_environment_profile,
@@ -205,6 +205,13 @@ class AgentCompositionResolver:
             thread_configuration_version=selection.version,
             project_id=selection.project_id,
             project_roots=tuple(item.path for item in project.roots) if project is not None else (),
+            webui_sidekick=(
+                SidekickConfiguration(
+                    agent=source.document.webui.sidekick.agent, model=source.document.webui.sidekick.model
+                )
+                if source.document.webui.sidekick is not None
+                else None
+            ),
             content_plugins=tuple(
                 ResolvedContentPlugin(
                     plugin_id=item.plugin_id,
@@ -474,6 +481,16 @@ class AgentCompositionResolver:
                         if not isinstance(model_id, str) or model_id not in source.models:
                             raise self._review_model_error(source, agent, model_id=model_id)
                         model = self._model_recipe(source.models[model_id])
+                    overrides = review.get("model_settings", {})
+                    if not isinstance(overrides, dict):
+                        raise CompositionError(
+                            "Auxiliary Model settings must be an object.", code="capability_model_settings_invalid"
+                        )
+                    self._model_adapter.validate(
+                        route=model.route,
+                        settings={**model.settings, **overrides},
+                        model_cfg=model.model_configuration,
+                    )
                 self.catalog.capabilities(((item.capability, configuration),))
             except CompositionError as exc:
                 # Never drop authorization rules because optional review is misconfigured.
@@ -794,7 +811,9 @@ def _validate_auth_route(item: ModelResource) -> None:
     prefix = item.route.split(":", 1)[0]
     authentication = item.authentication
     if not isinstance(authentication, ApiKeyAuthentication) and item.model_configuration:
-        raise CompositionError("Subscription endpoints cannot be overridden.", code="model_configuration_unsupported")
+        raise CompositionError(
+            "Subscription connection configuration cannot be overridden.", code="model_configuration_unsupported"
+        )
     if isinstance(authentication, CodexSubscriptionAuthentication) and prefix != "openai-codex":
         raise CompositionError(
             "Codex subscription authentication requires an openai-codex route.", code="model_auth_invalid"

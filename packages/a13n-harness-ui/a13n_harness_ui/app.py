@@ -157,7 +157,15 @@ from a13n_harness_ui.root_execution import RootRunExecutor
 from a13n_harness_ui.root_input import detach_input
 from a13n_harness_ui.root_run import RootRunCoordinator
 from a13n_harness_ui.settings import HarnessUiSettings
-from a13n_harness_ui.setup import EnvironmentReadiness, SetupProvider, SetupStatus, preflight_environment
+from a13n_harness_ui.setup import (
+    EnvironmentReadiness,
+    SetupModelOptions,
+    SetupModelOptionsRequest,
+    SetupProvider,
+    SetupStatus,
+    preflight_environment,
+    setup_model_options,
+)
 from a13n_harness_ui.shared_drafts import DraftCommand, SharedDraft
 from a13n_harness_ui.storage import (
     AgentResourceSource,
@@ -353,6 +361,10 @@ class HarnessUiApp:
             if self._logins is None:
                 raise AppStateError("Interactive login is unavailable.", code="login_unavailable")
             return self._logins.start(request)
+
+    async def active_login(self) -> LoginStatus | None:
+        async with self._operation():
+            return self._logins.active() if self._logins is not None else None
 
     async def login_status(self, session_id: str) -> LoginStatus:
         async with self._operation():
@@ -719,6 +731,7 @@ class HarnessUiApp:
         self,
         *,
         project_id: str | None,
+        project_scope: Literal["all", "projectless", "unavailable"] = "all",
         query: str | None = None,
         include_archived: bool = False,
         cursor: str | None = None,
@@ -727,6 +740,7 @@ class HarnessUiApp:
         async with self._operation():
             return await self._terminal_projections.thread_activity(
                 project_id=project_id,
+                project_scope=project_scope,
                 query=query,
                 include_archived=include_archived,
                 cursor=cursor,
@@ -892,6 +906,7 @@ class HarnessUiApp:
         *,
         defaults: NewThreadDefaults | RootThreadDefaults | None = None,
         title: str | None = None,
+        thread_id: str | None = None,
     ) -> ThreadSummary:
         async with self._operation():
             selected = (
@@ -899,7 +914,7 @@ class HarnessUiApp:
                 if isinstance(defaults, NewThreadDefaults)
                 else defaults
             )
-            thread = await self._threads.create(defaults=selected, title=title)
+            thread = await self._threads.create(defaults=selected, title=title, thread_id=thread_id)
             await self._summary_hub.publish(kind="thread", thread_id=thread.thread_id)
             return await self._projections.get_thread(thread.thread_id)
 
@@ -1755,8 +1770,19 @@ class HarnessUiApp:
             current = await self._configurations.current()
             defaults = None if current is None else current.document.defaults
             path = self._require_configuration_path()
+
+            def untouched() -> bool:
+                return not path.exists() and not any(
+                    any((path.parent / directory).glob("**/*.*"))
+                    for directory in ("agents", "models", "projects", "extensions", "mcp", "subagents")
+                )
+
             return SetupStatus(
                 needed=current is None or not current.agents or defaults is None or defaults.agent is None,
+                fresh=(current is None or not (current.agents or current.models or current.projects))
+                and self._candidate_error is None
+                and await to_thread.run_sync(untouched),
+                draft_scope=hashlib.sha256(f"{path.resolve()}\0{self._store.layout.root}".encode()).hexdigest()[:24],
                 configuration_path=str(path),
                 suggested_project_path=str(Path.cwd()),
                 providers=tuple(providers),
@@ -1772,6 +1798,10 @@ class HarnessUiApp:
                 else defaults.environment_profile,
                 diagnostic=None if self._candidate_error is None else str(self._candidate_error),
             )
+
+    async def setup_model_options(self, request: SetupModelOptionsRequest) -> SetupModelOptions:
+        async with self._operation():
+            return setup_model_options(request)
 
     async def preview_setup(self, selection: SetupSelection) -> SetupPreview:
         async with self._operation(), self._configuration_lock:
@@ -2331,11 +2361,13 @@ async def open_harness_ui_app(
                     projections=projections,
                     root_runs=root_runs,
                     create_thread=app.create_thread,
+                    configurations=configurations,
                 )
                 root_executor.set_root_capability_factory(
-                    lambda thread_id: ThreadCollaborationCapability(
+                    lambda composition: ThreadCollaborationCapability(
                         controller=thread_tools,
-                        source_thread_id=thread_id,
+                        source_thread_id=composition.thread_id,
+                        composition=composition,
                     )
                 )
             try:

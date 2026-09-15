@@ -13,14 +13,17 @@
 }
 
 :root {
-  --md-text-font: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --md-code-font: ui-monospace, SFMono-Regular, Consolas, monospace;
-  --md-clipboard-icon: url("icons/copy.svg");
-  --md-clipboard-icon--copied: url("icons/check.svg");
-  --md-nav-icon--next: url("icons/chevron-right.svg");
-  --md-toc-icon: url("icons/chevron-down.svg");
+  --md-text-font: var(--a13n-font);
+  --md-code-font: var(--a13n-mono);
+  --md-code-copy-icon: url("icons/copy.svg");
+  --md-nav-icon--next: url("icons/caret-right.svg");
+  --md-toc-icon: url("icons/caret-down.svg");
+  --md-search-result-icon: url("icons/file-magnifying-glass.svg");
+  --md-details-icon: url("icons/caret-right.svg");
 }
 
+/* Shared aliases resolve on :root; Material stores the palette on body. */
+:root:has(> body[data-md-color-scheme="default"]),
 [data-md-color-scheme="default"] {
   color-scheme: light;
   --background: #fff;
@@ -35,10 +38,14 @@
   --sidebar: #fafafa;
   --success: #10b981;
   --destructive-foreground: #b91c1c;
+  --info-foreground: #1d4ed8;
+  --success-foreground: #047857;
+  --warning-foreground: #b45309;
   --docs-link: #3730a3;
   --md-code-hl-color: rgb(0 0 0 / 4%);
 }
 
+:root:has(> body[data-md-color-scheme="slate"]),
 [data-md-color-scheme="slate"] {
   color-scheme: dark;
   --background: color-mix(in srgb, #0a0a0a 95%, #fff);
@@ -53,6 +60,9 @@
   --sidebar: color-mix(in srgb, #0a0a0a 97%, #fff);
   --success: #10b981;
   --destructive-foreground: #f87171;
+  --info-foreground: #60a5fa;
+  --success-foreground: #34d399;
+  --warning-foreground: #fbbf24;
   --docs-link: #c7d2fe;
   --md-code-hl-color: rgb(255 255 255 / 4%);
 }
@@ -75,6 +85,9 @@
   --md-typeset-color: var(--foreground);
   --md-typeset-a-color: var(--docs-link);
   --md-typeset-table-color: var(--border);
+  --md-typeset-table-color--light: var(--muted);
+  --md-admonition-bg-color: var(--card);
+  --md-admonition-fg-color: var(--foreground);
   --md-code-bg-color: var(--card);
   --md-code-fg-color: var(--foreground);
   --md-code-hl-generic-color: var(--foreground);
@@ -88,7 +101,7 @@
   --md-mermaid-node-fg-color: var(--ring);
   --md-mermaid-label-fg-color: var(--foreground);
   --md-mermaid-edge-color: var(--muted-foreground);
-  --md-mermaid-edge-label-bg-color: var(--background);
+  --md-mermaid-label-bg-color: var(--background);
 }
 
 body {
@@ -97,7 +110,7 @@ body {
 }
 
 .md-grid {
-  max-width: 76rem;
+  max-width: 66rem;
 }
 
 .md-header,
@@ -131,9 +144,10 @@ body {
   display: inline-flex;
 }
 
-.md-logo img {
-  width: 1.4rem;
-  height: 1.4rem;
+.md-header__button.md-logo img,
+.md-nav__title .md-nav__button.md-logo img {
+  width: 1.2rem;
+  height: 1.2rem;
 }
 
 .a13n-wordmark {
@@ -149,11 +163,6 @@ body {
 .md-icon svg {
   width: 1.05rem;
   height: 1.05rem;
-}
-
-/* Material's filled-icon default must not fill Lucide's outline paths. */
-.md-icon svg[stroke] {
-  fill: none;
 }
 
 .md-tabs__link {
@@ -195,6 +204,31 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
+.md-search-result .md-typeset {
+  font-size: 0.7rem;
+  color: var(--a13n-text-supporting);
+}
+
+.md-search-result .md-typeset :is(h1, h2) {
+  font-weight: 500;
+}
+
+.md-search .md-search__form:hover {
+  background: var(--accent);
+}
+
+@media (min-width: 60em) {
+  [data-md-toggle="search"]:checked ~ .md-header .md-search__form {
+    background: var(--card);
+    border-radius: 0.5rem 0.5rem 0 0;
+    box-shadow: none;
+  }
+
+  .md-search .md-search__output {
+    border-radius: 0 0 0.5rem 0.5rem;
+  }
+}
+
 .md-sidebar--primary .md-nav__link {
   margin: 0;
   padding: 0.35rem 0.55rem;
@@ -203,8 +237,7 @@ body {
 }
 
 .md-sidebar--primary .md-nav__link:hover,
-.md-sidebar--primary .md-nav__link--active,
-.md-sidebar--primary .md-nav__item--active > .md-nav__link {
+.md-sidebar--primary .md-nav__link--active {
   color: var(--foreground);
   background: var(--accent);
 }
@@ -212,7 +245,7 @@ body {
 .md-nav__item--section > .md-nav__link,
 .md-nav__title {
   color: var(--muted-foreground);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .md-nav__title {
@@ -229,33 +262,40 @@ body {
   color: var(--foreground);
 }
 
+.md-main__inner {
+  margin-top: 1.25rem;
+}
+
 .md-content__inner {
-  margin: 0 1.4rem 2rem;
-  padding-top: 0.7rem;
+  margin: 0 1.2rem 2rem;
+  padding-top: 0.3rem;
 }
 
 .md-typeset {
-  font-size: 0.82rem;
-  line-height: 1.75;
+  font-size: 0.8rem;
+  line-height: 1.7;
 }
 
 .md-typeset h1,
 .md-typeset h2,
-.md-typeset h3 {
+.md-typeset h3,
+.md-typeset h4,
+.md-typeset h5,
+.md-typeset h6 {
   color: var(--foreground);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: -0.025em;
   line-height: 1.3;
 }
 
 .md-typeset h1 {
-  margin-bottom: 0.8em;
-  font-size: 2em;
+  margin-bottom: 0.85em;
+  font-size: 1.9em;
 }
 
 .md-typeset h2 {
-  margin-top: 2.2em;
-  font-size: 1.45em;
+  margin-top: 1.8em;
+  font-size: 1.4em;
 }
 
 .md-typeset h3 {
@@ -282,18 +322,20 @@ body {
 }
 
 .md-typeset pre > code {
-  padding: 1rem;
+  padding: 0.8rem 2.2rem 0.8rem 0.8rem;
   background: var(--card);
   border-radius: 0.5rem;
   line-height: 1.65;
 }
 
-.md-clipboard {
+.md-typeset .md-code__button {
   color: var(--muted-foreground);
+  border-radius: 0.25rem;
 }
 
-.md-clipboard:hover {
+.md-typeset .md-code__button:hover {
   color: var(--foreground);
+  background: var(--accent);
 }
 
 .md-typeset blockquote {
@@ -309,6 +351,10 @@ body {
   border-radius: 0.5rem;
 }
 
+.md-typeset .md-typeset__table {
+  display: block;
+}
+
 .md-typeset table:not([class]) {
   display: table;
   width: 100%;
@@ -321,25 +367,58 @@ body {
 .md-typeset table:not([class]) th {
   background: var(--muted);
   min-width: 5rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .md-typeset table:not([class]) :is(th, td) {
   padding: 0.7em 0.9em;
+  vertical-align: top;
 }
 
-.md-typeset .admonition,
-.md-typeset details {
-  background: var(--card);
+/* Override Material's per-kind borders and title fills as one quiet surface. */
+.md-typeset :is(.admonition, details) {
+  --docs-callout-tone: var(--info-foreground);
+}
+
+.md-typeset :is(.tip, .success, .check, .done) {
+  --docs-callout-tone: var(--success-foreground);
+}
+
+.md-typeset :is(.warning, .caution, .attention) {
+  --docs-callout-tone: var(--warning-foreground);
+}
+
+.md-typeset :is(.danger, .error, .failure, .fail, .missing, .bug) {
+  --docs-callout-tone: var(--destructive-foreground);
+}
+
+.md-typeset :is(.admonition, details)[class] {
+  background: color-mix(
+    in srgb,
+    var(--docs-callout-tone) 5%,
+    var(--background)
+  );
   border: 1px solid var(--border);
-  border-left-width: 3px;
   border-radius: 0.5rem;
   box-shadow: none;
   font-size: 0.95em;
 }
 
-.md-typeset :is(.admonition-title, summary) {
-  background: var(--muted);
+.md-typeset :is(.admonition, details) > :is(.admonition-title, summary) {
+  background: transparent;
+  color: var(--docs-callout-tone);
+  font-weight: 500;
+}
+
+.md-typeset
+  :is(.admonition, details)
+  > :is(.admonition-title, summary)::before {
+  background-color: var(--docs-callout-tone);
+}
+
+.md-typeset .tabbed-labels > label {
+  font-size: 0.75rem;
+  font-weight: 500;
 }
 
 .md-typeset .mermaid {
@@ -351,17 +430,45 @@ body {
   text-align: center;
 }
 
-.md-typeset .mermaid svg {
-  height: auto;
-}
-
 .md-footer {
   border-top: 1px solid var(--border);
 }
 
-:where(a, button, input, summary):focus-visible {
+/* Outrank Material's outline resets, including its focus-visible polyfill. */
+body :is(a, button, input, summary, [tabindex]):focus-visible,
+.md-header .md-option:focus-visible + label {
   outline: 2px solid var(--ring);
   outline-offset: 3px;
+}
+
+.md-search .md-search__input:focus-visible {
+  outline: none;
+}
+
+.md-search__form:focus-within {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+:is(
+  .md-sidebar__scrollwrap,
+  .md-search__scrollwrap,
+  .md-typeset__scrollwrap,
+  .md-typeset pre > code,
+  .md-typeset .mermaid
+) {
+  scrollbar-width: thin;
+  scrollbar-color: var(--a13n-scrollbar-thumb) transparent;
+}
+
+:is(
+  .md-sidebar__scrollwrap,
+  .md-search__scrollwrap,
+  .md-typeset__scrollwrap,
+  .md-typeset pre > code,
+  .md-typeset .mermaid
+):hover {
+  scrollbar-color: var(--a13n-scrollbar-thumb-hover) transparent;
 }
 
 @media (max-width: 76.234375em) {
@@ -369,9 +476,16 @@ body {
     background: var(--background);
   }
 
-  .md-nav--primary .md-nav__title {
+  .md-nav--primary .md-nav__title,
+  .md-nav--primary .md-nav__title[for="__drawer"] {
     background: var(--sidebar);
     color: var(--foreground);
+    font-weight: 500;
+  }
+
+  .md-sidebar--primary .md-nav__link {
+    min-height: 2.2rem;
+    align-items: center;
   }
 
   .md-nav--primary .md-nav__title .md-logo {
@@ -384,12 +498,42 @@ body {
     margin: 0 0.8rem 1.5rem;
   }
 
-  .md-typeset {
-    font-size: 0.8rem;
+  [dir="ltr"] .md-header__title {
+    margin-left: 0.3rem;
   }
 
-  .md-search__form {
+  [data-md-toggle="search"]:checked ~ .md-header .md-search__form {
+    border: 0;
+    border-bottom: 1px solid var(--border);
     border-radius: 0;
+  }
+
+  .md-search__form:focus-within {
+    outline-offset: -2px;
+  }
+}
+
+/* Material otherwise makes code and tables full-bleed below 720px. */
+@media (max-width: 44.984375em) {
+  .md-header__button[for="__drawer"] {
+    order: -1;
+  }
+
+  .md-header__topic:first-child {
+    visibility: hidden;
+  }
+
+  .md-typeset > .highlight,
+  .md-typeset .md-typeset__scrollwrap {
+    margin-inline: 0;
+  }
+
+  .md-typeset .md-typeset__table {
+    padding-inline: 0;
+  }
+
+  .md-typeset .highlight > pre > code {
+    border-radius: 0.5rem;
   }
 }
 

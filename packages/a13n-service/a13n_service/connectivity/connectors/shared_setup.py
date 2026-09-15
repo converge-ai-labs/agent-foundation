@@ -6,13 +6,22 @@ There is intentionally no expiry that could turn an uncertain POST into a retry.
 """
 
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.storage import transaction
+from a13n_service.ids import new_object_id
+from a13n_service.storage import is_unique_conflict, transaction
 
 from .contracts import ConnectorProviderError
 from .domain import ConnectorProviderStatus
-from .models import ConnectorProviderRecord
+from .models import ConnectorProviderRecord, ConnectorSharedSetupClaimRecord
+
+_CLAIM_CONSTRAINT = "uq_connector_shared_setup_claims_scope"
+_CLAIM_SQLITE_COLUMNS = (
+    "connector_shared_setup_claims.provider_id, "
+    "connector_shared_setup_claims.connector_key, "
+    "connector_shared_setup_claims.configuration_key"
+)
 
 
 async def reserve_shared_setup(
@@ -23,18 +32,27 @@ async def reserve_shared_setup(
     credential_generation: int,
     connector_key: str,
 ) -> None:
-    async with transaction(sessions) as session:
-        record = await session.scalar(
-            select(ConnectorProviderRecord).where(ConnectorProviderRecord.id == provider_id).with_for_update()
-        )
-        if (
-            record is None
-            or record.status != ConnectorProviderStatus.active.value
-            or record.credential_generation != credential_generation
-        ):
-            raise ConnectorProviderError("connector_provider_changed")
-        claims = record.setup_claims_json
-        key = f"{connector_key}:{configuration_key}"
-        if key in claims:
-            raise ConnectorProviderError("shared_setup_outcome_unknown")
-        record.setup_claims_json = {**claims, key: credential_generation}
+    try:
+        async with transaction(sessions) as session:
+            record = await session.scalar(
+                select(ConnectorProviderRecord).where(ConnectorProviderRecord.id == provider_id).with_for_update()
+            )
+            if (
+                record is None
+                or record.status != ConnectorProviderStatus.active.value
+                or record.credential_generation != credential_generation
+            ):
+                raise ConnectorProviderError("connector_provider_changed")
+            session.add(
+                ConnectorSharedSetupClaimRecord(
+                    id=new_object_id("csc"),
+                    provider_id=provider_id,
+                    connector_key=connector_key,
+                    configuration_key=configuration_key,
+                    credential_generation=credential_generation,
+                )
+            )
+    except IntegrityError as error:
+        if is_unique_conflict(error, constraint=_CLAIM_CONSTRAINT, sqlite_columns=_CLAIM_SQLITE_COLUMNS):
+            raise ConnectorProviderError("shared_setup_outcome_unknown") from error
+        raise

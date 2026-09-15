@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Annotated
 
+from a13n_harness.model_affinity import SessionAffinityHeader
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 
@@ -20,6 +21,13 @@ class ProviderConfiguration(BaseModel):
 
     base_url: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=2048)] | None = Field(
         default=None, title="Base URL", description="Leave empty to use the Provider's default endpoint."
+    )
+
+    session_affinity_header: SessionAffinityHeader | None = Field(
+        default=None,
+        title="Session affinity header",
+        description="Optional gateway header name. Its value is a stable UUID derived from the current Thread ID. "
+        "Leave empty to disable. The gateway must be configured to route by this header.",
     )
 
     @property

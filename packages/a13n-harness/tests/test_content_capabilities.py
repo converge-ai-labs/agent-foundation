@@ -120,7 +120,7 @@ class _WebClient:
         return self.responses.pop(0)
 
 
-class _SearchProvider:
+class _WebProvider:
     def __init__(
         self,
         usage: tuple[ProviderUsage, ...] = (),
@@ -282,11 +282,11 @@ async def test_content_toolsets_compose_directly_over_natural_provider_ports(tmp
         web = WebToolset(
             client=_WebClient(()),
             policy=_WebPolicy(),
-            search_provider=_SearchProvider(),
+            search_provider=_WebProvider(),
             scrape_provider=_ScrapeProvider(
                 WebScrapeResult(
-                    markdown="# Page",
-                    final_url="https://example.com/page",
+                    content="# Page",
+                    source_url="https://example.com/page",
                     canonical_url="https://example.com/page",
                 )
             ),
@@ -733,11 +733,11 @@ async def test_web_capability_composes_search_and_scrape_providers() -> None:
         cost=Decimal("0.003"),
         currency="USD",
     )
-    search = _SearchProvider((usage,))
+    search = _WebProvider((usage,))
     scrape = _ScrapeProvider(
         WebScrapeResult(
-            markdown="# Page",
-            final_url="https://example.com/final?source=provider",
+            content="# Page",
+            source_url="https://example.com/final?source=provider",
             canonical_url="https://example.com/final?source=provider",
         )
     )
@@ -783,7 +783,7 @@ async def test_web_capability_composes_search_and_scrape_providers() -> None:
     ["apikey", "access_key", "auth", "client_secret", "sig", "X-Amz-Signature"],
 )
 async def test_web_search_strips_credential_aliases_from_model_history(credential_key: str) -> None:
-    search = _SearchProvider(credential_key=credential_key)
+    search = _WebProvider(credential_key=credential_key)
     seen: list[list[ModelMessage]] = []
     executable = HarnessBuilder().build(
         AgentSpec(),
@@ -827,7 +827,7 @@ def test_web_canonical_urls_fail_closed_for_credential_aliases(credential_key: s
         )
 
 
-async def test_web_fetch_rechecks_final_url_and_returns_native_binary() -> None:
+async def test_web_fetch_rechecks_final_url_and_rejects_binary_content() -> None:
     policy = _WebPolicy()
     closed = 0
 
@@ -853,7 +853,7 @@ async def test_web_fetch_rechecks_final_url_and_returns_native_binary() -> None:
         AgentSpec(),
         output_type=str,
         model=_one_tool_model("fetch", {"url": "https://example.com/image"}, seen=seen),
-        capabilities=(WebCapability(WebConfiguration(max_inline_binary_bytes=1024)),),
+        capabilities=(WebCapability(WebConfiguration()),),
     )
 
     result = await executable.run(
@@ -870,7 +870,9 @@ async def test_web_fetch_rechecks_final_url_and_returns_native_binary() -> None:
     ]
     assert client.requests[0].max_redirects == 8
     assert closed == 1
-    assert _native_binary(seen)[0].data == b"\x89PNG"
+    response = _tool_contents(seen)[0]
+    assert response["ok"] is False
+    assert response["error"]["code"] == "web_fetch_content_unsupported"
     tool_history = "\n".join(str(item) for item in _tool_contents(seen))
     assert "X-Amz-Signature" not in tool_history
     assert "secret" not in tool_history

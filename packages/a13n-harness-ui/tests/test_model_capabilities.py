@@ -135,7 +135,7 @@ async def test_all_creation_flows_persist_known_native_image_support(
     tmp_path: Path, mode, chosen_name, provider
 ) -> None:
     connection = {
-        "api": ["api", "anthropic", "", "env:TEST_KEY", "claude-sonnet-4-6", "", ""],
+        "api": ["api", "anthropic", "", "off", "env:TEST_KEY", "claude-sonnet-4-6", "", ""],
         "codex": ["codex", "later", "gpt-5.6-sol", ""],
         "grok": ["grok", "later", "grok-4.6"],
     }[provider]
@@ -185,7 +185,7 @@ async def test_all_creation_flows_persist_known_native_image_support(
 
 def test_wizard_backtracking_recomputes_media_notice_without_stale_hints() -> None:
     wizard = SetupWizard()
-    for answer in ("api", "anthropic", "", "env:TEST_KEY", "claude-sonnet-4-6", "", "", ""):
+    for answer in ("api", "anthropic", "", "off", "env:TEST_KEY", "claude-sonnet-4-6", "", "", ""):
         wizard.accept(answer)
     assert "Native media input: image." in wizard.notice()
     while wizard.question.key != "model":
@@ -197,6 +197,6 @@ def test_wizard_backtracking_recomputes_media_notice_without_stale_hints() -> No
     assert "Native media input: unknown; no native media enabled." in wizard.notice()
     while wizard.question.key != "api_provider":
         assert wizard.back()
-    for answer in ("google", "https://proxy.example/v1", "env:TEST_KEY", "gemini-2.5-pro", "", ""):
+    for answer in ("google", "https://proxy.example/v1", "off", "env:TEST_KEY", "gemini-2.5-pro", "", ""):
         wizard.accept(answer)
     assert "Native media input: audio, image, video." in wizard.notice()

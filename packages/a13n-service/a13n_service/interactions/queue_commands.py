@@ -60,7 +60,7 @@ from .command_evidence import (
     run_command_scope,
     scoped_idempotency_key,
 )
-from .command_preparation import CommandInput, validate_invocation
+from .command_preparation import CommandInput, PreparedCommandInput, validate_invocation
 from .errors import InteractionCommandError, command_not_found, idempotency_conflict, map_acceptance_error
 from .initialization import NewRunPolicy
 
@@ -73,6 +73,7 @@ class PreparedQueuedRun:
     state: RunCheckpoint
     input: AcceptedAgentInput
     validate: Callable[[AsyncSession], Awaitable[None]]
+    preparation: PreparedCommandInput
 
 
 class QueuedRunCommands:
@@ -185,52 +186,68 @@ class QueuedRunCommands:
             queued=queued,
             request_fingerprint=request_fingerprint,
         )
-        run = prepared.run
 
-        async def record_receipt(database: AsyncSession, receipt: QueuedSubmissionConsumptionReceipt) -> None:
-            # Automatic drain recovers from the queue row, not a synthetic HTTP command.
-            if stored_key is None:
-                return
-            database.add(
-                new_evidence(
-                    organization_id=run.organization_id,
-                    scope=run_command_scope(actor),
-                    identity=IdempotencyIdentity(stored_key.removeprefix("idem_"), request_fingerprint),
-                    result_kind="queue_consumption",
-                    result_ref=run.id,
-                    receipt=receipt.model_dump(mode="json"),
-                    now=self._clock(),
+        async def accept(selected: PreparedCommandInput) -> QueuedSubmissionConsumptionReceipt:
+            candidate = prepared
+            if selected is not prepared.preparation:
+                candidate = await self.prepare_queued_run(
+                    actor=actor,
+                    current=current,
+                    head=head,
+                    head_state=None if head is None else (await self._states.read_run(head)).envelope,
+                    thread=thread,
+                    queued=queued,
+                    request_fingerprint=request_fingerprint,
+                    prepared_input=selected,
                 )
-            )
+            run = candidate.run
 
-        try:
-            return await self._acceptance.consume_queued(
-                run=run,
-                state=prepared.state,
-                queued_submission_id=queued.queued_submission_id,
-                submission_digest_sha256=queued.submission_digest_sha256,
-                accepted_input=prepared.input,
-                expected_thread_version=request.expected_thread_version,
-                expected_queue_version=request.expected_queue_version,
-                expected_current_run_id=current.id,
-                expected_head_run_id=None if head is None else head.id,
-                next_head_run_id=None if head is None else head.id,
-                final_validator=prepared.validate,
-                transaction_hook=record_receipt,
-                label_overrides=queued.submission.labels,
-            )
-        except RunAcceptanceError as error:
-            if stored_key is None:
+            async def record_receipt(database: AsyncSession, receipt: QueuedSubmissionConsumptionReceipt) -> None:
+                # Automatic drain recovers from the queue row, not a synthetic HTTP command.
+                if stored_key is None:
+                    return
+                database.add(
+                    new_evidence(
+                        organization_id=run.organization_id,
+                        scope=run_command_scope(actor),
+                        identity=IdempotencyIdentity(stored_key.removeprefix("idem_"), request_fingerprint),
+                        result_kind="queue_consumption",
+                        result_ref=run.id,
+                        receipt=receipt.model_dump(mode="json"),
+                        now=self._clock(),
+                    )
+                )
+
+            try:
+                return await self._acceptance.consume_queued(
+                    run=run,
+                    state=candidate.state,
+                    queued_submission_id=queued.queued_submission_id,
+                    submission_digest_sha256=queued.submission_digest_sha256,
+                    accepted_input=candidate.input,
+                    expected_thread_version=request.expected_thread_version,
+                    expected_queue_version=request.expected_queue_version,
+                    expected_current_run_id=current.id,
+                    expected_head_run_id=None if head is None else head.id,
+                    next_head_run_id=None if head is None else head.id,
+                    final_validator=candidate.validate,
+                    transaction_hook=record_receipt,
+                    label_overrides=queued.submission.labels,
+                )
+            except RunAcceptanceError as error:
+                if stored_key is None:
+                    raise map_acceptance_error(error) from error
+                replay = await self._queued_consumption_replay(
+                    actor=actor,
+                    thread_id=thread_id,
+                    stored_key=stored_key,
+                    request_fingerprint=request_fingerprint,
+                )
+                if replay is not None:
+                    return replay
                 raise map_acceptance_error(error) from error
-            replay = await self._queued_consumption_replay(
-                actor=actor,
-                thread_id=thread_id,
-                stored_key=stored_key,
-                request_fingerprint=request_fingerprint,
-            )
-            if replay is not None:
-                return replay
-            raise map_acceptance_error(error) from error
+
+        return await self._inputs.accept_with_skill_refresh(self._invocations, prepared.preparation, accept)
 
     async def prepare_queued_run(
         self,
@@ -242,6 +259,7 @@ class QueuedRunCommands:
         thread: Thread,
         queued: QueuedSubmission,
         request_fingerprint: str,
+        prepared_input: PreparedCommandInput | None = None,
     ) -> PreparedQueuedRun:
         """Resolve the queue Principal's intent outside its final acceptance transaction."""
         retained_actor = AuthenticatedActor(
@@ -253,7 +271,7 @@ class QueuedRunCommands:
         )
         target_agent_id = queued.submission.agent_id or (head.agent_id if head is not None else current.agent_id)
         run_id = new_run_id()
-        prepared_input = await self._inputs.prepare(
+        prepared_input = prepared_input or await self._inputs.prepare(
             self._invocations,
             actor=retained_actor,
             agent_id=target_agent_id,
@@ -320,7 +338,7 @@ class QueuedRunCommands:
                 database, self._invocations, prepared=prepared_input.invocation, frozen=prepared_input.frozen
             )
 
-        return PreparedQueuedRun(run, state, prepared_input.input, validate_final)
+        return PreparedQueuedRun(run, state, prepared_input.input, validate_final, prepared_input)
 
     async def _queued_consumption_replay(
         self,

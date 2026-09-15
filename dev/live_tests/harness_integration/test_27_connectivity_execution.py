@@ -94,7 +94,7 @@ async def test_managed_connection_calls_selected_tool_and_revocation_blocks_disp
     journey, live = management, management.live
     resource = await connection(journey, kind)
     assert resource["status"] == "ready"
-    config = {"connection_tools": [{"connection_id": resource["id"], "tools": ["live_echo"]}]}
+    config = {"connection_tools": [{"connection_id": resource["id"], "tools": ["live_echo"], "permission": "allow"}]}
     agent = await journey.agent(**config)
     value = uuid4().hex
     case = await journey.case(steps=[{"tool": "live_echo", "arguments": {"value": value}}])

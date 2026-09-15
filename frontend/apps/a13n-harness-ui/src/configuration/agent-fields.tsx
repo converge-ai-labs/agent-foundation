@@ -1,5 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
-import { Button, ChoiceField, FormField, Textarea } from "a13n-ui";
+import { Button, FormField, SettingsSection, Textarea } from "a13n-ui";
+import { ResourceChoice } from "./resource-choice";
 import { useSources, useTransport } from "../transport/context";
 import { result } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
@@ -91,140 +92,149 @@ export function AgentFields({
   return (
     <>
       <ErrorNotice error={catalog.error || proxy.error} />
-      <div className={styles.stack}>
-        <strong>Capabilities</strong>
-        {capabilities.map((item, index) => (
-          <div className={styles.actions} key={index}>
-            <span>{item.capability}</span>
-            <Button
-              variant="ghost"
-              aria-label={`Remove capability ${item.capability}`}
-              onClick={() => remove("capabilities", index)}
-            >
-              Remove
-            </Button>
-          </div>
-        ))}
-        <ChoiceField
-          label="Add capability"
-          value=""
-          onValueChange={(capability) => {
-            if (capability)
-              add("capabilities", { capability, configuration: {} });
-          }}
-          options={[
-            { value: "", label: "Choose an installed capability" },
-            ...(catalog.data ?? [])
-              .filter(
-                (item) =>
-                  item.kind === "capability" &&
-                  item.configurable &&
-                  !capabilities.some(
-                    (selected) => selected.capability === item.key,
-                  ),
-              )
-              .map((item) => ({ value: item.key, label: item.key })),
-          ]}
-        />
-        <small>
-          Selected capabilities are enabled for this agent when you save. Edit
-          plugin-specific options in the configuration file below.
-        </small>
-      </div>
+      <SettingsSection title="Capabilities">
+        <div className={`${styles.stack} ${styles.fieldGroup}`}>
+          {capabilities.map((item, index) => (
+            <div className={styles.actions} key={index}>
+              <span>{item.capability}</span>
+              <Button
+                variant="ghost"
+                aria-label={`Remove capability ${item.capability}`}
+                onClick={() => remove("capabilities", index)}
+              >
+                Remove
+              </Button>
+            </div>
+          ))}
+          <ResourceChoice
+            loading={catalog.isPending}
+            label="Add capability"
+            value=""
+            onValueChange={(capability) => {
+              if (capability)
+                add("capabilities", { capability, configuration: {} });
+            }}
+            options={[
+              { value: "", label: "Choose an installed capability" },
+              ...(catalog.data ?? [])
+                .filter(
+                  (item) =>
+                    item.kind === "capability" &&
+                    item.configurable &&
+                    !capabilities.some(
+                      (selected) => selected.capability === item.key,
+                    ),
+                )
+                .map((item) => ({ value: item.key, label: item.key })),
+            ]}
+          />
+          <small>
+            Selected capabilities are enabled for this agent when you save. Edit
+            plugin-specific options in the configuration file below.
+          </small>
+        </div>
+      </SettingsSection>
       {!capabilitiesOnly && (
         <>
-          <div className={styles.stack}>
-            <strong>Child agents</strong>
-            {children.map((item, index) => (
-              <div className={styles.actions} key={index}>
-                <span>{item.agent ?? item.markdown}</span>
-                <small>
-                  {item.agent
-                    ? "Independent Agent model"
-                    : "Inherits parent model"}
-                </small>
-                <Button
-                  variant="ghost"
-                  aria-label={`Remove child ${item.agent ?? item.markdown}`}
-                  onClick={() => remove("subagents", index)}
-                >
-                  Remove
-                </Button>
-              </div>
-            ))}
-            <ChoiceField
-              label="Add child agent"
-              value=""
-              onValueChange={(child) => {
-                if (child) {
-                  const [kind, id] = child.split(":");
-                  add("subagents", { [kind]: id });
-                }
-              }}
-              options={[
-                {
-                  value: "",
-                  label: "Choose a configured Agent or Markdown subagent",
-                },
-                ...(sources.data?.sources ?? [])
-                  .filter(
-                    (item) =>
-                      item.resource_kind === "agent" ||
-                      item.resource_kind === "subagent",
-                  )
-                  .flatMap((item) =>
-                    item.resource_ids
-                      .filter(
-                        (id) =>
-                          id !== raw.id &&
-                          !children.some(
-                            (child) => (child.agent ?? child.markdown) === id,
-                          ),
-                      )
-                      .map((id) => ({
-                        value: `${item.resource_kind === "agent" ? "agent" : "markdown"}:${id}`,
-                        label: id,
-                      })),
-                  ),
-              ]}
-            />
-          </div>
-          <label className={styles.check}>
-            <input
-              type="checkbox"
-              checked={Array.isArray(raw.tools)}
-              onChange={(event) =>
-                onChange(
-                  updateDocument(
-                    source,
-                    ["tools"],
-                    event.target.checked ? [] : undefined,
-                  ),
-                )
-              }
-            />
-            Restrict tool names
-          </label>
-          {Array.isArray(raw.tools) && (
-            <FormField
-              label="Allowed tool names"
-              description="One exact name per line. An empty list allows no tools; disabling this restriction inherits the available tools."
-            >
-              <Textarea
-                rows={3}
-                value={raw.tools.join("\n")}
-                onChange={(event) =>
-                  onChange(
-                    updateDocument(
-                      source,
-                      ["tools"],
-                      event.target.value.split("\n").filter(Boolean),
+          <SettingsSection title="Child agents">
+            <div className={`${styles.stack} ${styles.fieldGroup}`}>
+              {children.map((item, index) => (
+                <div className={styles.actions} key={index}>
+                  <span>{item.agent ?? item.markdown}</span>
+                  <small>
+                    {item.agent
+                      ? "Independent Agent model"
+                      : "Inherits parent model"}
+                  </small>
+                  <Button
+                    variant="ghost"
+                    aria-label={`Remove child ${item.agent ?? item.markdown}`}
+                    onClick={() => remove("subagents", index)}
+                  >
+                    Remove
+                  </Button>
+                </div>
+              ))}
+              <ResourceChoice
+                loading={sources.isPending}
+                label="Add child agent"
+                value=""
+                onValueChange={(child) => {
+                  if (child) {
+                    const [kind, id] = child.split(":");
+                    add("subagents", { [kind]: id });
+                  }
+                }}
+                options={[
+                  {
+                    value: "",
+                    label: "Choose a configured Agent or Markdown subagent",
+                  },
+                  ...(sources.data?.sources ?? [])
+                    .filter(
+                      (item) =>
+                        item.resource_kind === "agent" ||
+                        item.resource_kind === "subagent",
+                    )
+                    .flatMap((item) =>
+                      item.resource_ids
+                        .filter(
+                          (id) =>
+                            id !== raw.id &&
+                            !children.some(
+                              (child) => (child.agent ?? child.markdown) === id,
+                            ),
+                        )
+                        .map((id) => ({
+                          value: `${item.resource_kind === "agent" ? "agent" : "markdown"}:${id}`,
+                          label: id,
+                        })),
                     ),
-                  )
-                }
+                ]}
               />
-            </FormField>
-          )}
+            </div>
+          </SettingsSection>
+          <details className={styles.details}>
+            <summary>Tool restrictions</summary>
+            <div className={styles.stack}>
+              <label className={styles.check}>
+                <input
+                  type="checkbox"
+                  checked={Array.isArray(raw.tools)}
+                  onChange={(event) =>
+                    onChange(
+                      updateDocument(
+                        source,
+                        ["tools"],
+                        event.target.checked ? [] : undefined,
+                      ),
+                    )
+                  }
+                />
+                Restrict tool names
+              </label>
+              {Array.isArray(raw.tools) && (
+                <FormField
+                  label="Allowed tool names"
+                  description="One exact name per line. An empty list allows no tools; disabling this restriction inherits the available tools."
+                >
+                  <Textarea
+                    rows={3}
+                    value={raw.tools.join("\n")}
+                    onChange={(event) =>
+                      onChange(
+                        updateDocument(
+                          source,
+                          ["tools"],
+                          event.target.value.split("\n").filter(Boolean),
+                        ),
+                      )
+                    }
+                  />
+                </FormField>
+              )}
+            </div>
+          </details>
           <details className={styles.details}>
             <summary>Saved tool groups</summary>
             <p>

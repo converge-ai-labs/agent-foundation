@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, model_validator
 from pydantic_ai import RunContext
@@ -45,6 +45,7 @@ class ClientToolDefinition(BaseModel):
     parameters_json_schema: dict[str, JsonValue]
     instruction: str | None = Field(default=None, min_length=1, max_length=MAX_CLIENT_TEXT_LENGTH)
     metadata: dict[str, JsonValue] = Field(default_factory=dict)
+    permission: Literal["inherit", "allow", "deny"] = "inherit"
 
     @field_validator("parameters_json_schema")
     @classmethod

@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 _ENV_PREFIXES = {
     "service": "",
     "plugins": "PLUGIN_",
+    "provider_plugins": "PROVIDER_PLUGIN_",
     "subagents": "SUBAGENT_",
     "environments": "ENVIRONMENT_",
     "models": "MODEL_",

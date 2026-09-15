@@ -8,7 +8,7 @@ from pydantic_ai import ToolApproved, ToolDenied
 from pydantic_ai.exceptions import ToolFailed
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 
-from .control_domain import PendingResolutionOutcome, WaitingRunFeedback
+from .control_domain import AcceptedPendingResolution, PendingResolutionOutcome, WaitingRunFeedback
 from .domain import PendingCallKind
 from .state import RunCheckpoint, WaitingOutcomeCandidate
 
@@ -44,7 +44,7 @@ def map_waiting_feedback(
     calls: dict[str, object] = {}
     for resolution in feedback.resolutions:
         if resolution.kind is PendingCallKind.approval:
-            approvals[resolution.call_id] = _approval_result(resolution.outcome)
+            approvals[resolution.call_id] = _approval_result(resolution)
         elif resolution.kind is PendingCallKind.client_tool:
             calls[resolution.call_id] = _client_tool_result(resolution.outcome, resolution.result)
         else:
@@ -59,11 +59,11 @@ def map_waiting_feedback(
     )
 
 
-def _approval_result(outcome: PendingResolutionOutcome) -> ToolApproved | ToolDenied:
-    if outcome is PendingResolutionOutcome.approve:
+def _approval_result(resolution: AcceptedPendingResolution) -> ToolApproved | ToolDenied:
+    if resolution.outcome is PendingResolutionOutcome.approve:
         return ToolApproved()
-    if outcome is PendingResolutionOutcome.reject:
-        return ToolDenied()
+    if resolution.outcome is PendingResolutionOutcome.reject:
+        return ToolDenied(resolution.reason or "Approval was denied.")
     raise WaitingFeedbackMappingError("approval feedback has an incompatible outcome")
 
 

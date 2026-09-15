@@ -19,6 +19,7 @@ export type DisplayBlock = {
   retry?: boolean;
   stopped?: boolean;
   edit?: AppliedEdit;
+  provider?: string;
   metadata?: Record<string, unknown>;
   value?: unknown;
   diagnostic?: boolean;
@@ -72,6 +73,7 @@ class RootRunChanged extends Error {}
 
 // Rendering only: history/receipt queries remain the continuation/control owners.
 export class FocusDisplay {
+  constructor(private readonly fragmentLimit = 64 * 1024 * 1024) {}
   snapshot?: Schema<"ThreadFocusSnapshot">;
   cursor?: string;
   runId?: string;
@@ -81,6 +83,22 @@ export class FocusDisplay {
   replayCount = 0;
   sequence = 0;
   gap = false;
+  tasks?: Schema<"TaskPage">;
+  readonly children = new Map<
+    string,
+    {
+      parentId: string;
+      threadId: string;
+      display: FocusDisplay;
+    }
+  >();
+  childOutput(child: Schema<"ChildExecutionView">) {
+    const observed = this.children.get(child.execution_id);
+    return observed?.parentId === child.parent_thread_id &&
+      observed.threadId === child.child_thread_id
+      ? observed.display
+      : undefined;
+  }
   private fragments = new Map<
     string,
     { count: number; parts: string[]; size: number }
@@ -92,6 +110,8 @@ export class FocusDisplay {
     this.runId = undefined;
     this.baseContinuation = undefined;
     this.blocks.clear();
+    this.children.clear();
+    this.tasks = undefined;
     this.fragments.clear();
     this.fragmentBytes = 0;
     this.ready = false;
@@ -107,6 +127,7 @@ export class FocusDisplay {
     if (frame.kind === "snapshot") {
       this.reset();
       this.snapshot = frame.snapshot;
+      this.tasks = frame.snapshot.tasks;
       this.sequence = frame.snapshot.cutover_sequence;
       this.runId = frame.snapshot.root_stream?.run_id;
       this.baseContinuation = frame.snapshot.root_stream
@@ -153,12 +174,95 @@ export class FocusDisplay {
       }
       this.sequence = frame.event.sequence; // Global sequences are sparse within one Thread.
       this.cursor = frame.resume_cursor;
-      if (frame.event.run_kind !== "root") return;
+      if (frame.event.root_thread_id !== this.snapshot?.thread.thread.thread_id)
+        return;
+      if (frame.event.run_kind === "child") {
+        this.foldChild(frame.event);
+        return;
+      }
       this.fold(
         frame.event.event_type,
         frame.event.payload,
         frame.event.payload_omitted,
       );
+    }
+  }
+  private foldChild(event: Schema<"LiveEvent">) {
+    if (
+      !event.execution_id ||
+      !event.parent_thread_id ||
+      event.thread_id === event.root_thread_id
+    )
+      return;
+    const known = this.snapshot?.children.executions.find(
+      (child) => child.execution_id === event.execution_id,
+    );
+    if (
+      known &&
+      (known.child_thread_id !== event.thread_id ||
+        known.parent_thread_id !== event.parent_thread_id)
+    )
+      return;
+    let child = this.children.get(event.execution_id);
+    if (
+      child &&
+      (child.parentId !== event.parent_thread_id ||
+        child.threadId !== event.thread_id)
+    )
+      return;
+    if (child && child.display.runId !== event.run_id) {
+      // One execution can start another Run after a deferred checkpoint. The
+      // root-lineage stream is ordered; never concatenate two Run suffixes.
+      child.display = new FocusDisplay(128 * 1024);
+      child.display.runId = event.run_id;
+      child.display.gap = true;
+    }
+    if (!child) {
+      // This is an observed suffix, not a replay of the child's full Run.
+      // Keep a finite set even when a root starts many sequential executions.
+      if (this.children.size >= 64)
+        this.children.delete(this.children.keys().next().value!);
+      child = {
+        parentId: event.parent_thread_id,
+        threadId: event.thread_id,
+        display: new FocusDisplay(128 * 1024),
+      };
+      child.display.runId = event.run_id;
+      this.children.set(event.execution_id, child);
+    }
+    child.display.fold(event.event_type, event.payload, event.payload_omitted);
+    child.display.trimChildOutput();
+  }
+  private trimChildOutput() {
+    // Bound both long deltas and event cardinality; saved output is fetched
+    // independently and never synthesized from this lossy display window.
+    while (this.blocks.size > 128) {
+      this.blocks.delete(this.blocks.keys().next().value!);
+      this.gap = true;
+    }
+    let remaining = 128 * 1024;
+    for (const [key, block] of [...this.blocks].reverse()) {
+      const size = JSON.stringify(block).length;
+      if (remaining <= 0) {
+        this.blocks.delete(key);
+        this.gap = true;
+      } else if (
+        size > remaining &&
+        (block.kind === "assistant" || block.kind === "thinking")
+      ) {
+        this.blocks.set(key, {
+          id: block.id,
+          kind: block.kind,
+          name: block.name,
+          text: (block.result ?? block.text).slice(-remaining),
+          done: block.done,
+        });
+        remaining = 0;
+        this.gap = true;
+      } else if (size > remaining) {
+        this.blocks.delete(key);
+        this.gap = true;
+      } else remaining -= size;
     }
   }
   private custom(payload: Payload): Payload | undefined {
@@ -193,7 +297,7 @@ export class FocusDisplay {
       count !== assembly.count ||
       count < 1 ||
       index >= count ||
-      this.fragmentBytes + size > 64 * 1024 * 1024
+      this.fragmentBytes + size > this.fragmentLimit
     ) {
       if (assembly) this.fragmentBytes -= assembly.size;
       this.fragments.delete(value.id);
@@ -323,6 +427,51 @@ export class FocusDisplay {
     const source = object(value.event) ? value.event : {};
     const payload = object(source.payload) ? source.payload : {};
     if (
+      ["a13n.pydantic_ai.part_start", "a13n.pydantic_ai.part_end"].includes(
+        name,
+      ) &&
+      object(source.part)
+    ) {
+      const part = source.part;
+      if (
+        ["builtin-tool-call", "builtin-tool-return"].includes(
+          string(part.part_kind),
+        ) &&
+        typeof part.tool_call_id === "string"
+      ) {
+        const provider = string(part.provider_name) || "provider";
+        const key = `${this.runId}:native:${provider}:${part.tool_call_id}`;
+        const previous = this.blocks.get(key);
+        const returned = part.part_kind === "builtin-tool-return";
+        this.blocks.set(key, {
+          id: key,
+          kind: "tool",
+          name: string(part.tool_name),
+          text: "",
+          ...previous,
+          provider,
+          ...(returned
+            ? {
+                result: sourceText(part.content),
+                done: true,
+                outcome: [
+                  "success",
+                  "failed",
+                  "denied",
+                  "interrupted",
+                ].includes(string(part.outcome))
+                  ? (part.outcome as ToolView["outcome"])
+                  : undefined,
+              }
+            : {
+                text: sourceText(part.args),
+                done: name === "a13n.pydantic_ai.part_end" || previous?.done,
+              }),
+        });
+        return;
+      }
+    }
+    if (
       name === "a13n.filesystem.edit_applied" &&
       typeof source.tool_call_id === "string" &&
       typeof source.file_path === "string" &&
@@ -398,6 +547,49 @@ export class FocusDisplay {
       object(payload.task)
     ) {
       const task = payload.task;
+      const status = task.status;
+      const version = payload.task_state_version;
+      if (
+        this.tasks?.available !== false &&
+        typeof version === "number" &&
+        version >= (this.tasks?.version ?? -1) &&
+        typeof task.id === "string" &&
+        typeof task.version === "number" &&
+        typeof task.subject === "string" &&
+        (status === "pending" ||
+          status === "in_progress" ||
+          status === "completed")
+      ) {
+        const tasks = new Map(
+          (this.tasks?.tasks ?? []).map((item) => [item.task_id, item]),
+        );
+        const previous = tasks.get(task.id);
+        if (!previous || task.version > previous.version) {
+          tasks.set(task.id, {
+            task_id: task.id,
+            version: task.version,
+            subject: task.subject,
+            status,
+            active_form: string(task.active_form) || null,
+            owner: string(task.owner) || null,
+            blocks: Array.isArray(task.blocks)
+              ? task.blocks.filter((id): id is string => typeof id === "string")
+              : [],
+            blocked_by: Array.isArray(task.blocked_by)
+              ? task.blocked_by.filter(
+                  (id): id is string => typeof id === "string",
+                )
+              : [],
+          });
+        }
+        this.tasks = {
+          ...this.tasks,
+          version,
+          available: true,
+          tasks: [...tasks.values()].slice(-100),
+          omitted: (this.tasks?.omitted ?? 0) + Math.max(0, tasks.size - 100),
+        };
+      }
       const key = `${this.runId}:task:${string(task.id)}`;
       this.blocks.set(key, {
         id: key,

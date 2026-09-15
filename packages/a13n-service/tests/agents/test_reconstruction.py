@@ -142,13 +142,14 @@ def _effective(
         skills=(),
         connection_tools=connection_tools,
         resolved_subagents=subagents,
+        toolsets=config.toolsets,
+        reviewer=config.reviewer,
         instructions=config.instructions,
         input_adapter=config.input_adapter,
         client_tools=config.client_tools,
         output_spec=config.output_spec,
         retries=config.retries,
         secret_requirements=config.secret_requirements,
-        asset_publication=config.asset_publication,
         protocol=config.protocol,
         content_digest="0" * 64,
     )
@@ -345,12 +346,12 @@ def test_reconstructs_root_model_client_tools_output_and_fresh_capabilities() ->
 
 def test_reconstruction_preserves_root_and_child_connectivity_selections() -> None:
     connector = ConnectionToolSelection(
-        connection_id="cconn_1234567890abcdef",
+        connection_id="conn_1234567890abcdef",
         tools=("lookup_order",),
         defer_loading=False,
     )
     mcp = ConnectionToolSelection(
-        connection_id="mcpc_1234567890abcdef",
+        connection_id="conn_fedcba0987654321",
         tools=("search", "fetch"),
         defer_loading=True,
     )

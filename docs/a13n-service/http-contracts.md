@@ -53,7 +53,7 @@ Schema validation, authorization, precondition conflicts, unavailable dependenci
 
 Collections return `items` and a continuation cursor under their documented schema. Limits, defaults, cursor field names, and filters are operation-specific. Identity collections commonly use `limit` 1–100 and `next_cursor`; do not infer every other collection has the same default.
 
-A cursor is opaque and can be bound to the principal, scope, and filters. Continue with the same boundary and query rather than parsing a cursor or reusing one from another account. Search account lists default to 50 in Service; the Python Search client explicitly requests 100 by default, while Go/Rust omitted limits leave the Service default in force.
+A cursor is opaque and can be bound to the principal, scope, and filters. Continue with the same boundary and query rather than parsing a cursor or reusing one from another account. Web Provider lists default to 50 in Service; the Python Web client explicitly requests 100 by default, while Go/Rust omitted limits leave the Service default in force.
 
 ## Binary content
 

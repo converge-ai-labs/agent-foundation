@@ -45,7 +45,6 @@ The following schemas are conceptual. They define durable field meaning rather t
 
 ```python
 class Agent:
-    labels: dict[str, str]
     id: AgentId
     organization_id: OrganizationId
     workspace_id: WorkspaceId
@@ -69,7 +68,7 @@ class Agent:
 
 `Agent.version` starts at `1` and always equals the current `AgentRevision.version`. It advances only when a genuinely new immutable Revision becomes current. `current_revision_id` is always present; Service never exposes an Agent without an executable Revision.
 
-`name`, `key`, `description`, `labels`, and `default_environment_template_id` are mutable head metadata. Label reads and replacement follow [Resource labels](16-management-api.md#resource-labels). Name changes preserve the key; explicit key changes follow the shared resource-key contract and preserve the Agent ID. The template default only seeds new Thread Environment allocation under [Environment Management](29-environment-management.md#thread-defaults-and-run-selection); it never changes an existing Thread or Run and does not publish an AgentRevision. `enabled` and `archived_at` are independent lifecycle axes. Their mutations change `updated_at` and the representation ETag without advancing `version` or rewriting a Revision.
+`name`, `key`, `description` and `default_environment_template_id` are mutable head metadata. Name changes preserve the key; explicit key changes follow the shared resource-key contract and preserve the Agent ID. The template default only seeds new Thread Environment allocation under [Environment Management](29-environment-management.md#thread-defaults-and-run-selection); it never changes an existing Thread or Run and does not publish an AgentRevision. `enabled` and `archived_at` are independent lifecycle axes. Their mutations change `updated_at` and the representation ETag without advancing `version` or rewriting a Revision.
 
 ### Avatar
 
@@ -154,8 +153,16 @@ class InputAdapterConfig:
     config: JsonObject
 
 
-class AssetPublicationConfig:
-    enabled: Literal[True]
+class ToolSelection:
+    enabled: bool = True
+    permission: Literal["inherit", "allow", "ask", "deny", "review"] = "inherit"
+    config: JsonObject = {}
+
+
+class ToolsetSelection:
+    enabled: bool = True
+    config: JsonObject = {}
+    tools: dict[str, ToolSelection] = {}
 
 
 class ProtocolConfig:
@@ -174,10 +181,10 @@ class ProtocolConfig:
 
 
 class AgentConfig:
+    toolsets: dict[Literal["files", "shell", "web", "assets"], ToolsetSelection]
     subagent_mode: Literal["inline", "async"] = "inline"
     model: AgentModel
-    search: SearchSelection | None
-    permissions: ToolPermissions | None
+    memory: MemorySelection | None
     reviewer: AgentReviewer | None
     instructions: str
     input_adapter: InputAdapterConfig
@@ -189,17 +196,18 @@ class AgentConfig:
     output_spec: OutputSpec | None
     retries: RetryConfig | None
     secret_requirements: tuple[SecretRequirement, ...]
-    asset_publication: AssetPublicationConfig | None
     protocol: ProtocolConfig
 ```
 
 The [`PluginSelection` contract](36-installed-harness-plugins.md#configuration-and-recovery) selects an installed factory key, instance name, and bounded configuration. `instructions` is the Agent's stable system prompt; Service- and Harness-generated runtime context is not stored in this field. A [`SkillSelection`](31-skill-management.md#agent-selection-and-run-locking) names one stable Skill key and optionally pins an integer version. The model selects one stable Model key. Primary Environment selection is independent Thread/Run context under [Environment Management](29-environment-management.md#thread-defaults-and-run-selection). `ChildEnvironmentPolicy.template_revision_id` is required exactly for `dedicated`; `shared` uses the spawning Run's Environment and `none` supplies no environment. The selected Model owns its one calling API and default request settings. Agent Revision creation resolves and retains stable Model and Skill identities but does not freeze mutable Model configuration or an unpinned Skill's current Revision; every Run resolves those selections under their owning contracts. Subagent map keys are stable local names within the Agent.
 
-`permissions` selects the shared Harness `ToolPermissions` modes and stable-ID rules. Unconfigured tools default to `allow` without review; supplying `reviewer` or its risk rules alone does not opt tools into review. Select effective permission `review` for the desired tools. `reviewer` is optional `AgentReviewer`, using the shared `ToolReviewConfig` fields but constraining `model` to a managed immutable Model ID, not a provider route or executable import. Its `risk_threshold` (default `extra_high`), `on_flagged` (default `deny`), and single-best-selector `rules` configure shared risk policy; optional `instruction`, `shell_instruction`, `model_settings`, `timeout_seconds`, and `on_error` configure the default reviewer. These fields are frozen and reconstructed together with the reviewer Model snapshot. The Harness owns [permission and review semantics](../a13n-harness/07-tool-execution.md#tool-permissions-and-review); these settings do not widen Service IAM or Environment ceilings.
+Each built-in Tool owns its exact permission in `toolsets`; there is no second top-level permission map. Authored permissions default to persisted `inherit`, which resolves at execution through the Harness Tool identity's code-owned default. Service built-ins use the Harness default of `allow`. Files and shell Toolsets are enabled by default; Web and asset publication are disabled by default. Disabling a Toolset removes all owned tools while retaining child settings. `reviewer` is optional `AgentReviewer`, using the shared `ToolReviewConfig` fields but constraining `model` to a managed immutable Model ID, not a provider route or executable import. Its `risk_threshold` (default `extra_high`), `on_flagged` (default `deny`), and single-best-selector `rules` configure shared risk policy; optional `instruction`, `shell_instruction`, `model_settings`, `timeout_seconds`, and `on_error` configure the default reviewer. A reviewer alone does not enable review. An effective `review` consults a matching reviewer when one is configured; without a match, the review layer adds no restriction. These fields are frozen and reconstructed together with a configured reviewer Model snapshot. The Harness owns [permission and review semantics](../a13n-harness/07-tool-execution.md#tool-permissions-and-review); these settings do not widen Service IAM or Environment ceilings.
 
 Revision creation validates reviewer Model eligibility and settings without resolving credentials. The authored Model ID already freezes the stable reference; no separate reviewer Revision field is needed. Run acceptance resolves and freezes `resolved_reviewer_model` with the complete Model execution snapshot and merged Model-default/reviewer settings for every selected graph node. The worker reconstructs the reviewer from that accepted snapshot using the same managed Run Model resolver and current authentication path as the main Model. A missing required reviewer snapshot rejects reconstruction rather than falling back to ambient model inference. Main and reviewer may share a Model ID while retaining independent request settings. Optional absent fields remain absent from serialized legacy configurations and their digests.
 
-`search` selects one first-party search account and bounded parameters under [Search Provider Management](41-search-provider-management.md#agent-selection). Absence or null disables this feature. The selection is Agent Revision content and is retained in each accepted graph node; the Provider owns live credentials and availability. Service composes the search capability directly, without requiring a Connector or installed-plugin selection.
+The `web` Toolset independently configures Provider-backed search and scrape and built-in fetch and download under [Web Provider Management](41-web-provider-management.md#agent-web-selection). Search and scrape may select the same compatible Provider explicitly or different Providers; fetch and download contain no Provider reference. The selection is Agent Revision content and is retained in each accepted graph node while Provider credentials and availability remain live.
+
+`memory` opts each Agent graph node into [long-term memory](42-memory.md). Absence or null disables memory. Its bounded behavior is immutable Revision content, not a backend endpoint or credential. Run override absence inherits, null disables, and an object replaces the whole selection; child nodes retain their own selection.
 
 `connection_tools` is an ordered list keyed semantically by managed connection IDs, with no caller-defined aliases. Duplicate connection IDs within the list are invalid. Omitted or null `tools` selects all currently available authorized source tools; an empty list selects none; explicit names select only those source-native tools. Duplicate tool names are invalid. `defer_loading` defaults to false and uses the [Harness loading contract](40-connectivity/04-agent-facing-tools.md#deferred-loading). These fields control one Agent or Run selection rather than the connection resource itself.
 
@@ -213,7 +221,7 @@ The config contains no Python class, import target, callable, native Model, Tool
 
 `input_adapter` selects one trusted adapter key and bounded configuration. Every Revision accepts the common [`AgentInput`](17-agent-input.md) wire contract. Run acceptance validates and canonicalizes that input, and the Worker verifies the frozen configuration and state before invoking the adapter. Replacement execution attempts reuse the same Revision, adapter configuration, accepted input,.
 
-When `asset_publication` is present, the trusted Service `AssetCapability` exposes `publish_asset`. Each execution attempt binds only its current authorized Environment; the tool fails closed when no readable default binding can supply the selected path. Package presence or general Environment file access does not enable it.
+When `toolsets.assets.tools.publish` is active, the trusted Service `AssetCapability` exposes `publish_asset`. Each execution attempt binds only its current authorized Environment; the tool fails closed when no readable default binding can supply the selected path. Package presence or general Environment file access does not enable it.
 
 ## Run Capability Overlay
 
@@ -233,7 +241,7 @@ candidate = (overridden Agent selections when inherit_agent else empty) + includ
 effective = candidate intersect current authorization and deployment policy
 ```
 
-`include` can select an authorized managed capability absent from the Agent defaults. `exclude` removes one exact selectable key and cannot remove mandatory Harness safety, Identity, policy, usage, output, or Environment behavior. `inherit_agent=false` replaces only the selectable managed capability surface; it does not replace the Agent, model, search selection, instructions, output contract, Plugins, subagents, or security ceiling. Duplicate keys, conflicting selections, unknown exclusions, unavailable compatibility evidence, and unauthorized additions fail Run acceptance.
+`include` can select an authorized managed capability absent from the Agent defaults. `exclude` removes one exact selectable key and cannot remove mandatory Harness safety, Identity, policy, usage, output, or Environment behavior. `inherit_agent=false` replaces only the selectable managed capability surface; it does not replace the Agent, model, Web selection, instructions, output contract, Plugins, subagents, or security ceiling. Duplicate keys, conflicting selections, unknown exclusions, unavailable compatibility evidence, and unauthorized additions fail Run acceptance.
 
 The accepted Run retains the complete effective selections and the revision locks required by each capability owner. Connection selections retain source identity, tool scope, and deferred-loading policy; [external tool discovery](40-connectivity/04-agent-facing-tools.md#discovery-and-recovery) supplies current schemas without a durable tool snapshot. Replacement RunAttempts preserve those selections and locks while revalidating authority and discovering current external tools. Model input and tool output cannot create or modify an overlay.
 
@@ -273,9 +281,9 @@ class RetryOverride:
 
 
 class AgentRunOverride:
+    toolsets: dict[Literal["files", "shell", "web", "assets"], ToolsetSelection] | None
     model: ModelOverride | None
-    search: SearchSelection | None  # May be absent.
-    permissions: ToolPermissions | None  # May be absent.
+    memory: MemorySelection | None
     reviewer: AgentReviewer | None  # May be absent.
     instructions: str | None
     plugins: tuple[PluginSelection, ...] | None
@@ -293,9 +301,7 @@ Within `model`, an absent `model_key` inherits the Agent selection; a supplied k
 
 `connection_tools` replaces the complete selection when present. Absence inherits, `[]` clears, and null for the whole category is invalid. Entries use the same complete selection types as Agent configuration; there is no per-alias patch or mapped deletion. Overrides can select existing authorized connections, tool scopes, and deferred loading, but cannot supply endpoints, credentials, external integration services, arbitrary headers, or native Ingress targets.
 
-`search` absence inherits the selected Revision, null disables first-party search, and an object replaces the complete selection. Its resource validation, override authorization, and per-node execution semantics belong to [Search Provider Management](41-search-provider-management.md#agent-selection).
-
-`permissions` and `reviewer` each use whole-value replacement: absence inherits, null clears the selection, and an object replaces it with its own defaults. These fields do not patch nested rules or instructions. Current resource validation and authorization apply to an override just as to an authored selection.
+Each supplied `toolsets` entry replaces that complete Toolset selection; omitted entries inherit. An explicit `enabled=false` disables the Toolset and preserves its submitted child settings. Null Toolset entries are invalid. Active Provider/resource references are revalidated with override authority. `reviewer` uses whole-value replacement: absence inherits and null clears it only when no active Tool resolves to review.
 
 `subagents` remains a name-keyed patch: an absent map inherits, explicit null clears all entries, an empty object changes nothing, and a mapped null deletes one entry. Its entries select managed Agents only.
 
@@ -310,8 +316,8 @@ class EffectiveAgentConfig:
     schema_version: str
     model: EffectiveAgentModel
     resolved_reviewer_model: EffectiveAgentModel | None
-    search: SearchSelection | None
-    permissions: ToolPermissions | None
+    toolsets: dict[Literal["files", "shell", "web", "assets"], ToolsetSelection]
+    memory: MemorySelection | None
     reviewer: AgentReviewer | None
     instructions: str
     input_adapter: InputAdapterConfig
@@ -323,7 +329,6 @@ class EffectiveAgentConfig:
     output_spec: OutputSpec | None
     retries: RetryConfig | None
     secret_requirements: tuple[SecretRequirement, ...]
-    asset_publication: AssetPublicationConfig | None
     protocol: ProtocolConfig
     content_digest: str
 ```
@@ -491,4 +496,3 @@ Atomically creating and advancing immutable Revisions removes a mutable draft/de
 08. Restore copies retained content into a new later Revision and never moves the Agent head backward.
 09. ProtocolConfig is Agent-owned Revision content rather than another resource, digest, or per-Agent protocol switch.
 10. Plugin code and dependencies belong to the Worker build; Agent Management stores authored selections and Worker execution owns durable normalized configuration under the installed Plugin contract.
-11. Agent labels are head metadata outside immutable Revisions. Duplicate copies the source Agent's current labels and applies explicit overrides; publish and restore retain the target head labels.

@@ -706,16 +706,6 @@
       "AgentConfig-Input": {
         "additionalProperties": false,
         "properties": {
-          "asset_publication": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AssetPublicationConfig"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "client_tools": {
             "default": [],
             "items": {
@@ -743,6 +733,16 @@
             "title": "Instructions",
             "type": "string"
           },
+          "memory": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemorySelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "model": {
             "$ref": "#/components/schemas/AgentModel"
           },
@@ -750,16 +750,6 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/OutputSpec"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "permissions": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ToolPermissions"
               },
               {
                 "type": "null"
@@ -792,16 +782,6 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/AgentReviewer"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "search": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SearchSelection"
               },
               {
                 "type": "null"
@@ -844,6 +824,21 @@
             },
             "title": "Subagents",
             "type": "object"
+          },
+          "toolsets": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ToolsetSelection"
+            },
+            "propertyNames": {
+              "enum": [
+                "files",
+                "shell",
+                "web",
+                "assets"
+              ]
+            },
+            "title": "Toolsets",
+            "type": "object"
           }
         },
         "required": [
@@ -857,16 +852,6 @@
       "AgentConfig-Output": {
         "additionalProperties": false,
         "properties": {
-          "asset_publication": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/AssetPublicationConfig"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "client_tools": {
             "default": [],
             "items": {
@@ -894,6 +879,16 @@
             "title": "Instructions",
             "type": "string"
           },
+          "memory": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemorySelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "model": {
             "$ref": "#/components/schemas/AgentModel"
           },
@@ -901,16 +896,6 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/OutputSpec"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "permissions": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ToolPermissions"
               },
               {
                 "type": "null"
@@ -943,16 +928,6 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/AgentReviewer"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "search": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SearchSelection"
               },
               {
                 "type": "null"
@@ -994,6 +969,21 @@
               }
             },
             "title": "Subagents",
+            "type": "object"
+          },
+          "toolsets": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ToolsetSelection"
+            },
+            "propertyNames": {
+              "enum": [
+                "files",
+                "shell",
+                "web",
+                "assets"
+              ]
+            },
+            "title": "Toolsets",
             "type": "object"
           }
         },
@@ -1426,6 +1416,16 @@
             ],
             "title": "Instructions"
           },
+          "memory": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemorySelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "model": {
             "anyOf": [
               {
@@ -1440,16 +1440,6 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/OutputSpec"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "permissions": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ToolPermissions"
               },
               {
                 "type": "null"
@@ -1485,16 +1475,6 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/AgentReviewer"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "search": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SearchSelection"
               },
               {
                 "type": "null"
@@ -1539,6 +1519,28 @@
               }
             ],
             "title": "Subagents"
+          },
+          "toolsets": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/ToolsetSelection"
+                },
+                "propertyNames": {
+                  "enum": [
+                    "files",
+                    "shell",
+                    "web",
+                    "assets"
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Toolsets"
           }
         },
         "title": "AgentRunOverride-Input",
@@ -1589,6 +1591,16 @@
             ],
             "title": "Instructions"
           },
+          "memory": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemorySelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "model": {
             "anyOf": [
               {
@@ -1603,16 +1615,6 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/OutputSpec"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "permissions": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ToolPermissions"
               },
               {
                 "type": "null"
@@ -1648,16 +1650,6 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/AgentReviewer"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "search": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SearchSelection"
               },
               {
                 "type": "null"
@@ -1702,6 +1694,28 @@
               }
             ],
             "title": "Subagents"
+          },
+          "toolsets": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "$ref": "#/components/schemas/ToolsetSelection"
+                },
+                "propertyNames": {
+                  "enum": [
+                    "files",
+                    "shell",
+                    "web",
+                    "assets"
+                  ]
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Toolsets"
           }
         },
         "title": "AgentRunOverride-Output",
@@ -1995,19 +2009,6 @@
           "next_cursor"
         ],
         "title": "AssetCollection",
-        "type": "object"
-      },
-      "AssetPublicationConfig": {
-        "additionalProperties": false,
-        "properties": {
-          "enabled": {
-            "const": true,
-            "default": true,
-            "title": "Enabled",
-            "type": "boolean"
-          }
-        },
-        "title": "AssetPublicationConfig",
         "type": "object"
       },
       "AssetSourceKind": {
@@ -2674,6 +2675,16 @@
             },
             "title": "Parameters Json Schema",
             "type": "object"
+          },
+          "permission": {
+            "default": "inherit",
+            "enum": [
+              "inherit",
+              "allow",
+              "deny"
+            ],
+            "title": "Permission",
+            "type": "string"
           }
         },
         "required": [
@@ -3293,6 +3304,22 @@
             "default": false,
             "title": "Defer Loading",
             "type": "boolean"
+          },
+          "permission": {
+            "$ref": "#/components/schemas/ToolPermissionSetting",
+            "default": "inherit"
+          },
+          "permissions": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ToolPermissionSetting"
+            },
+            "maxProperties": 2048,
+            "propertyNames": {
+              "maxLength": 128,
+              "minLength": 1
+            },
+            "title": "Permissions",
+            "type": "object"
           },
           "tools": {
             "anyOf": [
@@ -4390,7 +4417,7 @@
             "anyOf": [
               {
                 "maxLength": 39,
-                "pattern": "^thread-[a-f0-9]{32}$",
+                "pattern": "^thread[-_][a-f0-9]{32}$",
                 "type": "string"
               },
               {
@@ -4713,46 +4740,6 @@
           "name"
         ],
         "title": "CreateProviderRequest",
-        "type": "object"
-      },
-      "CreateSearchProviderRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "configuration": {
-            "$ref": "#/components/schemas/SearchConfiguration"
-          },
-          "credential": {
-            "format": "password",
-            "title": "Credential",
-            "type": "string",
-            "writeOnly": true
-          },
-          "enabled": {
-            "default": true,
-            "title": "Enabled",
-            "type": "boolean"
-          },
-          "name": {
-            "maxLength": 128,
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
-          },
-          "type": {
-            "enum": [
-              "brave",
-              "exa"
-            ],
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "type",
-          "name",
-          "credential"
-        ],
-        "title": "CreateSearchProviderRequest",
         "type": "object"
       },
       "CreateServiceAccountRequest": {
@@ -5084,6 +5071,45 @@
           }
         },
         "title": "CreateThreadRequest",
+        "type": "object"
+      },
+      "CreateWebProviderRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "configuration": {
+            "additionalProperties": true,
+            "title": "Configuration",
+            "type": "object"
+          },
+          "credential": {
+            "additionalProperties": true,
+            "title": "Credential",
+            "type": "object",
+            "writeOnly": true
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          },
+          "type": {
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "name",
+          "credential"
+        ],
+        "title": "CreateWebProviderRequest",
         "type": "object"
       },
       "CreateWorkspaceRequest": {
@@ -6568,7 +6594,7 @@
             "anyOf": [
               {
                 "maxLength": 39,
-                "pattern": "^thread-[a-f0-9]{32}$",
+                "pattern": "^thread[-_][a-f0-9]{32}$",
                 "type": "string"
               },
               {
@@ -8137,6 +8163,213 @@
           "items"
         ],
         "title": "MCPToolCollection",
+        "type": "object"
+      },
+      "Mem0Scope": {
+        "description": "Trusted Harness identity boundary used for Mem0 records.",
+        "enum": [
+          "thread",
+          "agent",
+          "user"
+        ],
+        "title": "Mem0Scope",
+        "type": "string"
+      },
+      "Memory": {
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "maxLength": 512,
+            "minLength": 1,
+            "title": "Id",
+            "type": "string"
+          },
+          "memory": {
+            "maxLength": 262144,
+            "minLength": 1,
+            "title": "Memory",
+            "type": "string"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score"
+          }
+        },
+        "required": [
+          "id",
+          "memory"
+        ],
+        "title": "Memory",
+        "type": "object"
+      },
+      "MemoryCollection": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Memory"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "pagination": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemoryPagination"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Native pagination when available. Null means a bounded result, not a complete collection."
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "MemoryCollection",
+        "type": "object"
+      },
+      "MemoryPagination": {
+        "additionalProperties": false,
+        "description": "Native traversal; a null cursor means the final page of that traversal.",
+        "properties": {
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "next_cursor"
+        ],
+        "title": "MemoryPagination",
+        "type": "object"
+      },
+      "MemorySearch": {
+        "additionalProperties": false,
+        "properties": {
+          "limit": {
+            "default": 20,
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "query": {
+            "maxLength": 16000,
+            "minLength": 1,
+            "title": "Query",
+            "type": "string"
+          },
+          "threshold": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threshold"
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "title": "MemorySearch",
+        "type": "object"
+      },
+      "MemorySelection": {
+        "additionalProperties": false,
+        "description": "Opt-in Agent behavior; backend credentials and subject IDs are host-owned.",
+        "properties": {
+          "auto_recall": {
+            "default": true,
+            "title": "Auto Recall",
+            "type": "boolean"
+          },
+          "recall_limit": {
+            "default": 5,
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Recall Limit",
+            "type": "integer"
+          },
+          "recall_required": {
+            "default": false,
+            "title": "Recall Required",
+            "type": "boolean"
+          },
+          "recall_threshold": {
+            "anyOf": [
+              {
+                "maximum": 1.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recall Threshold"
+          },
+          "recall_timeout": {
+            "default": 2,
+            "exclusiveMinimum": 0.0,
+            "maximum": 300.0,
+            "title": "Recall Timeout",
+            "type": "number"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Mem0Scope"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "toolset": {
+            "default": true,
+            "title": "Toolset",
+            "type": "boolean"
+          }
+        },
+        "title": "MemorySelection",
+        "type": "object"
+      },
+      "MemoryWrite": {
+        "additionalProperties": false,
+        "properties": {
+          "text": {
+            "maxLength": 8000,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Text",
+            "type": "string"
+          }
+        },
+        "required": [
+          "text"
+        ],
+        "title": "MemoryWrite",
         "type": "object"
       },
       "Model": {
@@ -10666,6 +10899,19 @@
             "minLength": 1,
             "title": "Call Id",
             "type": "string"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "maxLength": 2000,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
           }
         },
         "required": [
@@ -12254,12 +12500,6 @@
         "title": "SafeFailure",
         "type": "object"
       },
-      "SearchConfiguration": {
-        "additionalProperties": false,
-        "properties": {},
-        "title": "SearchConfiguration",
-        "type": "object"
-      },
       "SearchIn": {
         "enum": [
           "input",
@@ -12268,313 +12508,6 @@
         ],
         "title": "SearchIn",
         "type": "string"
-      },
-      "SearchProvider": {
-        "additionalProperties": false,
-        "properties": {
-          "configuration": {
-            "additionalProperties": true,
-            "title": "Configuration",
-            "type": "object"
-          },
-          "created_at": {
-            "format": "date-time",
-            "title": "Created At",
-            "type": "string"
-          },
-          "created_by": {
-            "$ref": "#/components/schemas/PrincipalRef"
-          },
-          "credential_configured": {
-            "title": "Credential Configured",
-            "type": "boolean"
-          },
-          "enabled": {
-            "title": "Enabled",
-            "type": "boolean"
-          },
-          "id": {
-            "maxLength": 72,
-            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
-            "title": "Id",
-            "type": "string"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          },
-          "organization_id": {
-            "maxLength": 72,
-            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
-            "title": "Organization Id",
-            "type": "string"
-          },
-          "type": {
-            "title": "Type",
-            "type": "string"
-          },
-          "updated_at": {
-            "format": "date-time",
-            "title": "Updated At",
-            "type": "string"
-          },
-          "updated_by": {
-            "$ref": "#/components/schemas/PrincipalRef"
-          },
-          "workspace_id": {
-            "anyOf": [
-              {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Workspace Id"
-          }
-        },
-        "required": [
-          "id",
-          "organization_id",
-          "workspace_id",
-          "type",
-          "name",
-          "configuration",
-          "credential_configured",
-          "enabled",
-          "created_by",
-          "updated_by",
-          "created_at",
-          "updated_at"
-        ],
-        "title": "SearchProvider",
-        "type": "object"
-      },
-      "SearchProviderCollection": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/SearchProvider"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "next_cursor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Next Cursor"
-          }
-        },
-        "required": [
-          "items"
-        ],
-        "title": "SearchProviderCollection",
-        "type": "object"
-      },
-      "SearchProviderDefinition": {
-        "additionalProperties": false,
-        "properties": {
-          "configuration_schema": {
-            "additionalProperties": true,
-            "title": "Configuration Schema",
-            "type": "object"
-          },
-          "credential_required": {
-            "default": true,
-            "title": "Credential Required",
-            "type": "boolean"
-          },
-          "credential_schema": {
-            "additionalProperties": true,
-            "title": "Credential Schema",
-            "type": "object"
-          },
-          "display_name": {
-            "title": "Display Name",
-            "type": "string"
-          },
-          "setup_url": {
-            "title": "Setup Url",
-            "type": "string"
-          },
-          "type": {
-            "title": "Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "type",
-          "display_name",
-          "configuration_schema",
-          "credential_schema",
-          "setup_url"
-        ],
-        "title": "SearchProviderDefinition",
-        "type": "object"
-      },
-      "SearchProviderDefinitionCollection": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/SearchProviderDefinition"
-            },
-            "title": "Items",
-            "type": "array"
-          }
-        },
-        "required": [
-          "items"
-        ],
-        "title": "SearchProviderDefinitionCollection",
-        "type": "object"
-      },
-      "SearchProviderReference": {
-        "properties": {
-          "agent_id": {
-            "maxLength": 72,
-            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
-            "title": "Agent Id",
-            "type": "string"
-          },
-          "agent_revision_id": {
-            "maxLength": 72,
-            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
-            "title": "Agent Revision Id",
-            "type": "string"
-          },
-          "is_current": {
-            "title": "Is Current",
-            "type": "boolean"
-          },
-          "version": {
-            "title": "Version",
-            "type": "integer"
-          }
-        },
-        "required": [
-          "agent_id",
-          "agent_revision_id",
-          "version",
-          "is_current"
-        ],
-        "title": "SearchProviderReference",
-        "type": "object"
-      },
-      "SearchProviderReferenceCollection": {
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/SearchProviderReference"
-            },
-            "title": "Items",
-            "type": "array"
-          },
-          "next_cursor": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Next Cursor"
-          }
-        },
-        "required": [
-          "items"
-        ],
-        "title": "SearchProviderReferenceCollection",
-        "type": "object"
-      },
-      "SearchProviderTestResult": {
-        "properties": {
-          "checked_at": {
-            "format": "date-time",
-            "title": "Checked At",
-            "type": "string"
-          },
-          "code": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Code"
-          },
-          "success": {
-            "title": "Success",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "success",
-          "code",
-          "checked_at"
-        ],
-        "title": "SearchProviderTestResult",
-        "type": "object"
-      },
-      "SearchSelection": {
-        "additionalProperties": false,
-        "properties": {
-          "allow_domains": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 256,
-            "title": "Allow Domains",
-            "type": "array"
-          },
-          "deny_domains": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 256,
-            "title": "Deny Domains",
-            "type": "array"
-          },
-          "include_domains": {
-            "default": [],
-            "items": {
-              "type": "string"
-            },
-            "maxItems": 20,
-            "title": "Include Domains",
-            "type": "array"
-          },
-          "max_results": {
-            "default": 5,
-            "maximum": 10.0,
-            "minimum": 1.0,
-            "title": "Max Results",
-            "type": "integer"
-          },
-          "provider_id": {
-            "maxLength": 72,
-            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
-            "title": "Provider Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "provider_id"
-        ],
-        "title": "SearchSelection",
-        "type": "object"
       },
       "SecretRequirement": {
         "additionalProperties": false,
@@ -15157,6 +15090,87 @@
         "title": "ToolCall",
         "type": "object"
       },
+      "ToolDefinition": {
+        "additionalProperties": false,
+        "properties": {
+          "config_schema": {
+            "additionalProperties": true,
+            "title": "Config Schema",
+            "type": "object"
+          },
+          "default_enabled": {
+            "title": "Default Enabled",
+            "type": "boolean"
+          },
+          "default_permission": {
+            "$ref": "#/components/schemas/ToolPermissionMode"
+          },
+          "deployment_supported": {
+            "default": true,
+            "title": "Deployment Supported",
+            "type": "boolean"
+          },
+          "display_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "execution_id": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Execution Id",
+            "type": "string"
+          },
+          "key": {
+            "pattern": "^[a-z][a-z0-9_]{0,63}$",
+            "title": "Key",
+            "type": "string"
+          },
+          "model_name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Model Name",
+            "type": "string"
+          },
+          "resource_selector": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolResourceSelector"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "supported_permissions": {
+            "items": {
+              "enum": [
+                "inherit",
+                "allow",
+                "ask",
+                "deny",
+                "review"
+              ],
+              "type": "string"
+            },
+            "title": "Supported Permissions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "key",
+          "display_name",
+          "execution_id",
+          "model_name",
+          "default_enabled",
+          "default_permission",
+          "config_schema",
+          "supported_permissions"
+        ],
+        "title": "ToolDefinition",
+        "type": "object"
+      },
       "ToolMessage": {
         "additionalProperties": true,
         "description": "A tool result message.",
@@ -15232,24 +15246,28 @@
         ],
         "title": "ToolPermissionSetting"
       },
-      "ToolPermissions": {
+      "ToolResourceSelector": {
         "additionalProperties": false,
-        "description": "Portable configuration. Inherit resolves a tool default, never an execution decision.",
         "properties": {
-          "default": {
-            "$ref": "#/components/schemas/ToolPermissionSetting",
-            "default": "inherit"
+          "kind": {
+            "const": "web_provider",
+            "title": "Kind",
+            "type": "string"
           },
-          "rules": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/ToolPermissionSetting"
-            },
-            "maxProperties": 1024,
-            "title": "Rules",
-            "type": "object"
+          "operation": {
+            "enum": [
+              "search",
+              "scrape"
+            ],
+            "title": "Operation",
+            "type": "string"
           }
         },
-        "title": "ToolPermissions",
+        "required": [
+          "kind",
+          "operation"
+        ],
+        "title": "ToolResourceSelector",
         "type": "object"
       },
       "ToolReviewRule": {
@@ -15294,6 +15312,257 @@
         ],
         "title": "ToolRiskLevel",
         "type": "string"
+      },
+      "ToolSelection": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Config",
+            "type": "object"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "permission": {
+            "$ref": "#/components/schemas/ToolPermissionSetting",
+            "default": "inherit"
+          }
+        },
+        "title": "ToolSelection",
+        "type": "object"
+      },
+      "ToolSetupDestination": {
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": [
+              "web_provider",
+              "reviewer"
+            ],
+            "title": "Kind",
+            "type": "string"
+          },
+          "operation": {
+            "anyOf": [
+              {
+                "enum": [
+                  "search",
+                  "scrape"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operation"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "title": "ToolSetupDestination",
+        "type": "object"
+      },
+      "ToolsetCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "reviewer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentReviewer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "toolsets": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ToolsetSelection"
+            },
+            "propertyNames": {
+              "enum": [
+                "files",
+                "shell",
+                "web",
+                "assets"
+              ]
+            },
+            "title": "Toolsets",
+            "type": "object"
+          }
+        },
+        "title": "ToolsetCandidate",
+        "type": "object"
+      },
+      "ToolsetCandidateError": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Code",
+            "type": "string"
+          },
+          "path": {
+            "maxLength": 1024,
+            "minLength": 1,
+            "title": "Path",
+            "type": "string"
+          },
+          "setup_destination": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ToolSetupDestination"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "code",
+          "path"
+        ],
+        "title": "ToolsetCandidateError",
+        "type": "object"
+      },
+      "ToolsetCandidateResult": {
+        "additionalProperties": false,
+        "properties": {
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/ToolsetCandidateError"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "toolsets": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ToolsetSelection"
+            },
+            "propertyNames": {
+              "enum": [
+                "files",
+                "shell",
+                "web",
+                "assets"
+              ]
+            },
+            "title": "Toolsets",
+            "type": "object"
+          },
+          "valid": {
+            "title": "Valid",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "valid",
+          "toolsets",
+          "errors"
+        ],
+        "title": "ToolsetCandidateResult",
+        "type": "object"
+      },
+      "ToolsetCatalog": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ToolsetDefinition"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "ToolsetCatalog",
+        "type": "object"
+      },
+      "ToolsetDefinition": {
+        "additionalProperties": false,
+        "properties": {
+          "config_schema": {
+            "additionalProperties": true,
+            "title": "Config Schema",
+            "type": "object"
+          },
+          "default_enabled": {
+            "title": "Default Enabled",
+            "type": "boolean"
+          },
+          "display_name": {
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Display Name",
+            "type": "string"
+          },
+          "key": {
+            "enum": [
+              "files",
+              "shell",
+              "web",
+              "assets"
+            ],
+            "title": "Key",
+            "type": "string"
+          },
+          "tools": {
+            "items": {
+              "$ref": "#/components/schemas/ToolDefinition"
+            },
+            "title": "Tools",
+            "type": "array"
+          }
+        },
+        "required": [
+          "key",
+          "display_name",
+          "default_enabled",
+          "config_schema",
+          "tools"
+        ],
+        "title": "ToolsetDefinition",
+        "type": "object"
+      },
+      "ToolsetSelection": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Config",
+            "type": "object"
+          },
+          "enabled": {
+            "default": true,
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "tools": {
+            "maxProperties": 64,
+            "patternProperties": {
+              "^[a-z][a-z0-9_]{0,63}$": {
+                "$ref": "#/components/schemas/ToolSelection"
+              }
+            },
+            "title": "Tools",
+            "type": "object"
+          }
+        },
+        "title": "ToolsetSelection",
+        "type": "object"
       },
       "Trace": {
         "additionalProperties": false,
@@ -15750,7 +16019,7 @@
             "anyOf": [
               {
                 "maxLength": 39,
-                "pattern": "^thread-[a-f0-9]{32}$",
+                "pattern": "^thread[-_][a-f0-9]{32}$",
                 "type": "string"
               },
               {
@@ -16082,61 +16351,6 @@
         "title": "UpdateResourceProfileRequest",
         "type": "object"
       },
-      "UpdateSearchProviderRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "configuration": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SearchConfiguration"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "credential": {
-            "anyOf": [
-              {
-                "format": "password",
-                "type": "string",
-                "writeOnly": true
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Credential",
-            "writeOnly": true
-          },
-          "enabled": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Enabled"
-          },
-          "name": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Name"
-          }
-        },
-        "title": "UpdateSearchProviderRequest",
-        "type": "object"
-      },
       "UpdateServiceAccountRequest": {
         "additionalProperties": false,
         "properties": {
@@ -16245,6 +16459,62 @@
           }
         },
         "title": "UpdateTemplateRequest",
+        "type": "object"
+      },
+      "UpdateWebProviderRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "configuration": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Configuration"
+          },
+          "credential": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Credential",
+            "writeOnly": true
+          },
+          "enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Enabled"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          }
+        },
+        "title": "UpdateWebProviderRequest",
         "type": "object"
       },
       "UploadedAssetSource": {
@@ -16807,6 +17077,280 @@
           "sealed_state_digest_sha256"
         ],
         "title": "WaitingRunFeedbackRequest",
+        "type": "object"
+      },
+      "WebProvider": {
+        "additionalProperties": false,
+        "properties": {
+          "configuration": {
+            "additionalProperties": true,
+            "title": "Configuration",
+            "type": "object"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "created_by": {
+            "$ref": "#/components/schemas/PrincipalRef"
+          },
+          "credential_configured": {
+            "title": "Credential Configured",
+            "type": "boolean"
+          },
+          "enabled": {
+            "title": "Enabled",
+            "type": "boolean"
+          },
+          "id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "organization_id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "updated_by": {
+            "$ref": "#/components/schemas/PrincipalRef"
+          },
+          "workspace_id": {
+            "anyOf": [
+              {
+                "maxLength": 72,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Workspace Id"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "workspace_id",
+          "type",
+          "name",
+          "configuration",
+          "credential_configured",
+          "enabled",
+          "created_by",
+          "updated_by",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "WebProvider",
+        "type": "object"
+      },
+      "WebProviderCollection": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WebProvider"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "WebProviderCollection",
+        "type": "object"
+      },
+      "WebProviderDefinition": {
+        "additionalProperties": false,
+        "properties": {
+          "configuration_schema": {
+            "additionalProperties": true,
+            "title": "Configuration Schema",
+            "type": "object"
+          },
+          "credential_required": {
+            "default": true,
+            "title": "Credential Required",
+            "type": "boolean"
+          },
+          "credential_schema": {
+            "additionalProperties": true,
+            "title": "Credential Schema",
+            "type": "object"
+          },
+          "display_name": {
+            "title": "Display Name",
+            "type": "string"
+          },
+          "operations": {
+            "items": {
+              "enum": [
+                "search",
+                "scrape"
+              ],
+              "type": "string"
+            },
+            "title": "Operations",
+            "type": "array"
+          },
+          "setup_url": {
+            "title": "Setup Url",
+            "type": "string"
+          },
+          "supports_restricted_scrape": {
+            "default": false,
+            "title": "Supports Restricted Scrape",
+            "type": "boolean"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "display_name",
+          "configuration_schema",
+          "credential_schema",
+          "setup_url",
+          "operations"
+        ],
+        "title": "WebProviderDefinition",
+        "type": "object"
+      },
+      "WebProviderDefinitionCollection": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WebProviderDefinition"
+            },
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "WebProviderDefinitionCollection",
+        "type": "object"
+      },
+      "WebProviderReference": {
+        "properties": {
+          "agent_id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "agent_revision_id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Agent Revision Id",
+            "type": "string"
+          },
+          "is_current": {
+            "title": "Is Current",
+            "type": "boolean"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "agent_id",
+          "agent_revision_id",
+          "version",
+          "is_current"
+        ],
+        "title": "WebProviderReference",
+        "type": "object"
+      },
+      "WebProviderReferenceCollection": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WebProviderReference"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "WebProviderReferenceCollection",
+        "type": "object"
+      },
+      "WebProviderTestResult": {
+        "properties": {
+          "checked_at": {
+            "format": "date-time",
+            "title": "Checked At",
+            "type": "string"
+          },
+          "code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Code"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "code",
+          "checked_at"
+        ],
+        "title": "WebProviderTestResult",
         "type": "object"
       },
       "WebhookDestinationConfig": {
@@ -27497,703 +28041,6 @@
         ]
       }
     },
-    "/api/v1/organizations/{organization}/search-providers": {
-      "get": {
-        "operationId": "get_organizations_organization_search_providers",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "organization",
-            "required": true,
-            "schema": {
-              "title": "Organization",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 50,
-              "maximum": 100,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "maxLength": 2048,
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Cursor"
-            }
-          },
-          {
-            "in": "query",
-            "name": "type",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "maxLength": 64,
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Type"
-            }
-          },
-          {
-            "in": "query",
-            "name": "enabled",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Enabled"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SearchProviderCollection"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid request.",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Service error.",
-            "headers": {
-              "Retry-After": {
-                "schema": {
-                  "type": "string"
-                }
-              },
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "SessionAuth": []
-          }
-        ],
-        "summary": "List Organization Provider",
-        "tags": [
-          "search-providers"
-        ]
-      },
-      "post": {
-        "operationId": "post_organizations_organization_search_providers",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "organization",
-            "required": true,
-            "schema": {
-              "title": "Organization",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateSearchProviderRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SearchProvider"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "ETag": {
-                "description": "Strong representation precondition.",
-                "schema": {
-                  "type": "string"
-                }
-              },
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid request.",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Service error.",
-            "headers": {
-              "Retry-After": {
-                "schema": {
-                  "type": "string"
-                }
-              },
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "SessionAuth": []
-          }
-        ],
-        "summary": "Create Organization Provider",
-        "tags": [
-          "search-providers"
-        ]
-      }
-    },
-    "/api/v1/organizations/{organization}/search-providers/{provider_id}": {
-      "get": {
-        "operationId": "get_organizations_organization_search_providers_provider_id",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "provider_id",
-            "required": true,
-            "schema": {
-              "title": "Provider Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "organization",
-            "required": true,
-            "schema": {
-              "title": "Organization",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SearchProvider"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "ETag": {
-                "description": "Strong representation precondition.",
-                "schema": {
-                  "type": "string"
-                }
-              },
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid request.",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Service error.",
-            "headers": {
-              "Retry-After": {
-                "schema": {
-                  "type": "string"
-                }
-              },
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "SessionAuth": []
-          }
-        ],
-        "summary": "Get Organization Provider",
-        "tags": [
-          "search-providers"
-        ]
-      },
-      "patch": {
-        "operationId": "patch_organizations_organization_search_providers_provider_id",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "provider_id",
-            "required": true,
-            "schema": {
-              "title": "Provider Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "organization",
-            "required": true,
-            "schema": {
-              "title": "Organization",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "maxLength": 256,
-              "minLength": 1,
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateSearchProviderRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SearchProvider"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "ETag": {
-                "description": "Strong representation precondition.",
-                "schema": {
-                  "type": "string"
-                }
-              },
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid request.",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Service error.",
-            "headers": {
-              "Retry-After": {
-                "schema": {
-                  "type": "string"
-                }
-              },
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "SessionAuth": []
-          }
-        ],
-        "summary": "Update Organization Provider",
-        "tags": [
-          "search-providers"
-        ]
-      }
-    },
-    "/api/v1/organizations/{organization}/search-providers/{provider_id}/references": {
-      "get": {
-        "operationId": "get_organizations_organization_search_providers_provider_id_references",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "provider_id",
-            "required": true,
-            "schema": {
-              "title": "Provider Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "organization",
-            "required": true,
-            "schema": {
-              "title": "Organization",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 50,
-              "maximum": 100,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "maxLength": 2048,
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Cursor"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SearchProviderReferenceCollection"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid request.",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Service error.",
-            "headers": {
-              "Retry-After": {
-                "schema": {
-                  "type": "string"
-                }
-              },
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "SessionAuth": []
-          }
-        ],
-        "summary": "References Organization Provider",
-        "tags": [
-          "search-providers"
-        ]
-      }
-    },
-    "/api/v1/organizations/{organization}/search-providers/{provider_id}/test": {
-      "post": {
-        "operationId": "post_organizations_organization_search_providers_provider_id_test",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "provider_id",
-            "required": true,
-            "schema": {
-              "title": "Provider Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "organization",
-            "required": true,
-            "schema": {
-              "title": "Organization",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SearchConfiguration"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SearchProviderTestResult"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid request.",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Service error.",
-            "headers": {
-              "Retry-After": {
-                "schema": {
-                  "type": "string"
-                }
-              },
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "SessionAuth": []
-          }
-        ],
-        "summary": "Test Organization Provider",
-        "tags": [
-          "search-providers"
-        ]
-      }
-    },
     "/api/v1/organizations/{organization}/security-audit-events": {
       "get": {
         "operationId": "get_organizations_organization_security_audit_events",
@@ -28421,6 +28268,693 @@
         "summary": "Users",
         "tags": [
           "identity-management"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization}/web-providers": {
+      "get": {
+        "operationId": "get_organizations_organization_web_providers",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization",
+            "required": true,
+            "schema": {
+              "title": "Organization",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "enabled",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Enabled"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebProviderCollection"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "List Organization Provider",
+        "tags": [
+          "web-providers"
+        ]
+      },
+      "post": {
+        "operationId": "post_organizations_organization_web_providers",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organization",
+            "required": true,
+            "schema": {
+              "title": "Organization",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWebProviderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebProvider"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong representation precondition.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Create Organization Provider",
+        "tags": [
+          "web-providers"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization}/web-providers/{provider_id}": {
+      "get": {
+        "operationId": "get_organizations_organization_web_providers_provider_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization",
+            "required": true,
+            "schema": {
+              "title": "Organization",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebProvider"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong representation precondition.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get Organization Provider",
+        "tags": [
+          "web-providers"
+        ]
+      },
+      "patch": {
+        "operationId": "patch_organizations_organization_web_providers_provider_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization",
+            "required": true,
+            "schema": {
+              "title": "Organization",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateWebProviderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebProvider"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong representation precondition.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Update Organization Provider",
+        "tags": [
+          "web-providers"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization}/web-providers/{provider_id}/references": {
+      "get": {
+        "operationId": "get_organizations_organization_web_providers_provider_id_references",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization",
+            "required": true,
+            "schema": {
+              "title": "Organization",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebProviderReferenceCollection"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "References Organization Provider",
+        "tags": [
+          "web-providers"
+        ]
+      }
+    },
+    "/api/v1/organizations/{organization}/web-providers/{provider_id}/test": {
+      "post": {
+        "operationId": "post_organizations_organization_web_providers_provider_id_test",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "organization",
+            "required": true,
+            "schema": {
+              "title": "Organization",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebProviderTestResult"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Test Organization Provider",
+        "tags": [
+          "web-providers"
         ]
       }
     },
@@ -31033,150 +31567,6 @@
         "summary": "Continue From Run",
         "tags": [
           "protocol-gateway"
-        ]
-      }
-    },
-    "/api/v1/search-provider-types": {
-      "get": {
-        "operationId": "get_search_provider_types",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SearchProviderDefinitionCollection"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Service error.",
-            "headers": {
-              "Retry-After": {
-                "schema": {
-                  "type": "string"
-                }
-              },
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "SessionAuth": []
-          }
-        ],
-        "summary": "List Types",
-        "tags": [
-          "search-providers"
-        ]
-      }
-    },
-    "/api/v1/search-provider-types/{provider_type}": {
-      "get": {
-        "operationId": "get_search_provider_types_provider_type",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "provider_type",
-            "required": true,
-            "schema": {
-              "title": "Provider Type",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SearchProviderDefinition"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid request.",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Service error.",
-            "headers": {
-              "Retry-After": {
-                "schema": {
-                  "type": "string"
-                }
-              },
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "SessionAuth": []
-          }
-        ],
-        "summary": "Get Type",
-        "tags": [
-          "search-providers"
         ]
       }
     },
@@ -34899,6 +35289,150 @@
         "summary": "Get Avatar",
         "tags": [
           "identity-images"
+        ]
+      }
+    },
+    "/api/v1/web-provider-types": {
+      "get": {
+        "operationId": "get_web_provider_types",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebProviderDefinitionCollection"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "List Types",
+        "tags": [
+          "web-providers"
+        ]
+      }
+    },
+    "/api/v1/web-provider-types/{provider_type}": {
+      "get": {
+        "operationId": "get_web_provider_types_provider_type",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_type",
+            "required": true,
+            "schema": {
+              "title": "Provider Type",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebProviderDefinition"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get Type",
+        "tags": [
+          "web-providers"
         ]
       }
     },
@@ -39575,6 +40109,759 @@
         ]
       }
     },
+    "/api/v1/workspaces/{workspace}/memories": {
+      "get": {
+        "operationId": "get_workspaces_workspace_memories",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Maximum loaded records, not a total count.",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 1000,
+              "description": "Maximum loaded records, not a total count.",
+              "maximum": 1000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Mem0Scope"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subject_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 72,
+                  "pattern": "^(?:thread-[a-f0-9]{32}|[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64})$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subject Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryCollection"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "List Memories",
+        "tags": [
+          "memory"
+        ]
+      },
+      "post": {
+        "operationId": "post_workspaces_workspace_memories",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Mem0Scope"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subject_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 72,
+                  "pattern": "^(?:thread-[a-f0-9]{32}|[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64})$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subject Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Memory"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Add Memory",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/memories/search": {
+      "post": {
+        "operationId": "post_workspaces_workspace_memories_search",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Mem0Scope"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subject_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 72,
+                  "pattern": "^(?:thread-[a-f0-9]{32}|[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64})$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subject Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemorySearch"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MemoryCollection"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Search Memories",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/memories/{memory_id}": {
+      "delete": {
+        "operationId": "delete_workspaces_workspace_memories_memory_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "memory_id",
+            "required": true,
+            "schema": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Memory Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Mem0Scope"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subject_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 72,
+                  "pattern": "^(?:thread-[a-f0-9]{32}|[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64})$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subject Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Delete Memory",
+        "tags": [
+          "memory"
+        ]
+      },
+      "get": {
+        "operationId": "get_workspaces_workspace_memories_memory_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "memory_id",
+            "required": true,
+            "schema": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Memory Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Mem0Scope"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subject_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 72,
+                  "pattern": "^(?:thread-[a-f0-9]{32}|[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64})$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subject Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Memory"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get Memory",
+        "tags": [
+          "memory"
+        ]
+      },
+      "put": {
+        "operationId": "put_workspaces_workspace_memories_memory_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "memory_id",
+            "required": true,
+            "schema": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Memory Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "scope",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/Mem0Scope"
+            }
+          },
+          {
+            "in": "query",
+            "name": "subject_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 72,
+                  "pattern": "^(?:thread-[a-f0-9]{32}|[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64})$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Subject Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MemoryWrite"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Memory"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Update Memory",
+        "tags": [
+          "memory"
+        ]
+      }
+    },
     "/api/v1/workspaces/{workspace}/model-catalog/suggestions": {
       "post": {
         "operationId": "post_workspaces_workspace_model_catalog_suggestions",
@@ -41665,703 +42952,6 @@
         ]
       }
     },
-    "/api/v1/workspaces/{workspace}/search-providers": {
-      "get": {
-        "operationId": "get_workspaces_workspace_search_providers",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "workspace",
-            "required": true,
-            "schema": {
-              "title": "Workspace",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 50,
-              "maximum": 100,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "maxLength": 2048,
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Cursor"
-            }
-          },
-          {
-            "in": "query",
-            "name": "type",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "maxLength": 64,
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Type"
-            }
-          },
-          {
-            "in": "query",
-            "name": "enabled",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "boolean"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Enabled"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SearchProviderCollection"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid request.",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Service error.",
-            "headers": {
-              "Retry-After": {
-                "schema": {
-                  "type": "string"
-                }
-              },
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "SessionAuth": []
-          }
-        ],
-        "summary": "List Workspace Provider",
-        "tags": [
-          "search-providers"
-        ]
-      },
-      "post": {
-        "operationId": "post_workspaces_workspace_search_providers",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "workspace",
-            "required": true,
-            "schema": {
-              "title": "Workspace",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CreateSearchProviderRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "201": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SearchProvider"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "ETag": {
-                "description": "Strong representation precondition.",
-                "schema": {
-                  "type": "string"
-                }
-              },
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid request.",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Service error.",
-            "headers": {
-              "Retry-After": {
-                "schema": {
-                  "type": "string"
-                }
-              },
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "SessionAuth": []
-          }
-        ],
-        "summary": "Create Workspace Provider",
-        "tags": [
-          "search-providers"
-        ]
-      }
-    },
-    "/api/v1/workspaces/{workspace}/search-providers/{provider_id}": {
-      "get": {
-        "operationId": "get_workspaces_workspace_search_providers_provider_id",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "provider_id",
-            "required": true,
-            "schema": {
-              "title": "Provider Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "workspace",
-            "required": true,
-            "schema": {
-              "title": "Workspace",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SearchProvider"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "ETag": {
-                "description": "Strong representation precondition.",
-                "schema": {
-                  "type": "string"
-                }
-              },
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid request.",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Service error.",
-            "headers": {
-              "Retry-After": {
-                "schema": {
-                  "type": "string"
-                }
-              },
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "SessionAuth": []
-          }
-        ],
-        "summary": "Get Workspace Provider",
-        "tags": [
-          "search-providers"
-        ]
-      },
-      "patch": {
-        "operationId": "patch_workspaces_workspace_search_providers_provider_id",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "provider_id",
-            "required": true,
-            "schema": {
-              "title": "Provider Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "workspace",
-            "required": true,
-            "schema": {
-              "title": "Workspace",
-              "type": "string"
-            }
-          },
-          {
-            "in": "header",
-            "name": "If-Match",
-            "required": true,
-            "schema": {
-              "maxLength": 256,
-              "minLength": 1,
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/UpdateSearchProviderRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SearchProvider"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "ETag": {
-                "description": "Strong representation precondition.",
-                "schema": {
-                  "type": "string"
-                }
-              },
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid request.",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Service error.",
-            "headers": {
-              "Retry-After": {
-                "schema": {
-                  "type": "string"
-                }
-              },
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "SessionAuth": []
-          }
-        ],
-        "summary": "Update Workspace Provider",
-        "tags": [
-          "search-providers"
-        ]
-      }
-    },
-    "/api/v1/workspaces/{workspace}/search-providers/{provider_id}/references": {
-      "get": {
-        "operationId": "get_workspaces_workspace_search_providers_provider_id_references",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "provider_id",
-            "required": true,
-            "schema": {
-              "title": "Provider Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "workspace",
-            "required": true,
-            "schema": {
-              "title": "Workspace",
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "limit",
-            "required": false,
-            "schema": {
-              "default": 50,
-              "maximum": 100,
-              "minimum": 1,
-              "title": "Limit",
-              "type": "integer"
-            }
-          },
-          {
-            "in": "query",
-            "name": "cursor",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "maxLength": 2048,
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Cursor"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SearchProviderReferenceCollection"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid request.",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Service error.",
-            "headers": {
-              "Retry-After": {
-                "schema": {
-                  "type": "string"
-                }
-              },
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "SessionAuth": []
-          }
-        ],
-        "summary": "References Workspace Provider",
-        "tags": [
-          "search-providers"
-        ]
-      }
-    },
-    "/api/v1/workspaces/{workspace}/search-providers/{provider_id}/test": {
-      "post": {
-        "operationId": "post_workspaces_workspace_search_providers_provider_id_test",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "provider_id",
-            "required": true,
-            "schema": {
-              "title": "Provider Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "workspace",
-            "required": true,
-            "schema": {
-              "title": "Workspace",
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SearchConfiguration"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/SearchProviderTestResult"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid request.",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Service error.",
-            "headers": {
-              "Retry-After": {
-                "schema": {
-                  "type": "string"
-                }
-              },
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "SessionAuth": []
-          }
-        ],
-        "summary": "Test Workspace Provider",
-        "tags": [
-          "search-providers"
-        ]
-      }
-    },
     "/api/v1/workspaces/{workspace}/security-audit-events": {
       "get": {
         "operationId": "get_workspaces_workspace_security_audit_events",
@@ -43494,6 +44084,188 @@
         ]
       }
     },
+    "/api/v1/workspaces/{workspace}/toolsets": {
+      "get": {
+        "operationId": "get_workspaces_workspace_toolsets",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolsetCatalog"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get Toolsets",
+        "tags": [
+          "agent-management"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/toolsets/validate": {
+      "post": {
+        "operationId": "post_workspaces_workspace_toolsets_validate",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ToolsetCandidate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ToolsetCandidateResult"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Validate Toolsets",
+        "tags": [
+          "agent-management"
+        ]
+      }
+    },
     "/api/v1/workspaces/{workspace}/trace-query": {
       "get": {
         "operationId": "get_workspaces_workspace_trace_query",
@@ -44060,6 +44832,693 @@
         "summary": "List Trace Observations",
         "tags": [
           "trace-query"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/web-providers": {
+      "get": {
+        "operationId": "get_workspaces_workspace_web_providers",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          },
+          {
+            "in": "query",
+            "name": "type",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 64,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Type"
+            }
+          },
+          {
+            "in": "query",
+            "name": "enabled",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Enabled"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebProviderCollection"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "List Workspace Provider",
+        "tags": [
+          "web-providers"
+        ]
+      },
+      "post": {
+        "operationId": "post_workspaces_workspace_web_providers",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateWebProviderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebProvider"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong representation precondition.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Create Workspace Provider",
+        "tags": [
+          "web-providers"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/web-providers/{provider_id}": {
+      "get": {
+        "operationId": "get_workspaces_workspace_web_providers_provider_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebProvider"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong representation precondition.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get Workspace Provider",
+        "tags": [
+          "web-providers"
+        ]
+      },
+      "patch": {
+        "operationId": "patch_workspaces_workspace_web_providers_provider_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateWebProviderRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebProvider"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "ETag": {
+                "description": "Strong representation precondition.",
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Update Workspace Provider",
+        "tags": [
+          "web-providers"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/web-providers/{provider_id}/references": {
+      "get": {
+        "operationId": "get_workspaces_workspace_web_providers_provider_id_references",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebProviderReferenceCollection"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "References Workspace Provider",
+        "tags": [
+          "web-providers"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/web-providers/{provider_id}/test": {
+      "post": {
+        "operationId": "post_workspaces_workspace_web_providers_provider_id_test",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "provider_id",
+            "required": true,
+            "schema": {
+              "title": "Provider Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebProviderTestResult"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Test Workspace Provider",
+        "tags": [
+          "web-providers"
         ]
       }
     }

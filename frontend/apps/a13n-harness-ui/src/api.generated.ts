@@ -292,6 +292,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/setup/model-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Model Options */
+        post: operations["model_options_api_setup_model_options_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/setup/preview": {
         parameters: {
             query?: never;
@@ -437,7 +454,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** Active Login */
+        get: operations["active_login_api_auth_logins_get"];
         put?: never;
         /** Start Login */
         post: operations["start_login_api_auth_logins_post"];
@@ -1238,6 +1256,17 @@ export interface components {
             /** Sources */
             sources: components["schemas"]["ToolProxySourceView"][];
         };
+        /** ApiKeyAuthentication */
+        ApiKeyAuthentication: {
+            /**
+             * Kind
+             * @constant
+             */
+            kind: "api_key";
+            /** Env */
+            env?: string | null;
+            credential_ref?: components["schemas"]["ResourceId"] | null;
+        };
         /** ApiKeyStatus */
         ApiKeyStatus: {
             credential_ref: components["schemas"]["ResourceId"];
@@ -1272,6 +1301,23 @@ export interface components {
              * @default []
              */
             capability_warnings?: string[];
+        };
+        /**
+         * AppliedEditView
+         * @description Observed edit content, or an explicit omission when retention bounds were reached.
+         */
+        AppliedEditView: {
+            /** File Path */
+            file_path: string;
+            /** Before */
+            before?: string | null;
+            /** After */
+            after?: string | null;
+            /**
+             * Omitted
+             * @default false
+             */
+            omitted?: boolean;
         };
         /** ApprovalRequestView */
         ApprovalRequestView: {
@@ -1310,6 +1356,16 @@ export interface components {
          * @enum {string}
          */
         Availability: "available" | "absent" | "incompatible" | "unsupported";
+        /** CapabilitySelection */
+        CapabilitySelection: {
+            capability: components["schemas"]["CatalogKey"];
+            /** Configuration */
+            configuration?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+        } & {
+            [key: string]: components["schemas"]["JsonValue"];
+        };
         /** CapturedAgentSelection */
         CapturedAgentSelection: {
             /** Name */
@@ -1336,6 +1392,7 @@ export interface components {
             project_id: string | null;
             /** Project Roots */
             project_roots: string[];
+            webui_sidekick?: components["schemas"]["SidekickConfiguration"] | null;
             agent: components["schemas"]["CapturedAgentSelection"];
             /** Capability Ids */
             capability_ids: string[];
@@ -1377,6 +1434,7 @@ export interface components {
              */
             omitted_fields?: string[];
         };
+        CatalogKey: string;
         /** CatalogReference */
         CatalogReference: {
             /**
@@ -2198,6 +2256,26 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /**
+         * HarnessModelCharacteristics
+         * @description Resolved Harness characteristics of the active Agent model.
+         */
+        HarnessModelCharacteristics: {
+            /** Capabilities */
+            capabilities?: components["schemas"]["ModelCapability"][];
+            /** Context Window */
+            context_window?: number | null;
+            /**
+             * Proactive Context Management Threshold
+             * @default 0.65
+             */
+            proactive_context_management_threshold?: number | null;
+            /**
+             * Compact Threshold
+             * @default 0.9
+             */
+            compact_threshold?: number;
+        };
         JsonValue: unknown;
         /**
          * ListenerFeatures
@@ -2338,6 +2416,13 @@ export interface components {
             /** Id */
             id: string;
         };
+        /**
+         * ModelCapability
+         * @description Harness-owned capabilities of the active Agent model.
+         * @enum {string}
+         */
+        ModelCapability: "image_understanding" | "video_understanding" | "audio_understanding";
+        ModelCharacteristics: components["schemas"]["HarnessModelCharacteristics"];
         /** NotePage */
         NotePage: {
             /** Continuation Id */
@@ -2417,6 +2502,11 @@ export interface components {
              * @default false
              */
             foreground?: boolean;
+            /**
+             * Pointer Enabled
+             * @default false
+             */
+            pointer_enabled?: boolean;
             /** Participant Id */
             participant_id: string;
             /**
@@ -2814,6 +2904,98 @@ export interface components {
             /** Source Path */
             source_path: string;
         };
+        /** SessionAffinityPreset */
+        SessionAffinityPreset: {
+            /** Label */
+            label: string;
+            /** Header */
+            header: string;
+            /** Description */
+            description: string;
+        };
+        /** SetupApiKeyModel */
+        SetupApiKeyModel: {
+            /** Route */
+            route: string;
+            authentication: components["schemas"]["ApiKeyAuthentication"];
+            /** Settings */
+            settings?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Model Configuration */
+            model_configuration?: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            model_characteristics?: components["schemas"]["ModelCharacteristics"];
+        };
+        /** SetupApiProvider */
+        SetupApiProvider: {
+            /** Value */
+            value: string;
+            /** Label */
+            label: string;
+            /** Base Url */
+            base_url: string;
+            /** Models */
+            models: string[];
+            /**
+             * Supports Session Affinity
+             * @default true
+             */
+            supports_session_affinity?: boolean;
+        };
+        /** SetupChoices */
+        SetupChoices: {
+            defaults: components["schemas"]["SetupSelection"];
+            /** Subscription Models */
+            subscription_models: {
+                [key: string]: components["schemas"]["SetupModelChoice"][];
+            };
+            /** Api Providers */
+            api_providers: components["schemas"]["SetupApiProvider"][];
+            /**
+             * Session Affinity Presets
+             * @default [
+             *       {
+             *         "label": "LiteLLM",
+             *         "header": "x-litellm-session-id",
+             *         "description": "Requires session affinity to be enabled on the gateway."
+             *       },
+             *       {
+             *         "label": "Conversation ID",
+             *         "header": "x-conversation-id",
+             *         "description": "For gateways configured to route by this header; configure the routing rule first."
+             *       },
+             *       {
+             *         "label": "Bifrost (API-key affinity)",
+             *         "header": "x-bf-session-id",
+             *         "description": "API-key affinity only; does not guarantee weighted provider or target pinning."
+             *       },
+             *       {
+             *         "label": "X-Session-ID (legacy / custom)",
+             *         "header": "x-session-id",
+             *         "description": "Use only when your gateway is configured to recognize this header."
+             *       }
+             *     ]
+             */
+            session_affinity_presets?: components["schemas"]["SessionAffinityPreset"][];
+        };
+        /** SetupModelChoice */
+        SetupModelChoice: {
+            /** Value */
+            value: string;
+            /** Label */
+            label: string;
+        };
+        /** SetupModelOptions */
+        SetupModelOptions: {
+            /** Presets */
+            presets: components["schemas"]["SetupSettingsChoice"][];
+            /** Context Window */
+            context_window: number;
+            /** Known Context Window */
+            known_context_window: number | null;
+        };
         /** SetupPreview */
         SetupPreview: {
             /** Files */
@@ -2852,10 +3034,120 @@ export interface components {
             /** Error Message */
             error_message?: string | null;
         };
+        /** SetupSelection */
+        SetupSelection: {
+            /**
+             * Providers
+             * @default []
+             */
+            providers?: ("codex" | "grok")[];
+            api_key_model?: components["schemas"]["SetupApiKeyModel"] | null;
+            /**
+             * Instructions
+             * @default
+             */
+            instructions?: string;
+            new_agent_id?: components["schemas"]["ResourceId"] | null;
+            /**
+             * New Agent Name
+             * @default
+             */
+            new_agent_name?: string;
+            new_model_id?: components["schemas"]["ResourceId"] | null;
+            /**
+             * New Model Name
+             * @default
+             */
+            new_model_name?: string;
+            existing_model_id?: components["schemas"]["ResourceId"] | null;
+            /**
+             * Connect Default
+             * @default false
+             */
+            connect_default?: boolean;
+            /** Tool Capabilities */
+            tool_capabilities?: components["schemas"]["CapabilitySelection"][] | null;
+            /** @default agent-default */
+            default_agent?: components["schemas"]["ResourceId"];
+            project?: components["schemas"]["ResourceId"] | null;
+            /** Project Path */
+            project_path?: string | null;
+            /**
+             * Environment Profile
+             * @enum {string}
+             */
+            environment_profile: "environment-native" | "environment-sandbox";
+            /**
+             * Shell Review
+             * @default true
+             */
+            shell_review?: boolean;
+            /** Include Default Subagents */
+            include_default_subagents?: boolean | null;
+            /**
+             * Codex Model
+             * @default gpt-5.6-sol
+             * @enum {string}
+             */
+            codex_model?: "gpt-5.6-terra" | "gpt-5.6-sol" | "gpt-6-astra";
+            /**
+             * Grok Model
+             * @default grok-4.6
+             * @enum {string}
+             */
+            grok_model?: "grok-4.6" | "grok-4.5" | "grok-4.20-0309-reasoning";
+            /**
+             * Codex Thinking
+             * @default high
+             * @enum {string}
+             */
+            codex_thinking?: "low" | "medium" | "high" | "xhigh";
+            /** Codex Service Tier */
+            codex_service_tier?: ("priority" | "default") | null;
+            /**
+             * Codex Context Window
+             * @default 350000
+             */
+            codex_context_window?: number;
+            /**
+             * Proactive Context Management Threshold
+             * @default 0.65
+             */
+            proactive_context_management_threshold?: number;
+            /**
+             * Compact Threshold
+             * @default 0.9
+             */
+            compact_threshold?: number;
+        };
+        /** SetupSettingsChoice */
+        SetupSettingsChoice: {
+            /** Value */
+            value: string;
+            /** Label */
+            label: string;
+            /** Description */
+            description: string;
+            /** Settings */
+            settings: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+        };
         /** SetupStatus */
         SetupStatus: {
             /** Needed */
             needed: boolean;
+            /**
+             * Fresh
+             * @default false
+             */
+            fresh?: boolean;
+            /**
+             * Draft Scope
+             * @default
+             */
+            draft_scope?: string;
+            choices?: components["schemas"]["SetupChoices"];
             /** Configuration Path */
             configuration_path: string;
             /**
@@ -2979,6 +3271,16 @@ export interface components {
             environment_profile: string;
             /** Diagnostic */
             diagnostic?: string | null;
+        };
+        /**
+         * SidekickConfiguration
+         * @description Instruction-guided collaboration; omitted Agent inherits the calling Agent.
+         */
+        SidekickConfiguration: {
+            agent?: components["schemas"]["ResourceId"] | null;
+            model?: components["schemas"]["ResourceId"] | null;
+        } & {
+            [key: string]: components["schemas"]["JsonValue"];
         };
         /**
          * StoreKind
@@ -3491,6 +3793,9 @@ export interface components {
             tool_call_id?: string | null;
             /** Outcome */
             outcome?: ("success" | "failed" | "denied" | "interrupted") | null;
+            /** Provider */
+            provider?: string | null;
+            applied_edit?: components["schemas"]["AppliedEditView"] | null;
             value?: components["schemas"]["JsonValue"] | null;
             /**
              * Value Omitted
@@ -3697,6 +4002,47 @@ export interface components {
              * @default false
              */
             foreground?: boolean;
+            /**
+             * Pointer Enabled
+             * @default false
+             */
+            pointer_enabled?: boolean;
+        };
+        /** PointerPosition */
+        PointerPosition: {
+            /** Anchor */
+            anchor: string;
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+        };
+        /** PointerReport */
+        PointerReport: {
+            /**
+             * Kind
+             * @default pointer
+             * @constant
+             */
+            kind?: "pointer";
+            target: components["schemas"]["ConversationPage"];
+            /** @default null */
+            pointer?: components["schemas"]["PointerPosition"] | null;
+        };
+        /** PointerFrame */
+        PointerFrame: {
+            /**
+             * Kind
+             * @default pointers
+             * @constant
+             */
+            kind?: "pointers";
+            /** @default null */
+            target?: components["schemas"]["ConversationPage"] | null;
+            /** Pointers */
+            pointers?: {
+                [key: string]: components["schemas"]["PointerPosition"];
+            };
         };
         /** ErrorBody */
         ErrorBody: {
@@ -3791,155 +4137,17 @@ export interface components {
             /** End Line */
             end_line?: number | null;
         };
-        /** ApiKeyAuthentication */
-        ApiKeyAuthentication: {
+        /** SetupModelOptionsRequest */
+        SetupModelOptionsRequest: {
+            /** Provider */
+            provider: string;
+            /** Model Id */
+            model_id: string;
             /**
-             * Kind
-             * @constant
-             */
-            kind: "api_key";
-            /** Env */
-            env?: string | null;
-            credential_ref?: components["schemas"]["ResourceId"] | null;
-        };
-        /** CapabilitySelection */
-        CapabilitySelection: {
-            capability: components["schemas"]["CatalogKey"];
-            /** Configuration */
-            configuration?: {
-                [key: string]: components["schemas"]["JsonValue"];
-            };
-        } & {
-            [key: string]: components["schemas"]["JsonValue"];
-        };
-        CatalogKey: string;
-        /**
-         * HarnessModelCharacteristics
-         * @description Resolved Harness characteristics of the active Agent model.
-         */
-        HarnessModelCharacteristics: {
-            /** Capabilities */
-            capabilities?: components["schemas"]["ModelCapability"][];
-            /** Context Window */
-            context_window?: number | null;
-            /**
-             * Proactive Context Management Threshold
-             * @default 0.65
-             */
-            proactive_context_management_threshold?: number | null;
-            /**
-             * Compact Threshold
-             * @default 0.9
-             */
-            compact_threshold?: number;
-        };
-        /**
-         * ModelCapability
-         * @description Harness-owned capabilities of the active Agent model.
-         * @enum {string}
-         */
-        ModelCapability: "image_understanding" | "video_understanding" | "audio_understanding";
-        ModelCharacteristics: components["schemas"]["HarnessModelCharacteristics"];
-        /** SetupApiKeyModel */
-        SetupApiKeyModel: {
-            /** Route */
-            route: string;
-            authentication: components["schemas"]["ApiKeyAuthentication"];
-            /** Settings */
-            settings?: {
-                [key: string]: components["schemas"]["JsonValue"];
-            };
-            /** Model Configuration */
-            model_configuration?: {
-                [key: string]: components["schemas"]["JsonValue"];
-            };
-            model_characteristics?: components["schemas"]["ModelCharacteristics"];
-        };
-        /** SetupSelection */
-        SetupSelection: {
-            /**
-             * Providers
-             * @default []
-             */
-            providers?: ("codex" | "grok")[];
-            api_key_model?: components["schemas"]["SetupApiKeyModel"] | null;
-            /**
-             * Instructions
+             * Base Url
              * @default
              */
-            instructions?: string;
-            new_agent_id?: components["schemas"]["ResourceId"] | null;
-            /**
-             * New Agent Name
-             * @default
-             */
-            new_agent_name?: string;
-            new_model_id?: components["schemas"]["ResourceId"] | null;
-            /**
-             * New Model Name
-             * @default
-             */
-            new_model_name?: string;
-            existing_model_id?: components["schemas"]["ResourceId"] | null;
-            /**
-             * Connect Default
-             * @default false
-             */
-            connect_default?: boolean;
-            /** Tool Capabilities */
-            tool_capabilities?: components["schemas"]["CapabilitySelection"][] | null;
-            /** @default agent-default */
-            default_agent?: components["schemas"]["ResourceId"];
-            project?: components["schemas"]["ResourceId"] | null;
-            /** Project Path */
-            project_path?: string | null;
-            /**
-             * Environment Profile
-             * @enum {string}
-             */
-            environment_profile: "environment-native" | "environment-sandbox";
-            /**
-             * Shell Review
-             * @default true
-             */
-            shell_review?: boolean;
-            /** Include Default Subagents */
-            include_default_subagents?: boolean | null;
-            /**
-             * Codex Model
-             * @default gpt-5.6-sol
-             * @enum {string}
-             */
-            codex_model?: "gpt-5.6-terra" | "gpt-5.6-sol" | "gpt-6-astra";
-            /**
-             * Grok Model
-             * @default grok-4.6
-             * @enum {string}
-             */
-            grok_model?: "grok-4.6" | "grok-4.5" | "grok-4.20-0309-reasoning";
-            /**
-             * Codex Thinking
-             * @default high
-             * @enum {string}
-             */
-            codex_thinking?: "low" | "medium" | "high" | "xhigh";
-            /** Codex Service Tier */
-            codex_service_tier?: ("priority" | "default") | null;
-            /**
-             * Codex Context Window
-             * @default 350000
-             */
-            codex_context_window?: number;
-            /**
-             * Proactive Context Management Threshold
-             * @default 0.65
-             */
-            proactive_context_management_threshold?: number;
-            /**
-             * Compact Threshold
-             * @default 0.9
-             */
-            compact_threshold?: number;
+            base_url?: string;
         };
         /** SetupApplyRequest */
         SetupApplyRequest: {
@@ -4113,6 +4321,8 @@ export interface components {
         };
         /** CreateThreadRequest */
         CreateThreadRequest: {
+            /** Thread Id */
+            thread_id?: string | null;
             defaults?: components["schemas"]["NewThreadDefaults"] | null;
             /** Title */
             title?: string | null;
@@ -4796,6 +5006,30 @@ export interface operations {
             };
         };
     };
+    model_options_api_setup_model_options_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SetupModelOptionsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SetupModelOptions"];
+                };
+            };
+        };
+    };
     preview_api_setup_preview_post: {
         parameters: {
             query?: never;
@@ -5052,6 +5286,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    active_login_api_auth_logins_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LoginStatus"] | null;
                 };
             };
         };
@@ -5919,6 +6173,7 @@ export interface operations {
         parameters: {
             query?: {
                 project_id?: string | null;
+                project_scope?: "all" | "projectless" | "unavailable";
                 query?: string | null;
                 include_archived?: boolean;
                 cursor?: string | null;

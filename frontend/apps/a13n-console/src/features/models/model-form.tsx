@@ -1,3 +1,4 @@
+import { ManageProvidersLink } from "../providers/manage-link";
 import { ResourceReference } from "../../shared/resource-reference";
 import { ConnectionTest } from "./connection-test";
 import { ProviderIcon } from "../../shared/provider-icon";
@@ -9,6 +10,7 @@ import {
   DisclosureSection,
   FormField,
   Input,
+  ReadOnlyField,
   SearchPicker,
   Switch,
   Tabs,
@@ -319,6 +321,25 @@ export function ModelForm({
           </Button>
         )}
       </div>
+      {selectedProvider && (
+        <ReadOnlyField
+          label={t("Session affinity header")}
+          description={t(
+            "Inherited from the provider connection. A stable UUID derived from the current Thread ID is supplied automatically; edit the provider to change the header.",
+          )}
+        >
+          <span>
+            {String(
+              selectedProvider.configuration.session_affinity_header ??
+                t("Disabled"),
+            )}
+          </span>
+          <ManageProvidersLink
+            category="models"
+            scope={selectedProvider.workspace_id ? "workspace" : "organization"}
+          />
+        </ReadOnlyField>
+      )}
       {!original && definition?.supports_model_discovery && (
         <Tabs
           value={manual ? "manual" : "catalog"}

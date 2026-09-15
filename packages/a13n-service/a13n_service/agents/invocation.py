@@ -4,18 +4,16 @@ from __future__ import annotations
 
 from typing import Literal
 
-from a13n_harness.tools import ToolPermissions
 from pydantic import Field, model_validator
 
+from a13n_service.memory.domain import MemorySelection
 from a13n_service.models.settings import JsonObject
-from a13n_service.search.domain import SearchSelection
 
 from .domain import (
     AgentConfig,
     AgentModel,
     AgentReviewer,
     AgentRunOverride,
-    AssetPublicationConfig,
     BoundedKey,
     ClientToolDefinition,
     ConnectionToolSelection,
@@ -30,13 +28,14 @@ from .domain import (
     SubagentSelection,
 )
 from .errors import invalid_run_override
+from .toolsets import Toolsets, default_toolsets
 
 
 class MergedAgentRunConfig(StrictModel):
     """Typed non-secret config after applying one Run override to a Revision."""
 
-    search: SearchSelection | None = Field(default=None, exclude_if=lambda value: value is None)
-    permissions: ToolPermissions | None = Field(default=None, exclude_if=lambda value: value is None)
+    toolsets: Toolsets = Field(default_factory=default_toolsets)
+    memory: MemorySelection | None = Field(default=None, exclude_if=lambda value: value is None)
     reviewer: AgentReviewer | None = Field(default=None, exclude_if=lambda value: value is None)
     subagent_mode: Literal["inline", "async"] = "inline"
     model: AgentModel
@@ -51,7 +50,6 @@ class MergedAgentRunConfig(StrictModel):
     output_spec: OutputSpec | None = None
     retries: RetryConfig | None = None
     secret_requirements: tuple[SecretRequirement, ...] = Field(default=(), max_length=128)
-    asset_publication: AssetPublicationConfig | None = None
     protocol: ProtocolConfig
 
     @model_validator(mode="after")
@@ -112,6 +110,12 @@ def merge_agent_run_override(
         if override.instructions is None:
             raise invalid_run_override("instructions", "null_not_allowed")
         instructions = override.instructions
+
+    toolsets = dict(base.toolsets)
+    if "toolsets" in fields:
+        if override.toolsets is None:
+            raise invalid_run_override("toolsets", "null_not_allowed")
+        toolsets.update(override.toolsets)
 
     plugins = _replace_list(
         inherited=base.plugins,
@@ -243,9 +247,8 @@ def merge_agent_run_override(
         output_spec=output_spec,
         retries=retries,
         secret_requirements=base.secret_requirements,
-        asset_publication=base.asset_publication,
-        search=override.search if "search" in fields else base.search,
-        permissions=override.permissions if "permissions" in fields else base.permissions,
+        toolsets=toolsets,
+        memory=override.memory if "memory" in fields else base.memory,
         reviewer=override.reviewer if "reviewer" in fields else base.reviewer,
         protocol=protocol,
     )

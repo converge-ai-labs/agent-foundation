@@ -400,7 +400,7 @@ async def test_switch_to_unauthenticated_provider_clears_material_and_advances_g
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("session_header", ["thread-current", "thread-other"])
-async def test_only_current_harness_correlation_is_allowed_at_model_dispatch(session_header: str) -> None:
+async def test_caller_cannot_supply_even_current_thread_affinity_at_model_dispatch(session_header: str) -> None:
     native = TestModel()
     resolver = Mock(spec=LiveProviderResolver)
     resolver.resolve = AsyncMock(return_value=Mock())
@@ -416,11 +416,7 @@ async def test_only_current_harness_correlation_is_allowed_at_model_dispatch(ses
         harness_thread_id="thread-current",
     )
     settings = {"extra_headers": {"x-session-id": session_header}}
-    if session_header == "thread-current":
+    with pytest.raises(ModelError):
         await model.request([], settings, ModelRequestParameters())
-        resolver.resolve.assert_awaited_once()
-    else:
-        with pytest.raises(ModelError):
-            await model.request([], settings, ModelRequestParameters())
-        resolver.resolve.assert_not_awaited()
+    resolver.resolve.assert_not_awaited()
     assert settings == {"extra_headers": {"x-session-id": session_header}}

@@ -15,6 +15,8 @@ from .role_rules import validate_binding
 
 
 class WorkspaceAction(StrEnum):
+    memory_read = "memory.read"
+    memory_write = "memory.write"
     agent_read = "agent.read"
     agent_create = "agent.create"
     agent_update = "agent.update"
@@ -27,8 +29,8 @@ class WorkspaceAction(StrEnum):
     asset_create = "asset.create"
     asset_use = "asset.use"
     asset_delete = "asset.delete"
-    search_provider_read = "search_provider.read"
-    search_provider_manage = "search_provider.manage"
+    web_provider_read = "web_provider.read"
+    web_provider_manage = "web_provider.manage"
     models_read = "models.read"
     models_manage = "models.manage"
     secrets_read = "secrets.read"
@@ -98,7 +100,7 @@ _READ_ACTIONS = frozenset(
         WorkspaceAction.asset_read,
         WorkspaceAction.agent_read,
         WorkspaceAction.models_read,
-        WorkspaceAction.search_provider_read,
+        WorkspaceAction.web_provider_read,
         WorkspaceAction.secrets_read,
         WorkspaceAction.skill_read,
         WorkspaceAction.environment_provider_read,
@@ -111,6 +113,7 @@ _READ_ACTIONS = frozenset(
         WorkspaceAction.notification_subscribe,
         WorkspaceAction.usage_read,
         WorkspaceAction.trace_read,
+        WorkspaceAction.memory_read,
         WorkspaceAction.hook_subscription_read,
         WorkspaceAction.queued_submission_read,
         WorkspaceAction.a2a_push_configuration_read,
@@ -125,6 +128,7 @@ _RUNNER_ACTIONS = _READ_ACTIONS | frozenset(
     {
         WorkspaceAction.application_account_use,
         WorkspaceAction.agent_invoke,
+        WorkspaceAction.memory_write,
         WorkspaceAction.asset_create,
         WorkspaceAction.asset_use,
         WorkspaceAction.environment_use,
@@ -163,7 +167,7 @@ _BUILDER_ACTIONS = _RUNNER_ACTIONS | frozenset(
         WorkspaceAction.agent_duplicate,
         WorkspaceAction.asset_delete,
         WorkspaceAction.models_manage,
-        WorkspaceAction.search_provider_manage,
+        WorkspaceAction.web_provider_manage,
         WorkspaceAction.secrets_manage,
         WorkspaceAction.secrets_bind,
         WorkspaceAction.skill_create,
@@ -213,6 +217,7 @@ _DIRECT_AGENT_VIEWER_ACTIONS = frozenset(
         WorkspaceAction.lifecycle_event_read,
         WorkspaceAction.notification_subscribe,
         WorkspaceAction.trace_read,
+        WorkspaceAction.memory_read,
         WorkspaceAction.a2a_push_configuration_read,
     }
 )
@@ -220,6 +225,7 @@ _DIRECT_AGENT_VIEWER_ACTIONS = frozenset(
 _DIRECT_AGENT_RUNNER_ACTIONS = _DIRECT_AGENT_VIEWER_ACTIONS | frozenset(
     {
         WorkspaceAction.agent_invoke,
+        WorkspaceAction.memory_write,
         WorkspaceAction.run_continue,
         WorkspaceAction.run_fork,
         WorkspaceAction.run_retry,

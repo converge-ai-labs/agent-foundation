@@ -41,6 +41,20 @@ An alternate environment file is used unchanged. If it does not exist, the launc
 
 Unlike the SDK development launcher, this command needs no `opentelemetry-instrument` wrapper. `open_harness_ui_app()` initializes an App-owned OTLP/HTTP tracing provider when tracing is enabled and no global Host provider exists. It passes that same provider to root and child Harness builds and drains it after App tasks finish. Explicitly supplied or preconfigured Host providers remain externally owned.
 
+## Disposable first-launch experience
+
+```bash
+make cli-landing
+make webui-landing
+make webui-landing WEBUI_ARGS='--port 9000 --no-share-computer'
+```
+
+These interactive manual-test targets start from scratch on every invocation. They do not seed from the regular development configuration, load the development `.env`, or require Langfuse. The launcher creates a temporary HOME, workspace, and data root; the default root YAML is deliberately absent so the ordinary first-run path decides what to show. User guidance, skills, history, API-key files, and Codex/Grok account files are not copied. Shell-provided provider keys, WebUI authentication settings, and proxy settings remain available; this is disposable application state, not a sandbox or a fully empty environment.
+
+`cli-landing` launches the normal CLI, including setup and the subsequent chat. `webui-landing` builds browser assets and starts the normal authenticated server; open its printed login link (or use your supplied key). It accepts `WEBUI_ARGS`, but neither target accepts `CLI_ARGS` or configuration/data path overrides. The temporary path is printed before startup.
+
+Exit the CLI or press Ctrl+C in the WebUI server terminal to delete all temporary state, including credentials and configuration saved during setup. Completing setup does not immediately delete live application files, so you can continue testing a first conversation. Closing a browser tab does not stop the server or trigger cleanup. Normal exits, Python errors, and Ctrl+C unwind the temporary-directory scope; a forced kill or machine crash can leave the printed directory behind. Any real provider requests or account authorizations still have their usual external effects.
+
 ## Deterministic App smoke test
 
 ```bash

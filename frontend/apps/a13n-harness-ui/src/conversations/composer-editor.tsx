@@ -20,6 +20,7 @@ export function ComposerEditor({
   submit,
   attachments,
   editor,
+  autoFocus = false,
 }: {
   draft: ThreadDraft;
   profile: Profile;
@@ -27,6 +28,7 @@ export function ComposerEditor({
   submit: () => void;
   attachments?: ComposerAttachmentView;
   editor?: { current: EditorView | null };
+  autoFocus?: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const send = useRef(submit);
@@ -41,9 +43,28 @@ export function ComposerEditor({
   useEffect(() => {
     if (!host.current) return;
     const awareness = new Awareness(doc);
+    let active = false;
+    let disposed = false;
+    let idle: ReturnType<typeof setTimeout> | undefined;
+    const clearCursor = () => {
+      active = false;
+      clearTimeout(idle);
+      awareness.setLocalStateField("cursor", null);
+    };
+    const activate = () => {
+      active = true;
+      clearTimeout(idle);
+      idle = setTimeout(clearCursor, 30000);
+      queueMicrotask(() => {
+        if (!disposed && active) view.dispatch({});
+      });
+    };
     const publish = (_change: unknown, origin: unknown) => {
       if (origin === "server") return;
-      const cursor = awareness.getLocalState()?.cursor;
+      const cursor =
+        active && document.hasFocus() && document.visibilityState === "visible"
+          ? awareness.getLocalState()?.cursor
+          : null;
       report.current({
         name: person.current.display_name,
         color: person.current.color,
@@ -91,6 +112,13 @@ export function ComposerEditor({
       doc: doc.getText("text").toString(),
       extensions: [
         EditorView.lineWrapping,
+        EditorView.domEventHandlers({
+          focus: activate,
+          keydown: activate,
+          pointerdown: activate,
+          input: activate,
+          blur: clearCursor,
+        }),
         ...(attachments
           ? [composerAttachments(draft, () => attachmentContext.current!)]
           : []),
@@ -120,23 +148,49 @@ export function ComposerEditor({
           },
           ".cm-content": {
             fontFamily: "inherit",
-            minHeight: "100px",
-            padding: "14px 4px",
+            minHeight: "44px",
+            padding: "20px 0 4px",
             lineHeight: "1.6",
           },
           ".cm-scroller": {
-            maxHeight: "280px",
+            maxHeight: "240px",
             overflow: "auto",
             fontFamily: "inherit",
           },
           ".cm-cursor": { borderLeftColor: "var(--a13n-text)" },
           "&.cm-focused": { outline: "none" },
-          ".cm-ySelectionInfo": { fontFamily: "inherit" },
+          ".cm-ySelectionCaret": {
+            borderLeftWidth: "2px",
+            borderRightWidth: "1px",
+            pointerEvents: "none",
+          },
+          ".cm-ySelectionCaretDot": { display: "none" },
+          ".cm-ySelectionInfo": {
+            fontFamily: "inherit",
+            fontSize: "11px",
+            fontWeight: "500",
+            lineHeight: "18px",
+            top: "-20px",
+            padding: "0 5px",
+            borderRadius: "4px 4px 4px 0",
+            maxWidth: "160px",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            opacity: "1",
+            // Keep arbitrary profile colors identifiable with readable label text.
+            color: "var(--a13n-text)",
+            backgroundColor: "var(--a13n-canvas)",
+            boxShadow: "0 1px 3px #0002",
+            borderTop: "2px solid",
+            borderTopColor: "inherit",
+          },
         }),
       ],
     });
     if (editor) editor.current = view;
-    let disposed = false;
+    window.addEventListener("blur", clearCursor);
+    document.addEventListener("visibilitychange", clearCursor);
+    if (autoFocus) view.focus();
     let scheduled = false;
     const unsubscribe = draft.subscribe(() => {
       if (scheduled) return;
@@ -152,7 +206,10 @@ export function ComposerEditor({
     syncPresence();
     return () => {
       disposed = true;
+      clearTimeout(idle);
       unsubscribe();
+      window.removeEventListener("blur", clearCursor);
+      document.removeEventListener("visibilitychange", clearCursor);
       awareness.off("update", publish);
       if (editor) editor.current = null;
       view.destroy();
@@ -171,5 +228,5 @@ export function ComposerEditor({
   useEffect(() => {
     report.current({ name: profile.display_name, color: profile.color });
   }, [profile]);
-  return <div ref={host} />;
+  return <div ref={host} data-presence-anchor="composer" />;
 }

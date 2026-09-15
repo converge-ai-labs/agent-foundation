@@ -44,14 +44,19 @@ def idempotency_conflict() -> AgentError:
 def map_model_error(error: ModelError) -> AgentError:
     if error.code == "invalid_model_settings":
         return AgentError(error.code, error.message, category=error.category, details=error.details)
-    reason = {
+    return agent_revision_not_executable(model_error_reason(error))
+
+
+def model_error_reason(error: ModelError) -> str:
+    """Map Model setup failures to the stable Agent-facing reason vocabulary."""
+
+    return {
         "model_not_found": "model_unavailable",
         "model_disabled": "model_unavailable",
         "credential_not_eligible": "model_credential_unavailable",
         "model_configuration_changed": "model_configuration_changed",
         "invalid_model_configuration": "model_incompatible",
     }.get(error.code, "model_unavailable")
-    return agent_revision_not_executable(reason)
 
 
 def agent_not_found() -> AgentError:
