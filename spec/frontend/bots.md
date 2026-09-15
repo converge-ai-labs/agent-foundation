@@ -25,7 +25,7 @@ Bots is placed under Integrations alongside Application accounts and Connections
 | AccountTarget          | Exact external channel/chat, optional Agent override, and supported per-target settings                                             |
 | Connection             | Independently authorized outbound tool source usable by the selected Agent                                                          |
 | Session / Thread / Run | Existing durable interaction, history, and execution model                                                                          |
-| Bot Memory             | Scoped records and metadata, browsing, sharing, and retention; owned by [Bot Memory](bot-memory.md)                                 |
+| Bot Memory             | Provider-independent index/documents, on-demand reading, sharing, and retention; owned by [Bot Memory](bot-memory.md)               |
 
 ### Bot identity
 
@@ -120,7 +120,7 @@ The heading shows local name, platform, external installation identity, administ
 - Overview shows default Agent, reception mode, incomplete setup steps, and recent failures with specific recovery actions.
 - Channels / Group chats shows exact targets and their Agent and response policies. Provider discovery is advisory and bounded by permissions. Manual ID entry remains available when discovery is unavailable; missing search results are not proof that a private conversation does not exist.
 - Conversations filters the existing Session/Thread views by trusted Account/target bindings. It creates no new transcript store and grants no additional history access.
-- Memory embeds the Bot Memory contract's three-pane scope tree, record list, and detail browser, with date/type filters and separate sharing settings. Saved-record details allow authorized Delete and Share actions, with no Edit action; changes and corrections create new records. It presents records rather than a virtual file tree. Before that feature exists, do not render a working-looking empty memory store or an enabled memory toggle.
+- Memory embeds the Bot Memory contract's three-pane scope tree, logical document list with `MEMORY.md`, and index/document detail browser, with date/type filters and separate sharing settings. Index links open authorized documents on demand, independent of Mem0 or file-based storage. Saved-document details allow authorized Delete and Share actions, with no Edit action; changes and corrections create new documents. The derived index updates as content/access changes and has no ordinary document mutation actions. Before that feature exists, do not render a working-looking empty memory store or an enabled memory toggle.
 - Settings shows inherited Account defaults, reception scope, and links to write-only credential maintenance. Account availability is edited through the canonical Account operation.
 
 Development reference: the [Memory frontend specification and embedded prototypes](bot-memory.md#8-frontend-and-request-behavior) show the three-pane browser and receiving-group view. [Selected-record sharing](bot-memory.md#5-sharing-selected-records) and [group-sharing settings](bot-memory.md#6-continuing-sharing-between-groups) embed their corresponding interaction prototypes. Reuse the same Bot shell; these images introduce no independent Bot identity or backend capability.
@@ -181,7 +181,7 @@ Account and credential changes retain Workspace Admin authority. Target configur
 
 Bots supplies trusted Account identity, external tenant, exact conversation, conversation kind, Thread/Run source, execution principal, and current reception eligibility. Memory determines the permitted read/write scopes and never accepts model-selected raw scope IDs.
 
-The Bot Memory contract owns group-local memory, daily/long-term record organization, selected-record publication, and continuing sharing between eligible groups. Sharing settings distinguish the Bot's external platform space from its a13n Workspace. Sharing grants retrieval, not permission to send messages, delete another group's records, or modify saved memory. All Bot memory is immutable after creation, including its metadata and published copies; corrections create new records and deletion remains authorized separately. Memory exposes per-record Share actions and group-sharing settings; the latter select participants, content kinds, history, and future enrollment.
+The Bot Memory contract owns group-local memory, a bounded `MEMORY.md` index, immutable daily/long-term documents, on-demand content reading, selected-document publication, and continuing sharing between eligible groups. Sharing settings distinguish the Bot's external platform space from its a13n Workspace. Sharing grants retrieval, not permission to send messages, delete another group's records, or modify saved memory. Saved Bot memory documents are immutable after creation, including their metadata and published copies; corrections create new documents and deletion remains authorized separately. The host-maintained navigation index may change without rewriting those documents. Memory exposes per-record Share actions and group-sharing settings; the latter select participants, content kinds, history, and future enrollment.
 
 Memory follows the exact conversation across target Agent changes. Execution must use trusted conversation memory rather than automatically adding the Agent's ordinary agent/user memories. The Account references one Memory Provider, inherited by its groups; several Accounts may share a Provider without sharing memory. Credentials remain on the Provider resource. The [Account-owned selection rules](bot-memory.md#account-owned-memory-provider-selection) define product behavior; root/child/recovery integration requires the corresponding Service contract extension. Metadata, source/date fields, and complete date listing are not available merely because the backend is Mem0; verified backend and API changes are required.
 
@@ -202,7 +202,7 @@ Bots remains usable with memory disabled or not installed. Adding Memory does no
 11. Two installations of one Slack app in different Slack Workspaces remain separate Accounts; entering several channels does not create duplicate Accounts.
 12. Credential verification displays the external installation for confirmation without confusing it with the containing a13n Workspace.
 13. Changing the selected Agent preserves the Account/group memory binding. Sharing a Memory Provider between Accounts never grants cross-Account memory access.
-14. Every Bot memory entry point preserves saved record immutability while permitting authorized creation, deletion, and sharing.
+14. Every Bot memory entry point preserves saved-document immutability while permitting authorized creation, deletion, and sharing. Derived indexes update independently, reveal only authorized entries, and load document content on demand.
 
 ## Compatibility and Backend Boundaries
 
