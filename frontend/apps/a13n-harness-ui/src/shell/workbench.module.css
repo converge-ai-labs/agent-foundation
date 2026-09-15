@@ -336,6 +336,56 @@ a.resourceRow:hover {
   font-size: 13px;
   overflow-wrap: anywhere;
 }
+.connectionNotice,
+.errorNotice {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: var(--a13n-surface);
+  color: var(--a13n-text-supporting);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.connectionNotice {
+  border-bottom: 1px solid var(--a13n-border);
+}
+.connectionNotice > svg,
+.errorMessage > svg {
+  flex-shrink: 0;
+}
+.connectionNotice > button,
+.errorNotice > button {
+  flex-shrink: 0;
+}
+.connectionMessage {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
+  column-gap: 8px;
+}
+.connectionMessage strong {
+  color: var(--a13n-text);
+  font-weight: 500;
+}
+.errorNotice {
+  flex-wrap: wrap;
+  border: 1px solid var(--a13n-border);
+  border-radius: 6px;
+}
+.errorMessage {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 8px;
+}
+.errorMessage > svg {
+  margin-top: 1px;
+}
 .details {
   border-top: 1px solid var(--a13n-border);
   padding-top: 16px;

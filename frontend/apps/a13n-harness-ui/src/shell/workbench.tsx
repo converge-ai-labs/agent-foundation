@@ -59,6 +59,7 @@ import { NativeWorkspace } from "../native/workspace";
 import { pageLink } from "./page-links";
 import { readPreference, writePreference } from "./preferences";
 import { NotificationSettings } from "./notifications";
+import { ConnectionNotice, ConnectionNoticeContext } from "./connection";
 
 const profileColors = [
   { value: "#64748b", label: "Slate" },
@@ -116,6 +117,7 @@ export function Workbench({
     unauthorized,
     nativeFocus,
   );
+  const disconnected = live.summary === "Reconnecting";
   const location = useLocation();
   const navigate = useNavigate();
   const { client } = useTransport();
@@ -220,7 +222,11 @@ export function Workbench({
         <div className={styles.actions}>
           <Button variant="ghost" onClick={openPeople}>
             <Users />
-            <span>{live.presence?.participants.length ?? 0} online</span>
+            <span>
+              {disconnected
+                ? "People"
+                : `${live.presence?.participants.length ?? 0} online`}
+            </span>
           </Button>
           <Button variant="ghost" onClick={forget}>
             Log out
@@ -232,7 +238,7 @@ export function Workbench({
       </div>
     </>
   );
-  return (
+  const content = (
     <div className={styles.shell}>
       <SharedPointers
         socket={live.socket}
@@ -269,6 +275,7 @@ export function Workbench({
       </Sheet>
       <div className={styles.workspace}>
         <main id="main-content" className={styles.main}>
+          {disconnected && <ConnectionNotice retry={live.retrySummary} />}
           {status.access === "dangerous_bypass" && (
             <div className={styles.notice}>
               Instance authentication is disabled by the server's explicit
@@ -502,6 +509,11 @@ export function Workbench({
         </div>
       </ModalFrame>
     </div>
+  );
+  return (
+    <ConnectionNoticeContext.Provider value={disconnected}>
+      {content}
+    </ConnectionNoticeContext.Provider>
   );
 }
 function HomePage() {

@@ -309,7 +309,9 @@ it("attempts offline publication immediately and does not queue it for reconnect
   try {
     onlineManager.setOnline(false);
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-    await screen.findByText("Offline request failed");
+    await screen.findByText(
+      "Unable to reach the server. Check your connection and try again.",
+    );
     expect(writes).toBe(1);
     onlineManager.setOnline(true);
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -953,4 +955,137 @@ it("keeps destructive configuration actions secondary and requires named confirm
       .mocked(fetch)
       .mock.calls.some(([request]) => (request as Request).method === "DELETE"),
   ).toBe(false);
+});
+
+it("shows one connection notice for server loss and reconciles on retry without replaying writes", async () => {
+  let unavailable = true;
+  let summaryRequests = 0;
+  const fetcher = vi.fn(async (request: Request) => {
+    const path = new URL(request.url).pathname;
+    if (path === "/api/status") return json(status);
+    if (path === "/api/events") {
+      summaryRequests++;
+      if (unavailable) throw new TypeError("Failed to fetch");
+      return new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.enqueue(
+              new TextEncoder().encode(
+                'data: {"kind":"open","resume_cursor":"restored"}\n\n',
+              ),
+            );
+            request.signal.addEventListener("abort", () => controller.close(), {
+              once: true,
+            });
+          },
+        }),
+        { headers: { "Content-Type": "text/event-stream" } },
+      );
+    }
+    if (unavailable) throw new TypeError("Failed to fetch");
+    return fixture(request);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  render(<BrowserApp />);
+  await screen.findByRole("status", { name: "Server connection" });
+  await waitFor(() => expect(screen.queryAllByRole("alert")).toHaveLength(0));
+  expect(screen.getAllByText("Connection interrupted")).toHaveLength(1);
+  expect(screen.queryByText("Failed to fetch")).toBeNull();
+  expect(screen.queryByText("0 online")).toBeNull();
+  expect(screen.getByRole("heading", { name: "Your workspace" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+
+  const attempts = summaryRequests;
+  fireEvent.click(screen.getByRole("button", { name: "Retry now" }));
+  await waitFor(() => expect(summaryRequests).toBeGreaterThan(attempts));
+  expect(
+    screen.getByRole("status", { name: "Server connection" }),
+  ).toBeTruthy();
+
+  unavailable = false;
+  fireEvent.click(screen.getByRole("button", { name: "Retry now" }));
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("status", { name: "Server connection" }),
+    ).toBeNull();
+    expect(screen.queryAllByRole("alert")).toHaveLength(0);
+  });
+  expect(
+    fetcher.mock.calls.every(([request]) => request.method === "GET"),
+  ).toBe(true);
+});
+
+it("synchronizes quick rename with the mounted clean Project editor before saving other fields", async () => {
+  window.history.replaceState(null, "", "/projects/project-test");
+  const projectSource = {
+    ...source,
+    relative_path: "projects/test.yaml",
+    resource_kind: "project",
+    resource_ids: ["project-test"],
+    content:
+      'schema_version: "1"\nkind: project\nid: project-test\nname: Test project\nroots: [{path: /test}]\ndefaults: {}\n',
+  };
+  const writes: string[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (request: Request) => {
+      const path = decodeURIComponent(new URL(request.url).pathname);
+      if (path === "/api/projects")
+        return json([
+          {
+            project_id: "project-test",
+            name: parse(projectSource.content).name,
+            roots: ["/test"],
+          },
+        ]);
+      if (path === "/api/configuration/sources")
+        return json({ generation_digest: "g", sources: [projectSource] });
+      if (path === "/api/configuration/sources/projects/test.yaml") {
+        if (request.method === "PUT") {
+          projectSource.content = (await request.json()).content;
+          writes.push(projectSource.content);
+          projectSource.source_digest = `saved-${writes.length}`;
+          return json({ source_digest: projectSource.source_digest });
+        }
+        return json(projectSource);
+      }
+      return fixture(request);
+    }),
+  );
+  render(<BrowserApp />);
+  const user = userEvent.setup();
+  const nameField = await screen.findByRole("textbox", {
+    name: "Name",
+  });
+  expect((nameField as HTMLInputElement).value).toBe("Test project");
+  await user.click(
+    screen.getByRole("button", { name: "Actions for Test project" }),
+  );
+  await user.click(
+    await screen.findByRole("menuitem", { name: "Rename project" }),
+  );
+  fireEvent.change(
+    await screen.findByRole("textbox", { name: "Project name" }),
+    { target: { value: "Renamed" } },
+  );
+  await user.click(screen.getByRole("button", { name: "Save name" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  await waitFor(() =>
+    expect((nameField as HTMLInputElement).value).toBe("Renamed"),
+  );
+  expect(
+    screen
+      .getByRole("button", { name: "Save changes" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+  fireEvent.change(screen.getByRole("textbox", { name: "Server directory" }), {
+    target: { value: "/changed" },
+  });
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  await waitFor(() => expect(writes).toHaveLength(2));
+  expect(parse(writes[1])).toMatchObject({
+    id: "project-test",
+    name: "Renamed",
+    roots: [{ path: "/changed" }],
+  });
 });

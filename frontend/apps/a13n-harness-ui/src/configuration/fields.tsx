@@ -15,6 +15,7 @@ import { readDocument, updateDocument } from "./documents";
 import styles from "../shell/workbench.module.css";
 import { SelectionField } from "./selection";
 import { AgentFields } from "./agent-fields";
+import { ProjectFolders } from "./project-folders";
 
 export function ResourceFields({
   source,
@@ -258,23 +259,10 @@ export function ResourceFields({
           <SettingsSection title="Project folders">
             <div className={styles.fieldGroup}>
               {roots ? (
-                <FormField
-                  label="Host root directories"
-                  description="One existing absolute directory per line. These are server paths, not browser paths or an Agent permission boundary."
-                >
-                  <Textarea
-                    value={roots.map((root) => root.path).join("\n")}
-                    onChange={(event) =>
-                      set(
-                        ["roots"],
-                        event.target.value
-                          .split("\n")
-                          .map((path) => ({ path })),
-                      )
-                    }
-                    rows={3}
-                  />
-                </FormField>
+                <ProjectFolders
+                  roots={roots}
+                  onChange={(value) => set(["roots"], value)}
+                />
               ) : (
                 <p>
                   Repair the host root list in advanced YAML before using the

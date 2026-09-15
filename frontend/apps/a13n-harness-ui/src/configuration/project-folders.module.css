@@ -1,0 +1,84 @@
+.folders,
+.folder,
+.browser {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.row {
+  display: flex;
+  align-items: end;
+  gap: 8px;
+  min-width: 0;
+}
+.row > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+.hint {
+  margin: 0;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.browser {
+  padding: 12px;
+  border: 1px solid var(--a13n-border);
+  border-radius: 8px;
+  background: var(--a13n-surface);
+}
+.toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.path {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.entries {
+  max-height: 240px;
+  overflow: auto;
+  display: grid;
+  gap: 4px;
+}
+.entry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--a13n-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.entry:hover {
+  background: var(--a13n-hover);
+}
+.entry > span {
+  flex: 1;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.entry > svg {
+  flex-shrink: 0;
+}
+.entry:focus-visible {
+  outline: 2px solid var(--a13n-focus);
+  outline-offset: -2px;
+}
+@media (max-width: 480px) {
+  .row {
+    flex-wrap: wrap;
+  }
+  .row > :first-child {
+    flex-basis: 100%;
+  }
+}

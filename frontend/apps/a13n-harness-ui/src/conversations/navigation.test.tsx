@@ -58,6 +58,7 @@ let activity: URL[];
 let writes: Request[];
 let failMore: boolean;
 let failSave: boolean;
+let cwd: string;
 let pauseMore: Promise<void> | null;
 let pageAborted: boolean;
 let recentTitle: string;
@@ -68,6 +69,7 @@ beforeEach(() => {
   writes = [];
   failMore = false;
   failSave = false;
+  cwd = "/outside";
   pauseMore = null;
   pageAborted = false;
   recentTitle = "Recent 1";
@@ -104,6 +106,10 @@ beforeEach(() => {
         return json(thread("created"));
       }
       if (url.pathname === "/api/projects") return json(projects);
+      if (url.pathname === "/api/setup")
+        return json({ suggested_project_path: cwd });
+      if (url.pathname === "/api/status")
+        return json({ features: { host_files: false } });
       if (url.pathname === "/api/configuration/sources")
         return json({ sources: [] });
       if (url.pathname === "/api/selectors")
@@ -646,4 +652,47 @@ it("targets execution refreshes without invalidating settings or native queries"
     queryClient.getQueryState(["thread", "thread-changed", "detail"])
       ?.isInvalidated,
   ).toBe(true);
+});
+
+it("puts the current server directory first by default and on reset, while respecting explicit browser order", async () => {
+  cwd = "/two";
+  const user = userEvent.setup();
+  const view = mount();
+  await waitFor(() => expect(groupNames()).toEqual(["Two", "One"]));
+  expect(writes).toHaveLength(0);
+  view.unmount();
+  localStorage.setItem(
+    "a13n-harness-ui.project-order",
+    JSON.stringify(["project-one", "project-two"]),
+  );
+  mount();
+  await screen.findByRole("button", { name: "Reorder One" });
+  expect(groupNames()).toEqual(["One", "Two"]);
+  await user.click(screen.getByRole("button", { name: "Actions for One" }));
+  await user.click(
+    await screen.findByRole("menuitem", {
+      name: "Reset project order in this browser",
+    }),
+  );
+  expect(groupNames()).toEqual(["Two", "One"]);
+  expect(writes).toHaveLength(0);
+});
+
+it("opens project rename directly from the secondary menu without expanding or navigating", async () => {
+  const user = userEvent.setup();
+  mount();
+  await user.click(
+    await screen.findByRole("button", { name: "Actions for One" }),
+  );
+  await user.click(
+    await screen.findByRole("menuitem", { name: "Rename project" }),
+  );
+  await screen.findByRole("dialog", { name: "Rename project" });
+  expect(
+    screen
+      .getByRole("button", { name: "One", hidden: true })
+      .getAttribute("aria-expanded"),
+  ).toBe("false");
+  expect(activity).toHaveLength(0);
+  expect(writes).toHaveLength(0);
 });

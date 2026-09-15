@@ -102,6 +102,7 @@ export function watchSummary(
   let cursor: string | undefined;
   let failures = 0;
   async function connect() {
+    timer = undefined;
     state(failures ? "Reconnecting" : "Connecting");
     try {
       const response = await transport.fetch(
@@ -134,9 +135,16 @@ export function watchSummary(
       );
     }
   }
-  void connect();
-  return () => {
+  const close = () => {
     controller.abort();
     clearTimeout(timer);
   };
+  // Skip only a pending backoff, retaining the cursor and any in-flight request.
+  close.retry = () => {
+    if (timer === undefined || controller.signal.aborted) return;
+    clearTimeout(timer);
+    void connect();
+  };
+  void connect();
+  return close;
 }

@@ -182,3 +182,51 @@ it("retains root identity and bounded notices rather than reducing every event t
     transport.close();
   }
 });
+
+it("manual retry retains the summary cursor and receives missed notices without overlapping requests", async () => {
+  vi.useFakeTimers();
+  const notice = {
+    kind: "root_operation",
+    epoch: "epoch",
+    sequence: 8,
+    root_thread_id: "thread-1",
+    notice: {
+      receipt_id: "receipt-1",
+      status: "completed",
+      brief: "Finished while disconnected.",
+    },
+  };
+  const requests: string[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (request: Request) => {
+      requests.push(request.url);
+      const frame =
+        requests.length === 1
+          ? { kind: "open", resume_cursor: "epoch:7" }
+          : { kind: "invalidation", resume_cursor: "epoch:8", event: notice };
+      return new Response(`data: ${JSON.stringify(frame)}\n\n`);
+    }),
+  );
+  const { watchSummary } = await import("./events");
+  const transport = createTransport("", vi.fn());
+  const receive = vi.fn();
+  const close = watchSummary(transport, receive, vi.fn());
+  try {
+    await vi.advanceTimersByTimeAsync(0);
+    close.retry();
+    close.retry();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(requests).toHaveLength(2);
+    expect(requests[1]).toContain("after=epoch%3A7");
+    expect(receive).toHaveBeenCalledWith(notice);
+    close();
+    close.retry();
+    await vi.advanceTimersByTimeAsync(30000);
+    expect(requests).toHaveLength(2);
+  } finally {
+    close();
+    transport.close();
+    vi.useRealTimers();
+  }
+});

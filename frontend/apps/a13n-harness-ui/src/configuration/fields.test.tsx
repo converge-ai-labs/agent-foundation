@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 import { useState } from "react";
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router";
@@ -15,6 +21,8 @@ const get = vi.hoisted(() =>
 );
 vi.mock("../transport/context", () => ({
   useTransport: () => ({ client: { GET: get } }),
+  useStatus: () => ({ data: { features: { host_files: false } } }),
+  useSetup: () => ({ data: { suggested_project_path: "/srv" } }),
   useSources: () => ({ data: { sources: [] }, isPending: false }),
   useSelectors: () => ({
     data: {
@@ -112,4 +120,25 @@ it("keeps HTTP transport selected while replacing its entire URL", async () => {
   expect(parse(screen.getByRole("status").textContent ?? "").transport).toEqual(
     { url: "https://new.example.test", headers: { custom: "value" } },
   );
+});
+
+it("edits Project folders as individual rows while preserving unrelated configuration", async () => {
+  const initial =
+    'schema_version: "1"\nkind: project\nid: project-one\nname: Custom\nposition: 7\nroots: [{path: /one}, {path: /two}]\ndefaults: {agent: agent-main}\n';
+  renderFields(initial);
+  fireEvent.change(screen.getByRole("textbox", { name: "Server directory" }), {
+    target: { value: "/new" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Remove directory 2" }));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Add another directory" }),
+  );
+  fireEvent.change(
+    screen.getByRole("textbox", { name: "Additional server directory 1" }),
+    { target: { value: "/other" } },
+  );
+  expect(parse(screen.getByRole("status").textContent ?? "")).toEqual({
+    ...parse(initial),
+    roots: [{ path: "/new" }, { path: "/other" }],
+  });
 });

@@ -20,6 +20,7 @@ import {
   Gear,
   ArrowUp,
   ArrowDown,
+  PencilSimpleIcon,
 } from "@phosphor-icons/react";
 import { useProjects } from "../transport/context";
 import type { Schema } from "../transport/client";
@@ -27,6 +28,7 @@ import { ErrorNotice } from "../shell/ui";
 import { useThread, useThreads } from "./queries";
 import { useProjectExpansion, useProjectOrder } from "./project-order";
 import { NewProject } from "./new-project";
+import { RenameProject } from "../configuration/rename-project";
 import { NewConversation } from "./new-conversation";
 import { ThreadRow } from "./thread-row";
 import styles from "./conversation.module.css";
@@ -56,6 +58,7 @@ export function ConversationNavigation({
     (project) => project.project_id === scope,
   );
   const [adding, setAdding] = useState(false);
+  const [renaming, setRenaming] = useState<Group | null>(null);
   const [creating, setCreating] = useState<string | null | undefined>(
     undefined,
   );
@@ -168,6 +171,7 @@ export function ConversationNavigation({
               selected={activeGroup === group.id ? selected : undefined}
               create={() => setCreating(group.projectId ?? null)}
               order={order}
+              rename={() => setRenaming(group)}
             />
           ))}
         </div>
@@ -193,6 +197,13 @@ export function ConversationNavigation({
           created={(id) => setExpanded(id, true)}
         />
       )}
+      {renaming?.projectId && (
+        <RenameProject
+          projectId={renaming.projectId}
+          name={renaming.name}
+          close={() => setRenaming(null)}
+        />
+      )}
       {creating !== undefined && (
         <NewConversation
           projectId={creating}
@@ -213,6 +224,7 @@ function ProjectGroup({
   presence,
   selected,
   create,
+  rename,
   order,
 }: {
   group: Group;
@@ -224,6 +236,7 @@ function ProjectGroup({
   presence: Presence;
   selected?: Schema<"ThreadSummary">;
   create: () => void;
+  rename: () => void;
   order: ReturnType<typeof useProjectOrder>;
 }) {
   const navigate = useNavigate();
@@ -305,6 +318,10 @@ function ProjectGroup({
                 <DotsThree />
               </MenuTrigger>
               <MenuPopup align="start" side="right">
+                <MenuItem onClick={rename}>
+                  <PencilSimpleIcon />
+                  Rename project
+                </MenuItem>
                 <MenuItem
                   onClick={() =>
                     navigate(
