@@ -55,7 +55,6 @@ class AssetRecord(Base):
             text("created_at DESC"),
             text("id DESC"),
             postgresql_where=text("deleted_at IS NULL"),
-            sqlite_where=text("deleted_at IS NULL"),
         ),
         Index(
             "ix_assets_active_source_kind_listing",
@@ -65,7 +64,6 @@ class AssetRecord(Base):
             text("created_at DESC"),
             text("id DESC"),
             postgresql_where=text("deleted_at IS NULL"),
-            sqlite_where=text("deleted_at IS NULL"),
         ),
         Index(
             "ix_assets_active_run_attempt_listing",
@@ -75,7 +73,6 @@ class AssetRecord(Base):
             text("created_at DESC"),
             text("id DESC"),
             postgresql_where=text("deleted_at IS NULL"),
-            sqlite_where=text("deleted_at IS NULL"),
         ),
         Index(
             "uq_assets_run_invocation",
@@ -83,15 +80,8 @@ class AssetRecord(Base):
             "source_invocation_id",
             unique=True,
             postgresql_where=text("source_kind = 'run_output'"),
-            sqlite_where=text("source_kind = 'run_output'"),
         ),
-        Index(
-            "ix_assets_tombstone_retention",
-            "deleted_at",
-            "id",
-            postgresql_where=text("deleted_at IS NOT NULL"),
-            sqlite_where=text("deleted_at IS NOT NULL"),
-        ),
+        Index("ix_assets_tombstone_retention", "deleted_at", "id", postgresql_where=text("deleted_at IS NOT NULL")),
     )
 
     id: Mapped[str] = mapped_column(String(72), primary_key=True)

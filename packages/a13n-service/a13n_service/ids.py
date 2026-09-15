@@ -25,6 +25,7 @@ _ID_RANDOM_BYTES = {
             "mcpc",
             "mdl",
             "mprov",
+            "memprov",
             "org",
             "sa",
             "sk",

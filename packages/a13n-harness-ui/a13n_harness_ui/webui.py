@@ -71,6 +71,7 @@ from a13n_harness_ui.model_accounts import AccountProjection, AccountStoreError,
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginStatus
 from a13n_harness_ui.output_comment_models import (
+    CommentEdit,
     CommentPage,
     CommentPublication,
     OutputComment,
@@ -125,7 +126,7 @@ from a13n_harness_ui.thread_files import (
     ComposerInput,
     ThreadAttachment,
 )
-from a13n_harness_ui.webui_lifecycle import EventStreamResponse, RequestLog, WebUIServer
+from a13n_harness_ui.webui_lifecycle import ErrorResponse, EventStreamResponse, RequestLog, WebUIServer
 
 API_VERSION = "1"
 _MAX_BODY = 1024 * 1024
@@ -285,11 +286,7 @@ class ErrorEnvelope(SurfaceModel):
 
 
 def _error(code: str, message: str, status: int) -> JSONResponse:
-    return JSONResponse(
-        ErrorEnvelope(error=ErrorBody(code=code, message=message)).model_dump(),
-        status_code=status,
-        headers={"Cache-Control": "no-store"},
-    )
+    return ErrorResponse(code=code, message=message, status_code=status)
 
 
 class AccessBoundary:
@@ -967,20 +964,40 @@ def create_webui(
         cursor: Annotated[str | None, Query(max_length=4096)] = None,
         limit: Annotated[int, Query(ge=1, le=100)] = 20,
         target: Annotated[str | None, Query(max_length=2048)] = None,
+        newest_first: bool = False,
     ) -> CommentPage:
         try:
             selected = SavedOutputTarget.model_validate_json(target) if target is not None else None
         except ValidationError:
             raise HarnessUiError("Target query does not match the schema.", code="request_invalid") from None
-        return await app().list_output_comments(thread_id, target=selected, cursor=cursor, limit=limit)
+        return await app().list_output_comments(
+            thread_id, target=selected, cursor=cursor, limit=limit, newest_first=newest_first
+        )
 
     @server.get("/api/threads/{thread_id}/comments/{comment_id}", response_model=OutputComment)
     async def comment(thread_id: str, comment_id: str) -> OutputComment:
         return await app().get_output_comment(thread_id, comment_id)
 
+    @server.patch(
+        "/api/threads/{thread_id}/comments/{comment_id}",
+        response_model=OutputComment,
+        openapi_extra=_body(CommentEdit),
+    )
+    async def edit_comment(thread_id: str, comment_id: str, request: Request) -> OutputComment:
+        return await app().edit_output_comment(thread_id, comment_id, await _document(request, CommentEdit))
+
+    @server.delete("/api/threads/{thread_id}/comments/{comment_id}", status_code=204)
+    async def delete_comment(
+        thread_id: str, comment_id: str, expected_version: Annotated[int, Query(ge=1)]
+    ) -> Response:
+        await app().delete_output_comment(thread_id, comment_id, expected_version=expected_version)
+        return Response(status_code=204)
+
     @server.post("/api/threads/{thread_id}/comments/{comment_id}/capture", response_model=ThreadAttachment)
-    async def capture_comment(thread_id: str, comment_id: str) -> ThreadAttachment:
-        return await app().capture_output_comment(thread_id, comment_id)
+    async def capture_comment(
+        thread_id: str, comment_id: str, expected_version: Annotated[int | None, Query(ge=1)] = None
+    ) -> ThreadAttachment:
+        return await app().capture_output_comment(thread_id, comment_id, expected_version=expected_version)
 
     @server.post(
         "/api/threads/{thread_id}/saved-output", response_model=SavedOutputView, openapi_extra=_body(SavedOutputTarget)

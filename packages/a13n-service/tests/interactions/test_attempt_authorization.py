@@ -56,9 +56,9 @@ def direct_runner():
     )
 
 
-async def test_tenth_loop_reuses_permissions_and_eleventh_refreshes(relational_interaction_sessions, caplog):
+async def test_tenth_loop_reuses_permissions_and_eleventh_refreshes(interaction_sessions, caplog):
     caplog.set_level("INFO")
-    sessions = relational_interaction_sessions
+    sessions = interaction_sessions
     await seed_hook_actor_access(sessions)
     authorization = await initialize(sessions)
     first = authorization.snapshot
@@ -103,8 +103,8 @@ async def test_tenth_loop_reuses_permissions_and_eleventh_refreshes(relational_i
 
 
 @pytest.mark.parametrize("change", ["principal", "membership", "invocation"])
-async def test_required_authority_loss_fails_closed_at_refresh(relational_interaction_sessions, change):
-    sessions = relational_interaction_sessions
+async def test_required_authority_loss_fails_closed_at_refresh(interaction_sessions, change):
+    sessions = interaction_sessions
     await seed_hook_actor_access(sessions)
     authorization = await initialize(sessions)
     async with transaction(sessions) as session:
@@ -124,10 +124,10 @@ async def test_required_authority_loss_fails_closed_at_refresh(relational_intera
         await initialize(sessions)
 
 
-async def test_concurrent_root_and_inline_requests_share_the_refresh(relational_interaction_sessions, monkeypatch):
+async def test_concurrent_root_and_inline_requests_share_the_refresh(interaction_sessions, monkeypatch):
     from a13n_service.iam import attempts
 
-    sessions = relational_interaction_sessions
+    sessions = interaction_sessions
     await seed_hook_actor_access(sessions)
     load = AsyncMock(wraps=attempts.read_principal_permissions)
     monkeypatch.setattr(attempts, "read_principal_permissions", load)
@@ -144,12 +144,10 @@ async def test_concurrent_root_and_inline_requests_share_the_refresh(relational_
     assert load.await_count == 6
 
 
-async def test_failed_database_refresh_cannot_fall_back_to_old_permissions(
-    relational_interaction_sessions, monkeypatch
-):
+async def test_failed_database_refresh_cannot_fall_back_to_old_permissions(interaction_sessions, monkeypatch):
     from a13n_service.iam import attempts
 
-    sessions = relational_interaction_sessions
+    sessions = interaction_sessions
     await seed_hook_actor_access(sessions)
     authorization = await initialize(sessions)
     await admit(authorization, 10)
@@ -163,8 +161,8 @@ async def test_failed_database_refresh_cannot_fall_back_to_old_permissions(
     assert load.await_count == 1
 
 
-async def test_cached_checks_keep_scope_and_observe_workspace_deletion_at_refresh(relational_interaction_sessions):
-    sessions = relational_interaction_sessions
+async def test_cached_checks_keep_scope_and_observe_workspace_deletion_at_refresh(interaction_sessions):
+    sessions = interaction_sessions
     await seed_hook_actor_access(sessions)
     authorization = await initialize(sessions)
     snapshot = authorization.snapshot
@@ -202,8 +200,8 @@ async def test_cached_checks_keep_scope_and_observe_workspace_deletion_at_refres
         await initialize(sessions)
 
 
-async def test_repeated_operations_do_not_reread_principal_or_roles(relational_interaction_sessions):
-    sessions = relational_interaction_sessions
+async def test_repeated_operations_do_not_reread_principal_or_roles(interaction_sessions):
+    sessions = interaction_sessions
     await seed_hook_actor_access(sessions)
     authorization = await initialize(sessions)
     statements = []

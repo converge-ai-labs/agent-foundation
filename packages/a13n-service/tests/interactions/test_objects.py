@@ -3,8 +3,11 @@ from __future__ import annotations
 import hashlib
 
 import pytest
+import zstandard
+from a13n_service.interactions import objects as run_objects
 from a13n_service.interactions.domain import RunPayloadObjectRef, RunStatus, SealedRunState
 from a13n_service.interactions.objects import (
+    RunObjectError,
     RunObjectIntegrityError,
     RunPayloadStore,
     RunStateStore,
@@ -13,7 +16,12 @@ from a13n_service.interactions.objects import (
 )
 from a13n_service.interactions.state import CompletedOutcomeCandidate, RunCheckpoint, RunPayloadEnvelope
 from a13n_service.storage import ObjectStore, ObjectStoreUnavailable
-from a13n_service.storage.codec import DurableObjectCodecError, decode_canonical_model
+from a13n_service.storage.codec import (
+    COMPRESSED_JSON_ENCODING,
+    DurableObjectCodecError,
+    canonical_model_bytes,
+    decode_canonical_model,
+)
 from pydantic import TypeAdapter
 
 from .conftest import ORGANIZATION_ID, initial_state, progress_state
@@ -41,6 +49,9 @@ async def test_state_create_claim_checkpoint_and_read_round_trip(
     assert restored.info.version == checkpoint.info.version
     assert restored.writer_fence == 1
     assert restored.digest_sha256 == hashlib.sha256(restored.body).hexdigest()
+    assert restored.info.content_type == "application/zstd"
+    assert restored.info.metadata["storage-encoding"] == COMPRESSED_JSON_ENCODING
+    assert zstandard.ZstdDecompressor().decompress(restored.body) == canonical_model_bytes(restored.envelope)
 
 
 async def test_object_version_and_fence_reject_stale_state_writers(
@@ -228,7 +239,7 @@ async def test_run_state_read_verifies_every_selected_seal_field(
         await store.read_run(altered)
 
 
-@pytest.mark.parametrize("operation", ["create", "checkpoint"])
+@pytest.mark.parametrize("operation", ["create", "checkpoint", "claim"])
 @pytest.mark.parametrize("failure", [TimeoutError, ObjectStoreUnavailable])
 async def test_state_write_lost_response_recovers_exact_committed_receipt(
     object_store: ObjectStore, monkeypatch, operation: str, failure: type[Exception]
@@ -248,6 +259,10 @@ async def test_state_write_lost_response_recovers_exact_committed_receipt(
     monkeypatch.setattr(object_store, "put", lose_response)
     if operation == "create":
         result = await store.create(ORGANIZATION_ID, initial)
+    elif operation == "claim":
+        assert state is not None
+        result = await store.claim_writer(state, attempt_number=2)
+        assert result.body == state.body
     else:
         assert state is not None
         result = await store.replace(
@@ -273,7 +288,7 @@ async def test_uncommitted_write_failure_preserves_original_token(object_store: 
     assert await store.read(ORGANIZATION_ID, original.envelope.run_id) == original
 
 
-@pytest.mark.parametrize("changed", ["writer", "metadata"])
+@pytest.mark.parametrize("changed", ["writer", "metadata", "encoding"])
 async def test_uncertain_write_never_adopts_another_writer_or_corrupt_metadata(
     object_store: ObjectStore, monkeypatch, changed: str
 ) -> None:
@@ -292,12 +307,21 @@ async def test_uncertain_write_never_adopts_another_writer_or_corrupt_metadata(
                 run_attempt_id="rat_1234567890abcdef",
                 attempt_number=2,
             )
-        else:
+        elif changed == "metadata":
             await put(
                 info.key,
                 args[1],
                 content_type=info.content_type,
                 metadata={**info.metadata, "writer-fence": "999"},
+                if_match=info.version,
+            )
+        else:
+            body = _alternate_encoding(args[1])
+            await put(
+                info.key,
+                body,
+                content_type=info.content_type,
+                metadata={**info.metadata, "digest-sha256": hashlib.sha256(body).hexdigest()},
                 if_match=info.version,
             )
         raise TimeoutError("write response lost")
@@ -309,8 +333,8 @@ async def test_uncertain_write_never_adopts_another_writer_or_corrupt_metadata(
         )
 
 
-async def test_writer_claim_preserves_pending_input_and_fences_prior_versions(interaction_object_store):
-    store = RunStateStore(interaction_object_store)
+async def test_writer_claim_preserves_pending_input_and_fences_prior_versions(object_store):
+    store = RunStateStore(object_store)
     initial = await store.create(ORGANIZATION_ID, initial_state())
     claimed = await store.claim_writer(initial, attempt_number=2)
     restored = await store.read(ORGANIZATION_ID, initial.envelope.run_id)
@@ -324,3 +348,88 @@ async def test_writer_claim_preserves_pending_input_and_fences_prior_versions(in
         await store.replace(
             initial, progress_state(initial.envelope), run_attempt_id="rat_1234567890abcdef", attempt_number=1
         )
+
+
+def _alternate_encoding(body: bytes) -> bytes:
+    canonical = zstandard.ZstdDecompressor().decompress(body)
+    writer = zstandard.ZstdCompressor(level=1, write_checksum=True).compressobj(size=len(canonical))
+    split = len(canonical) // 2
+    encoded = writer.compress(canonical[:split]) + writer.flush(zstandard.COMPRESSOBJ_FLUSH_BLOCK)
+    encoded += writer.compress(canonical[split:]) + writer.flush()
+    assert encoded != body
+    return encoded
+
+
+@pytest.mark.parametrize("outcome", [False, True])
+async def test_claim_reuses_exact_encoding_including_prepared_outcome(object_store, monkeypatch, outcome: bool) -> None:
+    store = RunStateStore(object_store)
+    original = await store.create(ORGANIZATION_ID, initial_state())
+    if outcome:
+        candidate = progress_state(original.envelope).model_copy(
+            update={"checkpoint_kind": "completed", "outcome_candidate": CompletedOutcomeCandidate(output="done")}
+        )
+        original = await store.replace(original, candidate, run_attempt_id="rat_1234567890abcdef", attempt_number=1)
+    body = _alternate_encoding(original.body)
+    digest = hashlib.sha256(body).hexdigest()
+    await object_store.put(
+        original.info.key,
+        body,
+        content_type=original.info.content_type,
+        metadata={**original.info.metadata, "digest-sha256": digest},
+        if_match=original.info.version,
+    )
+    source = await store.read(ORGANIZATION_ID, original.envelope.run_id)
+
+    async def unexpected_encoding(*args, **kwargs):
+        pytest.fail("metadata-only claim re-encoded the state")
+
+    monkeypatch.setattr(run_objects, "encode_compressed_model", unexpected_encoding)
+    claimed = await store.claim_writer(source, attempt_number=2)
+    assert claimed.body == body
+    assert claimed.digest_sha256 == digest
+    assert claimed.envelope == original.envelope
+    assert claimed.info.version != source.info.version
+    assert await store.read(ORGANIZATION_ID, original.envelope.run_id) == claimed
+
+
+@pytest.mark.parametrize("corruption", ["legacy", "encoding", "digest", "checksum"])
+async def test_state_read_rejects_invalid_storage_encoding(object_store, corruption: str) -> None:
+    store = RunStateStore(object_store)
+    original = await store.create(ORGANIZATION_ID, initial_state())
+    body = original.body
+    metadata = dict(original.info.metadata)
+    if corruption == "legacy":
+        body = canonical_model_bytes(original.envelope)
+        del metadata["storage-encoding"]
+        metadata["digest-sha256"] = hashlib.sha256(body).hexdigest()
+    elif corruption == "encoding":
+        metadata["storage-encoding"] = "rfc8785-zstd-v2"
+    elif corruption == "digest":
+        metadata["digest-sha256"] = "0" * 64
+    else:
+        body = body[:-1] + bytes([body[-1] ^ 1])
+        metadata["digest-sha256"] = hashlib.sha256(body).hexdigest()
+    await object_store.put(
+        original.info.key,
+        body,
+        content_type=original.info.content_type,
+        metadata=metadata,
+        if_match=original.info.version,
+    )
+    with pytest.raises(RunObjectIntegrityError):
+        await store.read(ORGANIZATION_ID, original.envelope.run_id)
+
+
+async def test_state_limits_apply_to_canonical_size(object_store) -> None:
+    envelope = initial_state()
+    limit = len(canonical_model_bytes(envelope))
+    store = RunStateStore(object_store, max_state_bytes=limit)
+    state = await store.create(ORGANIZATION_ID, envelope)
+    assert len(state.body) < limit
+    assert await store.read(ORGANIZATION_ID, envelope.run_id) == state
+
+    smaller = RunStateStore(object_store, max_state_bytes=limit - 1)
+    with pytest.raises(RunObjectError, match="size limit"):
+        await smaller.create(ORGANIZATION_ID, envelope)
+    with pytest.raises(RunObjectIntegrityError):
+        await smaller.read(ORGANIZATION_ID, envelope.run_id)

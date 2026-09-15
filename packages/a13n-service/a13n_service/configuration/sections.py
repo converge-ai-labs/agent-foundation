@@ -19,6 +19,7 @@ from a13n_service.connectivity.bounds import (
 from a13n_service.environments.domain import LOCAL_PROVIDER_TYPES, JsonObject, LocalProviderType
 from a13n_service.environments.policy import DEFAULT_BATCH_SIZE, DEFAULT_MAX_ACTIVE, DEFAULT_MAX_TARGETS
 from a13n_service.observability import TraceContent
+from a13n_service.storage.config import PostgreSQLConfig
 
 
 class ProcessRole(StrEnum):
@@ -28,11 +29,6 @@ class ProcessRole(StrEnum):
     control = "control"
     worker = "worker"
     connectivity = "connectivity"
-
-
-class DatabaseBackend(StrEnum):
-    postgresql = "postgresql"
-    sqlite = "sqlite"
 
 
 class RedisBackend(StrEnum):
@@ -50,31 +46,7 @@ class Section(BaseModel):
 
 
 class MemorySettings(Section):
-    provider: Literal["none", "platform", "oss"] = "none"
-    base_url: str | None = Field(default=None, min_length=1, max_length=2048)
-    api_key: SecretStr | None = Field(default=None, min_length=1, max_length=4096, repr=False)
     timeout_seconds: float = Field(default=30, gt=0, le=300)
-
-    @model_validator(mode="after")
-    def validate_backend(self) -> Self:
-        if self.provider != "none" and self.api_key is None:
-            raise ValueError("memory.api_key is required when memory.provider is enabled")
-        if self.provider == "oss" and self.base_url is None:
-            raise ValueError("memory.base_url is required for the OSS server")
-        if self.base_url is not None:
-            from urllib.parse import urlsplit
-
-            url = urlsplit(self.base_url)
-            if (
-                url.scheme not in {"http", "https"}
-                or not url.hostname
-                or url.username
-                or url.password
-                or url.query
-                or url.fragment
-            ):
-                raise ValueError("memory.base_url must be an HTTP(S) URL without credentials, query, or fragment")
-        return self
 
 
 class ObservabilityQuerySettings(Section):
@@ -109,6 +81,7 @@ class ServiceSettings(Section):
 
 class IamSettings(Section):
     public_origin: str = "http://127.0.0.1:8000"
+    session_cookie_name: str = Field(default="a13n_session", min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
     initial_admin_email: EmailStr | None = None
     session_days: int = Field(default=7, ge=1, le=90)
     invitation_days: int = Field(default=7, ge=1, le=30)
@@ -168,21 +141,11 @@ class ObservabilitySettings(Section):
     query: ObservabilityQuerySettings = Field(default_factory=ObservabilityQuerySettings)
 
 
-class DatabaseSettings(Section):
-    backend: DatabaseBackend = DatabaseBackend.postgresql
-    url: SecretStr | None = Field(
+class DatabaseSettings(PostgreSQLConfig):
+    url: SecretStr = Field(
         default=SecretStr("postgresql+psycopg://a13n_service:a13n_service@127.0.0.1:5432/a13n_service"),
         repr=False,
     )
-    sqlite_path: Path = Path("var/a13n-service.sqlite3")
-    pool_size: int = Field(default=10, ge=1, le=1000)
-    max_overflow: int = Field(default=20, ge=0, le=1000)
-    pool_timeout_seconds: float = Field(default=30, gt=0, le=300)
-    pool_recycle_seconds: int = Field(default=3600, ge=0)
-    connect_timeout_seconds: int = Field(default=10, ge=1, le=300)
-    statement_timeout_seconds: float = Field(default=30, gt=0, le=3600)
-    sqlite_busy_timeout_seconds: float = Field(default=5, gt=0, le=300)
-    cleanup_timeout_seconds: float = Field(default=5, gt=0, le=60)
     readiness_timeout_seconds: float = Field(default=3, gt=0, le=300)
 
 

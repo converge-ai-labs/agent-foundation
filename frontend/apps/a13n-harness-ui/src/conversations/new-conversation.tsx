@@ -1,34 +1,173 @@
-import { useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button, ModalFrame } from "a13n-ui";
-import { ResourceChoice } from "../configuration/resource-choice";
-import { useProjects, useSelectors, useTransport } from "../transport/context";
-import { result, type Schema } from "../transport/client";
-import { ErrorNotice, TextField } from "../shell/ui";
-import styles from "./conversation.module.css";
+import { Robot, Folder, Monitor } from "@phosphor-icons/react";
+import { SearchPicker } from "a13n-ui";
+import {
+  useProjects,
+  useSelectors,
+  useSetup,
+  useTransport,
+} from "../transport/context";
+import {
+  ApiError,
+  result,
+  type Schema,
+  type Transport,
+} from "../transport/client";
+import { ErrorNotice } from "../shell/ui";
+import type { Profile } from "../shell/presence";
+import { Composer } from "./composer";
+import { refreshThreadLists } from "./queries";
+import styles from "./new-conversation.module.css";
 
-export function NewConversation({
-  projectId,
-  close,
-}: {
-  projectId: string | null;
-  close: () => void;
+export type NewDraft = {
+  threadId: string;
+  defaults: Schema<"NewThreadDefaults">;
+  created: boolean;
+  attempted: boolean;
+  pending?: Promise<void>;
+};
+export const NewConversationDrafts = createContext(new Map<string, NewDraft>());
+
+export function newConversationPath(projectId: string | null = null) {
+  const id = `thread_${crypto.randomUUID().replaceAll("-", "")}`;
+  return `/new/${id}${projectId ? `?project=${encodeURIComponent(projectId)}` : ""}`;
+}
+
+// Creation and admission remain separate. Resolve a lost creation acknowledgement
+// by its retained identity, never by allocating another Thread or replaying Send.
+export async function ensureConversation(
+  transport: Transport,
+  threadId: string,
+  draft: NewDraft,
+) {
+  if (draft.pending) return draft.pending;
+  if (draft.created) return;
+  const create = async () => {
+    if (draft.attempted) {
+      try {
+        await result(
+          transport.client.GET("/api/threads/{thread_id}", {
+            params: { path: { thread_id: threadId } },
+          }),
+        );
+        draft.created = true;
+        throw new Error(
+          "This conversation already exists. Open it to review its settings before sending your retained input.",
+        );
+      } catch (error) {
+        if (error instanceof ApiError && error.status === 404) {
+          draft.attempted = false;
+          throw new Error(
+            "The conversation was not found. Your input is retained; Send again to retry with the same identity.",
+          );
+        }
+        throw error;
+      }
+    }
+    draft.attempted = true;
+    try {
+      const created = await result(
+        transport.client.POST("/api/threads", {
+          body: { thread_id: threadId, defaults: draft.defaults },
+        }),
+      );
+      if (created.thread_id !== threadId)
+        throw new Error(
+          "The conversation acknowledgement was incomplete. Send again to check its identity.",
+        );
+      draft.created = true;
+    } catch (error) {
+      if (
+        error instanceof ApiError &&
+        error.status >= 400 &&
+        error.status < 500 &&
+        error.status !== 409
+      )
+        draft.attempted = false;
+      throw error;
+    }
+  };
+  draft.pending = create();
+  try {
+    await draft.pending;
+  } finally {
+    draft.pending = undefined;
+  }
+}
+
+export function NewConversationPage(props: {
+  profile: Profile;
+  unauthorized: () => void;
 }) {
+  const { draftId } = useParams();
+  const drafts = useContext(NewConversationDrafts);
+  const [homeId] = useState(() => {
+    let home = drafts.get("@home");
+    if (!home) {
+      home = {
+        threadId: `thread_${crypto.randomUUID().replaceAll("-", "")}`,
+        defaults: { project_id: null },
+        created: false,
+        attempted: false,
+      };
+      drafts.set("@home", home);
+      drafts.set(home.threadId, home);
+    }
+    return home.threadId;
+  });
+  const [search] = useSearchParams();
+  return (
+    <NewConversation
+      key={draftId ?? homeId}
+      threadId={draftId ?? homeId}
+      projectId={search.get("project")}
+      {...props}
+    />
+  );
+}
+
+function NewConversation({
+  threadId,
+  projectId,
+  profile,
+  unauthorized,
+}: {
+  threadId: string;
+  projectId: string | null;
+  profile: Profile;
+  unauthorized: () => void;
+}) {
+  const active = useRef(true);
+  useEffect(() => {
+    active.current = true;
+    return () => {
+      active.current = false;
+    };
+  }, []);
   const transport = useTransport();
   const queries = useQueryClient();
   const selectors = useSelectors();
   const projects = useProjects();
+  const setup = useSetup();
   const navigate = useNavigate();
-  const [project, setProject] = useState(projectId ?? "");
-  const [title, setTitle] = useState("");
-  const [agent, setAgent] = useState("");
-  const [environment, setEnvironment] = useState("");
-  const defaults: Schema<"NewThreadDefaults"> = {
-    project_id: project || null,
-    ...(agent ? { agent_id: agent } : {}),
-    ...(environment ? { environment_profile_id: environment } : {}),
-  };
+  const drafts = useContext(NewConversationDrafts);
+  const [draft] = useState(() => {
+    let retained = drafts.get(threadId);
+    if (!retained) {
+      retained = {
+        threadId,
+        defaults: { project_id: projectId },
+        created: false,
+        attempted: false,
+      };
+      drafts.set(threadId, retained);
+    }
+    return retained;
+  });
+  const [defaults, setDefaults] = useState(draft.defaults);
+  const [preparing, setPreparing] = useState(false);
   const preview = useQuery({
     queryKey: ["new-thread-preview", defaults],
     queryFn: ({ signal }) =>
@@ -40,112 +179,202 @@ export function NewConversation({
       ),
   });
   const create = useMutation({
-    mutationFn: () =>
-      result(
-        transport.client.POST("/api/threads", {
-          body: { title: title || null, defaults },
-        }),
-      ),
-    onSuccess: (thread) => {
-      void queries.invalidateQueries({ queryKey: ["threads"] });
-      close();
-      navigate(`/threads/${encodeURIComponent(thread.thread_id)}`);
+    mutationFn: () => ensureConversation(transport, threadId, draft),
+    onSettled: (_data, error) => {
+      if (draft.created) void refreshThreadLists(queries);
+      if (draft.created && error && active.current) openConversation();
     },
   });
+  const [search, setSearch] = useSearchParams();
+  useEffect(() => {
+    if (search.get("project") === (defaults.project_id ?? null)) return;
+    setSearch(
+      (current) => {
+        if (defaults.project_id) current.set("project", defaults.project_id);
+        else current.delete("project");
+        return current;
+      },
+      { replace: true },
+    );
+  }, [defaults.project_id, search, setSearch]);
+  const change = (patch: Schema<"NewThreadDefaults">) => {
+    if (preparing || draft.attempted) return;
+    draft.defaults = { ...defaults, ...patch };
+    setDefaults(draft.defaults);
+  };
+  const project = projects.data?.find(
+    (item) => item.project_id === defaults.project_id,
+  );
+  const effective = preview.data?.configuration;
+  const effectiveAgent = selectors.data?.agents.find(
+    (item) => item.agent_id === effective?.agent_source.id,
+  );
+  const effectiveEnvironment = selectors.data?.environments.find(
+    (item) => item.profile_id === effective?.environment_profile_id,
+  );
+  const isolation =
+    effectiveEnvironment?.mode === "full-control"
+      ? "Full Control"
+      : effectiveEnvironment?.mode === "sandbox"
+        ? "Sandbox"
+        : "Custom environment";
+  const agentLabel = (agent: Schema<"AgentSummary">) =>
+    agent.model_id ? `${agent.name} · ${agent.model_id}` : agent.name;
+  const openConversation = () => {
+    if (drafts.get("@home") === draft) drafts.delete("@home");
+    navigate(`/threads/${encodeURIComponent(threadId)}?compose=1`, {
+      replace: true,
+    });
+  };
   return (
-    <ModalFrame
-      open
-      onOpenChange={(open) => {
-        if (!open && !create.isPending) close();
-      }}
-      title="New conversation"
-      description="Choose where to work. These selections are captured for the new conversation; creating it does not start a model."
-      closeLabel="Close"
-    >
-      <form
-        className={styles.form}
-        onSubmit={(event) => {
-          event.preventDefault();
-          if (
-            preview.data &&
-            !preview.isFetching &&
-            !preview.error &&
-            !create.isPending
-          )
-            create.mutate();
-        }}
-      >
-        <TextField
-          label="Title (optional)"
-          value={title}
-          onChange={(value) => setTitle(value.slice(0, 200))}
-        />
-        <ResourceChoice
-          label="Project"
-          value={project}
-          onValueChange={setProject}
-          options={[
-            { value: "", label: "Without a project" },
-            ...(projects.data ?? []).map((item) => ({
-              value: item.project_id,
-              label: item.name,
-            })),
-          ]}
-        />
-        <ResourceChoice
-          label="Agent"
-          value={agent}
-          onValueChange={setAgent}
-          options={[
-            { value: "", label: "Use creation default" },
-            ...(selectors.data?.agents ?? []).map((item) => ({
-              value: item.agent_id,
-              label: item.name,
-            })),
-          ]}
-        />
-        <ResourceChoice
-          label="Environment"
-          value={environment}
-          onValueChange={setEnvironment}
-          options={[
-            { value: "", label: "Use creation default" },
-            ...(selectors.data?.environments ?? []).map((item) => ({
-              value: item.profile_id,
-              label: item.name,
-            })),
-          ]}
-        />
-        {preview.data && (
-          <div className={styles.summary}>
-            <p>
-              Agent:{" "}
-              {selectors.data?.agents.find(
-                (item) =>
-                  item.agent_id === preview.data.configuration.agent_source.id,
-              )?.name || preview.data.configuration.agent_source.id}{" "}
-              · {preview.data.provenance.agent_source}
-            </p>
-            <p>
-              Environment: {preview.data.configuration.environment_profile_id} ·{" "}
-              {preview.data.provenance.environment_profile_id}
-            </p>
+    <section className={styles.page} aria-label="New conversation">
+      <div className={styles.welcome}>
+        <Robot aria-hidden="true" />
+        <h1>
+          What would you like to build
+          {project ? (
+            <>
+              {" "}
+              in <span>{project.name}</span>
+            </>
+          ) : (
+            ""
+          )}
+          ?
+        </h1>
+      </div>
+      <div className={styles.inputArea}>
+        <fieldset
+          className={styles.context}
+          disabled={preparing || draft.attempted}
+        >
+          <legend className={styles.srOnly}>Conversation settings</legend>
+          <div className={styles.location}>
+            <Folder aria-hidden="true" />
+            <SearchPicker
+              label="Project"
+              placeholder="Without a project"
+              emptyMessage="No projects found."
+              disabled={preparing || draft.attempted}
+              value={defaults.project_id ?? ""}
+              onValueChange={(value) => change({ project_id: value || null })}
+              groups={[
+                {
+                  label: "Projects",
+                  options: [
+                    { value: "", label: "Without a project" },
+                    ...(projects.data ?? []).map((item) => ({
+                      value: item.project_id,
+                      label: item.name,
+                    })),
+                    ...(defaults.project_id && !project && !projects.isPending
+                      ? [
+                          {
+                            value: defaults.project_id,
+                            label: `${defaults.project_id} (unavailable)`,
+                            disabled: true,
+                          },
+                        ]
+                      : []),
+                  ],
+                },
+              ]}
+            />
           </div>
-        )}
-        <ErrorNotice error={preview.error || create.error || selectors.error} />
-        {preview.error && (
-          <Link to="/setup" onClick={close}>
-            Open setup and readiness
+          <div className={styles.location}>
+            <Monitor aria-hidden="true" />
+            <SearchPicker
+              label="Environment"
+              placeholder={effectiveEnvironment?.name ?? "Default environment"}
+              emptyMessage="No environments found."
+              disabled={preparing || draft.attempted}
+              value={defaults.environment_profile_id ?? ""}
+              onValueChange={(value) =>
+                change({ environment_profile_id: value || null })
+              }
+              groups={[
+                {
+                  label: "Environments",
+                  options: [
+                    {
+                      value: "",
+                      label:
+                        effectiveEnvironment?.name ?? "Default environment",
+                    },
+                    ...(selectors.data?.environments ?? []).map((item) => ({
+                      value: item.profile_id,
+                      label: item.name,
+                      description: item.description,
+                    })),
+                  ],
+                },
+              ]}
+            />
+          </div>
+          {effectiveEnvironment && effectiveEnvironment.name !== isolation && (
+            <span className={styles.mode}>{isolation}</span>
+          )}
+        </fieldset>
+        <Composer
+          autoFocus
+          threadId={threadId}
+          activity={{ state: "inactive" }}
+          canRun={!!preview.data && !preview.isFetching && !preview.error}
+          profile={profile}
+          unauthorized={unauthorized}
+          reconcile={() => {
+            void refreshThreadLists(queries);
+          }}
+          local={!draft.created}
+          prepareThread={() => create.mutateAsync()}
+          onPreparing={setPreparing}
+          onSubmitted={openConversation}
+          controls={
+            <div className={styles.agentChoice}>
+              <SearchPicker
+                label="Agent & model"
+                placeholder={
+                  effectiveAgent ? agentLabel(effectiveAgent) : "Default agent"
+                }
+                emptyMessage="No agents found."
+                disabled={preparing || draft.attempted}
+                value={defaults.agent_id ?? ""}
+                onValueChange={(value) => change({ agent_id: value || null })}
+                groups={[
+                  {
+                    label: "Agents & models",
+                    options: [
+                      {
+                        value: "",
+                        label: effectiveAgent
+                          ? agentLabel(effectiveAgent)
+                          : "Default agent",
+                      },
+                      ...(selectors.data?.agents ?? []).map((item) => ({
+                        value: item.agent_id,
+                        label: agentLabel(item),
+                      })),
+                    ],
+                  },
+                ]}
+              />
+            </div>
+          }
+        />
+        <ErrorNotice
+          error={preview.error || selectors.error || projects.error}
+        />
+        {draft.created && create.error && (
+          <Link to={`/threads/${encodeURIComponent(threadId)}?compose=1`}>
+            Open conversation with retained input
           </Link>
         )}
-        <Button
-          type="submit"
-          loading={create.isPending}
-          disabled={!preview.data || preview.isFetching || !!preview.error}
-        >
-          Create conversation
-        </Button>
-      </form>
-    </ModalFrame>
+        {(preview.error || setup.data?.needed) && (
+          <Link className={styles.setup} to="/setup">
+            Continue setup
+          </Link>
+        )}
+      </div>
+    </section>
   );
 }

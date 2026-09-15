@@ -27,7 +27,7 @@ from a13n_service.skills.objects import SkillPackageStore
 from a13n_service.skills.package import NormalizedSkillPackage, normalize_skill_files, skill_package_object_key
 from a13n_service.skills.runtime import SkillRuntimeError, SkillRuntimePreparer
 from a13n_service.storage import transaction
-from a13n_service.storage.config import SQLiteConfig
+from a13n_service.storage.config import PostgreSQLConfig
 from a13n_service.storage.object_store import LocalObjectStore
 from a13n_service.storage.relational import create_session_factory, create_sql_engine
 from anyio import Event, create_task_group, fail_after
@@ -56,11 +56,8 @@ class RuntimeFixture:
 
 
 @pytest.fixture
-async def runtime_fixture(
-    tmp_path: Path,
-    service_sqlite_database: Path,
-) -> AsyncIterator[RuntimeFixture]:
-    engine = create_sql_engine(SQLiteConfig(path=service_sqlite_database))
+async def runtime_fixture(tmp_path: Path, service_database: PostgreSQLConfig) -> AsyncIterator[RuntimeFixture]:
+    engine = create_sql_engine(service_database)
     sessions = create_session_factory(engine)
     deploy = _package("deploy", "Deploy safely.", (("scripts/deploy.sh", b"#!/bin/sh\n"), ("empty.txt", b"")))
     review = _package("review", "Review carefully.", (("checklist.md", b"# Checklist\n"),))

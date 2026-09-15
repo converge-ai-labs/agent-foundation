@@ -36,7 +36,7 @@ from tests.gateway.test_commands import (
 )
 from tests.hooks.support import seed_hook_actor_access
 from tests.interactions.conftest import NOW, WORKSPACE_ID
-from tests.interactions.conftest import postgres_interaction_sessions as postgres_interaction_sessions
+from tests.interactions.conftest import interaction_sessions as interaction_sessions
 from tests.interactions.test_queue import _inline_hooks
 
 pytestmark = pytest.mark.anyio
@@ -411,9 +411,9 @@ async def test_reorder_replay_precedes_changed_queue_version(
 
 @pytest.mark.parametrize("branch", ["queued", "completed", "waiting", "root"])
 async def test_concurrent_thread_submission_owns_one_receipt_and_replays_after_queue_changes(
-    postgres_interaction_sessions, tmp_path, monkeypatch, branch
+    interaction_sessions, tmp_path, monkeypatch, branch
 ):
-    sessions = postgres_interaction_sessions
+    sessions = interaction_sessions
     await seed_hook_actor_access(sessions)
     service, commands, objects, source = await _submission_setup(sessions, tmp_path)
     waiting_resolution = None

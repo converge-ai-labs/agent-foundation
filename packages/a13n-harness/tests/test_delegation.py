@@ -316,6 +316,7 @@ async def test_inline_children_receive_fresh_search_bindings_without_parent_inhe
             raise AssertionError("Only search is enabled")
 
     def fresh(bindings):
+        assert bindings.tool_result_directory == "/scratch/tool-results"
         provider = Search()
         attachment = WebBinding(client=provider, policy=provider, search_provider=provider)
         created.append(attachment)
@@ -363,7 +364,7 @@ async def test_inline_children_receive_fresh_search_bindings_without_parent_inhe
             SubagentDefinition(name="researcher", description="Find evidence", agent=child, run_bindings_factory=fresh),
         ),
     )
-    parent_binding = fresh(_bindings_factory())
+    parent_binding = fresh(replace(_bindings_factory(), tool_result_directory="/scratch/tool-results"))
     result = await HarnessBuilder().build(parent).run("delegate", bindings=parent_binding)
     assert result.output_or_raise() == "parent-done"
     assert len(created) == 3 and len({id(item) for item in created}) == 3

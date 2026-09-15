@@ -35,7 +35,7 @@ from a13n_service.assets.runtime import AssetRuntime
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
 from a13n_service.environments.runtime import prepare_run_environment, validate_run_environment
-from a13n_service.memory.runtime import graph_uses_memory, memory_capability
+from a13n_service.memory.runtime import graph_uses_memory, memory_capability, validate_memory_providers
 from a13n_service.memory.service import MemoryService
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.provider_runtime import LiveProviderResolver
@@ -137,8 +137,14 @@ class WorkerAttemptPreparer:
             environment_id=self._run.environment_id,
         )
         if graph_uses_memory(config):
-            if self._memory is None or self._memory.backend is None:
-                raise RunError("Memory is unavailable.", code="mem0_configuration_invalid")
+            if self._memory is None:
+                raise RunError("Memory is unavailable.", code="memory_provider_unavailable")
+            await validate_memory_providers(
+                self._memory,
+                organization_id=self._run.organization_id,
+                workspace_id=self._workspace_id,
+                config=config,
+            )
         if self._web is not None:
             await self._web.validate(
                 run=self._run,

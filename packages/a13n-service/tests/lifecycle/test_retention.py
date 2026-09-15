@@ -275,18 +275,14 @@ async def test_retention_preserves_organization_cursor_prefix_across_resources(
 
 
 async def test_retention_prefix_query_runs_on_postgresql(
-    lifecycle_postgres_sessions: async_sessionmaker[AsyncSession],
+    lifecycle_interaction_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
-    await seed_run_and_secret(lifecycle_postgres_sessions)
+    await seed_run_and_secret(lifecycle_interaction_sessions)
     now = NOW + timedelta(days=100)
-    event_id = await _append_event(
-        lifecycle_postgres_sessions,
-        suffix=20,
-        occurred_at=now - timedelta(days=20),
-    )
-    await _settle_events(lifecycle_postgres_sessions, event_id)
+    event_id = await _append_event(lifecycle_interaction_sessions, suffix=20, occurred_at=now - timedelta(days=20))
+    await _settle_events(lifecycle_interaction_sessions, event_id)
     reconciler = LifecycleRetentionReconciler(
-        lifecycle_postgres_sessions,
+        lifecycle_interaction_sessions,
         event_horizon=timedelta(days=10),
         published_delivery_horizon=timedelta(days=5),
         dead_letter_horizon=timedelta(days=5),

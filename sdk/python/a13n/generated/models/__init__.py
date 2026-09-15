@@ -152,6 +152,9 @@ from .create_invitation_request import CreateInvitationRequest
 from .create_key_request import CreateKeyRequest
 from .create_managed_environment_request import CreateManagedEnvironmentRequest
 from .create_managed_environment_request_labels import CreateManagedEnvironmentRequestLabels
+from .create_memory_provider_request import CreateMemoryProviderRequest
+from .create_memory_provider_request_configuration import CreateMemoryProviderRequestConfiguration
+from .create_memory_provider_request_credential import CreateMemoryProviderRequestCredential
 from .create_model_provider_request import CreateModelProviderRequest
 from .create_model_provider_request_configuration import CreateModelProviderRequestConfiguration
 from .create_model_provider_request_extra_headers import CreateModelProviderRequestExtraHeaders
@@ -303,10 +306,19 @@ from .mcpo_auth_setup_action_grant_types_item import MCPOAuthSetupActionGrantTyp
 from .mcpo_auth_setup_action_token_endpoint_auth_methods_item import MCPOAuthSetupActionTokenEndpointAuthMethodsItem
 from .mcpo_auth_setup_action_type import MCPOAuthSetupActionType
 from .mcpo_auth_setup_request import MCPOAuthSetupRequest
-from .mem_0_scope import Mem0Scope
 from .memory import Memory
 from .memory_collection import MemoryCollection
 from .memory_pagination import MemoryPagination
+from .memory_provider import MemoryProvider
+from .memory_provider_collection import MemoryProviderCollection
+from .memory_provider_configuration import MemoryProviderConfiguration
+from .memory_provider_definition import MemoryProviderDefinition
+from .memory_provider_definition_collection import MemoryProviderDefinitionCollection
+from .memory_provider_definition_configuration_schema import MemoryProviderDefinitionConfigurationSchema
+from .memory_provider_definition_credential_schema import MemoryProviderDefinitionCredentialSchema
+from .memory_provider_reference import MemoryProviderReference
+from .memory_provider_reference_collection import MemoryProviderReferenceCollection
+from .memory_scope import MemoryScope
 from .memory_search import MemorySearch
 from .memory_selection import MemorySelection
 from .memory_write import MemoryWrite
@@ -561,6 +573,8 @@ from .update_connector_provider_request_credentials_type_0 import UpdateConnecto
 from .update_environment_request import UpdateEnvironmentRequest
 from .update_hook_subscription_request import UpdateHookSubscriptionRequest
 from .update_hook_subscription_state_request import UpdateHookSubscriptionStateRequest
+from .update_memory_provider_request import UpdateMemoryProviderRequest
+from .update_memory_provider_request_credential_type_0 import UpdateMemoryProviderRequestCredentialType0
 from .update_model_provider_request import UpdateModelProviderRequest
 from .update_model_provider_request_configuration_type_0 import UpdateModelProviderRequestConfigurationType0
 from .update_model_provider_request_extra_headers import UpdateModelProviderRequestExtraHeaders
@@ -762,6 +776,9 @@ __all__ = (
     "CreateKeyRequest",
     "CreateManagedEnvironmentRequest",
     "CreateManagedEnvironmentRequestLabels",
+    "CreateMemoryProviderRequest",
+    "CreateMemoryProviderRequestConfiguration",
+    "CreateMemoryProviderRequestCredential",
     "CreateModelProviderRequest",
     "CreateModelProviderRequestConfiguration",
     "CreateModelProviderRequestExtraHeaders",
@@ -905,10 +922,19 @@ __all__ = (
     "MCPToolCollection",
     "MCPToolInputSchema",
     "MCPToolOutputSchemaType0",
-    "Mem0Scope",
     "Memory",
     "MemoryCollection",
     "MemoryPagination",
+    "MemoryProvider",
+    "MemoryProviderCollection",
+    "MemoryProviderConfiguration",
+    "MemoryProviderDefinition",
+    "MemoryProviderDefinitionCollection",
+    "MemoryProviderDefinitionConfigurationSchema",
+    "MemoryProviderDefinitionCredentialSchema",
+    "MemoryProviderReference",
+    "MemoryProviderReferenceCollection",
+    "MemoryScope",
     "MemorySearch",
     "MemorySelection",
     "MemoryWrite",
@@ -1157,6 +1183,8 @@ __all__ = (
     "UpdateEnvironmentRequest",
     "UpdateHookSubscriptionRequest",
     "UpdateHookSubscriptionStateRequest",
+    "UpdateMemoryProviderRequest",
+    "UpdateMemoryProviderRequestCredentialType0",
     "UpdateModelProviderRequest",
     "UpdateModelProviderRequestConfigurationType0",
     "UpdateModelProviderRequestExtraHeaders",

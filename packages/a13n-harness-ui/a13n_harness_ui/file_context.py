@@ -52,6 +52,17 @@ class CommentContextSource(BaseModel):
     target: SavedOutputTarget
 
 
+class CommentReferencePreview(BaseModel):
+    """Additive attachment display metadata; the captured bytes own full content."""
+
+    model_config = ConfigDict(frozen=True, extra="ignore", strict=True)
+
+    version: int = Field(default=1, ge=1)
+    author: str | None = Field(default=None, max_length=80)
+    preview: str | None = Field(default=None, max_length=240)
+    quote: str | None = Field(default=None, max_length=240)
+
+
 CapturedSource = FileContextSource | GitContextSource | CommentContextSource
 
 

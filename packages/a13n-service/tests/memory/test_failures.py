@@ -5,11 +5,10 @@ import pytest
 from a13n_harness.capabilities.mem0_backends import Mem0OSSBackend
 from a13n_service.application_errors import ApplicationError
 from a13n_service.memory.domain import MemoryScope, MemoryWrite
-from a13n_service.memory.scopes import MemoryAuthorizer
-from a13n_service.memory.service import MemoryService
 from pydantic import ValidationError
 
 from ..models.conftest import WORKSPACE_ID, actor
+from .support import memory_service
 from .test_api import native_transport
 
 
@@ -34,8 +33,13 @@ async def test_committed_but_unconfirmed_write_is_not_retried(memory_sessions, o
         return response
 
     async with httpx2.AsyncClient(base_url="http://oss/", transport=httpx2.MockTransport(handler)) as client:
-        service = MemoryService(Mem0OSSBackend(client), MemoryAuthorizer(memory_sessions))
-        kwargs = {"actor": actor(), "workspace_id": WORKSPACE_ID, "selection": MemoryScope(scope="user")}
+        service, provider, _ = await memory_service(memory_sessions, Mem0OSSBackend(client))
+        kwargs = {
+            "actor": actor(),
+            "workspace_id": WORKSPACE_ID,
+            "provider_id": provider.id,
+            "selection": MemoryScope(scope="user"),
+        }
         existing = await service.add(**kwargs, text="before")
         before = len(calls)
         fail = True
@@ -68,8 +72,13 @@ async def test_mutation_deadline_includes_scope_read_and_verification(memory_ses
         return transport(request)
 
     async with httpx2.AsyncClient(base_url="http://oss/", transport=httpx2.MockTransport(handler)) as client:
-        service = MemoryService(Mem0OSSBackend(client), MemoryAuthorizer(memory_sessions), timeout=0.06)
-        kwargs = {"actor": actor(), "workspace_id": WORKSPACE_ID, "selection": MemoryScope(scope="user")}
+        service, provider, _ = await memory_service(memory_sessions, Mem0OSSBackend(client), timeout=0.06)
+        kwargs = {
+            "actor": actor(),
+            "workspace_id": WORKSPACE_ID,
+            "provider_id": provider.id,
+            "selection": MemoryScope(scope="user"),
+        }
         existing = await service.add(**kwargs, text="before")
         block = True
         with pytest.raises(ApplicationError) as caught:

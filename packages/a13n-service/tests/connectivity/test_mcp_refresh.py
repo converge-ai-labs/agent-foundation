@@ -156,30 +156,38 @@ async def test_oauth_completion_can_refresh_before_discovery_establishes_ready(m
 
 
 @pytest.mark.parametrize("separate_instances", [False, True])
-async def test_sqlite_concurrent_refresh_claim_exchanges_old_token_once(
+async def test_concurrent_refresh_claim_exchanges_old_token_once(
     mcp_services, connectivity_sessions, credential_protector, monkeypatch, separate_instances
 ):
     import asyncio
 
     from a13n_service.connectivity.mcp import refresh
+    from a13n_service.connectivity.mcp.oauth_client import MCPOAuthClient
     from anyio import fail_after
 
     ready = await _expired_connection(mcp_services, connectivity_sessions, credential_protector)
-    original = refresh.require_connection
-    both_read = asyncio.Event()
-    snapshots = []
+    exchange_started = asyncio.Event()
+    contender_observed_claim = asyncio.Event()
+    release_exchange = asyncio.Event()
+    original_refresh = MCPOAuthClient.refresh
+    original_claim = refresh.OAuthCredentialRefresh._claim
+    contender_task = None
+    contender_claims = []
 
-    async def read_before_either_claims(session, connection_id, **kwargs):
-        connection = await original(session, connection_id, **kwargs)
-        if len(snapshots) < 2:
-            snapshots.append((connection.refresh_claim_generation, connection.credential_generation))
-            assert connection.refresh_claim_owner is None
-            if len(snapshots) == 2:
-                both_read.set()
-            await both_read.wait()
-        return connection
+    async def pause_exchange(self, bundle, client):
+        exchange_started.set()
+        await release_exchange.wait()
+        return await original_refresh(self, bundle, client)
 
-    monkeypatch.setattr(refresh, "require_connection", read_before_either_claims)
+    async def observe_claim(self, connection_id):
+        result = await original_claim(self, connection_id)
+        if asyncio.current_task() is contender_task and not contender_observed_claim.is_set():
+            contender_claims.append(result)
+            contender_observed_claim.set()
+        return result
+
+    monkeypatch.setattr(MCPOAuthClient, "refresh", pause_exchange)
+    monkeypatch.setattr(refresh.OAuthCredentialRefresh, "_claim", observe_claim)
     first = refresh.OAuthCredentialRefresh(
         connectivity_sessions, mcp_services[1]._oauth, credential_protector, instance_id="first", clock=lambda: NOW
     )
@@ -190,9 +198,24 @@ async def test_sqlite_concurrent_refresh_claim_exchanges_old_token_once(
         if separate_instances
         else first
     )
-    with fail_after(5):
-        results = await asyncio.gather(first.current(ready.id), second.current(ready.id), return_exceptions=True)
-    assert snapshots[0] == snapshots[1]
+    tasks = []
+    try:
+        with fail_after(5):
+            first_task = asyncio.create_task(first.current(ready.id))
+            tasks.append(first_task)
+            await exchange_started.wait()
+            contender_task = asyncio.create_task(second.current(ready.id))
+            tasks.append(contender_task)
+            await contender_observed_claim.wait()
+            assert contender_claims == [refresh._RefreshState.refreshing]
+            release_exchange.set()
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+    finally:
+        release_exchange.set()
+        for task in tasks:
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
     exchanges = [request for request in mcp_services[2].requests if request.url.path == "/token"]
     assert len(exchanges) == 1, "the same rotating refresh token must not be exchanged twice"
     assert all(isinstance(result, refresh.CurrentConnection) for result in results), results

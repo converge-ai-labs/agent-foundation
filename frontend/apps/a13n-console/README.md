@@ -20,7 +20,7 @@ make sdk-typescript-build
 pnpm --dir frontend --filter a13n-console dev
 ```
 
-The development server listens on `http://127.0.0.1:5173` and proxies `/api` HTTP and WebSocket traffic to `http://127.0.0.1:8000`. Set `A13N_CONSOLE_SERVICE_URL` to change the upstream. Configure the Service public origin as the Console origin so invitation, recovery, email confirmation, cookies, and WebSocket origin checks use the same browser boundary. Email flows require the Service SMTP configuration.
+The local launcher assigns a stable Console port per checkout and passes the matching Service upstream. Run `make dev-status` to discover both URLs. A direct Vite invocation still accepts `A13N_CONSOLE_SERVICE_URL`. Configure the Service public origin as the Console origin so invitation, recovery, email confirmation, cookies, and WebSocket origin checks use the same browser boundary. Email flows require the Service SMTP configuration.
 
 ## Application surfaces
 

@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime
 
-from sqlalchemy import select, text, update
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ApplicationError, ErrorCategory
@@ -39,28 +39,21 @@ async def identity_transaction(
 ) -> AsyncIterator[AsyncSession]:
     """Serialize membership changes per Organization, including last-Admin checks.
 
-    The no-op write takes the writer lock before reads on SQLite and a row lock
-    on PostgreSQL. No password work or external I/O belongs inside this scope.
+    No password work or external I/O belongs inside this scope.
     """
     async with transaction(sessions) as session:
-        result = await session.execute(
-            update(OrganizationRecord)
-            .where(OrganizationRecord.id == organization_id)
-            .values(name=OrganizationRecord.name)
-            .returning(OrganizationRecord.id)
+        organization = await session.scalar(
+            select(OrganizationRecord).where(OrganizationRecord.id == organization_id).with_for_update()
         )
-        if result.scalar_one_or_none() is None:
+        if organization is None:
             raise not_found()
         yield session
 
 
 async def lock_bootstrap(session: AsyncSession) -> None:
     """Serialize the initially empty OSS database without a second identity table."""
-    if session.bind is not None and session.bind.dialect.name == "sqlite":
-        await session.execute(text("BEGIN IMMEDIATE"))
-    else:
-        # A fixed, private namespace; the canonical connection statement timeout bounds waiting.
-        await session.execute(text("SELECT pg_advisory_xact_lock(134644, 1)"))
+    # A fixed, private namespace; the canonical connection statement timeout bounds waiting.
+    await session.execute(text("SELECT pg_advisory_xact_lock(134644, 1)"))
 
 
 async def singleton_organization(session: AsyncSession) -> OrganizationRecord:

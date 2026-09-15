@@ -309,11 +309,10 @@ async def test_enqueue_rejects_thread_that_can_accept_immediately(
 
 
 async def test_postgresql_concurrent_enqueues_allocate_distinct_fifo_positions(
-    postgres_interaction_sessions: async_sessionmaker[AsyncSession],
-    interaction_object_store: ObjectStore,
+    interaction_sessions: async_sessionmaker[AsyncSession], interaction_object_store: ObjectStore
 ) -> None:
-    _, run, _ = await _accept_root(postgres_interaction_sessions, interaction_object_store)
-    queue = QueuedSubmissionStore(postgres_interaction_sessions, _inline_hooks(), clock=lambda: NOW)
+    _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
+    queue = QueuedSubmissionStore(interaction_sessions, _inline_hooks(), clock=lambda: NOW)
 
     receipts = await asyncio.gather(
         queue.enqueue(

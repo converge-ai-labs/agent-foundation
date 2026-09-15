@@ -104,6 +104,14 @@ async def test_saved_comments_concurrent_publish_reconciliation_original_output_
             ).json()
             ids = [item["comment_id"] for page in (first_page, second_page) for item in page["comments"]]
             assert len(ids) == len(set(ids)) == 4 and second_page["next_cursor"] is None
+            newest = (await api.get(prefix + "/comments", params={"limit": 2, "newest_first": True})).json()
+            older = (
+                await api.get(
+                    prefix + "/comments", params={"limit": 2, "newest_first": True, "cursor": newest["next_cursor"]}
+                )
+            ).json()
+            assert [item["comment_id"] for page in (newest, older) for item in page["comments"]] == ids[::-1]
+            assert (await api.get(prefix + "/comments", params={"cursor": newest["next_cursor"]})).status_code == 400
             filtered = await api.get(prefix + "/comments", params={"target": json.dumps(target)})
             assert len(filtered.json()["comments"]) == 4
             assert (await api.get(prefix + "/comments", params={"target": "{"})).status_code == 400
@@ -248,3 +256,72 @@ async def test_comment_commit_failure_rolls_back_without_hint_and_unsaved_output
             assert (await api.get(prefix + "/comments/" + body["comment_id"])).json() == first.json()
             unavailable = await api.post(prefix + "/saved-output", json=target)
             assert unavailable.status_code != 200
+
+
+async def test_comment_edit_delete_conflicts_captures_and_restart(tmp_path, monkeypatch):
+    configuration = _write_configuration(tmp_path)
+
+    async def stream(messages, info):
+        yield "Original saved answer"
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=stream)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    async with listener(tmp_path, configuration_path=configuration) as (http, _):
+        async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
+            thread = (await api.post("/api/threads", json={})).json()["thread_id"]
+            prefix = f"/api/threads/{thread}"
+            receipt = (await api.post(prefix + "/submit", json={"prompt": "First"})).json()["receipt_id"]
+            await settled(api, receipt)
+            history = (await api.get(prefix + "/transcript")).json()
+            request = publication(targets(history)[0], body="Original comment")
+            first = (await api.post(prefix + "/comments", json=request)).json()
+            path = prefix + "/comments/" + first["comment_id"]
+            captured = (await api.post(path + "/capture", params={"expected_version": 1})).json()
+            download = prefix + "/attachments/" + captured["attachment_id"]
+            frozen = (await api.get(download)).text
+            changes = await asyncio.gather(
+                api.patch(path, json={"expected_version": 1, "body": "Edit one"}),
+                api.patch(path, json={"expected_version": 1, "body": "Edit two"}),
+            )
+            assert sorted(item.status_code for item in changes) == [200, 409]
+            edited = next(item.json() for item in changes if item.status_code == 200)
+            assert edited["version"] == 2 and edited["updated_at"] is not None
+            assert edited["target"] == first["target"] and edited["author"] == first["author"]
+            assert edited["created_at"] == first["created_at"]
+            # Lost edit acknowledgements reconcile without applying the mutation twice.
+            retry = await api.patch(path, json={"expected_version": 1, "body": edited["body"]})
+            assert retry.json() == edited
+            assert (await api.post(prefix + "/comments", json=request)).status_code == 409
+            assert (await api.post(path + "/capture", params={"expected_version": 1})).status_code == 409
+            assert (await api.delete(path, params={"expected_version": 1})).status_code == 409
+            assert (await api.patch(path, json={"expected_version": 2, "body": " "})).status_code == 400
+            assert (await api.patch(path, json={"expected_version": 2, "body": "x", "author": {}})).status_code == 400
+            other = (await api.post("/api/threads", json={})).json()["thread_id"]
+            foreign = f"/api/threads/{other}/comments/{first['comment_id']}"
+            assert (await api.patch(foreign, json={"expected_version": 2, "body": "x"})).status_code == 400
+            assert (await api.delete(foreign, params={"expected_version": 2})).status_code == 400
+            async with httpx.AsyncClient(base_url=http, trust_env=False) as anonymous:
+                assert (await anonymous.delete(path, params={"expected_version": 2})).status_code == 401
+            assert (await api.delete(path, params={"expected_version": 2})).status_code == 204
+            assert (await api.delete(path, params={"expected_version": 2})).status_code == 204
+            assert (await api.get(path)).status_code == 400
+            assert (await api.get(prefix + "/comments")).json()["comments"] == []
+            assert (await api.post(path + "/capture")).status_code == 400
+            assert (await api.patch(path, json={"expected_version": 2, "body": "Restore"})).status_code == 400
+            assert (await api.post(prefix + "/comments", json=request)).status_code == 409
+            assert (await api.get(download)).text == frozen
+            assert (await api.get(prefix + "/transcript")).json() == history
+            receipt = (
+                await api.post(
+                    prefix + "/submit",
+                    json={"prompt": "Use the captured version", "attachment_ids": [captured["attachment_id"]]},
+                )
+            ).json()["receipt_id"]
+            assert (await settled(api, receipt))["status"] == "completed"
+    async with listener(tmp_path, configuration_path=configuration) as (http, _):
+        async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
+            assert (await api.get(prefix + "/comments")).json()["comments"] == []
+            assert (await api.post(prefix + "/comments", json=request)).status_code == 409
+            assert (await api.get(download)).text == frozen

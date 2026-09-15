@@ -35,12 +35,9 @@ pytestmark = pytest.mark.anyio
 
 @pytest.mark.parametrize("failure_point", ["event", "receipts", "retention", "lost_ack"])
 async def test_worker_retries_the_partial_activation_without_reinitializing(
-    relational_interaction_sessions,
-    interaction_object_store,
-    redis_client,
-    failure_point,
+    interaction_sessions, interaction_object_store, redis_client, failure_point
 ):
-    sessions = relational_interaction_sessions
+    sessions = interaction_sessions
     _, run, _ = await _accept_root(sessions, interaction_object_store)
     now = NOW + timedelta(seconds=1)
     claim = await AttemptScheduler(sessions, clock=lambda: now, lifecycle=test_lifecycle_writer()).claim(
@@ -90,12 +87,9 @@ async def test_worker_retries_the_partial_activation_without_reinitializing(
 
 @pytest.mark.parametrize("successor", [False, True])
 async def test_lifecycle_projector_recovers_activation_after_worker_disappears(
-    relational_interaction_sessions,
-    interaction_object_store,
-    redis_client,
-    successor,
+    interaction_sessions, interaction_object_store, redis_client, successor
 ):
-    sessions = relational_interaction_sessions
+    sessions = interaction_sessions
     _, run, _ = await _accept_root(sessions, interaction_object_store)
     now = NOW + timedelta(seconds=1)
     claim = await AttemptScheduler(sessions, clock=lambda: now, lifecycle=test_lifecycle_writer()).claim(
@@ -138,12 +132,9 @@ async def test_lifecycle_projector_recovers_activation_after_worker_disappears(
 
 @pytest.mark.parametrize("lost", ["incarnation", "events", "metadata", "both", "partial_activation"])
 async def test_terminal_projection_retires_unavailable_history_without_reactivating_the_old_attempt(
-    relational_interaction_sessions,
-    interaction_object_store,
-    redis_client,
-    lost,
+    interaction_sessions, interaction_object_store, redis_client, lost
 ):
-    sessions = relational_interaction_sessions
+    sessions = interaction_sessions
     _, run, _ = await _accept_root(sessions, interaction_object_store, max_attempts=1)
     now = NOW + timedelta(seconds=1)
     scheduler = AttemptScheduler(sessions, clock=lambda: now, lifecycle=test_lifecycle_writer())
@@ -201,12 +192,9 @@ async def test_terminal_projection_retires_unavailable_history_without_reactivat
 
 @pytest.mark.parametrize("failure", ["partial_expiration", "lost_ack"])
 async def test_terminal_cleanup_keeps_retrying_after_publication_budget_is_exhausted(
-    relational_interaction_sessions,
-    interaction_object_store,
-    redis_client,
-    failure,
+    interaction_sessions, interaction_object_store, redis_client, failure
 ):
-    sessions = relational_interaction_sessions
+    sessions = interaction_sessions
     _, run, _ = await _accept_root(sessions, interaction_object_store, max_attempts=1)
     now = NOW + timedelta(seconds=1)
     scheduler = AttemptScheduler(sessions, clock=lambda: now, lifecycle=test_lifecycle_writer())
@@ -275,12 +263,9 @@ async def test_terminal_cleanup_keeps_retrying_after_publication_budget_is_exhau
 
 @pytest.mark.parametrize("first_activated", [False, True])
 async def test_durable_claim_and_activation_are_separate_ordered_boundaries(
-    relational_interaction_sessions,
-    interaction_object_store,
-    redis_client,
-    first_activated,
+    interaction_sessions, interaction_object_store, redis_client, first_activated
 ):
-    sessions = relational_interaction_sessions
+    sessions = interaction_sessions
     _, run, _ = await _accept_root(sessions, interaction_object_store)
     first = await AttemptScheduler(
         sessions,
@@ -361,11 +346,9 @@ async def test_durable_claim_and_activation_are_separate_ordered_boundaries(
 
 
 async def test_projected_bootstrap_cannot_recreate_lost_publication_state(
-    relational_interaction_sessions,
-    interaction_object_store,
-    redis_client,
+    interaction_sessions, interaction_object_store, redis_client
 ):
-    sessions = relational_interaction_sessions
+    sessions = interaction_sessions
     _, run, _ = await _accept_root(sessions, interaction_object_store)
     claim = await AttemptScheduler(
         sessions,

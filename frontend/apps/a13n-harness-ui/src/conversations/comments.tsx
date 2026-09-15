@@ -1,5 +1,6 @@
 import {
   createContext,
+  useCallback,
   useEffect,
   useContext,
   useRef,
@@ -8,11 +9,18 @@ import {
 } from "react";
 import {
   useInfiniteQuery,
+  useQuery,
   useMutation,
   useQueryClient,
 } from "@tanstack/react-query";
 import {
   Button,
+  Sheet,
+  SheetPopup,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+  SheetPanel,
   ModalFrame,
   Popover,
   PopoverPopup,
@@ -31,7 +39,8 @@ import {
 import { ApiError, result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
 import type { Profile } from "../shell/presence";
-import { ErrorNotice, TextField } from "../shell/ui";
+import { ErrorNotice } from "../shell/ui";
+import { ConfirmAction } from "../shell/confirm-action";
 import { useDraft } from "./composer";
 import { MessageText } from "./message-text";
 import { selectedSource } from "./comment-selection";
@@ -45,6 +54,7 @@ export type CommentDraft = {
   text: string;
   status: "editing" | "pending" | "unknown" | "published";
   error?: unknown;
+  expectedVersion?: number;
 };
 export const CommentDrafts = createContext(new Map<string, CommentDraft>());
 const targetKey = (target: Target) =>
@@ -63,7 +73,8 @@ const DiscussionContext = createContext<{
     selection?: Selection,
     anchor?: HTMLElement,
   ) => void;
-  browse: (target?: Target, anchor?: HTMLElement) => void;
+  browse: (target?: Target, anchor?: HTMLElement, ids?: string[]) => void;
+  register: (target: Target, text: string, element: HTMLElement) => () => void;
   inspect: (target: Target) => void;
   comments: Schema<"OutputComment">[];
   open: boolean;
@@ -94,6 +105,11 @@ export function SavedOutput({
   const [originalShown, setOriginalShown] = useState(false);
   const [selectionTop, setSelectionTop] = useState(0);
   const [selectionLeft, setSelectionLeft] = useState(0);
+  const register = discussion?.register;
+  useEffect(() => {
+    if (register && target && container.current)
+      return register(target, text, container.current);
+  }, [register, target, text]);
   useEffect(() => {
     if (!discussion?.open) setSelection(undefined);
     const outside = (event: PointerEvent) => {
@@ -122,6 +138,7 @@ export function SavedOutput({
     // Pointer activation of the selection action must not erase its frozen quote.
     if (current.isCollapsed) {
       setSelection(undefined);
+      setAmbiguous(false);
       return;
     }
     setSelection(next);
@@ -157,12 +174,13 @@ export function SavedOutput({
     if (!keyboard && window.getSelection()?.isCollapsed === false) return false;
     const mark = element.closest<HTMLElement>("[data-comment-ids]");
     if (!mark || !target) return false;
-    discussion?.browse(target, mark);
+    discussion?.browse(target, mark, mark.dataset.commentIds?.split(" "));
     return true;
   };
   return (
     <div
       ref={container}
+      tabIndex={-1}
       className={styles.savedOutput}
       onMouseUp={read}
       onKeyUp={read}
@@ -239,14 +257,15 @@ export function SavedOutput({
           <div className={styles.outputTools}>
             <Button
               variant="ghost"
-              size="icon"
-              aria-label="Comment"
+              size="sm"
+              aria-label="Add comment"
               title="Comment on this output"
               onClick={(event) =>
                 discussion.begin(target, text, undefined, event.currentTarget)
               }
             >
               <ChatCircle />
+              Add comment
             </Button>
             {!!matches.length && (
               <Button
@@ -256,8 +275,7 @@ export function SavedOutput({
                   discussion.browse(target, event.currentTarget)
                 }
               >
-                {matches.length} loaded{" "}
-                {matches.length === 1 ? "comment" : "comments"}
+                View comments
               </Button>
             )}
             {truncated && (
@@ -284,10 +302,34 @@ export function SavedOutput({
             </Menu>
           </div>
           {ambiguous && (
-            <small className={styles.selectionHint}>
-              This selection includes transformed text. Open Original text to
-              select its exact source, or comment on the whole output.
-            </small>
+            <div className={styles.selectionHint}>
+              <span>This selection cannot be quoted precisely.</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={(event) => {
+                  setAmbiguous(false);
+                  discussion.begin(
+                    target,
+                    text,
+                    undefined,
+                    event.currentTarget,
+                  );
+                }}
+              >
+                Comment on whole response
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  setAmbiguous(false);
+                  setOriginalShown(true);
+                }}
+              >
+                Open original text
+              </Button>
+            </div>
           )}
         </>
       )}
@@ -308,6 +350,7 @@ function useOutputComments(threadId: string, filter?: Target) {
             query: {
               cursor: pageParam,
               target: filter ? JSON.stringify(filter) : undefined,
+              newest_first: true,
               limit: 20,
             },
           },
@@ -324,12 +367,14 @@ export function Discussion({
   children,
   listOpen = false,
   closeList,
+  onReferenceAdded,
 }: {
   threadId: string;
   profile: Profile;
   children: ReactNode;
   listOpen?: boolean;
   closeList?: () => void;
+  onReferenceAdded?: () => void;
 }) {
   const transport = useTransport();
   const queries = useQueryClient();
@@ -339,19 +384,58 @@ export function Discussion({
   const update = () => refresh((value) => value + 1);
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState<Target>();
+  const [focusedIds, setFocusedIds] = useState<string[]>();
   const [original, setOriginal] = useState<Target>();
   const [message, setMessage] = useState("");
+  const [deleting, setDeleting] = useState<Schema<"OutputComment">>();
+  const [anchor, setAnchor] = useState<HTMLElement>();
+  const transferFocus = useRef(false);
+  const outputs = useRef(
+    new Map<string, { text: string; element: HTMLElement }>(),
+  );
+  const register = useCallback(
+    (target: Target, text: string, element: HTMLElement) => {
+      const key = targetKey(target);
+      const entry = { text, element };
+      outputs.current.set(key, entry);
+      return () => {
+        if (outputs.current.get(key) === entry) outputs.current.delete(key);
+      };
+    },
+    [],
+  );
   const draft = drafts.get(threadId);
   const allComments = useOutputComments(threadId);
   const comments = useOutputComments(threadId, filter);
-  const [anchor, setAnchor] = useState<HTMLElement>();
   useEffect(() => {
     if (listOpen) {
       setFilter(undefined);
+      setFocusedIds(undefined);
       setAnchor(undefined);
+      setMessage("");
+      transferFocus.current = false;
     }
   }, [listOpen]);
   const rows = comments.data?.pages.flatMap((page) => page.comments) ?? [];
+  const visible = focusedIds
+    ? rows.filter((row) => focusedIds.includes(row.comment_id))
+    : rows;
+  const groups = new Map<
+    string,
+    { target: Target; comments: Schema<"OutputComment">[] }
+  >();
+  for (const comment of visible) {
+    const key = targetKey(comment.target);
+    if (!groups.has(key))
+      groups.set(key, { target: comment.target, comments: [] });
+    groups.get(key)!.comments.push(comment);
+  }
+  const close = () => {
+    setOpen(false);
+    closeList?.();
+  };
+  const refreshComments = () =>
+    queries.invalidateQueries({ queryKey: ["comments", threadId] });
   const publish = async (current: CommentDraft) => {
     if (current.status === "pending" || current.status === "published") return;
     const uncertain = current.status === "unknown";
@@ -359,23 +443,51 @@ export function Discussion({
     current.error = undefined;
     update();
     try {
-      const saved = await result(
-        transport.client.POST("/api/threads/{thread_id}/comments", {
-          params: { path: { thread_id: threadId } },
-          body: current.publication,
-        }),
-      );
+      const saved =
+        current.expectedVersion === undefined
+          ? await result(
+              transport.client.POST("/api/threads/{thread_id}/comments", {
+                params: { path: { thread_id: threadId } },
+                body: current.publication,
+              }),
+            )
+          : await result(
+              transport.client.PATCH(
+                "/api/threads/{thread_id}/comments/{comment_id}",
+                {
+                  params: {
+                    path: {
+                      thread_id: threadId,
+                      comment_id: current.publication.comment_id,
+                    },
+                  },
+                  body: {
+                    body: current.publication.body,
+                    expected_version: current.expectedVersion,
+                  },
+                },
+              ),
+            );
       if (saved.comment_id !== current.publication.comment_id)
-        throw new Error(
-          "Publication acknowledgement did not match this comment.",
-        );
+        throw new Error("The acknowledgement did not match this comment.");
       current.status = "published";
-      void queries.invalidateQueries({ queryKey: ["comments", threadId] });
+      if (drafts.get(threadId) === current) drafts.delete(threadId);
+      setFocusedIds(undefined);
+      setMessage(
+        current.expectedVersion === undefined
+          ? "Comment posted. Not sent to the agent."
+          : "Comment updated. Existing message references are unchanged.",
+      );
+      void refreshComments();
     } catch (error) {
       current.status =
         error instanceof ApiError &&
-        (error.code === "comment_target_stale" ||
-          (!uncertain && error.status >= 400 && error.status < 500))
+        error.status >= 400 &&
+        error.status < 500 &&
+        (!uncertain ||
+          error.status === 409 ||
+          (current.expectedVersion !== undefined &&
+            error.code === "comment_missing"))
           ? "editing"
           : "unknown";
       current.error = error;
@@ -384,36 +496,68 @@ export function Discussion({
     }
   };
   const capture = useMutation({
-    mutationFn: async (commentId: string) => {
+    mutationFn: async (comment: Schema<"OutputComment">) => {
       if (attachmentSelections(composer.doc).length >= 8)
         throw new Error(
-          "Remove an attachment before adding feedback (limit: eight).",
+          "Remove an attachment before adding a comment (limit: eight).",
         );
       const incarnation = composer.draftId;
       const attachment = await result(
         transport.client.POST(
           "/api/threads/{thread_id}/comments/{comment_id}/capture",
           {
-            params: { path: { thread_id: threadId, comment_id: commentId } },
+            params: {
+              path: { thread_id: threadId, comment_id: comment.comment_id },
+              query: { expected_version: comment.version ?? 1 },
+            },
           },
         ),
       );
       if (incarnation !== composer.draftId || composer.replacement)
         throw new Error(
-          "The shared draft changed during capture. Rejoin and add feedback explicitly.",
+          "The shared draft changed. Rejoin before adding this comment.",
         );
       if (attachmentSelections(composer.doc).length >= 8)
         throw new Error(
-          "The shared selection now has eight attachments. Remove one and add feedback again.",
+          "The message now has eight attachments. Remove one and try again.",
         );
       queries.setQueryData(
         ["thread", threadId, "attachment", attachment.attachment_id],
         attachment,
       );
       composer.addAttachment(attachment.attachment_id);
-      setMessage(
-        "Feedback added to the shared composer. Inspect its complete captured text before Send or Send as instruction.",
+      transferFocus.current = true;
+      close();
+      onReferenceAdded?.();
+    },
+    onError: () => {
+      void refreshComments();
+    },
+  });
+  const remove = useMutation({
+    mutationFn: async (comment: Schema<"OutputComment">) => {
+      await transport.client.DELETE(
+        "/api/threads/{thread_id}/comments/{comment_id}",
+        {
+          params: {
+            path: { thread_id: threadId, comment_id: comment.comment_id },
+            query: { expected_version: comment.version ?? 1 },
+          },
+        },
       );
+      if (drafts.get(threadId)?.publication.comment_id === comment.comment_id) {
+        drafts.delete(threadId);
+        update();
+      }
+      setFocusedIds(undefined);
+      setMessage("Comment deleted. Existing message references are unchanged.");
+      // The selected highlight may disappear on refetch; keep the discussion on its response.
+      if (anchor?.matches("[data-comment-ids]"))
+        setAnchor(outputs.current.get(targetKey(comment.target))?.element);
+      await refreshComments();
+    },
+    onError: () => {
+      void refreshComments();
     },
   });
   const begin = (
@@ -422,13 +566,13 @@ export function Discussion({
     selection?: Selection,
     element?: HTMLElement,
   ) => {
-    if (
+    const retained =
       draft &&
       draft.status !== "published" &&
-      (draft.publication.body || draft.status !== "editing")
-    ) {
+      (draft.publication.body || draft.status !== "editing");
+    if (retained) {
       setMessage(
-        "Your private draft is retained. Finish or discard it before choosing a different target.",
+        "Your unfinished comment is kept here. Save or discard it before starting another.",
       );
     } else {
       drafts.set(threadId, {
@@ -445,11 +589,9 @@ export function Discussion({
       setMessage("");
       update();
     }
+    transferFocus.current = false;
     setOriginal(undefined);
-    const retained =
-      draft &&
-      draft.status !== "published" &&
-      (draft.publication.body || draft.status !== "editing");
+    setFocusedIds(undefined);
     setFilter(retained ? draft.publication.target : target);
     setAnchor(
       retained && targetKey(draft.publication.target) !== targetKey(target)
@@ -458,211 +600,287 @@ export function Discussion({
     );
     setOpen(true);
   };
-  const panel = (
-    <div className={`${styles.form} ${styles.commentsPanel}`}>
-      {message && <p role="status">{message}</p>}
-      {draft?.status === "published" && (
-        <section className={styles.commentDraft}>
-          <h3>Comment published</h3>
-          <p>
-            Saved with attribution to {draft.publication.author.display_name}.
-            Publishing did not send model input.
-          </p>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              drafts.delete(threadId);
+  const edit = (comment: Schema<"OutputComment">) => {
+    if (
+      draft &&
+      draft.status !== "published" &&
+      (draft.publication.body || draft.status !== "editing")
+    ) {
+      setMessage(
+        "Save or discard your unfinished comment before editing another.",
+      );
+      return;
+    }
+    drafts.set(threadId, {
+      publication: {
+        comment_id: comment.comment_id,
+        target: comment.target,
+        selection: comment.selection,
+        author: comment.author,
+        body: comment.body,
+      },
+      text: outputs.current.get(targetKey(comment.target))?.text ?? "",
+      expectedVersion: comment.version ?? 1,
+      status: "editing",
+    });
+    setFilter(comment.target);
+    setFocusedIds(undefined);
+    setMessage("");
+    update();
+  };
+  const inspect = (target: Target) => {
+    const output = outputs.current.get(targetKey(target));
+    if (output?.element.isConnected) {
+      transferFocus.current = true;
+      close();
+      let parent = output.element.parentElement;
+      while (parent) {
+        if (parent instanceof HTMLDetailsElement) parent.open = true;
+        parent = parent.parentElement;
+      }
+      output.element.scrollIntoView({ block: "center", behavior: "smooth" });
+      output.element.focus({ preventScroll: true });
+    } else setOriginal(target);
+  };
+  const newComment = (target: Target) => {
+    const output = outputs.current.get(targetKey(target));
+    begin(target, output?.text ?? "", undefined, anchor);
+  };
+  const editor =
+    draft && draft.status !== "published" ? (
+      <section className={styles.commentDraft}>
+        <h3>
+          {draft.expectedVersion === undefined ? "New comment" : "Edit comment"}
+        </h3>
+        {draft.publication.selection ? (
+          <blockquote>{draft.publication.selection.quote}</blockquote>
+        ) : (
+          <CommentTarget
+            threadId={threadId}
+            target={draft.publication.target}
+            text={draft.text || undefined}
+          />
+        )}
+        <label className={styles.form}>
+          Comment
+          <textarea
+            key={draft.publication.comment_id}
+            autoFocus
+            rows={3}
+            placeholder="What would you like to point out?"
+            value={draft.publication.body}
+            disabled={draft.status !== "editing"}
+            onChange={(event) => {
+              draft.publication = {
+                ...draft.publication,
+                body: event.target.value,
+              };
               update();
             }}
-          >
-            Done
-          </Button>
-        </section>
-      )}
-      {draft && draft.status !== "published" && (
-        <section className={styles.commentDraft}>
-          <h3>Private comment draft</h3>
-          {!anchor && (
-            <small>
-              Root {threadId} · output{" "}
-              {draft.publication.target.source_id.slice(0, 12)}
-            </small>
+          />
+        </label>
+        <small>
+          Posting as {draft.publication.author.display_name}. Not sent to the
+          agent.
+        </small>
+        <ErrorNotice error={draft.error} />
+        {draft.expectedVersion !== undefined &&
+          draft.error instanceof ApiError &&
+          draft.error.code === "comment_version_conflict" && (
+            <EditConflict
+              threadId={threadId}
+              draft={draft}
+              onContinue={update}
+            />
           )}
-          <details>
-            <summary>
-              {draft.publication.selection
-                ? "Exact selected quote"
-                : "Output preview · comment applies to the whole block"}
-            </summary>
-            <pre className={styles.code}>
-              {draft.publication.selection?.quote ?? draft.text}
-            </pre>
-          </details>
-          <fieldset
-            disabled={draft.status !== "editing"}
-            className={styles.form}
-          >
-            <TextField
-              label="Author label (required)"
-              value={draft.publication.author.display_name}
-              onChange={(value) => {
-                draft.publication = {
-                  ...draft.publication,
-                  author: { display_name: value },
-                };
+        <div className={styles.commentActions}>
+          {draft.status === "editing" && (
+            <Button
+              disabled={
+                !draft.publication.body.trim() ||
+                [...draft.publication.body].length > 16384 ||
+                !draft.publication.author.display_name.trim() ||
+                (draft.error instanceof ApiError &&
+                  draft.error.code === "comment_version_conflict")
+              }
+              onClick={() => void publish(draft)}
+            >
+              {draft.expectedVersion === undefined
+                ? "Post comment"
+                : "Save changes"}
+            </Button>
+          )}
+          {draft.status === "pending" && <p role="status">Saving…</p>}
+          {draft.status === "unknown" && (
+            <>
+              <p>
+                We could not confirm the save. Your text is kept; retry checks
+                the same change.
+              </p>
+              <Button onClick={() => void publish(draft)}>
+                Check comment status
+              </Button>
+            </>
+          )}
+          {draft.status === "editing" && (
+            <ConfirmAction
+              key={draft.publication.comment_id}
+              trigger={<Button variant="ghost">Discard draft</Button>}
+              title="Discard this private comment draft?"
+              description="Your unpublished changes will be lost."
+              confirmLabel="Discard draft"
+              destructive
+              confirmationRequired={!!draft.publication.body}
+              onConfirm={() => {
+                drafts.delete(threadId);
                 update();
               }}
             />
-            <label className={styles.form}>
-              Comment
-              <textarea
-                rows={4}
-                value={draft.publication.body}
-                onChange={(event) => {
-                  draft.publication = {
-                    ...draft.publication,
-                    body: event.target.value,
-                  };
-                  update();
-                }}
-              />
-            </label>
-          </fieldset>
-          <ErrorNotice error={draft.error} />
-          <div className={styles.commentActions}>
-            {draft.status === "editing" && (
-              <Button
-                disabled={
-                  !draft.publication.body.trim() ||
-                  [...draft.publication.body].length > 16384 ||
-                  !draft.publication.author.display_name.trim() ||
-                  [...draft.publication.author.display_name].length > 80
-                }
-                onClick={() => void publish(draft)}
-              >
-                Post comment
-              </Button>
-            )}
-            {draft.status === "pending" && <p role="status">Posting…</p>}
-            {draft.status === "unknown" && (
-              <>
-                <p>
-                  We could not confirm whether your comment was posted. Check
-                  this comment again without creating a duplicate.
-                </p>
-                <Button onClick={() => void publish(draft)}>
-                  Check comment status
-                </Button>
-              </>
-            )}
-            {draft.status === "editing" && (
-              <Button
-                variant="ghost"
-                onClick={() => {
-                  if (
-                    !draft.publication.body ||
-                    window.confirm("Discard this private comment draft?")
-                  ) {
-                    drafts.delete(threadId);
-                    update();
-                  }
-                }}
-              >
-                Discard draft
-              </Button>
-            )}
-          </div>
-        </section>
-      )}
-      {(!anchor || !draft || draft.status === "published" || !!rows.length) && (
-        <div className={styles.commentToolbar}>
-          <span>{filter ? "Selected output" : "All outputs"}</span>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Refresh comments"
-            title="Refresh comments"
-            loading={comments.isFetching && !comments.isFetchingNextPage}
-            onClick={() => void comments.refetch()}
-          >
-            <ArrowClockwise />
-          </Button>
-          {filter && !anchor && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setFilter(undefined)}
-            >
-              Show all
-            </Button>
           )}
         </div>
+      </section>
+    ) : null;
+  const panel = (
+    <div className={`${styles.form} ${styles.commentsPanel}`}>
+      {message && (
+        <p role="status" className={styles.commentNotice}>
+          {message}
+        </p>
       )}
-      <ErrorNotice error={comments.error || capture.error} />
+      <ErrorNotice error={comments.error || capture.error || remove.error} />
+      <div className={styles.commentToolbar}>
+        <span>{filter ? "This response" : "All responses"}</span>
+        {focusedIds && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setFocusedIds(undefined)}
+          >
+            All comments
+          </Button>
+        )}
+        {filter && !anchor && (
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setFilter(undefined);
+              setFocusedIds(undefined);
+            }}
+          >
+            All responses
+          </Button>
+        )}
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Refresh comments"
+          title="Refresh comments"
+          loading={comments.isFetching && !comments.isFetchingNextPage}
+          onClick={() => void refreshComments()}
+        >
+          <ArrowClockwise />
+        </Button>
+      </div>
       {comments.isPending && <p>Loading comments…</p>}
-      {comments.isSuccess && !rows.length && (!anchor || !draft) && (
+      {!draft && comments.isSuccess && !visible.length && (
         <div className={styles.commentEmpty}>
           <ChatCircle size={28} aria-hidden="true" />
           <strong>No comments yet</strong>
           <p>
             {filter
-              ? "Leave feedback on this output using its comment action."
-              : "Select text in a saved response to leave feedback."}
+              ? "Leave a comment on this response."
+              : "Select text in a saved response, or use Add comment below it."}
           </p>
         </div>
       )}
-      {rows.map((comment) => (
-        <article key={comment.comment_id} className={styles.commentCard}>
-          <header>
-            <strong>{comment.author.display_name}</strong>
-            <time dateTime={comment.created_at}>
-              {new Date(comment.created_at).toLocaleString("en-US")}
-            </time>
-          </header>
-          {comment.selection && (
-            <blockquote>{comment.selection.quote}</blockquote>
-          )}
-          <MessageText text={comment.body} />
-          <small>
-            {comment.target.location.kind === "child_text"
-              ? "Child output"
-              : "Root output"}{" "}
-            · {comment.target.source_id.slice(0, 12)}
-          </small>
-          <div className={styles.commentActions}>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setOriginal(comment.target)}
-            >
-              View original output
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setFilter(comment.target)}
-            >
-              Filter this output
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={capture.isPending || !!composer.replacement}
-              onClick={() => capture.mutate(comment.comment_id)}
-            >
-              Add feedback to prompt
-            </Button>
-          </div>
-        </article>
+      {draft &&
+        (draft.expectedVersion === undefined ||
+          !visible.some(
+            (row) => row.comment_id === draft.publication.comment_id,
+          )) &&
+        editor}
+      {[...groups].map(([key, group]) => (
+        <section key={key} className={styles.commentGroup}>
+          <CommentTarget
+            threadId={threadId}
+            target={group.target}
+            text={outputs.current.get(key)?.text}
+            inspect={inspect}
+          />
+          {group.comments.map((comment) => (
+            <article key={comment.comment_id} className={styles.commentCard}>
+              {draft?.publication.comment_id === comment.comment_id ? (
+                editor
+              ) : (
+                <>
+                  <header>
+                    <strong>{comment.author.display_name}</strong>
+                    <time
+                      dateTime={comment.created_at}
+                      title={new Date(comment.created_at).toLocaleString()}
+                    >
+                      {new Date(comment.created_at).toLocaleDateString(
+                        undefined,
+                        { month: "short", day: "numeric" },
+                      )}
+                      {comment.updated_at ? " · edited" : ""}
+                    </time>
+                    <Menu>
+                      <MenuTrigger
+                        disabled={remove.isPending || capture.isPending}
+                        render={<Button variant="ghost" size="icon-sm" />}
+                        aria-label="Comment actions"
+                      >
+                        <DotsThree />
+                      </MenuTrigger>
+                      <MenuPopup align="end">
+                        <MenuItem onClick={() => edit(comment)}>
+                          Edit comment
+                        </MenuItem>
+                        <MenuItem onClick={() => setDeleting(comment)}>
+                          Delete comment…
+                        </MenuItem>
+                      </MenuPopup>
+                    </Menu>
+                  </header>
+                  {comment.selection ? (
+                    <blockquote>{comment.selection.quote}</blockquote>
+                  ) : (
+                    <small>Whole response</small>
+                  )}
+                  <MessageText text={comment.body} />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    disabled={
+                      capture.isPending ||
+                      !!composer.replacement ||
+                      remove.isPending
+                    }
+                    onClick={() => capture.mutate(comment)}
+                  >
+                    Add to message
+                  </Button>
+                </>
+              )}
+            </article>
+          ))}
+        </section>
       ))}
       {comments.hasNextPage && (
         <Button
-          variant="outline"
+          variant="ghost"
           loading={comments.isFetchingNextPage}
           onClick={() => void comments.fetchNextPage()}
         >
           Load more comments
+        </Button>
+      )}
+      {!draft && filter && (
+        <Button variant="outline" onClick={() => newComment(filter)}>
+          <ChatCircle />
+          Add comment
         </Button>
       )}
     </div>
@@ -671,10 +889,14 @@ export function Discussion({
     <DiscussionContext
       value={{
         begin,
-        browse: (target, element) => {
+        register,
+        browse: (target, element, ids) => {
+          transferFocus.current = false;
           setFilter(target);
+          setFocusedIds(ids);
           setAnchor(element);
           setOpen(true);
+          setMessage("");
         },
         comments:
           allComments.data?.pages.flatMap((page) => page.comments) ?? [],
@@ -683,14 +905,23 @@ export function Discussion({
       }}
     >
       {children}
-      <Popover open={open && !!anchor && !listOpen} onOpenChange={setOpen}>
+      <Popover
+        open={open && !!anchor && !listOpen}
+        onOpenChange={(next) => {
+          // Sibling confirmation/source dialogs temporarily take focus, not the discussion.
+          if (next || (!deleting && !original && !remove.isPending))
+            setOpen(next);
+        }}
+      >
         <PopoverPopup
           anchor={anchor}
           side="right"
           align="start"
           sideOffset={12}
           className={styles.inlineDiscussion}
-          finalFocus={() => (anchor?.isConnected ? anchor : false)}
+          finalFocus={() =>
+            transferFocus.current ? false : anchor?.isConnected ? anchor : false
+          }
         >
           <div className={styles.inlineHeading}>
             <PopoverTitle>Comments</PopoverTitle>
@@ -698,7 +929,7 @@ export function Discussion({
               variant="ghost"
               size="icon"
               aria-label="Close comments"
-              onClick={() => setOpen(false)}
+              onClick={close}
             >
               <X />
             </Button>
@@ -706,17 +937,53 @@ export function Discussion({
           {panel}
         </PopoverPopup>
       </Popover>
-      <ModalFrame
+      <Sheet
         open={(open && !anchor) || listOpen}
         onOpenChange={(next) => {
           setOpen(next);
           if (!next) closeList?.();
         }}
-        title="Comments"
-        description="Feedback on saved output. Only sent to the agent when you add it to a prompt and send."
-        closeLabel="Close comments"
       >
-        {panel}
+        <SheetPopup
+          finalFocus={() => (transferFocus.current ? false : undefined)}
+          closeProps={{ "aria-label": "Close comments" }}
+        >
+          <SheetHeader>
+            <SheetTitle>Comments</SheetTitle>
+            <SheetDescription>
+              Discuss responses here. Add a comment to your message when you
+              want the agent to act on it.
+            </SheetDescription>
+          </SheetHeader>
+          <SheetPanel>{panel}</SheetPanel>
+        </SheetPopup>
+      </Sheet>
+      <ModalFrame
+        open={!!deleting}
+        onOpenChange={(next) => {
+          if (!next) setDeleting(undefined);
+        }}
+        title="Delete this comment?"
+        description="The comment and its highlight will be removed. Copies already added to messages will stay unchanged."
+        closeLabel="Close confirmation"
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setDeleting(undefined)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (deleting) remove.mutate(deleting);
+                setDeleting(undefined);
+              }}
+            >
+              Delete comment
+            </Button>
+          </>
+        }
+      >
+        {deleting && <p>{deleting.body}</p>}
       </ModalFrame>
       <ModalFrame
         open={!!original}
@@ -724,12 +991,112 @@ export function Discussion({
           if (!value) setOriginal(undefined);
         }}
         title="Original saved output"
-        description="Read-only source inspection. This does not change the continuation."
+        description="The original response this comment refers to."
         closeLabel="Close"
       >
         {original && <OriginalOutput threadId={threadId} target={original} />}
       </ModalFrame>
     </DiscussionContext>
+  );
+}
+
+function EditConflict({
+  threadId,
+  draft,
+  onContinue,
+}: {
+  threadId: string;
+  draft: CommentDraft;
+  onContinue: () => void;
+}) {
+  const { client } = useTransport();
+  const latest = useQuery({
+    queryKey: ["comments", threadId, "conflict", draft.publication.comment_id],
+    queryFn: ({ signal }) =>
+      result(
+        client.GET("/api/threads/{thread_id}/comments/{comment_id}", {
+          params: {
+            path: {
+              thread_id: threadId,
+              comment_id: draft.publication.comment_id,
+            },
+          },
+          signal,
+        }),
+      ),
+    retry: false,
+  });
+  return (
+    <div className={`${styles.form} ${styles.commentConflict}`}>
+      <strong>Latest saved comment</strong>
+      <ErrorNotice error={latest.error} />
+      {latest.isPending && <p>Loading latest version…</p>}
+      {latest.data && (
+        <>
+          <MessageText text={latest.data.body} />
+          <small>
+            Your edit is kept above. Review this version before saving again.
+          </small>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              draft.expectedVersion = latest.data.version ?? 1;
+              draft.error = undefined;
+              onContinue();
+            }}
+          >
+            Continue with my edit
+          </Button>
+        </>
+      )}
+    </div>
+  );
+}
+
+function CommentTarget({
+  threadId,
+  target,
+  text,
+  inspect,
+}: {
+  threadId: string;
+  target: Target;
+  text?: string;
+  inspect?: (target: Target) => void;
+}) {
+  const { client } = useTransport();
+  const preview = useQuery({
+    queryKey: ["comment-preview", threadId, targetKey(target)],
+    enabled: text === undefined,
+    queryFn: ({ signal }) =>
+      result(
+        client.POST("/api/threads/{thread_id}/saved-output", {
+          params: { path: { thread_id: threadId }, query: { limit: 240 } },
+          body: target,
+          signal,
+        }),
+      ),
+    retry: false,
+  });
+  return (
+    <div className={styles.commentTarget}>
+      <small>
+        {target.location.kind === "child_text" ? "Child response" : "Response"}
+      </small>
+      <p>
+        {text?.slice(0, 240) ??
+          preview.data?.text ??
+          (preview.isError
+            ? "Original response unavailable"
+            : "Loading response…")}
+      </p>
+      {inspect && (
+        <Button variant="ghost" size="sm" onClick={() => inspect(target)}>
+          View response
+        </Button>
+      )}
+    </div>
   );
 }
 function OriginalOutput({
@@ -759,9 +1126,6 @@ function OriginalOutput({
   return (
     <div className={styles.form}>
       <ErrorNotice error={output.error} />
-      <small>
-        {target.producing_thread_id} · {target.source_id}
-      </small>
       {output.data?.pages.map((page) => (
         <OriginalWindow key={page.offset} page={page} />
       ))}

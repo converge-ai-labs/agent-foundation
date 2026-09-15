@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 import rfc8785
+import zstandard
 from a13n_service.agents.invocation_resolution import FrozenAgentInvocation
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
 from a13n_service.endpoint_policy import EndpointPolicy
@@ -49,6 +50,7 @@ from tests.interactions.conftest import (
     USER_ID,
     WORKSPACE_ID,
     effective_agent_config,
+    sealed_row_rewrite,
 )
 from tests.interactions.test_acceptance import _inline_hooks
 from tests.interactions.test_attempt_execution import _authority, _completed_state, _waiting_state, _worker
@@ -522,13 +524,17 @@ async def test_retry_copies_cancelled_root_intent_and_replays(
     )
 
     async with transaction(lifecycle_interaction_sessions) as database:
-        terminal = await database.get(RunRecord, source_receipt.run_id)
-        assert terminal is not None
-        terminal.labels = {"batch": "source", "source-only": "yes"}
-        terminal.attempts_started = 2
-        terminal.attempts_charged = 1
-        terminal.handoffs_completed = 1
-        terminal.started_at = NOW
+        # Fixture-only history rewrite: suspend the sealed-row guard to shape the
+        # cancelled source's accepted policy before retry copies it.
+        async with sealed_row_rewrite(database):
+            terminal = await database.get(RunRecord, source_receipt.run_id)
+            assert terminal is not None
+            terminal.labels = {"batch": "source", "source-only": "yes"}
+            terminal.attempts_started = 2
+            terminal.attempts_charged = 1
+            terminal.handoffs_completed = 1
+            terminal.started_at = NOW
+            await database.flush()
 
     # A service restart with new defaults must preserve the accepted execution policy.
     commands = _commands(
@@ -634,9 +640,9 @@ async def test_parent_consumers_reject_self_consistent_state_that_differs_from_s
         await _complete_run(sessions, objects, run_id=source.run_id)
     states = RunStateStore(objects)
     original = await states.read(ORGANIZATION_ID, source.run_id)
-    payload = json.loads(original.body)
+    payload = json.loads(zstandard.ZstdDecompressor().decompress(original.body))
     payload["checkpoint_seq"] += 1
-    body = rfc8785.dumps(payload)
+    body = zstandard.ZstdCompressor(level=1, write_checksum=True).compress(rfc8785.dumps(payload))
     await objects.put(
         original.info.key,
         body,
@@ -761,7 +767,7 @@ async def test_fork_creates_child_thread_and_replays(
         source_record = await database.get(RunRecord, source.run_id)
         fork_record = await database.get(RunRecord, first.run_id)
         assert source_record is not None and fork_record is not None
-        source_resource, fork_resource = source_record.to_resource(), fork_record.to_resource()
+        source_resource, fork_resource = (source_record.to_resource(), fork_record.to_resource())
     source_state = await RunStateStore(interaction_object_store).read_run(source_resource)
     fork_state = await RunStateStore(interaction_object_store).read_run(fork_resource)
     assert fork_state.envelope.effective_agent_config == source_state.envelope.effective_agent_config

@@ -80,16 +80,13 @@ async def test_shared_setup_claim_is_single_use_and_survives_uncertain_outcome(
 
 
 async def test_postgresql_shared_setup_claim_is_single_use(
-    postgres_connectivity_sessions, connector_registry, credential_protector
+    connectivity_sessions, connector_registry, credential_protector
 ):
     providers = ConnectorProviderService(
-        postgres_connectivity_sessions,
-        connector_registry,
-        credential_protector,
-        clock=lambda: NOW,
+        connectivity_sessions, connector_registry, credential_protector, clock=lambda: NOW
     )
     provider = await create_connector(providers)
-    await _assert_shared_setup_claim_is_single_use(postgres_connectivity_sessions, provider)
+    await _assert_shared_setup_claim_is_single_use(connectivity_sessions, provider)
 
 
 async def _assert_shared_setup_claim_is_single_use(

@@ -4,13 +4,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from a13n_harness.memory_plugins import MemoryBackendCatalog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver, PreparedConnectivity
 from a13n_service.environments.authoring import authorize_template
-from a13n_service.iam import AuthenticatedActor, authorize_agent, authorize_agent_skill_binding
+from a13n_service.iam import AuthenticatedActor, authorize_agent, authorize_agent_skill_binding, authorize_workspace
 from a13n_service.iam.authorization import WorkspaceAction
+from a13n_service.memory.resources import MemoryProviderError
+from a13n_service.memory.resources import require_provider as require_memory_provider
 from a13n_service.models.runtime import AcceptedModelSelector, PreparedModelExecution
 from a13n_service.storage import short_session
 from a13n_service.web.domain import ScrapeSelection, provider_selections
@@ -75,12 +78,16 @@ class AgentResolver:
         connectivity_resolver: ConnectivitySelectionResolver | None = None,
         protocol_policy: AgentProtocolPolicy | None = None,
         web_provider_registry: WebProviderRegistry | None = None,
+        memory_backend_catalog: MemoryBackendCatalog | None = None,
     ) -> None:
         self._sessions = sessions
         self._model_selector = model_selector
         self._connectivity_resolver = connectivity_resolver or ConnectivitySelectionResolver(sessions)
         self._protocol_policy = protocol_policy or AgentProtocolPolicy()
         self._web_provider_registry = web_provider_registry or built_in_web_provider_registry()
+        self._memory_backend_catalog = (
+            memory_backend_catalog if memory_backend_catalog is not None else MemoryBackendCatalog()
+        )
 
     async def prepare(
         self,
@@ -165,6 +172,21 @@ class AgentResolver:
             agent_id=prepared.agent_id,
             action=WorkspaceAction.agent_revision_create,
         )
+        if prepared.config.memory is not None:
+            await authorize_workspace(
+                session,
+                actor=prepared.actor,
+                workspace_id=prepared.workspace_id,
+                action=WorkspaceAction.memory_provider_read,
+            )
+            await require_memory_provider(
+                session,
+                organization_id=prepared.organization_id,
+                workspace_id=prepared.workspace_id,
+                provider_id=prepared.config.memory.provider_id,
+                eligible=True,
+                catalog=self._memory_backend_catalog,
+            )
         for operation, selection in provider_selections(web_selection(prepared.config.toolsets)):
             provider = await require_web_provider(
                 session,
@@ -395,6 +417,6 @@ def resolution_error(error: Exception) -> AgentError:
 
     if isinstance(error, AgentError):
         return error
-    if isinstance(error, WebProviderError):
+    if isinstance(error, WebProviderError | MemoryProviderError):
         return AgentError(error.code, error.message, category=error.category)
     return agent_revision_create_failed("managed_resource_unavailable")

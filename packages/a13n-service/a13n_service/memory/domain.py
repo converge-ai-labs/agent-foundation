@@ -1,11 +1,15 @@
 """Memory subjects, Agent selection, and bounded public representations."""
 
+from datetime import datetime
 from typing import Annotated
 
-from a13n_harness.capabilities.mem0 import Mem0Scope
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from a13n_harness.memory import MemoryScope as ScopeKind
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, StringConstraints, model_validator
 
+from a13n_service.iam.domain import PrincipalRef
+from a13n_service.ids import ObjectId
 from a13n_service.interactions.domain import ThreadId
+from a13n_service.names import DisplayName
 
 MemoryText = Annotated[str, StringConstraints(min_length=1, max_length=8000, pattern=r"\S")]
 
@@ -14,7 +18,8 @@ class MemorySelection(BaseModel):
     """Opt-in Agent behavior; backend credentials and subject IDs are host-owned."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
-    scope: Mem0Scope | None = None
+    provider_id: ObjectId
+    scope: ScopeKind | None = None
     auto_recall: bool = True
     toolset: bool = True
     recall_limit: int = Field(default=5, ge=1, le=100)
@@ -25,12 +30,12 @@ class MemorySelection(BaseModel):
 
 class MemoryScope(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    scope: Mem0Scope
+    scope: ScopeKind
     subject_id: ThreadId | None = None
 
     @model_validator(mode="after")
     def validate_subject(self) -> "MemoryScope":
-        if (self.scope is Mem0Scope.USER) != (self.subject_id is None):
+        if (self.scope is ScopeKind.USER) != (self.subject_id is None):
             raise ValueError("thread and agent scopes require subject_id; user scope uses the authenticated User")
         return self
 
@@ -68,3 +73,77 @@ class MemoryCollection(BaseModel):
         default=None,
         description="Native pagination when available. Null means a bounded result, not a complete collection.",
     )
+
+
+class CreateMemoryProviderRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    type: str = Field(min_length=1, max_length=128)
+    name: DisplayName
+    configuration: dict[str, JsonValue] = Field(default_factory=dict)
+    credential: dict[str, JsonValue] = Field(repr=False, json_schema_extra={"writeOnly": True})
+    enabled: bool = True
+
+
+class UpdateMemoryProviderRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+
+    name: DisplayName | None = None
+    credential: dict[str, JsonValue] | None = Field(default=None, repr=False, json_schema_extra={"writeOnly": True})
+    enabled: bool | None = None
+
+    @model_validator(mode="after")
+    def validate_changes(self) -> "UpdateMemoryProviderRequest":
+        if not self.model_fields_set:
+            raise ValueError("at least one field must be supplied")
+        values = {"name": self.name, "credential": self.credential, "enabled": self.enabled}
+        if any(values[key] is None for key in self.model_fields_set):
+            raise ValueError("supplied fields cannot be null")
+        return self
+
+
+class MemoryProvider(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    id: ObjectId
+    organization_id: ObjectId
+    workspace_id: ObjectId | None
+    type: str
+    name: str
+    configuration: dict[str, object]
+    credential_configured: bool
+    enabled: bool
+    created_by: PrincipalRef
+    updated_by: PrincipalRef
+    created_at: datetime
+    updated_at: datetime
+
+
+class MemoryProviderCollection(BaseModel):
+    items: tuple[MemoryProvider, ...]
+    next_cursor: str | None = None
+
+
+class MemoryProviderDefinition(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    type: str
+    display_name: str
+    configuration_schema: dict[str, object]
+    credential_schema: dict[str, object]
+
+
+class MemoryProviderDefinitionCollection(BaseModel):
+    items: tuple[MemoryProviderDefinition, ...]
+
+
+class MemoryProviderReference(BaseModel):
+    agent_id: ObjectId
+    agent_revision_id: ObjectId
+    version: int
+    is_current: bool
+
+
+class MemoryProviderReferenceCollection(BaseModel):
+    items: tuple[MemoryProviderReference, ...]
+    next_cursor: str | None = None

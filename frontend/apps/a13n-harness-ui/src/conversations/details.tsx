@@ -14,6 +14,7 @@ import { ToolActivity } from "./tool-call";
 import { sourceText } from "./tool-presentation";
 import { useChildControlState } from "./child-controls";
 import styles from "./conversation.module.css";
+import { useThreadUsage, useContextUsage } from "./usage";
 
 export function ConversationDetails({
   threadId,
@@ -567,26 +568,8 @@ function ContextDetails({
     queryFn: ({ signal }) =>
       result(client.GET("/api/threads/{thread_id}/notes", { params, signal })),
   });
-  const usage = useQuery({
-    queryKey: ["thread", threadId, "usage"],
-    queryFn: ({ signal }) =>
-      result(
-        client.GET("/api/threads/{thread_id}/usage", {
-          params: { path: params.path },
-          signal,
-        }),
-      ),
-  });
-  const context = useQuery({
-    queryKey: ["thread", threadId, "context-usage"],
-    queryFn: ({ signal }) =>
-      result(
-        client.GET("/api/threads/{thread_id}/context-usage", {
-          params: { path: params.path },
-          signal,
-        }),
-      ),
-  });
+  const usage = useThreadUsage(threadId);
+  const context = useContextUsage(threadId);
   return (
     <div className={styles.form}>
       <ErrorNotice

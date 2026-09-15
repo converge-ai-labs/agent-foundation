@@ -20,18 +20,19 @@ The complete machine-readable validation schema, including named enum/union defi
 
 ## `iam`
 
-| Setting                   | Environment variable                   | Type / choices    | Constraints and default               |
-| ------------------------- | -------------------------------------- | ----------------- | ------------------------------------- |
-| `iam.public_origin`       | `A13N_SERVICE_IAM_PUBLIC_ORIGIN`       | string            | default="http://127.0.0.1:8000"       |
-| `iam.initial_admin_email` | `A13N_SERVICE_IAM_INITIAL_ADMIN_EMAIL` | string or null    | default=null                          |
-| `iam.session_days`        | `A13N_SERVICE_IAM_SESSION_DAYS`        | integer           | minimum=1; maximum=90; default=7      |
-| `iam.invitation_days`     | `A13N_SERVICE_IAM_INVITATION_DAYS`     | integer           | minimum=1; maximum=30; default=7      |
-| `iam.smtp_host`           | `A13N_SERVICE_IAM_SMTP_HOST`           | string or null    | default=null                          |
-| `iam.smtp_port`           | `A13N_SERVICE_IAM_SMTP_PORT`           | integer           | minimum=1; maximum=65535; default=587 |
-| `iam.smtp_username`       | `A13N_SERVICE_IAM_SMTP_USERNAME`       | string or null    | default=null                          |
-| `iam.smtp_password`       | `A13N_SERVICE_IAM_SMTP_PASSWORD`       | string or null    | default=null                          |
-| `iam.smtp_sender`         | `A13N_SERVICE_IAM_SMTP_SENDER`         | string or null    | default=null                          |
-| `iam.smtp_tls`            | `A13N_SERVICE_IAM_SMTP_TLS`            | "starttls", "tls" | default="starttls"                    |
+| Setting                   | Environment variable                   | Type / choices    | Constraints and default                                                         |
+| ------------------------- | -------------------------------------- | ----------------- | ------------------------------------------------------------------------------- |
+| `iam.public_origin`       | `A13N_SERVICE_IAM_PUBLIC_ORIGIN`       | string            | default="http://127.0.0.1:8000"                                                 |
+| `iam.session_cookie_name` | `A13N_SERVICE_IAM_SESSION_COOKIE_NAME` | string            | minLength=1; maxLength=128; pattern="^[A-Za-z0-9\_-]+$"; default="a13n_session" |
+| `iam.initial_admin_email` | `A13N_SERVICE_IAM_INITIAL_ADMIN_EMAIL` | string or null    | default=null                                                                    |
+| `iam.session_days`        | `A13N_SERVICE_IAM_SESSION_DAYS`        | integer           | minimum=1; maximum=90; default=7                                                |
+| `iam.invitation_days`     | `A13N_SERVICE_IAM_INVITATION_DAYS`     | integer           | minimum=1; maximum=30; default=7                                                |
+| `iam.smtp_host`           | `A13N_SERVICE_IAM_SMTP_HOST`           | string or null    | default=null                                                                    |
+| `iam.smtp_port`           | `A13N_SERVICE_IAM_SMTP_PORT`           | integer           | minimum=1; maximum=65535; default=587                                           |
+| `iam.smtp_username`       | `A13N_SERVICE_IAM_SMTP_USERNAME`       | string or null    | default=null                                                                    |
+| `iam.smtp_password`       | `A13N_SERVICE_IAM_SMTP_PASSWORD`       | string or null    | default=null                                                                    |
+| `iam.smtp_sender`         | `A13N_SERVICE_IAM_SMTP_SENDER`         | string or null    | default=null                                                                    |
+| `iam.smtp_tls`            | `A13N_SERVICE_IAM_SMTP_TLS`            | "starttls", "tls" | default="starttls"                                                              |
 
 ## `plugins`
 
@@ -97,20 +98,17 @@ The complete machine-readable validation schema, including named enum/union defi
 
 ## `database`
 
-| Setting                                | Environment variable                                | Type / choices         | Constraints and default                           |
-| -------------------------------------- | --------------------------------------------------- | ---------------------- | ------------------------------------------------- |
-| `database.backend`                     | `A13N_SERVICE_DATABASE_BACKEND`                     | "postgresql", "sqlite" | default="postgresql"                              |
-| `database.url`                         | `A13N_SERVICE_DATABASE_URL`                         | string or null         | default="\*\*\*\*\*\*\*\*\*\*"                    |
-| `database.sqlite_path`                 | `A13N_SERVICE_DATABASE_SQLITE_PATH`                 | string                 | format="path"; default="var/a13n-service.sqlite3" |
-| `database.pool_size`                   | `A13N_SERVICE_DATABASE_POOL_SIZE`                   | integer                | minimum=1; maximum=1000; default=10               |
-| `database.max_overflow`                | `A13N_SERVICE_DATABASE_MAX_OVERFLOW`                | integer                | minimum=0; maximum=1000; default=20               |
-| `database.pool_timeout_seconds`        | `A13N_SERVICE_DATABASE_POOL_TIMEOUT_SECONDS`        | number                 | maximum=300; exclusiveMinimum=0; default=30       |
-| `database.pool_recycle_seconds`        | `A13N_SERVICE_DATABASE_POOL_RECYCLE_SECONDS`        | integer                | minimum=0; default=3600                           |
-| `database.connect_timeout_seconds`     | `A13N_SERVICE_DATABASE_CONNECT_TIMEOUT_SECONDS`     | integer                | minimum=1; maximum=300; default=10                |
-| `database.statement_timeout_seconds`   | `A13N_SERVICE_DATABASE_STATEMENT_TIMEOUT_SECONDS`   | number                 | maximum=3600; exclusiveMinimum=0; default=30      |
-| `database.sqlite_busy_timeout_seconds` | `A13N_SERVICE_DATABASE_SQLITE_BUSY_TIMEOUT_SECONDS` | number                 | maximum=300; exclusiveMinimum=0; default=5        |
-| `database.cleanup_timeout_seconds`     | `A13N_SERVICE_DATABASE_CLEANUP_TIMEOUT_SECONDS`     | number                 | maximum=60; exclusiveMinimum=0; default=5         |
-| `database.readiness_timeout_seconds`   | `A13N_SERVICE_DATABASE_READINESS_TIMEOUT_SECONDS`   | number                 | maximum=300; exclusiveMinimum=0; default=3        |
+| Setting                              | Environment variable                              | Type / choices | Constraints and default                           |
+| ------------------------------------ | ------------------------------------------------- | -------------- | ------------------------------------------------- |
+| `database.url`                       | `A13N_SERVICE_DATABASE_URL`                       | string         | format="password"; default="\*\*\*\*\*\*\*\*\*\*" |
+| `database.pool_size`                 | `A13N_SERVICE_DATABASE_POOL_SIZE`                 | integer        | minimum=1; maximum=1000; default=10               |
+| `database.max_overflow`              | `A13N_SERVICE_DATABASE_MAX_OVERFLOW`              | integer        | minimum=0; maximum=1000; default=20               |
+| `database.pool_timeout_seconds`      | `A13N_SERVICE_DATABASE_POOL_TIMEOUT_SECONDS`      | number         | maximum=300; exclusiveMinimum=0; default=30       |
+| `database.pool_recycle_seconds`      | `A13N_SERVICE_DATABASE_POOL_RECYCLE_SECONDS`      | integer        | minimum=0; default=3600                           |
+| `database.connect_timeout_seconds`   | `A13N_SERVICE_DATABASE_CONNECT_TIMEOUT_SECONDS`   | integer        | minimum=1; maximum=300; default=10                |
+| `database.statement_timeout_seconds` | `A13N_SERVICE_DATABASE_STATEMENT_TIMEOUT_SECONDS` | number         | maximum=3600; exclusiveMinimum=0; default=30      |
+| `database.cleanup_timeout_seconds`   | `A13N_SERVICE_DATABASE_CLEANUP_TIMEOUT_SECONDS`   | number         | maximum=60; exclusiveMinimum=0; default=5         |
+| `database.readiness_timeout_seconds` | `A13N_SERVICE_DATABASE_READINESS_TIMEOUT_SECONDS` | number         | maximum=300; exclusiveMinimum=0; default=3        |
 
 ## `models`
 
@@ -123,12 +121,9 @@ The complete machine-readable validation schema, including named enum/union defi
 
 ## `memory`
 
-| Setting                  | Environment variable                  | Type / choices            | Constraints and default                     |
-| ------------------------ | ------------------------------------- | ------------------------- | ------------------------------------------- |
-| `memory.provider`        | `A13N_SERVICE_MEMORY_PROVIDER`        | "none", "platform", "oss" | default="none"                              |
-| `memory.base_url`        | `A13N_SERVICE_MEMORY_BASE_URL`        | string or null            | default=null                                |
-| `memory.api_key`         | `A13N_SERVICE_MEMORY_API_KEY`         | string or null            | default=null                                |
-| `memory.timeout_seconds` | `A13N_SERVICE_MEMORY_TIMEOUT_SECONDS` | number                    | maximum=300; exclusiveMinimum=0; default=30 |
+| Setting                  | Environment variable                  | Type / choices | Constraints and default                     |
+| ------------------------ | ------------------------------------- | -------------- | ------------------------------------------- |
+| `memory.timeout_seconds` | `A13N_SERVICE_MEMORY_TIMEOUT_SECONDS` | number         | maximum=300; exclusiveMinimum=0; default=30 |
 
 ## `webhooks`
 

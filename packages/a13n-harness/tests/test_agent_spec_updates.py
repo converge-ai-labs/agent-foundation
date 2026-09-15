@@ -135,6 +135,30 @@ def test_with_updates_accepts_field_aliases_and_dynamic_mapping_input() -> None:
     )
 
 
+@pytest.mark.parametrize("field", ["context_window", "context_window_tokens"])
+def test_model_characteristics_accepts_legacy_context_window_without_changing_output(field: str) -> None:
+    import json
+
+    value = HarnessModelCharacteristics.model_validate_json(json.dumps({field: 128000}), strict=True)
+    assert value.context_window_tokens == 128000
+    assert value.summary_reminder_tokens == 83200
+    assert value.model_fields_set == {"context_window_tokens"}
+    assert "context_window" not in value.model_dump(by_alias=True)
+    assert value.model_dump()["context_window_tokens"] == 128000
+    spec = AgentSpec.from_dict({"model_characteristics": {field: 128000}})
+    assert spec.model_characteristics == value
+    assert HarnessModelCharacteristics.model_validate_json(json.dumps({field: None})).context_window_tokens is None
+    for invalid in (0, -1, "128000", True):
+        with pytest.raises(ValidationError):
+            HarnessModelCharacteristics.model_validate_json(json.dumps({field: invalid}), strict=True)
+    assert (
+        HarnessModelCharacteristics.model_validate_json(
+            '{"context_window":128000,"context_window_tokens":256000}'
+        ).context_window_tokens
+        == 256000
+    )
+
+
 def test_with_updates_rejects_unknown_duplicate_and_invalid_fields() -> None:
     preset = _preset()
 

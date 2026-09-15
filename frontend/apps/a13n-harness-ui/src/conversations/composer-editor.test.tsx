@@ -163,47 +163,51 @@ it("uses actual CodeMirror atomic deletion and Yjs undo without exposing registr
   });
 });
 
-it("cuts and pastes genuine identities within the draft but visible label text stays plain", async () => {
-  const { draft, editor, textbox } = inlineEditor();
-  let key = "";
-  act(() => {
-    key = draft.addAttachment("attachment-file");
-  });
-  await screen.findByText("notes.txt");
-  const data = new Map<string, string>();
-  const clipboardData = {
-    files: [],
-    setData: (type: string, value: string) => data.set(type, value),
-    getData: (type: string) => data.get(type) ?? "",
-  };
-  act(() =>
-    editor.current!.dispatch({
-      selection: { anchor: 0, head: attachmentToken(key).length },
-    }),
-  );
-  fireEvent.cut(textbox, { clipboardData });
-  expect(values(draft.doc).attachment_ids).toEqual([]);
-  expect(data.get("text/plain")).toBe("[notes.txt]");
-  fireEvent.paste(textbox, { clipboardData });
-  expect(values(draft.doc).attachment_ids).toEqual(["attachment-file"]);
-  // A second genuine occurrence is distinct: its remove button removes itself.
-  fireEvent.paste(textbox, { clipboardData });
-  await waitFor(() =>
-    expect(
-      screen.getAllByRole("button", { name: "Remove notes.txt" }),
-    ).toHaveLength(2),
-  );
-  const before = draft.doc.getText("text").toString();
-  fireEvent.click(
-    screen.getAllByRole("button", { name: "Remove notes.txt" })[1],
-  );
-  expect(draft.doc.getText("text").toString()).toBe(
-    before.slice(0, attachmentToken(key).length),
-  );
-  act(() => draft.doc.getText("text").insert(0, "[notes.txt] [image#1]"));
-  expect(values(draft.doc).attachment_ids).toEqual(["attachment-file"]);
-  expect(values(draft.doc).prompt).toBe("[notes.txt] [image#1]");
-});
+it.each(["draft-test", undefined])(
+  "cuts and pastes genuine identities within draft %s but visible label text stays plain",
+  async (draftId) => {
+    const { draft, editor, textbox } = inlineEditor();
+    draft.draftId = draftId;
+    let key = "";
+    act(() => {
+      key = draft.addAttachment("attachment-file");
+    });
+    await screen.findByText("notes.txt");
+    const data = new Map<string, string>();
+    const clipboardData = {
+      files: [],
+      setData: (type: string, value: string) => data.set(type, value),
+      getData: (type: string) => data.get(type) ?? "",
+    };
+    act(() =>
+      editor.current!.dispatch({
+        selection: { anchor: 0, head: attachmentToken(key).length },
+      }),
+    );
+    fireEvent.cut(textbox, { clipboardData });
+    expect(values(draft.doc).attachment_ids).toEqual([]);
+    expect(data.get("text/plain")).toBe("[notes.txt]");
+    fireEvent.paste(textbox, { clipboardData });
+    expect(values(draft.doc).attachment_ids).toEqual(["attachment-file"]);
+    // A second genuine occurrence is distinct: its remove button removes itself.
+    fireEvent.paste(textbox, { clipboardData });
+    await waitFor(() =>
+      expect(
+        screen.getAllByRole("button", { name: "Remove notes.txt" }),
+      ).toHaveLength(2),
+    );
+    const before = draft.doc.getText("text").toString();
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Remove notes.txt" })[1],
+    );
+    expect(draft.doc.getText("text").toString()).toBe(
+      before.slice(0, attachmentToken(key).length),
+    );
+    act(() => draft.doc.getText("text").insert(0, "[notes.txt] [image#1]"));
+    expect(values(draft.doc).attachment_ids).toEqual(["attachment-file"]);
+    expect(values(draft.doc).prompt).toBe("[notes.txt] [image#1]");
+  },
+);
 
 it("routes clipboard images and drops to the current insertion position", () => {
   const { draft, editor, context, textbox } = inlineEditor();
@@ -323,4 +327,49 @@ it("clears an idle editor cursor and does not revive it on remote updates or hea
     focused.mockRestore();
     vi.useRealTimers();
   }
+});
+
+it("renders a comment as the same atomic attachment with preview, removal, and undo", async () => {
+  const { draft, editor, context, textbox } = inlineEditor();
+  context.metadata.set("attachment-comment", {
+    attachment_id: "attachment-comment",
+    name: "Feedback by Reader.txt",
+    media_type: "text/plain",
+    size: 200,
+    source: {
+      kind: "comment_reference",
+      root_thread_id: "thread-one",
+      comment_id: "comment-1234567890123456",
+      target: {
+        producing_thread_id: "thread-one",
+        source_id: "a".repeat(64),
+        location: { kind: "root_text", message: 0, part: 0 },
+      },
+    },
+    comment: {
+      version: 2,
+      author: "Reader",
+      preview: "Please reconsider the conclusion",
+      quote: "saved source",
+    },
+  });
+  act(() => draft.addAttachment("attachment-comment"));
+  await screen.findByText("Comment · Reader");
+  expect(screen.getByText("Please reconsider the conclusion")).toBeTruthy();
+  expect(textbox.textContent).not.toContain("comment-123");
+  expect(textbox.textContent).not.toContain("inline-");
+  fireEvent.click(
+    screen.getByRole("button", { name: "Feedback by Reader.txt" }),
+  );
+  expect(context.preview).toHaveBeenCalledWith(
+    "attachment-comment",
+    context.metadata.get("attachment-comment"),
+  );
+  const token = attachmentSelections(draft.doc)[0];
+  act(() => editor.current!.dispatch({ selection: { anchor: token.to! } }));
+  fireEvent.keyDown(textbox, { key: "Backspace" });
+  expect(values(draft.doc).attachment_ids).toEqual([]);
+  act(() => draft.undo.undo());
+  await screen.findByText("Comment · Reader");
+  expect(values(draft.doc).attachment_ids).toEqual(["attachment-comment"]);
 });

@@ -262,13 +262,7 @@ class NativeInteractionQueries:
             )
             if authorization.visible_agent_ids is not None:
                 query = query.where(RunRecord.agent_id.in_(authorization.visible_agent_ids))
-            query = query.where(
-                *label_predicates(
-                    ThreadRecord.labels,
-                    labels,
-                    dialect=database.bind.dialect.name,
-                )
-            )
+            query = query.where(*label_predicates(ThreadRecord.labels, labels))
             if boundary is not None:
                 updated_at, resource_id = boundary
                 query = query.where(
@@ -348,13 +342,7 @@ class NativeInteractionQueries:
                 )
             if authorization.visible_agent_ids is not None:
                 query = query.where(RunRecord.agent_id.in_(authorization.visible_agent_ids))
-            query = query.where(
-                *label_predicates(
-                    RunRecord.labels,
-                    labels,
-                    dialect=database.bind.dialect.name,
-                )
-            )
+            query = query.where(*label_predicates(RunRecord.labels, labels))
             query = query.order_by(RunRecord.created_at.desc(), RunRecord.id.desc()).limit(limit + 1)
             if boundary is not None:
                 created_at, resource_id = boundary

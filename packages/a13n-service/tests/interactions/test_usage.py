@@ -61,8 +61,8 @@ async def read_usage(sessions, authority):
         return dict(attempt.usage_json), [record.record_json for record in records], run.to_resource()
 
 
-async def test_incremental_terminal_overlap_and_conflicts(relational_interaction_sessions, interaction_object_store):
-    sessions = relational_interaction_sessions
+async def test_incremental_terminal_overlap_and_conflicts(interaction_sessions, interaction_object_store):
+    sessions = interaction_sessions
     execution, authority = await setup_usage(sessions, interaction_object_store)
     first, second = receipt(), receipt(1, input_tokens=7, output_tokens=5)
     await execution.ingest_usage(authority, harness_run_id="harness-usage", records=[first, first])
@@ -123,8 +123,8 @@ async def test_expired_owner_can_only_add_evidence(interaction_sessions, interac
     assert usage["input_tokens"] == 0 and len(records) == 1
 
 
-async def test_concurrent_delivery_counts_once(postgres_interaction_sessions, interaction_object_store):
-    execution, authority = await setup_usage(postgres_interaction_sessions, interaction_object_store)
+async def test_concurrent_delivery_counts_once(interaction_sessions, interaction_object_store):
+    execution, authority = await setup_usage(interaction_sessions, interaction_object_store)
 
     async def deliver():
         await execution.ingest_usage(authority, harness_run_id="harness-usage", records=[receipt()])
@@ -132,7 +132,7 @@ async def test_concurrent_delivery_counts_once(postgres_interaction_sessions, in
     async with create_task_group() as group:
         for _ in range(4):
             group.start_soon(deliver)
-    usage, records, _ = await read_usage(postgres_interaction_sessions, authority)
+    usage, records, _ = await read_usage(interaction_sessions, authority)
     assert usage["input_tokens"] == 12 and usage["output_tokens"] == 3 and len(records) == 1
 
 

@@ -78,7 +78,7 @@ class AssetRef:
 
 ## `assets` Relational Schema
 
-The conceptual model materializes as one `assets` row per publication. The table uses the portable relational subset defined by [Relational Schema Lifecycle](04-relational-schema.md): identifiers and bounded strings are text, `size_bytes` is a signed 64-bit integer constrained to the non-negative domain, and timestamps preserve UTC instants.
+The conceptual model materializes as one `assets` row per publication. Identifiers and bounded strings use PostgreSQL text-compatible columns, `size_bytes` is a signed 64-bit integer constrained to the non-negative domain, and timezone-aware timestamps preserve UTC instants.
 
 | Column                  | Nullability and key                   | Durable meaning                                                                                       |
 | ----------------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------- |

@@ -14,10 +14,8 @@ from ..performance.connection_preparation import prepare_pg_connections, warm_ht
 
 @pytest.mark.anyio
 @pytest.mark.parametrize("state", ["cold", "warm"])
-async def test_sql_pool_state_controls_physical_connections_before_the_wave(tmp_path, state):
-    # SQLite exercises the real SQLAlchemy pool without Docker; live tests
-    # separately verify PostgreSQL authentication, transactions and persistence.
-    engine = create_async_engine(f"sqlite+aiosqlite:///{tmp_path / 'pool.db'}", pool_size=8, max_overflow=0)
+async def test_sql_pool_state_controls_physical_connections_before_the_wave(owned_postgres_url, state):
+    engine = create_async_engine(owned_postgres_url, pool_size=8, max_overflow=0)
     opened = []
     event.listen(engine.sync_engine, "connect", lambda connection, record: opened.append(connection))
     try:

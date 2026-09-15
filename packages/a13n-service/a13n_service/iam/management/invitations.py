@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
 
-from sqlalchemy import select, update
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
@@ -116,11 +116,10 @@ class InvitationService:
                 await session.flush()
             else:
                 organization = organizations[0]
-                await session.execute(
-                    update(OrganizationRecord)
-                    .where(OrganizationRecord.id == organization.id)
-                    .values(name=OrganizationRecord.name)
+                organization = await session.scalar(
+                    select(OrganizationRecord).where(OrganizationRecord.id == organization.id).with_for_update()
                 )
+                assert organization is not None
             row = await session.scalar(
                 select(InvitationRecord).where(
                     InvitationRecord.organization_id == organization.id,

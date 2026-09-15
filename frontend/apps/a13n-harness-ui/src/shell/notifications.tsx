@@ -63,6 +63,7 @@ type Notifications = {
   permission: Permission;
   requesting: boolean;
   error: string;
+  testStatus: string;
   setEnabled: (value: boolean) => void;
   request: () => Promise<void>;
   test: () => void;
@@ -85,6 +86,7 @@ function NotificationState({ children }: { children: ReactNode }) {
   const [permission, setPermission] = useState(notificationPermission);
   const [requesting, setRequesting] = useState(false);
   const [error, setError] = useState("");
+  const [testStatus, setTestStatus] = useState("");
   const navigate = useNavigate();
   const match = useMatch("/threads/:threadId");
   const queries = useQueryClient();
@@ -133,6 +135,7 @@ function NotificationState({ children }: { children: ReactNode }) {
     updateEnabled(value);
     setPermission(notificationPermission());
     setError("");
+    setTestStatus("");
   };
   const request = async () => {
     if (requesting || notificationPermission() !== "default") return;
@@ -170,6 +173,20 @@ function NotificationState({ children }: { children: ReactNode }) {
           oldest.close();
           native.current.delete(oldest);
         }
+        notification.onshow = () => {
+          if (alive.current && tag === "a13n-harness-ui.test")
+            setTestStatus(
+              "The browser reported the test notification as shown. If no banner appeared, check your system notification settings.",
+            );
+        };
+        notification.onerror = () => {
+          native.current.delete(notification);
+          if (!alive.current) return;
+          setTestStatus("");
+          setError(
+            "This browser could not display a desktop notification. Check site permission and system notification settings. In-app notices remain available.",
+          );
+        };
         notification.onclose = () => native.current.delete(notification);
         notification.onclick = () => {
           if (alive.current) {
@@ -248,30 +265,34 @@ function NotificationState({ children }: { children: ReactNode }) {
       if (!current.current.enabled || notificationPermission() !== "granted")
         return;
       void deliverOnce(id, () => {
-        // A foreground observer claims the event without a redundant native alert.
-        if (!alive.current) return false;
-        if (document.visibilityState === "visible" && document.hasFocus())
-          return true;
         return showNative(title, notice.brief, id, path);
       }).catch(() => {
-        // Losing optional browser coordination must not interrupt the event stream.
+        // Optional cross-tab coordination must not silently swallow an alert.
+        // The native tag still provides best-effort replacement.
+        showNative(title, notice.brief, id, path);
       });
     },
     [queries, showNative],
   );
   const test = () => {
     setError("");
-    showNative(
-      "Harness UI notifications are ready",
+    setTestStatus("");
+    const requested = showNative(
+      "Harness UI test notification",
       "Task results and requests for your input will appear here while WebUI is open.",
       "a13n-harness-ui.test",
     );
+    if (requested)
+      setTestStatus(
+        "Test requested from the browser. This does not confirm that macOS displayed a banner.",
+      );
   };
   const value = {
     enabled,
     permission,
     requesting,
     error,
+    testStatus,
     setEnabled,
     request,
     test,
@@ -401,6 +422,15 @@ export function NotificationSettings() {
           </Button>
         </div>
         {notifications.error && <p role="alert">{notifications.error}</p>}
+        {notifications.testStatus && (
+          <p role="status">{notifications.testStatus}</p>
+        )}
+        <p>
+          Alerts are sent even while this page is in the foreground. On macOS,
+          check System Settings → Notifications for your browser or this
+          website, and check whether Focus is silencing alerts. Site permission
+          alone does not guarantee a desktop banner.
+        </p>
         <p>
           In-app task notices remain available without desktop permission.
           Closing WebUI stops live notifications; missed history is not replayed

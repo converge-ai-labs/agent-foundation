@@ -550,6 +550,7 @@ def _create_inline_child_bindings(
             host_refs=parent.instance.host_refs,
         ),
         environment=_BorrowedEnvironmentRuntime(parent.environment),
+        tool_result_directory=parent.tool_result_directory,
         model_resolver=parent.model_resolver,
         toolset_instructions=parent._toolset_instructions_override,
         capabilities=(invocation_policy,) if invocation_policy is not None else (),

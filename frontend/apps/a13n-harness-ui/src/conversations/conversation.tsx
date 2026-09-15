@@ -16,6 +16,7 @@ import { ErrorNotice, TextField } from "../shell/ui";
 import type { Profile } from "../shell/presence";
 import { readPreference, writePreference } from "../shell/preferences";
 import { Composer, useDraft } from "./composer";
+import { ComposerStatus } from "./composer-status";
 import { Decisions } from "./decisions";
 import { ConversationDetails } from "./details";
 import { WorkInspector } from "./work-inspector";
@@ -77,6 +78,7 @@ function Conversation({
     if (rename) setTitle(detail.data?.thread.title ?? "");
   }, [rename, detail.data?.thread.title]);
   const [message, setMessage] = useState("");
+  const [referenceAdded, setReferenceAdded] = useState(0);
   const reader = useRef<HTMLDivElement>(null);
   const restoreScroll = useRef(readPreference(`scroll.${threadId}`, ""));
   const follow = useRef(true);
@@ -270,6 +272,7 @@ function Conversation({
       profile={profile}
       listOpen={dialog === "comments"}
       closeList={closeDialog}
+      onReferenceAdded={() => setReferenceAdded((value) => value + 1)}
     >
       <div className={styles.page}>
         {(connection !== "Live" ||
@@ -416,6 +419,7 @@ function Conversation({
         />
         {!thread.archived && (
           <Composer
+            referenceAdded={referenceAdded}
             autoFocus={search.get("compose") === "1"}
             threadId={threadId}
             activity={thread.root_activity}
@@ -425,6 +429,7 @@ function Conversation({
             reconcile={reconcile}
           />
         )}
+        {!thread.archived && <ComposerStatus threadId={threadId} />}
         <ModalFrame
           open={dialog === "share"}
           onOpenChange={(open) => {
@@ -499,14 +504,8 @@ function Conversation({
             detail.data.available_actions?.includes("archive") && (
               <Button
                 variant="outline"
-                onClick={() => {
-                  if (
-                    window.confirm(
-                      "Archive this conversation? Its saved history will be retained.",
-                    )
-                  )
-                    metadata.mutate({ archived: true });
-                }}
+                loading={metadata.isPending}
+                onClick={() => metadata.mutate({ archived: true })}
               >
                 Archive conversation
               </Button>

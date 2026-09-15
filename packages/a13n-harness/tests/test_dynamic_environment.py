@@ -2119,7 +2119,13 @@ async def test_resource_metadata_does_not_bind_execution_to_mount_incarnation(tm
         assert (tmp_path / "relative.txt").read_text() == "current operation"
 
 
-async def test_managed_large_json_result_spills_for_the_run_and_is_cleaned(tmp_path: Path) -> None:
+@pytest.mark.parametrize("custom_directory", [False, True])
+async def test_managed_large_json_result_spills_for_the_run_and_is_cleaned(
+    tmp_path: Path, custom_directory: bool
+) -> None:
+    directory = f"{tmp_path.as_posix()}/tmp/tool-results" if custom_directory else None
+    expected_directory = directory or f"{tmp_path.as_posix()}/.a13n/tmp/tool-results"
+
     def produce() -> dict[str, str]:
         return {"content": "x" * 4_000, "hint": "keep-this-field"}
 
@@ -2161,7 +2167,7 @@ async def test_managed_large_json_result_spills_for_the_run_and_is_cleaned(tmp_p
         assert isinstance(result, dict)
         assert result["hint"] == "keep-this-field"
         observed_path = cast(str, content["output_file_path"])
-        assert observed_path.startswith(f"{tmp_path.as_posix()}/.a13n/tmp/tool-results/")
+        assert observed_path.startswith(f"{expected_directory}/run-")
         assert json.loads(Path(observed_path).read_text(encoding="utf-8")) == produce()
         yield "done"
 
@@ -2178,11 +2184,14 @@ async def test_managed_large_json_result_spills_for_the_run_and_is_cleaned(tmp_p
         "produce",
         bindings=RunBindings.embedded(
             environment=_local_binding(tmp_path, mount_path=tmp_path.as_posix()),
+            tool_result_directory=directory,
             capabilities=(_policy(),),
         ),
     )
 
     assert result.output_or_raise() == "done"
+    if custom_directory:
+        assert not (tmp_path / ".a13n").exists()
     assert observed_path is not None
     assert not Path(observed_path).exists()
 
@@ -3327,7 +3336,7 @@ async def test_spill_tracks_default_changes_and_owns_only_unique_leaves(tmp_path
     bindings = RunBindings.embedded(environment=runtime)
     async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=bindings.instance, host_refs={}) as env:
         await runtime._activate()
-        context = cast(Any, SimpleNamespace(run_id="run-1", environment=env))
+        context = cast(Any, SimpleNamespace(run_id="run-1", environment=env, tool_result_directory=None))
         store = _ToolResultSpillStore(context)
         other = _ToolResultSpillStore(context)
         first_path = await store.write(b"first", suffix=".txt")
@@ -3361,7 +3370,9 @@ async def test_spill_cleanup_does_not_follow_replaced_mount(tmp_path: Path) -> N
     bindings = RunBindings.embedded(environment=runtime)
     async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=bindings.instance, host_refs={}) as env:
         await runtime._activate()
-        store = _ToolResultSpillStore(cast(Any, SimpleNamespace(run_id="run-1", environment=env)))
+        store = _ToolResultSpillStore(
+            cast(Any, SimpleNamespace(run_id="run-1", environment=env, tool_result_directory=None))
+        )
         path = await store.write(b"original", suffix=".txt")
         assert path
         relative = path.removeprefix("/environment/local/")
@@ -3481,7 +3492,9 @@ async def test_spill_failure_keeps_owned_leaf_for_best_effort_cleanup(tmp_path: 
     bindings = RunBindings.embedded(environment=runtime)
     async with runtime.bind(thread_id="thread-1", run_id="run-1", instance=bindings.instance, host_refs={}) as env:
         await runtime._activate()
-        store = _ToolResultSpillStore(cast(Any, SimpleNamespace(run_id="run-1", environment=env)))
+        store = _ToolResultSpillStore(
+            cast(Any, SimpleNamespace(run_id="run-1", environment=env, tool_result_directory=None))
+        )
 
         async def fail(*args, **kwargs):
             if failure == "cancel":

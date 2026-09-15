@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from prompt_toolkit.buffer import Buffer
-from prompt_toolkit.clipboard import InMemoryClipboard
+from prompt_toolkit.clipboard import ClipboardData, InMemoryClipboard
 from prompt_toolkit.completion import Completer
 from prompt_toolkit.document import Document
 from prompt_toolkit.formatted_text import StyleAndTextTuples
@@ -100,6 +100,39 @@ class InlineAttachments:
         self.values = {token: value for token, value in self.values.items() if token in reachable}
 
 
+def replace_document_token(document: Document, token: str, replacement: str) -> Document:
+    """Replace an anchor while retaining the current cursor and selection."""
+    text = document.text
+    if token not in text:
+        return document
+
+    def position(offset: int) -> int:
+        return offset + text[:offset].count(token) * (len(replacement) - 1)
+
+    selection = document.selection
+    if selection is not None:
+        from prompt_toolkit.selection import SelectionState
+
+        selection = SelectionState(position(selection.original_cursor_position), selection.type)
+    return Document(text.replace(token, replacement), position(document.cursor_position), selection)
+
+
+@dataclass(frozen=True)
+class AttachmentInsertion:
+    token: str
+    before: Document
+    after: Document
+    replaced_text: str
+    redo_before: list[tuple[str, int]]
+    redo_after: list[tuple[str, int]]
+    text_revision: int
+
+    def revert(self, document: Document) -> Document:
+        if document == self.after:
+            return self.before
+        return replace_document_token(document, self.token, self.replaced_text)
+
+
 class AttachmentClipboard(InMemoryClipboard):
     """Expose native kill-ring roots without duplicating its bounded yank behavior."""
 
@@ -107,13 +140,22 @@ class AttachmentClipboard(InMemoryClipboard):
     def texts(self) -> tuple[str, ...]:
         return tuple(item.text for item in self._ring)
 
+    def discard_insertion(self, insertion: AttachmentInsertion) -> None:
+        for index, item in enumerate(self._ring):
+            self._ring[index] = ClipboardData(item.text.replace(insertion.token, insertion.replaced_text), item.type)
+
 
 class AttachmentBuffer(Buffer):
     """Keep native movement/selection/undo, separating external insertion from tokens."""
 
     def __init__(self, attachments: InlineAttachments, completer: Completer | None = None) -> None:
         self.attachments = attachments
+        self._text_revision = 0
         super().__init__(multiline=True, completer=completer, complete_while_typing=True)
+        self.on_text_changed += self._record_text_change
+
+    def _record_text_change(self, buffer: Buffer) -> None:
+        self._text_revision += 1
 
     def set_document(self, value: Document, bypass_readonly: bool = False) -> None:
         super().set_document(value, bypass_readonly=bypass_readonly)
@@ -126,29 +168,34 @@ class AttachmentBuffer(Buffer):
     ) -> None:
         super().insert_text(self.attachments.external_text(data), overwrite, move_cursor, fire_event)
 
-    def insert_attachment(self, token: str) -> None:
+    def insert_attachment(self, token: str) -> AttachmentInsertion:
+        before = self.document
+        redo_before = self._redo_stack
         self.save_to_undo_stack()
-        if self.selection_state is not None:
-            self.cut_selection()
+        replaced_text = self.cut_selection().text if self.selection_state is not None else ""
         super().insert_text(token, fire_event=False)
+        return AttachmentInsertion(
+            token, before, self.document, replaced_text, redo_before, self._redo_stack, self._text_revision
+        )
+
+    def discard_insertion(self, insertion: AttachmentInsertion) -> None:
+        # A text edit or native history reset invalidates the old redo branch.
+        if self._text_revision == insertion.text_revision and self._redo_stack is insertion.redo_after:
+            self._redo_stack = insertion.redo_before
+        # This is acquisition cleanup, not an edit. Rewrite history in place so
+        # undo/redo preserves subsequent edits without resurrecting the anchor.
+        for stack in (self._undo_stack, self._redo_stack):
+            for index, (text, cursor) in enumerate(stack):
+                document = insertion.revert(Document(text, cursor))
+                stack[index] = (document.text, document.cursor_position)
+        self.document = insertion.revert(self.document)
 
     def replace_token(self, token: str, replacement: str) -> None:
         """Resolve an asynchronous anchor without moving the user's current selection."""
-        document = self.document
-        text = document.text
-        if token not in text:
+        if token not in self.text:
             return
         self.save_to_undo_stack()
-
-        def position(offset: int) -> int:
-            return offset + text[:offset].count(token) * (len(replacement) - 1)
-
-        selection = document.selection
-        if selection is not None:
-            from prompt_toolkit.selection import SelectionState
-
-            selection = SelectionState(position(selection.original_cursor_position), selection.type)
-        self.document = Document(text.replace(token, replacement), position(document.cursor_position), selection)
+        self.document = replace_document_token(self.document, token, replacement)
 
 
 class AttachmentProcessor(Processor):

@@ -269,8 +269,8 @@ def _model_process(port: int):
                 process.wait()
 
 
-def serve_model() -> None:
-    uvicorn.run(app, host="127.0.0.1", port=MODEL_PORT, log_level="warning", access_log=False)
+def serve_model(port: int = MODEL_PORT) -> None:
+    uvicorn.run(app, host="127.0.0.1", port=port, log_level="warning", access_log=False)
 
 
 if __name__ == "__main__":

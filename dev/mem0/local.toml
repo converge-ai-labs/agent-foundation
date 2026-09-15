@@ -1,0 +1,10 @@
+# Optional checkout-owned Mem0 OSS infrastructure, not Service product settings.
+# make dev / make setup never starts Mem0 unless you explicitly enable it here.
+# For private values, copy to local.private.toml and pass MEM0_CONFIG=that/path.
+enabled = false
+api_key = "local-mem0-api-key" # Public fixture key only; never commit a real key.
+
+# Real embeddings use MEM0_OSS_EMBEDDING_{BASE_URL,MODEL,API_KEY,DIMENSIONS}
+# from your private shell environment. The default fixture is deterministic,
+# not semantic inference. See README.md for model and collection configuration.
+# Starting OSS does not create a Memory Provider or enable an Agent's memory.

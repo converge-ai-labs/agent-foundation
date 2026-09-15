@@ -443,10 +443,9 @@ async def test_active_delivery_never_bypasses_an_earlier_unbound_result(
 
 
 async def test_concurrent_result_publication_converges_on_postgresql(
-    postgres_interaction_sessions: async_sessionmaker[AsyncSession],
-    interaction_object_store: ObjectStore,
+    interaction_sessions: async_sessionmaker[AsyncSession], interaction_object_store: ObjectStore
 ) -> None:
-    sessions = postgres_interaction_sessions
+    sessions = interaction_sessions
     _, parent, _, child_run_id = await _accept_child(sessions, interaction_object_store)
     await _fail_child(sessions, child_run_id)
     ids = iter(("inb_4444444444444444", "inb_5555555555555555"))
@@ -660,9 +659,9 @@ async def test_deferred_result_does_not_starve_the_next_scan_page(
 
 @pytest.mark.parametrize("prior_receipt", [False, True])
 async def test_expired_result_is_not_materialized_after_cached_receipt_confirmation(
-    relational_interaction_sessions, interaction_object_store, monkeypatch, prior_receipt
+    interaction_sessions, interaction_object_store, monkeypatch, prior_receipt
 ):
-    sessions = relational_interaction_sessions
+    sessions = interaction_sessions
     states, parent, authority, child_run_id = await _accept_child(sessions, interaction_object_store)
     now = NOW + timedelta(seconds=4)
     store = ThreadInboxStore(sessions, clock=lambda: now)

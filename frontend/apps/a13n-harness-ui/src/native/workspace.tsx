@@ -56,10 +56,17 @@ export function NativeWorkspace({
   const threadId = matchPath("/threads/:threadId", location.pathname)?.params
     .threadId;
   const thread = useThread(threadId ?? "");
-  const isWorkspace = location.pathname === "/" || !!threadId;
+  const isNew =
+    location.pathname === "/" ||
+    !!matchPath("/new/:draftId", location.pathname);
+  const isWorkspace = location.pathname === "/" || !!threadId || isNew;
   const projectLoading = !!threadId && (thread.isPending || projects.isPending);
   const resolvedProject = projects.data?.find(
-    (item) => item.project_id === thread.data?.thread.configuration?.project_id,
+    (item) =>
+      item.project_id ===
+      (isNew
+        ? new URLSearchParams(location.search).get("project")
+        : thread.data?.thread.configuration?.project_id),
   );
   // Settings hides native views without replacing their current Project context.
   const retainedProject = useRef<Schema<"ProjectSummary"> | undefined>(
@@ -353,7 +360,7 @@ export function NativeWorkspace({
           {threadId
             ? thread.data?.thread.title || "Untitled conversation"
             : isWorkspace
-              ? "Overview"
+              ? "New conversation"
               : "Settings"}
         </h1>
         {isWorkspace && (

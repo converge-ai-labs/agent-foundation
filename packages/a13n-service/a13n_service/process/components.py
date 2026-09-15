@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING
 
 from a13n_environment import EnvironmentProviderCatalog
+from a13n_harness.memory_plugins import MemoryBackendCatalog
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
@@ -38,6 +39,7 @@ class Components:
     model_connection_tester: ModelConnectionTester | None = None
     model_catalog: ModelCatalog | None = None
     environment_provider_catalog: EnvironmentProviderCatalog | None = None
+    memory_backend_catalog: MemoryBackendCatalog | None = None
     skill_github_acquirer: GitHubSkillAcquirer | None = None
     skill_credential_resolver: GitHubCredentialResolver | None = None
     trace_access_authorizer: TraceAccessAuthorizer | None = None

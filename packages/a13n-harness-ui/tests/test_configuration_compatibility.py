@@ -36,6 +36,92 @@ from .test_setup import _selection, _validate
 pytestmark = pytest.mark.anyio
 
 
+async def test_legacy_context_window_survives_upgrade_and_webui_status(tmp_path):
+    import httpx
+    from a13n_harness_ui.storage import open_local_store
+    from a13n_harness_ui.webui import create_webui
+
+    root = _write_configuration(tmp_path)
+    model_path = tmp_path / "models/primary.yaml"
+    model_path.write_text(model_path.read_text() + "model_characteristics: {context_window: 128000}\n")
+    original_yaml = model_path.read_bytes()
+    # Reproduce the legacy wire shape under the unchanged normalization version.
+    legacy = await load_harness_ui_configuration(root)
+    payload = legacy.model_dump(mode="json")
+    characteristics = payload["models"]["model-primary"]["model_characteristics"]
+    characteristics["context_window"] = characteristics.pop("context_window_tokens")
+    settings = _settings(tmp_path / "state").model_copy(update={"pricing_auto_update": False})
+    async with open_local_store(settings.storage) as store:
+        envelope = await store.objects.publish(
+            object_kind=ObjectKind.configuration_generation, object_schema_version="1", payload=payload
+        )
+        await store.configurations.accept(
+            generation_digest=legacy.source_digest,
+            generation=envelope.ref,
+            sources=(),
+            resources=(),
+            expected_current_digest=None,
+        )
+    # No source reload: the retained generation itself must remain readable.
+    async with open_harness_ui_app(settings) as app:
+        assert (await app.status()).candidate_error_code is None
+        thread = await app.create_thread()
+        thread_id = thread.thread_id
+    server = create_webui(lambda: open_harness_ui_app(settings, configuration_path=root), api_key="test-key")
+    async with server.router.lifespan_context(server):
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=server),
+            base_url="http://127.0.0.1",
+            headers={"Authorization": "Bearer test-key"},
+        ) as client:
+            response = await client.get("/api/status")
+            assert response.status_code == 200
+            status = response.json()["app"]
+            assert status["candidate_error_code"] is None
+            assert status["accepted_generation_digest"] == legacy.source_digest
+            assert (await client.get(f"/api/threads/{thread_id}")).status_code == 200
+    async with open_local_store(settings.storage) as store:
+        assert await store.objects.read(envelope.ref) == envelope
+        restored = await store.objects.read_model(envelope.ref, LoadedHarnessUiConfiguration)
+        assert restored.models["model-primary"].model_characteristics.context_window_tokens == 128000
+        assert await store.configurations.reference(legacy.source_digest) == envelope.ref
+    assert model_path.read_bytes() == original_yaml
+    # Repeated startup must not collide on the same source-generation digest.
+    async with open_harness_ui_app(settings, configuration_path=root) as app:
+        assert (await app.status()).candidate_error_code is None
+        assert (await app.get_thread(thread_id)).thread.thread_id == thread_id
+
+
+async def test_legacy_run_composition_reads_context_window_without_rewriting_object(tmp_path):
+    from a13n_harness_ui.composition import AgentCompositionResolver, ResolvedRunComposition
+
+    from .test_composition import _catalog, _write_source
+    from .test_composition import _selection as composition_selection
+
+    root = _write_source(tmp_path)
+    model_path = tmp_path / "models/primary.yaml"
+    model_path.write_text(model_path.read_text() + "model_characteristics: {context_window: 128000}\n")
+    source = await load_harness_ui_configuration(root)
+    composition = AgentCompositionResolver(_catalog()).resolve_run(source, composition_selection())
+    payload = composition.model_dump(mode="json")
+    pending = [payload]
+    replacements = 0
+    while pending:
+        node = pending.pop()
+        if isinstance(node, dict):
+            if "context_window_tokens" in node:
+                node["context_window"] = node.pop("context_window_tokens")
+                replacements += 1
+            pending.extend(node.values())
+        elif isinstance(node, list):
+            pending.extend(node)
+    assert replacements > 0
+    store, _ = _object_store(tmp_path / "state")
+    envelope = await store.publish(object_kind=ObjectKind.run_composition, object_schema_version="1", payload=payload)
+    assert await store.read_model(envelope.ref, ResolvedRunComposition) == composition
+    assert await store.read(envelope.ref) == envelope
+
+
 async def test_additive_configuration_fields_survive_nested_snapshot_round_trip(tmp_path, caplog):
     root = _write_configuration(tmp_path)
     extra = {"items": [1, True, None, "  private-future-value  "]}

@@ -3,33 +3,36 @@
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
 
 
 class _Config(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
 
 
 class PostgreSQLConfig(_Config):
-    backend: Literal["postgresql"] = "postgresql"
     url: SecretStr
     pool_size: int = Field(default=10, ge=1, le=1000)
-    max_overflow: int = Field(default=10, ge=0, le=1000)
-    pool_timeout_seconds: float = Field(default=10, gt=0, le=300)
+    max_overflow: int = Field(default=20, ge=0, le=1000)
+    pool_timeout_seconds: float = Field(default=30, gt=0, le=300)
     pool_recycle_seconds: int = Field(default=3600, ge=0)
     connect_timeout_seconds: int = Field(default=10, ge=1, le=300)
     statement_timeout_seconds: float = Field(default=30, gt=0, le=3600)
     cleanup_timeout_seconds: float = Field(default=5, gt=0, le=60)
 
-
-class SQLiteConfig(_Config):
-    backend: Literal["sqlite"] = "sqlite"
-    path: Path
-    busy_timeout_seconds: float = Field(default=5, gt=0, le=300)
-    cleanup_timeout_seconds: float = Field(default=5, gt=0, le=60)
-
-
-DatabaseConfig = Annotated[PostgreSQLConfig | SQLiteConfig, Field(discriminator="backend")]
+    @field_validator("url", mode="before")
+    @classmethod
+    def validate_url(cls, value: str | SecretStr) -> SecretStr:
+        raw = value.get_secret_value() if isinstance(value, SecretStr) else value
+        try:
+            url = make_url(raw)
+        except (ArgumentError, TypeError, ValueError):
+            raise ValueError("database.url must be a valid PostgreSQL URL") from None
+        if url.drivername not in {"postgresql", "postgresql+psycopg"}:
+            raise ValueError("PostgreSQL requires a postgresql or postgresql+psycopg URL")
+        return SecretStr(url.set(drivername="postgresql+psycopg").render_as_string(hide_password=False))
 
 
 class RedisServerConfig(_Config):
@@ -91,7 +94,7 @@ class FilesystemConfig(_Config):
 
 
 class StorageSettings(_Config):
-    database: DatabaseConfig
+    database: PostgreSQLConfig
     redis: RedisConfig
     objects: ObjectStoreConfig
     filesystem: FilesystemConfig
@@ -103,14 +106,6 @@ class StorageSettings(_Config):
             object_root = _normalized(self.objects.root)
             if _overlaps(files_root, object_root):
                 raise ValueError("filesystem and local object roots must not overlap")
-        if isinstance(self.database, SQLiteConfig) and str(self.database.path) != ":memory:":
-            database_path = _normalized(self.database.path)
-            if database_path == files_root or database_path.is_relative_to(files_root):
-                raise ValueError("SQLite database must not be stored beneath the filesystem root")
-            if isinstance(self.objects, LocalObjectConfig):
-                object_root = _normalized(self.objects.root)
-                if database_path == object_root or database_path.is_relative_to(object_root):
-                    raise ValueError("SQLite database must not be stored beneath the local object root")
         return self
 
 

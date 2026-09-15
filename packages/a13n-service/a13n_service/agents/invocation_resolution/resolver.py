@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from a13n_harness.memory_plugins import MemoryBackendCatalog
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver
@@ -26,6 +27,7 @@ class AgentInvocationResolver:
         connectivity_resolver: ConnectivitySelectionResolver | None = None,
         protocol_policy: AgentProtocolPolicy | None = None,
         web_provider_registry: WebProviderRegistry | None = None,
+        memory_backend_catalog: MemoryBackendCatalog | None = None,
     ) -> None:
         policy = protocol_policy or AgentProtocolPolicy()
         connectivity = connectivity_resolver or ConnectivitySelectionResolver(sessions)
@@ -39,4 +41,7 @@ class AgentInvocationResolver:
             model_selector,
             connectivity_resolver=connectivity,
             web_provider_registry=web_provider_registry or built_in_web_provider_registry(),
+            memory_backend_catalog=memory_backend_catalog
+            if memory_backend_catalog is not None
+            else MemoryBackendCatalog(),
         )

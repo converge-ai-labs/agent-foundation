@@ -9,6 +9,11 @@
   color: var(--a13n-secondary);
   min-width: 0;
 }
+.strip button {
+  font-size: 12px;
+  color: var(--a13n-secondary);
+}
+.strip button:hover,
 .strip button[data-popup-open] {
   color: var(--a13n-text);
   background: var(--a13n-surface);

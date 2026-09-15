@@ -790,7 +790,7 @@ async def test_sealed_hosted_replay_survives_native_stream_loss_and_bounds_curso
                 last_event_id=invalid_cursor,
             )
 
-    assert replay_info.content_type == "application/vnd.a13n.hosted-agui-replay+json"
+    assert replay_info.content_type == "application/zstd"
     assert len(frames) == 5
     assert b'"type":"RUN_FINISHED"' in frames[-1]
     assert resumed_frames == frames[2:]

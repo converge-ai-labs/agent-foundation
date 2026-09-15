@@ -193,6 +193,8 @@ Paste folding is display-only. Separately, authored text blocks strictly longer 
 
 The agent has a `thread-files` Environment mount with `tmp/` for disposable downloads, scripts, conversions, and intermediate output. It belongs to the conversation, not an individual Run, and is reused after restarting the CLI. Submitted attachments are retained separately under `attachments/`; resuming a conversation does not depend on a clipboard temp file. Removing a draft marker does not delete a previously submitted file.
 
+Oversized tool results are saved under the current Thread's `tmp/tool-results/`, including results from child Agents in their own Threads, rather than creating `.a13n/tmp/` in your Project. These particular files are Run-private: Harness attempts to remove them when the Run ends. They are not retained answers or attachments.
+
 Temporary work is cleaned automatically at startup and hourly once it has been inactive for three days. An App conservatively protects every Thread directory it has used until it exits, including against cleanup by another local App. Cleanup never removes submitted attachments or Project files. Closing or archiving a conversation does not immediately delete its temporary directory. Do not store important final results in `tmp/`; ask the agent to copy them to your Project or another chosen destination.
 
 In Sandbox mode, a command running in the Project cannot automatically read a sibling Thread mount. Attachment processing must select a working directory inside the Thread mount. Custom providers can expose this mount through file tools only; the model sees the available operations. There is no additional remote-host or network permission grant.

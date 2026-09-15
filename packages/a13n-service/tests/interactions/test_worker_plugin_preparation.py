@@ -4,6 +4,7 @@ import json
 from unittest.mock import Mock
 
 import pytest
+import zstandard
 from a13n_harness.plugin_factories import build_harness_plugin_factory_catalog
 from a13n_service.agents.domain import PluginSelection
 from a13n_service.agents.plugin_preparation import prepare_agent_plugins
@@ -74,7 +75,7 @@ async def test_worker_preserves_initial_input_and_uses_durable_plugin_defaults(
 
     async def intercept_put(key, body, **kwargs):
         nonlocal failed_write
-        envelope = json.loads(body)
+        envelope = json.loads(zstandard.ZstdDecompressor().decompress(body))
         is_preparation = envelope.get("checkpoint_seq") == 0 and envelope.get("prepared_plugins") is not None
         if is_preparation:
             publications.append(envelope)

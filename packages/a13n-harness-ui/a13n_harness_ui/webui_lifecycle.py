@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import socket
 from collections.abc import AsyncGenerator, Mapping
 from time import monotonic
@@ -10,7 +11,7 @@ from types import FrameType
 import uvicorn
 from a13n_logging import get_logger
 from anyio import CancelScope, Event, create_task_group, sleep
-from starlette.responses import StreamingResponse
+from starlette.responses import JSONResponse, StreamingResponse
 from starlette.routing import Route
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
@@ -91,6 +92,42 @@ class EventStreamResponse(StreamingResponse):
         await send({"type": "http.response.body", "body": b"", "more_body": False})
 
 
+# Only fixed explanations are safe here: application messages may contain
+# configuration values, model content, credentials or native file paths.
+_ERROR_REASONS = {
+    "thread_history_continuation_changed": "Saved history changed before transcript projection; refresh the Thread.",
+    "thread_continuation_conflict": "The selected continuation changed; refresh the Thread.",
+    "thread_history_cursor_mismatch": "Transcript cursor belongs to another continuation; reload history.",
+    "thread_history_cursor_invalid": "Transcript cursor is invalid or outside the selected history.",
+    "thread_history_page_invalid": "Transcript page is outside supported bounds.",
+    "task_page_invalid": "Task page is outside supported bounds.",
+    "thread_missing": "Thread does not exist.",
+    "request_invalid": "Request does not match the API schema.",
+    "authentication_required": "Instance authentication is required.",
+    "host_rejected": "Request Host is not an allowed listener address.",
+    "origin_rejected": "Cross-origin API access is not enabled.",
+    "app_not_ready": "The App is not ready.",
+    "app_stopping": "The App is stopping.",
+    "object_payload_incompatible": "Stored object is incompatible; inspect the object validation warning for its identity and fields.",
+}
+
+
+class ErrorResponse(JSONResponse):
+    """Carry a safe error identity to access logging without inspecting bodies."""
+
+    def __init__(self, *, code: str, message: str, status_code: int) -> None:
+        super().__init__(
+            {"error": {"code": code, "message": message}},
+            status_code=status_code,
+            headers={"Cache-Control": "no-store"},
+        )
+        self.error_code = code if re.fullmatch(r"[a-z][a-z0-9_]{0,95}", code) else "application_error"
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        scope["a13n.error_code"] = self.error_code
+        await super().__call__(scope, receive, send)
+
+
 class RequestLog:
     """Report API outcomes without logging keys, query values, bodies or native paths."""
 
@@ -111,7 +148,27 @@ class RequestLog:
                 log = logger.warning if status >= 400 else logger.info
                 if not path.startswith("/api/") and status < 400:
                     log = logger.debug
-                log("%s %s → %d (%.0f ms)", scope["method"], path, status, (monotonic() - started) * 1000)
+                fields: dict[str, str] = {}
+                if status >= 400:
+                    code = scope.get("a13n.error_code")
+                    if isinstance(code, str):
+                        fields["error_code"] = code
+                        fields["reason"] = _ERROR_REASONS.get(code, "Inspect the API error response for details.")
+                    # These are generated correlation identities, never arbitrary
+                    # route values such as native paths or resource names.
+                    params = scope.get("path_params", {})
+                    for name, prefix in (("thread_id", "thread"), ("receipt_id", "receipt"), ("run_id", "run")):
+                        value = params.get(name)
+                        if isinstance(value, str) and re.fullmatch(rf"{prefix}[-_][a-f0-9]{{32}}", value):
+                            fields[name] = value
+                log(
+                    "%s %s → %d (%.0f ms)",
+                    scope["method"],
+                    path,
+                    status,
+                    (monotonic() - started) * 1000,
+                    extra=fields,
+                )
             await send(message)
 
         await self.app(scope, receive, report)

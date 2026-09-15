@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from a13n_harness.memory_plugins import MemoryBackendCatalog
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.connectivity.selection_resolution import (
@@ -14,6 +15,7 @@ from a13n_service.iam import (
     authorize_agent,
     authorize_workspace,
 )
+from a13n_service.memory.resources import require_provider as require_memory_provider
 from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.models.service import ModelError
 from a13n_service.models.settings import effective_settings
@@ -55,10 +57,12 @@ class AgentInvocationFreezer:
         *,
         connectivity_resolver: ConnectivitySelectionResolver,
         web_provider_registry: WebProviderRegistry,
+        memory_backend_catalog: MemoryBackendCatalog,
     ) -> None:
         self._model_selector = model_selector
         self._connectivity_resolver = connectivity_resolver
         self._web_provider_registry = web_provider_registry
+        self._memory_backend_catalog = memory_backend_catalog
 
     async def freeze_in_transaction(
         self,
@@ -120,7 +124,25 @@ class AgentInvocationFreezer:
                 )
             except ModelError as error:
                 raise map_model_error(error) from error
-            original_web = web_selection(AgentConfig.model_validate(revision_record.config).toolsets)
+            authored = AgentConfig.model_validate(revision_record.config)
+            memory = prepared.merged.memory
+            if memory is not None:
+                if authored.memory is None or authored.memory.provider_id != memory.provider_id:
+                    await authorize_workspace(
+                        session,
+                        actor=prepared.actor,
+                        workspace_id=prepared.workspace_id,
+                        action=WorkspaceAction.memory_provider_read,
+                    )
+                await require_memory_provider(
+                    session,
+                    organization_id=prepared.organization_id,
+                    workspace_id=prepared.workspace_id,
+                    provider_id=memory.provider_id,
+                    eligible=True,
+                    catalog=self._memory_backend_catalog,
+                )
+            original_web = web_selection(authored.toolsets)
             original_by_operation = dict(provider_selections(original_web))
             for operation, selection in provider_selections(web_selection(prepared.merged.toolsets)):
                 provider = await require_web_provider(

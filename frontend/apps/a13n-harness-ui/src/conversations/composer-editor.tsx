@@ -148,8 +148,8 @@ export function ComposerEditor({
           },
           ".cm-content": {
             fontFamily: "inherit",
-            minHeight: "44px",
-            padding: "20px 0 4px",
+            minHeight: "76px",
+            padding: "20px 2px 8px",
             lineHeight: "1.6",
           },
           ".cm-scroller": {

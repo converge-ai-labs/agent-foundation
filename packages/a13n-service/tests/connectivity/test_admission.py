@@ -170,8 +170,8 @@ async def test_retention_never_expires_pending_payload(ingress_event_service, co
         assert await session.scalar(select(func.count()).select_from(IngressAdmissionRecord)) == 0
 
 
-async def test_postgresql_duplicate_and_claim_ordering(postgres_connectivity_sessions):
-    sessions = postgres_connectivity_sessions
+async def test_postgresql_duplicate_and_claim_ordering(connectivity_sessions):
+    sessions = connectivity_sessions
     service = _event_service(sessions, SecretProtector(key=b"k" * 32, encryption_key_id="connectivity-test"))
     responses = await gather(*(service.receive(account_id=ACCOUNT_ID, request=_request("one")) for _ in range(2)))
     assert sorted(json.loads(r.body)["duplicate"] for r in responses) == [False, True]
@@ -193,8 +193,8 @@ async def test_postgresql_duplicate_and_claim_ordering(postgres_connectivity_ses
         assert await session.scalar(select(func.count()).select_from(IngressAdmissionRecord)) == 2
 
 
-async def test_postgresql_append_claim_race_preserves_every_event(postgres_connectivity_sessions):
-    sessions = postgres_connectivity_sessions
+async def test_postgresql_append_claim_race_preserves_every_event(connectivity_sessions):
+    sessions = connectivity_sessions
     service = _event_service(sessions, SecretProtector(key=b"k" * 32, encryption_key_id="connectivity-test"))
     await service.receive(account_id=ACCOUNT_ID, request=_request("first"))
     worker = reconciler(sessions, RetryAcceptor())
@@ -213,8 +213,8 @@ async def test_postgresql_append_claim_race_preserves_every_event(postgres_conne
             assert sum(event.batch_id == batch.id for event in events) == batch.event_count
 
 
-async def test_postgresql_concurrent_capacity_never_acknowledges_overflow(postgres_connectivity_sessions):
-    sessions = postgres_connectivity_sessions
+async def test_postgresql_concurrent_capacity_never_acknowledges_overflow(connectivity_sessions):
+    sessions = connectivity_sessions
     service = _event_service(
         sessions, SecretProtector(key=b"k" * 32, encryption_key_id="connectivity-test"), pending_max_count=1
     )

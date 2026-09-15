@@ -21,7 +21,7 @@ The server owns one process-local `HarnessUiApp`. The browser calls its public c
 
 The default work path is to enter a Project and continue a conversation, not to navigate through an administrative dashboard. Execution detail is inspectable without making raw logs the primary conversation view. Panel arrangement does not change command ownership.
 
-A browser-visible conversation is an existing root Thread, not a new Session identity. Child Threads remain subordinate execution/inspection context. Projectless Threads retain their existing semantics and are not assigned fabricated roots merely for navigation.
+A saved browser conversation is an existing root Thread, not a new Session identity. The [blank entry page](04-workbench-interaction.md#entry-and-navigation) holds local input before first Send and does not fabricate persisted Thread state. Child Threads remain subordinate execution/inspection context. Projectless Threads retain their existing semantics and are not assigned fabricated roots merely for navigation.
 
 Different Threads can execute concurrently under App admission rules. Switching or closing a view does not cancel execution. Shared local paths can be modified by multiple Threads or people; Project grouping and multiple conversations do not imply worktree or filesystem isolation. The workbench shows the actual working location and does not create a worktree implicitly.
 

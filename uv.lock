@@ -1,5 +1,5 @@
 version = 1
-revision = 2
+revision = 3
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.14' and sys_platform == 'win32'",
@@ -264,7 +264,6 @@ dependencies = [
     { name = "ag-ui-protocol" },
     { name = "aiobotocore", extra = ["httpx2"] },
     { name = "aiosmtplib" },
-    { name = "aiosqlite" },
     { name = "alembic" },
     { name = "anthropic" },
     { name = "anyio" },
@@ -298,6 +297,7 @@ dependencies = [
     { name = "sqlalchemy", extra = ["asyncio"] },
     { name = "starlette" },
     { name = "uvicorn" },
+    { name = "zstandard" },
 ]
 
 [package.metadata]
@@ -310,7 +310,6 @@ requires-dist = [
     { name = "ag-ui-protocol", specifier = ">=0.1.18,<0.2" },
     { name = "aiobotocore", extras = ["httpx2"], specifier = ">=3.9,<4" },
     { name = "aiosmtplib", specifier = ">=5,<6" },
-    { name = "aiosqlite", specifier = ">=0.21,<1" },
     { name = "alembic", specifier = ">=1.17.1,<2" },
     { name = "anthropic", specifier = ">=1.3,<2" },
     { name = "anyio", specifier = ">=4,<5" },
@@ -344,6 +343,7 @@ requires-dist = [
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0.41,<3" },
     { name = "starlette", specifier = ">=0.52,<2" },
     { name = "uvicorn", specifier = ">=0.35,<1" },
+    { name = "zstandard", specifier = ">=0.25,<0.26" },
 ]
 
 [[package]]

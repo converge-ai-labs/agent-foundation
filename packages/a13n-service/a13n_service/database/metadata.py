@@ -38,6 +38,7 @@ def service_metadata() -> MetaData:
     from a13n_service.interactions import control_models as interaction_control_models
     from a13n_service.interactions import models as interaction_models
     from a13n_service.lifecycle import models as lifecycle_models
+    from a13n_service.memory import models as memory_models
     from a13n_service.models import models as model_models
     from a13n_service.object_retention import models as object_retention_models
     from a13n_service.secrets import models as secret_models
@@ -61,6 +62,7 @@ def service_metadata() -> MetaData:
         target_models,
         lifecycle_models,
         mcp_models,
+        memory_models,
         model_models,
         object_retention_models,
         web_models,

@@ -20,7 +20,7 @@ def upgrade() -> None:
     """Create the domain schema."""
     op.create_table(
         "lifecycle_events",
-        sa.Column("seq", sa.BigInteger().with_variant(sa.Integer(), "sqlite"), autoincrement=True, nullable=False),
+        sa.Column("seq", sa.BigInteger(), autoincrement=True, nullable=False),
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("organization_id", sa.String(length=72), nullable=False),
         sa.Column("entity_type", sa.String(length=32), nullable=False),
@@ -106,7 +106,6 @@ def upgrade() -> None:
         ["projection_state", "projection_next_attempt_at", "seq"],
         unique=False,
         postgresql_where=sa.text("projection_state IN ('pending', 'projecting', 'retry_wait')"),
-        sqlite_where=sa.text("projection_state IN ('pending', 'projecting', 'retry_wait')"),
     )
     op.create_index(
         "ix_lifecycle_events_resource",
@@ -131,7 +130,6 @@ def downgrade() -> None:
         "ix_lifecycle_events_projection_due",
         table_name="lifecycle_events",
         postgresql_where=sa.text("projection_state IN ('pending', 'projecting', 'retry_wait')"),
-        sqlite_where=sa.text("projection_state IN ('pending', 'projecting', 'retry_wait')"),
     )
     op.drop_index("ix_lifecycle_events_attempt", table_name="lifecycle_events")
     op.drop_table("lifecycle_events")
@@ -159,47 +157,31 @@ def _create_fact_immutability_trigger() -> None:
         "occurred_at",
         "created_at",
     )
-    if op.get_bind().dialect.name == "postgresql":
-        changed = " OR ".join(f"NEW.{column} IS DISTINCT FROM OLD.{column}" for column in fact_columns)
-        op.execute(
-            f"""
-            CREATE FUNCTION reject_lifecycle_fact_update()
-            RETURNS trigger
-            LANGUAGE plpgsql
-            AS $$
-            BEGIN
-                IF {changed} THEN
-                    RAISE EXCEPTION 'lifecycle fact columns are immutable';
-                END IF;
-                RETURN NEW;
-            END;
-            $$
-            """
-        )
-        op.execute(
-            """
-            CREATE TRIGGER reject_lifecycle_fact_update
-            BEFORE UPDATE ON lifecycle_events
-            FOR EACH ROW EXECUTE FUNCTION reject_lifecycle_fact_update()
-            """
-        )
-        return
-    changed = " OR ".join(f"OLD.{column} IS NOT NEW.{column}" for column in fact_columns)
+    changed = " OR ".join(f"NEW.{column} IS DISTINCT FROM OLD.{column}" for column in fact_columns)
     op.execute(
         f"""
+        CREATE FUNCTION reject_lifecycle_fact_update()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+            IF {changed} THEN
+                RAISE EXCEPTION 'lifecycle fact columns are immutable';
+            END IF;
+            RETURN NEW;
+        END;
+        $$
+        """
+    )
+    op.execute(
+        """
         CREATE TRIGGER reject_lifecycle_fact_update
         BEFORE UPDATE ON lifecycle_events
-        WHEN {changed}
-        BEGIN
-            SELECT RAISE(ABORT, 'lifecycle fact columns are immutable');
-        END
+        FOR EACH ROW EXECUTE FUNCTION reject_lifecycle_fact_update()
         """
     )
 
 
 def _drop_fact_immutability_trigger() -> None:
-    if op.get_bind().dialect.name == "postgresql":
-        op.execute("DROP TRIGGER reject_lifecycle_fact_update ON lifecycle_events")
-        op.execute("DROP FUNCTION reject_lifecycle_fact_update()")
-        return
-    op.execute("DROP TRIGGER reject_lifecycle_fact_update")
+    op.execute("DROP TRIGGER reject_lifecycle_fact_update ON lifecycle_events")
+    op.execute("DROP FUNCTION reject_lifecycle_fact_update()")

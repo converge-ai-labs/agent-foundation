@@ -39,7 +39,6 @@ class ConnectorProviderRecord(ResourceCredential[str | None], Base):
             "normalized_name",
             unique=True,
             postgresql_where=text("workspace_id IS NULL"),
-            sqlite_where=text("workspace_id IS NULL"),
         ),
         CheckConstraint(
             "ciphertext IS NOT NULL AND nonce IS NOT NULL AND encryption_key_id IS NOT NULL",
