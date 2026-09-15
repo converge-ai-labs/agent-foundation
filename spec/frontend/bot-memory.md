@@ -114,20 +114,22 @@ Deletion is complete only after source deletion and withdrawal of every derived 
 
 ![Configure continuing group sharing](assets/bot-memory/03-group-sharing.webp)
 
-Figure 3: Configure participants, content kinds, history, and future enrollment with an audience preview. The illustrated form is an unsaved selection; **Review confirmation** opens the final confirmation before applying a policy.
+Figure 3: Configure participants, content kinds, history, and future enrollment with an audience preview. The illustrated form is an unsaved example selection, not the initial defaults; **Review confirmation** opens the final confirmation before applying a policy.
 
 **Sharing settings** configures continuous read access to source records. Unlike selected publication, this policy grants access to qualifying source records in their owning groups. New records become available under the policy without per-record publication; existing records are never edited. Deletion and authorization changes affect availability, not historical text.
 
-| Setting        | Choices and meaning                                                                           |
-| -------------- | --------------------------------------------------------------------------------------------- |
-| Mode           | Independent groups with explicit publications only; or mutual sharing within a selected range |
-| Platform space | The Bot's Slack Workspace or Feishu enterprise, distinct from its a13n Workspace              |
-| Participants   | All eligible connected groups with an exact preview; or selected groups                       |
-| Content kinds  | Long-term knowledge, daily records, or both                                                   |
-| History        | Existing and future records; or only records newly saved after activation                     |
-| Future groups  | Explicit opt-in to auto-enroll newly connected, eligible groups; default is off               |
+| Setting        | Choices and meaning                                                                                                       |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| Mode           | Independent groups with explicit publications only; or mutual sharing within a selected range                             |
+| Platform space | The Bot's Slack Workspace or Feishu enterprise, distinct from its a13n Workspace                                          |
+| Participants   | Manually selected groups by default; or all currently eligible connected groups with an exact preview                     |
+| Content kinds  | Long-term knowledge by default; daily records or both may be selected                                                     |
+| History        | Only records newly saved after activation by default; include historical records through an explicit additional selection |
+| Future groups  | Explicit opt-in to auto-enroll newly connected, eligible groups; default is off                                           |
 
 “All groups” means those this Bot has connected and is authorized to access, not every Slack channel or enterprise group. Private channels are clearly marked in the preview. Direct conversations are excluded. Unknown or unsupported audience visibility cannot become eligible through this setting. Future enrollment follows the reviewed eligibility policy, records added audiences, and never bypasses initial-participant access checks.
+
+Selecting all currently eligible groups does not select historical records or enable future group enrollment. The include-history control starts unchecked, and newly connected groups remain outside the policy unless separately enrolled or covered by an explicitly enabled future-enrollment rule. These defaults initialize a new policy; opening an existing policy shows its saved settings without resetting them.
 
 Confirmation states the exact participants, kinds, history choice, and future enrollment behavior. Every participant can read qualifying records from the others; new records remain local and source ownership controls deletion. Removing a participant ends its reading and contribution through that policy, while local content remains stored.
 
@@ -239,7 +241,7 @@ Revocation or withdrawal prevents subsequent authorized retrieval through that g
 06. Unsupported pagination, missing metadata, and failed requests differ from a complete empty day. Search is never labeled exhaustive.
 07. Selected-record sharing previews exact text and recipients, exposes no private evidence implicitly, and sends no chat message.
 08. Saved memories and publications reject content/metadata updates through the UI, generic API paths, Bot tools, and automatic processing before backend mutation. Recipients cannot delete or reshare merely because they can read.
-09. Mutual sharing controls all eligible/selected groups, kinds, history, and future enrollment. Private channels are marked; direct conversations are excluded.
+09. A new mutual-sharing policy defaults to manually selected groups, long-term knowledge, newly saved records only, and no automatic future enrollment. Selecting all currently eligible groups does not implicitly include historical records or future groups. History requires an explicit additional selection. Confirmation lists the actual participants and effective range; reopening a saved policy preserves its settings. Private channels are marked; direct conversations are excluded.
 10. Future-only sharing uses immutable creation evidence. An authorized correction receives a new ID and does not overwrite its source or grant access to inaccessible evidence. Unsupported creation semantics block the feature rather than widen access.
 11. Removing a group ends mutual reading/contribution through that policy; other valid grants remain visible with their access reasons.
 12. Forged metadata, changed Account IDs, external user IDs, direct links, cached results, and source links cannot bypass authorization.
