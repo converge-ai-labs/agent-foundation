@@ -380,3 +380,38 @@ async def test_header_patch_can_replace_a_full_set_atomically(provider_service: 
         ),
     )
     assert set(updated.header_names) == {f"x-new-{i}" for i in range(32)}
+
+
+@pytest.mark.parametrize("header", ["x-session-id", "x-litellm-session-id", "X-Custom-Affinity"])
+def test_provider_affinity_is_optional_normalized_and_schema_has_presets(header):
+    from a13n_service.models.provider_adapters.types import ProviderConfiguration
+
+    registry = built_in_provider_registry()
+    parsed = registry.validate_provider("openai", {"session_affinity_header": header}, credential_configured=True)
+    assert parsed.configuration["session_affinity_header"] == header.lower()
+    assert (
+        "session_affinity_header"
+        not in registry.validate_provider("openai", {}, credential_configured=True).configuration
+    )
+    schema = ProviderConfiguration.model_json_schema()
+    assert "x-litellm-session-id" in json.dumps(schema)
+
+
+@pytest.mark.parametrize(
+    "configuration,headers",
+    [
+        ({"session_affinity_header": "x-title"}, ()),
+        ({"session_affinity_header": "authorization"}, ()),
+        ({"session_affinity_header": "x-custom", "auth_mode": "api_key_header", "api_key_header_name": "x-custom"}, ()),
+        ({"session_affinity_header": "x-custom"}, ("x-custom",)),
+        ({"session_affinity_header": "bad\r\nname"}, ()),
+    ],
+)
+def test_affinity_cannot_collide_with_static_auth_or_protocol_headers(configuration, headers):
+    with pytest.raises(ValueError):
+        built_in_provider_registry().validate_provider(
+            "openai",
+            configuration,
+            credential_configured=True,
+            header_names=headers,
+        )

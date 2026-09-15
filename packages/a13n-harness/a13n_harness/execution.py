@@ -680,6 +680,7 @@ class HarnessBuilder:
         configured_plugins_enabled: bool | None = None,
         gateway_provider_factory: GatewayModelProviderFactory | None = None,
         instrumentation: HarnessInstrumentation | Literal["environment"] | None = "environment",
+        session_affinity_header: str | None = None,
         x_session_id_enabled: bool | None = None,
         openai_prompt_cache_key_enabled: bool | None = None,
     ) -> None:
@@ -710,6 +711,7 @@ class HarnessBuilder:
         )
         self._observation = _compile_observation(resolved_instrumentation)
         self._model_request_patch_configuration = ModelRequestPatchConfiguration.from_environment(
+            session_affinity_header=session_affinity_header,
             x_session_id_enabled=x_session_id_enabled,
             openai_prompt_cache_key_enabled=openai_prompt_cache_key_enabled,
         )

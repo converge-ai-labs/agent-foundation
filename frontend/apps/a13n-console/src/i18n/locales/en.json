@@ -1831,5 +1831,19 @@
   "state.prepared": "Prepared",
   "Tool request": "Tool request",
   "Dispatched": "Dispatched",
-  "Delegation was dispatched. Child progress is tracked in its own thread.": "Delegation was dispatched. Child progress is tracked in its own thread."
+  "Delegation was dispatched. Child progress is tracked in its own thread.": "Delegation was dispatched. Child progress is tracked in its own thread.",
+  "Gateway session affinity": "Gateway session affinity",
+  "Disabled (default)": "Disabled (default)",
+  "Session affinity header": "Session affinity header",
+  "Choose a preset above or type a custom header name. The current Thread ID is supplied automatically as its value. Leave empty to disable.": "Choose a preset above or type a custom header name. The current Thread ID is supplied automatically as its value. Leave empty to disable.",
+  "Configure your gateway to route by this header. Sending it does not guarantee provider pinning; connection tests do not verify affinity.": "Configure your gateway to route by this header. Sending it does not guarantee provider pinning; connection tests do not verify affinity.",
+  "Inherited from the provider connection. The current Thread ID is supplied automatically; edit the provider to change the header.": "Inherited from the provider connection. The current Thread ID is supplied automatically; edit the provider to change the header.",
+  "LiteLLM": "LiteLLM",
+  "Conversation ID": "Conversation ID",
+  "Bifrost (API-key affinity)": "Bifrost (API-key affinity)",
+  "X-Session-ID (legacy / custom)": "X-Session-ID (legacy / custom)",
+  "Requires session affinity to be enabled on the gateway.": "Requires session affinity to be enabled on the gateway.",
+  "For gateways configured to route by this header; configure the routing rule first.": "For gateways configured to route by this header; configure the routing rule first.",
+  "API-key affinity only; does not guarantee weighted provider or target pinning.": "API-key affinity only; does not guarantee weighted provider or target pinning.",
+  "Use only when your gateway is configured to recognize this header.": "Use only when your gateway is configured to recognize this header."
 }

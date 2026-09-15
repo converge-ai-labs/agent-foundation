@@ -111,11 +111,10 @@ def _exercise_populated_upgrade(configuration: PostgreSQLConfig | SQLiteConfig) 
         migrator.upgrade()
         migrator.upgrade()  # Retrying startup must not change retained identities.
         current = MetaData()
-        current.reflect(engine, only=["connector_providers", "connections"])
+        current.reflect(engine, only=["connector_providers", "connector_shared_setup_claims", "connections"])
         with engine.connect() as connection:
             provider = connection.execute(select(current.tables["connector_providers"])).mappings().one()
             child = connection.execute(select(current.tables["connections"])).mappings().one()
-            assert provider["setup_claims_json"] == {}
             assert provider["directory_json"] is None
             assert provider["directory_updated_at"] is None
             assert provider["ciphertext"] == b"fixture"
@@ -124,9 +123,14 @@ def _exercise_populated_upgrade(configuration: PostgreSQLConfig | SQLiteConfig) 
             assert child["id"] == "connection_migration"
             if isinstance(configuration, SQLiteConfig):
                 assert connection.execute(text("PRAGMA foreign_key_check")).all() == []
-        columns = {column["name"]: column for column in inspect(engine).get_columns("connector_providers")}
-        assert columns["setup_claims_json"]["nullable"] is False
-        assert columns["setup_claims_json"]["default"] is not None
+        claims = current.tables["connector_shared_setup_claims"]
+        assert {column.name for column in claims.columns} == {
+            "id",
+            "provider_id",
+            "connector_key",
+            "configuration_key",
+            "credential_generation",
+        }
     finally:
         with engine.begin() as connection:
             for table in (connections, providers, workspaces, organizations):

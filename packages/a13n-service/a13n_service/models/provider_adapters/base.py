@@ -137,10 +137,12 @@ class ProviderIntegration:
         if self.credential_format is None and credential_configured:
             raise ValueError("the provider does not accept a credential")
         parsed = self.configuration_model.model_validate(dict(configuration))
-        validate_header_names(
-            header_names,
-            reserved=(*self.reserved_headers, *parsed.authentication_headers),
-        )
+        reserved = (*self.reserved_headers, *parsed.authentication_headers)
+        affinity_header = parsed.session_affinity_header
+        if affinity_header is not None:
+            validate_header_names((affinity_header,), reserved=reserved)
+            reserved = (*reserved, affinity_header)
+        validate_header_names(header_names, reserved=reserved)
         normalized = parsed.model_dump(mode="json", by_alias=True, exclude_none=False, exclude_defaults=True)
         if self.credential_validator is not None:
             self.credential_validator(normalized, credential_configured)

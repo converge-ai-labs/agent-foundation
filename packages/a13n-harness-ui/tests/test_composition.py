@@ -1320,3 +1320,46 @@ def test_shell_shortcut_rejects_unsupported_actions(field: str, value: str) -> N
 
     with pytest.raises(ValidationError):
         HarnessUiDocument.model_validate({"security": {"shell_review": {"enable": True, field: value}}})
+
+
+@pytest.mark.parametrize("header", ["x-session-id", "X-SESSION-ID"])
+async def test_auxiliary_review_settings_cannot_override_managed_affinity(tmp_path: Path, header: str) -> None:
+    from a13n_harness_ui.configuration.models import CapabilitySelection
+
+    source = await load_harness_ui_configuration(_write_source(tmp_path))
+    agent = source.agents["agent-assistant"]
+    model = source.models["model-primary"]
+    source = source.model_copy(
+        update={
+            "models": {
+                **source.models,
+                model.id: model.model_copy(
+                    update={
+                        "model_configuration": {"session_affinity_header": "x-session-id"},
+                    }
+                ),
+            },
+            "agents": {
+                **source.agents,
+                agent.id: agent.model_copy(
+                    update={
+                        "capabilities": (
+                            CapabilitySelection(
+                                capability="ToolPermissionsCapability",
+                                configuration={
+                                    "review": {
+                                        "model": model.id,
+                                        "model_settings": {"extra_headers": {header: "fixed-review-thread"}},
+                                    },
+                                },
+                            ),
+                        ),
+                    }
+                ),
+            },
+        }
+    )
+    resolver = AgentCompositionResolver(_catalog())
+    with pytest.raises(CompositionError) as error:
+        resolver.resolve_run(source, _selection())
+    assert error.value.code == "model_configuration_unsupported"

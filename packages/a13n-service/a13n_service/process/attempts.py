@@ -199,6 +199,7 @@ class WorkerAttempts:
             driver = HarnessDriver(
                 HarnessBuilder(
                     configured_plugins_enabled=False,
+                    x_session_id_enabled=False,  # Live Provider configuration owns gateway affinity.
                     instrumentation=None
                     if self._observability is None
                     else self._observability.harness_instrumentation,

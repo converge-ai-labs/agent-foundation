@@ -90,7 +90,16 @@ def test_preset_settings_are_fresh_editable_values() -> None:
 
 def test_backtracking_replaces_the_whole_preset_and_context_does_not_scale_output() -> None:
     wizard = SetupWizard(add_model=True)
-    for answer in ("api", "openai-responses", "https://example.invalid/v1", "env:TEST_KEY", "gpt-5.4", "high", "128k"):
+    for answer in (
+        "api",
+        "openai-responses",
+        "https://example.invalid/v1",
+        "off",
+        "env:TEST_KEY",
+        "gpt-5.4",
+        "high",
+        "128k",
+    ):
         wizard.accept(answer)
     assert wizard.question.key == "name"
     assert "Output limit: 65,536 tokens" in wizard.notice()

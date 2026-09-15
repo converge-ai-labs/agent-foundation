@@ -14,7 +14,25 @@ const advancedFields = new Set([
   "auth_mode",
   "api_key_header_name",
   "mantle_base_url",
+  "session_affinity_header",
 ]);
+
+type AffinityPreset = { label: string; header: string; description: string };
+
+function affinityPresets(property: unknown): AffinityPreset[] {
+  if (!property || typeof property !== "object") return [];
+  const field = property as Record<string, unknown>;
+  const presets = field["x-session-affinity-presets"];
+  if (Array.isArray(presets))
+    return presets.filter(
+      (p): p is AffinityPreset =>
+        !!p &&
+        typeof p.label === "string" &&
+        typeof p.header === "string" &&
+        typeof p.description === "string",
+    );
+  return Array.isArray(field.anyOf) ? field.anyOf.flatMap(affinityPresets) : [];
+}
 
 export function ordinaryConfigurationSchema(schema: Record<string, unknown>) {
   const properties = (schema.properties ?? {}) as Record<string, unknown>;
@@ -67,7 +85,11 @@ export function ProviderConnection({
     onChange(next);
   }
   const properties = (schema.properties ?? {}) as Record<string, unknown>;
+  const presets = affinityPresets(properties.session_affinity_header);
+  const affinityHeader = String(configuration.session_affinity_header ?? "");
+  const selectedPreset = presets.find((p) => p.header === affinityHeader);
   const configured =
+    !!affinityHeader ||
     !!configuration.base_url ||
     !!configuration.mantle_base_url ||
     headers.length > 0 ||
@@ -159,6 +181,59 @@ export function ProviderConnection({
               />
             </FormField>
           )}
+        </>
+      )}
+      {!!properties.session_affinity_header && (
+        <>
+          <ChoiceField
+            label={t("Gateway session affinity")}
+            value={
+              selectedPreset
+                ? affinityHeader
+                : affinityHeader
+                  ? "custom"
+                  : "off"
+            }
+            description={
+              selectedPreset ? t(selectedPreset.description) : undefined
+            }
+            onValueChange={(value) => {
+              if (value !== "custom")
+                change("session_affinity_header", value === "off" ? "" : value);
+            }}
+            options={[
+              { value: "off", label: t("Disabled (default)") },
+              ...presets.map((p) => ({
+                value: p.header,
+                label: `${t(p.label)} · ${p.header}`,
+              })),
+              ...(affinityHeader && !selectedPreset
+                ? [{ value: "custom", label: t("Custom header") }]
+                : []),
+            ]}
+          />
+          <FormField
+            label={t("Session affinity header")}
+            description={t(
+              "Choose a preset above or type a custom header name. The current Thread ID is supplied automatically as its value. Leave empty to disable.",
+            )}
+          >
+            <Input
+              name="session_affinity_header"
+              autoComplete="off"
+              maxLength={128}
+              placeholder="x-conversation-id"
+              value={affinityHeader}
+              onChange={(event) =>
+                change("session_affinity_header", event.target.value)
+              }
+            />
+          </FormField>
+          <p>
+            {t(
+              "Configure your gateway to route by this header. Sending it does not guarantee provider pinning; connection tests do not verify affinity.",
+            )}
+          </p>
         </>
       )}
       <ProviderHeaders rows={headers} onChange={onHeadersChange} />

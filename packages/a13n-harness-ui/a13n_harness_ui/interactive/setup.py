@@ -60,6 +60,13 @@ _QUESTIONS = (
     ),
     Question("base_url", "Base URL (HTTP or HTTPS; no credentials in the URL)", ""),
     Question(
+        "session_affinity_header",
+        "Gateway session affinity header (optional). The current Thread ID is supplied automatically.\n"
+        "Choose a preset or enter a custom header name; your gateway must be configured to use it.",
+        "off",
+        allow_custom=True,
+    ),
+    Question(
         "credential",
         "API key (hidden), or env:VARIABLE / key:credential-id.\n"
         "Entering a new key saves it immediately in the local key store, even if setup is later cancelled.",
@@ -165,6 +172,10 @@ class SetupWizard:
             return None
         question = _QUESTIONS[self.index]
         default = self.values.get(question.key, question.default)
+        if question.key == "session_affinity_header":
+            from a13n_harness.model_affinity import SESSION_AFFINITY_PRESETS
+
+            return replace(question, default=default, choices=("off", *(p.header for p in SESSION_AFFINITY_PRESETS)))
         if question.key == "tools":
             route, authentication, base_url = self.tool_connection()
             options = tool_choices(route, authentication=authentication, base_url=base_url)
@@ -371,6 +382,18 @@ class SetupWizard:
                 ),
                 cursor=question.choices.index(question.default),
             )
+        if question.key == "session_affinity_header":
+            from a13n_harness.model_affinity import SESSION_AFFINITY_PRESETS
+
+            choices = (
+                Choice("off", "Disabled", "Do not send a gateway affinity header"),
+                *(Choice(p.header, f"{p.label} · {p.header}", p.description) for p in SESSION_AFFINITY_PRESETS),
+            )
+            if question.default not in question.choices:
+                choices = (*choices, Choice(question.default, question.default, "Custom gateway header"))
+            return Selection(
+                choices, cursor=next(i for i, choice in enumerate(choices) if choice.value == question.default)
+            )
         if question.key == "api_provider":
             return Selection(
                 tuple(
@@ -475,6 +498,10 @@ class SetupWizard:
             raise ValueError("Choose a name between 1 and 128 characters.")
         if question.key in {"base_url", "mcp_url"}:
             validate_base_url(selected)
+        if question.key == "session_affinity_header" and selected != "off":
+            from a13n_harness.model_affinity import validate_session_affinity_header
+
+            selected = validate_session_affinity_header(selected)
         if question.key == "file_stores":
             stores = [part.strip() for part in selected.split(",")]
             if not all(stores) or any(any(char.isspace() for char in store) for store in stores):
@@ -546,6 +573,7 @@ class SetupWizard:
             "provider",
             "api_provider",
             "base_url",
+            "session_affinity_header",
             "credential",
             "model",
             "preset",
@@ -571,9 +599,14 @@ class SetupWizard:
             return bool(tool_choices(route, authentication=authentication, base_url=base_url))
         if key == "base_url" and self.values.get("api_provider") == "xai":
             return False
+        if (
+            key == "session_affinity_header"
+            and not API_PROVIDER_BY_ROUTE[self.values.get("api_provider", "openai-responses")].supports_session_affinity
+        ):
+            return False
         if key == "fast" and provider != "codex":
             return False
-        if key in {"api_provider", "base_url", "credential", "preset"} and provider != "api":
+        if key in {"api_provider", "base_url", "session_affinity_header", "credential", "preset"} and provider != "api":
             return False
         if (key == "context" and provider not in {"codex", "api"}) or (key == "thinking" and provider != "codex"):
             return False
@@ -647,7 +680,14 @@ class SetupWizard:
             result["api_key_model"] = {
                 "route": f"{self.values['api_provider']}:{self.values['model']}",
                 "authentication": {"kind": "api_key", "env" if kind == "env" else "credential_ref": name},
-                "model_configuration": {"base_url": self.values["base_url"]} if "base_url" in self.values else {},
+                "model_configuration": {
+                    **({"base_url": self.values["base_url"]} if "base_url" in self.values else {}),
+                    **(
+                        {"session_affinity_header": self.values["session_affinity_header"]}
+                        if self.values.get("session_affinity_header", "off") != "off"
+                        else {}
+                    ),
+                },
                 "model_characteristics": {
                     "context_window": int(self.values["context"]),
                     "proactive_context_management_threshold": 0.65,

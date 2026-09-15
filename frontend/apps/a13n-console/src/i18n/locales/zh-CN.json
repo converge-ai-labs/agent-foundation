@@ -1831,5 +1831,19 @@
   "state.prepared": "已准备",
   "Tool request": "请求调用工具",
   "Dispatched": "已派发",
-  "Delegation was dispatched. Child progress is tracked in its own thread.": "委派已发出。子 Agent 的进度在它自己的线程中单独记录。"
+  "Delegation was dispatched. Child progress is tracked in its own thread.": "委派已发出。子 Agent 的进度在它自己的线程中单独记录。",
+  "Gateway session affinity": "网关会话黏性",
+  "Disabled (default)": "默认关闭",
+  "Session affinity header": "会话黏性请求头",
+  "Choose a preset above or type a custom header name. The current Thread ID is supplied automatically as its value. Leave empty to disable.": "选择上方预设或输入自定义请求头名称。请求头值自动使用当前 Thread ID，留空即关闭。",
+  "Configure your gateway to route by this header. Sending it does not guarantee provider pinning; connection tests do not verify affinity.": "请先配置网关按此请求头路由。发送请求头不保证固定提供方；连接测试不会验证会话黏性。",
+  "Inherited from the provider connection. The current Thread ID is supplied automatically; edit the provider to change the header.": "继承自提供方连接，自动使用当前 Thread ID。请编辑提供方以更换请求头。",
+  "LiteLLM": "LiteLLM",
+  "Conversation ID": "Conversation ID",
+  "Bifrost (API-key affinity)": "Bifrost（API Key 黏性）",
+  "X-Session-ID (legacy / custom)": "X-Session-ID（旧版 / 自定义）",
+  "Requires session affinity to be enabled on the gateway.": "需要先在网关启用会话黏性。",
+  "For gateways configured to route by this header; configure the routing rule first.": "适用于按此请求头路由的网关；请先配置路由规则。",
+  "API-key affinity only; does not guarantee weighted provider or target pinning.": "仅提供 API Key 黏性，不保证固定加权提供方或目标。",
+  "Use only when your gateway is configured to recognize this header.": "仅在网关已配置为识别此请求头时使用。"
 }

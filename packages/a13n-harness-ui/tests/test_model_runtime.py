@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Any
+from unittest.mock import Mock
 
 import pytest
 from a13n_harness import AgentContext
@@ -20,7 +21,7 @@ from pydantic_ai.providers.openai_codex import OpenAICodexCredentials
 pytestmark = pytest.mark.anyio
 
 _NOW = datetime(2026, 9, 2, 10, 0, tzinfo=UTC)
-_CONTEXT = cast(ModelResolutionContext[AgentContext], None)
+_CONTEXT = ModelResolutionContext(agent=Mock(), deps=Mock(spec=AgentContext, thread_id="thread-current"))
 
 
 class _CodexSource:
@@ -128,3 +129,53 @@ async def test_fresh_resolver_keeps_sources_without_touching_credentials(monkeyp
     resolved = await resolver.fresh()(_CONTEXT, recipe.model_id)
 
     assert resolved is expected
+
+
+@pytest.mark.parametrize("header", [None, "x-session-id", "x-custom-affinity"])
+async def test_api_recipe_affinity_uses_current_resolution_thread_and_immutable_recipe(header, monkeypatch):
+    from a13n_harness.models.inference import RequestHeadersModel
+    from a13n_harness_ui.configuration import ApiKeyAuthentication
+    from a13n_harness_ui.model_runtime import model_recipe_id
+    from pydantic_ai.models.test import TestModel
+
+    recipe = ResolvedModelRecipe(
+        model_id="primary",
+        route="openai-chat:example-model",
+        authentication=ApiKeyAuthentication(kind="api_key", env="TEST_KEY"),
+        model_configuration={"session_affinity_header": header},
+    )
+    original_id = model_recipe_id(recipe)
+    resolver = HarnessUiModelResolver({"primary": recipe})
+    recipe.model_configuration["session_affinity_header"] = "x-later-edit"
+    assert model_recipe_id(recipe) != original_id
+
+    async def build(*args):
+        return TestModel()
+
+    monkeypatch.setattr(HarnessUiModelResolver, "_api_key_model", build)
+    for thread_id in ("thread-root", "thread-child", "thread-fork", "thread-root"):
+        context = ModelResolutionContext(agent=Mock(), deps=Mock(spec=AgentContext, thread_id=thread_id))
+        model = await resolver.fresh()(context, "primary")
+        if header:
+            assert isinstance(model, RequestHeadersModel)
+            assert model.common_headers == {header: thread_id}
+        else:
+            assert isinstance(model, TestModel)
+
+
+@pytest.mark.parametrize("header", ["x-litellm-session-id", "X-Custom"])
+def test_adapter_accepts_presets_and_custom_headers_but_rejects_static_values(header):
+    from a13n_harness_ui.errors import CompositionError
+    from a13n_harness_ui.model_adapters import PydanticAiModelAdapter
+
+    adapter = PydanticAiModelAdapter()
+    validated = adapter.validate(route="openai-chat:test", settings={}, model_cfg={"session_affinity_header": header})
+    assert validated.model_cfg == {"session_affinity_header": header.lower()}
+    with pytest.raises(CompositionError):
+        adapter.validate(
+            route="openai-chat:test",
+            settings={"extra_headers": {header.upper(): "fixed"}},
+            model_cfg=validated.model_cfg,
+        )
+    with pytest.raises(CompositionError):
+        adapter.validate(route="xai:test", settings={}, model_cfg=validated.model_cfg)

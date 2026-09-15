@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from importlib.metadata import PackageNotFoundError, version
 
+from a13n_harness.model_affinity import SessionAffinityHeader
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator
 
 from a13n_harness_ui.errors import CompositionError
@@ -57,6 +58,7 @@ class _ModelConfiguration(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", strict=True)
 
     base_url: str | None = Field(default=None, max_length=2048)
+    session_affinity_header: SessionAffinityHeader | None = None
 
     @field_validator("base_url")
     @classmethod
@@ -95,6 +97,19 @@ class PydanticAiModelAdapter:
                 provider == "xai" or provider not in {*API_PROVIDER_BY_ROUTE, "openai"}
             ):
                 raise ValueError("This route does not support an API-key base URL override")
+            if configuration.session_affinity_header is not None:
+                preset = API_PROVIDER_BY_ROUTE.get(provider)
+                if (preset is not None and not preset.supports_session_affinity) or provider in {
+                    "cohere",
+                    "grok-build",
+                    "openai-codex",
+                }:
+                    raise ValueError("This route does not support gateway session affinity")
+                headers = settings.get("extra_headers")
+                if isinstance(headers, dict) and any(
+                    name.lower() == configuration.session_affinity_header for name in headers
+                ):
+                    raise ValueError("The affinity header value is managed by the current Thread")
         except ValueError as exc:
             raise CompositionError(
                 "Model construction configuration is invalid or unsupported.",

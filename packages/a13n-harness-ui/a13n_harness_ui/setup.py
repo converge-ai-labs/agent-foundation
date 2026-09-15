@@ -13,6 +13,7 @@ from a13n_environment.local_envd import (
     LocalEnvdWorkspaceConfiguration,
     validate_local_envd_runtime,
 )
+from a13n_harness.model_affinity import SESSION_AFFINITY_PRESETS, SessionAffinityPreset
 from anyio import fail_after
 from pydantic import Field, JsonValue
 
@@ -50,12 +51,14 @@ class SetupApiProvider(StrictModel):
     label: str
     base_url: str
     models: tuple[str, ...]
+    supports_session_affinity: bool = True
 
 
 class SetupChoices(StrictModel):
     defaults: SetupSelection
     subscription_models: dict[str, tuple[SetupModelChoice, ...]]
     api_providers: tuple[SetupApiProvider, ...]
+    session_affinity_presets: tuple[SessionAffinityPreset, ...] = SESSION_AFFINITY_PRESETS
 
 
 def setup_choices() -> SetupChoices:
@@ -75,6 +78,7 @@ def setup_choices() -> SetupChoices:
                 label=provider.label,
                 base_url=provider.base_url,
                 models=API_MODEL_SUGGESTIONS[provider.route],
+                supports_session_affinity=provider.supports_session_affinity,
             )
             for provider in API_PROVIDERS
         ),
