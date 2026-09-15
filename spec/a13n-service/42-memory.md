@@ -59,6 +59,8 @@ Each accepted root and child definition retains its own complete selection, incl
 
 ## Management API
 
+`GET /api/v1/workspaces/{workspace}/memory-providers/{provider_id}/memory-access` accepts the same subject query as content operations. It requires current subject read access and returns `MemoryAccess { can_write: boolean }`, using the same Workspace, direct-Agent, or current-Thread-head authorization as content writes. It performs no backend I/O and grants no durable authority: each content operation authorizes again. This projection does not require Provider administration permission and is not a connectivity check.
+
 All content routes use `/api/v1/workspaces/{workspace}/memory-providers/{provider_id}/memories`. The Provider is explicit rather than inferred from current Agent configuration, so a caller can address an old Provider after changing the Agent selection. Query parameter `scope` is required. `thread` and `agent` require `subject_id`; `user` forbids it and uses the authenticated User. Resource identifiers are immutable Service IDs, not aliases. The path memory ID remains an opaque native provider identifier.
 
 | Method and suffix     | Input                                                     | Result                      |

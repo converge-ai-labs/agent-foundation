@@ -11,10 +11,10 @@ from a13n_service.iam.http.resource_dependencies import WorkspaceId
 from a13n_service.interactions.domain import ThreadId
 from a13n_service.request_runtime import get_process_runtime
 
-from .domain import Memory, MemoryCollection, MemoryScope, MemorySearch, MemoryWrite
+from .domain import Memory, MemoryAccess, MemoryCollection, MemoryScope, MemorySearch, MemoryWrite
 from .service import MemoryService, failure
 
-router = APIRouter(prefix="/api/v1/workspaces/{workspace}/memory-providers/{provider_id}/memories", tags=["memory"])
+router = APIRouter(prefix="/api/v1/workspaces/{workspace}/memory-providers/{provider_id}", tags=["memory"])
 Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]
 
 
@@ -40,7 +40,16 @@ def _memory(request: Request) -> MemoryService:
     return runtime.shared.memories
 
 
-@router.get("", response_model=MemoryCollection)
+@router.get("/memory-access", response_model=MemoryAccess)
+async def get_memory_access(
+    request: Request, actor: Actor, workspace_id: WorkspaceId, provider_id: str, scope: Scope
+) -> MemoryAccess:
+    return await _memory(request).access(
+        actor=actor, workspace_id=workspace_id, provider_id=provider_id, selection=scope
+    )
+
+
+@router.get("/memories", response_model=MemoryCollection)
 async def list_memories(
     request: Request,
     actor: Actor,
@@ -55,7 +64,7 @@ async def list_memories(
     )
 
 
-@router.post("/search", response_model=MemoryCollection)
+@router.post("/memories/search", response_model=MemoryCollection)
 async def search_memories(
     request: Request, actor: Actor, workspace_id: WorkspaceId, provider_id: str, scope: Scope, body: MemorySearch
 ) -> MemoryCollection:
@@ -64,7 +73,7 @@ async def search_memories(
     )
 
 
-@router.post("", response_model=Memory, status_code=201)
+@router.post("/memories", response_model=Memory, status_code=201)
 async def add_memory(
     request: Request, actor: Actor, workspace_id: WorkspaceId, provider_id: str, scope: Scope, body: MemoryWrite
 ) -> Memory:
@@ -73,7 +82,7 @@ async def add_memory(
     )
 
 
-@router.get("/{memory_id}", response_model=Memory)
+@router.get("/memories/{memory_id}", response_model=Memory)
 async def get_memory(
     request: Request, actor: Actor, workspace_id: WorkspaceId, provider_id: str, scope: Scope, memory_id: MemoryId
 ) -> Memory:
@@ -82,7 +91,7 @@ async def get_memory(
     )
 
 
-@router.put("/{memory_id}", response_model=Memory)
+@router.put("/memories/{memory_id}", response_model=Memory)
 async def update_memory(
     request: Request,
     actor: Actor,
@@ -102,7 +111,7 @@ async def update_memory(
     )
 
 
-@router.delete("/{memory_id}", status_code=204)
+@router.delete("/memories/{memory_id}", status_code=204)
 async def delete_memory(
     request: Request, actor: Actor, workspace_id: WorkspaceId, provider_id: str, scope: Scope, memory_id: MemoryId
 ) -> Response:

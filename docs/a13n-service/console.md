@@ -42,6 +42,22 @@ Provider management lives in Workspace or Organization settings under `section=p
 
 Organization settings live at `/organization/settings`; personal settings live at `/settings/profile`. Profile images, active sessions, password/email changes, and security activity belong to their identity settings, not Agent configuration.
 
+## Set up and manage memory
+
+1. Open Workspace settings → Providers → Memory. Organization administrators can instead create a shared Provider in Organization settings.
+2. Choose an installed backend type and fill its configuration and write-only credential fields. Saving does not test connectivity. Storage configuration cannot change after creation; create another Provider for another storage target.
+3. Open an Agent's Memory section, select the Provider, and choose the recall scope and behavior. Recall settings contain the result limit, optional similarity threshold, timeout, and required-recall option. Save the Agent revision to enable it. Off leaves stored records intact.
+4. Use **View agent memories**, **Thread memories** in a Session, or **Memories** in the Workspace sidebar. Contextual links open a new tab so unsaved Agent configuration and the conversation stay open.
+5. Select the Provider and scope, then choose **View memories**. **My memories** means your signed-in identity in this Workspace. An Agent uses its stable Agent ID; a Thread uses its stable Thread ID, even while you inspect an older Run. The loaded target remains identified while you adjust selectors.
+
+The list shows loaded records, 20 per local page. A bounded backend response is not a total count or proof that an empty collection is exhaustive. **Load more records** appears only when the backend provides a continuation cursor. Semantic search runs independently against the backend and displays ranked matches; it is not a filter of the loaded page.
+
+Open a record to inspect or edit it. Add and edit preserve text exactly, up to 8,000 characters. Delete requires confirmation. Read-only users can inspect but do not receive write controls. Provider administration does not grant content access; the Service checks the actual subject, including direct Agent grants and a Thread's current Run.
+
+If a write cannot be confirmed, do not submit it again blindly. The dialog keeps the draft and offers **Inspect current state**. For adds, it shows semantic matches; a missing match does not prove that the add failed. Explicit acknowledgement permits another attempt, which may still create a duplicate. Provider creation has a similar saved-collection reconciliation flow, without exposing or comparing credentials.
+
+Changing a Provider selection does not migrate old records. Select the old Provider on the Memories page to inspect them while it remains enabled and eligible. There is no automatic conversation extraction, bulk deletion, history, or memory export. See [long-term memory](memory.md) for backend setup and API semantics.
+
 ## Work with conversations
 
 A Session can contain Threads, and each Thread can contain multiple Runs. Use the selected Run's state and version to understand which action is currently valid:

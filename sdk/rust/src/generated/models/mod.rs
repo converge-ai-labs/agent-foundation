@@ -362,6 +362,8 @@ pub mod mcpo_auth_setup_request;
 pub use self::mcpo_auth_setup_request::McpoAuthSetupRequest;
 pub mod memory;
 pub use self::memory::Memory;
+pub mod memory_access;
+pub use self::memory_access::MemoryAccess;
 pub mod memory_collection;
 pub use self::memory_collection::MemoryCollection;
 pub mod memory_pagination;

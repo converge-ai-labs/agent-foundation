@@ -16,10 +16,10 @@ from a13n_harness.memory_plugins import MemoryBackendCatalog
 
 from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.collection_cursors import decode_collection_cursor, encode_collection_cursor
-from a13n_service.iam import AuthenticatedActor
+from a13n_service.iam import AuthenticatedActor, AuthorizationError
 from a13n_service.secrets.crypto import SecretProtector
 
-from .domain import Memory, MemoryCollection, MemoryPagination, MemoryScope, MemorySearch
+from .domain import Memory, MemoryAccess, MemoryCollection, MemoryPagination, MemoryScope, MemorySearch
 from .execution import open_memory_backend
 from .scopes import MemoryAuthorizer
 
@@ -72,6 +72,20 @@ class MemoryService:
         self.protector = protector
         self.authorizer = authorizer
         self.timeout = timeout
+
+    async def access(
+        self, *, actor: AuthenticatedActor, workspace_id: str, provider_id: str, selection: MemoryScope
+    ) -> MemoryAccess:
+        await self.authorizer.authorize(
+            actor=actor, workspace_id=workspace_id, provider_id=provider_id, selection=selection
+        )
+        try:
+            await self.authorizer.authorize(
+                actor=actor, workspace_id=workspace_id, provider_id=provider_id, selection=selection, write=True
+            )
+        except AuthorizationError:
+            return MemoryAccess(can_write=False)
+        return MemoryAccess(can_write=True)
 
     async def list(
         self,

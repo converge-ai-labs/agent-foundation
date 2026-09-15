@@ -2995,6 +2995,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/workspaces/{workspace}/memory-providers/{provider_id}/memory-access": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Memory Access */
+    get: operations["get_workspaces_workspace_memory_providers_provider_id_memory_access"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/workspaces/{workspace}/memory-providers/{provider_id}/references": {
     parameters: {
       query?: never;
@@ -6324,6 +6341,14 @@ export interface components {
       memory: string;
       /** Score */
       score?: number | null;
+    };
+    /**
+     * MemoryAccess
+     * @description Current subject permissions; each content operation authorizes again.
+     */
+    MemoryAccess: {
+      /** Can Write */
+      can_write: boolean;
     };
     /** MemoryCollection */
     MemoryCollection: {
@@ -20726,6 +20751,54 @@ export interface operations {
           [name: string]: unknown;
         };
         content?: never;
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_workspaces_workspace_memory_providers_provider_id_memory_access: {
+    parameters: {
+      query: {
+        scope: components["schemas"]["MemoryScope"];
+        subject_id?: string | null;
+      };
+      header?: never;
+      path: {
+        provider_id: string;
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryAccess"];
+        };
       };
       /** @description Invalid request. */
       400: {

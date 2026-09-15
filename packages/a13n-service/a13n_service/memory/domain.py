@@ -40,6 +40,13 @@ class MemoryScope(BaseModel):
         return self
 
 
+class MemoryAccess(BaseModel):
+    """Current subject permissions; each content operation authorizes again."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    can_write: bool
+
+
 class MemoryWrite(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     text: MemoryText

@@ -13,6 +13,7 @@ import {
 } from "react-router";
 
 import {
+  ArrowSquareOutIcon,
   CaretRightIcon,
   ChatIcon,
   PlusIcon,
@@ -34,6 +35,7 @@ import { SessionIdentity } from "./identity";
 import { useConversationNotifications } from "./notifications";
 import { OptionsComposer, RunOptions, useRunOptions } from "./options";
 import { ThreadQueue } from "./queue";
+import { memoriesPath } from "../memory/api";
 
 export function ConversationsPage() {
   const { sessionId } = useParams();
@@ -163,6 +165,24 @@ export function SessionLayout() {
         </div>
         <SessionIdentity />
         <div className={styles.sessionControls}>
+          {threadId &&
+            threads.data?.some(
+              (thread) =>
+                thread.id === threadId && thread.session_id === sessionId,
+            ) && (
+              <a
+                className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground hover:text-foreground"
+                href={memoriesPath(basePath, {
+                  scope: "thread",
+                  subject_id: threadId,
+                })}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {t("Thread memories")}
+                <ArrowSquareOutIcon size={14} aria-hidden="true" />
+              </a>
+            )}
           <Button
             ref={mapTrigger}
             variant={mapOpen ? "secondary" : "outline"}

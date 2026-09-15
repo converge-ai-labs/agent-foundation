@@ -1,5 +1,6 @@
 import {
   CubeIcon,
+  DatabaseIcon,
   MagnifyingGlassIcon,
   MonitorIcon,
   PlugIcon,
@@ -17,6 +18,12 @@ export const providerCategories = [
     label: "Search",
     icon: MagnifyingGlassIcon,
     description: "Connect search services for your agents' web tools.",
+  },
+  {
+    value: "memory",
+    label: "Memory",
+    icon: DatabaseIcon,
+    description: "Connect memory backends and manage their credentials.",
   },
   {
     value: "environments",

@@ -6,6 +6,7 @@ import { initialConfig } from "./configuration";
 import { AgentForm } from "./form";
 
 vi.mock("../web/selection", () => ({ AgentSearchSelection: () => null }));
+vi.mock("../memory/selection", () => ({ AgentMemorySelection: () => null }));
 vi.mock("./choices", () => ({
   useAgentChoices: () => ({
     isPending: false,

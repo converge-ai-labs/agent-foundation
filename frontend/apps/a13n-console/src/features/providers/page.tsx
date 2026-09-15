@@ -6,12 +6,14 @@ import { providerCategories, providerCategory } from "./categories";
 import { Empty } from "../../shared/feedback";
 import { Providers } from "../models/providers";
 import { WebProviders } from "../web/page";
+import { MemoryProviders } from "../memory/providers";
 import { EnvironmentProviders } from "../environments/providers";
 import { ConnectorProviders } from "../connectors/providers";
 
 const components = {
   models: Providers,
   search: WebProviders,
+  memory: MemoryProviders,
   environments: EnvironmentProviders,
   connectors: ConnectorProviders,
 };

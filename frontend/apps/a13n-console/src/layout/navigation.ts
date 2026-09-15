@@ -1,5 +1,6 @@
 import {
   type Icon,
+  DatabaseIcon,
   PulseIcon,
   HeartIcon,
   CubeIcon,
@@ -25,6 +26,7 @@ export const navigationGroups: {
     entries: [
       ["models", "Models", CubeIcon],
       ["skills", "Skills", PuzzlePieceIcon],
+      ["memories", "Memories", DatabaseIcon],
       [
         "environments",
         "Environments",

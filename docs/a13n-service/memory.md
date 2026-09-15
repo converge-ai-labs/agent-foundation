@@ -4,6 +4,8 @@ Service provides tenant-scoped memory through reusable **Memory Providers**, wit
 
 Memory is optional: starting Service does not require a Mem0 server, credentials, or an Agent memory selection. Local `make dev` and `make setup` leave it disabled unless you manually enable `dev/mem0/local.toml`; `MEM0_CONFIG` selects an alternative local configuration. Native integration tests also require separate explicit opt-in. See the [local OSS walkthrough](https://github.com/converge-ai-labs/agent-foundation/tree/main/dev/mem0) for startup and configuration.
 
+Console provides schema-driven Memory Provider setup, an Agent Memory section, and scoped content management. See [Console memory workflow](console.md#set-up-and-manage-memory) for the browser steps. Provider management and content permissions are separate; the content page asks Service for the selected subject's current write permission rather than inferring it from Provider access.
+
 ## Create a Memory Provider
 
 For OSS, connect an existing native Mem0 server providing `GET /memories` with `top_k`, `POST /search`, and memory CRUD. No upstream patch, custom route, replacement image, or database access is required. The server separately owns its embedding/LLM configuration and storage. Service does not proxy model configuration or migrate embeddings.

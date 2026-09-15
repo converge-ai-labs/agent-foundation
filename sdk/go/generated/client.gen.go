@@ -4710,6 +4710,11 @@ type Memory struct {
 	Score  nullable.Nullable[float32] `json:"score,omitempty"`
 }
 
+// MemoryAccess Current subject permissions; each content operation authorizes again.
+type MemoryAccess struct {
+	CanWrite bool `json:"can_write"`
+}
+
 // MemoryCollection defines model for MemoryCollection.
 type MemoryCollection struct {
 	Items []Memory `json:"items"`
@@ -7449,6 +7454,12 @@ type GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryIdParams struc
 
 // PutWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryIdParams defines parameters for PutWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryId.
 type PutWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryIdParams struct {
+	Scope     MemoryScope `form:"scope" json:"scope"`
+	SubjectId *string     `form:"subject_id,omitempty" json:"subject_id,omitempty"`
+}
+
+// GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessParams defines parameters for GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccess.
+type GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessParams struct {
 	Scope     MemoryScope `form:"scope" json:"scope"`
 	SubjectId *string     `form:"subject_id,omitempty" json:"subject_id,omitempty"`
 }
@@ -14921,6 +14932,11 @@ type ClientInterface interface {
 	// Corresponds with PUT /api/v1/workspaces/{workspace}/memory-providers/{provider_id}/memories/{memory_id} (the `PutWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryId` operationId).
 	PutWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryId(ctx context.Context, workspace string, providerId string, memoryId string, params *PutWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryIdParams, body PutWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccess Get Memory Access
+	//
+	// Corresponds with GET /api/v1/workspaces/{workspace}/memory-providers/{provider_id}/memory-access (the `GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccess` operationId).
+	GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccess(ctx context.Context, workspace string, providerId string, params *GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetWorkspacesWorkspaceMemoryProvidersProviderIdReferences References Workspace Provider
 	//
 	// Corresponds with GET /api/v1/workspaces/{workspace}/memory-providers/{provider_id}/references (the `GetWorkspacesWorkspaceMemoryProvidersProviderIdReferences` operationId).
@@ -20805,6 +20821,21 @@ func (c *Client) PutWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryId
 // Corresponds with PUT /api/v1/workspaces/{workspace}/memory-providers/{provider_id}/memories/{memory_id} (the `PutWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryId` operationId).
 func (c *Client) PutWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryId(ctx context.Context, workspace string, providerId string, memoryId string, params *PutWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryIdParams, body PutWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPutWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryIdRequest(c.Server, workspace, providerId, memoryId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccess Get Memory Access
+//
+// Corresponds with GET /api/v1/workspaces/{workspace}/memory-providers/{provider_id}/memory-access (the `GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccess` operationId).
+func (c *Client) GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccess(ctx context.Context, workspace string, providerId string, params *GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessRequest(c.Server, workspace, providerId, params)
 	if err != nil {
 		return nil, err
 	}
@@ -34908,6 +34939,82 @@ func NewPutWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryIdRequestWi
 	return req, nil
 }
 
+// NewGetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessRequest constructs an http.Request for the GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccess method
+func NewGetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessRequest(server string, workspace string, providerId string, params *GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider_id", providerId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/memory-providers/%s/memory-access", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "scope", params.Scope, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if params.SubjectId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "subject_id", *params.SubjectId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewGetWorkspacesWorkspaceMemoryProvidersProviderIdReferencesRequest constructs an http.Request for the GetWorkspacesWorkspaceMemoryProvidersProviderIdReferences method
 func NewGetWorkspacesWorkspaceMemoryProvidersProviderIdReferencesRequest(server string, workspace string, providerId string, params *GetWorkspacesWorkspaceMemoryProvidersProviderIdReferencesParams) (*http.Request, error) {
 	var err error
@@ -40060,6 +40167,13 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with PUT /api/v1/workspaces/{workspace}/memory-providers/{provider_id}/memories/{memory_id} (the `PutWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryId` operationId).
 	PutWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryIdWithResponse(ctx context.Context, workspace string, providerId string, memoryId string, params *PutWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryIdParams, body PutWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PutWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryIdResponse, error)
+
+	// GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessWithResponse Get Memory Access
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/workspaces/{workspace}/memory-providers/{provider_id}/memory-access (the `GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccess` operationId).
+	GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessWithResponse(ctx context.Context, workspace string, providerId string, params *GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessParams, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessResponse, error)
 
 	// GetWorkspacesWorkspaceMemoryProvidersProviderIdReferencesWithResponse References Workspace Provider
 	//
@@ -58937,6 +59051,83 @@ func (r PutWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryIdResponse)
 	return ""
 }
 
+// GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessResponse200Headers the declared response headers of an HTTP 200 response for GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccess
+type GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessResponse400Headers the declared response headers of an HTTP 400 response for GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccess
+type GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessResponseDefaultHeaders the declared response headers of an HTTP default response for GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccess
+type GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MemoryAccess
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessResponse) GetJSON200() *MemoryAccess {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // GetWorkspacesWorkspaceMemoryProvidersProviderIdReferencesResponse200Headers the declared response headers of an HTTP 200 response for GetWorkspacesWorkspaceMemoryProvidersProviderIdReferences
 type GetWorkspacesWorkspaceMemoryProvidersProviderIdReferencesResponse200Headers struct {
 	XRequestID *string
@@ -66554,6 +66745,19 @@ func (c *ClientWithResponses) PutWorkspacesWorkspaceMemoryProvidersProviderIdMem
 		return nil, err
 	}
 	return ParsePutWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryIdResponse(rsp)
+}
+
+// GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessWithResponse Get Memory Access
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/workspaces/{workspace}/memory-providers/{provider_id}/memory-access (the `GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccess` operationId).
+func (c *ClientWithResponses) GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessWithResponse(ctx context.Context, workspace string, providerId string, params *GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessParams, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessResponse, error) {
+	rsp, err := c.GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccess(ctx, workspace, providerId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessResponse(rsp)
 }
 
 // GetWorkspacesWorkspaceMemoryProvidersProviderIdReferencesWithResponse References Workspace Provider
@@ -86551,6 +86755,86 @@ func ParsePutWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryIdRespons
 		response.Headers400 = &headers
 	case true:
 		var headers PutWorkspacesWorkspaceMemoryProvidersProviderIdMemoriesMemoryIdResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessResponse parses an HTTP response from a GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessWithResponse call
+func ParseGetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessResponse(rsp *http.Response) (*GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MemoryAccess
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetWorkspacesWorkspaceMemoryProvidersProviderIdMemoryAccessResponseDefaultHeaders
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {

@@ -18,6 +18,11 @@ import { Shell } from "./layout/shell";
 import { WorkspaceProvider } from "./layout/workspace";
 import { Empty, ErrorPage, Loading, Page } from "./shared/feedback";
 
+const MemoriesPage = lazy(() =>
+  import("./features/memory/page").then((module) => ({
+    default: module.MemoriesPage,
+  })),
+);
 const ModelsPage = lazy(() =>
   import("./features/models/page").then((module) => ({
     default: module.ModelsPage,
@@ -259,6 +264,7 @@ function AppContent() {
                         element={<SkillDetail />}
                       />
                       <Route path="models" element={<ModelsPage />} />
+                      <Route path="memories" element={<MemoriesPage />} />
                       <Route path="settings" element={<WorkspaceSettings />} />
                       <Route path="usage" element={<ComingSoon />} />
                       <Route path="schedules" element={<ComingSoon />} />
