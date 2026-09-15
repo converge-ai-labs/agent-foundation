@@ -293,9 +293,9 @@ async def test_inline_child_inherits_only_explicit_toolset_instruction_override(
 
 async def test_inline_children_receive_fresh_search_bindings_without_parent_inheritance() -> None:
     from a13n_harness.capabilities.web import (
+        WebBinding,
         WebCapability,
         WebConfiguration,
-        WebRunCapability,
         WebScrapeConfiguration,
         WebSearchConfiguration,
         WebSearchResponse,
@@ -315,11 +315,11 @@ async def test_inline_children_receive_fresh_search_bindings_without_parent_inhe
         async def request(self, request, *, policy):
             raise AssertionError("Only search is enabled")
 
-    def fresh():
+    def fresh(bindings):
         provider = Search()
-        attachment = WebRunCapability(client=provider, policy=provider, search_provider=provider)
+        attachment = WebBinding(client=provider, policy=provider, search_provider=provider)
         created.append(attachment)
-        return (attachment,)
+        return replace(bindings, web=attachment)
 
     configuration = WebConfiguration(
         search=WebSearchConfiguration(mode="host"),
@@ -360,17 +360,11 @@ async def test_inline_children_receive_fresh_search_bindings_without_parent_inhe
         model=FunctionModel(stream_function=parent_stream),
         capabilities=(_inline_subagents(), WebCapability(configuration)),
         subagents=(
-            SubagentDefinition(
-                name="researcher", description="Find evidence", agent=child, run_capability_factory=fresh
-            ),
+            SubagentDefinition(name="researcher", description="Find evidence", agent=child, run_bindings_factory=fresh),
         ),
     )
-    parent_binding = fresh()
-    result = (
-        await HarnessBuilder()
-        .build(parent)
-        .run("delegate", bindings=_bindings_factory(extra_capabilities=parent_binding))
-    )
+    parent_binding = fresh(_bindings_factory())
+    result = await HarnessBuilder().build(parent).run("delegate", bindings=parent_binding)
     assert result.output_or_raise() == "parent-done"
     assert len(created) == 3 and len({id(item) for item in created}) == 3
     assert dispatched == [created[1].search_provider, created[2].search_provider]
@@ -1238,3 +1232,51 @@ async def test_inline_delegation_uses_standard_result_policy() -> None:
 
     result = await executable.run("start", bindings=_bindings_factory())
     assert result.output_or_raise() == "done"
+
+
+@pytest.mark.parametrize("change", ["result_type", "instance", "environment", "policy", "shared_tasks"])
+async def test_inline_child_binding_factory_preserves_owned_boundaries(change: str) -> None:
+    from a13n_harness.capabilities import EmbeddedTaskStateCell, TaskStateBinding
+
+    child_calls = []
+    returns = []
+
+    async def child_model(messages, info):
+        child_calls.append(True)
+        yield "unexpected"
+
+    async def parent_model(messages, info):
+        received = _returns_after_latest_user(messages)
+        if not received:
+            yield {
+                0: DeltaToolCall(
+                    name="delegate", json_args='{"subagent":"reviewer","prompt":"work"}', tool_call_id="delegate-1"
+                )
+            }
+        else:
+            returns.extend(received)
+            yield "handled"
+
+    def factory(baseline):
+        assert baseline.web is None and baseline.media_reader is None
+        assert baseline.skill_selection is None and baseline.client_toolsets is None
+        assert baseline.task_state is None
+        if change == "result_type":
+            return ()
+        if change == "instance":
+            return replace(baseline, instance=_bindings_factory().instance)
+        if change == "environment":
+            return replace(baseline, environment=EmptyEnvironmentRuntime())
+        if change == "policy":
+            return replace(baseline, capabilities=())
+        return replace(baseline, task_state=TaskStateBinding(source="embedded_borrowed", cell=EmbeddedTaskStateCell()))
+
+    child = _child_definition(working_state=True).with_updates(model=FunctionModel(stream_function=child_model))
+    parent = _parent_definition(child, FunctionModel(stream_function=parent_model), working_state=True)
+    parent = parent.with_updates(subagents=(replace(parent.subagents[0], run_bindings_factory=factory),))
+    result = await HarnessBuilder().build(parent).run("start", bindings=_bindings_factory())
+
+    assert result.output_or_raise() == "handled"
+    assert not child_calls
+    assert len(returns) == 1 and returns[0].outcome == "failed"
+    assert returns[0].content == "Inline delegation failed before a complete child result."

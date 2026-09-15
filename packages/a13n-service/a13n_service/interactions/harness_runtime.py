@@ -33,6 +33,7 @@ from a13n_harness import (
     RunInputValue,
     RunModelResolver,
 )
+from a13n_harness.capabilities import WebBinding
 from a13n_harness.errors import RunError
 from a13n_harness.events import UsageReportPayload
 from a13n_harness.model_context import ModelContextMiddleware
@@ -128,6 +129,7 @@ class HarnessCollaborators:
     """Fresh typed collaborators supplied to one logical Harness Run."""
 
     instance: AgentInstanceContext
+    web: WebBinding | None = None
     model_resolver: RunModelResolver | None = None
     capabilities: tuple[AbstractCapability[AgentContext], ...] = ()
     metadata: Mapping[str, JsonValue] = field(default_factory=dict)
@@ -145,6 +147,7 @@ class HarnessCollaborators:
 
         return RunBindings(
             instance=self.instance,
+            web=self.web,
             model_resolver=self.model_resolver,
             capabilities=self.capabilities,
             metadata=self.metadata,

@@ -161,7 +161,7 @@ async def run_search(
         environment=EnvironmentMount(environment, access=EnvironmentAccess(access))
         if environment is not None
         else None,
-        bindings=RunBindings.embedded(capabilities=(binding,)),
+        bindings=RunBindings.embedded(web=binding),
     )
 
 

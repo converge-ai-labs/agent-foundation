@@ -648,8 +648,6 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
     )
     from a13n_harness.capabilities.documents import (
         DOCUMENTS_CAPABILITY_ID,
-        DOCUMENTS_RUN_CAPABILITY_ID,
-        DocumentsRunCapability,
         _DocumentsActiveCapability,
     )
     from a13n_harness.capabilities.interaction import (
@@ -662,8 +660,6 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
     )
     from a13n_harness.capabilities.media import (
         MEDIA_CAPABILITY_ID,
-        MEDIA_RUN_CAPABILITY_ID,
-        MediaRunCapability,
         _MediaActiveCapability,
     )
     from a13n_harness.capabilities.skills import (
@@ -680,14 +676,10 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
     from a13n_harness.capabilities.tool_proxy import TOOL_PROXY_CAPABILITY_ID, _ToolProxySurfaceCapability
     from a13n_harness.capabilities.web import (
         WEB_CAPABILITY_ID,
-        WEB_RUN_CAPABILITY_ID,
-        WebRunCapability,
         _WebActiveCapability,
     )
     from a13n_harness.capabilities.working_state import (
-        TASK_STATE_RUN_CAPABILITY_ID,
         WORKING_STATE_CAPABILITY_ID,
-        TaskStateRunCapability,
         WorkingStateCapability,
         _WorkingStateRunCapability,
     )
@@ -706,9 +698,7 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
     )
     from a13n_harness.tools.client import (
         CLIENT_TOOLS_CAPABILITY_ID,
-        CLIENT_TOOLS_RUN_CAPABILITY_ID,
         ClientToolsCapability,
-        ClientToolsRunCapability,
     )
     from a13n_harness.usage import USAGE_CAPABILITY_ID, _UsageActiveCapability
 
@@ -741,10 +731,6 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
         CLIENT_TOOLS_CAPABILITY_ID: (
             (ClientToolsCapability,),
             provenance.definition_ids,
-        ),
-        CLIENT_TOOLS_RUN_CAPABILITY_ID: (
-            (ClientToolsRunCapability,),
-            provenance.run_ids,
         ),
         TOOL_PROXY_CAPABILITY_ID: (
             (_ToolProxySurfaceCapability,),
@@ -787,33 +773,17 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
             (_MediaActiveCapability,),
             provenance.definition_ids,
         ),
-        MEDIA_RUN_CAPABILITY_ID: (
-            (MediaRunCapability,),
-            provenance.run_ids,
-        ),
         DOCUMENTS_CAPABILITY_ID: (
             (_DocumentsActiveCapability,),
             provenance.definition_ids,
-        ),
-        DOCUMENTS_RUN_CAPABILITY_ID: (
-            (DocumentsRunCapability,),
-            provenance.run_ids,
         ),
         WEB_CAPABILITY_ID: (
             (_WebActiveCapability,),
             provenance.definition_ids,
         ),
-        WEB_RUN_CAPABILITY_ID: (
-            (WebRunCapability,),
-            provenance.run_ids,
-        ),
         WORKING_STATE_CAPABILITY_ID: (
             (WorkingStateCapability, _WorkingStateRunCapability),
             provenance.definition_ids,
-        ),
-        TASK_STATE_RUN_CAPABILITY_ID: (
-            (TaskStateRunCapability,),
-            provenance.run_ids,
         ),
         SUBAGENT_CAPABILITY_ID: (
             (
@@ -891,50 +861,20 @@ def _validate_finalized_capability_provenance(ctx: RunContext[AgentContext]) -> 
                 },
             )
 
-    content_pairs = (
-        (
-            MEDIA_CAPABILITY_ID,
-            MEDIA_RUN_CAPABILITY_ID,
-            "media_owner_missing",
-            "media_binding_missing",
-            "Media",
-        ),
-        (
-            DOCUMENTS_CAPABILITY_ID,
-            DOCUMENTS_RUN_CAPABILITY_ID,
-            "documents_owner_missing",
-            "documents_binding_missing",
-            "Documents",
-        ),
-        (
-            WEB_CAPABILITY_ID,
-            WEB_RUN_CAPABILITY_ID,
-            "web_owner_missing",
-            "web_binding_missing",
-            "Web",
-        ),
-    )
-    for owner_id, attachment_id, owner_code, binding_code, label in content_pairs:
+    for owner_id, binding, prefix, label in (
+        (MEDIA_CAPABILITY_ID, ctx.deps.media_reader, "media", "Media"),
+        (DOCUMENTS_CAPABILITY_ID, ctx.deps.document_converter, "documents", "Documents"),
+        (WEB_CAPABILITY_ID, ctx.deps.web, "web", "Web"),
+    ):
         owner = ctx.capabilities.get(owner_id)
-        attachment = ctx.capabilities.get(attachment_id)
-        if attachment is not None and owner is None:
+        if binding is not None and owner is None:
+            raise DefinitionError(f"A {label} binding requires its definition owner.", code=f"{prefix}_owner_missing")
+        if owner is not None and binding is None:
             raise DefinitionError(
-                f"A {label} run attachment requires its definition owner.",
-                code=owner_code,
+                f"{label}Capability requires its RunBindings dependency.", code=f"{prefix}_binding_missing"
             )
-        if owner is not None and attachment is None:
-            raise DefinitionError(
-                f"{label}Capability requires one fresh run attachment.",
-                code=binding_code,
-            )
-
-    working_state_owner = ctx.capabilities.get(WORKING_STATE_CAPABILITY_ID)
-    task_state_attachment = ctx.capabilities.get(TASK_STATE_RUN_CAPABILITY_ID)
-    if task_state_attachment is not None and working_state_owner is None:
-        raise DefinitionError(
-            "A task-state run attachment requires its definition owner.",
-            code="task_state_owner_missing",
-        )
+    if ctx.deps.task_state is not None and ctx.capabilities.get(WORKING_STATE_CAPABILITY_ID) is None:
+        raise DefinitionError("A task-state binding requires its definition owner.", code="task_state_owner_missing")
 
 
 def _resolve_policy(ctx: RunContext[AgentContext]) -> InvocationPolicyCapability | None:
@@ -1503,9 +1443,7 @@ def _validate_final_toolset_wrapper_order(toolset: AbstractToolset[AgentContext]
 def _validate_client_run_attachment(ctx: RunContext[AgentContext]) -> None:
     from a13n_harness.tools.client import (
         CLIENT_TOOLS_CAPABILITY_ID,
-        CLIENT_TOOLS_RUN_CAPABILITY_ID,
         ClientToolsCapability,
-        ClientToolsRunCapability,
     )
 
     provenance = ctx.deps._capability_provenance
@@ -1521,20 +1459,9 @@ def _validate_client_run_attachment(ctx: RunContext[AgentContext]) -> None:
             code="capability_scope_invalid",
         )
 
-    attachment = ctx.capabilities.get(CLIENT_TOOLS_RUN_CAPABILITY_ID)
-    if attachment is not None and type(attachment) is not ClientToolsRunCapability:
+    if ctx.deps.client_toolsets is not None and owner is None:
         raise DefinitionError(
-            "The client-tools run Capability has an incompatible type.",
-            code="client_tools_run_type_mismatch",
-        )
-    if attachment is not None and CLIENT_TOOLS_RUN_CAPABILITY_ID not in provenance.run_ids:
-        raise DefinitionError(
-            "ClientToolsRunCapability must originate from RunBindings.",
-            code="capability_scope_invalid",
-        )
-    if attachment is not None and owner is None:
-        raise DefinitionError(
-            "A client-tools run attachment requires ClientToolsCapability in the Agent definition.",
+            "RunBindings.client_toolsets requires ClientToolsCapability in the Agent definition.",
             code="client_tools_owner_missing",
         )
 

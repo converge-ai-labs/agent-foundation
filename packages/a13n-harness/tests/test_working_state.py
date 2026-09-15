@@ -16,8 +16,8 @@ from a13n_harness.capabilities import (
     EmbeddedTaskStateCell,
     ProviderTaskCursor,
     TaskMutation,
+    TaskStateBinding,
     TaskStateError,
-    TaskStateRunCapability,
     WorkingState,
     WorkingStateCapability,
     WorkingStateConfiguration,
@@ -458,7 +458,7 @@ async def test_working_state_context_has_hard_utf8_budget() -> None:
     )
     result = await executable.run(
         "Continue",
-        bindings=RunBindings.embedded(capabilities=(TaskStateRunCapability(source="provider", cell=cell),)),
+        bindings=RunBindings.embedded(task_state=TaskStateBinding(source="provider", cell=cell)),
     )
 
     assert result.output_or_raise() == "done"
@@ -656,13 +656,11 @@ async def test_provider_mode_requires_fresh_binding_and_discards_mismatched_curs
     result = await executable.run(
         "Continue",
         bindings=RunBindings.embedded(
-            capabilities=(
-                TaskStateRunCapability(
-                    source="provider",
-                    cell=EmbeddedTaskStateCell(),
-                    provider_type="current-provider",
-                    state_version="2",
-                ),
+            task_state=TaskStateBinding(
+                source="provider",
+                cell=EmbeddedTaskStateCell(),
+                provider_type="current-provider",
+                state_version="2",
             )
         ),
         previous_state=previous,
@@ -698,9 +696,7 @@ async def test_task_attachment_without_working_state_owner_fails_closed() -> Non
     with pytest.raises(DefinitionError) as exc_info:
         await executable.run(
             "Continue",
-            bindings=RunBindings.embedded(
-                capabilities=(TaskStateRunCapability(source="provider", cell=EmbeddedTaskStateCell()),)
-            ),
+            bindings=RunBindings.embedded(task_state=TaskStateBinding(source="provider", cell=EmbeddedTaskStateCell())),
         )
     assert exc_info.value.code == "task_state_owner_missing"
 

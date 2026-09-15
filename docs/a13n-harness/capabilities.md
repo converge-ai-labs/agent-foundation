@@ -11,7 +11,7 @@ Capabilities can enter from four trusted sources:
 3. a Harness plugin's Agent-bound contribution;
 4. fresh `RunBindings.capabilities`.
 
-Use definition composition for stable Agent behavior. Use run composition for current policy, provider clients, selection, and other authority that must be reconstructed for every run.
+Use definition composition for stable Agent behavior. Use run Capability composition for current invocation policy or MCP. Supply provider clients and feature overrides through typed `RunBindings` fields, not a second feature Capability.
 
 ```mermaid
 flowchart LR
@@ -87,7 +87,7 @@ The two steps have different authority:
 1. `CapabilityTypeCatalog` makes an exact serialization name and Python type available to this builder. It performs no package discovery and enables no feature by itself.
 2. `AgentSpec.capabilities` selects and configures an instance for this Agent. A name absent from the native, first-party, and Host catalogs fails during construction.
 
-Use `HarnessBuilder.build(..., capabilities=(PolicyInstructionsCapability(...),))` instead when the definition already exists as trusted Python code. Use `RunBindings.capabilities` for fresh policy or provider collaborators that must be reconstructed for each run. A plugin may also contribute a Capability from its trusted `get_capabilities()` implementation after that plugin is explicitly enabled.
+Use `HarnessBuilder.build(..., capabilities=(PolicyInstructionsCapability(...),))` instead when the definition already exists as trusted Python code. Use `RunBindings.capabilities` for fresh policy or MCP Capabilities; provider collaborators belong in typed binding fields. A plugin may also contribute a Capability from its trusted `get_capabilities()` implementation after that plugin is explicitly enabled.
 
 Do not confuse `AgentSpec.capabilities`, which selects Agent-loop behavior, with `AgentSpec.model_characteristics.capabilities`, which records explicit image, video, and audio understanding characteristics of the active Model.
 
@@ -102,13 +102,13 @@ The [integration package example](https://github.com/converge-ai-labs/agent-foun
 | `FileContextCapability`        | Run-frozen `AGENTS.md` and explicit file contents                                           | Environment file facet                                         |
 | `DynamicEnvironmentCapability` | File and shell Toolset composition, current mount context, and mount-change notices         | Environment mount; managed calls also need current policy      |
 | `ToolPermissionsCapability`    | Stable-ID permissions and optional risk review, with shell input specialization             | Fresh invocation policy still authorizes every managed call    |
-| `SkillsCapability`             | Explicit Skill discovery, selection, instructions, and paths                                | Entered Environment and optional `SkillSelectionRunCapability` |
-| `WorkingStateCapability`       | Task and note tools plus model-context projection                                           | Optional `TaskStateRunCapability` in provider mode             |
+| `SkillsCapability`             | Explicit Skill discovery, selection, instructions, and paths                                | Entered Environment and optional `RunBindings.skill_selection` |
+| `WorkingStateCapability`       | Task and note tools plus model-context projection                                           | Optional `TaskStateBinding` in provider mode                   |
 | `Mem0Capability`               | One bounded automatic recall plus optional search, list, and explicit-add tools             | Host-owned native OSS or Platform backend                      |
 | `UserInteractionCapability`    | Structured user questions through native deferred tools                                     | Host handles suspension and resume                             |
-| `MediaCapability`              | Media-reading Toolset                                                                       | `MediaRunCapability`                                           |
-| `DocumentsCapability`          | Document-conversion Toolset                                                                 | `DocumentsRunCapability`                                       |
-| `WebCapability`                | Search, fetch, and scrape Toolset                                                           | `WebRunCapability` with current client and policy              |
+| `MediaCapability`              | Media-reading Toolset                                                                       | `RunBindings.media_reader`                                     |
+| `DocumentsCapability`          | Document-conversion Toolset                                                                 | `RunBindings.document_converter`                               |
+| `WebCapability`                | Search, fetch, and scrape Toolset                                                           | `WebBinding` with current client and policy                    |
 | `HandoffCapability`            | Explicit `summarize` tool and continuation reminder                                         | No                                                             |
 | `CompactionCapability`         | Provider-usage-triggered same-Agent plain-text compaction with retained user input replay   | No                                                             |
 | `SubagentCapability`           | Inline or asynchronous execution of exact declared children                                 | Definition-selected `SubagentOperator`                         |
@@ -117,7 +117,9 @@ The [integration package example](https://github.com/converge-ai-labs/agent-foun
 
 For large local tool collections, [ToolProxyCapability](tool-proxy.md) accepts a `groups` mapping of passive `ToolProxyGroup(source=..., description=...)` values. This single code-first entry provides grouped discovery with dynamic schemas and CodeAct compatibility, without replacing native execution. The [Host integration guide](tool-proxy.md#host-integration) covers source selection and plugin composition.
 
-Provider-backed run Capabilities contain live trusted collaborators. They are not definition state and never enter `HarnessState`.
+Each feature has one public Capability. Its internal active replacement stays private and is reused across ModelAttempts in the same logical Run, not across Runs. Host collaborators use `RunBindings.web`, `media_reader`, `document_converter`, `file_media_understanding`, `skill_selection`, `task_state`, and `client_toolsets`. `WebBinding` and `TaskStateBinding` are passive frozen values, not Capabilities. These fields do not enable a missing feature, and never enter `HarnessState`. The Host owns provider lifetime and may share a transport when its provider contract permits it.
+
+For inline children, `SubagentDefinition.run_bindings_factory` receives the child's baseline `RunBindings` and returns a replacement with that child's collaborators. It must preserve the child instance, borrowed Environment, and inherited invocation policy. Parent feature bindings are not inherited automatically; an explicit shared task-state policy supplies the borrowed cell and rejects a conflicting factory binding.
 
 ## Native Image Generation with Saving
 
@@ -223,7 +225,6 @@ These features separate stable model-facing schemas from fresh provider implemen
 from a13n_harness import RunBindings
 from a13n_harness.capabilities import (
     DocumentsCapability,
-    DocumentsRunCapability,
 )
 
 executable = HarnessBuilder().build(
@@ -234,7 +235,7 @@ executable = HarnessBuilder().build(
 )
 
 bindings = RunBindings.embedded(
-    capabilities=(DocumentsRunCapability(converter=document_converter),),
+    document_converter=document_converter,
 )
 ```
 
@@ -278,7 +279,7 @@ Bind multiple Host backends in default fallback order, and keep search and scrap
 from a13n_harness.capabilities import (
     WebCapability,
     WebConfiguration,
-    WebRunCapability,
+    WebBinding,
     WebScrapeBackendBinding,
     WebScrapeConfiguration,
     WebSearchBackendBinding,
@@ -299,21 +300,19 @@ web = WebCapability(
 )
 
 bindings = RunBindings.embedded(
-    capabilities=(
-        WebRunCapability(
-            client=web_client,
-            policy=web_policy,
-            search_backends=(
-                WebSearchBackendBinding("google", google_search),
-                WebSearchBackendBinding("brave", brave_search),
-                WebSearchBackendBinding("tavily", tavily_search),
-            ),
-            scrape_backends=(
-                WebScrapeBackendBinding("local", local_scraper),
-                WebScrapeBackendBinding("firecrawl", firecrawl_scraper),
-            ),
+    web=WebBinding(
+        client=web_client,
+        policy=web_policy,
+        search_backends=(
+            WebSearchBackendBinding("google", google_search),
+            WebSearchBackendBinding("brave", brave_search),
+            WebSearchBackendBinding("tavily", tavily_search),
         ),
-    )
+        scrape_backends=(
+            WebScrapeBackendBinding("local", local_scraper),
+            WebScrapeBackendBinding("firecrawl", firecrawl_scraper),
+        ),
+    ),
 )
 ```
 
@@ -335,7 +334,7 @@ When `WebCapability()` is constructed without an explicit configuration, these e
 | `A13N_HARNESS_WEB_SCRAPE_BACKEND`          | One exact bound backend ID         | unset         |
 | `A13N_HARNESS_WEB_SCRAPE_BACKEND_PRIORITY` | Comma-separated backend IDs        | binding order |
 
-An exact `*_BACKEND` value ignores the corresponding `*_BACKEND_PRIORITY` and disables fallback. Environment variables select only modes and backend IDs; provider objects and credentials still come from the fresh `WebRunCapability`. Passing `WebCapability(WebConfiguration(...))` is authoritative and does not merge environment defaults, which keeps loaded presets deterministic.
+An exact `*_BACKEND` value ignores the corresponding `*_BACKEND_PRIORITY` and disables fallback. Environment variables select only modes and backend IDs; provider objects and credentials still come from the fresh `WebBinding` in `RunBindings.web`. Passing `WebCapability(WebConfiguration(...))` is authoritative and does not merge environment defaults, which keeps loaded presets deterministic.
 
 ## Run-local Shell Observations
 

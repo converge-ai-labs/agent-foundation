@@ -344,34 +344,23 @@ class WorkingStateToolset:
     async def ensure_bound(self, ctx: RunContext[AgentContext]) -> None:
         from a13n_harness.capabilities.working_state import (
             _WORKING_STATE_VERSION,
-            TASK_STATE_RUN_CAPABILITY_ID,
             WORKING_STATE_CAPABILITY_ID,
             EmbeddedTaskStateCell,
             TaskState,
-            TaskStateRunCapability,
+            TaskStateBinding,
             _working_state_with,
         )
 
         self._require_context(ctx)
         if self._task_binding_resolved:
             return
-        attachment = ctx.capabilities.get(TASK_STATE_RUN_CAPABILITY_ID)
-        if attachment is not None and type(attachment) is not TaskStateRunCapability:
-            raise DefinitionError(
-                "Task-state run attachment has an incompatible type.",
-                code="task_state_type_mismatch",
-            )
-        if attachment is not None and TASK_STATE_RUN_CAPABILITY_ID not in self._context._capability_provenance.run_ids:
-            raise DefinitionError(
-                "Task-state attachment must originate from RunBindings.",
-                code="capability_scope_invalid",
-            )
+        attachment = ctx.deps.task_state
         if not self._configuration.tasks_enabled:
             self._task_binding_resolved = True
             return
 
         if self._configuration.task_mode == "embedded":
-            if type(attachment) is TaskStateRunCapability:
+            if isinstance(attachment, TaskStateBinding):
                 if attachment.source != "embedded_borrowed":
                     raise DefinitionError(
                         "Embedded task mode requires an embedded_borrowed attachment.",
@@ -404,9 +393,9 @@ class WorkingStateToolset:
                 "Provider task mode cannot restore an embedded task map.",
                 code="task_state_snapshot_conflict",
             )
-        if type(attachment) is not TaskStateRunCapability or attachment.source != "provider":
+        if not isinstance(attachment, TaskStateBinding) or attachment.source != "provider":
             raise DefinitionError(
-                "Provider task mode requires one fresh provider TaskStateRunCapability.",
+                "Provider task mode requires one fresh provider TaskStateBinding.",
                 code="task_state_binding_missing",
             )
         self._cell = attachment.cell

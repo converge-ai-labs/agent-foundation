@@ -95,22 +95,20 @@ from .virtual_files import VirtualFileOperator
 
 if TYPE_CHECKING:
     from .configuration import DynamicEnvironmentConfiguration
-    from .dynamic import DynamicEnvironmentCapability, FileMediaUnderstandingRunCapability
+    from .dynamic import DynamicEnvironmentCapability
 
 
 def __getattr__(name: str) -> Any:
     if name in {
         "DynamicEnvironmentCapability",
         "DynamicEnvironmentConfiguration",
-        "FileMediaUnderstandingRunCapability",
     }:
         from .configuration import DynamicEnvironmentConfiguration
-        from .dynamic import DynamicEnvironmentCapability, FileMediaUnderstandingRunCapability
+        from .dynamic import DynamicEnvironmentCapability
 
         return {
             "DynamicEnvironmentCapability": DynamicEnvironmentCapability,
             "DynamicEnvironmentConfiguration": DynamicEnvironmentConfiguration,
-            "FileMediaUnderstandingRunCapability": FileMediaUnderstandingRunCapability,
         }[name]
     raise AttributeError(name)
 
@@ -164,7 +162,6 @@ __all__ = [
     "FileCopyResult",
     "FileEntriesResult",
     "FileIgnoreMode",
-    "FileMediaUnderstandingRunCapability",
     "FileMetadata",
     "FileMutationResult",
     "FileOperator",

@@ -19,12 +19,12 @@ from a13n_harness.capabilities import (
     WEB_SEARCH_BACKEND_PRIORITY_ENV,
     WEB_SEARCH_CONTEXT_SIZE_ENV,
     WEB_SEARCH_MODE_ENV,
+    WebBinding,
     WebCapability,
     WebConfiguration,
     WebProviderError,
     WebRequest,
     WebResponse,
-    WebRunCapability,
     WebScrapeBackendBinding,
     WebScrapeConfiguration,
     WebScrapeRequest,
@@ -128,13 +128,11 @@ def _configuration(backend: str, *, search_context_size: str = "medium") -> WebC
 
 def _bindings(*, host_search: bool) -> RunBindings:
     return RunBindings.embedded(
-        capabilities=(
-            WebRunCapability(
-                client=_WebClient(),
-                policy=_WebPolicy(),
-                search_provider=_WebSearchProvider() if host_search else None,
-                scrape_provider=_WebScrapeProvider(),
-            ),
+        web=WebBinding(
+            client=_WebClient(),
+            policy=_WebPolicy(),
+            search_provider=_WebSearchProvider() if host_search else None,
+            scrape_provider=_WebScrapeProvider(),
         )
     )
 
@@ -337,7 +335,7 @@ def test_run_binding_accepts_many_backends_without_an_arbitrary_count_limit() ->
         for index in range(40)
     )
 
-    capability = WebRunCapability(
+    capability = WebBinding(
         client=_WebClient(),
         policy=_WebPolicy(),
         search_backends=backends,

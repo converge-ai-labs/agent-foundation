@@ -70,9 +70,7 @@ def _reserved_harness_capability_contract() -> tuple[
     )
     from a13n_harness.tools.client import (
         CLIENT_TOOLS_CAPABILITY_ID,
-        CLIENT_TOOLS_RUN_CAPABILITY_ID,
         ClientToolsCapability,
-        ClientToolsRunCapability,
     )
     from a13n_harness.tools.invocation import (
         TOOL_EXECUTION_BOUNDARY_CAPABILITY_ID,
@@ -93,7 +91,6 @@ def _reserved_harness_capability_contract() -> tuple[
         InvocationPolicyCapability,
         AbstractModelCostCapability,
         ClientToolsCapability,
-        ClientToolsRunCapability,
         CodeActCapability,
         ToolProxyCapability,
         _ToolProxySurfaceCapability,
@@ -111,7 +108,6 @@ def _reserved_harness_capability_contract() -> tuple[
             INVOCATION_POLICY_CAPABILITY_ID,
             MODEL_COST_CAPABILITY_ID,
             CLIENT_TOOLS_CAPABILITY_ID,
-            CLIENT_TOOLS_RUN_CAPABILITY_ID,
             CODEACT_CAPABILITY_ID,
             TOOL_PROXY_CAPABILITY_ID,
             DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
