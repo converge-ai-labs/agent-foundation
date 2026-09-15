@@ -6,7 +6,6 @@ import {
   FormField,
   Input,
   SearchPicker,
-  Skeleton,
   Menu,
   MenuTrigger,
   MenuPopup,
@@ -278,6 +277,15 @@ function ProjectGroup({
           <span>{group.name}</span>
         </button>
         <div className={styles.groupActions}>
+          {expanded && list.isFetching && !!list.data && (
+            <span
+              role="status"
+              className={styles.refreshingGroup}
+              aria-label={`Updating conversations in ${group.name}`}
+            >
+              Updating…
+            </span>
+          )}
           {group.scope !== "unavailable" && (
             <Button
               variant="ghost"
@@ -343,19 +351,17 @@ function ProjectGroup({
         {rows.map((row) => (
           <ThreadRow key={row.thread.thread_id} row={row} presence={presence} />
         ))}
-        {expanded && list.isPending && (
+        {expanded && !list.data && list.isPending && (
           <div
             role="status"
             aria-label="Loading conversations"
             aria-busy="true"
-            className={styles.threadSkeletons}
+            className={styles.initialLoading}
           >
-            {[0, 1, 2].map((item) => (
-              <Skeleton key={item} className="h-8 w-full" />
-            ))}
+            <span>Loading conversations…</span>
           </div>
         )}
-        {list.isSuccess && !rows.length && (
+        {list.isSuccess && !list.isPreviousData && !rows.length && (
           <small className={styles.emptyGroup}>No conversations yet</small>
         )}
         <ErrorNotice error={list.error} retry={() => void list.refetch()} />
@@ -406,7 +412,11 @@ function SearchResults({
           <ThreadRow row={row} presence={presence} />
         </div>
       ))}
-      {list.isPending && <p role="status">Searching conversations…</p>}
+      {list.isFetching && !list.isFetchingNextPage && (
+        <p role="status">
+          {list.data ? "Updating results…" : "Searching conversations…"}
+        </p>
+      )}
       {list.isSuccess && !rows.length && <p>No matching conversations.</p>}
       <ErrorNotice error={list.error} retry={() => void list.refetch()} />
       {list.hasNextPage && (

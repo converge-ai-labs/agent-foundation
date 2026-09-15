@@ -58,6 +58,7 @@ import { NativeWorkspace } from "../native/workspace";
 
 import { pageLink } from "./page-links";
 import { readPreference, writePreference } from "./preferences";
+import { NotificationSettings } from "./notifications";
 
 const profileColors = [
   { value: "#64748b", label: "Slate" },
@@ -344,6 +345,10 @@ export function Workbench({
                 <Route path="/projects" element={<ProjectsPage />} />
                 <Route path="/projects/:projectId" element={<ProjectPage />} />
                 <Route path="/settings" element={<GeneralSettings />} />
+                <Route
+                  path="/settings/notifications"
+                  element={<NotificationSettings />}
+                />
                 <Route
                   path="/settings/agents"
                   element={

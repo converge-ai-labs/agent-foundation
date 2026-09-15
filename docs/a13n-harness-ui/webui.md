@@ -38,6 +38,16 @@ Existing installations keep their conversations and configuration. **General →
 
 **Projects** edits server directories and defaults directly, with a separate saved-default preview and per-axis provenance. Saved defaults initialize new conversations; changes to project folders also affect future Runs in existing conversations. Default, None and Custom list selections remain distinct. Preview does not include unsaved source changes or execute a model. The top-right header automatically shows a generated collaboration name on first entry. Click it to change the name; **Save name** remembers it in this browser and updates live presence and composer labels. New comment drafts use this name, while existing comment authors remain unchanged. The online indicator opens the per-tab participant directory. This profile is not provider login or an authenticated identity.
 
+## Task notifications
+
+After login, a persistent **Enable task notifications** prompt offers browser notification permission. Choose **Enable notifications** to open the browser permission dialog, or **Turn off reminders** to stop the prompt from appearing. If permission is blocked, allow it in this site's browser settings. Desktop notifications require a supported browser and a secure context such as HTTPS or localhost; remote plain HTTP may not support them.
+
+**Settings → Notifications** lets you enable or disable desktop notifications, inspect browser permission, and send a test notification. Preferences apply immediately to this browser. Disabling notifications does not revoke browser permission, change another collaborator's preferences, or disable in-app task notices.
+
+For conversations opened in this browser, notices show completion, failure, or requests for your input with actual reply/question/failure previews. They do not call a model to generate a separate summary. Desktop notifications can expose this preview on your desktop or lock screen. A focused foreground page shows the in-app notice without an additional desktop alert. **Open conversation**, or clicking a desktop notification, returns to the matching conversation.
+
+Keep WebUI open to receive live notifications. This is not closed-page Web Push; browser suspension and operating-system notification settings may prevent timely delivery. Reopening WebUI does not replay old completions, and browser disconnection does not cancel the agent's work.
+
 ## Work in a conversation
 
 Use **Add project** at the top of the sidebar to save a name and server directory; additional roots are optional. It creates only the Project, not an empty conversation. Expand a Project to see its five most recently updated root conversations. **Show more** loads the next page for that Project only; collapsing a group retains its loaded pages. **Without a project** and **Unavailable projects** keep unassigned conversations and those with removed Project references accessible.

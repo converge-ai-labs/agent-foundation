@@ -6,6 +6,7 @@ import { createTransport, result, type Schema } from "./transport/client";
 import { TransportContext } from "./transport/context";
 import { DraftContext, type SourceDraft } from "./configuration/sources";
 import { Workbench } from "./shell/workbench";
+import { NotificationsProvider } from "./shell/notifications";
 import { ComposerDrafts } from "./conversations/composer";
 import { ChildControlsProvider } from "./conversations/child-controls";
 import { CommentDrafts, type CommentDraft } from "./conversations/comments";
@@ -138,11 +139,13 @@ export function BrowserApp() {
                 <FileBuffers.Provider value={files.current}>
                   {status ? (
                     <BrowserRouter>
-                      <Workbench
-                        status={status}
-                        forget={forget}
-                        unauthorized={unauthorized}
-                      />
+                      <NotificationsProvider>
+                        <Workbench
+                          status={status}
+                          forget={forget}
+                          unauthorized={unauthorized}
+                        />
+                      </NotificationsProvider>
                     </BrowserRouter>
                   ) : (
                     <main className={styles.access}>

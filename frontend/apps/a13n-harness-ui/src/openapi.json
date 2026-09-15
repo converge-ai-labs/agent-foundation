@@ -8268,6 +8268,39 @@
         ],
         "title": "RootExecutionView"
       },
+      "RootOperationNotice": {
+        "properties": {
+          "receipt_id": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Receipt Id"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "completed",
+              "failed",
+              "suspended"
+            ],
+            "title": "Status"
+          },
+          "brief": {
+            "type": "string",
+            "maxLength": 320,
+            "minLength": 1,
+            "title": "Brief"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "receipt_id",
+          "status",
+          "brief"
+        ],
+        "title": "RootOperationNotice"
+      },
       "RootOperationStatus": {
         "type": "string",
         "enum": [
@@ -9581,6 +9614,16 @@
               }
             ],
             "title": "Execution Id"
+          },
+          "notice": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RootOperationNotice"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,

@@ -5,6 +5,7 @@ import { useSources, useTransport } from "../transport/context";
 import { watchSummary } from "../transport/events";
 import { refreshThreadLists } from "../conversations/queries";
 import type { Schema } from "../transport/client";
+import { useNotifications } from "./notifications";
 
 export type Profile = { display_name: string; color: string };
 export function pageFocus(
@@ -60,6 +61,7 @@ export function useLiveWorkbench(
 ) {
   const transport = useTransport();
   const queries = useQueryClient();
+  const notify = useNotifications()?.receive;
   const location = useLocation();
   const sources = useSources();
   const sourcePath = new URLSearchParams(location.search).get("path");
@@ -96,6 +98,7 @@ export function useLiveWorkbench(
       watchSummary(
         transport,
         (event) => {
+          if (event) notify?.(event);
           if (event?.kind === "comment")
             void queries.invalidateQueries({
               queryKey: event.root_thread_id
@@ -105,17 +108,31 @@ export function useLiveWorkbench(
           else {
             void refreshThreadLists(queries);
             void queries.invalidateQueries({
-              // Native observations refresh on return/actions/reconnect, not each
-              // unrelated conversation event. They are not a filesystem watcher.
-              predicate: (query) =>
-                query.queryKey[0] !== "threads" &&
-                (!event || query.queryKey[0] !== "native"),
+              predicate: (query) => {
+                const [kind, threadId] = query.queryKey;
+                if (kind === "threads") return false;
+                if (!event) return true;
+                // Execution changes do not invalidate settings, native files or
+                // unrelated conversations. Open/reset still reconcile everything.
+                if (
+                  ["thread", "root_operation", "child_execution"].includes(
+                    event.kind,
+                  )
+                )
+                  return (
+                    kind === "thread" &&
+                    (!event.root_thread_id ||
+                      threadId === event.root_thread_id ||
+                      threadId === event.thread_id)
+                  );
+                return kind !== "native";
+              },
             });
           }
         },
         setSummary,
       ),
-    [transport, queries],
+    [transport, queries, notify],
   );
 
   useEffect(() => {

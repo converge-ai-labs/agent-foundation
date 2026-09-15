@@ -18,10 +18,27 @@
   min-height: 80px;
   scrollbar-gutter: stable;
 }
-.threadSkeletons {
-  display: grid;
-  gap: 8px;
+.initialLoading {
+  min-height: 32px;
   padding: 8px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.initialLoading > span {
+  animation: revealLoading 0s 180ms both;
+}
+@keyframes revealLoading {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.refreshingGroup {
+  align-self: center;
+  font-size: 10px;
+  color: var(--a13n-secondary);
 }
 .groupHeading {
   display: flex;

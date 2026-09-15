@@ -420,6 +420,12 @@ class SummaryCursor(_StreamModel):
     sequence: int = Field(ge=0)
 
 
+class RootOperationNotice(_StreamModel):
+    receipt_id: str = Field(min_length=1, max_length=128)
+    status: Literal["completed", "failed", "suspended"]
+    brief: str = Field(min_length=1, max_length=320)
+
+
 class SummaryInvalidation(_StreamModel):
     epoch: str = Field(min_length=1, max_length=80)
     sequence: int = Field(ge=1)
@@ -427,6 +433,7 @@ class SummaryInvalidation(_StreamModel):
     root_thread_id: str | None = Field(default=None, min_length=1, max_length=80)
     thread_id: str | None = Field(default=None, min_length=1, max_length=80)
     execution_id: str | None = Field(default=None, min_length=1, max_length=80)
+    notice: RootOperationNotice | None = None
 
 
 class _SummarySubscriber:
@@ -500,6 +507,7 @@ class HarnessUiSummaryHub:
         root_thread_id: str | None = None,
         thread_id: str | None = None,
         execution_id: str | None = None,
+        notice: RootOperationNotice | None = None,
     ) -> None:
         async with self._lock:
             if self._closed:
@@ -512,6 +520,7 @@ class HarnessUiSummaryHub:
                 root_thread_id=root_thread_id,
                 thread_id=thread_id,
                 execution_id=execution_id,
+                notice=notice,
             )
             self._ring.append(event)
             stale: list[_SummarySubscriber] = []

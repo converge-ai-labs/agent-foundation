@@ -401,8 +401,12 @@ The implementation catalog is distinct from configured resource selectors. Accou
 
 The adapter exposes two authenticated SSE forms:
 
-1. one App-wide summary stream carries only the summary hub's epoch, sequence, and invalidation hints;
+1. one App-wide summary stream carries the summary hub's epoch, sequence, and invalidation hints, with an optional bounded terminal root-operation notice;
 2. one focused root-Thread stream either opens a fresh App focused watch or resumes retained delivery for an existing watch cursor. A fresh watch emits its detached snapshot, any finite root-stream replay batches and ready boundary, then only later detailed events from that subscription. A valid resumable cursor emits only events after that cursor; an unavailable cursor emits an explicit reset.
+
+A terminal `root_operation` invalidation may include `notice` with the exact `receipt_id`, Host status (`completed`, `failed`, or `suspended`), and a plain-text `brief` of at most 320 characters. The notice is published only after the root receipt settles, including continuation selection. Its brief previews actual final assistant prose, deferred questions/approval reasons, or the user-facing failure; absent suitable content uses a generic status description. It performs no model call and includes neither full output nor tool-argument dumps. Cancellation, child progress, and nonterminal root transitions carry no notice. A failed continuation selection cannot produce a completed notice even when the model returned output.
+
+Notices share the summary hub's bounded process-local retention and resume cursor; they are not a durable inbox or a delivery guarantee. Opening a fresh subscription starts at the current boundary. Cursor expiry or an App epoch change requires ordinary reconciliation, not synthetic historical completion alerts. Consumers deduplicate by epoch and receipt identity; notification projection or delivery failure never changes execution or continuation publication. Existing clients can ignore the optional field and continue refetching affected resources.
 
 Focused frames use the following conceptual JSON union; the adapter's OpenAPI document owns the serialized schema:
 
