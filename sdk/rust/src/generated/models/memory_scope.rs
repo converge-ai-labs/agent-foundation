@@ -11,10 +11,9 @@
 use crate::generated::models;
 use serde::{Deserialize, Serialize};
 
-/// Mem0Scope : Trusted Harness identity boundary used for Mem0 records.
-/// Trusted Harness identity boundary used for Mem0 records.
+///
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
-pub enum Mem0Scope {
+pub enum MemoryScope {
     #[serde(rename = "thread")]
     Thread,
     #[serde(rename = "agent")]
@@ -23,7 +22,7 @@ pub enum Mem0Scope {
     User,
 }
 
-impl std::fmt::Display for Mem0Scope {
+impl std::fmt::Display for MemoryScope {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Self::Thread => write!(f, "thread"),
@@ -33,8 +32,8 @@ impl std::fmt::Display for Mem0Scope {
     }
 }
 
-impl Default for Mem0Scope {
-    fn default() -> Mem0Scope {
+impl Default for MemoryScope {
+    fn default() -> MemoryScope {
         Self::Thread
     }
 }

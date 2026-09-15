@@ -6,8 +6,9 @@ from uuid import uuid4
 import httpx
 import httpx2
 import pytest
-from a13n_harness.capabilities.mem0 import Mem0Scope
 from a13n_harness.capabilities.mem0_backends import Mem0OSSBackend, open_mem0_platform
+from a13n_harness.memory import MemoryScope as ScopeKind
+from a13n_harness.memory_plugins import MemoryBackendCatalog
 from a13n_service.app import Components, create_app
 from a13n_service.iam import AuthorizationError, PrincipalRef
 from a13n_service.iam.models import RoleBindingRecord
@@ -17,6 +18,7 @@ from a13n_service.storage import transaction
 
 from ..models.conftest import ORG_ID, USER_ID, WORKSPACE_ID, actor
 from ..models.test_router import settings
+from .support import BorrowedMemoryPlugin
 
 pytestmark = pytest.mark.anyio
 
@@ -74,6 +76,15 @@ def native_transport(records, calls, response_type):
     return respond
 
 
+async def provider_path(client, *, name="Memory"):
+    response = await client.post(
+        f"/api/v1/workspaces/{WORKSPACE_ID}/memory-providers",
+        json={"type": "test.memory", "name": name, "credential": {"api_key": "test-key"}},
+    )
+    assert response.status_code == 201, response.text
+    return f"/api/v1/workspaces/{WORKSPACE_ID}/memory-providers/{response.json()['id']}/memories"
+
+
 @pytest.mark.parametrize("provider", ["oss", "platform"])
 async def test_full_native_api_lifecycle_and_scope_isolation(
     memory_sessions, service_sqlite_database, tmp_path, monkeypatch, provider
@@ -101,12 +112,15 @@ async def test_full_native_api_lifecycle_and_scope_isolation(
         return actor()
 
     app = create_app(
-        settings(tmp_path, service_sqlite_database), components=Components(request_authenticator=authenticate)
+        settings(tmp_path, service_sqlite_database),
+        components=Components(
+            request_authenticator=authenticate,
+            memory_backend_catalog=MemoryBackendCatalog((BorrowedMemoryPlugin(backend),)),
+        ),
     )
     async with stack, remote, app.router.lifespan_context(app):
-        app.state.runtime.shared.memories.backend = backend
         async with httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url="http://testserver") as client:
-            path = f"/api/v1/workspaces/{WORKSPACE_ID}/memories"
+            path = await provider_path(client)
             params = {"scope": "user"}
             created = await client.post(path, params=params, json={"text": "  Exact text, not extracted.  "})
             assert created.status_code == 201, created.text
@@ -136,6 +150,13 @@ async def test_full_native_api_lifecycle_and_scope_isolation(
             assert (await client.get(path + "/" + memory_id, params=params)).json()["memory"] == created.json()[
                 "memory"
             ]
+            other_path = await provider_path(client, name="Other provider, same backend")
+            assert (await client.get(other_path, params=params)).json()["items"] == []
+            assert (await client.get(other_path + "/" + memory_id, params=params)).status_code == 404
+            if provider == "platform":
+                assert (
+                    await client.get(other_path, params={**params, "limit": 1, "cursor": cursor})
+                ).status_code == 400
             changed = await client.put(path + "/" + memory_id, params=params, json={"text": "Updated"})
             assert changed.status_code == 200 and changed.json()["memory"] == "Updated", changed.text
             assert (await client.delete(path + "/" + memory_id, params=params)).status_code == 204
@@ -166,17 +187,21 @@ async def test_full_native_api_lifecycle_and_scope_isolation(
 async def test_service_account_never_becomes_user(memory_sessions):
     principal = PrincipalRef(principal_type="service_account", principal_id="sa_1234567890abcdef")
     with pytest.raises(AuthorizationError):
-        await MemoryAuthorizer(memory_sessions).authorize(
-            actor=replace(actor(), principal=principal), workspace_id=WORKSPACE_ID, selection=MemoryScope(scope="user")
+        await MemoryAuthorizer(memory_sessions, MemoryBackendCatalog()).authorize(
+            actor=replace(actor(), principal=principal),
+            workspace_id=WORKSPACE_ID,
+            provider_id="memprov_1234567890abcdef",
+            selection=MemoryScope(scope="user"),
         )
 
 
 def test_namespace_covers_organization_workspace_subject_and_kind():
-    base = memory_subject(ORG_ID, WORKSPACE_ID, Mem0Scope.USER, USER_ID)
-    assert base != memory_subject(ORG_ID, "other", Mem0Scope.USER, USER_ID)
-    assert base != memory_subject("other", WORKSPACE_ID, Mem0Scope.USER, USER_ID)
-    assert base != memory_subject(ORG_ID, WORKSPACE_ID, Mem0Scope.AGENT, USER_ID)
-    assert base != memory_subject(ORG_ID, WORKSPACE_ID, Mem0Scope.USER, "other")
+    base = memory_subject(ORG_ID, WORKSPACE_ID, "memprov_1234567890abcdef", ScopeKind.USER, USER_ID)
+    assert base != memory_subject(ORG_ID, "other", "memprov_1234567890abcdef", ScopeKind.USER, USER_ID)
+    assert base != memory_subject("other", WORKSPACE_ID, "memprov_1234567890abcdef", ScopeKind.USER, USER_ID)
+    assert base != memory_subject(ORG_ID, WORKSPACE_ID, "memprov_1234567890abcdef", ScopeKind.AGENT, USER_ID)
+    assert base != memory_subject(ORG_ID, WORKSPACE_ID, "memprov_1234567890abcdef", ScopeKind.USER, "other")
+    assert base != memory_subject(ORG_ID, WORKSPACE_ID, "other-provider", ScopeKind.USER, USER_ID)
 
 
 async def test_oss_default_loads_1000_for_client_paging_without_completeness_claim(
@@ -184,8 +209,7 @@ async def test_oss_default_loads_1000_for_client_paging_without_completeness_cla
 ):
     from a13n_service.collection_cursors import encode_collection_cursor
 
-    subject = memory_subject(ORG_ID, WORKSPACE_ID, Mem0Scope.USER, USER_ID)
-    records = {str(index): {"id": str(index), "memory": f"record {index}", **subject.filter()} for index in range(1005)}
+    records = {}
     calls = []
     transport = native_transport(records, calls, httpx2.Response)
 
@@ -198,16 +222,27 @@ async def test_oss_default_loads_1000_for_client_paging_without_completeness_cla
     async def authenticate(_request):
         return actor()
 
-    app = create_app(
-        settings(tmp_path, service_sqlite_database), components=Components(request_authenticator=authenticate)
-    )
     async with httpx2.AsyncClient(base_url="http://mem0/", transport=httpx2.MockTransport(handle)) as remote:
+        app = create_app(
+            settings(tmp_path, service_sqlite_database),
+            components=Components(
+                request_authenticator=authenticate,
+                memory_backend_catalog=MemoryBackendCatalog((BorrowedMemoryPlugin(Mem0OSSBackend(remote)),)),
+            ),
+        )
         async with app.router.lifespan_context(app):
-            app.state.runtime.shared.memories.backend = Mem0OSSBackend(remote)
             async with httpx2.AsyncClient(
                 transport=httpx2.ASGITransport(app=app), base_url="http://testserver"
             ) as client:
-                path = f"/api/v1/workspaces/{WORKSPACE_ID}/memories"
+                path = await provider_path(client)
+                provider_id = path.split("/")[-2]
+                subject = memory_subject(ORG_ID, WORKSPACE_ID, provider_id, ScopeKind.USER, USER_ID)
+                records.update(
+                    {
+                        str(index): {"id": str(index), "memory": f"record {index}", "user_id": subject.value}
+                        for index in range(1005)
+                    }
+                )
                 response = await client.get(path, params={"scope": "user"})
                 assert response.status_code == 200, response.text
                 assert len(response.json()["items"]) == 1000
@@ -215,7 +250,11 @@ async def test_oss_default_loads_1000_for_client_paging_without_completeness_cla
                 assert set(response.json()) == {"items", "pagination"}
                 cursor = encode_collection_cursor(
                     {"cursor": "invented"},
-                    scope={"subject": subject.filter(), "limit": 1000, "backend": "Mem0OSSBackend"},
+                    scope={
+                        "provider_id": provider_id,
+                        "subject": {"scope": subject.scope.value, "value": subject.value},
+                        "limit": 1000,
+                    },
                     kind="memories",
                 )
                 rejected = await client.get(path, params={"scope": "user", "cursor": cursor})

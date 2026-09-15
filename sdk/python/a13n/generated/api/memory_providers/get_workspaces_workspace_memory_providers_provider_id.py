@@ -1,53 +1,38 @@
 from http import HTTPStatus
-from typing import Any, cast
+from typing import Any
 from urllib.parse import quote
 
 import httpx2 as httpx
 
 from ...client import AuthenticatedClient, Client
 from ...models.error_response import ErrorResponse
-from ...models.mem_0_scope import Mem0Scope
-from ...types import UNSET, Response, Unset
+from ...models.memory_provider import MemoryProvider
+from ...types import Response
 
 
 def build_request(
     workspace: str,
-    memory_id: str,
-    *,
-    scope: Mem0Scope,
-    subject_id: str | Unset | None = UNSET,
+    provider_id: str,
 ) -> dict[str, Any]:
 
-    params: dict[str, Any] = {}
-
-    json_scope = scope.value
-    params["scope"] = json_scope
-
-    json_subject_id: str | Unset | None
-    if isinstance(subject_id, Unset):
-        json_subject_id = UNSET
-    else:
-        json_subject_id = subject_id
-    params["subject_id"] = json_subject_id
-
-    params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
-
     _kwargs: dict[str, Any] = {
-        "method": "delete",
-        "url": "/api/v1/workspaces/{workspace}/memories/{memory_id}".format(
+        "method": "get",
+        "url": "/api/v1/workspaces/{workspace}/memory-providers/{provider_id}".format(
             workspace=quote(str(workspace), safe=""),
-            memory_id=quote(str(memory_id), safe=""),
+            provider_id=quote(str(provider_id), safe=""),
         ),
-        "params": params,
     }
 
     return _kwargs
 
 
-def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> Any | ErrorResponse:
-    if response.status_code == 204:
-        response_204 = cast(Any, None)
-        return response_204
+def _parse_response(
+    *, client: AuthenticatedClient | Client, response: httpx.Response
+) -> ErrorResponse | MemoryProvider:
+    if response.status_code == 200:
+        response_200 = MemoryProvider.from_dict(response.json())
+
+        return response_200
 
     if response.status_code == 400:
         response_400 = ErrorResponse.from_dict(response.json())
@@ -59,7 +44,9 @@ def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Res
     return response_default
 
 
-def _build_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> Response[Any | ErrorResponse]:
+def _build_response(
+    *, client: AuthenticatedClient | Client, response: httpx.Response
+) -> Response[ErrorResponse | MemoryProvider]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -70,33 +57,27 @@ def _build_response(*, client: AuthenticatedClient | Client, response: httpx.Res
 
 def sync_detailed(
     workspace: str,
-    memory_id: str,
+    provider_id: str,
     *,
     client: AuthenticatedClient,
-    scope: Mem0Scope,
-    subject_id: str | Unset | None = UNSET,
-) -> Response[Any | ErrorResponse]:
-    """Delete Memory
+) -> Response[ErrorResponse | MemoryProvider]:
+    """Get Workspace Provider
 
     Args:
         workspace (str):
-        memory_id (str):
-        scope (Mem0Scope): Trusted Harness identity boundary used for Mem0 records.
-        subject_id (None | str | Unset):
+        provider_id (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Any | ErrorResponse]
+        Response[ErrorResponse | MemoryProvider]
     """
 
     kwargs = build_request(
         workspace=workspace,
-        memory_id=memory_id,
-        scope=scope,
-        subject_id=subject_id,
+        provider_id=provider_id,
     )
 
     response = client.get_httpx_client().request(
@@ -108,66 +89,54 @@ def sync_detailed(
 
 def sync(
     workspace: str,
-    memory_id: str,
+    provider_id: str,
     *,
     client: AuthenticatedClient,
-    scope: Mem0Scope,
-    subject_id: str | Unset | None = UNSET,
-) -> Any | ErrorResponse | None:
-    """Delete Memory
+) -> ErrorResponse | MemoryProvider | None:
+    """Get Workspace Provider
 
     Args:
         workspace (str):
-        memory_id (str):
-        scope (Mem0Scope): Trusted Harness identity boundary used for Mem0 records.
-        subject_id (None | str | Unset):
+        provider_id (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Any | ErrorResponse
+        ErrorResponse | MemoryProvider
     """
 
     return sync_detailed(
         workspace=workspace,
-        memory_id=memory_id,
+        provider_id=provider_id,
         client=client,
-        scope=scope,
-        subject_id=subject_id,
     ).parsed
 
 
 async def asyncio_detailed(
     workspace: str,
-    memory_id: str,
+    provider_id: str,
     *,
     client: AuthenticatedClient,
-    scope: Mem0Scope,
-    subject_id: str | Unset | None = UNSET,
-) -> Response[Any | ErrorResponse]:
-    """Delete Memory
+) -> Response[ErrorResponse | MemoryProvider]:
+    """Get Workspace Provider
 
     Args:
         workspace (str):
-        memory_id (str):
-        scope (Mem0Scope): Trusted Harness identity boundary used for Mem0 records.
-        subject_id (None | str | Unset):
+        provider_id (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[Any | ErrorResponse]
+        Response[ErrorResponse | MemoryProvider]
     """
 
     kwargs = build_request(
         workspace=workspace,
-        memory_id=memory_id,
-        scope=scope,
-        subject_id=subject_id,
+        provider_id=provider_id,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -177,34 +146,28 @@ async def asyncio_detailed(
 
 async def asyncio(
     workspace: str,
-    memory_id: str,
+    provider_id: str,
     *,
     client: AuthenticatedClient,
-    scope: Mem0Scope,
-    subject_id: str | Unset | None = UNSET,
-) -> Any | ErrorResponse | None:
-    """Delete Memory
+) -> ErrorResponse | MemoryProvider | None:
+    """Get Workspace Provider
 
     Args:
         workspace (str):
-        memory_id (str):
-        scope (Mem0Scope): Trusted Harness identity boundary used for Mem0 records.
-        subject_id (None | str | Unset):
+        provider_id (str):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Any | ErrorResponse
+        ErrorResponse | MemoryProvider
     """
 
     return (
         await asyncio_detailed(
             workspace=workspace,
-            memory_id=memory_id,
+            provider_id=provider_id,
             client=client,
-            scope=scope,
-            subject_id=subject_id,
         )
     ).parsed

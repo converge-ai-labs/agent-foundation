@@ -281,6 +281,38 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
+### `GET /api/v1/workspaces/{workspace}/toolsets`
+
+Get Toolsets.
+
+| Parameter   | Location | Required | Type / schema | Constraints and default |
+| ----------- | -------- | -------- | ------------- | ----------------------- |
+| `workspace` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: ToolsetCatalog`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/workspaces/{workspace}/toolsets/validate`
+
+Validate Toolsets.
+
+| Parameter   | Location | Required | Type / schema | Constraints and default |
+| ----------- | -------- | -------- | ------------- | ----------------------- |
+| `workspace` | path     | true     | string        | —                       |
+
+Request body: required.
+
+- `application/json`: `ToolsetCandidate`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: ToolsetCandidateResult`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
 ## asset-management
 
 ### `DELETE /api/v1/assets/{asset_id}`
@@ -2823,17 +2855,18 @@ Responses:
 
 ## memory
 
-### `GET /api/v1/workspaces/{workspace}/memories`
+### `GET /api/v1/workspaces/{workspace}/memory-providers/{provider_id}/memories`
 
 List Memories.
 
-| Parameter    | Location | Required | Type / schema  | Constraints and default            |
-| ------------ | -------- | -------- | -------------- | ---------------------------------- |
-| `workspace`  | path     | true     | string         | —                                  |
-| `limit`      | query    | false    | integer        | minimum=1; maximum=100; default=50 |
-| `cursor`     | query    | false    | string or null | —                                  |
-| `scope`      | query    | true     | Mem0Scope      | —                                  |
-| `subject_id` | query    | false    | string or null | —                                  |
+| Parameter     | Location | Required | Type / schema  | Constraints and default               |
+| ------------- | -------- | -------- | -------------- | ------------------------------------- |
+| `provider_id` | path     | true     | string         | —                                     |
+| `workspace`   | path     | true     | string         | —                                     |
+| `limit`       | query    | false    | integer        | minimum=1; maximum=1000; default=1000 |
+| `cursor`      | query    | false    | string or null | —                                     |
+| `scope`       | query    | true     | MemoryScope    | —                                     |
+| `subject_id`  | query    | false    | string or null | —                                     |
 
 Responses:
 
@@ -2841,15 +2874,16 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
-### `POST /api/v1/workspaces/{workspace}/memories`
+### `POST /api/v1/workspaces/{workspace}/memory-providers/{provider_id}/memories`
 
 Add Memory.
 
-| Parameter    | Location | Required | Type / schema  | Constraints and default |
-| ------------ | -------- | -------- | -------------- | ----------------------- |
-| `workspace`  | path     | true     | string         | —                       |
-| `scope`      | query    | true     | Mem0Scope      | —                       |
-| `subject_id` | query    | false    | string or null | —                       |
+| Parameter     | Location | Required | Type / schema  | Constraints and default |
+| ------------- | -------- | -------- | -------------- | ----------------------- |
+| `provider_id` | path     | true     | string         | —                       |
+| `workspace`   | path     | true     | string         | —                       |
+| `scope`       | query    | true     | MemoryScope    | —                       |
+| `subject_id`  | query    | false    | string or null | —                       |
 
 Request body: required.
 
@@ -2861,15 +2895,16 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
-### `POST /api/v1/workspaces/{workspace}/memories/search`
+### `POST /api/v1/workspaces/{workspace}/memory-providers/{provider_id}/memories/search`
 
 Search Memories.
 
-| Parameter    | Location | Required | Type / schema  | Constraints and default |
-| ------------ | -------- | -------- | -------------- | ----------------------- |
-| `workspace`  | path     | true     | string         | —                       |
-| `scope`      | query    | true     | Mem0Scope      | —                       |
-| `subject_id` | query    | false    | string or null | —                       |
+| Parameter     | Location | Required | Type / schema  | Constraints and default |
+| ------------- | -------- | -------- | -------------- | ----------------------- |
+| `provider_id` | path     | true     | string         | —                       |
+| `workspace`   | path     | true     | string         | —                       |
+| `scope`       | query    | true     | MemoryScope    | —                       |
+| `subject_id`  | query    | false    | string or null | —                       |
 
 Request body: required.
 
@@ -2881,16 +2916,17 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
-### `DELETE /api/v1/workspaces/{workspace}/memories/{memory_id}`
+### `DELETE /api/v1/workspaces/{workspace}/memory-providers/{provider_id}/memories/{memory_id}`
 
 Delete Memory.
 
-| Parameter    | Location | Required | Type / schema  | Constraints and default    |
-| ------------ | -------- | -------- | -------------- | -------------------------- |
-| `memory_id`  | path     | true     | string         | minLength=1; maxLength=512 |
-| `workspace`  | path     | true     | string         | —                          |
-| `scope`      | query    | true     | Mem0Scope      | —                          |
-| `subject_id` | query    | false    | string or null | —                          |
+| Parameter     | Location | Required | Type / schema  | Constraints and default    |
+| ------------- | -------- | -------- | -------------- | -------------------------- |
+| `provider_id` | path     | true     | string         | —                          |
+| `memory_id`   | path     | true     | string         | minLength=1; maxLength=512 |
+| `workspace`   | path     | true     | string         | —                          |
+| `scope`       | query    | true     | MemoryScope    | —                          |
+| `subject_id`  | query    | false    | string or null | —                          |
 
 Responses:
 
@@ -2898,16 +2934,17 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
-### `GET /api/v1/workspaces/{workspace}/memories/{memory_id}`
+### `GET /api/v1/workspaces/{workspace}/memory-providers/{provider_id}/memories/{memory_id}`
 
 Get Memory.
 
-| Parameter    | Location | Required | Type / schema  | Constraints and default    |
-| ------------ | -------- | -------- | -------------- | -------------------------- |
-| `memory_id`  | path     | true     | string         | minLength=1; maxLength=512 |
-| `workspace`  | path     | true     | string         | —                          |
-| `scope`      | query    | true     | Mem0Scope      | —                          |
-| `subject_id` | query    | false    | string or null | —                          |
+| Parameter     | Location | Required | Type / schema  | Constraints and default    |
+| ------------- | -------- | -------- | -------------- | -------------------------- |
+| `provider_id` | path     | true     | string         | —                          |
+| `memory_id`   | path     | true     | string         | minLength=1; maxLength=512 |
+| `workspace`   | path     | true     | string         | —                          |
+| `scope`       | query    | true     | MemoryScope    | —                          |
+| `subject_id`  | query    | false    | string or null | —                          |
 
 Responses:
 
@@ -2915,16 +2952,17 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
-### `PUT /api/v1/workspaces/{workspace}/memories/{memory_id}`
+### `PUT /api/v1/workspaces/{workspace}/memory-providers/{provider_id}/memories/{memory_id}`
 
 Update Memory.
 
-| Parameter    | Location | Required | Type / schema  | Constraints and default    |
-| ------------ | -------- | -------- | -------------- | -------------------------- |
-| `memory_id`  | path     | true     | string         | minLength=1; maxLength=512 |
-| `workspace`  | path     | true     | string         | —                          |
-| `scope`      | query    | true     | Mem0Scope      | —                          |
-| `subject_id` | query    | false    | string or null | —                          |
+| Parameter     | Location | Required | Type / schema  | Constraints and default    |
+| ------------- | -------- | -------- | -------------- | -------------------------- |
+| `provider_id` | path     | true     | string         | —                          |
+| `memory_id`   | path     | true     | string         | minLength=1; maxLength=512 |
+| `workspace`   | path     | true     | string         | —                          |
+| `scope`       | query    | true     | MemoryScope    | —                          |
+| `subject_id`  | query    | false    | string or null | —                          |
 
 Request body: required.
 
@@ -2933,6 +2971,207 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: Memory`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+## memory-providers
+
+### `GET /api/v1/memory-provider-types`
+
+List Types.
+
+Responses:
+
+- **200** — Successful Response (`application/json: MemoryProviderDefinitionCollection`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/memory-provider-types/{provider_type}`
+
+Get Type.
+
+| Parameter       | Location | Required | Type / schema | Constraints and default |
+| --------------- | -------- | -------- | ------------- | ----------------------- |
+| `provider_type` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: MemoryProviderDefinition`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/organizations/{organization}/memory-providers`
+
+List Organization Provider.
+
+| Parameter      | Location | Required | Type / schema   | Constraints and default            |
+| -------------- | -------- | -------- | --------------- | ---------------------------------- |
+| `organization` | path     | true     | string          | —                                  |
+| `limit`        | query    | false    | integer         | minimum=1; maximum=100; default=50 |
+| `cursor`       | query    | false    | string or null  | —                                  |
+| `type`         | query    | false    | string or null  | —                                  |
+| `enabled`      | query    | false    | boolean or null | —                                  |
+
+Responses:
+
+- **200** — Successful Response (`application/json: MemoryProviderCollection`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/organizations/{organization}/memory-providers`
+
+Create Organization Provider.
+
+| Parameter      | Location | Required | Type / schema | Constraints and default |
+| -------------- | -------- | -------- | ------------- | ----------------------- |
+| `organization` | path     | true     | string        | —                       |
+
+Request body: required.
+
+- `application/json`: `CreateMemoryProviderRequest`.
+
+Responses:
+
+- **201** — Successful Response (`application/json: MemoryProvider`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/organizations/{organization}/memory-providers/{provider_id}`
+
+Get Organization Provider.
+
+| Parameter      | Location | Required | Type / schema | Constraints and default |
+| -------------- | -------- | -------- | ------------- | ----------------------- |
+| `provider_id`  | path     | true     | string        | —                       |
+| `organization` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: MemoryProvider`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `PATCH /api/v1/organizations/{organization}/memory-providers/{provider_id}`
+
+Update Organization Provider.
+
+| Parameter      | Location | Required | Type / schema | Constraints and default    |
+| -------------- | -------- | -------- | ------------- | -------------------------- |
+| `provider_id`  | path     | true     | string        | —                          |
+| `organization` | path     | true     | string        | —                          |
+| `If-Match`     | header   | true     | string        | minLength=1; maxLength=256 |
+
+Request body: required.
+
+- `application/json`: `UpdateMemoryProviderRequest`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: MemoryProvider`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/organizations/{organization}/memory-providers/{provider_id}/references`
+
+References Organization Provider.
+
+| Parameter      | Location | Required | Type / schema  | Constraints and default            |
+| -------------- | -------- | -------- | -------------- | ---------------------------------- |
+| `provider_id`  | path     | true     | string         | —                                  |
+| `organization` | path     | true     | string         | —                                  |
+| `limit`        | query    | false    | integer        | minimum=1; maximum=100; default=50 |
+| `cursor`       | query    | false    | string or null | —                                  |
+
+Responses:
+
+- **200** — Successful Response (`application/json: MemoryProviderReferenceCollection`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/workspaces/{workspace}/memory-providers`
+
+List Workspace Provider.
+
+| Parameter   | Location | Required | Type / schema   | Constraints and default            |
+| ----------- | -------- | -------- | --------------- | ---------------------------------- |
+| `workspace` | path     | true     | string          | —                                  |
+| `limit`     | query    | false    | integer         | minimum=1; maximum=100; default=50 |
+| `cursor`    | query    | false    | string or null  | —                                  |
+| `type`      | query    | false    | string or null  | —                                  |
+| `enabled`   | query    | false    | boolean or null | —                                  |
+
+Responses:
+
+- **200** — Successful Response (`application/json: MemoryProviderCollection`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/workspaces/{workspace}/memory-providers`
+
+Create Workspace Provider.
+
+| Parameter   | Location | Required | Type / schema | Constraints and default |
+| ----------- | -------- | -------- | ------------- | ----------------------- |
+| `workspace` | path     | true     | string        | —                       |
+
+Request body: required.
+
+- `application/json`: `CreateMemoryProviderRequest`.
+
+Responses:
+
+- **201** — Successful Response (`application/json: MemoryProvider`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/workspaces/{workspace}/memory-providers/{provider_id}`
+
+Get Workspace Provider.
+
+| Parameter     | Location | Required | Type / schema | Constraints and default |
+| ------------- | -------- | -------- | ------------- | ----------------------- |
+| `provider_id` | path     | true     | string        | —                       |
+| `workspace`   | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: MemoryProvider`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `PATCH /api/v1/workspaces/{workspace}/memory-providers/{provider_id}`
+
+Update Workspace Provider.
+
+| Parameter     | Location | Required | Type / schema | Constraints and default    |
+| ------------- | -------- | -------- | ------------- | -------------------------- |
+| `provider_id` | path     | true     | string        | —                          |
+| `workspace`   | path     | true     | string        | —                          |
+| `If-Match`    | header   | true     | string        | minLength=1; maxLength=256 |
+
+Request body: required.
+
+- `application/json`: `UpdateMemoryProviderRequest`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: MemoryProvider`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/workspaces/{workspace}/memory-providers/{provider_id}/references`
+
+References Workspace Provider.
+
+| Parameter     | Location | Required | Type / schema  | Constraints and default            |
+| ------------- | -------- | -------- | -------------- | ---------------------------------- |
+| `provider_id` | path     | true     | string         | —                                  |
+| `workspace`   | path     | true     | string         | —                                  |
+| `limit`       | query    | false    | integer        | minimum=1; maximum=100; default=50 |
+| `cursor`      | query    | false    | string or null | —                                  |
+
+Responses:
+
+- **200** — Successful Response (`application/json: MemoryProviderReferenceCollection`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 

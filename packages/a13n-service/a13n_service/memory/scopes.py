@@ -2,10 +2,10 @@
 
 import hashlib
 import json
-from typing import Literal
 
-from a13n_harness.capabilities.mem0 import Mem0Scope
-from a13n_harness.capabilities.mem0_backends import Mem0Subject
+from a13n_harness.memory import MemoryScope as ScopeKind
+from a13n_harness.memory import MemorySubject
+from a13n_harness.memory_plugins import MemoryBackendCatalog
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.models import AgentRecord
@@ -21,38 +21,44 @@ from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRec
 from a13n_service.storage import short_session
 
 from .domain import MemoryScope
+from .execution import MemoryProviderAccess
+from .resources import require_provider
 
 
-def memory_subject(organization_id: str, workspace_id: str, scope: Mem0Scope, subject_id: str) -> Mem0Subject:
+def memory_subject(
+    organization_id: str, workspace_id: str, provider_id: str, scope: ScopeKind, subject_id: str
+) -> MemorySubject:
     # Length-delimited canonical input prevents tenant/subject concatenation collisions.
     namespace = json.dumps(
-        ["a13n.memory.v1", organization_id, workspace_id, scope.value, subject_id], separators=(",", ":")
+        ["a13n.memory.v2", organization_id, workspace_id, provider_id, scope.value, subject_id], separators=(",", ":")
     )
-    fields: dict[Mem0Scope, Literal["run_id", "agent_id", "user_id"]] = {
-        Mem0Scope.THREAD: "run_id",
-        Mem0Scope.AGENT: "agent_id",
-        Mem0Scope.USER: "user_id",
-    }
-    return Mem0Subject(fields[scope], "a13n-" + hashlib.sha256(namespace.encode()).hexdigest())
+    return MemorySubject(scope, "a13n-" + hashlib.sha256(namespace.encode()).hexdigest())
 
 
 class MemoryAuthorizer:
-    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(self, sessions: async_sessionmaker[AsyncSession], catalog: MemoryBackendCatalog) -> None:
         self.sessions = sessions
+        self.catalog = catalog
 
     async def authorize(
-        self, *, actor: AuthenticatedActor, workspace_id: str, selection: MemoryScope, write: bool = False
-    ) -> Mem0Subject:
+        self,
+        *,
+        actor: AuthenticatedActor,
+        workspace_id: str,
+        provider_id: str,
+        selection: MemoryScope,
+        write: bool = False,
+    ) -> tuple[MemorySubject, MemoryProviderAccess]:
         action = WorkspaceAction.memory_write if write else WorkspaceAction.memory_read
         async with short_session(self.sessions) as session:
             subject_id = selection.subject_id
             agent_id = None
             organization_id = None
-            if selection.scope is Mem0Scope.USER:
+            if selection.scope is ScopeKind.USER:
                 if actor.principal.principal_type is not PrincipalType.user:
                     raise AuthorizationError("memory_scope_unavailable", concealed=True)
                 subject_id = actor.principal.principal_id
-            elif selection.scope is Mem0Scope.AGENT:
+            elif selection.scope is ScopeKind.AGENT:
                 agent = await session.get(AgentRecord, subject_id)
                 if agent is None or agent.workspace_id != workspace_id:
                     raise AuthorizationError("memory_scope_unavailable", concealed=True)
@@ -82,4 +88,15 @@ class MemoryAuthorizer:
             if organization_id is not None and organization_id != authorized.organization_id:
                 raise AuthorizationError("memory_scope_unavailable", concealed=True)
             assert subject_id is not None
-            return memory_subject(authorized.organization_id, workspace_id, selection.scope, subject_id)
+            provider = await require_provider(
+                session,
+                organization_id=authorized.organization_id,
+                workspace_id=workspace_id,
+                provider_id=provider_id,
+                eligible=True,
+                catalog=self.catalog,
+            )
+            return (
+                memory_subject(authorized.organization_id, workspace_id, provider_id, selection.scope, subject_id),
+                MemoryProviderAccess.from_record(provider),
+            )

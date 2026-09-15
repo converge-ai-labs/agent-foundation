@@ -6,18 +6,16 @@ import httpx2 as httpx
 
 from ...client import AuthenticatedClient, Client
 from ...models.error_response import ErrorResponse
-from ...models.mem_0_scope import Mem0Scope
-from ...models.memory_collection import MemoryCollection
+from ...models.memory_provider_reference_collection import MemoryProviderReferenceCollection
 from ...types import UNSET, Response, Unset
 
 
 def build_request(
-    workspace: str,
+    organization: str,
+    provider_id: str,
     *,
     limit: int | Unset = UNSET,
     cursor: str | Unset | None = UNSET,
-    scope: Mem0Scope,
-    subject_id: str | Unset | None = UNSET,
 ) -> dict[str, Any]:
 
     params: dict[str, Any] = {}
@@ -31,22 +29,13 @@ def build_request(
         json_cursor = cursor
     params["cursor"] = json_cursor
 
-    json_scope = scope.value
-    params["scope"] = json_scope
-
-    json_subject_id: str | Unset | None
-    if isinstance(subject_id, Unset):
-        json_subject_id = UNSET
-    else:
-        json_subject_id = subject_id
-    params["subject_id"] = json_subject_id
-
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
     _kwargs: dict[str, Any] = {
         "method": "get",
-        "url": "/api/v1/workspaces/{workspace}/memories".format(
-            workspace=quote(str(workspace), safe=""),
+        "url": "/api/v1/organizations/{organization}/memory-providers/{provider_id}/references".format(
+            organization=quote(str(organization), safe=""),
+            provider_id=quote(str(provider_id), safe=""),
         ),
         "params": params,
     }
@@ -56,9 +45,9 @@ def build_request(
 
 def _parse_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> ErrorResponse | MemoryCollection:
+) -> ErrorResponse | MemoryProviderReferenceCollection:
     if response.status_code == 200:
-        response_200 = MemoryCollection.from_dict(response.json())
+        response_200 = MemoryProviderReferenceCollection.from_dict(response.json())
 
         return response_200
 
@@ -74,7 +63,7 @@ def _parse_response(
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[ErrorResponse | MemoryCollection]:
+) -> Response[ErrorResponse | MemoryProviderReferenceCollection]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -84,37 +73,34 @@ def _build_response(
 
 
 def sync_detailed(
-    workspace: str,
+    organization: str,
+    provider_id: str,
     *,
     client: AuthenticatedClient,
     limit: int | Unset = UNSET,
     cursor: str | Unset | None = UNSET,
-    scope: Mem0Scope,
-    subject_id: str | Unset | None = UNSET,
-) -> Response[ErrorResponse | MemoryCollection]:
-    """List Memories
+) -> Response[ErrorResponse | MemoryProviderReferenceCollection]:
+    """References Organization Provider
 
     Args:
-        workspace (str):
-        limit (int | Unset): Maximum loaded records, not a total count.
+        organization (str):
+        provider_id (str):
+        limit (int | Unset):
         cursor (None | str | Unset):
-        scope (Mem0Scope): Trusted Harness identity boundary used for Mem0 records.
-        subject_id (None | str | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[ErrorResponse | MemoryCollection]
+        Response[ErrorResponse | MemoryProviderReferenceCollection]
     """
 
     kwargs = build_request(
-        workspace=workspace,
+        organization=organization,
+        provider_id=provider_id,
         limit=limit,
         cursor=cursor,
-        scope=scope,
-        subject_id=subject_id,
     )
 
     response = client.get_httpx_client().request(
@@ -125,73 +111,67 @@ def sync_detailed(
 
 
 def sync(
-    workspace: str,
+    organization: str,
+    provider_id: str,
     *,
     client: AuthenticatedClient,
     limit: int | Unset = UNSET,
     cursor: str | Unset | None = UNSET,
-    scope: Mem0Scope,
-    subject_id: str | Unset | None = UNSET,
-) -> ErrorResponse | MemoryCollection | None:
-    """List Memories
+) -> ErrorResponse | MemoryProviderReferenceCollection | None:
+    """References Organization Provider
 
     Args:
-        workspace (str):
-        limit (int | Unset): Maximum loaded records, not a total count.
+        organization (str):
+        provider_id (str):
+        limit (int | Unset):
         cursor (None | str | Unset):
-        scope (Mem0Scope): Trusted Harness identity boundary used for Mem0 records.
-        subject_id (None | str | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        ErrorResponse | MemoryCollection
+        ErrorResponse | MemoryProviderReferenceCollection
     """
 
     return sync_detailed(
-        workspace=workspace,
+        organization=organization,
+        provider_id=provider_id,
         client=client,
         limit=limit,
         cursor=cursor,
-        scope=scope,
-        subject_id=subject_id,
     ).parsed
 
 
 async def asyncio_detailed(
-    workspace: str,
+    organization: str,
+    provider_id: str,
     *,
     client: AuthenticatedClient,
     limit: int | Unset = UNSET,
     cursor: str | Unset | None = UNSET,
-    scope: Mem0Scope,
-    subject_id: str | Unset | None = UNSET,
-) -> Response[ErrorResponse | MemoryCollection]:
-    """List Memories
+) -> Response[ErrorResponse | MemoryProviderReferenceCollection]:
+    """References Organization Provider
 
     Args:
-        workspace (str):
-        limit (int | Unset): Maximum loaded records, not a total count.
+        organization (str):
+        provider_id (str):
+        limit (int | Unset):
         cursor (None | str | Unset):
-        scope (Mem0Scope): Trusted Harness identity boundary used for Mem0 records.
-        subject_id (None | str | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[ErrorResponse | MemoryCollection]
+        Response[ErrorResponse | MemoryProviderReferenceCollection]
     """
 
     kwargs = build_request(
-        workspace=workspace,
+        organization=organization,
+        provider_id=provider_id,
         limit=limit,
         cursor=cursor,
-        scope=scope,
-        subject_id=subject_id,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -200,38 +180,35 @@ async def asyncio_detailed(
 
 
 async def asyncio(
-    workspace: str,
+    organization: str,
+    provider_id: str,
     *,
     client: AuthenticatedClient,
     limit: int | Unset = UNSET,
     cursor: str | Unset | None = UNSET,
-    scope: Mem0Scope,
-    subject_id: str | Unset | None = UNSET,
-) -> ErrorResponse | MemoryCollection | None:
-    """List Memories
+) -> ErrorResponse | MemoryProviderReferenceCollection | None:
+    """References Organization Provider
 
     Args:
-        workspace (str):
-        limit (int | Unset): Maximum loaded records, not a total count.
+        organization (str):
+        provider_id (str):
+        limit (int | Unset):
         cursor (None | str | Unset):
-        scope (Mem0Scope): Trusted Harness identity boundary used for Mem0 records.
-        subject_id (None | str | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        ErrorResponse | MemoryCollection
+        ErrorResponse | MemoryProviderReferenceCollection
     """
 
     return (
         await asyncio_detailed(
-            workspace=workspace,
+            organization=organization,
+            provider_id=provider_id,
             client=client,
             limit=limit,
             cursor=cursor,
-            scope=scope,
-            subject_id=subject_id,
         )
     ).parsed

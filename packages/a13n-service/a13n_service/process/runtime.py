@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from a13n_service.interactions.lifecycle import LifecycleWriter
     from a13n_service.interactions.worker import WorkerExecutionLoop
     from a13n_service.lifecycle.service import LifecycleEventService
+    from a13n_service.memory.providers import MemoryProviderService
     from a13n_service.memory.service import MemoryService
     from a13n_service.models.model_factory import NativeModelFactory
     from a13n_service.models.provider_service import ModelProviderService
@@ -71,6 +72,7 @@ class ControlRuntime:
     gateway: GatewayRuntime
     subagent_maintenance: SubagentMaintenance
     web_providers: WebProviderService | None = None
+    memory_providers: MemoryProviderService | None = None
     identity: IdentityRuntime | None = None
 
 

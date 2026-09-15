@@ -104,7 +104,7 @@ E2B and HTTP Envd remain in the default implementation catalog. Configure E2B cr
 
 ## Install deployment Provider packages
 
-Service can load trusted implementations for the existing Environment, Model, Connector, and Web Provider domains from installed Python distributions. The image build installs the package; deployment configuration selects its metadata entry-point name:
+Service can load trusted implementations for the existing Environment, Model, Connector, Web, and Memory Provider domains from installed Python distributions. The image build installs the package; deployment configuration selects its metadata entry-point name:
 
 ```toml
 [provider_plugins]
@@ -113,7 +113,7 @@ enabled = ["acme"]
 
 The package declares `acme` under the `a13n.providers` entry-point group and exposes one registration callable decorated with an explicit contract literal such as `@provider_plugin(api_version=1)`. A package must not derive that declaration from the installed Service version; this lets a newer Service reject an older incompatible package before invoking its registration callback. Its distribution name, entry-point name, and registered Provider `type` values are separate identities. Service imports only selected names, combines their inert definitions and factories with built-ins, validates the complete typed catalog, and fails startup before readiness when a selected entry is missing, ambiguous, incompatible, or invalid. Changing installation or selection requires a restart and the same selection must be used by every role in one deployment.
 
-Provider packages do not add a generic execute API or a fifth Provider domain. Each registered implementation enters its domain's existing management and runtime path, with domain-specific configuration and credential schemas. The `[plugins]` section independently selects installed Harness run plugins and is not an alias for `[provider_plugins]`. See the runnable [deployment Provider plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/provider-plugin).
+Provider packages do not add a generic execute API or arbitrary new Provider domains. Each registered implementation enters its domain's existing management and runtime path, with domain-specific configuration and credential schemas. The `[plugins]` section independently selects installed Harness run plugins and is not an alias for `[provider_plugins]`. See the runnable [deployment Provider plugin example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/provider-plugin).
 
 ## Environment variable mapping
 

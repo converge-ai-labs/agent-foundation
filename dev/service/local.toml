@@ -58,22 +58,13 @@ setup_correlation_secret = "local-public-test-correlation-key-not-a-real-secret"
 private_endpoint_cidrs = ["0.0.0.0/0", "::/0"]
 
 [memory]
-# make setup / make dev starts unmodified OSS and configures it via its native API.
-# Existing external OSS deployments need no patch or replacement image.
-# Management listing loads up to 1,000 records; it is not full-collection pagination.
-# This selects the backend, not Agent behavior: set config.memory on an Agent
-# revision to enable recall and memory tools. See dev/mem0/README.md.
-provider = "oss"
-base_url = "http://127.0.0.1:18888"
-api_key = "local-mem0-api-key"
-# The default OSS stack uses deterministic 128-dimensional development embeddings.
-# Set MEM0_OSS_EMBEDDING_{BASE_URL,MODEL,API_KEY,DIMENSIONS} for real embeddings.
-# Explicit memory writes use infer=false; they do not call an LLM or extract a
-# transcript. LLM configuration is independent: MEM0_OSS_LLM_{BASE_URL,MODEL,API_KEY}.
-# Real keys belong in local environment variables, never in this committed file.
-# Switching to Platform only changes this section (provider = "platform") and
-# its API key; OSS model settings are not used by Platform.
-# Set provider = "none" to opt out; existing memories are retained.
+# Only the operation deadline is process configuration. Memory is opt-in:
+# 1. Manually enable dev/mem0/local.toml, then make mem0-up starts unmodified OSS.
+#    Default make dev/setup does not require or start any memory backend.
+# 2. Create a Memory Provider through the API with its endpoint and credential.
+# 3. Set config.memory.provider_id on an Agent revision.
+# See dev/mem0/README.md for a runnable walkthrough and real embedding setup.
+# No memory backend or credential belongs in Service process configuration.
 timeout_seconds = 30
 
 [pricing]

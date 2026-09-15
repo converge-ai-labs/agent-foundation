@@ -6,20 +6,31 @@ import httpx2 as httpx
 
 from ...client import AuthenticatedClient, Client
 from ...models.error_response import ErrorResponse
-from ...models.mem_0_scope import Mem0Scope
-from ...models.memory import Memory
+from ...models.memory_collection import MemoryCollection
+from ...models.memory_scope import MemoryScope
 from ...types import UNSET, Response, Unset
 
 
 def build_request(
     workspace: str,
-    memory_id: str,
+    provider_id: str,
     *,
-    scope: Mem0Scope,
+    limit: int | Unset = UNSET,
+    cursor: str | Unset | None = UNSET,
+    scope: MemoryScope,
     subject_id: str | Unset | None = UNSET,
 ) -> dict[str, Any]:
 
     params: dict[str, Any] = {}
+
+    params["limit"] = limit
+
+    json_cursor: str | Unset | None
+    if isinstance(cursor, Unset):
+        json_cursor = UNSET
+    else:
+        json_cursor = cursor
+    params["cursor"] = json_cursor
 
     json_scope = scope.value
     params["scope"] = json_scope
@@ -35,9 +46,9 @@ def build_request(
 
     _kwargs: dict[str, Any] = {
         "method": "get",
-        "url": "/api/v1/workspaces/{workspace}/memories/{memory_id}".format(
+        "url": "/api/v1/workspaces/{workspace}/memory-providers/{provider_id}/memories".format(
             workspace=quote(str(workspace), safe=""),
-            memory_id=quote(str(memory_id), safe=""),
+            provider_id=quote(str(provider_id), safe=""),
         ),
         "params": params,
     }
@@ -45,9 +56,11 @@ def build_request(
     return _kwargs
 
 
-def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Response) -> ErrorResponse | Memory:
+def _parse_response(
+    *, client: AuthenticatedClient | Client, response: httpx.Response
+) -> ErrorResponse | MemoryCollection:
     if response.status_code == 200:
-        response_200 = Memory.from_dict(response.json())
+        response_200 = MemoryCollection.from_dict(response.json())
 
         return response_200
 
@@ -63,7 +76,7 @@ def _parse_response(*, client: AuthenticatedClient | Client, response: httpx.Res
 
 def _build_response(
     *, client: AuthenticatedClient | Client, response: httpx.Response
-) -> Response[ErrorResponse | Memory]:
+) -> Response[ErrorResponse | MemoryCollection]:
     return Response(
         status_code=HTTPStatus(response.status_code),
         content=response.content,
@@ -74,18 +87,22 @@ def _build_response(
 
 def sync_detailed(
     workspace: str,
-    memory_id: str,
+    provider_id: str,
     *,
     client: AuthenticatedClient,
-    scope: Mem0Scope,
+    limit: int | Unset = UNSET,
+    cursor: str | Unset | None = UNSET,
+    scope: MemoryScope,
     subject_id: str | Unset | None = UNSET,
-) -> Response[ErrorResponse | Memory]:
-    """Get Memory
+) -> Response[ErrorResponse | MemoryCollection]:
+    """List Memories
 
     Args:
         workspace (str):
-        memory_id (str):
-        scope (Mem0Scope): Trusted Harness identity boundary used for Mem0 records.
+        provider_id (str):
+        limit (int | Unset): Maximum loaded records, not a total count.
+        cursor (None | str | Unset):
+        scope (MemoryScope):
         subject_id (None | str | Unset):
 
     Raises:
@@ -93,12 +110,14 @@ def sync_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[ErrorResponse | Memory]
+        Response[ErrorResponse | MemoryCollection]
     """
 
     kwargs = build_request(
         workspace=workspace,
-        memory_id=memory_id,
+        provider_id=provider_id,
+        limit=limit,
+        cursor=cursor,
         scope=scope,
         subject_id=subject_id,
     )
@@ -112,18 +131,22 @@ def sync_detailed(
 
 def sync(
     workspace: str,
-    memory_id: str,
+    provider_id: str,
     *,
     client: AuthenticatedClient,
-    scope: Mem0Scope,
+    limit: int | Unset = UNSET,
+    cursor: str | Unset | None = UNSET,
+    scope: MemoryScope,
     subject_id: str | Unset | None = UNSET,
-) -> ErrorResponse | Memory | None:
-    """Get Memory
+) -> ErrorResponse | MemoryCollection | None:
+    """List Memories
 
     Args:
         workspace (str):
-        memory_id (str):
-        scope (Mem0Scope): Trusted Harness identity boundary used for Mem0 records.
+        provider_id (str):
+        limit (int | Unset): Maximum loaded records, not a total count.
+        cursor (None | str | Unset):
+        scope (MemoryScope):
         subject_id (None | str | Unset):
 
     Raises:
@@ -131,13 +154,15 @@ def sync(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        ErrorResponse | Memory
+        ErrorResponse | MemoryCollection
     """
 
     return sync_detailed(
         workspace=workspace,
-        memory_id=memory_id,
+        provider_id=provider_id,
         client=client,
+        limit=limit,
+        cursor=cursor,
         scope=scope,
         subject_id=subject_id,
     ).parsed
@@ -145,18 +170,22 @@ def sync(
 
 async def asyncio_detailed(
     workspace: str,
-    memory_id: str,
+    provider_id: str,
     *,
     client: AuthenticatedClient,
-    scope: Mem0Scope,
+    limit: int | Unset = UNSET,
+    cursor: str | Unset | None = UNSET,
+    scope: MemoryScope,
     subject_id: str | Unset | None = UNSET,
-) -> Response[ErrorResponse | Memory]:
-    """Get Memory
+) -> Response[ErrorResponse | MemoryCollection]:
+    """List Memories
 
     Args:
         workspace (str):
-        memory_id (str):
-        scope (Mem0Scope): Trusted Harness identity boundary used for Mem0 records.
+        provider_id (str):
+        limit (int | Unset): Maximum loaded records, not a total count.
+        cursor (None | str | Unset):
+        scope (MemoryScope):
         subject_id (None | str | Unset):
 
     Raises:
@@ -164,12 +193,14 @@ async def asyncio_detailed(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        Response[ErrorResponse | Memory]
+        Response[ErrorResponse | MemoryCollection]
     """
 
     kwargs = build_request(
         workspace=workspace,
-        memory_id=memory_id,
+        provider_id=provider_id,
+        limit=limit,
+        cursor=cursor,
         scope=scope,
         subject_id=subject_id,
     )
@@ -181,18 +212,22 @@ async def asyncio_detailed(
 
 async def asyncio(
     workspace: str,
-    memory_id: str,
+    provider_id: str,
     *,
     client: AuthenticatedClient,
-    scope: Mem0Scope,
+    limit: int | Unset = UNSET,
+    cursor: str | Unset | None = UNSET,
+    scope: MemoryScope,
     subject_id: str | Unset | None = UNSET,
-) -> ErrorResponse | Memory | None:
-    """Get Memory
+) -> ErrorResponse | MemoryCollection | None:
+    """List Memories
 
     Args:
         workspace (str):
-        memory_id (str):
-        scope (Mem0Scope): Trusted Harness identity boundary used for Mem0 records.
+        provider_id (str):
+        limit (int | Unset): Maximum loaded records, not a total count.
+        cursor (None | str | Unset):
+        scope (MemoryScope):
         subject_id (None | str | Unset):
 
     Raises:
@@ -200,14 +235,16 @@ async def asyncio(
         httpx.TimeoutException: If the request takes longer than Client.timeout.
 
     Returns:
-        ErrorResponse | Memory
+        ErrorResponse | MemoryCollection
     """
 
     return (
         await asyncio_detailed(
             workspace=workspace,
-            memory_id=memory_id,
+            provider_id=provider_id,
             client=client,
+            limit=limit,
+            cursor=cursor,
             scope=scope,
             subject_id=subject_id,
         )

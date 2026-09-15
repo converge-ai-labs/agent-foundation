@@ -6,21 +6,19 @@ import httpx2 as httpx
 
 from ...client import AuthenticatedClient, Client
 from ...models.error_response import ErrorResponse
-from ...models.mem_0_scope import Mem0Scope
 from ...models.memory import Memory
-from ...models.memory_write import MemoryWrite
+from ...models.memory_scope import MemoryScope
 from ...types import UNSET, Response, Unset
 
 
 def build_request(
     workspace: str,
+    provider_id: str,
     memory_id: str,
     *,
-    body: MemoryWrite,
-    scope: Mem0Scope,
+    scope: MemoryScope,
     subject_id: str | Unset | None = UNSET,
 ) -> dict[str, Any]:
-    headers: dict[str, Any] = {}
 
     params: dict[str, Any] = {}
 
@@ -37,19 +35,15 @@ def build_request(
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
     _kwargs: dict[str, Any] = {
-        "method": "put",
-        "url": "/api/v1/workspaces/{workspace}/memories/{memory_id}".format(
+        "method": "get",
+        "url": "/api/v1/workspaces/{workspace}/memory-providers/{provider_id}/memories/{memory_id}".format(
             workspace=quote(str(workspace), safe=""),
+            provider_id=quote(str(provider_id), safe=""),
             memory_id=quote(str(memory_id), safe=""),
         ),
         "params": params,
     }
 
-    _kwargs["json"] = body.to_dict()
-
-    headers["Content-Type"] = "application/json"
-
-    _kwargs["headers"] = headers
     return _kwargs
 
 
@@ -82,21 +76,21 @@ def _build_response(
 
 def sync_detailed(
     workspace: str,
+    provider_id: str,
     memory_id: str,
     *,
     client: AuthenticatedClient,
-    body: MemoryWrite,
-    scope: Mem0Scope,
+    scope: MemoryScope,
     subject_id: str | Unset | None = UNSET,
 ) -> Response[ErrorResponse | Memory]:
-    """Update Memory
+    """Get Memory
 
     Args:
         workspace (str):
+        provider_id (str):
         memory_id (str):
-        scope (Mem0Scope): Trusted Harness identity boundary used for Mem0 records.
+        scope (MemoryScope):
         subject_id (None | str | Unset):
-        body (MemoryWrite):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -108,8 +102,8 @@ def sync_detailed(
 
     kwargs = build_request(
         workspace=workspace,
+        provider_id=provider_id,
         memory_id=memory_id,
-        body=body,
         scope=scope,
         subject_id=subject_id,
     )
@@ -123,21 +117,21 @@ def sync_detailed(
 
 def sync(
     workspace: str,
+    provider_id: str,
     memory_id: str,
     *,
     client: AuthenticatedClient,
-    body: MemoryWrite,
-    scope: Mem0Scope,
+    scope: MemoryScope,
     subject_id: str | Unset | None = UNSET,
 ) -> ErrorResponse | Memory | None:
-    """Update Memory
+    """Get Memory
 
     Args:
         workspace (str):
+        provider_id (str):
         memory_id (str):
-        scope (Mem0Scope): Trusted Harness identity boundary used for Mem0 records.
+        scope (MemoryScope):
         subject_id (None | str | Unset):
-        body (MemoryWrite):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -149,9 +143,9 @@ def sync(
 
     return sync_detailed(
         workspace=workspace,
+        provider_id=provider_id,
         memory_id=memory_id,
         client=client,
-        body=body,
         scope=scope,
         subject_id=subject_id,
     ).parsed
@@ -159,21 +153,21 @@ def sync(
 
 async def asyncio_detailed(
     workspace: str,
+    provider_id: str,
     memory_id: str,
     *,
     client: AuthenticatedClient,
-    body: MemoryWrite,
-    scope: Mem0Scope,
+    scope: MemoryScope,
     subject_id: str | Unset | None = UNSET,
 ) -> Response[ErrorResponse | Memory]:
-    """Update Memory
+    """Get Memory
 
     Args:
         workspace (str):
+        provider_id (str):
         memory_id (str):
-        scope (Mem0Scope): Trusted Harness identity boundary used for Mem0 records.
+        scope (MemoryScope):
         subject_id (None | str | Unset):
-        body (MemoryWrite):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -185,8 +179,8 @@ async def asyncio_detailed(
 
     kwargs = build_request(
         workspace=workspace,
+        provider_id=provider_id,
         memory_id=memory_id,
-        body=body,
         scope=scope,
         subject_id=subject_id,
     )
@@ -198,21 +192,21 @@ async def asyncio_detailed(
 
 async def asyncio(
     workspace: str,
+    provider_id: str,
     memory_id: str,
     *,
     client: AuthenticatedClient,
-    body: MemoryWrite,
-    scope: Mem0Scope,
+    scope: MemoryScope,
     subject_id: str | Unset | None = UNSET,
 ) -> ErrorResponse | Memory | None:
-    """Update Memory
+    """Get Memory
 
     Args:
         workspace (str):
+        provider_id (str):
         memory_id (str):
-        scope (Mem0Scope): Trusted Harness identity boundary used for Mem0 records.
+        scope (MemoryScope):
         subject_id (None | str | Unset):
-        body (MemoryWrite):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -225,9 +219,9 @@ async def asyncio(
     return (
         await asyncio_detailed(
             workspace=workspace,
+            provider_id=provider_id,
             memory_id=memory_id,
             client=client,
-            body=body,
             scope=scope,
             subject_id=subject_id,
         )

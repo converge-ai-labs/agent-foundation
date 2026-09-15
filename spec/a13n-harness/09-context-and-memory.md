@@ -371,24 +371,30 @@ Ordinary compact-run failures, including an empty plain-text summary, emit a bou
 
 After successful nested generation and replacement-history construction, compaction exposes the exact generated summary through the native Capability event channel. The summary remains separate from normal assistant output and is correlated to its compaction operation. Failure and cancellation do not publish successful-summary content. This process-local observation does not promise a persisted continuation or installed outer-history snapshot. [Events and Usage](12-events-observability-and-usage.md) owns the event shape and lifecycle distinction.
 
-## Mem0 Integration
+## Memory Integration
 
-`Mem0Capability` is the first-party long-term-memory integration. OSS is the primary backend, using the native Mem0 server API; Platform has a separate native `AsyncMemoryClient` adapter. The shared `Mem0Backend` contract contains only bounded search, list, and explicit add. It does not emulate the Platform wire protocol or own memory storage. The Capability remains opt-in in an Agent definition; package installation or backend configuration alone enables no behavior.
+`MemoryCapability` is the single public long-term-memory Capability, identified by `a13n.memory`. It borrows a provider-neutral `MemoryBackend` and owns optional automatic recall, standard memory tools, context projection, and typed current-run operations for custom Capabilities. It remains opt-in in an Agent definition; package installation or backend configuration alone enables no behavior. Mem0 OSS and Platform are independent built-in adapters, not public behavior types.
+
+The `MemoryBackend` asynchronous contract covers `search`, `list`, `add`, `get`, `update`, and `delete`. `MemorySubject` contains a trusted `MemoryScope` and namespace value; no native filter names cross this boundary. `MemoryRecord` contains `id`, verbatim `text`, verified `subjects`, and an optional finite `score`. Search returns a bounded tuple of records. List returns `MemoryPage(items, pagination)`: absent pagination means unknown completeness; a present `MemoryPagination(next_cursor=None)` means a terminal native page. No total count, timestamps, metadata, extraction history, offset traversal, or complete export is implied. Get/update/delete require an explicit subject and verify ownership before mutation. Adds and updates confirm exact text and subject by readback; deletes confirm native absence. `MemoryRecordNotFound`, `MemoryPaginationUnsupported`, and `MemoryWriteUnconfirmed` are provider-neutral failures. Write uncertainty requires inspection before repetition, never automatic retry.
+
+`MemoryBackendPlugin` is an inert backend factory within `a13n-harness`, separate from `AbstractHarnessPlugin`. Each implementation defines a stable key, display name, independent Pydantic configuration and credential models with pure validation, and an asynchronous context-manager factory owning backend construction and cleanup. Its configuration contains no secrets. A host-selected immutable `MemoryBackendCatalog` contains only explicitly selected built-ins, installed entry points from `a13n_harness.memory_backends`, and direct plugin objects. Duplicate keys fail without shadowing; unselected entry points are not imported. The built-in keys are `a13n.mem0-oss` and `a13n.mem0-platform`. Embedded Hosts can inject a backend directly without a catalog or Service resource. Service and Harness share this protocol and adapter implementation, not a client instance across processes.
+
+The following is a conceptual construction schema, not serialized state.
 
 ```python
-class Mem0Scope(StrEnum):
+class MemoryScope(StrEnum):
     THREAD = "thread"
     AGENT = "agent"
     USER = "user"
 
 
-class Mem0Capability(AbstractModelContextCapability):
+class MemoryCapability(AbstractModelContextCapability):
     def __init__(
         self,
         *,
-        backend: Mem0Backend,
-        scope_ids: Mapping[Mem0Scope, str] | None = None,
-        scope: Mem0Scope | None = None,
+        backend: MemoryBackend,
+        scope_ids: Mapping[MemoryScope, str] | None = None,
+        scope: MemoryScope | None = None,
         toolset: bool = True,
         auto_recall: bool = True,
         recall_limit: int = 5,
@@ -402,13 +408,17 @@ The backend is required and borrowed. The Host owns its transport lifetime, cred
 
 The Capability resolves scope only from trusted current context:
 
-| Scope    | Trusted value                 | Mem0 entity field |
-| -------- | ----------------------------- | ----------------- |
-| `thread` | `AgentContext.thread_id`      | `run_id`          |
-| `agent`  | the `agent_id` Identity claim | `agent_id`        |
-| `user`   | the `user_id` Identity claim  | `user_id`         |
+| Scope    | Trusted value                 |
+| -------- | ----------------------------- |
+| `thread` | `AgentContext.thread_id`      |
+| `agent`  | the `agent_id` Identity claim |
+| `user`   | the `user_id` Identity claim  |
+
+Native field mapping belongs only to the backend adapter. Mem0 maps thread to `run_id`, agent to `agent_id`, and user to `user_id`.
 
 A configured `scope` is fixed for recall and tools; a missing required claim fails before model or memory-provider work. With `scope=None`, recall searches the union of all currently available scopes, while model tools accept one `thread`, `agent`, or `user` selector and resolve its value in trusted code. The model never supplies an entity ID. Without `scope_ids`, thread is always available; agent and user require their corresponding claims. A Host-supplied `scope_ids` mapping replaces this derivation with explicit trusted namespace bindings and can omit unavailable scopes.
+
+`auto_recall=False` and `toolset=False` disable only the corresponding defaults, not the selected backend or public operations. Custom behavior is contributed through existing `AbstractHarnessPlugin.get_capabilities()` and native Capability hooks, with corresponding defaults disabled explicitly; no class-name, tool-name, or feature-slot replacement heuristic exists. A custom Capability obtains the finalized owner using `ctx.capabilities.get(MemoryCapability.id)`, checks `isinstance(owner, MemoryCapability)`, and calls its typed `search/list/add/get/update/delete` methods with the current native `RunContext`. It never needs private context caches or native clients and credentials. Operations resolve one trusted scope, require a scope when none is fixed, and reject use through an unbound source or another logical Run's owner. Root, child, and concurrent Runs have independent bindings; native `for_run()` and logical-run recovery retain state without another public attachment or lifecycle. Hosts performing management or post-commit work can call their authorized backend directly without constructing a Capability.
 
 OSS searches at most three scopes concurrently using native direct entity filters, deduplicates by memory ID using the highest finite score, sorts by descending score then ID, and applies the total limit. One deadline bounds the entire union; failure cancels siblings and never returns successful partial recall. Platform uses its native union filter. Listing respects native limits: OSS uses public `GET /memories` with `top_k` and returns a bounded set without continuation; Platform retains native pages. No upstream patch, private route, direct storage access, or Service-side mirror is required. Bounded lists do not establish collection completeness. Automatic recall searches independently of any management list.
 
@@ -416,11 +426,11 @@ Pydantic `for_run()` receives the final prompt after `RunInputFactory` and Harne
 
 `recall_timeout` bounds provider wait. Timeout, authentication or provider failure, malformed response, empty query, and no result produce bounded observations. With `recall_required=False`, they omit the block and execution continues; with `recall_required=True`, timeout, authentication or provider failure, or malformed response terminates before model work. Cancellation always propagates.
 
-When `toolset=True`, the Capability composes exactly one of two Toolsets. A fixed-scope Toolset exposes `memory_search`, `memory_list`, and `memory_add` without a scope argument. An unbound Toolset exposes the same names with a `Mem0Scope` selector. Search and list are managed read tools, while add is a managed write tool and stores explicit bounded text with `infer=False`. Provider failures become bounded typed tool failures. A write requires a completed single `ADD` result; acceptance or queuing is not persistence. Unconfirmed writes return `mem0_write_unconfirmed`, instruct reconciliation, and never suggest automatic retry. Raw entity IDs, update, delete, batch, history, event polling, and entity administration are not model-visible.
+When `toolset=True`, the Capability composes exactly one of two Toolsets. A fixed-scope Toolset exposes `memory_search`, `memory_list`, and `memory_add` without a scope argument. An unbound Toolset exposes the same names with a `MemoryScope` selector. Search and list are managed read tools, while add is a managed write tool and stores explicit bounded text with `infer=False`. Provider failures become bounded typed tool failures. Explicit text contains 1–8000 characters, cannot be blank, and is stored verbatim. Mem0 add requires a completed single native `ADD` result and verified readback; acceptance or queuing is not persistence. Unconfirmed writes return `memory_write_unconfirmed`, instruct reconciliation, and never suggest automatic retry. Raw entity IDs, update, delete, batch, history, event polling, and entity administration are not model-visible.
 
 Automatic recall emits bounded context lifecycle events and one `memory_recall` Harness operation observation. The operation span and metric contain only the closed operation kind; events may include configured scope kinds, outcome, and result count. Pydantic owns model-visible memory-tool spans and the managed invocation boundary owns their events. Harness-authored observations contain no query, memory text, entity value, endpoint, credential, SDK response body, or raw exception.
 
-Mem0 records and SDK-side extraction remain provider-owned durable state. The Capability performs no automatic terminal transcript extraction: a process-local result does not prove Host checkpoint acceptance. A Host that requires automatic extraction dispatches it after its own durable commit. No memory task outlives a logical Harness Run without explicit Host ownership.
+Memory records remain provider-owned durable state. The Capability performs no automatic terminal transcript extraction: a process-local result does not prove Host checkpoint acceptance. A Host that requires automatic extraction dispatches it after its own durable commit. No memory task outlives a logical Harness Run without explicit Host ownership.
 
 ## State Ownership
 
@@ -434,7 +444,7 @@ Mem0 records and SDK-side extraction remain provider-owned durable state. The Ca
 | Retained semantic inputs and user steering   | Mandatory steering bridge namespace when automatic compaction is enabled                |
 | Monitored-process tasks and completion route | Host collaborator; Capability state can retain only incorporated completion IDs         |
 | Temporary media/document/web content         | Owning Capability or selected provider until bounded projection and cleanup             |
-| Long-term memory records                     | Mem0; `Mem0Capability` owns no portable or durable namespace                            |
+| Long-term memory records                     | Selected backend; `MemoryCapability` owns no portable or durable namespace              |
 | Portable multi-Environment backend state     | Explicit `HarnessState.environment_states`; backing-target authority remains Host-owned |
 | Host delivery, counters, and scheduler work  | Host                                                                                    |
 
@@ -450,7 +460,7 @@ A child run receives an explicit context seed and a fresh `AgentContext`. Parent
 | ---------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
 | Imported messages are invalid                                          | Run creation fails before provider work                                                                           |
 | Optional dynamic guidance is unavailable                               | Owning Capability omits it and emits a diagnostic                                                                 |
-| Required guidance or Mem0 recall fails                                 | Run fails before model work with a bounded memory error                                                           |
+| Required guidance or memory recall fails                               | Run fails before model work with a bounded memory error                                                           |
 | Shared task binding is missing or incompatible                         | Inline child dispatch fails before child model/tool work                                                          |
 | Task claim conflicts or uses a stale version                           | Typed conflict; the existing task owner and state remain unchanged                                                |
 | Structured question cannot be correlated or validated                  | Deferred resume fails under [Tool Execution](07-tool-execution.md#structured-user-questions)                      |
@@ -461,21 +471,21 @@ A child run receives an explicit context seed and a fresh `AgentContext`. Parent
 | Resource exceeds policy or conversion fails                            | Owning tool returns a bounded typed failure and cleans its partial assets                                         |
 | Compaction output is invalid                                           | Original history remains active                                                                                   |
 | Context exceeds the provider limit after policy                        | Model step fails with a bounded context error                                                                     |
-| Optional Mem0 recall times out or fails                                | Recall block is omitted after bounded observation; history remains valid                                          |
+| Optional memory recall times out or fails                              | Recall block is omitted after bounded observation; history remains valid                                          |
 
 ## Boundaries
 
-| Concern                                          | Owner                               |
-| ------------------------------------------------ | ----------------------------------- |
-| Prompt-dependent Mem0 recall and bounded tools   | `Mem0Capability` and Mem0 SDK       |
-| Dynamic context validation and structural commit | Harness model-context coordinator   |
-| Owned-overlay cleanup during history replacement | Compaction and Handoff Capabilities |
-| Instruction and history composition              | Pydantic AI and owning Capabilities |
-| Active messages and namespaced run state         | Harness                             |
-| Long-term memory storage and consolidation       | Mem0 or Host                        |
-| Automatic post-commit extraction                 | Host                                |
-| Application conversation and display history     | Host                                |
-| Provider context limits and request acceptance   | Model provider                      |
+| Concern                                          | Owner                                   |
+| ------------------------------------------------ | --------------------------------------- |
+| Prompt-dependent memory recall and bounded tools | `MemoryCapability` and selected backend |
+| Dynamic context validation and structural commit | Harness model-context coordinator       |
+| Owned-overlay cleanup during history replacement | Compaction and Handoff Capabilities     |
+| Instruction and history composition              | Pydantic AI and owning Capabilities     |
+| Active messages and namespaced run state         | Harness                                 |
+| Long-term memory storage and consolidation       | Selected backend or Host                |
+| Automatic post-commit extraction                 | Host                                    |
+| Application conversation and display history     | Host                                    |
+| Provider context limits and request acceptance   | Model provider                          |
 
 ## Trade-offs
 
@@ -487,9 +497,9 @@ Direct instructions, public model-request hooks, native enqueue, and Capability 
 
 Tasks and notes share tool presentation and one state owner without turning `AgentContext` into a collection of managers. Their separate request overlays preserve distinct recall semantics while retaining one storage namespace and lifecycle. A typed task cell supports atomic parent/child coordination, while notes, messages, and unrelated Capability state remain isolated. Handoff owns narrative continuity, automatic compaction owns history reduction, Notes own structured session facts, and Tasks own structured execution state; these Capabilities coordinate through instructions and fresh projection rather than direct dependencies.
 
-### Native Mem0 Client vs. Another Memory Port
+### Neutral Memory Operations vs. Vendor Behavior
 
-Using the native async SDK keeps one supported Mem0 API and response contract, while accepting its dependency and compatibility surface as part of the Harness release. A borrowed client amortizes SDK validation and connection setup across Runs. The environment-backed convenience path instead creates and closes one client per logical Run so the Harness does not invent an executable-lifetime resource owner.
+One typed storage contract permits custom behavior and managed backend selection without leaking vendor response shapes or duplicating a Capability per provider. Native Mem0 APIs remain authoritative inside the adapters; bounded OSS lists are not emulated as pagination. Hosts own transport lifetime and authorization, while the Capability borrows the selected backend and retains only logical-run behavior. Backend factory selection and behavior-plugin composition are independent.
 
 ### Host-owned Memory Work vs. Automatic Background Tasks
 

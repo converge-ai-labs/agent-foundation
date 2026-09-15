@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Protocol, cast
+from typing import Any, Protocol, cast
 
 from a13n_environment import EnvironmentProvider
 from a13n_harness.capabilities.web import (
@@ -16,6 +16,7 @@ from a13n_harness.capabilities.web import (
     WebSearchRequest,
     WebSearchResponse,
 )
+from a13n_harness.memory_plugins import MemoryBackendPlugin
 from pydantic import BaseModel
 
 from a13n_service.connectivity.connectors.contracts import ConnectorProviderRuntime
@@ -127,6 +128,9 @@ class ProviderPluginRegistry:
             "Connector", ConnectorProviderRegistration, lambda item: item.type
         )
         self.web = _DomainRegistry[WebProviderRegistration]("Web", WebProviderRegistration, lambda item: item.type)
+        self.memory = _DomainRegistry[MemoryBackendPlugin[Any, Any]](
+            "Memory", MemoryBackendPlugin, lambda item: item.key
+        )
 
 
 class ProviderRegister(Protocol):

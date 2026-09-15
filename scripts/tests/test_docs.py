@@ -215,23 +215,33 @@ def test_service_generated_references_match_current_definitions(built_site: Path
 
 
 def test_service_workflow_examples_match_request_models() -> None:
-    from a13n_service.agents.domain import CreateAgentRequest
+    from a13n_service.agents.domain import AgentRunOverride, CreateAgentRequest
     from a13n_service.connectivity.connections.domain import CreateConnectionRequest
     from a13n_service.gateway.requests import StartRunRequest
+    from a13n_service.memory.domain import CreateMemoryProviderRequest
     from a13n_service.skills.domain import CreateSkillRequest
 
     def blocks(name: str) -> list[dict[str, object]]:
         text = (ROOT / "docs/a13n-service" / name).read_text(encoding="utf-8")
         return [json.loads(block) for block in re.findall(r"^```json\n(.*?)^```", text, re.MULTILINE | re.DOTALL)]
 
-    agent, run = blocks("agents-and-runs.md")
+    agent, permissions, run = blocks("agents-and-runs.md")
     CreateAgentRequest.model_validate(agent)
+    reviewer = permissions["reviewer"]
+    assert isinstance(reviewer, dict)
+    assert reviewer["model"] == "REVIEW_MODEL_ID"
+    # The guide explicitly requires replacing this placeholder with a managed Model ID.
+    reviewer["model"] = "mdl_0123456789abcdef0123"
+    AgentRunOverride.model_validate(permissions)
     StartRunRequest.model_validate(run)
     for connection in blocks("external-tools.md"):
         if "source" in connection:
             CreateConnectionRequest.model_validate(connection)
     skill = next(value for value in blocks("resources.md") if "source" in value)
     CreateSkillRequest.model_validate(skill)
+    provider, memory = blocks("memory.md")
+    CreateMemoryProviderRequest.model_validate(provider)
+    AgentRunOverride.model_validate(memory)
 
 
 def test_logging_reference_covers_every_public_export() -> None:

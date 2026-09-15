@@ -78,9 +78,9 @@ def test_runtime_import_defers_unused_provider_sdks() -> None:
             "from a13n_harness.model_auth import CodexRequestModel; "
             "from a13n_harness.model_auth.codex import CodexRequestModel as native; "
             "assert CodexRequestModel is native; "
-            "from a13n_harness.capabilities import Mem0Capability; "
-            "from a13n_harness.capabilities.mem0 import Mem0Capability as memory; "
-            "assert Mem0Capability is memory",
+            "from a13n_harness.capabilities import MemoryCapability; "
+            "from a13n_harness.capabilities.memory import MemoryCapability as memory; "
+            "assert MemoryCapability is memory",
         ],
         check=False,
         capture_output=True,

@@ -1,4 +1,4 @@
-"""One installed entry point registering Web and Model Provider types."""
+"""One installed entry point registering Web, Model, and Memory Provider types."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from a13n_harness.capabilities.web import (
     WebSearchResponse,
     WebSearchResult,
 )
+from a13n_harness.memory_plugins import Mem0OSSPlugin
 from a13n_service.provider_plugins import (
     ProviderConfiguration,
     ProviderIntegration,
@@ -95,8 +96,16 @@ def _build_model_provider(provider: RuntimeProvider, http_client, model_api: str
     )
 
 
+class AcmeMemoryPlugin(Mem0OSSPlugin):
+    """Reuse the native OSS adapter and schemas in both Harness and Service."""
+
+    key = "acme.memory"
+    display_name = "Acme Memory"
+
+
 @provider_plugin(api_version=1)
 def register(registry: ProviderPluginRegistry) -> None:
+    registry.memory.register(AcmeMemoryPlugin())
     registry.web.register(
         WebProviderRegistration(
             type="acme_web",

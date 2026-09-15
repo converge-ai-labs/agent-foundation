@@ -1,4 +1,4 @@
-"""Model-facing Mem0 tools composed by Mem0Capability."""
+"""Model-facing Memory tools composed by MemoryCapability."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pydantic_ai import RunContext
 from pydantic_ai.toolsets import FunctionToolset
 
 from a13n_harness._json import dump_json_bytes
-from a13n_harness.capabilities.mem0 import Mem0Scope, _Mem0Binding
+from a13n_harness.capabilities.memory import MemoryScope, _MemoryBinding, _normalize_memories
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import RunError
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
@@ -17,18 +17,18 @@ from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOu
 from ._instructions import InstructionFunctionToolset, tool_instruction
 from ._results import tool_failure
 
-_MEMORY_INSTRUCTION = tool_instruction("mem0")
+_MEMORY_INSTRUCTION = tool_instruction("memory")
 _MAX_QUERY_CHARS = 16_000
-_MAX_MEMORY_TEXT_CHARS = 16_000
+_MAX_MEMORY_TEXT_CHARS = 8_000
 _MAX_RESULT_BYTES = 240 * 1024
 
 
-class Mem0Toolset:
-    """Bounded search, list, and explicit-add tools for one run-local Mem0 binding."""
+class MemoryToolset:
+    """Bounded search, list, and explicit-add tools for one run-local Memory binding."""
 
-    def __init__(self, binding: _Mem0Binding) -> None:
-        if not isinstance(binding, _Mem0Binding):
-            raise TypeError("binding must be a run-local Mem0 binding")
+    def __init__(self, binding: _MemoryBinding) -> None:
+        if not isinstance(binding, _MemoryBinding):
+            raise TypeError("binding must be a run-local Memory binding")
         self._binding = binding
 
     def get_toolset(self) -> FunctionToolset[AgentContext]:
@@ -42,7 +42,7 @@ class Mem0Toolset:
                 self._tool(list_memories, tool_id="memory.list", name="memory_list", write=False),
                 self._tool(add, tool_id="memory.add", name="memory_add", write=True),
             ],
-            id="a13n-mem0-tools",
+            id="a13n-memory-tools",
             instructions=[_MEMORY_INSTRUCTION],
         )
 
@@ -78,7 +78,7 @@ class Mem0Toolset:
         self,
         ctx: RunContext[AgentContext],
         query: Annotated[str, Field(min_length=1, max_length=_MAX_QUERY_CHARS, description="Memory search query")],
-        scope: Annotated[Mem0Scope, Field(description="Trusted memory scope")],
+        scope: Annotated[MemoryScope, Field(description="Trusted memory scope")],
         limit: Annotated[int, Field(ge=1, le=100, description="Maximum memories to return")] = 5,
     ) -> dict[str, JsonValue]:
         del ctx
@@ -95,7 +95,7 @@ class Mem0Toolset:
     async def memory_list(
         self,
         ctx: RunContext[AgentContext],
-        scope: Annotated[Mem0Scope, Field(description="Trusted memory scope")],
+        scope: Annotated[MemoryScope, Field(description="Trusted memory scope")],
         limit: Annotated[int, Field(ge=1, le=100, description="Maximum memories to return")] = 20,
     ) -> dict[str, JsonValue]:
         del ctx
@@ -119,7 +119,7 @@ class Mem0Toolset:
             str,
             Field(min_length=1, max_length=_MAX_MEMORY_TEXT_CHARS, description="Exact memory text to store"),
         ],
-        scope: Annotated[Mem0Scope, Field(description="Trusted memory scope")],
+        scope: Annotated[MemoryScope, Field(description="Trusted memory scope")],
     ) -> dict[str, JsonValue]:
         del ctx
         return await self._add(text, scope=scope)
@@ -128,57 +128,57 @@ class Mem0Toolset:
         self,
         query: str,
         *,
-        scope: Mem0Scope | None,
+        scope: MemoryScope | None,
         limit: int,
     ) -> dict[str, JsonValue]:
         try:
             memories = await self._binding.search(query, scope=scope, limit=limit)
-            return _memory_result(memories)
+            return _memory_result(_normalize_memories(memories, limit=limit))
         except TimeoutError:
-            return _failure("mem0_timeout", retry_hint="retry")
+            return _failure("memory_timeout", retry_hint="retry")
         except RunError as exc:
             return cast(
                 dict[str, JsonValue], tool_failure(exc.code, str(exc), details=exc.details, retry_hint=exc.retry_hint)
             )
         except (TypeError, ValueError):
-            return _failure("mem0_response_invalid")
+            return _failure("memory_response_invalid")
         except Exception:
-            return _failure("mem0_search_failed", retry_hint="retry")
+            return _failure("memory_search_failed", retry_hint="retry")
 
     async def _list(
         self,
         *,
-        scope: Mem0Scope | None,
+        scope: MemoryScope | None,
         limit: int,
     ) -> dict[str, JsonValue]:
         try:
-            memories = await self._binding.list(scope=scope, limit=limit)
-            return _memory_result(memories)
+            page = await self._binding.list(scope=scope, limit=limit)
+            return _memory_result(_normalize_memories(page.items, limit=limit))
         except TimeoutError:
-            return _failure("mem0_timeout", retry_hint="retry")
+            return _failure("memory_timeout", retry_hint="retry")
         except RunError as exc:
             return cast(
                 dict[str, JsonValue], tool_failure(exc.code, str(exc), details=exc.details, retry_hint=exc.retry_hint)
             )
         except (TypeError, ValueError):
-            return _failure("mem0_response_invalid")
+            return _failure("memory_response_invalid")
         except Exception:
-            return _failure("mem0_list_failed", retry_hint="retry")
+            return _failure("memory_list_failed", retry_hint="retry")
 
-    async def _add(self, text: str, *, scope: Mem0Scope | None) -> dict[str, JsonValue]:
+    async def _add(self, text: str, *, scope: MemoryScope | None) -> dict[str, JsonValue]:
         try:
             await self._binding.add(text, scope=scope)
             return {"ok": True, "added": True}
         except TimeoutError:
-            return _failure("mem0_write_unconfirmed")
+            return _failure("memory_write_unconfirmed")
         except RunError as exc:
             return cast(
                 dict[str, JsonValue], tool_failure(exc.code, str(exc), details=exc.details, retry_hint=exc.retry_hint)
             )
         except (TypeError, ValueError):
-            return _failure("mem0_write_unconfirmed")
+            return _failure("memory_write_unconfirmed")
         except Exception:
-            return _failure("mem0_write_unconfirmed")
+            return _failure("memory_write_unconfirmed")
 
 
 def _memory_result(memories) -> dict[str, JsonValue]:
@@ -204,12 +204,12 @@ def _memory_result(memories) -> dict[str, JsonValue]:
 
 def _failure(code: str, *, retry_hint: str | None = None) -> dict[str, JsonValue]:
     message = {
-        "mem0_timeout": "The memory operation timed out.",
-        "mem0_response_invalid": "The memory provider returned an invalid response.",
-        "mem0_scope_unavailable": "The requested memory scope is unavailable.",
-        "mem0_search_failed": "The memory search failed; check the configured provider.",
-        "mem0_list_failed": "The memory list operation failed; check the configured provider.",
-        "mem0_write_unconfirmed": "The memory write could not be confirmed. Inspect current memory before repeating the write.",
+        "memory_timeout": "The memory operation timed out.",
+        "memory_response_invalid": "The memory provider returned an invalid response.",
+        "memory_scope_unavailable": "The requested memory scope is unavailable.",
+        "memory_search_failed": "The memory search failed; check the configured provider.",
+        "memory_list_failed": "The memory list operation failed; check the configured provider.",
+        "memory_write_unconfirmed": "The memory write could not be confirmed. Inspect current memory before repeating the write.",
     }.get(code, "The memory operation could not complete.")
     return cast(dict[str, JsonValue], tool_failure(code, message, retry_hint=retry_hint))
 

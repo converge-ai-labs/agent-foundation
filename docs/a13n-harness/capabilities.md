@@ -104,7 +104,7 @@ The [integration package example](https://github.com/converge-ai-labs/agent-foun
 | `ToolPermissionsCapability`    | Stable-ID permissions and optional risk review, with shell input specialization             | Fresh invocation policy still authorizes every managed call    |
 | `SkillsCapability`             | Explicit Skill discovery, selection, instructions, and paths                                | Entered Environment and optional `RunBindings.skill_selection` |
 | `WorkingStateCapability`       | Task and note tools plus model-context projection                                           | Optional `TaskStateBinding` in provider mode                   |
-| `Mem0Capability`               | One bounded automatic recall plus optional search, list, and explicit-add tools             | Host-owned native OSS or Platform backend                      |
+| `MemoryCapability`             | Optional recall and standard tools, plus typed current-run operations for custom behavior   | Host-owned typed MemoryBackend; built-in Mem0 OSS and Platform |
 | `UserInteractionCapability`    | Structured user questions through native deferred tools                                     | Host handles suspension and resume                             |
 | `MediaCapability`              | Media-reading Toolset                                                                       | `RunBindings.media_reader`                                     |
 | `DocumentsCapability`          | Document-conversion Toolset                                                                 | `RunBindings.document_converter`                               |
@@ -169,9 +169,9 @@ Native search remains independently composable with `NativeTool(WebSearchTool(..
 
 See [Context and memory](context-and-memory.md#context-composition) for configuration, examples, and lifecycle boundaries.
 
-## Mem0 Long-Term Memory
+## Long-Term Memory
 
-See [Context and memory](context-and-memory.md#mem0-long-term-memory) for configuration, examples, and lifecycle boundaries.
+See [Context and memory](context-and-memory.md#long-term-memory) for configuration, examples, and lifecycle boundaries.
 
 ## Tool permissions and general review
 

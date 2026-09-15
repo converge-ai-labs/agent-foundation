@@ -338,3 +338,18 @@ def test_environment_and_managed_tool_import_routes_are_public() -> None:
     assert expected_tools <= set(tools.__all__)
     assert "InvocationAuthorizationCapability" not in tools.__all__
     assert "InvocationAuthorizationToolset" not in tools.__all__
+
+
+def test_memory_has_one_public_capability_and_independent_backend_contract():
+    from a13n_harness.capabilities.memory import MemoryCapability
+    from a13n_harness.memory import MemoryBackend, MemoryScope
+    from a13n_harness.memory_plugins import MemoryBackendCatalog, MemoryBackendPlugin
+
+    assert capabilities.MemoryCapability is MemoryCapability
+    assert capabilities.MemoryScope is MemoryScope
+    assert MemoryCapability.id == "a13n.memory"
+    assert not hasattr(capabilities, "Mem0Capability")
+    assert not hasattr(capabilities, "MemoryRunCapability")
+    assert MemoryBackend.__abstractmethods__ == {"search", "list", "add", "get", "update", "delete"}
+    assert MemoryBackendPlugin is not harness.AbstractHarnessPlugin
+    assert MemoryBackendCatalog() == {}

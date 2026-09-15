@@ -1,7 +1,7 @@
 from enum import StrEnum
 
 
-class Mem0Scope(StrEnum):
+class MemoryScope(StrEnum):
     AGENT = "agent"
     THREAD = "thread"
     USER = "user"

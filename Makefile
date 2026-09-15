@@ -10,7 +10,8 @@ SERVICE_CONFIG ?= dev/service/local.toml
 HARNESS_ENV ?= dev/harness/.env
 HARNESS_UI_ENV ?= dev/harness-ui/.env
 STATE ?=
-SERVICE_DEV = uv run --locked python -m dev.service --config "$(SERVICE_CONFIG)"
+MEM0_CONFIG ?= dev/mem0/local.toml
+SERVICE_DEV = uv run --locked python -m dev.service --config "$(SERVICE_CONFIG)" --mem0-config "$(MEM0_CONFIG)"
 CHECK_JOBS ?= 4
 CHECK_TARGETS := \
 	lint \

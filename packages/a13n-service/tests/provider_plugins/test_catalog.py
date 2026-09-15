@@ -306,3 +306,31 @@ async def test_web_runtime_cleanup_log_excludes_external_error_details(caplog: p
     assert result == "operation completed"
     assert "credential=must-not-appear" not in caplog.text
     assert caplog.records[0].cleanup_error_type == "RuntimeError"
+
+
+def test_memory_registration_reuses_shared_plugin_and_rejects_builtin_collision(monkeypatch):
+    from a13n_harness.memory_plugins import Mem0OSSPlugin, MemoryBackendCatalog
+
+    class CustomMemoryPlugin(Mem0OSSPlugin):
+        key = "custom.memory"
+        display_name = "Custom Memory"
+
+    plugin = CustomMemoryPlugin()
+
+    @compatible
+    def selected(registry):
+        registry.memory.register(plugin)
+
+    chosen = EntryPoint("memory", selected)
+    install(monkeypatch, chosen)
+    catalog = MemoryBackendCatalog(load_provider_catalogs(("memory",)).memory)
+    assert catalog[plugin.key] is plugin
+    assert chosen.loads == 1
+
+    @compatible
+    def collision(registry):
+        registry.memory.register(Mem0OSSPlugin())
+
+    install(monkeypatch, EntryPoint("collision", collision))
+    with pytest.raises(ProviderPluginError, match="ValueError"):
+        load_provider_catalogs(("collision",))

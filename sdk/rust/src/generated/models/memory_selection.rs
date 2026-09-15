@@ -17,6 +17,9 @@ pub struct MemorySelection {
     #[serde(rename = "auto_recall", skip_serializing_if = "Option::is_none")]
     pub auto_recall: Option<bool>,
 
+    #[serde(rename = "provider_id")]
+    pub provider_id: String,
+
     #[serde(rename = "recall_limit", skip_serializing_if = "Option::is_none")]
     pub recall_limit: Option<i32>,
 
@@ -40,7 +43,7 @@ pub struct MemorySelection {
         with = "::serde_with::rust::double_option",
         skip_serializing_if = "Option::is_none"
     )]
-    pub scope: Option<Option<models::Mem0Scope>>,
+    pub scope: Option<Option<models::MemoryScope>>,
 
     #[serde(rename = "toolset", skip_serializing_if = "Option::is_none")]
     pub toolset: Option<bool>,
@@ -48,9 +51,10 @@ pub struct MemorySelection {
 
 impl MemorySelection {
     /// Opt-in Agent behavior; backend credentials and subject IDs are host-owned.
-    pub fn new() -> MemorySelection {
+    pub fn new(provider_id: String) -> MemorySelection {
         MemorySelection {
             auto_recall: None,
+            provider_id,
             recall_limit: None,
             recall_required: None,
             recall_threshold: None,

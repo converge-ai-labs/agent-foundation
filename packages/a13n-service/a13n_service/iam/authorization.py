@@ -15,6 +15,8 @@ from .role_rules import validate_binding
 
 
 class WorkspaceAction(StrEnum):
+    memory_provider_read = "memory_provider.read"
+    memory_provider_manage = "memory_provider.manage"
     memory_read = "memory.read"
     memory_write = "memory.write"
     agent_read = "agent.read"
@@ -101,6 +103,7 @@ _READ_ACTIONS = frozenset(
         WorkspaceAction.agent_read,
         WorkspaceAction.models_read,
         WorkspaceAction.web_provider_read,
+        WorkspaceAction.memory_provider_read,
         WorkspaceAction.secrets_read,
         WorkspaceAction.skill_read,
         WorkspaceAction.environment_provider_read,
@@ -168,6 +171,7 @@ _BUILDER_ACTIONS = _RUNNER_ACTIONS | frozenset(
         WorkspaceAction.asset_delete,
         WorkspaceAction.models_manage,
         WorkspaceAction.web_provider_manage,
+        WorkspaceAction.memory_provider_manage,
         WorkspaceAction.secrets_manage,
         WorkspaceAction.secrets_bind,
         WorkspaceAction.skill_create,

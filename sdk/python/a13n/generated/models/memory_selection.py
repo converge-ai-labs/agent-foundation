@@ -5,7 +5,7 @@ from typing import Any, TypeVar, cast
 
 from attrs import define as _attrs_define
 
-from ..models.mem_0_scope import Mem0Scope
+from ..models.memory_scope import MemoryScope
 from ..types import UNSET, Unset
 
 T = TypeVar("T", bound="MemorySelection")
@@ -16,24 +16,28 @@ class MemorySelection:
     """Opt-in Agent behavior; backend credentials and subject IDs are host-owned.
 
     Attributes:
+        provider_id (str):
         auto_recall (bool | Unset):
         recall_limit (int | Unset):
         recall_required (bool | Unset):
         recall_threshold (float | None | Unset):
         recall_timeout (float | Unset):
-        scope (Mem0Scope | None | Unset):
+        scope (MemoryScope | None | Unset):
         toolset (bool | Unset):
     """
 
+    provider_id: str
     auto_recall: bool | Unset = UNSET
     recall_limit: int | Unset = UNSET
     recall_required: bool | Unset = UNSET
     recall_threshold: float | Unset | None = UNSET
     recall_timeout: float | Unset = UNSET
-    scope: Mem0Scope | Unset | None = UNSET
+    scope: MemoryScope | Unset | None = UNSET
     toolset: bool | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
+        provider_id = self.provider_id
+
         auto_recall = self.auto_recall
 
         recall_limit = self.recall_limit
@@ -51,7 +55,7 @@ class MemorySelection:
         scope: str | Unset | None
         if isinstance(self.scope, Unset):
             scope = UNSET
-        elif isinstance(self.scope, Mem0Scope):
+        elif isinstance(self.scope, MemoryScope):
             scope = self.scope.value
         else:
             scope = self.scope
@@ -60,7 +64,11 @@ class MemorySelection:
 
         field_dict: dict[str, Any] = {}
 
-        field_dict.update({})
+        field_dict.update(
+            {
+                "provider_id": provider_id,
+            }
+        )
         if auto_recall is not UNSET:
             field_dict["auto_recall"] = auto_recall
         if recall_limit is not UNSET:
@@ -81,6 +89,8 @@ class MemorySelection:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         d = dict(src_dict)
+        provider_id = d.pop("provider_id")
+
         auto_recall = d.pop("auto_recall", UNSET)
 
         recall_limit = d.pop("recall_limit", UNSET)
@@ -98,7 +108,7 @@ class MemorySelection:
 
         recall_timeout = d.pop("recall_timeout", UNSET)
 
-        def _parse_scope(data: object) -> Mem0Scope | Unset | None:
+        def _parse_scope(data: object) -> MemoryScope | Unset | None:
             if data is None:
                 return data
             if isinstance(data, Unset):
@@ -106,18 +116,19 @@ class MemorySelection:
             try:
                 if not isinstance(data, str):
                     raise TypeError()
-                scope_type_0 = Mem0Scope(data)
+                scope_type_0 = MemoryScope(data)
 
                 return scope_type_0
             except (TypeError, ValueError, AttributeError, KeyError):
                 pass
-            return cast(Mem0Scope | Unset | None, data)
+            return cast(MemoryScope | Unset | None, data)
 
         scope = _parse_scope(d.pop("scope", UNSET))
 
         toolset = d.pop("toolset", UNSET)
 
         memory_selection = cls(
+            provider_id=provider_id,
             auto_recall=auto_recall,
             recall_limit=recall_limit,
             recall_required=recall_required,

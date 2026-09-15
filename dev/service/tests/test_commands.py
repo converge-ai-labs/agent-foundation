@@ -37,14 +37,14 @@ def test_setup_is_repeatable_preserves_state_and_never_resets(tmp_path, monkeypa
     monkeypatch.setattr(commands, "ensure_docker", lambda: events.append("docker"))
     monkeypatch.setattr(Environment, "compose", lambda self, *args: events.append(args))
     monkeypatch.setattr(Langfuse, "start", lambda self: events.append("langfuse"))
-    monkeypatch.setattr(Mem0, "start", lambda self: events.append("mem0"))
+    monkeypatch.setattr(Mem0, "start", lambda self: pytest.fail("memory infrastructure is opt-in"))
     monkeypatch.setattr(
         commands, "DatabaseMigrator", lambda *args: SimpleNamespace(upgrade=lambda: events.append("migrate"))
     )
     monkeypatch.setattr(commands, "reset", lambda *args: pytest.fail("setup must never reset or seed"))
     for _ in range(2):
         commands.setup(environment, Langfuse(environment), LOCAL_CONFIG)
-    assert events == ["docker", ("up", "-d", "--wait"), "langfuse", "mem0", "migrate"] * 2
+    assert events == ["docker", ("up", "-d", "--wait"), "langfuse", "migrate"] * 2
     assert retained.read_text() == "preserve data"
     assert "Service and Console have not been started" in capsys.readouterr().out
 
@@ -184,3 +184,22 @@ def test_logfire_local_commands_skip_langfuse_and_keep_selected_export(tmp_path,
     monkeypatch.setattr(commands, "reset", reset)
     commands.main()
     assert events == (["docker", ("up", "-d", "--wait"), "migrate"] if action == "setup" else [("reset", "seeded")])
+
+
+def test_setup_starts_mem0_only_when_local_configuration_explicitly_enables_it(tmp_path, monkeypatch):
+    from dev.service.mem0 import Mem0Settings
+
+    environment = local_environment(tmp_path)
+    events = []
+    monkeypatch.setattr(commands, "ensure_docker", lambda: None)
+    monkeypatch.setattr(Environment, "compose", lambda *args: None)
+    monkeypatch.setattr(Langfuse, "start", lambda self: None)
+    monkeypatch.setattr(Mem0, "validate", lambda self: events.append("validate"))
+    monkeypatch.setattr(Mem0, "start", lambda self: events.append(("start", self.port)))
+    monkeypatch.setattr(commands, "DatabaseMigrator", lambda *args: SimpleNamespace(upgrade=lambda: None))
+    commands.setup(environment, Langfuse(environment), LOCAL_CONFIG)
+    assert events == []
+    commands.setup(
+        environment, Langfuse(environment), LOCAL_CONFIG, mem0_settings=Mem0Settings(enabled=True, port=18899)
+    )
+    assert events == ["validate", ("start", 18899)]

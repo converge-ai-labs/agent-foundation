@@ -6,14 +6,14 @@ from unittest.mock import AsyncMock
 
 import pytest
 from a13n_environment.models import EnvironmentError
-from a13n_harness.capabilities.mem0 import Mem0Scope, _Mem0Binding
+from a13n_harness.capabilities.memory import MemoryScope, _MemoryBinding
 from a13n_harness.capabilities.working_state import CreateTask, TaskStateError
 from a13n_harness.errors import RunError
 from a13n_harness.toolsets._results import validation_failure
 from a13n_harness.toolsets.documents import DocumentsToolset, _document_error
 from a13n_harness.toolsets.files import _environment_error_result as file_failure
 from a13n_harness.toolsets.media import _media_error
-from a13n_harness.toolsets.mem0 import Mem0Toolset, _failure
+from a13n_harness.toolsets.memory import MemoryToolset, _failure
 from a13n_harness.toolsets.shell import _environment_error_result as shell_failure
 from a13n_harness.toolsets.web import WebConfiguration, WebToolset, _web_error
 from a13n_harness.toolsets.working_state import _task_error, _validate_note_key
@@ -26,7 +26,7 @@ from pydantic import ValidationError
         (_document_error, "document_timeout"),
         (_media_error, "media_read_failed"),
         (_web_error, "web_search_backend_missing"),
-        (_failure, "mem0_response_invalid"),
+        (_failure, "memory_response_invalid"),
     ],
 )
 def test_code_only_provider_failures_gain_safe_message_and_details(factory, code):
@@ -128,16 +128,16 @@ async def test_environment_details_and_retry_are_not_lost_by_content_tools(opera
 
 
 @pytest.mark.anyio
-async def test_mem0_keeps_safe_scope_error_message_and_details():
+async def test_memory_keeps_safe_scope_error_message_and_details():
     backend = SimpleNamespace(search=AsyncMock(side_effect=AssertionError("unexpected provider I/O")))
-    binding = _Mem0Binding(backend=backend, scopes=(), fixed_scope=None)
+    binding = _MemoryBinding(backend=backend, scopes=(), fixed_scope=None)
     for scope, reason, message in [
         (None, "scope_required", "A memory scope is required."),
-        (Mem0Scope.USER, "scope_unavailable", "The selected memory scope is unavailable."),
+        (MemoryScope.USER, "scope_unavailable", "The selected memory scope is unavailable."),
     ]:
         with pytest.raises(RunError) as exc:
             binding.scope_binding(scope)
-        result = await Mem0Toolset(binding)._search("query", scope=scope, limit=5)
+        result = await MemoryToolset(binding)._search("query", scope=scope, limit=5)
         assert result["error"]["message"] == message
         assert result["error"]["details"]["reason"] == reason
         assert result["error"]["retry_hint"] == exc.value.retry_hint

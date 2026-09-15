@@ -1,8 +1,5 @@
 """First-party optional Agent Harness Capabilities."""
 
-from importlib import import_module
-from typing import TYPE_CHECKING
-
 from .codeact import CodeActCapability, CodeActConfig
 from .context import (
     CompactionCapability,
@@ -43,6 +40,7 @@ from .media import (
     MediaReadRequest,
     MediaResource,
 )
+from .memory import MemoryCapability, MemoryScope
 from .native_image_generation import NativeImageGenerationCapability, NativeImageSaver
 from .skills import (
     BoundSkillCatalog,
@@ -140,20 +138,6 @@ from .working_state import (
     WorkingStateConfiguration,
 )
 
-if TYPE_CHECKING:
-    from .mem0 import Mem0Capability, Mem0Scope
-
-
-def __getattr__(name: str) -> object:
-    # Importing any capability must not initialize an unused memory SDK and its
-    # vector-store integrations. Preserve the public re-exports on explicit use.
-    if name in {"Mem0Capability", "Mem0Scope"}:
-        value = vars(import_module(".mem0", __name__))[name]
-        globals()[name] = value
-        return value
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
 __all__ = [
     "MAX_SUBAGENT_ACTIVITY_OUTPUT_CHARS",
     "WEB_SCRAPE_BACKEND_ENV",
@@ -199,8 +183,8 @@ __all__ = [
     "MediaReadRequest",
     "MediaReader",
     "MediaResource",
-    "Mem0Capability",
-    "Mem0Scope",
+    "MemoryCapability",
+    "MemoryScope",
     "NativeImageGenerationCapability",
     "NativeImageSaver",
     "ProviderTaskCursor",

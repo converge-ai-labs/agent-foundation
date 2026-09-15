@@ -16,9 +16,10 @@ from a13n_harness import (
     RunBindings,
     RunError,
 )
-from a13n_harness.capabilities import Mem0Capability, Mem0Scope
-from a13n_harness.capabilities import mem0 as mem0_module
+from a13n_harness.capabilities import MemoryCapability, MemoryScope
+from a13n_harness.capabilities import memory as memory_module
 from a13n_harness.capabilities.mem0_backends import Mem0PlatformBackend
+from a13n_harness.memory import MemoryRecord, MemorySubject
 from mem0 import AsyncMemoryClient
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
@@ -62,17 +63,27 @@ class _FakeMem0Client(AsyncMemoryClient):
         self.search_calls.append((query, kwargs))
         if self.search_error is not None:
             raise self.search_error
-        return self.search_response
+        filters = kwargs["filters"]
+        subjects = filters.get("OR", [filters])
+        return {
+            **self.search_response,
+            "results": [{"id": "memory-1", **subjects[0], **item} for item in self.search_response["results"]],
+        }
 
     async def get_all(self, options=None, **kwargs):
         del options
         self.list_calls.append(kwargs)
-        return {"results": [{"memory": "Listed memory"}]}
+        return {"results": [{"id": "memory-1", "memory": "Listed memory", **kwargs["filters"]}]}
 
     async def add(self, messages, options=None, **kwargs):
         del options
         self.add_calls.append((messages, kwargs))
+        self.stored = {"id": "memory-1", "memory": messages, **kwargs["filters"]}
         return {"results": [{"id": "memory-1", "event": "ADD", "memory": messages}]}
+
+    async def get(self, memory_id):
+        assert memory_id == "memory-1"
+        return self.stored
 
 
 def _bindings() -> RunBindings:
@@ -121,7 +132,7 @@ async def test_auto_recall_is_once_per_logical_run_and_persists_input_overlays()
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
-        capabilities=(Mem0Capability(backend=Mem0PlatformBackend(client), toolset=False),),
+        capabilities=(MemoryCapability(backend=Mem0PlatformBackend(client), toolset=False),),
         model_recovery=ModelRecoveryPolicy(
             enabled=True,
             max_attempts=2,
@@ -189,12 +200,12 @@ async def test_auto_recall_is_once_per_logical_run_and_persists_input_overlays()
 @pytest.mark.parametrize(
     ("scope", "expected_scope_property"),
     [
-        (Mem0Scope.USER, False),
+        (MemoryScope.USER, False),
         (None, True),
     ],
 )
 async def test_toolset_schema_is_fixed_or_model_selectable(
-    scope: Mem0Scope | None,
+    scope: MemoryScope | None,
     expected_scope_property: bool,
 ) -> None:
     client = _FakeMem0Client()
@@ -209,7 +220,7 @@ async def test_toolset_schema_is_fixed_or_model_selectable(
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
-        capabilities=(Mem0Capability(backend=Mem0PlatformBackend(client), scope=scope, auto_recall=False),),
+        capabilities=(MemoryCapability(backend=Mem0PlatformBackend(client), scope=scope, auto_recall=False),),
     )
     result = await executable.run("hello", bindings=_bindings())
 
@@ -218,7 +229,7 @@ async def test_toolset_schema_is_fixed_or_model_selectable(
     for name in ("memory_search", "memory_list", "memory_add"):
         assert ("scope" in schemas[name]["properties"]) is expected_scope_property
     if expected_scope_property:
-        assert set(schemas["memory_search"]["$defs"]["Mem0Scope"]["enum"]) == {
+        assert set(schemas["memory_search"]["$defs"]["MemoryScope"]["enum"]) == {
             "thread",
             "agent",
             "user",
@@ -259,9 +270,9 @@ async def test_fixed_scope_tools_resolve_ids_in_trusted_code_and_add_without_inf
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(
-            Mem0Capability(
+            MemoryCapability(
                 backend=Mem0PlatformBackend(client),
-                scope=Mem0Scope.USER,
+                scope=MemoryScope.USER,
                 auto_recall=False,
             ),
         ),
@@ -289,7 +300,7 @@ async def test_invalid_unicode_recall_fails_open_before_overlay_projection() -> 
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
-        capabilities=(Mem0Capability(backend=Mem0PlatformBackend(client), toolset=False),),
+        capabilities=(MemoryCapability(backend=Mem0PlatformBackend(client), toolset=False),),
     )
     events: list[HarnessExtensionEvent] = []
     result = None
@@ -304,14 +315,14 @@ async def test_invalid_unicode_recall_fails_open_before_overlay_projection() -> 
     assert result.output_or_raise() == "done"
     assert model_called is True
     failed = next(event.payload for event in events if event.payload.get("type") == "memory_recall_failed")
-    assert failed["error_code"] == "mem0_response_invalid"
+    assert failed["error_code"] == "memory_response_invalid"
     assert failed["retryable"] is False
     assert all(event.payload.get("type") != "memory_recall_completed" for event in events)
 
 
 async def test_recalled_memory_is_bounded_by_utf8_bytes() -> None:
-    memories = mem0_module._normalize_memories(
-        {"results": [{"memory": "界" * 3_000}]},
+    memories = memory_module._normalize_memories(
+        (MemoryRecord("memory-1", "界" * 3_000, (MemorySubject(MemoryScope.USER, "user-1"),)),),
         limit=1,
     )
 
@@ -331,7 +342,7 @@ async def test_optional_recall_failure_is_observed_while_required_recall_fails()
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream),
-        capabilities=(Mem0Capability(backend=Mem0PlatformBackend(optional_client), toolset=False),),
+        capabilities=(MemoryCapability(backend=Mem0PlatformBackend(optional_client), toolset=False),),
     )
     optional_events: list[HarnessExtensionEvent] = []
     optional_result = None
@@ -344,7 +355,7 @@ async def test_optional_recall_failure_is_observed_while_required_recall_fails()
     assert optional_result is not None
     assert optional_result.output_or_raise() == "done"
     failed = next(event.payload for event in optional_events if event.payload.get("type") == "memory_recall_failed")
-    assert failed["error_code"] == "mem0_recall_failed"
+    assert failed["error_code"] == "memory_recall_failed"
     assert "provider secret" not in str(failed)
 
     required_client = _FakeMem0Client()
@@ -354,7 +365,7 @@ async def test_optional_recall_failure_is_observed_while_required_recall_fails()
         output_type=str,
         model=FunctionModel(stream_function=stream),
         capabilities=(
-            Mem0Capability(
+            MemoryCapability(
                 backend=Mem0PlatformBackend(required_client),
                 toolset=False,
                 recall_required=True,
@@ -363,5 +374,244 @@ async def test_optional_recall_failure_is_observed_while_required_recall_fails()
     )
     with pytest.raises(RunError) as exc_info:
         await required.run("hello", bindings=_bindings())
-    assert exc_info.value.code == "mem0_recall_failed"
+    assert exc_info.value.code == "memory_recall_failed"
     assert "provider secret" not in str(exc_info.value)
+
+
+async def test_custom_plugin_uses_public_current_run_memory_with_defaults_disabled():
+    import asyncio
+    from dataclasses import dataclass
+
+    from a13n_harness import AbstractHarnessPlugin, DefinitionError
+    from a13n_harness.memory import MemoryBackend, MemoryPage, MemoryRecordNotFound, require_memory_subject
+    from pydantic_ai.capabilities import AbstractCapability
+
+    class Backend(MemoryBackend):
+        def __init__(self):
+            self.records = {}
+            self.calls = []
+
+        async def search(self, query, *, subjects, limit, threshold=None):
+            self.calls.append(("search", subjects))
+            return tuple(record for record in self.records.values() if any(s in record.subjects for s in subjects))[
+                :limit
+            ]
+
+        async def list(self, subject, *, limit, cursor=None):
+            self.calls.append(("list", (subject,)))
+            return MemoryPage(tuple(record for record in self.records.values() if subject in record.subjects)[:limit])
+
+        async def add(self, text, *, subject):
+            self.calls.append(("add", (subject,)))
+            record = MemoryRecord(f"record-{len(self.records)}", text, (subject,))
+            self.records[record.id] = record
+            return record
+
+        async def get(self, memory_id, *, subject):
+            record = self.records.get(memory_id)
+            if record is None:
+                raise MemoryRecordNotFound(memory_id)
+            require_memory_subject(record, (subject,))
+            return record
+
+        async def update(self, memory_id, text, *, subject):
+            await self.get(memory_id, subject=subject)
+            record = MemoryRecord(memory_id, text, (subject,))
+            self.records[memory_id] = record
+            return record
+
+        async def delete(self, memory_id, *, subject):
+            await self.get(memory_id, subject=subject)
+            del self.records[memory_id]
+
+    backend = Backend()
+    source = MemoryCapability(backend=backend, auto_recall=False, toolset=False)
+    contexts = []
+    ready = asyncio.Event()
+
+    @dataclass
+    class CustomMemory(AbstractCapability):
+        async def before_model_request(self, ctx, request_context):
+            memory = ctx.capabilities.get(MemoryCapability.id)
+            assert isinstance(memory, MemoryCapability)
+            assert memory is not source
+            contexts.append((ctx, memory))
+            if len(contexts) == 2:
+                ready.set()
+            await ready.wait()
+            other_memory = next(cap for other, cap in contexts if other is not ctx)
+            assert other_memory is not memory
+            with pytest.raises(DefinitionError):
+                await other_memory.list(ctx, scope=MemoryScope.THREAD)
+            with pytest.raises(DefinitionError):
+                await source.list(ctx, scope=MemoryScope.THREAD)
+            with pytest.raises(RunError):
+                await memory.list(ctx)
+            record = await memory.add(ctx, f"exact {ctx.deps.thread_id}", scope=MemoryScope.THREAD)
+            assert record.subjects == (MemorySubject(MemoryScope.THREAD, ctx.deps.thread_id),)
+            assert await memory.get(ctx, record.id, scope=MemoryScope.THREAD) == record
+            updated = await memory.update(ctx, record.id, "updated", scope=MemoryScope.THREAD)
+            assert updated.text == "updated"
+            assert (await memory.list(ctx, scope=MemoryScope.THREAD)).items == (updated,)
+            assert await memory.search(ctx, "query", scope=MemoryScope.THREAD) == (updated,)
+            await memory.delete(ctx, record.id, scope=MemoryScope.THREAD)
+            assert not (await memory.list(ctx, scope=MemoryScope.THREAD)).items
+            assert all(not name.startswith("memory_") for name in ctx.available_tool_names)
+            return request_context
+
+    class Plugin(AbstractHarnessPlugin):
+        @property
+        def plugin_id(self):
+            return "test.custom-memory"
+
+        def get_capabilities(self):
+            return (CustomMemory(),)
+
+    async def stream(messages, info):
+        yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(),
+        output_type=str,
+        model=FunctionModel(stream_function=stream),
+        capabilities=(source,),
+        plugins=(Plugin(),),
+    )
+    results = await asyncio.gather(
+        executable.run("one", bindings=_bindings()),
+        executable.run("two", bindings=_bindings()),
+    )
+    assert all(result.output_or_raise() == "done" for result in results)
+    assert len(contexts) == 2
+    assert len([call for call in backend.calls if call[0] == "search"]) == 2
+    assert not backend.records
+    assert all("memory-context" not in str(result.all_messages()) for result in results)
+
+
+async def test_root_and_child_can_borrow_one_source_without_sharing_run_binding_or_recall():
+    from dataclasses import dataclass
+
+    from a13n_harness import AgentDefinition, SubagentDefinition
+    from a13n_harness.capabilities import SubagentCapability
+    from pydantic_ai.capabilities import AbstractCapability
+
+    client = _FakeMem0Client()
+    source = MemoryCapability(backend=Mem0PlatformBackend(client), scope=MemoryScope.THREAD, toolset=False)
+    seen = []
+
+    @dataclass
+    class CaptureMemory(AbstractCapability):
+        async def before_model_request(self, ctx, request_context):
+            memory = ctx.capabilities.get(MemoryCapability.id)
+            assert isinstance(memory, MemoryCapability)
+            page = await memory.list(ctx)
+            assert page.items[0].subjects == (MemorySubject(MemoryScope.THREAD, ctx.deps.thread_id),)
+            seen.append((ctx.deps, memory))
+            return request_context
+
+    async def child_stream(messages, info):
+        yield "child-done"
+
+    parent_calls = 0
+
+    async def parent_stream(messages, info):
+        nonlocal parent_calls
+        parent_calls += 1
+        if parent_calls == 1:
+            yield {
+                0: DeltaToolCall(
+                    name="delegate",
+                    json_args=json.dumps({"subagent": "helper", "prompt": "inspect"}),
+                    tool_call_id="delegate-1",
+                )
+            }
+        else:
+            yield "parent-done"
+
+    child = AgentDefinition(
+        agent=AgentSpec(),
+        output_type=str,
+        definition_id="memory-child",
+        model=FunctionModel(stream_function=child_stream),
+        capabilities=(source, CaptureMemory()),
+    )
+    parent = AgentDefinition(
+        agent=AgentSpec(),
+        output_type=str,
+        definition_id="memory-parent",
+        model=FunctionModel(stream_function=parent_stream),
+        capabilities=(source, CaptureMemory(), SubagentCapability()),
+        subagents=(SubagentDefinition(name="helper", description="Inspect memory", agent=child),),
+    )
+    result = await HarnessBuilder().build(parent).run("delegate now", bindings=_bindings())
+    assert result.output_or_raise() == "parent-done"
+    assert len(seen) == 3
+    assert seen[0][0] is seen[2][0] and seen[0][1] is seen[2][1]
+    assert seen[1][0] is not seen[0][0] and seen[1][1] is not seen[0][1]
+    assert len(client.search_calls) == 2
+    assert client.search_calls[0][0] == "delegate now"
+    assert json.loads(client.search_calls[1][0]) == {"delegated_task": "inspect", "parent_task": "delegate now"}
+    assert len({options["filters"]["run_id"] for _, options in client.search_calls}) == 2
+    assert client.entered == 0 and client.exited == 0
+
+
+@pytest.mark.parametrize("operation", ["add", "update", "delete"])
+async def test_public_memory_write_deadline_reports_uncertainty_without_retry(operation):
+    import asyncio
+    from dataclasses import dataclass
+
+    from a13n_harness.memory import MemoryWriteUnconfirmed
+    from pydantic_ai.capabilities import AbstractCapability
+
+    class SlowClient(_FakeMem0Client):
+        writes = 0
+
+        async def add(self, *args, **kwargs):
+            self.writes += 1
+            await asyncio.sleep(60)
+
+        async def update(self, *args, **kwargs):
+            self.writes += 1
+            await asyncio.sleep(60)
+
+        async def delete(self, *args, **kwargs):
+            self.writes += 1
+            await asyncio.sleep(60)
+
+    client = SlowClient()
+    client.stored = {"id": "memory-1", "memory": "original", "user_id": "user-1"}
+
+    @dataclass
+    class WriteMemory(AbstractCapability):
+        async def before_model_request(self, ctx, request_context):
+            memory = ctx.capabilities.get(MemoryCapability.id)
+            assert isinstance(memory, MemoryCapability)
+            with pytest.raises(MemoryWriteUnconfirmed):
+                if operation == "add":
+                    await memory.add(ctx, "text", timeout=0.01)
+                elif operation == "update":
+                    await memory.update(ctx, "memory-1", "text", timeout=0.01)
+                else:
+                    await memory.delete(ctx, "memory-1", timeout=0.01)
+            return request_context
+
+    async def stream(messages, info):
+        yield "done"
+
+    result = (
+        await HarnessBuilder()
+        .build(
+            AgentSpec(),
+            output_type=str,
+            model=FunctionModel(stream_function=stream),
+            capabilities=(
+                MemoryCapability(
+                    backend=Mem0PlatformBackend(client), scope=MemoryScope.USER, toolset=False, auto_recall=False
+                ),
+                WriteMemory(),
+            ),
+        )
+        .run("write", bindings=_bindings())
+    )
+    assert result.output_or_raise() == "done"
+    assert client.writes == 1
