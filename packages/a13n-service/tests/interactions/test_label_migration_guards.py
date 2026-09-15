@@ -8,7 +8,6 @@ from a13n_service.gateway.labels import InteractionLabels
 from a13n_service.interactions.models import RunRecord
 from a13n_service.labels import LabelsBody, labels_etag
 from a13n_service.storage import transaction
-from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
 from a13n_service.storage.relational import create_session_factory, create_sql_engine
 from sqlalchemy.exc import DBAPIError
 
@@ -17,13 +16,8 @@ from tests.interactions.conftest import NOW, _seed_interaction_database
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("backend", ["sqlite", "postgresql"])
-async def test_terminal_label_edits_do_not_weaken_execution_guards(backend, request, tmp_path):
-    config = (
-        PostgreSQLConfig(url=request.getfixturevalue("pg_url"))
-        if backend == "postgresql"
-        else SQLiteConfig(path=tmp_path / "guard.sqlite3")
-    )
+async def test_terminal_label_edits_do_not_weaken_execution_guards(postgres_database):
+    config = postgres_database
     migrator = DatabaseMigrator(config)
     await asyncio.to_thread(migrator.upgrade)
     engine = create_sql_engine(config)
@@ -54,5 +48,3 @@ async def test_terminal_label_edits_do_not_weaken_execution_guards(backend, requ
         assert read == body and current == etag
     finally:
         await engine.dispose()
-        if backend == "postgresql":
-            await asyncio.to_thread(migrator.downgrade, "base")

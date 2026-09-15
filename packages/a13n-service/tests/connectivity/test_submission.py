@@ -190,10 +190,10 @@ async def test_inbound_run_steer_and_idle_continue(connectivity_sessions, connec
 
 @pytest.mark.parametrize("scenario", ["ordinary", "waiting", "stale_claim"])
 async def test_postgresql_inbound_atomic_acceptance(
-    postgres_connectivity_sessions, connectivity_objects, credential_protector, scenario
+    connectivity_sessions, connectivity_objects, credential_protector, scenario
 ):
     await _exercise(
-        postgres_connectivity_sessions,
+        connectivity_sessions,
         connectivity_objects,
         credential_protector,
         waiting=scenario == "waiting",

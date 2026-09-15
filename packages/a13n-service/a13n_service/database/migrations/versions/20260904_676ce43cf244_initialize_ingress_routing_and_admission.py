@@ -106,7 +106,6 @@ def upgrade() -> None:
         ["workspace_id", "provider_key", "identity_digest"],
         unique=True,
         postgresql_where=sa.text("deleted_at IS NULL"),
-        sqlite_where=sa.text("deleted_at IS NULL"),
     )
     op.create_index(
         "uq_application_accounts_workspace_name",
@@ -114,7 +113,6 @@ def upgrade() -> None:
         ["workspace_id", "normalized_name"],
         unique=True,
         postgresql_where=sa.text("deleted_at IS NULL"),
-        sqlite_where=sa.text("deleted_at IS NULL"),
     )
     op.create_table(
         "account_targets",
@@ -313,13 +311,11 @@ def downgrade() -> None:
         "uq_application_accounts_workspace_name",
         table_name="application_accounts",
         postgresql_where=sa.text("deleted_at IS NULL"),
-        sqlite_where=sa.text("deleted_at IS NULL"),
     )
     op.drop_index(
         "uq_application_accounts_identity",
         table_name="application_accounts",
         postgresql_where=sa.text("deleted_at IS NULL"),
-        sqlite_where=sa.text("deleted_at IS NULL"),
     )
     op.drop_index("uq_application_accounts_id_organization", table_name="application_accounts")
     op.drop_index("ix_application_accounts_workspace_updated", table_name="application_accounts")

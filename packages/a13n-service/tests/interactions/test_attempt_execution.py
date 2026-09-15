@@ -662,19 +662,18 @@ async def test_waiting_outcome_selects_the_frozen_continuation_head(
 
 
 async def test_postgresql_concurrent_claim_has_exactly_one_winner(
-    postgres_interaction_sessions: async_sessionmaker[AsyncSession],
-    interaction_object_store: ObjectStore,
+    interaction_sessions: async_sessionmaker[AsyncSession], interaction_object_store: ObjectStore
 ) -> None:
-    _, run, _ = await _accept_root(postgres_interaction_sessions, interaction_object_store)
+    _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
     first = AttemptScheduler(
-        postgres_interaction_sessions,
+        interaction_sessions,
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "token-1",
         attempt_id_factory=lambda: "rat_9999999999999999",
         lifecycle=test_lifecycle_writer(),
     )
     second = AttemptScheduler(
-        postgres_interaction_sessions,
+        interaction_sessions,
         clock=lambda: NOW + timedelta(seconds=1),
         token_factory=lambda: "token-2",
         attempt_id_factory=lambda: "rat_aaaaaaaaaaaaaaaa",
@@ -688,7 +687,7 @@ async def test_postgresql_concurrent_claim_has_exactly_one_winner(
 
     winners = [result for result in results if isinstance(result, ClaimedAttempt)]
     assert len(winners) == 1
-    async with short_session(postgres_interaction_sessions) as database:
+    async with short_session(interaction_sessions) as database:
         attempts = (await database.scalars(select(RunAttemptRecord))).all()
         current = await database.get(RunRecord, run.id)
         assert current is not None
@@ -1066,8 +1065,8 @@ async def test_output_verification_uses_fresh_lease_and_versions_before_sealing(
 
 
 async def test_postgresql_heartbeat_does_not_revoke_tool_authority(
-    postgres_interaction_sessions, interaction_object_store, monkeypatch
+    interaction_sessions, interaction_object_store, monkeypatch
 ):
     await test_external_tool_scope_rechecks_durable_attempt_and_principal(
-        postgres_interaction_sessions, interaction_object_store, monkeypatch, "heartbeat"
+        interaction_sessions, interaction_object_store, monkeypatch, "heartbeat"
     )

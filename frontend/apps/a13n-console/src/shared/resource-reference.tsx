@@ -6,10 +6,16 @@ import styles from "./resource-reference.module.css";
 
 export function ResourceReference({
   id,
+  idLabel,
+  idCopyLabel,
   resourceKey,
+  references,
 }: {
   id: string;
+  idLabel?: string;
+  idCopyLabel?: string;
   resourceKey?: string;
+  references?: { label: string; value: string; copyLabel: string }[];
 }) {
   const { t } = useTranslation();
   return (
@@ -31,9 +37,9 @@ export function ResourceReference({
         tooltipStyle
       >
         <ReferenceRow
-          label={t("ID")}
+          label={idLabel ?? t("ID")}
           value={id}
-          copyLabel={t("Copy resource ID")}
+          copyLabel={idCopyLabel ?? t("Copy resource ID")}
         />
         {resourceKey && (
           <ReferenceRow
@@ -42,6 +48,14 @@ export function ResourceReference({
             copyLabel={t("Copy resource key")}
           />
         )}
+        {references?.map((reference) => (
+          <ReferenceRow
+            key={reference.label}
+            label={reference.label}
+            value={reference.value}
+            copyLabel={reference.copyLabel}
+          />
+        ))}
       </PopoverPopup>
     </Popover>
   );

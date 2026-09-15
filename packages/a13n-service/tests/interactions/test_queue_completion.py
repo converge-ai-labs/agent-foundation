@@ -166,10 +166,8 @@ async def test_source_completion_precedes_successor_preparation(
     assert (await QueueDrain(sessions, commands.queued).scan()).completed == 0
 
 
-async def test_late_steer_blocks_completion_and_queue_consumption(
-    relational_interaction_sessions, interaction_object_store
-):
-    sessions = relational_interaction_sessions
+async def test_late_steer_blocks_completion_and_queue_consumption(interaction_sessions, interaction_object_store):
+    sessions = interaction_sessions
     source, authority, stored, queued, _, drain, committer = await _completion(sessions, interaction_object_store)
     verified = await committer.verify_state_outcome(authority, stored)
     payload = _input("arrived after completion preparation")

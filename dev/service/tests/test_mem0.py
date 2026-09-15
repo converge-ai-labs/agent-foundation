@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 from a13n_service.configuration.sections import MemorySettings
 
-from dev.service.mem0 import LOCAL_MEM0_CONFIG, Mem0, Mem0Settings, load_mem0_settings
+from dev.service.mem0 import LOCAL_MEM0_CONFIG, Mem0, load_mem0_settings
 from dev.service.tests.test_commands import local_environment
 
 
@@ -40,15 +40,8 @@ def test_compose_uses_checkout_and_selected_configuration(tmp_path, monkeypatch)
     command, options = calls[0]
     assert command[command.index("--env-file") + 1] == os.devnull
     assert command[command.index("--project-name") + 1] == memory.environment.project + "-mem0"
-    assert options["env"]["MEM0_LOCAL_PORT"] == "18888"
+    assert options["env"]["MEM0_LOCAL_PORT"] == str(memory.port)
     assert options["env"]["MEM0_LOCAL_API_KEY"] == "local-mem0-api-key"
-
-
-@pytest.mark.parametrize("port", [8000, 18080, 15432, 3000])
-def test_port_conflicts_fail_before_compose(tmp_path, port):
-    memory = Mem0(local_environment(tmp_path), Mem0Settings(port=port))
-    with pytest.raises(ValueError, match="overlaps"):
-        memory.validate()
 
 
 def test_embedding_size_and_real_endpoint_configuration_are_explicit(tmp_path, monkeypatch):
@@ -68,10 +61,10 @@ def test_embedding_size_and_real_endpoint_configuration_are_explicit(tmp_path, m
 
 def test_local_stack_settings_are_separate_from_product_configuration(tmp_path):
     config = tmp_path / "mem0.toml"
-    config.write_text('enabled = true\nport = 18899\napi_key = "local-custom-key"\n')
+    config.write_text('enabled = true\napi_key = "local-custom-key"\n')
     memory = Mem0(local_environment(tmp_path), load_mem0_settings(config))
     assert memory.settings.enabled
-    assert memory.port == 18899
+    assert memory.port == 18888
     assert memory.api_key == "local-custom-key"
     assert MemorySettings().model_dump() == {"timeout_seconds": 30.0}
 

@@ -43,6 +43,8 @@ Local Service development uses the explicit, public test configuration in `dev/s
 
 The repository selects Python 3.13 through `.python-version`. Python packages are uv workspace members under `packages/`; Rust crates under `crates/` are validated by the same top-level merge gate.
 
+For concurrent Service worktrees, the development resolver assigns stable checkout-specific loopback ports and isolated stores while reusing one machine-owned Langfuse stack. Use `make dev-status` to discover URLs; do not assume committed template ports. The [local Service guide](dev/service/README.md) owns lifecycle and recovery details.
+
 ## Engineering Standards
 
 Apply [Code Quality and Design](DEVELOPMENT.md#code-quality-and-design) when implementing or reviewing features, bug fixes, and refactoring across repository languages and components. Read additional engineering rules for the boundaries affected by the change. For deployable services, these include:
@@ -72,13 +74,14 @@ Use the Makefile as the stable development interface:
 | ----------------------------- | ------------------------------------------------------------------ |
 | `make help`                   | List available commands                                            |
 | `make install`                | Synchronize locked workspace, application, and SDK dependencies    |
-| `make setup`                  | Prepare local PostgreSQL, Redis, Langfuse and Service schema       |
+| `make setup`                  | Prepare this checkout's stores, shared Langfuse and Service schema |
 | `make dev`                    | Upgrade the schema and run a13n Service and Console                |
 | `make service-dev`            | Run only local Service and the scripted development model          |
 | `make dev-reset STATE=empty`  | Rebuild owned Service storage with no business data                |
 | `make dev-reset STATE=seeded` | Rebuild owned Service storage with fictional resources and history |
 | `make dev-state-check`        | Validate state tools with disposable local infrastructure          |
-| `make dev-down`               | Stop local Service and Langfuse infrastructure; preserve data      |
+| `make dev-status`             | Report this checkout's identity, ports and listener state as JSON  |
+| `make dev-down`               | Stop this checkout's infrastructure; preserve data and Langfuse    |
 | `make env-init`               | Initialize missing Harness development `.env` files                |
 | `make cli`                    | Run Harness UI with Git-ignored config/data in `var/harness-ui/`   |
 | `make webui`                  | Build browser assets and start WebUI with a generated login link   |
@@ -86,9 +89,9 @@ Use the Makefile as the stable development interface:
 | `make webui-landing`          | Try WebUI first-run setup in temporary state; Ctrl+C cleans up     |
 | `make harness-dev`            | Run SDK observation scenarios with `dev/harness/.env`              |
 | `make harness-ui-smoke`       | Run a scripted real-App observation smoke test                     |
-| `make langfuse-up`            | Start the isolated local Langfuse trace backend                    |
-| `make langfuse-down`          | Stop local Langfuse while preserving its data                      |
-| `make langfuse-reset`         | Stop local Langfuse and remove its data volumes                    |
+| `make langfuse-up`            | Start the machine-shared local Langfuse trace backend              |
+| `make langfuse-down`          | Stop shared Langfuse while preserving all local trace data         |
+| `make langfuse-reset`         | Explicitly remove all machine-shared local Langfuse data           |
 | `make format`                 | Apply repository formatting hooks                                  |
 | `make lint`                   | Run non-mutating repository lint checks                            |
 | `make deps-check`             | Check each Python package's dependency declarations with deptry    |
@@ -128,7 +131,7 @@ Use `make format` for formatting alone; `make check` applies the same formatters
 
 Testcontainers is pinned to 4.13.1 because 4.15.0 can read Ryuk port mappings before Docker publishes them; upgrades must verify mapped-port startup with Ryuk enabled. Unreturned SQL connections, unhandled thread exceptions, and unraisable exceptions fail the test gate.
 
-a13n Service CI runs service tests on a dedicated larger runner, with logging tests, type checks, and builds on a standard runner. The `a13n Service Python` check requires both jobs to pass. See [the workflow](.github/workflows/ci-a13n-service.yml) for worker counts, timing output, and timeout settings. Local `make test` uses seven workers for a13n Service, matching CI, and two workers for other Python suites. Tests are grouped by file unless explicitly marked with `xdist_group`; each worker owns its containers. SQLite fixtures give each test an independent copy of a schema template. Process tests use a template built through real migrations; migration tests still run upgrades and downgrades directly.
+a13n Service CI runs service tests on a dedicated larger runner, with logging tests, type checks, and builds on a standard runner. The `a13n Service Python` check requires both jobs to pass. See [the workflow](.github/workflows/ci-a13n-service.yml) for worker counts, timing output, and timeout settings. Local `make test` uses seven workers for a13n Service, matching CI, and two workers for other Python suites. Tests are grouped by file unless explicitly marked with `xdist_group`; each worker owns its containers. PostgreSQL fixtures give each test an independent database cloned from a template built through real migrations; migration tests still run upgrades and downgrades directly.
 
 UI Tests runs the Linux suite with seven file-grouped workers on an eight-core runner on pull requests and `main`; local UI tests retain the two-worker default. Independent PTY scenarios use separate `xdist_group` marks because each owns its process and temporary home. A path-classification job selects Python tests, Console/shared frontend checks, and WebUI distribution verification, which then run in parallel. Console-only changes do not run UI Python or WebUI packaging checks; WebUI-only changes retain generated-contract, formatting, and distribution verification without the Python/native suites. Package test-only changes do not rebuild frontend assets. Shared frontend and Python runtime/dependency changes retain their affected consumers. The `UI (Linux)` check requires classification and every selected job to succeed; only unselected jobs may be skipped. Distribution tooling tests run with packaging, outside the application test path. There is no dedicated browser integration workflow or Python WebUI startup/HTTP test suite. The browser application remains build input for distribution verification; that job also runs its TypeScript, generated-contract and Vitest/jsdom checks, including isolated App HTTP/WebSocket/SSE protocol tests. These tests do not depend on a real browser, Playwright, or paid models. Pull requests selecting Python inputs run a focused Windows native integration suite; the full Windows UI suite runs weekly and through `workflow_dispatch`, not on every merge. Manual runs also retain the Linux gate. The [workflow](.github/workflows/ci-a13n-harness-ui.yml) owns the native test selection and schedule. Windows smoke coverage does not replace full platform coverage: less common storage, plugin, and interaction regressions may only be detected by the full Windows run.
 

@@ -16,11 +16,11 @@ from ..infrastructure.round_two_lab import identity
 
 
 @pytest.mark.anyio
-async def test_seed_two_workspaces_is_idempotent_and_keeps_second_user_scoped(monkeypatch, tmp_path):
+async def test_seed_two_workspaces_is_idempotent_and_keeps_second_user_scoped(
+    monkeypatch, tmp_path, owned_postgres_url
+):
     monkeypatch.setenv("A13N_SERVICE_DATABASE_URL", "must-not-use-ambient-database")
-    settings = load_settings(
-        environ={}, overrides={"database": {"backend": "sqlite", "sqlite_path": tmp_path / "identity.db"}}
-    )
+    settings = load_settings(environ={}, overrides={"database": {"url": owned_postgres_url}})
     engine = create_sql_engine(settings.database_config())
     try:
         async with engine.begin() as connection:

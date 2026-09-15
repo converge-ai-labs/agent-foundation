@@ -243,8 +243,7 @@ async def write_hook_lifecycle(
         .limit(MAX_ACTIVE_HOOK_SUBSCRIPTIONS + 1)
         .with_for_update(of=HookSubscriptionRecord)
     )
-    if database.get_bind().dialect.name == "postgresql":
-        statement = statement.where(HookSubscriptionRevisionRecord.hook_names.op("@>")(cast([event.event_type], JSONB)))
+    statement = statement.where(HookSubscriptionRevisionRecord.hook_names.op("@>")(cast([event.event_type], JSONB)))
     candidates = (await database.execute(statement)).all()
     if len(candidates) > MAX_ACTIVE_HOOK_SUBSCRIPTIONS:
         raise HookSubscriptionInvariantError(
@@ -272,7 +271,6 @@ async def write_hook_lifecycle(
             last_error_code=None,
         )
         for _, revision in candidates
-        if event.event_type in revision.hook_names
     )
     database.add_all(records)
     await database.flush()

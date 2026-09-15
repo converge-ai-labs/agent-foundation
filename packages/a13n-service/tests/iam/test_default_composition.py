@@ -1,17 +1,28 @@
+from functools import partial
 from urllib.parse import urlsplit
 
 import pytest
 from a13n_service.app import create_app
 from a13n_service.cli import main
 from a13n_service.settings import ProcessRole
+from a13n_service.storage.config import PostgreSQLConfig
+from a13n_service.storage.relational import database_url
 from click.testing import CliRunner
 from httpx2 import ASGITransport, AsyncClient
 
-from tests.process.support import local_settings
+from tests.process.support import local_settings as build_local_settings
+
+
+@pytest.fixture
+def local_settings(service_database: PostgreSQLConfig):
+    return partial(
+        build_local_settings,
+        database_url=database_url(service_database).render_as_string(hide_password=False),
+    )
 
 
 @pytest.mark.anyio
-async def test_default_process_accepts_bootstrap_and_authenticates_product_api(tmp_path, caplog):
+async def test_default_process_accepts_bootstrap_and_authenticates_product_api(tmp_path, caplog, local_settings):
     app = create_app(local_settings(tmp_path, role=ProcessRole.control))
     async with app.router.lifespan_context(app):
         message = next(
@@ -57,7 +68,7 @@ async def test_default_process_accepts_bootstrap_and_authenticates_product_api(t
             assert result.json()["items"] == []
 
 
-def test_operator_reissue_invalidates_old_link(tmp_path, monkeypatch):
+def test_operator_reissue_invalidates_old_link(tmp_path, monkeypatch, local_settings):
     import a13n_service.cli as cli
 
     settings = local_settings(tmp_path, role=ProcessRole.control)

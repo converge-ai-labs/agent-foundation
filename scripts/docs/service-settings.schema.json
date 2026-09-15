@@ -351,40 +351,15 @@
       "title": "ControlSettings",
       "type": "object"
     },
-    "DatabaseBackend": {
-      "enum": [
-        "postgresql",
-        "sqlite"
-      ],
-      "title": "DatabaseBackend",
-      "type": "string"
-    },
     "DatabaseSettings": {
       "additionalProperties": false,
       "properties": {
-        "backend": {
-          "$ref": "#/$defs/DatabaseBackend",
-          "default": "postgresql"
-        },
         "url": {
-          "anyOf": [
-            {
-              "format": "password",
-              "type": "string",
-              "writeOnly": true
-            },
-            {
-              "type": "null"
-            }
-          ],
           "default": "**********",
-          "title": "Url"
-        },
-        "sqlite_path": {
-          "default": "var/a13n-service.sqlite3",
-          "format": "path",
-          "title": "Sqlite Path",
-          "type": "string"
+          "format": "password",
+          "title": "Url",
+          "type": "string",
+          "writeOnly": true
         },
         "pool_size": {
           "default": 10,
@@ -425,13 +400,6 @@
           "exclusiveMinimum": 0,
           "maximum": 3600,
           "title": "Statement Timeout Seconds",
-          "type": "number"
-        },
-        "sqlite_busy_timeout_seconds": {
-          "default": 5,
-          "exclusiveMinimum": 0,
-          "maximum": 300,
-          "title": "Sqlite Busy Timeout Seconds",
           "type": "number"
         },
         "cleanup_timeout_seconds": {
@@ -735,6 +703,14 @@
         "public_origin": {
           "default": "http://127.0.0.1:8000",
           "title": "Public Origin",
+          "type": "string"
+        },
+        "session_cookie_name": {
+          "default": "a13n_session",
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Session Cookie Name",
           "type": "string"
         },
         "initial_admin_email": {

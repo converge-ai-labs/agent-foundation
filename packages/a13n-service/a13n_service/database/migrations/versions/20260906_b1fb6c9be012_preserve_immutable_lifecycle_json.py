@@ -17,14 +17,12 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Permit projection updates without changing immutable JSON fact bytes."""
-    if op.get_bind().dialect.name == "postgresql":
-        _replace_fact_guard(compare_json_text=True)
+    _replace_fact_guard(compare_json_text=True)
 
 
 def downgrade() -> None:
     """Restore the prior guard; no durable rows or lifecycle constraints change."""
-    if op.get_bind().dialect.name == "postgresql":
-        _replace_fact_guard(compare_json_text=False)
+    _replace_fact_guard(compare_json_text=False)
 
 
 def _replace_fact_guard(*, compare_json_text: bool) -> None:
@@ -50,9 +48,11 @@ def _replace_fact_guard(*, compare_json_text: bool) -> None:
         "created_at",
     )
     changed = " OR ".join(
-        f"NEW.{column}::text IS DISTINCT FROM OLD.{column}::text"
-        if column == "payload" and compare_json_text
-        else f"NEW.{column} IS DISTINCT FROM OLD.{column}"
+        (
+            f"NEW.{column}::text IS DISTINCT FROM OLD.{column}::text"
+            if column == "payload" and compare_json_text
+            else f"NEW.{column} IS DISTINCT FROM OLD.{column}"
+        )
         for column in fact_columns
     )
     op.execute(

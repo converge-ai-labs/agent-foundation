@@ -38,7 +38,6 @@ class SecretRecord(Base):
             "key",
             unique=True,
             postgresql_where=text("deleted_at IS NULL"),
-            sqlite_where=text("deleted_at IS NULL"),
         ),
         Index(
             "ix_secrets_owner_listing",

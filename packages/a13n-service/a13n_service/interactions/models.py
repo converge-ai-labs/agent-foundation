@@ -157,7 +157,6 @@ class ThreadRecord(Base):
             "session_id",
             unique=True,
             postgresql_where=text("role = 'root'"),
-            sqlite_where=text("role = 'root'"),
         ),
         Index("ix_threads_session_created", "organization_id", "session_id", "created_at", "id"),
         Index("ix_threads_session_updated", "organization_id", "session_id", "updated_at", "id"),
@@ -379,7 +378,6 @@ class RunRecord(Base):
             "idempotency_key",
             unique=True,
             postgresql_where=text("idempotency_key IS NOT NULL"),
-            sqlite_where=text("idempotency_key IS NOT NULL"),
         ),
         Index(
             "uq_runs_active_thread",
@@ -387,7 +385,6 @@ class RunRecord(Base):
             "thread_id",
             unique=True,
             postgresql_where=text("status IN ('accepted', 'running')"),
-            sqlite_where=text("status IN ('accepted', 'running')"),
         ),
         Index(
             "uq_runs_live_root_thread",
@@ -397,7 +394,6 @@ class RunRecord(Base):
             postgresql_where=text(
                 "parent_run_id IS NULL AND status IN ('accepted', 'running', 'waiting', 'completed')"
             ),
-            sqlite_where=text("parent_run_id IS NULL AND status IN ('accepted', 'running', 'waiting', 'completed')"),
         ),
         Index(
             "ix_runs_worker_scan",
@@ -409,7 +405,6 @@ class RunRecord(Base):
             "created_at",
             "id",
             postgresql_where=text("status = 'accepted' OR (status = 'running' AND current_run_attempt_id IS NULL)"),
-            sqlite_where=text("status = 'accepted' OR (status = 'running' AND current_run_attempt_id IS NULL)"),
         ),
         Index("ix_runs_session_created", "organization_id", "session_id", "created_at", "id"),
         Index("ix_runs_agent_session", "organization_id", "agent_id", "session_id", "id"),
@@ -681,7 +676,6 @@ class RunAttemptRecord(Base):
             "lease_expires_at",
             "run_id",
             postgresql_where=text("status IN ('leased', 'running')"),
-            sqlite_where=text("status IN ('leased', 'running')"),
         ),
     )
 

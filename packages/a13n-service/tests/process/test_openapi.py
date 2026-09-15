@@ -37,6 +37,12 @@ def test_authentication_is_described_on_protected_not_public_operations() -> Non
     assert schema["components"]["securitySchemes"]["SessionAuth"]["name"] == "a13n_session"
 
 
+def test_session_cookie_metadata_uses_configured_name() -> None:
+    settings = Settings(iam={"session_cookie_name": "a13n_session_worktree"})
+    schema = create_app(settings).openapi()
+    assert schema["components"]["securitySchemes"]["SessionAuth"]["name"] == "a13n_session_worktree"
+
+
 def test_native_errors_use_the_runtime_envelope() -> None:
     app = create_app(Settings())
     schema = app.openapi()

@@ -22292,9 +22292,11 @@ export interface operations {
         cursor?: string | null;
         query?: string | null;
         search_in?: components["schemas"]["SearchIn"] | null;
+        session_id?: string | null;
         thread_id?: string | null;
         run_id?: string | null;
         run_attempt_id?: string | null;
+        metadata?: string[] | null;
         view?: components["schemas"]["TraceView"];
       };
       header?: never;

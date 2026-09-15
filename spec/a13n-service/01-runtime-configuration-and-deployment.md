@@ -45,7 +45,7 @@ host = "127.0.0.1"
 port = 8000
 
 [database]
-backend = "postgresql"
+url = "postgresql+psycopg://a13n_service:***@db.internal:5432/a13n_service"
 
 [redis]
 backend = "redis"
@@ -121,12 +121,12 @@ Before each Harness build, execution captures the current immutable catalog off 
 
 Service supports two profiles:
 
-| Profile        | Roles                                         | Relational           | Redis                              | Objects                          | Process constraint                                             |
-| -------------- | --------------------------------------------- | -------------------- | ---------------------------------- | -------------------------------- | -------------------------------------------------------------- |
-| Single-process | `all`                                         | SQLite or PostgreSQL | Process-local memory or real Redis | Local directory or S3-compatible | Exactly one service process when any local backend is selected |
-| Distributed    | `all`, `control`, `worker`, or `connectivity` | PostgreSQL           | Real Redis                         | Shared S3-compatible storage     | One or more independently replaceable processes                |
+| Profile        | Roles                                         | Relational | Redis                              | Objects                          | Process constraint                                             |
+| -------------- | --------------------------------------------- | ---------- | ---------------------------------- | -------------------------------- | -------------------------------------------------------------- |
+| Single-process | `all`                                         | PostgreSQL | Process-local memory or real Redis | Local directory or S3-compatible | Exactly one service process when any local backend is selected |
+| Distributed    | `all`, `control`, `worker`, or `connectivity` | PostgreSQL | Real Redis                         | Shared S3-compatible storage     | One or more independently replaceable processes                |
 
-The distributed profile requires PostgreSQL, real Redis, and shared object storage. It rejects SQLite, process-local Redis, and local object storage before opening service traffic. A mounted shared filesystem can satisfy a domain that explicitly owns filesystem semantics, but it does not replace shared object storage or make SQLite and local object locking distributed.
+PostgreSQL is the only relational backend; every profile requires a PostgreSQL database URL. The distributed profile additionally requires real Redis and shared object storage, and rejects process-local Redis and local object storage before opening service traffic. A mounted shared filesystem can satisfy a domain that explicitly owns filesystem semantics, but it does not replace shared object storage or turn local object locking into distributed coordination.
 
 Real Redis is a required distributed data-flow and coordination dependency. Required does not mean universally authoritative: each owning domain defines the identity, retention, replay, and authority of the values it places in Redis. Durable Service resource state, RunAttempt fencing, and accepted lifecycle transitions remain relational facts unless an owning specification explicitly establishes a different authority.
 

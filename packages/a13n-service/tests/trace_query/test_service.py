@@ -95,7 +95,10 @@ class Provider:
         self.queries.append(query)
         if self.failure is not None:
             raise self.failure
-        return TraceCollection(items=self.items, next_cursor="provider-next" if query.cursor is None else None)
+        return TraceCollection(
+            items=self.items,
+            next_cursor="provider-next" if query.cursor is None else None,
+        )
 
     async def get_trace(self, query: ProviderTraceRead) -> Trace | None:
         self.reads.append(query)
@@ -170,8 +173,49 @@ async def list_traces(
 
 
 @pytest.mark.anyio
+async def test_metadata_filters_normalize_and_reach_the_provider() -> None:
+    adapter = Provider()
+    await service(adapter, Authorizer()).list(
+        actor=actor(),
+        workspace_id="ws-1",
+        metadata=(" synthetic = true ", "scenario=review"),
+    )
+    assert adapter.queries[-1].metadata == (
+        ("scenario", "review"),
+        ("synthetic", " true "),
+    )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "entries",
+    (
+        ["no-equals"],
+        ["=value"],
+        ["key="],
+        ["dup=1", "dup=2"],
+        [f"key-{index}=v" for index in range(9)],
+        ["ke\x00y=v"],
+        ["k" * 257 + "=v"],
+        ["key=" + "v" * 1025],
+    ),
+)
+async def test_metadata_filters_reject_malformed_entries(entries: list[str]) -> None:
+    adapter = Provider()
+    with pytest.raises(TraceQueryError) as raised:
+        await service(adapter, Authorizer()).list(actor=actor(), workspace_id="ws-1", metadata=entries)
+    assert raised.value.code == "invalid_request"
+    assert not adapter.queries
+
+
+@pytest.mark.anyio
 async def test_organization_session_can_page_both_collections_without_workspace_header() -> None:
-    browser = replace(actor(), auth_method="session", boundary_workspace_id=None, boundary_organization_id="org-1")
+    browser = replace(
+        actor(),
+        auth_method="session",
+        boundary_workspace_id=None,
+        boundary_organization_id="org-1",
+    )
     adapter = Provider()
     queries = service(adapter, Authorizer())
     first = await queries.list(actor=browser, workspace_id="ws-1")
@@ -185,12 +229,18 @@ async def test_organization_session_can_page_both_collections_without_workspace_
     assert children.items and children.next_cursor
     adapter.observations = ObservationCollection(items=(), next_cursor=None)
     last = await queries.list_observations(
-        actor=browser, workspace_id="ws-1", trace_id="trace-1", cursor=children.next_cursor
+        actor=browser,
+        workspace_id="ws-1",
+        trace_id="trace-1",
+        cursor=children.next_cursor,
     )
     assert last.items == () and last.next_cursor is None
     with pytest.raises(TraceQueryError, match="cursor"):
         await queries.list_observations(
-            actor=actor(), workspace_id="ws-1", trace_id="trace-1", cursor=children.next_cursor
+            actor=actor(),
+            workspace_id="ws-1",
+            trace_id="trace-1",
+            cursor=children.next_cursor,
         )
 
 
@@ -215,7 +265,8 @@ async def test_list_forces_scope_authorizes_results_and_projects_root_consistent
 @pytest.mark.anyio
 async def test_list_omits_unauthorized_and_cross_scope_provider_results() -> None:
     cross_scope = summary(
-        id="trace-cross", correlation=summary().correlation.model_copy(update={"workspace_id": "ws-other"})
+        id="trace-cross",
+        correlation=summary().correlation.model_copy(update={"workspace_id": "ws-other"}),
     )
     provider = Provider(items=(summary(), cross_scope))
 

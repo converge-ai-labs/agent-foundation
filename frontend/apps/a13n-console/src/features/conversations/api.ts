@@ -30,7 +30,6 @@ export function conversationKeys(workspaceId: string) {
     attempts: (runId: string) => [...root, "attempts", runId] as const,
     lineage: (runId: string) => [...root, "lineage", runId] as const,
     events: (runId: string) => [...root, "events", runId] as const,
-    steer: (runId: string) => [...root, "steer", runId] as const,
   };
 }
 
@@ -192,18 +191,6 @@ export function conversationQueries(client: Client, workspaceId: string) {
             })
             .then(data),
       }),
-    steer: (run_id: string, steer_id: string) =>
-      queryOptions({
-        queryKey: [...keys.steer(run_id), steer_id],
-        queryFn: ({ signal }) =>
-          client.http
-            .GET("/api/v1/runs/{run_id}/steers/{steer_id}", {
-              params: { path: { run_id, steer_id } },
-              headers,
-              signal,
-            })
-            .then(data),
-      }),
   };
 }
 
@@ -238,7 +225,6 @@ export function invalidateConversation(
           case "attempts":
           case "lineage":
           case "events":
-          case "steer":
             return !!change.runId && id === change.runId;
           default:
             return false;

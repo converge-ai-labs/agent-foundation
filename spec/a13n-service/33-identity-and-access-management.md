@@ -185,7 +185,7 @@ Changing a password with the current password preserves the current browser sess
 | `expires_at` | Fixed deployment-configurable expiry; default seven days after creation |
 | `revoked_at` | Explicit revocation time; null while unrevoked                          |
 
-The plaintext token appears only in an `HttpOnly`, `Secure` cookie. Sessions do not use a long-lived self-contained JWT, sliding renewal, a remember-me mode, or a durable current-Workspace field. Browser closure does not itself revoke a session. Every request rechecks User status, session validity, selected resource scope, and current RoleBindings.
+The plaintext token appears only in an `HttpOnly`, `Secure` cookie. `iam.session_cookie_name` selects the cookie name, defaulting to `a13n_session`; login, invitation acceptance, authentication, CSRF verification, logout, and OpenAPI use the same configured name. Deployments keep this name stable: changing it prevents existing browser cookies from authenticating but does not revoke the stored sessions. Distinct names prevent same-host cookie collisions, not cross-deployment security isolation. Sessions do not use a long-lived self-contained JWT, sliding renewal, a remember-me mode, or a durable current-Workspace field. Browser closure does not itself revoke a session. Every request rechecks User status, session validity, selected resource scope, and current RoleBindings.
 
 ### `invitations` and `invitation_grants`
 

@@ -70,7 +70,6 @@ def upgrade() -> None:
         ["organization_id", "normalized_name"],
         unique=True,
         postgresql_where=sa.text("workspace_id IS NULL"),
-        sqlite_where=sa.text("workspace_id IS NULL"),
     )
     op.create_index(
         "ix_connector_providers_driver_status", "connector_providers", ["type", "status", "id"], unique=False

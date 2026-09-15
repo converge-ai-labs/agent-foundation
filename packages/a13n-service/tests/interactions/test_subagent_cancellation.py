@@ -62,14 +62,10 @@ async def test_parent_cancellation_propagates_only_to_requested_child_threads(
 
 
 async def test_concurrent_parent_cancellation_reconciliation_is_idempotent_on_postgresql(
-    postgres_interaction_sessions: async_sessionmaker[AsyncSession],
-    interaction_object_store: ObjectStore,
+    interaction_sessions: async_sessionmaker[AsyncSession], interaction_object_store: ObjectStore
 ) -> None:
-    sessions = postgres_interaction_sessions
-    parent, requested_child_id, _, outcomes = await _cancel_parent_with_children(
-        sessions,
-        interaction_object_store,
-    )
+    sessions = interaction_sessions
+    parent, requested_child_id, _, outcomes = await _cancel_parent_with_children(sessions, interaction_object_store)
     reconciler = ChildCancellationReconciler(sessions, outcomes)
 
     batches = await asyncio.gather(

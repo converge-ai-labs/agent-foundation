@@ -12,7 +12,7 @@ make mem0-logs
 make mem0-down   # Stop containers; preserve volumes
 ```
 
-`make mem0-up` explicitly starts OSS at `http://127.0.0.1:18888` with the public fixture key `local-mem0-api-key`. Local infrastructure settings live in `dev/mem0/local.toml`, with `enabled = false` by default. Manually set `enabled = true` and adjust `port` and `api_key` when needed. To keep private settings out of Git, copy it to `dev/mem0/local.private.toml` and pass `MEM0_CONFIG=dev/mem0/local.private.toml` to Make (or `--mem0-config PATH` to `python -m dev.service`). `make dev` and `make setup` start Mem0 only when that selected file explicitly enables it. Product Service settings remain independent; ordinary development and standard tests require no Mem0 server or credentials. The checkout determines the Compose project; ambient `MEM0_LOCAL_*` variables do not change the helper's target. The helper only manages this checkout-owned local stack, never a Memory Provider's external endpoint. External OSS and Platform remain operator-owned. PostgreSQL and the embedding fixture have no host ports. The Mem0 process is non-root.
+`make mem0-up` starts OSS on this checkout's instance-assigned loopback port with the public fixture key `local-mem0-api-key`; use `make dev-status` to discover it. Local infrastructure settings live in `dev/mem0/local.toml`, with `enabled = false` by default. Manually set `enabled = true` and adjust `api_key` when needed. To keep private settings out of Git, copy it to `dev/mem0/local.private.toml` and pass `MEM0_CONFIG=dev/mem0/local.private.toml` to Make (or `--mem0-config PATH` to `python -m dev.service`). `make dev` and `make setup` start Mem0 only when that selected file explicitly enables it. Product Service settings remain independent; ordinary development and standard tests require no Mem0 server or credentials. The checkout determines the Compose project and port; ambient `MEM0_LOCAL_*` variables do not change the helper's target. The helper only manages this checkout-owned local stack, never a Memory Provider's external endpoint. External OSS and Platform remain operator-owned. PostgreSQL and the embedding fixture have no host ports. The Mem0 process is non-root.
 
 The default embedding endpoint is a deterministic, hashed-word, 128-dimensional fixture. It validates storage, HTTP contracts, CRUD, scope isolation, and bounded listing without paid credentials. **It does not validate semantic embedding quality or real LLM inference.** The separate Service scripted model is not a memory model. Explicit writes use `infer=false`, so neither writes nor retrieval require chat completion. The fixture rejects chat requests instead of pretending to perform extraction.
 
@@ -52,14 +52,15 @@ The three keys have distinct owners: the Memory Provider's `credential.api_key` 
 Use an authenticated human User bearer token with Workspace access. Obtain immutable Workspace/Agent/Thread IDs through the Native API. Do not substitute provider namespace hashes or model-visible aliases.
 
 ```bash
-export SERVICE_URL='http://127.0.0.1:8000'
+export SERVICE_URL="$(make dev-status | jq -er '.service_url')"
+export MEM0_PORT="$(make dev-status | jq -er '.ports.mem0')"
 # Set WORKSPACE_ID and SERVICE_TOKEN privately.
 PROVIDERS="$SERVICE_URL/api/v1/workspaces/$WORKSPACE_ID/memory-providers"
 # Workspace Builder authority is required to create a Provider.
 # Public local fixture key only; substitute your privately supplied key as needed.
 PROVIDER_ID=$(curl --fail-with-body -sS -H "Authorization: Bearer $SERVICE_TOKEN" \
   -H 'Content-Type: application/json' \
-  -d '{"name":"Local memories","type":"a13n.mem0-oss","configuration":{"base_url":"http://127.0.0.1:18888"},"credential":{"api_key":"local-mem0-api-key"}}' \
+  -d "{\"name\":\"Local memories\",\"type\":\"a13n.mem0-oss\",\"configuration\":{\"base_url\":\"http://127.0.0.1:$MEM0_PORT\"},\"credential\":{\"api_key\":\"local-mem0-api-key\"}}" \
   "$PROVIDERS" | jq -er '.id')
 BASE="$PROVIDERS/$PROVIDER_ID/memories"
 curl --fail-with-body -H "Authorization: Bearer $SERVICE_TOKEN" \
@@ -118,7 +119,8 @@ uv run --locked pytest dev/service/tests
 For real native OSS tests, start a disposable instance or use the local stack, then explicitly opt in. Tests create records and delete only their own IDs; the bounded-list test writes more than 1,000 records and confirms only 1,000 are loaded without claiming completion. Do not point this at production.
 
 ```bash
-TEST_MEM0_OSS_URL=http://127.0.0.1:18888 \
+export MEM0_PORT="$(make dev-status | jq -er '.ports.mem0')"
+TEST_MEM0_OSS_URL="http://127.0.0.1:$MEM0_PORT" \
 TEST_MEM0_OSS_API_KEY=local-mem0-api-key \
 uv run --locked pytest packages/a13n-service/tests/memory/test_oss_integration.py -q
 ```

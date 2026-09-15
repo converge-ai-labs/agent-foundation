@@ -78,14 +78,13 @@ async def load_evidence(
     boundary_id = scope.workspace_id or scope.organization_id
     if boundary_id is None:
         raise ValueError("Idempotency evidence requires a Workspace or Organization boundary")
-    if session.get_bind().dialect.name == "postgresql":
-        # Serialize a key even before its first row exists; expiry replacement
-        # and the mutation use this same transaction and bounded DB timeouts.
-        material = digests.digest_request(
-            (boundary_id, scope.actor_type, scope.actor_id, scope.operation, scope.scope_id, identity.key_digest)
-        )
-        lock_id = int.from_bytes(bytes.fromhex(material)[:8], signed=True)
-        await session.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_id})
+    # Serialize a key even before its first row exists; expiry replacement
+    # and the mutation use this same transaction and bounded DB timeouts.
+    material = digests.digest_request(
+        (boundary_id, scope.actor_type, scope.actor_id, scope.operation, scope.scope_id, identity.key_digest)
+    )
+    lock_id = int.from_bytes(bytes.fromhex(material)[:8], signed=True)
+    await session.execute(text("SELECT pg_advisory_xact_lock(:key)"), {"key": lock_id})
     evidence = await session.scalar(
         select(IdempotencyEvidenceRecord)
         .where(

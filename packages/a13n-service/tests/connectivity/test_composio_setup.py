@@ -264,9 +264,7 @@ async def test_lost_redemption_response_recovers_by_exact_account_read(composio_
     assert requests[-1].method == "GET"
 
 
-@pytest.mark.parametrize(
-    "composio_sessions", ["connectivity_sessions", "postgres_connectivity_sessions"], indirect=True
-)
+@pytest.mark.parametrize("composio_sessions", ["connectivity_sessions", "connectivity_sessions"], indirect=True)
 async def test_concurrent_callbacks_have_one_redeemer(composio_setup):
     service, connection, reconciler, _, _, state, _ = composio_setup
     result = await launch(service, connection)
@@ -368,9 +366,7 @@ async def test_late_redemption_owner_cannot_publish_after_lease_expires(composio
     assert state["redeem_calls"] == 1
 
 
-@pytest.mark.parametrize(
-    "composio_sessions", ["connectivity_sessions", "postgres_connectivity_sessions"], indirect=True
-)
+@pytest.mark.parametrize("composio_sessions", ["connectivity_sessions", "connectivity_sessions"], indirect=True)
 async def test_new_idempotency_key_cannot_start_same_setup_generation(composio_setup):
     service, connection, _, sessions, _, state, _ = composio_setup
     first = await launch(service, connection)

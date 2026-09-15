@@ -125,6 +125,18 @@ def anyio_backend():
     return "asyncio"
 
 
+@pytest.fixture(scope="session")
+def owned_postgres_url():
+    """One disposable PostgreSQL server shared by offline infrastructure tests."""
+    from testcontainers.postgres import PostgresContainer
+
+    with PostgresContainer("postgres:17-alpine") as container:
+        yield (
+            f"postgresql+psycopg://{container.username}:{container.password}"
+            f"@{container.get_container_host_ip()}:{container.get_exposed_port(5432)}/{container.dbname}"
+        )
+
+
 @pytest.fixture
 async def live(request, selected_shared_labs):
     if not request.config.getoption("--live"):

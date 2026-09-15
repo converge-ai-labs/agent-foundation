@@ -43,9 +43,9 @@ pytestmark = pytest.mark.anyio
 
 @pytest.mark.parametrize("scenario", ["expired", "eligible", "new_arrival"])
 async def test_completed_recovery_rechecks_input_after_runtime_preparation(
-    relational_interaction_sessions, interaction_object_store, monkeypatch, scenario
+    interaction_sessions, interaction_object_store, monkeypatch, scenario
 ):
-    sessions = relational_interaction_sessions
+    sessions = interaction_sessions
     states, parent, context, child_id = await _accept_child(sessions, interaction_object_store)
     now = NOW + timedelta(seconds=4)
     execution = AttemptExecutionService(sessions, clock=lambda: now, lifecycle=test_lifecycle_writer())

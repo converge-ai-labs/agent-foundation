@@ -253,7 +253,6 @@ class QueuedSubmissionRecord(Base):
             "position",
             unique=True,
             postgresql_where=text("position IS NOT NULL"),
-            sqlite_where=text("position IS NOT NULL"),
         ),
         Index(
             "ix_thread_queued_submissions_live",
@@ -262,7 +261,6 @@ class QueuedSubmissionRecord(Base):
             "position",
             "id",
             postgresql_where=text("position IS NOT NULL"),
-            sqlite_where=text("position IS NOT NULL"),
         ),
         Index(
             "ix_thread_queued_submissions_consumed",

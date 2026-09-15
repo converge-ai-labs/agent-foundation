@@ -1,15 +1,13 @@
-from pathlib import Path
-
 import pytest
 from a13n_service.database.migration import DatabaseMigrator
-from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
-from a13n_service.storage.relational import sync_database_url
+from a13n_service.storage.config import PostgreSQLConfig
+from a13n_service.storage.relational import database_url
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.exc import DatabaseError
 
 
-def _assert_hook_schema(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) -> None:
-    engine = create_engine(sync_database_url(config))
+def _assert_hook_schema(config: PostgreSQLConfig, *, present: bool) -> None:
+    engine = create_engine(database_url(config))
     try:
         inspector = inspect(engine)
         tables = set(inspector.get_table_names())
@@ -28,38 +26,24 @@ def _assert_hook_schema(config: PostgreSQLConfig | SQLiteConfig, *, present: boo
             "ix_hook_subscription_revisions_thread",
         }
         assert scope_index_names <= revision_indexes.keys()
-        dialect = engine.dialect.name
         for scope in ("run", "session", "thread"):
             options = revision_indexes[f"ix_hook_subscription_revisions_{scope}"]["dialect_options"]
-            assert options[f"{dialect}_where"] is not None
+            assert options["postgresql_where"] is not None
         with engine.connect() as connection:
-            if connection.dialect.name == "postgresql":
-                triggers = set(
-                    connection.execute(
-                        text(
-                            "SELECT trigger_name FROM information_schema.triggers "
-                            "WHERE event_object_table = 'hook_subscription_revisions'"
-                        )
-                    ).scalars()
-                )
-            else:
-                triggers = set(
-                    connection.execute(
-                        text(
-                            "SELECT name FROM sqlite_master "
-                            "WHERE type = 'trigger' AND tbl_name = 'hook_subscription_revisions'"
-                        )
-                    ).scalars()
-                )
-        assert {
-            "reject_hook_subscription_revision_update",
-            "validate_hook_subscription_revision_insert",
-        } <= triggers
+            triggers = set(
+                connection.execute(
+                    text(
+                        "SELECT trigger_name FROM information_schema.triggers "
+                        "WHERE event_object_table = 'hook_subscription_revisions'"
+                    )
+                ).scalars()
+            )
+        assert {"reject_hook_subscription_revision_update", "validate_hook_subscription_revision_insert"} <= triggers
     finally:
         engine.dispose()
 
 
-def _exercise_migration(config: PostgreSQLConfig | SQLiteConfig) -> None:
+def _exercise_migration(config: PostgreSQLConfig) -> None:
     migrator = DatabaseMigrator(config)
     migrator.upgrade()
     migrator.current(check_heads=True, verbose=False)
@@ -68,18 +52,14 @@ def _exercise_migration(config: PostgreSQLConfig | SQLiteConfig) -> None:
     _assert_hook_schema(config, present=False)
 
 
-def test_hook_schema_migrates_up_and_down_on_sqlite(tmp_path: Path) -> None:
-    _exercise_migration(SQLiteConfig(path=tmp_path / "hook-migrations.sqlite3"))
+def test_hook_schema_migrates_up_and_down(postgres_database: PostgreSQLConfig) -> None:
+    _exercise_migration(postgres_database)
 
 
-def test_hook_schema_migrates_up_and_down_on_postgresql(pg_url: str) -> None:
-    _exercise_migration(PostgreSQLConfig(url=pg_url))
-
-
-def test_hook_revision_is_immutable_in_sqlite(tmp_path: Path) -> None:
-    config = SQLiteConfig(path=tmp_path / "hook-immutability.sqlite3")
+def test_hook_revision_is_immutable(postgres_database: PostgreSQLConfig) -> None:
+    config = postgres_database
     DatabaseMigrator(config).upgrade()
-    engine = create_engine(sync_database_url(config))
+    engine = create_engine(database_url(config))
     try:
         with engine.begin() as connection:
             connection.execute(
@@ -102,7 +82,8 @@ def test_hook_revision_is_immutable_in_sqlite(tmp_path: Path) -> None:
                     "(id, organization_id, workspace_id, owner_type, owner_id, key, version, ciphertext, nonce, "
                     "encryption_key_id, created_at, value_updated_at, deleted_at) VALUES "
                     "('sec_1234567890abcdef', 'org_1234567890abcdef', 'ws_1234567890abcdef', 'workspace', "
-                    "'ws_1234567890abcdef', 'hook-signing', 1, X'01', X'000000000000000000000000', 'test-key', "
+                    "'ws_1234567890abcdef', 'hook-signing', 1, decode('01','hex'), "
+                    "decode('000000000000000000000000','hex'), 'test-key', "
                     "CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, NULL)"
                 )
             )
@@ -112,7 +93,7 @@ def test_hook_revision_is_immutable_in_sqlite(tmp_path: Path) -> None:
                     "(id, organization_id, workspace_id, version, current_revision_id, enabled, inline_run_id, "
                     "deleted_at, created_by_type, created_by_id, updated_by_type, updated_by_id, created_at, updated_at) "
                     "VALUES ('hsub_1234567890abcdef', 'org_1234567890abcdef', 'ws_1234567890abcdef', 1, "
-                    "'hsubr_1234567890abcdef', 1, NULL, NULL, 'user', 'usr_1234567890abcdef', "
+                    "'hsubr_1234567890abcdef', TRUE, NULL, NULL, 'user', 'usr_1234567890abcdef', "
                     "'user', 'usr_1234567890abcdef', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)"
                 )
             )
@@ -140,8 +121,7 @@ def test_hook_revision_is_immutable_in_sqlite(tmp_path: Path) -> None:
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("backend", ["sqlite", "postgresql"])
-async def test_inline_database_guards_after_clean_migration(backend, request, tmp_path):
+async def test_inline_database_guards_after_clean_migration(postgres_database):
     from a13n_service.hooks import InlineHookSubscriptionInput, WebhookDestinationConfig
     from a13n_service.hooks.models import HookSubscriptionRecord, HookSubscriptionRevisionRecord
     from a13n_service.hooks.persistence import create_hook_subscription, create_inline_hook_subscription
@@ -160,11 +140,7 @@ async def test_inline_database_guards_after_clean_migration(backend, request, tm
         _seed_interaction_database,
     )
 
-    config = (
-        SQLiteConfig(path=tmp_path / "inline-guards.sqlite3")
-        if backend == "sqlite"
-        else PostgreSQLConfig(url=request.getfixturevalue("pg_url"))
-    )
+    config = postgres_database
     migrator = DatabaseMigrator(config)
     migrator.upgrade()
     engine = create_sql_engine(config)
@@ -244,5 +220,3 @@ async def test_inline_database_guards_after_clean_migration(backend, request, tm
             )
     finally:
         await engine.dispose()
-        if backend == "postgresql":
-            migrator.downgrade("base")

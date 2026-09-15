@@ -144,16 +144,8 @@ class ModelProviderService:
                 return record.to_resource()
         except IntegrityError as error:
             if not (
-                is_unique_conflict(
-                    error,
-                    constraint="uq_model_providers_workspace_name",
-                    sqlite_columns="model_providers.workspace_id, model_providers.normalized_name",
-                )
-                or is_unique_conflict(
-                    error,
-                    constraint="uq_model_providers_organization_normalized_name",
-                    sqlite_columns="model_providers.organization_id, model_providers.normalized_name",
-                )
+                is_unique_conflict(error, constraint="uq_model_providers_workspace_name")
+                or is_unique_conflict(error, constraint="uq_model_providers_organization_normalized_name")
             ):
                 raise
             raise ModelError(
@@ -188,7 +180,7 @@ class ModelProviderService:
                 # Mutation snapshots verify ownership before any credential decryption.
                 lock=action is WorkspaceAction.models_manage,
             )
-            return record.to_resource(), record.credential_snapshot() if record.ciphertext is not None else None
+            return record.to_resource(), (record.credential_snapshot() if record.ciphertext is not None else None)
 
     async def list(
         self,
@@ -306,11 +298,11 @@ class ModelProviderService:
                     else ProviderSecrets()
                 )
                 secrets = ProviderSecrets(
-                    credential=credential if "credential" in request.model_fields_set else previous.credential,
+                    credential=(credential if "credential" in request.model_fields_set else previous.credential),
                     extra_headers=apply_header_updates(
                         previous.extra_headers,
                         {
-                            name: value.get_secret_value() if value is not None else None
+                            name: (value.get_secret_value() if value is not None else None)
                             for name, value in request.extra_headers.items()
                         },
                     ),
@@ -366,16 +358,8 @@ class ModelProviderService:
                 await session.flush()
             except IntegrityError as error:
                 if not (
-                    is_unique_conflict(
-                        error,
-                        constraint="uq_model_providers_workspace_name",
-                        sqlite_columns="model_providers.workspace_id, model_providers.normalized_name",
-                    )
-                    or is_unique_conflict(
-                        error,
-                        constraint="uq_model_providers_organization_normalized_name",
-                        sqlite_columns="model_providers.organization_id, model_providers.normalized_name",
-                    )
+                    is_unique_conflict(error, constraint="uq_model_providers_workspace_name")
+                    or is_unique_conflict(error, constraint="uq_model_providers_organization_normalized_name")
                 ):
                     raise
                 raise ModelError(
