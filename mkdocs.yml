@@ -137,28 +137,28 @@ theme:
     - media: "(prefers-color-scheme: light)"
       scheme: default
       toggle:
-        icon: lucide/moon
+        icon: phosphor/moon
         name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
       toggle:
-        icon: lucide/sun
+        icon: phosphor/sun
         name: Switch to light mode
   icon:
-    menu: lucide/menu
-    search: lucide/search
-    close: lucide/x
-    previous: lucide/arrow-left
-    next: lucide/arrow-right
-    top: lucide/arrow-up
-    repo: lucide/github
-    edit: lucide/pencil
+    menu: phosphor/list
+    search: phosphor/magnifying-glass
+    close: phosphor/x
+    previous: phosphor/arrow-left
+    next: phosphor/arrow-right
+    top: phosphor/arrow-up
+    repo: phosphor/github-logo
+    edit: phosphor/pencil-simple
     admonition:
-      note: lucide/pencil
-      info: lucide/info
-      tip: lucide/lightbulb
-      warning: lucide/triangle-alert
-      danger: lucide/circle-alert
+      note: phosphor/pencil-simple
+      info: phosphor/info
+      tip: phosphor/lightbulb
+      warning: phosphor/warning
+      danger: phosphor/warning-circle
   features:
     - navigation.tabs
     - navigation.sections

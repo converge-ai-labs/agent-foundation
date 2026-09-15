@@ -5,11 +5,15 @@
 ## Sources
 
 - `frontend/packages/a13n-ui/src/styles/theme.css` owns the Coss neutral light/dark colors. `theme.css` maps those semantic values to Material variables, with larger documentation typography and accessible indigo links derived from the brand palette. It is an adapter, not another frontend theme.
-- `frontend/packages/a13n-ui/src/styles/tokens.css` owns the application font/token aliases and is included unchanged.
+- `frontend/packages/a13n-ui/src/styles/tokens.css` owns the application font/token aliases and is included unchanged. The adapter exposes the active semantic palette on `:root` as well as Material's `body`, so root-scoped aliases resolve in both themes.
 - `frontend/packages/a13n-ui/src/brand` owns the logo, Space Grotesk Bold font, and font license. `hooks.py` copies them into the built site directly from those sources. No duplicate brand binaries are committed here.
-- `.icons/lucide` under `theme/` contains a selected SVG export from the frontend's **lucide-react 0.577.0** package. The icon node geometry, 24px view box, round caps/joins, and 2px outline are unchanged; React-only node keys are omitted. `lucide-LICENSE` includes the ISC and inherited Feather notices and ships with the site.
+- `.icons/phosphor` under `theme/` contains selected regular-weight SVGs rendered from the frontend's **@phosphor-icons/react 2.1.10** public components. The 256px view box and path geometry are unchanged; SVGs use `currentColor` at a nominal 24px size. `phosphor-LICENSE` contains the MIT notice and ships with the site.
 
-When changing the shared frontend theme, update the small Material semantic bridge as part of the same visual check. When changing the frontend Lucide version, refresh the selected SVGs from its public icon nodes and retain the license. Documentation builds require only the Python workspace, not Node.js, a frontend build, or live icon/font downloads.
+When changing the shared frontend theme, update the small Material semantic bridge as part of the same visual check. When changing the frontend Phosphor version, refresh the selected SVGs using React's `renderToStaticMarkup` with `weight="regular"` and `size={24}`, and retain the license. Documentation builds require only the Python workspace, not Node.js, a frontend build, or live icon/font downloads.
+
+The Mermaid fence formatter supplies flowchart and sequence sizing through diagram frontmatter, keeping SVGs at their natural width inside a horizontally scrollable region rather than shrinking labels to fit. Markdown fences keep their graph source only; the formatter owns this presentation configuration.
+
+The adapter retains Material's navigation, search, code copying, and content scrolling. It supplies medium-weight headings, a bounded reading canvas, neutral navigation selection, semantic callouts, and shared scrollbar colors. State selectors deliberately cover Material's hover, open, focus, and narrow-screen rules; changing a base selector alone may not change the rendered state.
 
 ## Validation
 
@@ -19,4 +23,4 @@ uv run --locked pytest scripts/tests/test_docs.py
 make docs-serve
 ```
 
-Check light and dark themes, the mobile drawer and search, readable code/table overflow, focus indicators, and rendered Mermaid SVGs. Strict MkDocs checks generated HTML and navigation, not Mermaid's browser parser. Material loads its Mermaid runtime in the browser; graph checks need that runtime to be reachable.
+Check light and dark themes, the mobile drawer and search (including results and no results), readable code/table overflow, keyboard focus and copying, and rendered Mermaid SVGs. Material renders diagrams in a closed shadow root: inspect the rendered diagram rather than expecting an outer `.mermaid svg` selector to reach it. Strict MkDocs checks generated HTML and navigation, not Mermaid's browser parser. Material loads its Mermaid runtime in the browser; graph checks need that runtime to be reachable.
