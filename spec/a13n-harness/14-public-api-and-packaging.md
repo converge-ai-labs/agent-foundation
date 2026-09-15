@@ -161,6 +161,7 @@ class RunBindings:
     metadata: Mapping[str, JsonValue] = field(default_factory=dict)
     model_context: ModelContextMiddleware | None = None
     observation: HarnessObservationContext | None = None
+    tool_result_directory: str | None = None
 
     @classmethod
     def embedded(
@@ -182,6 +183,7 @@ class RunBindings:
         client_toolsets: tuple[ClientToolsetDefinition, ...] | None = None,
         metadata: Mapping[str, JsonValue] | None = None,
         observation: HarnessObservationContext | None = None,
+        tool_result_directory: str | None = None,
     ) -> RunBindings: ...
 ```
 
@@ -192,6 +194,8 @@ class RunBindings:
 `RunBindings.capabilities` contains invocation-policy and upstream MCP Capabilities and is passed to every internal `ModelAttempt`. Feature-specific providers and overrides instead use the explicit typed fields above, captured on the logical-run `AgentContext` before Capability preparation. `WebBinding` and `TaskStateBinding` are passive frozen values without Capability IDs, ordering, or source provenance. The selected feature Capability consumes its field at the earliest lifecycle phase it requires; a binding never installs that feature. Missing required dependencies, incompatible values, and unsupported orphan bindings fail before dependent behavior. Internal active replacements stay Run-local and are reused across recovery and compaction. `None` means no override; an empty Skill set or client-tool tuple explicitly clears the selection. A stable definition-selected operator cannot be replaced by a run Capability or binding. Provider lifetime is Host-owned, and no live collaborator enters continuation State. The Harness exposes no generic dependency registry or role-name lookup. Environment adapters remain explicit Run arguments and cannot be moved into `RunBindings.capabilities`; `DynamicEnvironmentCapability` can be omitted without changing adapter entry or trusted Run-local routing.
 
 `SkillsCapability()` uses the canonical optional workspace source owned by [Skills and Discovery](09-context-and-memory.md#skills-and-discovery). `SkillManager.default(additional_sources=...)` retains that source before explicit Host additions, while passing another `SkillManager` replaces the default source composition. `SkillSource.catalog(files=...)` and `SkillMaterializer.materialize(files=...)` use only the public `FileOperator` boundary. `SkillSource.roots` and `SkillManager.roots` expose the configured canonical absolute FileOperator paths. `SkillManager.scan(files=...)` is the direct non-virtual mode for a caller-controlled FileOperator. `SkillManager.scan_environment(environment=...)` captures mount-incarnation-pinned file scopes and returns `BoundSkillCatalog`; both Environment-aware Hosts and `SkillsCapability` use that method without constructing another Agent loop. `BoundSkillCatalog.require_current()` fences only the routes represented by its items. These are separate explicit operations: neither dispatches to or retries through the other, and the public surface provides only the explicit source and root operations described here.
+
+`RunBindings.tool_result_directory` selects an optional canonical absolute Environment path for Run-private tool result files. It is captured on `AgentContext`, grants no file authority, and is not restored from State. The [tool output contract](07-tool-execution.md#dispatch-retry-and-results) owns default placement, explicit-sink failure, and cleanup.
 
 `RunBindings.skill_selection` is the optional Host override consumed only by a definition-selected `SkillsCapability`. Its immutable exact-name set chooses a subset of the conflict-resolved discovered catalog for one logical run. Absence selects the complete catalog, while an explicit empty set selects none. It carries no source, file, package, or activation authority and is reconstructed independently for resumed and child runs.
 

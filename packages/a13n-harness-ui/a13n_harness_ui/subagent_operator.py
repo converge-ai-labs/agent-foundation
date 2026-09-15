@@ -910,6 +910,7 @@ class HarnessUiSubagentOperator(SubagentOperator):
                 host_refs={"thread_id": state.thread_id},
             ),
             environment=environment.runtime,
+            tool_result_directory=environment.tool_result_directory,
             model_resolver=reconstructed.model_resolver.fresh(),
         )
         bindings = production_run_bindings(bindings, reconstructed.definition_capability_ids)

@@ -16,6 +16,7 @@ from pydantic import JsonValue
 from pydantic_ai.capabilities import AbstractCapability
 from pydantic_ai.messages import ModelMessage
 
+from a13n_harness.environment._mount_path import parse_mount_path
 from a13n_harness.identity import AgentIdentityRef, AgentInstanceContext
 from a13n_harness.observation import HarnessObservationContext
 from a13n_harness.state import AgentContextState, HarnessState
@@ -144,6 +145,7 @@ class RunBindings:
     metadata: Mapping[str, JsonValue] = field(default_factory=dict)
     model_context: ModelContextMiddleware | None = None
     observation: HarnessObservationContext | None = None
+    tool_result_directory: str | None = None
     _inherited_model_cost: AbstractModelCostCapability | None = field(
         default=None,
         repr=False,
@@ -151,6 +153,11 @@ class RunBindings:
     )
 
     def __post_init__(self) -> None:
+        if self.tool_result_directory is not None:
+            try:
+                parse_mount_path(self.tool_result_directory)
+            except ValueError as exc:
+                raise ValueError("tool_result_directory must be a canonical absolute Environment path") from exc
         if self.toolset_instructions is not None and not isinstance(self.toolset_instructions, bool):
             raise TypeError("toolset_instructions must be a boolean or None")
         if self.observation is not None and not isinstance(self.observation, HarnessObservationContext):
@@ -202,6 +209,7 @@ class RunBindings:
         client_toolsets: tuple[ClientToolsetDefinition, ...] | None = None,
         metadata: Mapping[str, JsonValue] | None = None,
         observation: HarnessObservationContext | None = None,
+        tool_result_directory: str | None = None,
     ) -> RunBindings:
         """Create fresh trusted bindings for one embedded run."""
         instance_id = str(uuid4())
@@ -222,6 +230,7 @@ class RunBindings:
             skill_selection=skill_selection,
             task_state=task_state,
             client_toolsets=client_toolsets,
+            tool_result_directory=tool_result_directory,
             metadata=metadata or {},
             observation=observation,
         )
@@ -373,6 +382,7 @@ class AgentContext:
         repr=False,
         compare=False,
     )
+    tool_result_directory: str | None = None
     _tool_result_spill_store: _ToolResultSpillStore | None = field(
         default=None,
         repr=False,
@@ -525,7 +535,8 @@ class _ToolResultSpillStore:
     def __init__(self, context: AgentContext) -> None:
         run_digest = hashlib.sha256(context.run_id.encode("utf-8")).hexdigest()[:12]
         self._environment = context.environment
-        self._directory_suffix = f".a13n/tmp/tool-results/run-{run_digest}"
+        self._directory = context.tool_result_directory
+        self._run_directory_prefix = f"run-{run_digest}"
         self._directories: dict[tuple[str, str], tuple[FileScopeSelection, str]] = {}
         self._next_sequence = 1
         self._closed = False
@@ -538,7 +549,7 @@ class _ToolResultSpillStore:
             if self._closed:
                 return None
             try:
-                directory = self._default_directory()
+                directory = self._new_directory()
                 if directory is None:
                     return None
                 selection = await self._environment.resolve_files(directory)
@@ -566,15 +577,16 @@ class _ToolResultSpillStore:
                 return None
             return path
 
-    def _default_directory(self) -> str | None:
-        snapshot = self._environment.snapshot
-        if snapshot.default_mount is None:
-            return None
-        mount = next((item for item in snapshot.mounts if item.name == snapshot.default_mount), None)
-        if mount is None:
-            return None
-        root = mount.mount_path or f"/environment/{mount.name}"
-        return f"{root.rstrip('/')}/{self._directory_suffix}-{uuid4().hex[:12]}"
+    def _new_directory(self) -> str | None:
+        parent = self._directory
+        if parent is None:
+            snapshot = self._environment.snapshot
+            mount = next((item for item in snapshot.mounts if item.name == snapshot.default_mount), None)
+            if mount is None:
+                return None
+            root = mount.mount_path or f"/environment/{mount.name}"
+            parent = f"{root.rstrip('/')}/.a13n/tmp/tool-results"
+        return f"{parent.rstrip('/')}/{self._run_directory_prefix}-{uuid4().hex[:12]}"
 
     async def close(self) -> None:
         async with self._lock:

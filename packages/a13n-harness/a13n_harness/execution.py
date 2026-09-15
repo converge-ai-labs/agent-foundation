@@ -1485,6 +1485,7 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                     skill_selection=self._bindings.skill_selection,
                     task_state=self._bindings.task_state,
                     client_toolsets=self._bindings.client_toolsets,
+                    tool_result_directory=self._bindings.tool_result_directory,
                     _capability_provenance=_CapabilityProvenance(
                         definition_ids=self._executable._definition_reserved_capability_ids,
                         run_ids=self._run_reserved_capability_ids,

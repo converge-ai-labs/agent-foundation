@@ -228,6 +228,7 @@ class RootRunExecutor:
             bindings = RunBindings(
                 instance=instance,
                 environment=environment.runtime,
+                tool_result_directory=environment.tool_result_directory,
                 model_resolver=reconstructed.model_resolver,
             )
             bindings = production_run_bindings(bindings, reconstructed.definition_capability_ids)
