@@ -108,6 +108,7 @@ _ERROR_REASONS = {
     "origin_rejected": "Cross-origin API access is not enabled.",
     "app_not_ready": "The App is not ready.",
     "app_stopping": "The App is stopping.",
+    "object_payload_incompatible": "Stored object is incompatible; inspect the object validation warning for its identity and fields.",
 }
 
 
@@ -160,14 +161,12 @@ class RequestLog:
                         value = params.get(name)
                         if isinstance(value, str) and re.fullmatch(rf"{prefix}[-_][a-f0-9]{{32}}", value):
                             fields[name] = value
-                detail = " · " + " · ".join(f"{key}={value}" for key, value in fields.items()) if fields else ""
                 log(
-                    "%s %s → %d (%.0f ms)%s",
+                    "%s %s → %d (%.0f ms)",
                     scope["method"],
                     path,
                     status,
                     (monotonic() - started) * 1000,
-                    detail,
                     extra=fields,
                 )
             await send(message)

@@ -311,7 +311,8 @@ async def test_projection_errors_log_safe_reasons_and_thread_identity(
                 assert len(records) == 1
                 assert records[0].error_code == code
                 assert records[0].thread_id == thread_id
-                assert reason in records[0].getMessage()
+                assert reason in records[0].reason
+                assert "error_code=" not in records[0].getMessage()
                 assert "private" not in caplog.text
 
 
@@ -339,7 +340,7 @@ async def test_error_diagnostics_do_not_log_dynamic_messages_or_arbitrary_route_
 
     with caplog.at_level(logging.WARNING, logger="a13n_harness_ui.webui"):
         await RequestLog(app)({"type": "http", "method": "GET", "path": "/private/folder"}, receive, send)
-    assert "configuration_invalid" in caplog.text
+    assert caplog.records[-1].error_code == "configuration_invalid"
     assert "private" not in caplog.text
     # The response body remains available to its authenticated caller, unmodified.
     assert b"private-secret" in messages[-1]["body"]

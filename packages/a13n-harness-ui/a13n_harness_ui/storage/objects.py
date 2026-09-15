@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Annotated, TypeVar
 from uuid import uuid4
 
 import zstandard
+from a13n_logging import get_logger
 from anyio import to_thread
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, field_validator
 
@@ -28,6 +29,40 @@ _DIGEST = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
 _SUPPORTED_OBJECT_SCHEMA_VERSION = "1"
 _SUPPORTED_PAYLOAD_CODEC_VERSION = "1"
 _ObjectModelT = TypeVar("_ObjectModelT", bound=BaseModel)
+_LOGGER = get_logger(__name__)
+
+
+def _validation_diagnostics(error: ValidationError, model_type: type[BaseModel]) -> dict[str, object]:
+    # Locations can contain arbitrary dictionary keys (including paths or secrets).
+    # Only schema-owned field names and numeric positions belong in diagnostics.
+    fields = set(model_type.model_fields)
+    try:
+        schema = model_type.model_json_schema()
+    except (TypeError, ValueError):
+        schema = {}
+    pending = [schema]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, dict):
+            properties = node.get("properties")
+            if isinstance(properties, dict):
+                fields.update(properties)
+            pending.extend(node.values())
+        elif isinstance(node, list):
+            pending.extend(node)
+    issues = error.errors(include_input=False, include_context=False, include_url=False)
+    return {
+        "validation_error_count": error.error_count(),
+        "validation_errors": [
+            {
+                "location": ".".join(
+                    str(part) if isinstance(part, int) or part in fields else "*" for part in issue["loc"][:16]
+                ),
+                "type": issue["type"],
+            }
+            for issue in issues[:8]
+        ],
+    }
 
 
 class ObjectKind(StrEnum):
@@ -170,11 +205,23 @@ class ImmutableObjectStore:
                 separators=(",", ":"),
             )
             return model_type.model_validate_json(serialized, strict=True)
-        except (TypeError, ValueError, ValidationError) as exc:
+        except (TypeError, ValueError) as exc:
+            details: dict[str, object] = {
+                "object_kind": reference.object_kind.value,
+                "object_schema_version": reference.object_schema_version,
+                "object_digest": reference.logical_digest,
+                "payload_codec_version": envelope.payload_codec_version,
+                "payload_model": model_type.__name__,
+            }
+            if isinstance(exc, ValidationError):
+                details.update(_validation_diagnostics(exc, model_type))
+            else:
+                details["validation_error_type"] = type(exc).__name__
+            _LOGGER.warning("Immutable object payload is incompatible", extra=details)
             raise ObjectIntegrityError(
                 "Immutable object payload does not match its expected contract.",
                 code="object_payload_incompatible",
-                details={"object_kind": reference.object_kind.value},
+                details=details,
             ) from exc
 
     async def references(self) -> tuple[ObjectRef, ...]:

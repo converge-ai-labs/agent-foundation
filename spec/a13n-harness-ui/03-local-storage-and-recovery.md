@@ -95,6 +95,10 @@ Startup upgrades revisions known to the package under the existing bounded seria
 
 Schema changes preserve the reads and writes of concurrently running supported older Apps. Compatible expansion retains existing columns, meanings, constraints, and immutable payload representations; added fields permit older writers to omit them. A migration's structural startup check is not proof of semantic compatibility. New writers must not publish payloads that supported old readers cannot interpret, and genuinely incompatible changes require an explicit compatibility transition rather than an ordinary automatic upgrade that breaks active Runs. Historical readers that predate this behavior retain their own startup limitations.
 
+Reaccepting unchanged configuration sources reuses their existing immutable object when decoding that object produces the same complete normalized configuration. Compatible input aliases do not justify rewriting stored bytes, changing the source digest, or replacing indexes. Different normalized content under the same source digest remains an integrity error, and selecting an earlier accepted generation still requires the ordinary compare-and-select check. Harness owns legacy model-characteristic input aliases; the UI consumes them for configuration and Run composition snapshots.
+
+An incompatible typed object emits a warning identifying its kind, object digest, schema/codec versions, and expected payload model. Diagnostics include a bounded list of schema-owned field locations and validation error types plus the total error count; arbitrary mapping keys are masked. Payload values, dynamic validation messages, and exception contexts are not logged. This evidence does not relax integrity validation or authorize deletion of the object.
+
 Mixed-version access does not share live execution ownership or remove compare-and-select conflicts. Two Apps independently running the same Thread can still conflict on its selected continuation; schema compatibility never permits overwriting that newer continuation.
 
 ## Thread Files and Automatic Scratch Cleanup

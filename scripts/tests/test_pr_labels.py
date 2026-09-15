@@ -78,12 +78,96 @@ console.log(JSON.stringify({calls, notices}));
 
 def test_auto_labels_run_only_on_open_and_ready_without_executing_pr_code():
     workflow = _workflow()
-    assert workflow["on"] == {"pull_request_target": {"types": ["opened", "ready_for_review"]}}
+    assert workflow["on"] == {
+        "pull_request_target": {"types": ["opened", "synchronize", "reopened", "ready_for_review"]}
+    }
+    assert workflow["jobs"]["labels"]["if"] == (
+        "github.event.action == 'opened' || github.event.action == 'ready_for_review'"
+    )
     assert workflow["permissions"] == {"pull-requests": "write"}
     steps = workflow["jobs"]["labels"]["steps"]
     assert len(steps) == 1
     assert steps[0]["uses"] == "actions/github-script@v8"
     assert "${{" not in steps[0]["with"]["script"]
+
+
+@pytest.mark.parametrize("status", ["added", "modified", "removed", "renamed"])
+def test_compatibility_notice_handles_baseline_changes_and_renames(status):
+    prefix = "packages/a13n-harness/tests/fixtures/compatibility/"
+    file = {"filename": prefix + "agent.json", "status": status}
+    if status == "renamed":
+        file.update(filename="elsewhere/agent.json", previous_filename=prefix + "agent.json")
+    calls = _compatibility_notice([file])
+    assert len(calls) == 1
+    assert calls[0]["action"] == "create"
+    assert "human review requested" in calls[0]["body"]
+    assert "explicit human agreement" in calls[0]["body"]
+    assert "1 changed files" in calls[0]["body"]
+
+
+def _compatibility_notice(files, comments=()):
+    script = _workflow()["jobs"]["compatibility-review"]["steps"][0]["with"]["script"]
+    runner = """
+import fs from 'node:fs';
+const input = JSON.parse(fs.readFileSync(0, 'utf8'));
+const calls = [];
+const context = {repo: {owner: 'owner', repo: 'repo'}, payload: {pull_request: {number: 42}}};
+const github = {
+  paginate: async method => method === 'files' ? input.files : input.comments,
+  rest: {
+    pulls: {listFiles: 'files'},
+    issues: {
+      listComments: 'comments',
+      createComment: async args => calls.push({action: 'create', ...args}),
+      updateComment: async args => calls.push({action: 'update', ...args}),
+    },
+  },
+};
+const AsyncFunction = Object.getPrototypeOf(async function() {}).constructor;
+await new AsyncFunction('context', 'github', input.script)(context, github);
+console.log(JSON.stringify(calls));
+"""
+    result = subprocess.run(
+        ["node", "--input-type=module", "-e", runner],
+        input=json.dumps({"script": script, "files": files, "comments": comments}),
+        text=True,
+        capture_output=True,
+        check=True,
+    )
+    return json.loads(result.stdout)
+
+
+def test_compatibility_notice_is_idempotent_and_never_edits_human_comments():
+    files = [{"filename": "packages/a13n-harness/tests/fixtures/compatibility/agent.json", "status": "modified"}]
+    body = _compatibility_notice(files)[0]["body"]
+    human = {"id": 7, "user": {"login": "human"}, "body": body}
+    assert _compatibility_notice(files, [human])[0]["action"] == "create"
+    previous = {"id": 8, "user": {"login": "github-actions[bot]"}, "body": body}
+    assert _compatibility_notice(files, [previous]) == []
+    changed = _compatibility_notice(files * 2, [human, previous])
+    assert changed[0]["action"] == "update"
+    assert changed[0]["comment_id"] == 8
+    cleared = _compatibility_notice([], [previous])
+    assert "No Harness compatibility baseline changes remain" in cleared[0]["body"]
+    assert _compatibility_notice([], [human]) == []
+    assert _compatibility_notice([{"filename": "README.md", "status": "modified"}]) == []
+
+
+def test_compatibility_notice_never_evaluates_or_echoes_untrusted_filenames():
+    files = [
+        {
+            "filename": "packages/a13n-harness/tests/fixtures/compatibility/`@everyone${process.exit(1)}",
+            "status": "added",
+        }
+    ]
+    body = _compatibility_notice(files)[0]["body"]
+    assert "@everyone" not in body
+    assert "process.exit" not in body
+    job = _workflow()["jobs"]["compatibility-review"]
+    assert job["concurrency"]["cancel-in-progress"] == "false"
+    assert len(job["steps"]) == 1
+    assert job["steps"][0]["uses"] == "actions/github-script@v8"
+    assert "${{" not in job["steps"][0]["with"]["script"]
 
 
 def test_release_jobs_can_read_labels_without_changing_publish_graphs():
