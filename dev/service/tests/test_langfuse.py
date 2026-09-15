@@ -4,6 +4,7 @@ import base64
 import dataclasses
 import os
 import subprocess
+import tomllib
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -242,7 +243,8 @@ def test_legacy_stack_warning_is_read_only_and_preserves_old_volumes(tmp_path, m
     assert "stop" in message and "--volumes" not in message
 
 
-def test_disabled_stack_can_be_stopped_without_ambient_compose_settings(tmp_path, monkeypatch):
+@pytest.mark.parametrize("provider", ["none", "logfire"])
+def test_disabled_stack_can_be_stopped_without_ambient_compose_settings(tmp_path, monkeypatch, provider):
     monkeypatch.setenv("LANGFUSE_LOCAL_PORT", "9999")
     calls = []
 
@@ -251,9 +253,93 @@ def test_disabled_stack_can_be_stopped_without_ambient_compose_settings(tmp_path
         return SimpleNamespace(stdout="")
 
     monkeypatch.setattr(subprocess, "run", run)
-    langfuse = local_langfuse(tmp_path, provider="none")
+    langfuse = local_langfuse(
+        tmp_path,
+        provider=provider,
+        logfire_base_url="https://logfire-us.pydantic.dev",
+        logfire_read_token="test-read-token",
+        logfire_history_from="2026-09-14T00:00:00Z",
+    )
     langfuse.compose("stop")
     command, options = calls[0]
     assert command[-1] == "stop"
     assert command[command.index("--project-name") + 1] == langfuse.environment.project + "-langfuse"
     assert "LANGFUSE_LOCAL_PORT" not in options["env"]
+
+
+@pytest.mark.parametrize("region", ["us", "eu"])
+def test_logfire_query_selects_matching_export_without_starting_langfuse(tmp_path, monkeypatch, region):
+    monkeypatch.delenv("A13N_DEV_TRACE_BACKEND", raising=False)
+    monkeypatch.delenv("LOGFIRE_BASE_URL", raising=False)
+    monkeypatch.setenv("LOGFIRE_TOKEN", "test-write-token")
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "https://ambient.invalid/v1/traces")
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "Authorization=ambient-secret")
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: pytest.fail("must not operate Langfuse"))
+    base_url = f"https://logfire-{region}.pydantic.dev"
+    langfuse = local_langfuse(
+        tmp_path,
+        provider="logfire",
+        logfire_base_url=base_url + "/",
+        logfire_read_token="test-read-token",
+        logfire_history_from="2026-09-14T00:00:00Z",
+    )
+    langfuse.validate()
+    langfuse.start()
+    assert not langfuse.enabled
+    env = trace_environment(langfuse)
+    assert env["OTEL_EXPORTER_OTLP_ENDPOINT"] == base_url
+    assert env["OTEL_EXPORTER_OTLP_HEADERS"] == "Authorization=test-write-token"
+    assert env["OTEL_EXPORTER_OTLP_PROTOCOL"] == "http/protobuf"
+    assert env["OTEL_TRACES_EXPORTER"] == "otlp"
+    assert "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT" not in env
+    assert "OTEL_EXPORTER_OTLP_TRACES_HEADERS" not in env
+    assert "test-read-token" not in env["OTEL_EXPORTER_OTLP_HEADERS"]
+    monkeypatch.setenv("A13N_DEV_TRACE_BACKEND", "none")
+    assert trace_environment(langfuse)["OTEL_TRACES_EXPORTER"] == "none"
+
+
+@pytest.mark.parametrize("field", ["logfire_base_url", "logfire_read_token", "logfire_history_from"])
+def test_logfire_query_requires_complete_configuration_before_infrastructure(tmp_path, monkeypatch, field):
+    query = {
+        "provider": "logfire",
+        "logfire_base_url": "https://logfire-us.pydantic.dev",
+        "logfire_read_token": "test-read-token",
+        "logfire_history_from": "2026-09-14T00:00:00Z",
+    }
+    query[field] = None
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: pytest.fail("must not operate infrastructure"))
+    with pytest.raises(ValueError, match=field.upper()):
+        local_langfuse(tmp_path, **query).validate()
+
+
+def test_commented_logfire_recipe_is_valid_without_changing_public_default():
+    text = LOCAL_CONFIG.read_text()
+    assert tomllib.loads(text)["observability"]["query"]["provider"] == "langfuse"
+    recipe = tomllib.loads(
+        "\n".join(
+            line.removeprefix("# ")
+            for line in text.splitlines()
+            if line.startswith(('# provider = "logfire"', "# logfire_"))
+        )
+    )
+    settings = load_settings(LOCAL_CONFIG, environ={}, overrides={"observability": {"query": recipe}})
+    settings.validate_trace_query_configuration()
+    assert settings.observability.query.provider == "logfire"
+    assert settings.observability.query.logfire_base_url == "https://logfire-us.pydantic.dev"
+
+
+def test_logfire_export_only_retains_explicit_profile_and_requires_write_token(tmp_path, monkeypatch):
+    monkeypatch.setenv("A13N_DEV_TRACE_BACKEND", "logfire")
+    monkeypatch.setenv("LOGFIRE_BASE_URL", "https://logfire-eu.pydantic.dev/")
+    monkeypatch.delenv("LOGFIRE_TOKEN", raising=False)
+    langfuse = local_langfuse(tmp_path, provider="none")
+    with pytest.raises(ValueError, match="LOGFIRE_TOKEN"):
+        trace_environment(langfuse)
+    monkeypatch.setenv("LOGFIRE_TOKEN", "test-write-token")
+    env = trace_environment(langfuse)
+    assert env["OTEL_EXPORTER_OTLP_ENDPOINT"] == "https://logfire-eu.pydantic.dev"
+    assert env["OTEL_EXPORTER_OTLP_HEADERS"] == "Authorization=test-write-token"
+    before = dict(os.environ)
+    with local_traces(langfuse):
+        assert os.environ["OTEL_EXPORTER_OTLP_HEADERS"] == "Authorization=test-write-token"
+    assert dict(os.environ) == before

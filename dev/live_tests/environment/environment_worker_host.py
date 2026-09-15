@@ -49,6 +49,8 @@ def install(config, role):
         return await original_claim(self, *args, **kwargs)
 
     AttemptScheduler.claim = claim
+    if config.get("run_faults", {}).get("skills"):
+        return
 
     def facts(operation):
         return {

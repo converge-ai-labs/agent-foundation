@@ -5,7 +5,7 @@ import json
 from typing import Literal
 
 import rfc8785
-from a13n_service.interactions.models import RunAttemptRecord, RunRecord, SessionRecord
+from a13n_service.interactions.models import RunAttemptRecord, RunRecord, RunUsageRecord, SessionRecord
 from a13n_service.interactions.objects import RunStateStore, run_state_key
 from a13n_service.request_runtime import get_process_runtime
 from a13n_service.storage import ObjectNotFound, short_session
@@ -74,6 +74,17 @@ def evidence_router(config, authenticate):
             "usage_charged": run.usage_charged.model_dump(mode="json"),
             "attempts": attempts,
         }
+
+    @router.get("/runs/{run_id}/usage")
+    async def usage(run_id: str, request: Request, actor=authentication):
+        storage, run = await owned_run(request, actor, run_id)
+        async with short_session(storage.sessions) as database:
+            rows = await database.scalars(
+                select(RunUsageRecord)
+                .where(RunUsageRecord.organization_id == run.organization_id, RunUsageRecord.run_id == run_id)
+                .order_by(RunUsageRecord.ingested_at, RunUsageRecord.record_id)
+            )
+            return {"items": [{"run_attempt_id": row.run_attempt_id, "record": row.record_json} for row in rows]}
 
     @router.get("/runs/{run_id}/state")
     async def state(run_id: str, request: Request, actor=authentication):

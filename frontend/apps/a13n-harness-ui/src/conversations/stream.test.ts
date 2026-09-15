@@ -403,3 +403,314 @@ it("retains unsaved initial output and only cuts over after replacement history 
   expect(showFocusedOutput(display, "C1", null)).toBe(true);
   expect(showFocusedOutput(display, "C2", null)).toBe(false);
 });
+
+it("folds native applied edits and failed results by exact ID without guessing proxy identities", () => {
+  const display = new FocusDisplay();
+  const events = [
+    ["TOOL_CALL_START", { tool_call_id: "outer", tool_call_name: "call" }],
+    [
+      "TOOL_CALL_ARGS",
+      { tool_call_id: "outer", delta: '{"group":"filesystem","tool":"edit"}' },
+    ],
+    ["TOOL_CALL_END", { tool_call_id: "outer" }],
+    [
+      "CUSTOM",
+      {
+        name: "a13n.filesystem.edit_applied",
+        value: {
+          event: {
+            tool_call_id: "inner",
+            file_path: "/native/a",
+            before: "old",
+            after: "new",
+          },
+        },
+      },
+    ],
+    [
+      "CUSTOM",
+      {
+        name: "a13n.pydantic_ai.function_tool_result",
+        value: {
+          event: {
+            part: {
+              part_kind: "tool-return",
+              tool_name: "edit",
+              tool_call_id: "inner",
+              outcome: "failed",
+              content: "Failed after write",
+            },
+          },
+        },
+      },
+    ],
+    ["TOOL_CALL_START", { tool_call_id: "retry", tool_call_name: "view" }],
+    [
+      "CUSTOM",
+      {
+        name: "a13n.pydantic_ai.function_tool_result",
+        value: {
+          event: {
+            part: {
+              part_kind: "retry-prompt",
+              tool_call_id: "retry",
+              content: "Invalid input",
+            },
+          },
+        },
+      },
+    ],
+    ["RUN_ERROR", { code: "run_cancelled" }],
+  ];
+  display.accept(snapshot(events.length));
+  display.accept(
+    focusFrame({
+      kind: "root_stream",
+      run_id: "run-one",
+      events: events.map(([event_type, payload], index) => ({
+        index,
+        event_type,
+        payload,
+        payload_omitted: false,
+      })),
+    }),
+  );
+  expect(display.blocks.get("run-one:outer")).toMatchObject({
+    done: true,
+    stopped: true,
+  });
+  expect(display.blocks.get("run-one:outer")?.result).toBeUndefined();
+  expect(display.blocks.get("run-one:outer")?.edit).toBeUndefined();
+  expect(display.blocks.get("run-one:inner")).toMatchObject({
+    outcome: "failed",
+    result: "Failed after write",
+    edit: { before: "old", after: "new" },
+    stopped: true,
+  });
+  expect(display.blocks.get("run-one:retry")?.failure).toBe("Invalid input");
+  expect(display.blocks.get("run-one:retry")?.retry).toBe(true);
+  expect(
+    [...display.blocks.values()].filter((block) => block.diagnostic),
+  ).toHaveLength(0);
+});
+
+it("folds provider-native search snapshots once, retaining final arguments and separate local call identity", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "cursor-ready" }));
+  let sequence = 101;
+  const emit = (event_type: string, payload: Record<string, unknown>) =>
+    display.accept(
+      focusFrame({
+        kind: "event",
+        resume_cursor: `cursor-${sequence}`,
+        event: {
+          sequence: sequence++,
+          epoch: "epoch-one",
+          run_kind: "root",
+          thread_id: "thread-one",
+          root_thread_id: "thread-one",
+          run_id: "run-one",
+          event_type,
+          payload,
+        },
+      }),
+    );
+  const part = {
+    part_kind: "builtin-tool-call",
+    tool_name: "web_search",
+    tool_call_id: "same",
+    provider_name: "openai",
+    args: null,
+  };
+  const native = (name: string, value: Record<string, unknown>) =>
+    emit("CUSTOM", {
+      name: `a13n.pydantic_ai.${name}`,
+      value: { event: { index: 0, part: value } },
+    });
+  native("part_start", part);
+  expect([...display.blocks.values()][0].result).toBeUndefined();
+  native("part_end", {
+    ...part,
+    args: { type: "search", query: "final query" },
+  });
+  expect([...display.blocks.values()][0].text).toContain("final query");
+  expect([...display.blocks.values()][0].result).toBeUndefined();
+  const returned = {
+    ...part,
+    part_kind: "builtin-tool-return",
+    content: { status: "completed", sources: [] },
+    outcome: "success",
+  };
+  native("part_start", returned);
+  native("part_end", returned);
+  emit("TOOL_CALL_START", {
+    tool_call_id: "same",
+    tool_call_name: "web_search",
+  });
+  expect(display.blocks.size).toBe(2);
+  const provider = [...display.blocks.values()].find((block) => block.provider);
+  expect(provider?.outcome).toBe("success");
+  expect(provider?.text).toContain("final query");
+  expect(provider?.result).toContain("completed");
+  expect([...display.blocks.values()].every((block) => !block.diagnostic)).toBe(
+    true,
+  );
+});
+
+function childEvent(
+  sequence: number,
+  execution = "execution-one",
+  payload = { message_id: "text", delta: "child text" },
+) {
+  return focusFrame({
+    kind: "event",
+    resume_cursor: `cursor-${sequence}`,
+    event: {
+      sequence,
+      epoch: "epoch-one",
+      run_kind: "child",
+      root_thread_id: "thread-one",
+      parent_thread_id: "thread-one",
+      thread_id: `thread-${execution}`,
+      run_id: `run-${execution}`,
+      execution_id: execution,
+      event_type: "TEXT_MESSAGE_CONTENT",
+      payload,
+      payload_omitted: false,
+    },
+  });
+}
+it("isolates interleaved child output by execution, run and parent, and clears it on reset", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  display.accept(childEvent(101));
+  display.accept(childEvent(102, "execution-two"));
+  display.accept(childEvent(102, "execution-two"));
+  const bad = childEvent(103);
+  if (bad.kind !== "event") throw new Error("Expected event");
+  bad.event.parent_thread_id = "wrong-parent";
+  display.accept(bad);
+  const nextRun = childEvent(104);
+  if (nextRun.kind !== "event") throw new Error("Expected event");
+  nextRun.event.run_id = "different-run";
+  display.accept(nextRun);
+  const unrelated = childEvent(105, "unrelated");
+  if (unrelated.kind !== "event") throw new Error("Expected event");
+  unrelated.event.root_thread_id = "another-root";
+  display.accept(unrelated);
+  display.accept(event(106, "root text"));
+  expect([...display.blocks.values()].map((block) => block.text)).toEqual([
+    "root text",
+  ]);
+  expect(display.children.size).toBe(2);
+  for (const child of display.children.values())
+    expect(
+      [...child.display.blocks.values()].map((block) => block.text),
+    ).toEqual(["child text"]);
+  const child = {
+    execution_id: "execution-one",
+    parent_thread_id: "thread-one",
+    child_thread_id: "thread-execution-one",
+    child_run_id: "run-execution-one",
+  } as Schema<"ChildExecutionView">;
+  expect(display.childOutput(child)).toBeDefined();
+  // The saved head can still identify the preceding deferred checkpoint.
+  expect(display.childOutput(child)?.runId).toBe("different-run");
+  expect(display.childOutput(child)?.gap).toBe(true);
+  expect(
+    display.childOutput({ ...child, parent_thread_id: "wrong-parent" }),
+  ).toBeUndefined();
+  display.accept(focusFrame({ kind: "reset", reason: "epoch_changed" }));
+  expect(display.children.size).toBe(0);
+  expect(display.tasks).toBeUndefined();
+});
+it("bounds observed child text and events without pretending it is complete saved history", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot());
+  display.accept(
+    childEvent(101, "execution-one", {
+      message_id: "text",
+      delta: "x".repeat(200_000),
+    }),
+  );
+  const child = display.children.get("execution-one")!.display;
+  expect(child.gap).toBe(true);
+  expect([...child.blocks.values()][0].text.length).toBeLessThanOrEqual(
+    128 * 1024,
+  );
+  for (let i = 0; i < 200; i++)
+    display.accept(
+      childEvent(102 + i, "execution-one", {
+        message_id: `text-${i}`,
+        delta: "next",
+      }),
+    );
+  expect(child.blocks.size).toBeLessThanOrEqual(128);
+  expect([...child.blocks.values()].at(-1)?.id).toContain("text-199");
+});
+it("merges same-version task batches, rejects stale projections and never mixes child tasks into root", () => {
+  const display = new FocusDisplay();
+  const prefix = snapshot(0);
+  if (prefix.kind !== "snapshot") throw new Error("Expected snapshot");
+  prefix.snapshot.tasks = {
+    version: 3,
+    available: true,
+    tasks: [
+      {
+        task_id: "task-one",
+        version: 2,
+        subject: "Current",
+        status: "in_progress",
+      },
+    ],
+  };
+  display.accept(prefix);
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  let sequence = 101;
+  function emit(
+    id: string,
+    state: number,
+    version: number,
+    subject: string,
+    child = false,
+  ) {
+    const frame = child ? childEvent(sequence++) : event(sequence++);
+    if (frame.kind !== "event") throw new Error("Expected event");
+    frame.event.event_type = "CUSTOM";
+    frame.event.payload = {
+      name: "a13n.harness.state",
+      value: {
+        event: {
+          payload: {
+            type: "task_changed",
+            task_state_version: state,
+            task: {
+              id,
+              version,
+              subject,
+              status: "completed",
+              blocks: ["task-next"],
+            },
+          },
+        },
+      },
+    };
+    display.accept(frame);
+  }
+  emit("task-one", 2, 9, "Stale state");
+  emit("task-one", 3, 1, "Stale task");
+  expect(display.tasks?.tasks?.[0].subject).toBe("Current");
+  emit("task-one", 4, 3, "Updated");
+  emit("task-two", 4, 1, "Reciprocal update");
+  emit("child-task", 5, 1, "Child task", true);
+  expect(display.tasks?.version).toBe(4);
+  expect(display.tasks?.tasks?.map((task) => task.subject)).toEqual([
+    "Updated",
+    "Reciprocal update",
+  ]);
+  expect(display.tasks?.tasks?.[0].blocks).toEqual(["task-next"]);
+  display.accept(snapshot());
+  expect(display.tasks).toBeUndefined();
+});

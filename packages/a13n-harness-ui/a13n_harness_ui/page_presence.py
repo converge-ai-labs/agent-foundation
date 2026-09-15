@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from time import monotonic
 from typing import Annotated, Literal, Self
 from uuid import uuid4
 
@@ -16,6 +17,7 @@ from a13n_harness_ui.surfaces import SurfaceModel
 PRESENCE_TIMEOUT_SECONDS = 60
 PRESENCE_REFRESH_SECONDS = 15
 MAX_PARTICIPANTS = 32
+POINTER_TIMEOUT_SECONDS = 5
 
 
 class WorkbenchPage(SurfaceModel):
@@ -89,6 +91,7 @@ class PresenceReport(SurfaceModel):
     color: str = Field(default="#64748b", pattern=r"^#[0-9a-fA-F]{6}$")
     focus: PageFocus | None = None
     foreground: bool = False
+    pointer_enabled: bool = False
 
 
 class ParticipantPresence(PresenceReport):
@@ -105,17 +108,41 @@ class PresenceFrame(SurfaceModel):
     closed: bool = False
 
 
+class PointerPosition(SurfaceModel):
+    anchor: str = Field(min_length=1, max_length=256)
+    x: float = Field(ge=0, le=1, allow_inf_nan=False)
+    y: float = Field(ge=0, le=1, allow_inf_nan=False)
+
+
+class PointerReport(SurfaceModel):
+    kind: Literal["pointer"] = "pointer"
+    target: ConversationPage
+    pointer: PointerPosition | None = None
+
+
+class PointerFrame(SurfaceModel):
+    kind: Literal["pointers"] = "pointers"
+    target: ConversationPage | None = None
+    pointers: dict[str, PointerPosition] = Field(default_factory=dict)
+
+
 class PagePresence:
     """Only live membership; every reconnect allocates a fresh tab identity."""
 
     def __init__(self) -> None:
         self.participants: dict[str, PresenceReport] = {}
         self.changed = Event()
+        self.pointer_changed = Event()
+        self.pointers: dict[str, tuple[PointerPosition, float]] = {}
         self.closed = False
 
     def _notify(self) -> None:
         self.changed.set()
         self.changed = Event()
+
+    def _notify_pointers(self) -> None:
+        self.pointer_changed.set()
+        self.pointer_changed = Event()
 
     def attach(self) -> str:
         if self.closed or len(self.participants) >= MAX_PARTICIPANTS:
@@ -130,12 +157,50 @@ class PagePresence:
             raise HarnessUiError("Page participation has ended.", code="presence_instance_conflict")
         if len(report.model_dump_json().encode("utf-8")) > 16 * 1024:
             raise ValueError("Presence report exceeds 16 KiB.")
-        if self.participants[identity] != report:
+        previous = self.participants[identity]
+        if previous != report:
             self.participants[identity] = report
+            if previous.focus != report.focus or not report.foreground or not report.pointer_enabled:
+                self.pointers.pop(identity, None)
+            self._notify_pointers()
             self._notify()
+
+    def report_pointer(self, identity: str, report: PointerReport) -> None:
+        own = self.participants.get(identity)
+        if self.closed or own is None:
+            raise HarnessUiError("Page participation has ended.", code="presence_instance_conflict")
+        if not own.pointer_enabled or not own.foreground or own.focus is None or own.focus.target != report.target:
+            return
+        if report.pointer is None:
+            self.pointers.pop(identity, None)
+        else:
+            self.pointers[identity] = (report.pointer, monotonic())
+        self._notify_pointers()
+
+    def pointer_snapshot(self, identity: str) -> PointerFrame:
+        # High-frequency observations never inspect resources or rebuild the directory.
+        now = monotonic()
+        self.pointers = {key: value for key, value in self.pointers.items() if now - value[1] < POINTER_TIMEOUT_SECONDS}
+        own = self.participants.get(identity)
+        if own is None or own.focus is None or not isinstance(own.focus.target, ConversationPage):
+            return PointerFrame()
+        target = own.focus.target
+        pointers = {
+            key: position
+            for key, (position, _) in self.pointers.items()
+            if key != identity
+            and own.foreground
+            and (peer := self.participants.get(key)) is not None
+            and peer.foreground
+            and peer.focus is not None
+            and peer.focus.target == target
+        }
+        return PointerFrame(target=target, pointers=pointers)
 
     def detach(self, identity: str) -> None:
         self.participants.pop(identity, None)
+        self.pointers.pop(identity, None)
+        self._notify_pointers()
         self._notify()
 
     async def snapshot(
@@ -183,4 +248,6 @@ class PagePresence:
     def close(self) -> None:
         self.closed = True
         self.participants.clear()
+        self.pointers.clear()
+        self._notify_pointers()
         self._notify()

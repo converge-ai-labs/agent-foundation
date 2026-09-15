@@ -25,6 +25,10 @@ async def main() -> None:
         os.environ["HOME"] = directory
         os.environ["USERPROFILE"] = directory
         os.environ["XDG_CONFIG_HOME"] = str(root / "xdg")
+        os.environ["CODEX_HOME"] = str(root / "codex")
+        (root / "codex").mkdir()
+        os.environ["GROK_HOME"] = str(root / "grok")
+        os.environ["GROK_AUTH_PATH"] = str(root / "grok" / "auth.json")
         if os.name == "posix":
             os.environ["SHELL"] = "/bin/sh"
             os.environ["ENV"] = str(root / "no-shell-init")
@@ -61,11 +65,17 @@ async def main() -> None:
             (repository / "new.txt").write_text("untracked\n", encoding="utf-8")
         configuration = root / "config" / "a13n-harness-ui.yaml"
         configuration.parent.mkdir()
-        configuration.write_text('schema_version: "1"\ndefaults:\n  agent: agent-fixture\n', encoding="utf-8")
-        sources = {
-            "models/fixture.yaml": 'schema_version: "1"\nkind: model\nid: model-fixture\nname: Fixture\nroute: openai:gpt-5\nauthentication: {kind: api_key, env: FIXTURE_MODEL_KEY}\n',
-            "agents/fixture.yaml": 'schema_version: "1"\nkind: agent\nid: agent-fixture\nname: Fixture\nmodel: model-fixture\n',
-        }
+        setup = "--setup" in sys.argv
+        if not setup:
+            configuration.write_text('schema_version: "1"\ndefaults:\n  agent: agent-fixture\n', encoding="utf-8")
+        sources = (
+            {}
+            if setup
+            else {
+                "models/fixture.yaml": 'schema_version: "1"\nkind: model\nid: model-fixture\nname: Fixture\nroute: openai:gpt-5\nauthentication: {kind: api_key, env: FIXTURE_MODEL_KEY}\n',
+                "agents/fixture.yaml": 'schema_version: "1"\nkind: agent\nid: agent-fixture\nname: Fixture\nmodel: model-fixture\n',
+            }
+        )
         for name, content in sources.items():
             path = configuration.parent / name
             path.parent.mkdir()

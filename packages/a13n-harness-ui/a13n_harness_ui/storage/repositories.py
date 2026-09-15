@@ -7,7 +7,7 @@ from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Literal, cast
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_harness_ui.conversation import ConversationExcerpt
@@ -189,6 +189,10 @@ class ThreadRepository:
         _require_kind(initial_state, ObjectKind.thread_initial_state)
         now = _utc(created_at)
         async with transaction(self._sessions) as session:
+            if await session.get(ThreadRecord, thread_id) is not None:
+                raise StoreIntegrityError(
+                    "Thread identity already exists; read it before retrying.", code="thread_exists"
+                )
             if parent_thread_id is not None and await session.get(ThreadRecord, parent_thread_id) is None:
                 raise StoreIntegrityError("Parent Thread does not exist.", code="thread_parent_missing")
             record = ThreadRecord(
@@ -227,6 +231,7 @@ class ThreadRepository:
         query: str | None = None,
         project_id: str | None = None,
         include_children: bool = False,
+        projectless: bool = False,
         include_archived: bool = False,
         project_ids: tuple[str, ...] | None = None,
         sort: Literal["updated", "activity"] = "updated",
@@ -237,8 +242,8 @@ class ThreadRepository:
             raise ValueError("Thread page is outside supported bounds")
         if before is not None and (not before[1] or before[0].tzinfo is None or before[0].utcoffset() is None):
             raise ValueError("Thread page cursor is invalid")
-        if project_id is not None and project_ids is not None:
-            raise ValueError("Choose project_id or project_ids, not both")
+        if sum((project_id is not None, project_ids is not None, projectless)) > 1:
+            raise ValueError("Choose only one Project filter")
         order_time = (
             ThreadRecord.updated_at
             if sort == "updated"
@@ -247,7 +252,7 @@ class ThreadRepository:
         async with short_session(self._sessions) as session:
             statement = select(ThreadRecord)
             count_statement = select(func.count()).select_from(ThreadRecord)
-            if project_id is not None or project_ids is not None:
+            if project_id is not None or project_ids is not None or projectless:
                 statement = statement.join(
                     ThreadConfigurationRecord,
                     ThreadConfigurationRecord.thread_id == ThreadRecord.thread_id,
@@ -261,6 +266,8 @@ class ThreadRepository:
                 predicates.append(ThreadConfigurationRecord.project_id == project_id)
             if project_ids is not None:
                 predicates.append(ThreadConfigurationRecord.project_id.in_(project_ids))
+            if projectless:
+                predicates.append(ThreadConfigurationRecord.project_id.is_(None))
             if not include_children:
                 predicates.append(ThreadRecord.parent_thread_id.is_(None))
             if not include_archived:
@@ -374,7 +381,7 @@ class ThreadRepository:
             record.thread_id: reference for record in records if (reference := _continuation_ref(record)) is not None
         }
 
-    async def project_recency(self) -> dict[str, datetime]:
+    async def project_recency(self, *, include_archived: bool = False) -> dict[str, datetime]:
         async with short_session(self._sessions) as session:
             rows = await session.execute(
                 select(
@@ -382,7 +389,7 @@ class ThreadRepository:
                     func.max(ThreadRecord.updated_at),
                 )
                 .join(ThreadRecord, ThreadRecord.thread_id == ThreadConfigurationRecord.thread_id)
-                .where(ThreadRecord.archived.is_(False))
+                .where(true() if include_archived else ThreadRecord.archived.is_(False))
                 .group_by(ThreadConfigurationRecord.project_id)
             )
             return {

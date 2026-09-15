@@ -3,7 +3,12 @@ from datetime import timedelta
 
 import pytest
 from a13n_harness.usage import BoundedRequestUsage, ModelUsageRecord
-from a13n_service.interactions.attempts import AttemptAuthorityError, AttemptExecutionService, AttemptMutationError
+from a13n_service.interactions.attempts import (
+    AttemptAuthorityError,
+    AttemptExecutionService,
+    AttemptMutationError,
+    AttemptUsageExceeded,
+)
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord, RunUsageRecord
 from a13n_service.interactions.scheduling import AttemptScheduler, ClaimedAttempt
 from a13n_service.storage import short_session, transaction
@@ -32,7 +37,7 @@ def receipt(ordinal=0, *, input_tokens=12, output_tokens=3):
     )
 
 
-async def setup_usage(sessions, objects):
+async def setup_usage(sessions, objects, *, admit_request=True):
     _, run, _ = await _accept_root(sessions, objects)
     scheduler = AttemptScheduler(sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer())
     claim = await scheduler.claim(run.id, _worker())
@@ -43,7 +48,8 @@ async def setup_usage(sessions, objects):
     )
     preparation = await execution.commit_preparation_success(authority)
     await execution.enter_harness(authority, preparation=preparation, harness_run_id="harness-usage")
-    await execution.increment_model_request(authority)
+    if admit_request:
+        await execution.increment_model_request(authority)
     return execution, authority
 
 
@@ -153,3 +159,42 @@ async def test_nested_model_receipts_keep_identity_without_double_counting(
     usage, records, _ = await read_usage(interaction_sessions, authority)
     assert (usage["model_requests"], usage["input_tokens"], usage["output_tokens"]) == (2, 19, 8)
     assert {record["run_id"] for record in records} == {"harness-usage", "inline-harness"}
+
+
+@pytest.mark.parametrize("field", ["input_tokens", "output_tokens"])
+@pytest.mark.parametrize(
+    "ceiling,prior,current,allowed",
+    [
+        (0, 0, 0, False),
+        (10, 0, 9, True),
+        (10, 0, 10, False),
+        (10, 0, 11, False),
+        (10, 6, 3, True),
+        (10, 6, 4, False),
+        (10, 10, 0, False),
+        (None, 0, 10, True),
+    ],
+)
+async def test_request_admission_counts_current_and_previous_attempt_tokens(
+    interaction_sessions, interaction_object_store, field, ceiling, prior, current, allowed
+):
+    execution, authority = await setup_usage(interaction_sessions, interaction_object_store, admit_request=current > 0)
+    async with transaction(interaction_sessions) as session:
+        run = await session.get(RunRecord, authority.run_id)
+        run.max_usage_json = {field: ceiling}
+        run.usage_charged_json = {field: prior}
+    if current:
+        usage_receipt = receipt(input_tokens=0, output_tokens=0).model_copy(
+            update={"request_usage": BoundedRequestUsage(**{field: current})}
+        )
+        await execution.ingest_usage(authority, harness_run_id="harness-usage", records=[usage_receipt])
+    before = await read_usage(interaction_sessions, authority)
+    if allowed:
+        await execution.increment_model_request(authority)
+        usage, records, run = await read_usage(interaction_sessions, authority)
+        assert usage == {**before[0], "model_requests": before[0]["model_requests"] + 1}
+        assert (records, run) == before[1:]
+    else:
+        with pytest.raises(AttemptUsageExceeded, match="budget"):
+            await execution.increment_model_request(authority)
+        assert await read_usage(interaction_sessions, authority) == before

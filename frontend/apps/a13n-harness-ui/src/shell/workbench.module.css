@@ -5,7 +5,7 @@
   background: var(--a13n-canvas);
 }
 .sidebar {
-  width: 232px;
+  width: 280px;
   flex-shrink: 0;
   min-height: 0;
   z-index: 30;
@@ -15,13 +15,20 @@
   background: var(--a13n-surface);
   border-right: 1px solid var(--a13n-border);
 }
+.sidebarHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 0 20px 8px;
+}
 .brand {
   display: flex;
   align-items: center;
   gap: 12px;
   color: var(--a13n-text);
   text-decoration: none;
-  padding: 0 8px 20px;
+  white-space: nowrap;
   font-size: 16px;
 }
 .brandMark {
@@ -70,6 +77,12 @@
   min-width: 0;
   flex-shrink: 0;
   gap: 6px;
+}
+.colorSwatch {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  border-radius: 50%;
 }
 .profileAvatar {
   display: inline-flex;
@@ -441,6 +454,13 @@ a.resourceRow:hover {
   overflow: hidden;
   max-width: 300px;
 }
+.mobileNavigationHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-right: 32px;
+}
 .mobileNavigation nav {
   display: grid;
   gap: 4px;
@@ -573,4 +593,45 @@ a.resourceRow:hover {
     white-space: nowrap;
     flex-shrink: 0;
   }
+}
+
+.configurationForm {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+}
+.configurationForm > .stack {
+  gap: 24px;
+}
+.fieldGroup {
+  padding-block: 20px;
+}
+.selectionOptions {
+  display: grid;
+  gap: 12px;
+  padding-bottom: 16px;
+}
+.selectionList {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  gap: 4px 16px;
+  max-height: 240px;
+  overflow: auto;
+}
+.selectionOption {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.selectionOption:hover {
+  background: var(--a13n-hover);
+}
+.selectionOption > span {
+  min-width: 0;
 }

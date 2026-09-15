@@ -7,6 +7,7 @@ import { TransportContext } from "./transport/context";
 import { DraftContext, type SourceDraft } from "./configuration/sources";
 import { Workbench } from "./shell/workbench";
 import { ComposerDrafts } from "./conversations/composer";
+import { ChildControlsProvider } from "./conversations/child-controls";
 import { CommentDrafts, type CommentDraft } from "./conversations/comments";
 import { FileBuffers, type FileBuffer } from "./native/buffer";
 import type { ThreadDraft } from "./conversations/draft";
@@ -133,59 +134,61 @@ export function BrowserApp() {
         <DraftContext.Provider value={drafts.current}>
           <CommentDrafts.Provider value={comments.current}>
             <ComposerDrafts.Provider value={composers.current}>
-              <FileBuffers.Provider value={files.current}>
-                {status ? (
-                  <BrowserRouter>
-                    <Workbench
-                      status={status}
-                      forget={forget}
-                      unauthorized={unauthorized}
-                    />
-                  </BrowserRouter>
-                ) : (
-                  <main className={styles.access}>
-                    <div className={styles.accessCard}>
-                      <span className={styles.brandMark}>a13n</span>
-                      <h1>Log in to Harness UI</h1>
-                      <p>
-                        Use the instance API key printed by your server.
-                        Provider accounts and model keys are configured after
-                        connecting.
-                      </p>
-                      <p role="status">
-                        {error ||
-                          (connecting
-                            ? "Connecting to server…"
-                            : "Enter your instance key.")}
-                      </p>
-                      <form
-                        className={styles.stack}
-                        onSubmit={(event) => {
-                          event.preventDefault();
-                          setKey(input);
-                          setAttempt((value) => value + 1);
-                        }}
-                      >
-                        <TextField
-                          label="API key"
-                          type="password"
-                          value={input}
-                          onChange={setInput}
-                        />
-                        <Button type="submit" loading={connecting}>
-                          Log in
-                        </Button>
-                      </form>
-                      {drafts.current.size > 0 && (
+              <ChildControlsProvider>
+                <FileBuffers.Provider value={files.current}>
+                  {status ? (
+                    <BrowserRouter>
+                      <Workbench
+                        status={status}
+                        forget={forget}
+                        unauthorized={unauthorized}
+                      />
+                    </BrowserRouter>
+                  ) : (
+                    <main className={styles.access}>
+                      <div className={styles.accessCard}>
+                        <span className={styles.brandMark}>a13n</span>
+                        <h1>Log in to Harness UI</h1>
                         <p>
-                          Your unsaved changes are kept in this tab. Log in
-                          again without reloading to continue editing.
+                          Use the instance API key printed by your server.
+                          Provider accounts and model keys are configured after
+                          connecting.
                         </p>
-                      )}
-                    </div>
-                  </main>
-                )}
-              </FileBuffers.Provider>
+                        <p role="status">
+                          {error ||
+                            (connecting
+                              ? "Connecting to server…"
+                              : "Enter your instance key.")}
+                        </p>
+                        <form
+                          className={styles.stack}
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            setKey(input);
+                            setAttempt((value) => value + 1);
+                          }}
+                        >
+                          <TextField
+                            label="API key"
+                            type="password"
+                            value={input}
+                            onChange={setInput}
+                          />
+                          <Button type="submit" loading={connecting}>
+                            Log in
+                          </Button>
+                        </form>
+                        {drafts.current.size > 0 && (
+                          <p>
+                            Your unsaved changes are kept in this tab. Log in
+                            again without reloading to continue editing.
+                          </p>
+                        )}
+                      </div>
+                    </main>
+                  )}
+                </FileBuffers.Provider>
+              </ChildControlsProvider>
             </ComposerDrafts.Provider>
           </CommentDrafts.Provider>
         </DraftContext.Provider>

@@ -191,3 +191,96 @@ async def test_presence_bounds_close_and_independent_directories():
     assert changed.is_set() and first.participants == {} and first.closed
     with pytest.raises(HarnessUiError, match="ended"):
         first.report(ids[0], PresenceReport())
+
+
+async def test_pointer_positions_are_ephemeral_scoped_and_do_not_refresh_the_directory(monkeypatch):
+    from a13n_harness_ui.page_presence import PointerReport
+
+    clock = 100.0
+    monkeypatch.setattr("a13n_harness_ui.page_presence.monotonic", lambda: clock)
+    directory = PagePresence()
+    a, b, c = (directory.attach() for _ in range(3))
+    target = {"kind": "conversation", "thread_id": "thread-one"}
+    active = PresenceReport.model_validate({**report(target), "pointer_enabled": True})
+    for identity in (a, b):
+        directory.report(identity, active)
+    directory.report(
+        c,
+        PresenceReport.model_validate(
+            {**report({"kind": "conversation", "thread_id": "thread-other"}), "pointer_enabled": True}
+        ),
+    )
+    pointer = PointerReport.model_validate({"target": target, "pointer": {"anchor": "composer", "x": 0.5, "y": 0.25}})
+    changed = directory.changed
+    directory.report_pointer(a, pointer)
+    assert not changed.is_set()
+    assert directory.pointer_snapshot(a).pointers == {}
+    assert directory.pointer_snapshot(b).pointers == {a: pointer.pointer}
+    assert directory.pointer_snapshot(c).pointers == {}
+    # A stale move after navigation cannot put a pointer on the new page.
+    directory.report_pointer(c, pointer)
+    assert c not in directory.pointers
+    clock += 5
+    assert directory.pointer_snapshot(b).pointers == {}
+    directory.report_pointer(a, pointer)
+    directory.report(a, active.model_copy(update={"foreground": False}))
+    assert directory.pointer_snapshot(b).pointers == {}
+    directory.report(a, active)
+    assert directory.pointer_snapshot(b).pointers == {}
+    directory.report_pointer(a, pointer)
+    directory.report(a, PresenceReport.model_validate(report({"kind": "workbench"})))
+    assert directory.pointer_snapshot(b).pointers == {}
+    directory.report(a, active)
+    directory.report_pointer(a, pointer)
+    directory.detach(a)
+    assert directory.pointer_snapshot(b).pointers == {}
+    fresh = directory.attach()
+    assert fresh != a and fresh not in directory.pointers
+    directory.close()
+    assert not directory.pointers
+
+
+async def test_pointer_validation_rejects_unbounded_or_nonfinite_coordinates():
+    from a13n_harness_ui.page_presence import PointerPosition
+    from pydantic import ValidationError
+
+    for invalid in ({"x": -0.1}, {"y": 1.1}, {"x": float("nan")}, {"y": float("inf")}, {"anchor": "x" * 257}):
+        with pytest.raises(ValidationError):
+            PointerPosition.model_validate({"anchor": "composer", "x": 0, "y": 1, **invalid})
+
+
+async def test_pointer_transport_opt_in_same_page_clear_and_legacy_compatibility(tmp_path):
+    configuration = _write_configuration(tmp_path)
+    async with listener(tmp_path, configuration_path=configuration, sharing=False) as (http, ws):
+        async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
+            thread = (await api.post("/api/threads", json={})).json()["thread_id"]
+        async with (
+            connect(ws + "/api/presence/connect", proxy=None, origin=http) as first,
+            connect(ws + "/api/presence/connect", proxy=None, origin=http) as second,
+            connect(ws + "/api/presence/connect", proxy=None, origin=http) as legacy,
+        ):
+            a = (await join(first))["participant_id"]
+            b = (await join(second))["participant_id"]
+            await join(legacy)
+            target = {"kind": "conversation", "thread_id": thread}
+            for connection in (first, second):
+                await connection.send(json.dumps({**report(target), "pointer_enabled": True}))
+            await legacy.send(json.dumps(report(target)))
+            await frame_until(first, lambda frame: b in frame.get("same_page_participant_ids", []))
+            position = {"anchor": "composer", "x": 0.3, "y": 0.6}
+            await first.send(json.dumps({"kind": "pointer", "target": target, "pointer": position}))
+            frame = await frame_until(second, lambda frame: a in frame.get("pointers", {}))
+            assert frame["target"] == target and frame["pointers"][a] == position
+            await first.send(json.dumps({"kind": "pointer", "target": target, "pointer": None}))
+            await frame_until(second, lambda frame: frame.get("kind") == "pointers" and not frame["pointers"])
+            # Ordinary reports remain usable after pointer updates and validation errors.
+            await first.send(json.dumps({"kind": "pointer", "target": target, "pointer": {**position, "x": 2}}))
+            error = await frame_until(first, lambda frame: "error" in frame)
+            assert error["error"]["code"] == "presence_invalid"
+            await first.send(json.dumps({**report(target), "display_name": "Updated", "pointer_enabled": True}))
+            with fail_after(2):
+                while True:
+                    frame = json.loads(await legacy.recv())
+                    assert frame["kind"] == "presence"
+                    if any(item["display_name"] == "Updated" for item in frame["participants"]):
+                        break

@@ -120,6 +120,9 @@ class LoginSessions:
             raise HarnessUiError("The login session is unavailable. Start a new login.", code="login_not_found")
         return session
 
+    def active(self) -> LoginStatus | None:
+        return next((session.status for session in self._sessions.values() if not session.done.is_set()), None)
+
     def status(self, session_id: str) -> LoginStatus:
         return self._get(session_id).status
 

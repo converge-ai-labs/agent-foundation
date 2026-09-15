@@ -145,17 +145,24 @@ class TerminalProjectionService:
         self,
         *,
         project_id: str | None,
+        project_scope: Literal["all", "projectless", "unavailable"] = "all",
         query: str | None = None,
         include_archived: bool = False,
         cursor: str | None = None,
         limit: int = 20,
     ) -> ThreadActivityPage:
         source = await self._required_configuration()
-        if project_id is not None and project_id not in source.projects:
-            raise ThreadError("The selected Project is unavailable.", code="project_missing")
+        if project_id is not None and project_scope != "all":
+            raise ThreadError("Choose a Project or a Project scope.", code="thread_page_invalid")
+        unavailable = None
+        if project_scope == "unavailable":
+            recency = await self._store.threads.project_recency(include_archived=include_archived)
+            unavailable = tuple(sorted(set(recency) - source.projects.keys()))
         page = await self._threads.list_threads(
             query=query,
             project_id=project_id,
+            projectless=project_scope == "projectless",
+            project_ids=unavailable,
             include_archived=include_archived,
             cursor=cursor,
             limit=limit,

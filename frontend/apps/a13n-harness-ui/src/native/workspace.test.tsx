@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { useEffect } from "react";
+import { useEffect, type ReactNode } from "react";
+import { ToolCall } from "../conversations/tool-call";
 import {
   cleanup,
   fireEvent,
@@ -126,6 +127,8 @@ function setup(
   currentProject: string | null = "project-one",
   otherProject: string | null = currentProject,
   currentRoots: string[] = ["/native"],
+  content?: ReactNode,
+  buffers = new Map(),
 ) {
   vi.stubGlobal("matchMedia", () => ({ matches: false }));
   const focus = vi.fn();
@@ -196,6 +199,7 @@ function setup(
       <>
         <NativeWorkspace onFocus={focus} unauthorized={vi.fn()}>
           <p data-testid="chat">Chat remains mounted {location.pathname}</p>
+          {content}
         </NativeWorkspace>
         <button
           onClick={() =>
@@ -232,7 +236,7 @@ function setup(
     <MemoryRouter initialEntries={[initial]}>
       <QueryClientProvider client={queries}>
         <TransportContext value={transport}>
-          <FileBuffers value={new Map()}>
+          <FileBuffers value={buffers}>
             <Page />
           </FileBuffers>
         </TransportContext>
@@ -731,4 +735,54 @@ it("switching configured roots from a file view returns to the selected folder i
       .getByRole("button", { name: "Up one level" })
       .hasAttribute("disabled"),
   ).toBe(true);
+});
+
+it("opens tool paths through existing private buffers without re-reading or replacing dirty text", async () => {
+  const dirty = { dirty: true, text: "Unsaved private edit" };
+  const buffers = new Map([["/native/deleted.txt", dirty]]);
+  const { get } = setup(
+    "/threads/current",
+    true,
+    undefined,
+    "project-one",
+    "project-one",
+    ["/native"],
+    <ToolCall
+      tool={{
+        id: "edit-one",
+        name: "edit",
+        input: { file_path: "/native/deleted.txt" },
+        result: { ok: true },
+      }}
+    />,
+    buffers,
+  );
+  fireEvent.click(await screen.findByRole("button", { name: "Open on host" }));
+  await screen.findByText("Editor /native/deleted.txt");
+  expect(buffers.get("/native/deleted.txt")).toBe(dirty);
+  expect(dirty.text).toBe("Unsaved private edit");
+  expect(
+    get.mock.calls.some(([url]) => url === "/api/host/files/metadata"),
+  ).toBe(false);
+  expect(screen.getByTestId("chat").textContent).toContain("/threads/current");
+});
+
+it("does not offer tool-to-host lookup when sharing is disabled", async () => {
+  setup(
+    "/threads/current",
+    false,
+    undefined,
+    "project-one",
+    "project-one",
+    ["/native"],
+    <ToolCall
+      tool={{
+        id: "edit-one",
+        name: "edit",
+        input: { file_path: "/native/a.txt" },
+      }}
+    />,
+  );
+  await screen.findByText("Edit");
+  expect(screen.queryByRole("button", { name: "Open on host" })).toBeNull();
 });

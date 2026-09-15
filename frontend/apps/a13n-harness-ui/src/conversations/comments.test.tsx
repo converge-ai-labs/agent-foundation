@@ -15,6 +15,7 @@ import {
   Discussion,
   SavedOutput,
   CommentListButton,
+  ChildSavedOutputs,
   type CommentDraft,
 } from "./comments";
 import { MessageText } from "./message-text";
@@ -355,8 +356,10 @@ it("opens a text selection's private editor inline and publishes only after expl
   fireEvent.click(screen.getByRole("button", { name: "Comment on selection" }));
   await screen.findByLabelText("Comment", { selector: "textarea" });
   expect(
-    screen.queryByRole("dialog", { name: "Saved output discussion" }),
-  ).toBeNull();
+    screen
+      .getByRole("dialog", { name: "Comments" })
+      .hasAttribute("data-a13n-modal"),
+  ).toBe(false);
   expect(drafts.get("thread-one")!.publication.selection).toEqual({
     start: 6,
     end: 11,
@@ -396,4 +399,79 @@ it("activates a saved text highlight from the keyboard without creating or sendi
     screen.queryByLabelText("Comment", { selector: "textarea" }),
   ).toBeNull();
   expect(POST).not.toHaveBeenCalled();
+});
+
+it("keeps recorded child text collapsed without removing its independent comment target", async () => {
+  const recorded: Schema<"SavedOutputTarget"> = {
+    producing_thread_id: "child-one",
+    source_id: "b".repeat(64),
+    location: { kind: "child_text", execution_id: "exec-one", activity: 0 },
+  };
+  const final: Schema<"SavedOutputTarget"> = {
+    ...recorded,
+    location: { kind: "child_text", execution_id: "exec-one", activity: null },
+  };
+  const GET = vi.fn(async () => ({
+    data: {
+      outputs: [
+        { target: recorded, text: "Recorded working text" },
+        { target: final, text: "Final answer" },
+      ],
+      next_cursor: null,
+    },
+  }));
+  const queries = new QueryClient();
+  const { container } = render(
+    <QueryClientProvider client={queries}>
+      <TransportContext value={{ client: { GET } } as unknown as Transport}>
+        <ChildSavedOutputs threadId="root" executionId="exec-one" />
+      </TransportContext>
+    </QueryClientProvider>,
+  );
+  const outer = container.querySelector("details")!;
+  outer.open = true;
+  fireEvent(outer, new Event("toggle"));
+  const summary = await screen.findByText("Recorded text · activity 1");
+  const details = summary.closest("details")!;
+  expect(details.open).toBe(false);
+  expect(
+    screen.getByText("Final answer", { selector: "span" }).closest("details"),
+  ).toBe(outer);
+  details.open = true;
+  fireEvent(details, new Event("toggle"));
+  expect(
+    screen
+      .getByText("Recorded working text", { selector: "span" })
+      .closest("details"),
+  ).toBe(details);
+});
+
+it("shows a quiet pre-checkpoint child state and refreshes the saved output after reconciliation", async () => {
+  const GET = vi
+    .fn()
+    .mockRejectedValueOnce(
+      new ApiError("No checkpoint", 400, "comment_source_unavailable"),
+    )
+    .mockResolvedValue({ data: { outputs: [], next_cursor: null } });
+  const queries = new QueryClient();
+  const { container } = render(
+    <QueryClientProvider client={queries}>
+      <TransportContext value={{ client: { GET } } as unknown as Transport}>
+        <ChildSavedOutputs threadId="root" executionId="exec-one" />
+      </TransportContext>
+    </QueryClientProvider>,
+  );
+  const outer = container.querySelector("details")!;
+  outer.open = true;
+  fireEvent(outer, new Event("toggle"));
+  await screen.findByText("No retained saved text is available yet.");
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(GET).toHaveBeenCalledTimes(1);
+  await queries.invalidateQueries({
+    queryKey: ["child-saved-output", "root", "exec-one"],
+  });
+  await waitFor(() => expect(GET).toHaveBeenCalledTimes(2));
+  expect(
+    screen.getByText("No retained saved text is available yet."),
+  ).toBeTruthy();
 });

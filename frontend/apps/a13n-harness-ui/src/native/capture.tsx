@@ -2,6 +2,7 @@ import { useContext, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
 import { ComposerDrafts } from "../conversations/composer";
+import { attachmentSelections } from "../conversations/inline-attachments";
 import { result, type Schema, type Transport } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { ErrorNotice, TextField } from "../shell/ui";
@@ -80,7 +81,7 @@ export function CaptureContext({
         throw new Error(
           "Reconnect the conversation's shared input before capturing context.",
         );
-      if (draft.doc.getMap("attachments").size >= 8)
+      if (attachmentSelections(draft.doc).length >= 8)
         throw new Error("Remove an attachment first (limit: eight).");
       const incarnation = draft.draftId;
       const captured = await captureSource(
@@ -93,7 +94,7 @@ export function CaptureContext({
         throw new Error(
           "The shared draft was replaced during capture. Rejoin before adding context again.",
         );
-      if (draft.doc.getMap("attachments").size >= 8)
+      if (attachmentSelections(draft.doc).length >= 8)
         throw new Error(
           "The shared input now has eight attachments. Remove one before adding context again.",
         );
@@ -102,9 +103,7 @@ export function CaptureContext({
         ["thread", threadId, "attachment", attachment.attachment_id],
         attachment,
       );
-      draft.doc
-        .getMap("attachments")
-        .set(crypto.randomUUID(), attachment.attachment_id);
+      draft.addAttachment(attachment.attachment_id);
       setMessage(
         "Added to the conversation. Return to Chat to review it before sending.",
       );

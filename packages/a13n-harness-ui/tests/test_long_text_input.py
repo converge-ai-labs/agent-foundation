@@ -18,7 +18,7 @@ from a13n_harness_ui.configuration import HarnessUiDocument, InputConfiguration
 from a13n_harness_ui.root_input import RootInputFiles
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from a13n_harness_ui.surfaces import RootOperationStatus
-from a13n_harness_ui.thread_files import AttachmentUpload, ComposerInput, ThreadFiles
+from a13n_harness_ui.thread_files import AttachmentUpload, ComposerAttachment, ComposerInput, ThreadFiles
 from anyio import Event, create_task_group, fail_after
 from PIL import Image
 from pydantic import ValidationError
@@ -158,8 +158,11 @@ async def test_long_composer_text_preserves_order_metadata_and_survives_restart(
         receipt = await app.submit_thread(
             thread_id=thread.thread_id,
             prompt=ComposerInput(
-                text,
-                attachments=(AttachmentUpload("image.png", image.getvalue()), AttachmentUpload("notes.txt", b"notes")),
+                (
+                    text,
+                    ComposerAttachment(AttachmentUpload("image.png", image.getvalue()), "image#1"),
+                    ComposerAttachment(AttachmentUpload("notes.txt", b"notes"), "file#2"),
+                ),
                 source_id="input-long-text",
             ),
         )

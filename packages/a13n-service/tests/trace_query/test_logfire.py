@@ -40,7 +40,7 @@ def row(**updates):
             "gen_ai.usage.input_tokens": 0,
             "gen_ai.usage.output_tokens": 5,
             "gen_ai.usage.cost": 0,
-            "input.value": "null",
+            "input.value": None,
             "input.mime_type": "application/json",
         },
         "otel_resource_attributes": '{"service.name":"service"}',
@@ -48,7 +48,11 @@ def row(**updates):
         "otel_scope_version": "1",
         "otel_scope_attributes": {},
         "otel_events": [
-            {"name": "exception", "timestamp": "2026-09-01T01:00:01Z", "attributes": {"exception.message": "failed"}}
+            {
+                "event_name": "exception",
+                "event_timestamp": "2026-09-01T01:00:01Z",
+                "attributes": {"exception.message": "failed"},
+            }
         ],
         "otel_links": [{"context": {"trace_id": "other-trace", "span_id": "other-span"}, "attributes": {}}],
         **updates,
@@ -84,6 +88,8 @@ def test_mapping_preserves_explicit_status_and_reported_values():
     assert observation.input.value is None
     assert observation.resource_attributes == {"service.name": "service"}
     assert observation.scope.attributes == {}
+    assert observation.events[0].name == "exception"
+    assert observation.events[0].occurred_at == datetime(2026, 9, 1, 1, 0, 1, tzinfo=UTC)
     assert observation.events[0].attributes["exception.message"] == "failed"
     assert observation.links[0].observation_id == "other-span"
     compact = _observation(row(), TraceView.compact)
@@ -219,8 +225,8 @@ def test_native_harness_categories_and_message_containers(operation, category):
         row(
             attributes={
                 "gen_ai.operation.name": operation,
-                "gen_ai.input.messages": json.dumps(messages),
-                "gen_ai.output.messages": json.dumps([]),
+                "gen_ai.input.messages": messages,
+                "gen_ai.output.messages": [],
             }
         ),
         TraceView.full,
@@ -232,8 +238,8 @@ def test_native_harness_categories_and_message_containers(operation, category):
         row(
             attributes={
                 "langfuse.observation.type": "agent",
-                "a13n.input": '{"prompt":"hello"}',
-                "a13n.output": '"answer"',
+                "a13n.input": {"prompt": "hello"},
+                "a13n.output": "answer",
             }
         ),
         TraceView.full,
@@ -241,6 +247,31 @@ def test_native_harness_categories_and_message_containers(operation, category):
     assert harness.type == "agent"
     assert harness.input.value == {"prompt": "hello"}
     assert harness.output.value == "answer"
+
+
+@pytest.mark.parametrize("key", ["input.value", "a13n.input", "gen_ai.input.messages"])
+@pytest.mark.parametrize("value", ["plain text", "null", "123", '"quoted"', '{"text":1}', None, [], {"text": "hello"}])
+def test_logfire_content_is_already_decoded_and_present_null_is_not_missing(key, value):
+    attributes = {key: value, "input.mime_type": "application/json"}
+    item = _observation(row(attributes=attributes), TraceView.full)
+    assert item.input is not None
+    assert item.input.media_type == "application/json"
+    assert item.input.value == value
+    assert _observation(row(attributes={}), TraceView.full).input is None
+
+
+@pytest.mark.parametrize("serialized", [False, True])
+def test_native_events_preserve_sequence_and_reject_invalid_entries(serialized):
+    event = {
+        "event_name": "exception",
+        "event_timestamp": "2026-09-01T01:00:01Z",
+        "attributes": {"exception.message": "failed"},
+    }
+    events = [event, event]
+    item = _observation(row(otel_events=json.dumps(events) if serialized else events), TraceView.full)
+    assert len(item.events) == 2 and item.events[0] == item.events[1]
+    with pytest.raises(TraceQueryProviderError, match="malformed"):
+        _observation(row(otel_events=[{**event, "event_timestamp": "not-a-timestamp"}]), TraceView.full)
 
 
 @pytest.mark.anyio

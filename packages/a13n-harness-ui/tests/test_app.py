@@ -1652,6 +1652,7 @@ async def test_webui_create_thread_preserves_project_and_returns_before_completi
             projections=app._projections,
             root_runs=app._root_runs,
             create_thread=app.create_thread,
+            configurations=app._configurations,
         )
         # No model request is needed to receive an admission receipt.
         with fail_after(2):
@@ -1685,6 +1686,7 @@ async def test_webui_create_reports_created_identity_when_admission_fails(tmp_pa
             projections=app._projections,
             root_runs=app._root_runs,
             create_thread=app.create_thread,
+            configurations=app._configurations,
         )
         result = await controller.create_thread(
             source_thread_id=source.thread_id, prompt="work", title=None, agent_id=None
