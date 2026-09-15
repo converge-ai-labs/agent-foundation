@@ -237,7 +237,6 @@ async def test_agent_model_settings_reach_the_resolved_model_unchanged() -> None
     assert seen == [
         ModelSettings(
             temperature=0.25,
-            extra_headers={"x-session-id": result.state.thread_id},
         )
     ]
     assert settings == ModelSettings(temperature=0.25)
@@ -346,7 +345,7 @@ async def test_automatic_request_affinity_runs_inside_other_innermost_request_wr
         seen.append(info.model_settings)
         yield "configured"
 
-    executable = HarnessBuilder().build(
+    executable = HarnessBuilder(session_affinity_header="x-session-id").build(
         AgentSpec(),
         output_type=str,
         model=FunctionModel(stream_function=stream, model_name="gpt-5"),
@@ -388,6 +387,7 @@ async def test_model_request_patches_can_be_disabled_independently_at_builder_cr
         seen.append(info.model_settings)
         yield "configured"
 
+    monkeypatch.setenv(MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV, "true")
     monkeypatch.setenv(disabled_environment, "false")
     builder = HarnessBuilder()
     monkeypatch.setenv(disabled_environment, "true")

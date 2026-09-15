@@ -157,6 +157,7 @@ async def test_advanced_setup_offers_subagents_and_only_publishes_inclusion(tmp_
     wizard.accept("api")
     wizard.accept("openai-responses")
     wizard.accept("")
+    wizard.accept("off")
     wizard.accept("env:TEST_KEY")
     wizard.accept("gpt-5")
     wizard.accept("high")

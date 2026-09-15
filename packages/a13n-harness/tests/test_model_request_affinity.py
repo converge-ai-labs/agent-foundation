@@ -85,7 +85,7 @@ async def test_cache_key_uses_final_model_name(
     )
     assert result.output_or_raise() == "ok"
     assert result.state is not None
-    settings = ModelSettings(extra_headers={"x-session-id": result.state.thread_id})
+    settings = ModelSettings()
     if expected:
         settings["openai_prompt_cache_key"] = result.state.thread_id
     assert seen == [settings]
@@ -251,14 +251,73 @@ async def test_openrouter_request_body_only_gets_automatic_cache_key_for_gpt(
                 openai_client=AsyncOpenAI(api_key="test-key", base_url="https://example.test/v1", http_client=client)
             ),
         )
-        executable = HarnessBuilder().build(AgentSpec(), model=model, output_type=str)
+        executable = HarnessBuilder(session_affinity_header="x-litellm-session-id").build(
+            AgentSpec(), model=model, output_type=str
+        )
         result = await executable.run("hello", bindings=RunBindings.embedded())
 
     assert result.output_or_raise() == "ok"
     assert result.state is not None
     assert len(bodies) == 1
-    assert headers[0]["x-session-id"] == result.state.thread_id
+    assert "x-session-id" not in headers[0]
+    assert headers[0]["x-litellm-session-id"] == result.state.thread_id
     if expect_cache_key:
         assert bodies[0]["prompt_cache_key"] == result.state.thread_id
     else:
         assert "prompt_cache_key" not in bodies[0]
+
+
+@pytest.mark.parametrize("header", [None, "X-Custom-Affinity", "x-litellm-session-id"])
+async def test_opt_in_affinity_is_thread_scoped_across_continuation_child_and_fork(header) -> None:
+    seen = []
+
+    async def stream(messages, info):
+        seen.append(dict(info.model_settings or {}))
+        yield "ok"
+
+    model = FunctionModel(stream_function=stream, model_name="example-model")
+    executable = HarnessBuilder(session_affinity_header=header).build(
+        AgentSpec(),
+        model=model,
+        output_type=str,
+        subagents=(
+            SubagentDefinition(
+                name="child",
+                description="Child",
+                agent=AgentDefinition(agent=AgentSpec(), model=model, output_type=str),
+            ),
+        ),
+    )
+    first = await executable.run("hello", bindings=RunBindings.embedded())
+    assert first.state is not None
+    second = await executable.run("continue", bindings=RunBindings.embedded(), previous_state=first.state)
+    fork = await executable.run("fork", bindings=RunBindings.embedded(), previous_state=first.state.fork())
+    child = await executable.subagents["child"].executable.run("child", bindings=RunBindings.embedded())
+    states = [first.state, second.state, fork.state, child.state]
+    ids = [state.thread_id for state in states if state is not None]
+    assert len(ids) == 4 and ids[0] == ids[1] and len(set(ids)) == 3
+    assert seen == [({"extra_headers": {header.lower(): thread_id}} if header else {}) for thread_id in ids]
+
+
+@pytest.mark.parametrize(
+    "header", ["", "bad header", "bad\r\nheader", "authorization", "Host", "x-title", "a" * 129, 1]
+)
+def test_affinity_header_rejects_invalid_or_owned_names(header) -> None:
+    with pytest.raises(DefinitionError):
+        HarnessBuilder(session_affinity_header=header)
+
+
+def test_custom_affinity_replaces_explicit_legacy_switch(monkeypatch) -> None:
+    from a13n_harness.models.request_headers import ModelRequestPatchConfiguration
+
+    monkeypatch.setenv(MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV, "true")
+    configuration = ModelRequestPatchConfiguration.from_environment(session_affinity_header="X-Custom")
+    assert configuration.session_affinity_header == "x-custom"
+    assert ModelRequestPatchConfiguration.from_environment(x_session_id_enabled=False).session_affinity_header is None
+
+
+def test_custom_header_does_not_consult_legacy_environment_but_validates_host_arguments(monkeypatch):
+    monkeypatch.setenv(MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV, "invalid")
+    HarnessBuilder(session_affinity_header="x-custom")
+    with pytest.raises(DefinitionError):
+        HarnessBuilder(session_affinity_header="x-custom", x_session_id_enabled="yes")

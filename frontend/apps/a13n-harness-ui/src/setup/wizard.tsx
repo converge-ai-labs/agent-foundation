@@ -150,9 +150,12 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
               kind: "api_key",
               credential_ref: draft.credential,
             },
-            model_configuration: draft.baseUrl
-              ? { base_url: draft.baseUrl }
-              : {},
+            model_configuration: {
+              ...(draft.baseUrl ? { base_url: draft.baseUrl } : {}),
+              ...(draft.sessionAffinityHeader
+                ? { session_affinity_header: draft.sessionAffinityHeader }
+                : {}),
+            },
           },
         }
       : { api_key_model: null }),
@@ -345,9 +348,12 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
               credential_ref: draft.credential,
             },
             settings: preset.settings,
-            model_configuration: draft.baseUrl
-              ? { base_url: draft.baseUrl }
-              : {},
+            model_configuration: {
+              ...(draft.baseUrl ? { base_url: draft.baseUrl } : {}),
+              ...(draft.sessionAffinityHeader
+                ? { session_affinity_header: draft.sessionAffinityHeader }
+                : {}),
+            },
             model_characteristics: {
               context_window: draft.apiContext ?? options.context_window,
               proactive_context_management_threshold: 0.65,
@@ -516,6 +522,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                               apiProvider: value,
                               modelId: next.models[0]!,
                               baseUrl: next.base_url,
+                              sessionAffinityHeader: "",
                               credential: "",
                               preset: "",
                               apiContext: undefined,
@@ -619,6 +626,74 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                             value={draft.baseUrl}
                             onChange={(baseUrl) => patch({ baseUrl })}
                           />
+                        )}
+                        {provider.supports_session_affinity && (
+                          <>
+                            <ChoiceField
+                              label="Gateway session affinity"
+                              value={
+                                choices.session_affinity_presets?.some(
+                                  (p) =>
+                                    p.header === draft.sessionAffinityHeader,
+                                )
+                                  ? draft.sessionAffinityHeader!
+                                  : draft.sessionAffinityHeader
+                                    ? "custom"
+                                    : "off"
+                              }
+                              description={
+                                choices.session_affinity_presets?.find(
+                                  (p) =>
+                                    p.header === draft.sessionAffinityHeader,
+                                )?.description
+                              }
+                              options={[
+                                { value: "off", label: "Disabled (default)" },
+                                ...(choices.session_affinity_presets ?? []).map(
+                                  (p) => ({
+                                    value: p.header,
+                                    label: `${p.label} · ${p.header}`,
+                                  }),
+                                ),
+                                ...(draft.sessionAffinityHeader &&
+                                !choices.session_affinity_presets?.some(
+                                  (p) =>
+                                    p.header === draft.sessionAffinityHeader,
+                                )
+                                  ? [
+                                      {
+                                        value: "custom",
+                                        label: "Custom header",
+                                      },
+                                    ]
+                                  : []),
+                              ]}
+                              onValueChange={(value) => {
+                                if (value !== "custom")
+                                  patch({
+                                    sessionAffinityHeader:
+                                      value === "off" ? "" : value,
+                                  });
+                              }}
+                            />
+                            <FormField
+                              label="Session affinity header"
+                              description="Choose a preset above or type any custom header name. Its value is the current Thread ID, supplied automatically. Leave empty to disable. Configure your gateway to route by this header; sending it alone does not guarantee provider pinning."
+                            >
+                              <Input
+                                name="session_affinity_header"
+                                autoComplete="off"
+                                maxLength={128}
+                                placeholder="e.g. x-conversation-id"
+                                value={draft.sessionAffinityHeader ?? ""}
+                                onChange={(event) =>
+                                  patch({
+                                    sessionAffinityHeader: event.target.value,
+                                  })
+                                }
+                              />
+                            </FormField>
+                          </>
                         )}
                         <ErrorNotice error={modelOptions.error} />
                         {modelOptions.data && (

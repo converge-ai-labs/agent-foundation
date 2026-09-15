@@ -219,6 +219,7 @@ async def test_back_from_login_can_choose_another_connection(tmp_path: Path) -> 
             "api",
             "openai-responses",
             "https://api.openai.com/v1",
+            "off",
             "env:TEST_KEY",
             "gpt-test",
             "high",
@@ -532,6 +533,7 @@ async def test_add_model_only_then_add_agent_reuses_exact_model(tmp_path: Path, 
                     "api",
                     "anthropic",
                     "https://api.anthropic.com",
+                    "off",
                     "env:TEST_KEY",
                     "claude-sonnet-4-6",
                     "adaptive",
@@ -544,7 +546,18 @@ async def test_add_model_only_then_add_agent_reuses_exact_model(tmp_path: Path, 
             )
             assert await run_setup(app, tmp_path, ask_user=ask, emit=lambda text: None, add_model=True)
             assert asked == (
-                ["provider", "api_provider", "base_url", "credential", "model", "preset", "context", "name", "action"]
+                [
+                    "provider",
+                    "api_provider",
+                    "base_url",
+                    "session_affinity_header",
+                    "credential",
+                    "model",
+                    "preset",
+                    "context",
+                    "name",
+                    "action",
+                ]
                 if api
                 else ["provider", "model", "fast", "name", "action"]
             )

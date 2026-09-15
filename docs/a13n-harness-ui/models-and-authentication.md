@@ -17,6 +17,31 @@ A Model chooses a provider connection, request settings, and context budget. Sto
 
 `settings` controls model requests. `model_configuration` controls connection wiring such as `base_url`. `model_characteristics` controls local context/input policy. These mappings are not interchangeable, and none belongs at the root of `a13n-harness-ui.yaml`.
 
+## Gateway session affinity
+
+In **Add Model** or first-run setup, choose a **Gateway session affinity** preset or type a replacement in **Session affinity header**. CLI `add model` offers the same presets and custom entry. The saved result is an ordinary header name, not a preset reference:
+
+```yaml
+model_configuration:
+  base_url: https://gateway.example.com/v1
+  session_affinity_header: x-litellm-session-id
+```
+
+Set this inside the Model file, alongside `base_url`, **not** in `settings.extra_headers` or the root process configuration. Do not supply a session value: the current Thread ID is inserted automatically. Leave the field absent or set it to `null` to disable it. To replace a preset, change only the name, for example to `x-company-session`.
+
+| Preset                         | Header name            | Gateway prerequisite / boundary                                                |
+| ------------------------------ | ---------------------- | ------------------------------------------------------------------------------ |
+| LiteLLM                        | `x-litellm-session-id` | Enable session affinity on the gateway.                                        |
+| Conversation ID                | `x-conversation-id`    | Configure a routing rule that reads this header first.                         |
+| Bifrost (API-key affinity)     | `x-bf-session-id`      | API-key affinity only; not a guarantee of weighted provider or target pinning. |
+| X-Session-ID (legacy / custom) | `x-session-id`         | Use when the gateway is explicitly configured to recognize it.                 |
+
+Presets do not configure or detect the gateway. Sending the header requests affinity; it is not proof of a fixed target. Check the gateway's routing logs or target identifier if you need to verify routing. A connection test proves neither sticky routing nor cache reuse.
+
+The value stays stable for the same Thread across turns and retries; independent Threads, child Threads, and forks use their own IDs. The name is captured in the immutable Run recipe. Editing the Model affects new compositions, not an already captured Run. This is separate from OpenAI prompt caching and Codex subscription protocol headers. Native xAI gRPC and subscription connections do not offer this gateway setting.
+
+**Upgrade note:** older releases implicitly sent `x-session-id`. Omitted fields now disable gateway affinity, including in existing files and captures. Add `session_affinity_header: x-session-id` and start a new composition to retain that behavior. The legacy process-wide environment switch does not override Harness UI Model recipes. Configuration files are never automatically rewritten.
+
 ## Subscription login and API keys
 
 ```console

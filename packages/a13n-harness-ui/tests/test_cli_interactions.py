@@ -225,6 +225,7 @@ def test_setup_access_selection_and_back_preserve_no_secret_defaults() -> None:
     assert wizard.question is not None and wizard.question.key == "api_provider"
     wizard.accept("")
     wizard.accept("")
+    wizard.accept("off")
     wizard.accept("key:work")
     wizard.accept("gpt-5.6-sol")
     wizard.accept("high")

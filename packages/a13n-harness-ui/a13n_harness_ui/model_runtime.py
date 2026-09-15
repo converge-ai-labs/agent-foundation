@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, cast
 from a13n_harness import AgentContext, infer_model
 from a13n_harness.errors import ModelResolutionError
 from a13n_harness.model_auth import GrokCredentials, GrokCredentialSource
+from a13n_harness.models.inference import RequestHeadersModel
 from pydantic_ai.models import Model, ModelResolutionContext
 from pydantic_ai.providers import Provider, infer_provider_class
 
@@ -83,7 +84,6 @@ class HarnessUiModelResolver:
         context: ModelResolutionContext[AgentContext],
         model_id: str,
     ) -> Model:
-        del context
         recipe = self._recipes.get(model_id)
         if recipe is None:
             raise ModelResolutionError(
@@ -93,7 +93,11 @@ class HarnessUiModelResolver:
             )
         authentication = recipe.authentication
         if isinstance(authentication, ApiKeyAuthentication):
-            return await self._api_key_model(recipe, authentication)
+            model = await self._api_key_model(recipe, authentication)
+            header = recipe.model_configuration.get("session_affinity_header")
+            if isinstance(header, str):
+                return RequestHeadersModel(model, common_headers={header: context.deps.thread_id})
+            return model
         if isinstance(authentication, CodexSubscriptionAuthentication):
             from a13n_harness.model_auth import CodexRequestModel
 
@@ -106,6 +110,7 @@ class HarnessUiModelResolver:
             return CodexRequestModel(
                 _model_name(recipe),
                 credential_source=BoundCodexCredentialSource(source.source),
+                thread_id=context.deps.thread_id,
             )
         if isinstance(authentication, GrokSubscriptionAuthentication):
             from a13n_harness.model_auth import build_grok_model

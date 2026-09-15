@@ -7,6 +7,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { BrowserRouter, Route, Routes } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createTransport, type Schema } from "../transport/client";
@@ -40,6 +41,13 @@ const status: Schema<"SetupStatus"> = {
       codex_context_window: 350000,
       shell_review: true,
     },
+    session_affinity_presets: [
+      {
+        label: "LiteLLM",
+        header: "x-litellm-session-id",
+        description: "Enable session affinity on your gateway first.",
+      },
+    ],
     subscription_models: {
       codex: [{ value: "gpt-5.6-sol", label: "Release Codex model" }],
       grok: [{ value: "grok-4.6", label: "Release Grok model" }],
@@ -50,6 +58,7 @@ const status: Schema<"SetupStatus"> = {
         label: "OpenAI",
         base_url: "https://api.openai.com/v1",
         models: ["gpt-5.4"],
+        supports_session_affinity: true,
       },
     ],
   },
@@ -418,4 +427,35 @@ it("never persists credentials embedded in an endpoint, even before backend vali
     expect((input as HTMLInputElement).value).toBe(url);
     expect(JSON.stringify(localStorage)).not.toContain("embedded-secret");
   }
+});
+
+it("offers affinity presets and captures a custom replacement alongside the endpoint", async () => {
+  mount();
+  const user = userEvent.setup();
+  fireEvent.click(screen.getByRole("button", { name: "API key" }));
+  fireEvent.change(await screen.findByLabelText("Provider API key"), {
+    target: { value: "test-key" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Save API key" }));
+  await continueStep();
+  const input = (await screen.findByLabelText(
+    "Session affinity header",
+  )) as HTMLInputElement;
+  expect(input.value).toBe("");
+  await user.click(
+    screen.getByRole("combobox", { name: "Gateway session affinity" }),
+  );
+  await user.click(screen.getByRole("option", { name: /LiteLLM/ }));
+  expect(input.value).toBe("x-litellm-session-id");
+  expect(
+    screen.getByText("Enable session affinity on your gateway first."),
+  ).toBeTruthy();
+  fireEvent.change(input, { target: { value: "x-company-session" } });
+  await continueStep();
+  const model = readWizardDraft(status.draft_scope!)?.selection.api_key_model;
+  expect(model?.model_configuration).toEqual({
+    base_url: "https://api.openai.com/v1",
+    session_affinity_header: "x-company-session",
+  });
+  expect(model?.settings).not.toHaveProperty("extra_headers");
 });

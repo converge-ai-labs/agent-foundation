@@ -137,7 +137,9 @@ class CodexRequestModel(WrapperModel):
         *,
         credential_source: OpenAICodexCredentialSource,
         http_client: httpx2.AsyncClient | None = None,
+        thread_id: str | None = None,
     ) -> None:
+        self._thread_id = thread_id
         self._model_name = model_name
         self._credential_source = credential_source
         self._request_headers = _CodexRequestHeaders(model_name)
@@ -190,13 +192,12 @@ class CodexRequestModel(WrapperModel):
                 if self._owns_client and self._entries == 0:
                     await self._client.aclose()
 
-    @staticmethod
-    def _affinity_settings(model_settings: ModelSettings | None) -> ModelSettings:
+    def _affinity_settings(self, model_settings: ModelSettings | None) -> ModelSettings:
         settings: dict[str, Any] = dict(model_settings or {})
         raw_headers = cast(Mapping[str, str] | None, settings.get("extra_headers"))
         headers = dict(raw_headers or {})
         lower = {name.lower() for name in headers}
-        thread_id = next((value for name, value in headers.items() if name.lower() == "x-session-id"), None)
+        thread_id = self._thread_id
         if thread_id is not None:
             for name in ("session-id", "thread-id", "x-client-request-id"):
                 if name not in lower:

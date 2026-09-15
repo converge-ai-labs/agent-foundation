@@ -18,6 +18,9 @@ vi.mock("../../auth/context", () => ({
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
+vi.mock("../../layout/workspace", () => ({
+  useAccess: () => ({ workspace: { key: "workspace-test" } }),
+}));
 const provider = {
   id: "mp_test",
   name: "My endpoint",

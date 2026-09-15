@@ -20,7 +20,6 @@ _TRANSPORT_HEADERS = frozenset(
         "transfer-encoding",
         "upgrade",
         "user-agent",
-        "x-session-id",
     }
 )
 

@@ -17,6 +17,7 @@ from pydantic_ai.settings import ModelSettings
 
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
+from a13n_harness.model_affinity import validate_session_affinity_header
 from a13n_harness.models.inference import _merge_headers
 
 MODEL_REQUEST_HEADERS_CAPABILITY_ID = "a13n.model.request-headers"
@@ -31,7 +32,7 @@ _FALSE_VALUES = frozenset({"0", "false", "no", "off"})
 class ModelRequestPatchConfiguration:
     """Build-scoped snapshot of independently controlled request defaults."""
 
-    x_session_id_enabled: bool = True
+    session_affinity_header: str | None = None
     openai_prompt_cache_key_enabled: bool = True
 
     @classmethod
@@ -39,19 +40,36 @@ class ModelRequestPatchConfiguration:
         cls,
         *,
         environ: Mapping[str, str] | None = None,
+        session_affinity_header: str | None = None,
         x_session_id_enabled: bool | None = None,
         openai_prompt_cache_key_enabled: bool | None = None,
     ) -> ModelRequestPatchConfiguration:
-        """Snapshot Host overrides, falling back independently to environment and then True."""
+        """Snapshot explicit affinity and independent cache policy.
+
+        The legacy boolean/environment switch remains an explicit opt-in alias for
+        x-session-id. A custom name replaces it; omission no longer enables it.
+        """
 
         source = os.environ if environ is None else environ
+        legacy_enabled = _resolve_enabled(
+            x_session_id_enabled,
+            source=source if session_affinity_header is None else {},
+            parameter="x_session_id_enabled",
+            environment_name=MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV,
+            default=False,
+        )
+        try:
+            header = (
+                validate_session_affinity_header(session_affinity_header)
+                if session_affinity_header is not None
+                else "x-session-id"
+                if legacy_enabled
+                else None
+            )
+        except ValueError as exc:
+            raise DefinitionError(str(exc), code="model_request_patch_configuration_invalid") from exc
         return cls(
-            x_session_id_enabled=_resolve_enabled(
-                x_session_id_enabled,
-                source=source,
-                parameter="x_session_id_enabled",
-                environment_name=MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV,
-            ),
+            session_affinity_header=header,
             openai_prompt_cache_key_enabled=_resolve_enabled(
                 openai_prompt_cache_key_enabled,
                 source=source,
@@ -67,9 +85,11 @@ def _resolve_enabled(
     source: Mapping[str, str],
     parameter: str,
     environment_name: str,
+    default: bool = True,
 ) -> bool:
     if override is None:
-        return _parse_enabled(source.get(environment_name), name=environment_name)
+        value = source.get(environment_name)
+        return default if value is None else _parse_enabled(value, name=environment_name)
     if not isinstance(override, bool):
         raise DefinitionError(
             f"{parameter} must be a boolean or None.",
@@ -122,13 +142,13 @@ class ModelRequestHeadersCapability(AbstractCapability[AgentContext]):
         handler: WrapModelRequestHandler,
     ) -> ModelResponse:
         configuration = self._configuration
-        if not configuration.x_session_id_enabled and not configuration.openai_prompt_cache_key_enabled:
+        if configuration.session_affinity_header is None and not configuration.openai_prompt_cache_key_enabled:
             return await handler(request_context)
 
         settings: dict[str, Any] = dict(request_context.model_settings or {})
-        if configuration.x_session_id_enabled:
+        if configuration.session_affinity_header is not None:
             settings["extra_headers"] = _merge_headers(
-                {"x-session-id": ctx.deps.thread_id},
+                {configuration.session_affinity_header: ctx.deps.thread_id},
                 cast(Mapping[str, str] | None, settings.get("extra_headers")),
             )
         # This is a conservative naming policy, not endpoint capability detection.
