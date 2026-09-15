@@ -52,7 +52,7 @@ export function RunEvents({ runId }: { runId: string }) {
                           </span>
                         </button>
                       }
-                      size="md"
+                      size="lg"
                       title={event.event_type}
                       closeLabel={t("Close")}
                     >
