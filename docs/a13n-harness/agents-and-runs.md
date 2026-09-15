@@ -208,7 +208,9 @@ bindings = RunBindings.embedded(
     environment=environment_binding,
     model_resolver=model_resolver,
     model_context=model_context_binding,
-    capabilities=run_capabilities,
+    capabilities=run_capabilities,  # Invocation policy and/or MCP only.
+    web=web_binding,  # WebBinding; requires a selected WebCapability.
+    skill_selection=frozenset({"code-review"}),
     metadata={"request_kind": "interactive"},
     observation=HarnessObservationContext(
         name="interactive-agent-run",
@@ -220,7 +222,7 @@ bindings = RunBindings.embedded(
 
 `RunBindings.embedded()` supplies an embedded identity and optional advanced integrations. Use it when an embedded application needs run Capabilities, a model resolver, model-context middleware, metadata, or an advanced `EnvironmentRuntime`. Ordinary `run()` and `stream()` calls can omit `bindings`; run normalization creates fresh embedded bindings and an empty Environment runtime when no Environment input is supplied. A Host can construct `RunBindings` directly with an exact `AgentInstanceContext`.
 
-Create fresh bindings for every root, resumed, or child run. Do not persist or reuse live bindings as continuation state.
+Create fresh bindings for every root, resumed, or child run. Do not persist or reuse live bindings as continuation state. Optional feature providers and overrides use `web`, `media_reader`, `document_converter`, `file_media_understanding`, `skill_selection`, `task_state`, and `client_toolsets`; each is consumed by its selected feature Capability rather than a companion Run Capability. Leave selection fields `None` to retain defaults; an explicit empty Skill set or client-tool tuple selects none. The Host owns provider lifetime, including any deliberately shared transport.
 
 | Stable definition input     | Fresh run input                                            |
 | --------------------------- | ---------------------------------------------------------- |
@@ -228,7 +230,7 @@ Create fresh bindings for every root, resumed, or child run. Do not persist or r
 | Output contract             | Environment runtime                                        |
 | Agent behavior Capabilities | Model resolver and model-context binding                   |
 | Direct plugins              | Policy and provider collaborators                          |
-| Child topology              | Run-specific Capability selection                          |
+| Child topology              | Typed feature overrides and current policy                 |
 | Recovery policy             | Bounded non-authoritative metadata and Observation context |
 
 ## Input

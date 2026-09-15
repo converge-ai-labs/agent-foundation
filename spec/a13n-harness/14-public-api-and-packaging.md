@@ -151,6 +151,13 @@ class RunBindings:
     capabilities: tuple[
         AbstractCapability[AgentContext], ...
     ] = ()
+    web: WebBinding | None = None
+    media_reader: MediaReader | None = None
+    document_converter: DocumentConverter | None = None
+    file_media_understanding: MediaUnderstandingProvider | None = None
+    skill_selection: frozenset[str] | None = None
+    task_state: TaskStateBinding | None = None
+    client_toolsets: tuple[ClientToolsetDefinition, ...] | None = None
     metadata: Mapping[str, JsonValue] = field(default_factory=dict)
     model_context: ModelContextMiddleware | None = None
     observation: HarnessObservationContext | None = None
@@ -166,6 +173,13 @@ class RunBindings:
         capabilities: Sequence[
             AbstractCapability[AgentContext]
         ] = (),
+        web: WebBinding | None = None,
+        media_reader: MediaReader | None = None,
+        document_converter: DocumentConverter | None = None,
+        file_media_understanding: MediaUnderstandingProvider | None = None,
+        skill_selection: frozenset[str] | None = None,
+        task_state: TaskStateBinding | None = None,
+        client_toolsets: tuple[ClientToolsetDefinition, ...] | None = None,
         metadata: Mapping[str, JsonValue] | None = None,
         observation: HarnessObservationContext | None = None,
     ) -> RunBindings: ...
@@ -175,7 +189,7 @@ class RunBindings:
 
 `RunBindings` values are fresh trusted inputs for one logical Harness Run. Collection and metadata values are copied into immutable views. Thread identity remains State-owned: a trusted Host selects it through `HarnessState.new(thread_id=...)` or derives a distinct branch through `HarnessState.fork(thread_id=...)`, never through fresh bindings. Environment adapters and ordered Environment Run Extensions are supplied through explicit `run()`/`stream()` arguments rather than retained in reusable bindings. Async subagent mode and its stable `SubagentOperator` remain definition-selected by `SubagentCapability`; the operator receives only an immutable authorized plan and detached parent correlation. Run-local shell observations requires no operator and accepts no process collaborator through bindings. `observation` is the optional bounded `HarnessObservationContext` projected only onto the logical-run span under the [Observation contract](19-observation-model.md#attribute-model); it is distinct from arbitrary model-facing or integration metadata. `RunBindings.embedded()` creates an embedded identity and optional advanced integrations; when a Run supplies no Environment input, normalization creates an empty bound facade and exposes no Environment tools. `toolset_instructions` is the optional runtime override for the Harness `AgentSpec.toolset_instructions` default; it controls only Toolset-owned instructions as defined by [Context and Memory](09-context-and-memory.md#toolset-instruction-enablement). `model_resolver` is the explicit run-scoped model-selection seam. It accepts an async callable conforming structurally to `RunModelResolver`; no subclass or registration is required. The callable resolves a logical string to a native Model or raises, and when absent the thin resolver calls Harness `infer_model()` with the builder's optional gateway Provider factory. `model_context` is the optional fresh Host wrapper around this run's model-context projection chain defined by [Context and Memory](09-context-and-memory.md#model-context-projection-contract).
 
-`RunBindings.capabilities` are passed to every internal `ModelAttempt`. Feature-specific fresh collaborators use documented public Capability types and stable IDs, and the Harness exposes each to its owning definition-selected Capability at the earliest lifecycle phase required by that feature. A stable definition-selected operator cannot be replaced by a run Capability or change its Toolset. A policy value that changes run-specific instruction construction is captured before Capability preparation; live collaborators used only by tools resolve from Pydantic's finalized run Capability mapping. Missing, duplicate, or incompatible typed collaborators fail in the owner before dependent behavior. The Harness does not expose a second class-free registry or require role-name lookups. Identity and model resolution remain explicit typed fields because they are universal Run construction inputs rather than optional feature collaborators. Environment adapters remain explicit Run arguments and cannot be moved into `RunBindings.capabilities`; `DynamicEnvironmentCapability` can be omitted without changing adapter entry or trusted Run-local routing.
+`RunBindings.capabilities` contains invocation-policy and upstream MCP Capabilities and is passed to every internal `ModelAttempt`. Feature-specific providers and overrides instead use the explicit typed fields above, captured on the logical-run `AgentContext` before Capability preparation. `WebBinding` and `TaskStateBinding` are passive frozen values without Capability IDs, ordering, or source provenance. The selected feature Capability consumes its field at the earliest lifecycle phase it requires; a binding never installs that feature. Missing required dependencies, incompatible values, and unsupported orphan bindings fail before dependent behavior. Internal active replacements stay Run-local and are reused across recovery and compaction. `None` means no override; an empty Skill set or client-tool tuple explicitly clears the selection. A stable definition-selected operator cannot be replaced by a run Capability or binding. Provider lifetime is Host-owned, and no live collaborator enters continuation State. The Harness exposes no generic dependency registry or role-name lookup. Environment adapters remain explicit Run arguments and cannot be moved into `RunBindings.capabilities`; `DynamicEnvironmentCapability` can be omitted without changing adapter entry or trusted Run-local routing.
 
 `SkillsCapability()` uses the canonical optional workspace source owned by [Skills and Discovery](09-context-and-memory.md#skills-and-discovery). `SkillManager.default(additional_sources=...)` retains that source before explicit Host additions, while passing another `SkillManager` replaces the default source composition. `SkillSource.catalog(files=...)` and `SkillMaterializer.materialize(files=...)` use only the public `FileOperator` boundary. `SkillSource.roots` and `SkillManager.roots` expose the configured canonical absolute FileOperator paths. `SkillManager.scan(files=...)` is the direct non-virtual mode for a caller-controlled FileOperator. `SkillManager.scan_environment(environment=...)` captures mount-incarnation-pinned file scopes and returns `BoundSkillCatalog`; both Environment-aware Hosts and `SkillsCapability` use that method without constructing another Agent loop. `BoundSkillCatalog.require_current()` fences only the routes represented by its items. These are separate explicit operations: neither dispatches to or retries through the other, and the public surface provides only the explicit source and root operations described here.
 

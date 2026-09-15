@@ -48,6 +48,26 @@ executable = HarnessBuilder().build(
 
 Direct and configured plugins enter the same ordering, Agent binding, run binding, middleware, result validation, and cleanup path.
 
+### Feature Capabilities and Current Providers
+
+Middleware can coexist with a first-party feature without owning another feature attachment. The Host selects one configured `WebCapability` in the Agent definition and supplies current clients and policy separately. Reserved first-party Capability source rules still apply: `WebCapability` belongs to the definition, not a plugin's `get_capabilities()` contribution.
+
+```python
+from a13n_harness import RunBindings
+from a13n_harness.capabilities import WebBinding
+
+result = await executable.run(
+    "Read the page",
+    bindings=RunBindings.embedded(
+        web=WebBinding(client=web_client, policy=web_policy),
+    ),
+)
+```
+
+Do not add a companion provider Capability to the plugin or put provider objects in plugin YAML. `RunBindings.capabilities` remains the source for invocation-policy and MCP Capabilities, not passive feature dependencies. A binding cannot enable a missing feature owner, and provider clients never enter `HarnessState`. The Host owns their lifetime; a plugin's `for_run()` remains its ordinary middleware-isolation hook, not another feature API.
+
+The [offline middleware and Web example](https://github.com/converge-ai-labs/agent-foundation/tree/main/examples/plugins#middleware-and-feature-with-host-bindings) exercises a recorder plugin alongside a definition-owned Web feature, fresh typed bindings, and the standard `fetch` tool without a network request.
+
 ### Publish a Plugin Factory
 
 Register one no-argument factory class:

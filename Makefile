@@ -77,6 +77,7 @@ examples-smoke: examples-sync ## Run every offline example path
 	@(cd examples/plugins && uv run --locked plugin-example-environment-extension-code)
 	@(cd examples/plugins && uv run --locked plugin-example-harness-entrypoint)
 	@(cd examples/plugins && uv run --locked plugin-example-harness-code)
+	@(cd examples/plugins && uv run --locked python -m a13n_plugin_examples.demo_web)
 	@workspace_dir=$$(mktemp -d); trap 'rm -rf "$$workspace_dir"' EXIT; \
 		(cd examples/environment-provider && uv run --locked environment-provider-example direct-local --workspace "$$workspace_dir")
 	@state_dir=$$(mktemp -d); trap 'rm -rf "$$state_dir"' EXIT; \
