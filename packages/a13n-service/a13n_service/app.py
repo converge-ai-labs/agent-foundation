@@ -223,7 +223,7 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
             del api_path
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="API route not found")
 
-    install_openapi(app)
+    install_openapi(app, session_cookie_name=resolved_settings.iam.session_cookie_name)
     return app
 
 

@@ -737,6 +737,14 @@
           "title": "Public Origin",
           "type": "string"
         },
+        "session_cookie_name": {
+          "default": "a13n_session",
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "title": "Session Cookie Name",
+          "type": "string"
+        },
         "initial_admin_email": {
           "anyOf": [
             {

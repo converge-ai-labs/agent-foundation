@@ -38,6 +38,13 @@ def test_no_implicit_files_and_no_environment_in_model(tmp_path, monkeypatch):
     assert load_settings(environ={}).service.port == 8000
 
 
+def test_session_cookie_name_is_normal_configuration():
+    settings = load_settings(environ={"A13N_SERVICE_IAM_SESSION_COOKIE_NAME": "a13n_session_worktree"})
+    assert Settings().iam.session_cookie_name == "a13n_session"
+    assert settings.iam.session_cookie_name == "a13n_session_worktree"
+    assert settings.identity_configuration().session_cookie_name == "a13n_session_worktree"
+
+
 def test_relative_paths_share_file_base_even_for_environment_overrides(tmp_path, monkeypatch):
     path = tmp_path / "service.toml"
     path.write_text('[database]\nbackend="sqlite"\nsqlite_path="data/service.sqlite3"\n')

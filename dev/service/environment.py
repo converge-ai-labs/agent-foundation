@@ -2,17 +2,16 @@
 
 from __future__ import annotations
 
-import fcntl
-import hashlib
 import os
 import subprocess
-from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from a13n_service.settings import Settings
 from sqlalchemy.engine import make_url
+
+from .instance import Instance, Ports
 
 ROOT = Path(__file__).resolve().parents[2]
 LOCAL_CONFIG = Path(__file__).with_name("local.toml")
@@ -21,20 +20,32 @@ LOCAL_CONFIG = Path(__file__).with_name("local.toml")
 @dataclass(frozen=True)
 class Environment:
     settings: Settings
+    instance: Instance
     root: Path = ROOT
 
     @property
     def state(self) -> Path:
-        return self.root / "var" / "service"
+        return self.root / "var/dev/service"
 
     @property
     def incomplete(self) -> Path:
-        return self.root / "var" / "service-reset-incomplete"
+        return self.root / "var/dev/reset-incomplete"
 
     @property
     def project(self) -> str:
-        suffix = hashlib.sha256(str(self.root.resolve()).encode()).hexdigest()[:12]
-        return f"a13n-local-{suffix}"
+        return f"a13n-dev-v2-{self.local_id}"
+
+    @property
+    def legacy_project(self) -> str:
+        return f"a13n-local-{self.local_id}"
+
+    @property
+    def local_id(self) -> str:
+        return self.instance.id
+
+    @property
+    def ports(self) -> Ports:
+        return self.instance.ports
 
     def validate(self) -> None:
         """Never infer ownership just from localhost or a filename."""
@@ -65,6 +76,16 @@ class Environment:
             raise ValueError("Effective storage configuration does not match the owned local development services")
         if sql.port == cache.port:
             raise ValueError("PostgreSQL and Redis ports must differ")
+        ports = self.ports
+        if (
+            config.service.host != "127.0.0.1"
+            or config.service.port != ports.service
+            or sql.port != ports.postgres
+            or cache.port != ports.redis
+            or urlsplit(config.iam.public_origin).port != ports.console
+            or config.iam.session_cookie_name != f"a13n_session_{self.local_id}"
+        ):
+            raise ValueError("Effective settings do not match this checkout's local instance")
         if config.objects.backend != "local":
             raise ValueError("Local reset only owns the local object backend, never an external bucket")
         for value, expected in (
@@ -72,7 +93,7 @@ class Environment:
             (config.filesystem.root, self.state / "files"),
         ):
             if value.absolute() != expected.absolute() or value.resolve() != expected.absolute():
-                raise ValueError("Local storage must use the owned var/service directories without symlinks")
+                raise ValueError("Local storage must use the owned var/dev/service directories without symlinks")
         if self.state.resolve() != self.state.absolute():
             raise ValueError("The local state directory must not traverse symlinks")
         if self.incomplete.is_symlink():
@@ -103,24 +124,43 @@ class Environment:
         )
         return result.stdout or ""
 
-    @contextmanager
-    def lock(self, *, shared: bool = False):
-        self.validate()
-        directory = self.root / "var"
-        directory.mkdir(exist_ok=True)
-        path = directory / "service.lock"
-        # Do not follow a substituted lock file to another location.
-        fd = os.open(path, os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
-        try:
-            try:
-                fcntl.flock(fd, (fcntl.LOCK_SH if shared else fcntl.LOCK_EX) | fcntl.LOCK_NB)
-            except BlockingIOError:
-                raise ValueError(
-                    "Local Service or another state operation is running; stop it before resetting"
-                ) from None
-            yield
-        finally:
-            os.close(fd)
+    def legacy_resources(self) -> tuple[str, ...]:
+        """Find the retired v1 namespace without operating it."""
+        commands = (
+            (
+                "docker",
+                "ps",
+                "-a",
+                "--filter",
+                f"label=com.docker.compose.project={self.legacy_project}",
+                "--format",
+                "container {{.Names}}",
+            ),
+            (
+                "docker",
+                "volume",
+                "ls",
+                "--filter",
+                f"label=com.docker.compose.project={self.legacy_project}",
+                "--format",
+                "volume {{.Name}}",
+            ),
+        )
+        return tuple(
+            line
+            for command in commands
+            for line in subprocess.run(command, check=True, capture_output=True, text=True).stdout.splitlines()
+            if line
+        )
+
+    def report_legacy_resources(self) -> None:
+        resources = self.legacy_resources()
+        if resources:
+            print(
+                f"Retained legacy local resources ({self.legacy_project}) were detected and will not be used, "
+                "stopped, reset, or migrated:\n  " + "\n  ".join(resources),
+                flush=True,
+            )
 
     def require_stopped(self) -> None:
         """Also catch Service processes started outside the development launcher."""

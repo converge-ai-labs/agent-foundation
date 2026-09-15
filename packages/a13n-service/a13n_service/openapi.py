@@ -30,7 +30,7 @@ BINARY_RESPONSE: dict[int | str, dict[str, object]] = {
 }
 
 
-def install_openapi(app: FastAPI) -> None:
+def install_openapi(app: FastAPI, *, session_cookie_name: str = "a13n_session") -> None:
     """Enrich the framework schema without starting Service resources."""
     framework_openapi = app.openapi
 
@@ -38,6 +38,9 @@ def install_openapi(app: FastAPI) -> None:
         if app.openapi_schema is not None:
             return app.openapi_schema
         schema = framework_openapi()
+        security = schema.setdefault("components", {}).setdefault("securitySchemes", {}).get("SessionAuth")
+        if security is not None:
+            security["name"] = session_cookie_name
         models = schema.setdefault("components", {}).setdefault("schemas", {})
         for model in (ErrorResponse, RunStreamEvent, NotificationSubscription):
             definition = model.model_json_schema(ref_template="#/components/schemas/{model}")

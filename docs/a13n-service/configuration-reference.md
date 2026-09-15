@@ -20,18 +20,19 @@ The complete machine-readable validation schema, including named enum/union defi
 
 ## `iam`
 
-| Setting                   | Environment variable                   | Type / choices    | Constraints and default               |
-| ------------------------- | -------------------------------------- | ----------------- | ------------------------------------- |
-| `iam.public_origin`       | `A13N_SERVICE_IAM_PUBLIC_ORIGIN`       | string            | default="http://127.0.0.1:8000"       |
-| `iam.initial_admin_email` | `A13N_SERVICE_IAM_INITIAL_ADMIN_EMAIL` | string or null    | default=null                          |
-| `iam.session_days`        | `A13N_SERVICE_IAM_SESSION_DAYS`        | integer           | minimum=1; maximum=90; default=7      |
-| `iam.invitation_days`     | `A13N_SERVICE_IAM_INVITATION_DAYS`     | integer           | minimum=1; maximum=30; default=7      |
-| `iam.smtp_host`           | `A13N_SERVICE_IAM_SMTP_HOST`           | string or null    | default=null                          |
-| `iam.smtp_port`           | `A13N_SERVICE_IAM_SMTP_PORT`           | integer           | minimum=1; maximum=65535; default=587 |
-| `iam.smtp_username`       | `A13N_SERVICE_IAM_SMTP_USERNAME`       | string or null    | default=null                          |
-| `iam.smtp_password`       | `A13N_SERVICE_IAM_SMTP_PASSWORD`       | string or null    | default=null                          |
-| `iam.smtp_sender`         | `A13N_SERVICE_IAM_SMTP_SENDER`         | string or null    | default=null                          |
-| `iam.smtp_tls`            | `A13N_SERVICE_IAM_SMTP_TLS`            | "starttls", "tls" | default="starttls"                    |
+| Setting                   | Environment variable                   | Type / choices    | Constraints and default                                                         |
+| ------------------------- | -------------------------------------- | ----------------- | ------------------------------------------------------------------------------- |
+| `iam.public_origin`       | `A13N_SERVICE_IAM_PUBLIC_ORIGIN`       | string            | default="http://127.0.0.1:8000"                                                 |
+| `iam.session_cookie_name` | `A13N_SERVICE_IAM_SESSION_COOKIE_NAME` | string            | minLength=1; maxLength=128; pattern="^[A-Za-z0-9\_-]+$"; default="a13n_session" |
+| `iam.initial_admin_email` | `A13N_SERVICE_IAM_INITIAL_ADMIN_EMAIL` | string or null    | default=null                                                                    |
+| `iam.session_days`        | `A13N_SERVICE_IAM_SESSION_DAYS`        | integer           | minimum=1; maximum=90; default=7                                                |
+| `iam.invitation_days`     | `A13N_SERVICE_IAM_INVITATION_DAYS`     | integer           | minimum=1; maximum=30; default=7                                                |
+| `iam.smtp_host`           | `A13N_SERVICE_IAM_SMTP_HOST`           | string or null    | default=null                                                                    |
+| `iam.smtp_port`           | `A13N_SERVICE_IAM_SMTP_PORT`           | integer           | minimum=1; maximum=65535; default=587                                           |
+| `iam.smtp_username`       | `A13N_SERVICE_IAM_SMTP_USERNAME`       | string or null    | default=null                                                                    |
+| `iam.smtp_password`       | `A13N_SERVICE_IAM_SMTP_PASSWORD`       | string or null    | default=null                                                                    |
+| `iam.smtp_sender`         | `A13N_SERVICE_IAM_SMTP_SENDER`         | string or null    | default=null                                                                    |
+| `iam.smtp_tls`            | `A13N_SERVICE_IAM_SMTP_TLS`            | "starttls", "tls" | default="starttls"                                                              |
 
 ## `plugins`
 

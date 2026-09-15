@@ -85,6 +85,7 @@ class ServiceSettings(Section):
 
 class IamSettings(Section):
     public_origin: str = "http://127.0.0.1:8000"
+    session_cookie_name: str = Field(default="a13n_session", min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
     initial_admin_email: EmailStr | None = None
     session_days: int = Field(default=7, ge=1, le=90)
     invitation_days: int = Field(default=7, ge=1, le=30)
