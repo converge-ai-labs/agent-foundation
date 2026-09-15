@@ -46,6 +46,12 @@ function mount() {
             display_name: "DeepSeek",
             supported_model_apis: ["openai.chat_completions"],
             default_model_api: "openai.chat_completions",
+            model_api_labels: {
+              "openai.chat_completions": "Chat Completions",
+            },
+            settings_schemas: {
+              "openai.chat_completions": { type: "object" },
+            },
             supports_model_discovery: true,
             credential_schema: { type: "string" },
             configuration_schema: {

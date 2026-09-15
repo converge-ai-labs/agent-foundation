@@ -1,16 +1,3 @@
-export function apiLabel(value: string) {
-  return (
-    (
-      {
-        "openai.chat_completions": "Chat Completions",
-        "openrouter.chat_completions": "Chat Completions",
-        "openai.responses": "Responses",
-        "anthropic.messages": "Messages",
-        "google.generate_content": "Generate Content",
-      } as Record<string, string>
-    )[value] ?? value
-  );
-}
 export function suggestedKey(value: string) {
   return value
     .normalize("NFC")

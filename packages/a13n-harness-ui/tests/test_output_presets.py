@@ -111,7 +111,7 @@ def test_backtracking_replaces_the_whole_preset_and_context_does_not_scale_outpu
     wizard.accept("Example")
     selection = SetupSelection.model_validate(wizard.selection("/tmp"))
     assert selection.api_key_model.settings["max_tokens"] == 16384
-    assert selection.api_key_model.model_characteristics.context_window == 64000
+    assert selection.api_key_model.model_characteristics.context_window_tokens == 64000
 
 
 @pytest.mark.anyio

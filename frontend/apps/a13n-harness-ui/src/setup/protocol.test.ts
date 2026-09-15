@@ -66,7 +66,7 @@ it("takes an untouched real App from offline choices to saved configuration and 
       },
       settings: options.presets[0]!.settings,
       model_configuration: { base_url: provider.base_url },
-      model_characteristics: { context_window: options.context_window },
+      model_characteristics: { context_window_tokens: options.context_window },
     },
   };
   const preview: Schema<"SetupPreview"> = await (

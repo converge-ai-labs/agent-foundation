@@ -459,9 +459,9 @@ class AgentCompositionResolver:
                 item.capability == "runtime_context"
                 and "context_window_tokens" not in configuration
                 and characteristics is not None
-                and characteristics.context_window is not None
+                and characteristics.context_window_tokens is not None
             ):
-                configuration["context_window_tokens"] = characteristics.context_window
+                configuration["context_window_tokens"] = characteristics.context_window_tokens
             model = None
             try:
                 review = configuration.get("review") if item.capability == "ToolPermissionsCapability" else None

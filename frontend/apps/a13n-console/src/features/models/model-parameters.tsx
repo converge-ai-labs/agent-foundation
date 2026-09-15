@@ -17,13 +17,11 @@ export function ModelParameters({
   text,
   onChange,
   schema,
-  support,
   error,
 }: {
   text: string;
   onChange: (value: string) => void;
   schema?: Record<string, unknown>;
-  support?: Record<string, string>;
   error?: string;
 }) {
   const { t } = useTranslation(),
@@ -46,12 +44,10 @@ export function ModelParameters({
     Record<string, unknown>
   >;
   const fields = Object.fromEntries(
-    Object.entries(properties)
-      .filter(([key]) => support?.[`/${key}`] !== "unsupported")
-      .map(([key, field]) => [
-        key,
-        { ...field, title: commonLabels[key] ?? field.title ?? key },
-      ]),
+    Object.entries(properties).map(([key, field]) => [
+      key,
+      { ...field, title: commonLabels[key] ?? field.title ?? key },
+    ]),
   );
   const common = Object.fromEntries(
     Object.entries(fields).filter(([key]) => key in commonLabels),

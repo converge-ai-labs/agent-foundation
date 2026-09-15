@@ -163,27 +163,22 @@ export function modelApi(client: Client, scope: ModelScope) {
               { params: { path: { workspace: workspace_id, provider_id } } },
             )
             .then(data),
-    describe: (provider_id: string, body: Schema["DescribeModelRequest"]) =>
+    suggestions: (body: Schema["ModelCatalogSuggestionRequest"]) =>
       org
         ? client.http
             .POST(
-              "/api/v1/organizations/{organization}/model-providers/{provider_id}/describe-model",
+              "/api/v1/organizations/{organization}/model-catalog/suggestions",
               {
-                params: {
-                  path: { organization: organization_id, provider_id },
-                },
+                params: { path: { organization: organization_id } },
                 body,
               },
             )
             .then(data)
         : client.http
-            .POST(
-              "/api/v1/workspaces/{workspace}/model-providers/{provider_id}/describe-model",
-              {
-                params: { path: { workspace: workspace_id, provider_id } },
-                body,
-              },
-            )
+            .POST("/api/v1/workspaces/{workspace}/model-catalog/suggestions", {
+              params: { path: { workspace: workspace_id } },
+              body,
+            })
             .then(data),
     model: (model_id: string, signal: AbortSignal) =>
       org

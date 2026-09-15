@@ -689,7 +689,7 @@ class SetupWizard:
                     ),
                 },
                 "model_characteristics": {
-                    "context_window": int(self.values["context"]),
+                    "context_window_tokens": int(self.values["context"]),
                     "proactive_context_management_threshold": 0.65,
                     "compact_threshold": 0.90,
                 },

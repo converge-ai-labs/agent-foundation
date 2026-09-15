@@ -46,6 +46,14 @@ const definition = {
   default_model_api: "openai.chat_completions",
   supported_model_apis: ["openai.chat_completions", "openai.responses"],
   supports_model_discovery: true,
+  model_api_labels: {
+    "openai.chat_completions": "OpenAI Chat Completions",
+    "openai.responses": "OpenAI Responses",
+  },
+  settings_schemas: {
+    "openai.chat_completions": settingsSchema,
+    "openai.responses": settingsSchema,
+  },
   credential_schema: {
     type: "string",
     "x-a13n-credential-format": "api_key",
@@ -97,18 +105,27 @@ beforeEach(() => {
                 suggested_settings: {},
               },
             ],
-            settings_schemas: {
-              "openai.chat_completions": settingsSchema,
-              "openai.responses": settingsSchema,
-            },
           },
         };
-      if (path.endsWith("describe-model"))
+      if (path.endsWith("model-catalog/suggestions"))
         return {
           data: {
-            settings_schema: settingsSchema,
-            parameter_support: {},
-            suggested_model_api: "openai.chat_completions",
+            source: "name_tokens",
+            items: [
+              {
+                base_model: "openai:gpt-5",
+                model_api: "openai.chat_completions",
+                model_api_label: "Chat Completions",
+                declarations: {
+                  thinking_efforts: [],
+                  capabilities: [],
+                  context_window_tokens: null,
+                  max_output_tokens: null,
+                  structured_output: false,
+                  pricing: { input: 0, output: null },
+                },
+              },
+            ],
           },
         };
       if (path.endsWith("model-providers")) return { data: provider };
@@ -251,6 +268,18 @@ it("prefills a catalog model and preserves JSON overrides when switching APIs", 
   mount("mp_test");
   await user.click(await screen.findByRole("combobox", { name: "Model" }));
   await user.click(await screen.findByRole("option", { name: /Model V1/ }));
+  await waitFor(() =>
+    expect(state.POST).toHaveBeenCalledWith(
+      "/api/v1/workspaces/{workspace}/model-catalog/suggestions",
+      expect.objectContaining({
+        body: {
+          provider_id: "mp_test",
+          upstream_model: "vendor/model-v1",
+          model_api: "openai.chat_completions",
+        },
+      }),
+    ),
+  );
   expect(
     (screen.getByRole("textbox", { name: "Model key" }) as HTMLInputElement)
       .value,
@@ -263,7 +292,9 @@ it("prefills a catalog model and preserves JSON overrides when switching APIs", 
   await user.clear(json);
   await user.paste('{"temperature":0.4}');
   await user.click(screen.getByRole("combobox", { name: "API" }));
-  await user.click(await screen.findByRole("option", { name: "Responses" }));
+  await user.click(
+    await screen.findByRole("option", { name: "OpenAI Responses" }),
+  );
   expect(
     (
       screen.getByRole("textbox", {
@@ -279,6 +310,14 @@ it("prefills a catalog model and preserves JSON overrides when switching APIs", 
       body: expect.objectContaining({
         model_api: "openai.responses",
         settings: { temperature: 0.4 },
+        base_model: "openai:gpt-5",
+        declarations: expect.objectContaining({
+          thinking_efforts: [],
+          capabilities: [],
+          context_window_tokens: null,
+          structured_output: false,
+          pricing: expect.objectContaining({ input: 0 }),
+        }),
       }),
     }),
   );
@@ -394,6 +433,15 @@ it("holds status edits until save and restores the unchanged state when reverted
     provider_id: "mp_test",
     upstream_model: "custom-model",
     model_api: "openai.chat_completions",
+    base_model: null,
+    declarations: {
+      thinking_efforts: [],
+      capabilities: [],
+      context_window_tokens: null,
+      max_output_tokens: null,
+      structured_output: false,
+      pricing: { input: 0, output: null, cache_read: null, cache_write: null },
+    },
     settings: {},
     enabled: true,
     description: null,
@@ -449,4 +497,8 @@ it("holds status edits until save and restores the unchanged state when reverted
       body: expect.objectContaining({ enabled: false, name: "Team model" }),
     }),
   );
+  expect(state.PATCH.mock.calls[0][1].body).toMatchObject({
+    base_model: null,
+    declarations: model.declarations,
+  });
 });

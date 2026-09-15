@@ -6906,7 +6906,7 @@
             "uniqueItems": true,
             "title": "Capabilities"
           },
-          "context_window": {
+          "context_window_tokens": {
             "anyOf": [
               {
                 "type": "integer",
@@ -6916,7 +6916,7 @@
                 "type": "null"
               }
             ],
-            "title": "Context Window"
+            "title": "Context Window Tokens"
           },
           "proactive_context_management_threshold": {
             "anyOf": [

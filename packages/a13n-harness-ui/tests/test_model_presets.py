@@ -581,7 +581,7 @@ def test_api_context_defaults_manual_override_and_model_change(hint, expected) -
     wizard.accept("full-control")
     characteristics = wizard.selection("/tmp")["api_key_model"]["model_characteristics"]
     assert characteristics == {
-        "context_window": 100000,
+        "context_window_tokens": 100000,
         "proactive_context_management_threshold": 0.65,
         "compact_threshold": 0.90,
     }
@@ -602,7 +602,7 @@ def test_bundled_context_catalog_and_programmatic_default_use_harness_owner() ->
     selection = SetupApiKeyModel(
         route="openai-chat:custom", authentication=ApiKeyAuthentication(kind="api_key", env="TEST_KEY")
     )
-    assert selection.model_characteristics.context_window == 350000
+    assert selection.model_characteristics.context_window_tokens == 350000
     assert selection.model_characteristics.summary_reminder_tokens == 227500
     assert selection.model_characteristics.compact_threshold == 0.90
 
@@ -658,7 +658,7 @@ async def test_setup_context_and_names_survive_publication_capture_and_reconstru
         assert f"name: {title}\n" in (tmp_path / "models/api-key.yaml").read_text(encoding="utf-8")
         assert f"name: {title} - Coding\n" in (tmp_path / "agents/api-key.yaml").read_text(encoding="utf-8")
         characteristics = source.models["model-api-key"].model_characteristics
-        assert characteristics.context_window == window
+        assert characteristics.context_window_tokens == window
         expected_capabilities = frozenset({"image_understanding"}) if model_id == "kimi-k2.5" else frozenset()
         assert characteristics.capabilities == expected_capabilities
         composition = AgentCompositionResolver().resolve_run(

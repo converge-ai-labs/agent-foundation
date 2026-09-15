@@ -51,7 +51,7 @@ def test_context_only_catalog_entry_is_not_a_text_only_claim(monkeypatch) -> Non
 
     entry = model_catalog.OfficialModelEntry(
         model="openai:context-only",
-        characteristics=HarnessModelCharacteristics(context_window=123456),
+        characteristics=HarnessModelCharacteristics(context_window_tokens=123456),
         source_url="https://example.com/model",
     )
     monkeypatch.setattr(
@@ -64,7 +64,7 @@ def test_context_only_catalog_entry_is_not_a_text_only_claim(monkeypatch) -> Non
 @pytest.mark.parametrize("capabilities", [None, [], ["audio_understanding"]])
 async def test_app_setup_fills_only_omitted_capabilities(tmp_path: Path, capabilities) -> None:
     characteristics = {
-        "context_window": 123456,
+        "context_window_tokens": 123456,
         "proactive_context_management_threshold": None,
         "compact_threshold": 0.8,
     }
@@ -119,7 +119,7 @@ async def test_programmatic_setup_without_characteristics_seeds_stable_media_lis
     characteristics = yaml.safe_load(preview.files["models/api-key.yaml"])["model_characteristics"]
     assert characteristics == {
         "capabilities": ["audio_understanding", "image_understanding", "video_understanding"],
-        "context_window": 350000,
+        "context_window_tokens": 350000,
         "proactive_context_management_threshold": 0.65,
         "compact_threshold": 0.90,
     }
