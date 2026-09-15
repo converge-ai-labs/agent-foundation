@@ -685,39 +685,17 @@ class MCPOAuthService:
                 raise MCPConnectionError(
                     "oauth_issuer_mismatch", "OAuth callback issuer is invalid.", category=ErrorCategory.invalid_request
                 )
-            # Compare the validated state in the write itself so concurrent
-            # callbacks cannot both exchange it.
-            claim_generation = await session.scalar(
-                update(MCPAuthorizationRecord)
-                .where(
-                    MCPAuthorizationRecord.id == oauth_session.id,
-                    MCPAuthorizationRecord.status == "pending",
-                    MCPAuthorizationRecord.state_digest == oauth_session.state_digest,
-                    MCPAuthorizationRecord.connection_version == oauth_session.connection_version,
-                    MCPAuthorizationRecord.claim_generation == oauth_session.claim_generation,
-                )
-                .values(
-                    status="exchanging",
-                    claim_generation=oauth_session.claim_generation + 1,
-                    claim_owner=self._instance_id,
-                    claim_expires_at=now + timedelta(seconds=self._claim_lease_seconds),
-                    updated_at=now,
-                )
-                .returning(MCPAuthorizationRecord.claim_generation)
-                .execution_options(synchronize_session=False)
-            )
-            if claim_generation is None:
-                raise MCPConnectionError(
-                    "oauth_session_unavailable",
-                    "Start a new authorization session; the previous session is unavailable.",
-                    category=ErrorCategory.conflict,
-                )
+            oauth_session.status = "exchanging"
+            oauth_session.claim_generation += 1
+            oauth_session.claim_owner = self._instance_id
+            oauth_session.claim_expires_at = now + timedelta(seconds=self._claim_lease_seconds)
+            oauth_session.updated_at = now
             return CallbackSource(
                 connection_id=connection.id,
                 connection_version=connection.version,
                 credential_generation=connection.credential_generation,
                 session=snapshot,
-                claim_generation=claim_generation,
+                claim_generation=oauth_session.claim_generation,
                 claim_owner=self._instance_id,
             )
 

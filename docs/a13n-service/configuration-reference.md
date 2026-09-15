@@ -97,17 +97,17 @@ The complete machine-readable validation schema, including named enum/union defi
 
 ## `database`
 
-| Setting                              | Environment variable                              | Type / choices | Constraints and default                      |
-| ------------------------------------ | ------------------------------------------------- | -------------- | -------------------------------------------- |
-| `database.url`                       | `A13N_SERVICE_DATABASE_URL`                       | string or null | default="\*\*\*\*\*\*\*\*\*\*"               |
-| `database.pool_size`                 | `A13N_SERVICE_DATABASE_POOL_SIZE`                 | integer        | minimum=1; maximum=1000; default=10          |
-| `database.max_overflow`              | `A13N_SERVICE_DATABASE_MAX_OVERFLOW`              | integer        | minimum=0; maximum=1000; default=20          |
-| `database.pool_timeout_seconds`      | `A13N_SERVICE_DATABASE_POOL_TIMEOUT_SECONDS`      | number         | maximum=300; exclusiveMinimum=0; default=30  |
-| `database.pool_recycle_seconds`      | `A13N_SERVICE_DATABASE_POOL_RECYCLE_SECONDS`      | integer        | minimum=0; default=3600                      |
-| `database.connect_timeout_seconds`   | `A13N_SERVICE_DATABASE_CONNECT_TIMEOUT_SECONDS`   | integer        | minimum=1; maximum=300; default=10           |
-| `database.statement_timeout_seconds` | `A13N_SERVICE_DATABASE_STATEMENT_TIMEOUT_SECONDS` | number         | maximum=3600; exclusiveMinimum=0; default=30 |
-| `database.cleanup_timeout_seconds`   | `A13N_SERVICE_DATABASE_CLEANUP_TIMEOUT_SECONDS`   | number         | maximum=60; exclusiveMinimum=0; default=5    |
-| `database.readiness_timeout_seconds` | `A13N_SERVICE_DATABASE_READINESS_TIMEOUT_SECONDS` | number         | maximum=300; exclusiveMinimum=0; default=3   |
+| Setting                              | Environment variable                              | Type / choices | Constraints and default                           |
+| ------------------------------------ | ------------------------------------------------- | -------------- | ------------------------------------------------- |
+| `database.url`                       | `A13N_SERVICE_DATABASE_URL`                       | string         | format="password"; default="\*\*\*\*\*\*\*\*\*\*" |
+| `database.pool_size`                 | `A13N_SERVICE_DATABASE_POOL_SIZE`                 | integer        | minimum=1; maximum=1000; default=10               |
+| `database.max_overflow`              | `A13N_SERVICE_DATABASE_MAX_OVERFLOW`              | integer        | minimum=0; maximum=1000; default=20               |
+| `database.pool_timeout_seconds`      | `A13N_SERVICE_DATABASE_POOL_TIMEOUT_SECONDS`      | number         | maximum=300; exclusiveMinimum=0; default=30       |
+| `database.pool_recycle_seconds`      | `A13N_SERVICE_DATABASE_POOL_RECYCLE_SECONDS`      | integer        | minimum=0; default=3600                           |
+| `database.connect_timeout_seconds`   | `A13N_SERVICE_DATABASE_CONNECT_TIMEOUT_SECONDS`   | integer        | minimum=1; maximum=300; default=10                |
+| `database.statement_timeout_seconds` | `A13N_SERVICE_DATABASE_STATEMENT_TIMEOUT_SECONDS` | number         | maximum=3600; exclusiveMinimum=0; default=30      |
+| `database.cleanup_timeout_seconds`   | `A13N_SERVICE_DATABASE_CLEANUP_TIMEOUT_SECONDS`   | number         | maximum=60; exclusiveMinimum=0; default=5         |
+| `database.readiness_timeout_seconds` | `A13N_SERVICE_DATABASE_READINESS_TIMEOUT_SECONDS` | number         | maximum=300; exclusiveMinimum=0; default=3        |
 
 ## `models`
 

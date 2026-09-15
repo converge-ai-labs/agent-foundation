@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from datetime import datetime
 
-from sqlalchemy import select, text, update
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ApplicationError, ErrorCategory
@@ -39,17 +39,13 @@ async def identity_transaction(
 ) -> AsyncIterator[AsyncSession]:
     """Serialize membership changes per Organization, including last-Admin checks.
 
-    The no-op write takes a row lock before reads. No password work or external
-    I/O belongs inside this scope.
+    No password work or external I/O belongs inside this scope.
     """
     async with transaction(sessions) as session:
-        result = await session.execute(
-            update(OrganizationRecord)
-            .where(OrganizationRecord.id == organization_id)
-            .values(name=OrganizationRecord.name)
-            .returning(OrganizationRecord.id)
+        organization = await session.scalar(
+            select(OrganizationRecord).where(OrganizationRecord.id == organization_id).with_for_update()
         )
-        if result.scalar_one_or_none() is None:
+        if organization is None:
             raise not_found()
         yield session
 

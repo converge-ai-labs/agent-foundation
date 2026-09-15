@@ -12,7 +12,6 @@ def test_settings_preserve_service_defaults_without_exposing_secrets() -> None:
 
     assert settings.service.role is ProcessRole.all
     assert settings.service.port == 8000
-    assert settings.database.url is not None
     assert settings.database.url.get_secret_value().startswith("postgresql+psycopg://")
     assert settings.assets.max_size_bytes == 100 * 1024 * 1024
     assert settings.observability.query.provider == "none"
@@ -56,6 +55,13 @@ def test_network_profile_maps_to_typed_storage_settings(tmp_path: Path) -> None:
     assert "private-database-password" not in repr(settings)
     assert "private-redis-password" not in repr(settings)
     assert "secret" not in repr(storage)
+
+
+def test_process_and_direct_database_configuration_share_connection_defaults() -> None:
+    direct = PostgreSQLConfig(url="postgresql:///service")
+    process = Settings(database={"url": "postgresql:///service"}).database_config()
+
+    assert process == direct
 
 
 def test_langfuse_trace_query_configuration_is_complete_and_redacted() -> None:
@@ -119,7 +125,6 @@ def test_invalid_trace_query_configuration_fails_static_validation(
 @pytest.mark.parametrize(
     ("values", "message"),
     [
-        ({"database": {"url": None}}, "A13N_SERVICE_DATABASE_URL"),
         ({"redis": {"backend": RedisBackend.redis, "url": None}}, "A13N_SERVICE_REDIS_URL"),
         ({"objects": {"backend": ObjectBackend.s3, "bucket": None}}, "A13N_SERVICE_OBJECT_BUCKET"),
     ],
@@ -129,6 +134,11 @@ def test_selected_network_backend_requires_its_location(values: dict[str, object
 
     with pytest.raises(ValueError, match=message):
         settings.storage_settings()
+
+
+def test_database_url_is_required_at_settings_construction() -> None:
+    with pytest.raises(ValueError, match=r"database\.url"):
+        Settings(database={"url": None})
 
 
 def test_managed_secret_master_key_is_exact_and_redacted() -> None:

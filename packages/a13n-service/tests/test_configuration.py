@@ -45,8 +45,7 @@ def test_relative_paths_share_file_base_even_for_environment_overrides(tmp_path,
     other.mkdir()
     monkeypatch.chdir(other)
     settings = load_settings(path, environ={"A13N_SERVICE_OBJECT_LOCAL_ROOT": "content"})
-    assert settings.database.url is not None
-    assert settings.database.url.get_secret_value() == "postgresql://db.example/service"
+    assert settings.database.url.get_secret_value() == "postgresql+psycopg://db.example/service"
     assert settings.objects.local_root == tmp_path / "content"
     assert settings.filesystem.root == tmp_path / "var/files"
 
@@ -90,6 +89,25 @@ def test_sensitive_inputs_are_redacted_from_errors_and_representations(tmp_path)
     assert result.exit_code == 1
     assert "service.port" in result.output
     assert "private-invalid-port" not in result.output
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "not-a-url",
+        "mysql://admin:private-database-password@db.example/service",
+        "postgresql://admin:private-database-password@db.example:private-port/service",
+    ],
+)
+def test_config_check_rejects_invalid_database_urls_without_connecting_or_revealing_credentials(monkeypatch, value):
+    monkeypatch.setenv("A13N_SERVICE_DATABASE_URL", value)
+
+    result = CliRunner().invoke(main, ["config", "check"])
+
+    assert result.exit_code == 1
+    assert "database.url" in result.output
+    assert "private-database-password" not in result.output
+    assert "private-port" not in result.output
 
 
 def test_environment_catalog_is_unique_and_preserves_known_names():

@@ -4,7 +4,7 @@ from collections.abc import Iterable
 from datetime import datetime
 
 from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert as postgres_insert
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.application_errors import ApplicationError, ErrorCategory
@@ -17,7 +17,7 @@ from .models import ObjectPublicationRecord
 async def lock_publication(database: AsyncSession, key: str, *, observed_at: datetime) -> ObjectPublicationRecord:
     """Reserve absent keys as well as lock existing ones."""
     await database.execute(
-        postgres_insert(ObjectPublicationRecord)
+        insert(ObjectPublicationRecord)
         .values(
             key=key,
             generation=new_object_id("opg"),

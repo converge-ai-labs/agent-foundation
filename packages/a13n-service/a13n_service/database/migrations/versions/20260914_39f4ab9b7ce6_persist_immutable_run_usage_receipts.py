@@ -1,7 +1,7 @@
 """persist immutable run usage receipts.
 
 Revision ID: 39f4ab9b7ce6
-Revises: 56b4ee866468
+Revises: ec86f1da8c98
 Create Date: 2026-09-14 06:24:20.320107+00:00
 """
 
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "39f4ab9b7ce6"
-down_revision: str | Sequence[str] | None = "56b4ee866468"
+down_revision: str | Sequence[str] | None = "ec86f1da8c98"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

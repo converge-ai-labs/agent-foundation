@@ -355,18 +355,11 @@
       "additionalProperties": false,
       "properties": {
         "url": {
-          "anyOf": [
-            {
-              "format": "password",
-              "type": "string",
-              "writeOnly": true
-            },
-            {
-              "type": "null"
-            }
-          ],
           "default": "**********",
-          "title": "Url"
+          "format": "password",
+          "title": "Url",
+          "type": "string",
+          "writeOnly": true
         },
         "pool_size": {
           "default": 10,

@@ -24,7 +24,6 @@ def _assert_schema(config: PostgreSQLConfig, *, present: bool) -> None:
             assert INTERACTION_TABLES.isdisjoint(tables)
             return
         assert INTERACTION_TABLES <= tables
-        assert "thread_inbox_counters" not in tables
         for table in INTERACTION_TABLES:
             columns = {column["name"] for column in inspector.get_columns(table)}
             assert columns == set(service_metadata().tables[table].columns.keys()), table
@@ -37,6 +36,8 @@ def _assert_schema(config: PostgreSQLConfig, *, present: bool) -> None:
         } <= run_columns
         assert "connector_selections_json" not in run_columns
         assert "mcp_selections_json" not in run_columns
+        thread_columns = {column["name"] for column in inspector.get_columns("threads")}
+        assert {"next_delivery_sequence", "pending_count", "pending_bytes"} <= thread_columns
         run_indexes = {index["name"] for index in inspector.get_indexes("runs")}
         assert {
             "ix_runs_worker_scan",

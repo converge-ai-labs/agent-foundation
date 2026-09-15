@@ -25,8 +25,6 @@ from a13n_service.temporal import assume_utc, optional_assume_utc
 
 from .domain import CreateHookSubscriptionRequest, HookSubscription, HookSubscriptionRevision, WebhookDestinationConfig
 
-_HOOK_NAMES_TYPE = JSONB()
-
 
 class HookSubscriptionRecord(Base):
     __tablename__ = "hook_subscriptions"
@@ -182,7 +180,7 @@ class HookSubscriptionRevisionRecord(Base):
     workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
     hook_subscription_id: Mapped[str] = mapped_column(String(72), nullable=False)
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    hook_names: Mapped[list[str]] = mapped_column(_HOOK_NAMES_TYPE, nullable=False)
+    hook_names: Mapped[list[str]] = mapped_column(JSONB(), nullable=False)
     session_id: Mapped[str | None] = mapped_column(String(72))
     thread_id: Mapped[str | None] = mapped_column(String(72))
     run_id: Mapped[str | None] = mapped_column(String(72))

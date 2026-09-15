@@ -19,27 +19,6 @@ depends_on: str | Sequence[str] | None = None
 def upgrade() -> None:
     """Create the domain schema."""
     op.create_table(
-        "thread_inbox_counters",
-        sa.Column("thread_id", sa.String(length=72), nullable=False),
-        sa.Column("organization_id", sa.String(length=72), nullable=False),
-        sa.Column("next_delivery_sequence", sa.BigInteger(), nullable=False),
-        sa.Column("pending_count", sa.BigInteger(), nullable=False),
-        sa.Column("pending_bytes", sa.BigInteger(), nullable=False),
-        sa.CheckConstraint(
-            "next_delivery_sequence >= 1", name=op.f("ck_thread_inbox_counters_next_delivery_sequence_positive")
-        ),
-        sa.CheckConstraint("pending_bytes >= 0", name=op.f("ck_thread_inbox_counters_pending_bytes_non_negative")),
-        sa.CheckConstraint("pending_count >= 0", name=op.f("ck_thread_inbox_counters_pending_count_non_negative")),
-        sa.ForeignKeyConstraint(
-            ["organization_id", "thread_id"],
-            ["threads.organization_id", "threads.id"],
-            name=op.f("fk_thread_inbox_counters_organization_id_threads"),
-            ondelete="CASCADE",
-        ),
-        sa.PrimaryKeyConstraint("thread_id", name=op.f("pk_thread_inbox_counters")),
-        sa.UniqueConstraint("organization_id", "thread_id", name="uq_thread_inbox_counters_scope"),
-    )
-    op.create_table(
         "thread_inbox",
         sa.Column("id", sa.String(length=72), nullable=False),
         sa.Column("organization_id", sa.String(length=72), nullable=False),
@@ -271,4 +250,3 @@ def downgrade() -> None:
     op.drop_index("ix_thread_inbox_kind_scan", table_name="thread_inbox")
     op.drop_index("ix_thread_inbox_fifo", table_name="thread_inbox")
     op.drop_table("thread_inbox")
-    op.drop_table("thread_inbox_counters")

@@ -17,7 +17,7 @@ from tests.process.support import local_settings as build_local_settings
 def local_settings(service_database: PostgreSQLConfig):
     return partial(
         build_local_settings,
-        database_url_factory=lambda: database_url(service_database).render_as_string(hide_password=False),
+        database_url=database_url(service_database).render_as_string(hide_password=False),
     )
 
 

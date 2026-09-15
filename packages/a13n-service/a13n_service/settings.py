@@ -101,18 +101,7 @@ class Settings(Section):
         )
 
     def database_config(self) -> PostgreSQLConfig:
-        if self.database.url is None:
-            raise ValueError("A13N_SERVICE_DATABASE_URL is required")
-        return PostgreSQLConfig(
-            url=self.database.url,
-            pool_size=self.database.pool_size,
-            max_overflow=self.database.max_overflow,
-            pool_timeout_seconds=self.database.pool_timeout_seconds,
-            pool_recycle_seconds=self.database.pool_recycle_seconds,
-            connect_timeout_seconds=self.database.connect_timeout_seconds,
-            statement_timeout_seconds=self.database.statement_timeout_seconds,
-            cleanup_timeout_seconds=self.database.cleanup_timeout_seconds,
-        )
+        return PostgreSQLConfig.model_validate(self.database.model_dump(exclude={"readiness_timeout_seconds"}))
 
     def redis_config(self) -> RedisServerConfig | RedisMemoryConfig:
         if self.redis.backend is RedisBackend.memory:

@@ -2,7 +2,6 @@
 
 import asyncio
 from base64 import b64encode
-from collections.abc import Callable
 from pathlib import Path
 
 import httpx2
@@ -20,9 +19,9 @@ def request(app: FastAPI, path: str, *, method: str = "GET") -> httpx2.Response:
     return asyncio.run(send_request())
 
 
-def local_settings(tmp_path: Path, *, database_url_factory: Callable[[], str], **updates: object) -> Settings:
+def local_settings(tmp_path: Path, *, database_url: str, **updates: object) -> Settings:
     values: dict[str, object] = {
-        "database_url": database_url_factory(),
+        "database_url": database_url,
         "redis_backend": "memory",
         "object_backend": "local",
         "object_local_root": tmp_path / "objects",

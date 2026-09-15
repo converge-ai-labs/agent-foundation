@@ -1,7 +1,6 @@
 """Independent process databases cloned from the fully migrated template."""
 
 from collections.abc import Callable, Iterator
-from functools import partial
 from uuid import uuid4
 
 import pytest
@@ -25,8 +24,11 @@ def local_settings(
         created.append(name)
         return make_url(pg_url).set(database=name).render_as_string(hide_password=False)
 
+    def build_settings(tmp_path, **updates):
+        return build_local_settings(tmp_path, database_url=create_database_url(), **updates)
+
     try:
-        yield partial(build_local_settings, database_url_factory=create_database_url)
+        yield build_settings
     finally:
         for name in created:
             drop_postgres_database(postgres_admin_url, name)

@@ -17,11 +17,7 @@ from .config import PostgreSQLConfig
 
 def database_url(config: PostgreSQLConfig) -> URL:
     """Return the validated SQLAlchemy URL for application and migration I/O."""
-
-    url = make_url(config.url.get_secret_value())
-    if url.drivername not in {"postgresql", "postgresql+psycopg"}:
-        raise ValueError("PostgreSQL requires a postgresql or postgresql+psycopg URL")
-    return url.set(drivername="postgresql+psycopg")
+    return make_url(config.url.get_secret_value())
 
 
 def create_sql_engine(config: PostgreSQLConfig) -> AsyncEngine:

@@ -156,7 +156,7 @@ Provider-specific integration tests cover behavior outside the common subset wit
 
 Using capability-specific interfaces means Service consumers learn SQLAlchemy, redis-py, object-store, and filesystem semantics rather than one uniform storage vocabulary. This cost keeps transactions, Redis structures, object publication, and path mutation explicit and prevents a lowest-common-denominator abstraction.
 
-Local backends optimize for zero-service development, not operational parity. They preserve the tested application-visible behavior needed by the minimal profile while accepting weaker durability, concurrency, and failure characteristics. Deployments that need network semantics run the corresponding network service locally.
+Local backends reduce external dependencies for development, not operational parity. They preserve the tested application-visible behavior needed by the Single-process profile while accepting weaker durability, concurrency, and failure characteristics. PostgreSQL remains required; deployments that need network semantics for another capability run that capability's network service locally.
 
 ## Invariants
 

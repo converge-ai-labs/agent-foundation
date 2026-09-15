@@ -3,22 +3,36 @@
 from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
 
 
 class _Config(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
+    model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
 
 
 class PostgreSQLConfig(_Config):
     url: SecretStr
     pool_size: int = Field(default=10, ge=1, le=1000)
-    max_overflow: int = Field(default=10, ge=0, le=1000)
-    pool_timeout_seconds: float = Field(default=10, gt=0, le=300)
+    max_overflow: int = Field(default=20, ge=0, le=1000)
+    pool_timeout_seconds: float = Field(default=30, gt=0, le=300)
     pool_recycle_seconds: int = Field(default=3600, ge=0)
     connect_timeout_seconds: int = Field(default=10, ge=1, le=300)
     statement_timeout_seconds: float = Field(default=30, gt=0, le=3600)
     cleanup_timeout_seconds: float = Field(default=5, gt=0, le=60)
+
+    @field_validator("url", mode="before")
+    @classmethod
+    def validate_url(cls, value: str | SecretStr) -> SecretStr:
+        raw = value.get_secret_value() if isinstance(value, SecretStr) else value
+        try:
+            url = make_url(raw)
+        except (ArgumentError, TypeError, ValueError):
+            raise ValueError("database.url must be a valid PostgreSQL URL") from None
+        if url.drivername not in {"postgresql", "postgresql+psycopg"}:
+            raise ValueError("PostgreSQL requires a postgresql or postgresql+psycopg URL")
+        return SecretStr(url.set(drivername="postgresql+psycopg").render_as_string(hide_password=False))
 
 
 class RedisServerConfig(_Config):
