@@ -8051,8 +8051,7 @@
           "summary": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 4096
+                "type": "string"
               },
               {
                 "type": "null"
@@ -8063,8 +8062,7 @@
           "content": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 262144
+                "type": "string"
               },
               {
                 "type": "null"

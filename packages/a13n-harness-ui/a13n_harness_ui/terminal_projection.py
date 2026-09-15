@@ -635,6 +635,7 @@ class TerminalProjectionService:
             title=tool_name,
             summary=part.text,
             value=part.value,
+            truncated=part.text_truncated,
             omitted=part.value_omitted,
         )
 

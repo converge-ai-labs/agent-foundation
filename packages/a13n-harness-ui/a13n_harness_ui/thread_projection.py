@@ -493,6 +493,7 @@ def _request_parts(part: object) -> tuple[TranscriptPart, ...]:
             TranscriptPart(
                 kind="retry",
                 text=_bounded_text(text),
+                text_truncated=len(text) > _MAX_TEXT,
                 tool_name=part.tool_name,
                 tool_call_id=part.tool_call_id,
             ),
