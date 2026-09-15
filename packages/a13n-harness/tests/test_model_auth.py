@@ -12,6 +12,7 @@ import anyio
 import httpx2
 import jwt
 import pytest
+from a13n_harness.model_affinity import derive_model_affinity_id
 from a13n_harness.model_auth import (
     CodexRequestModel,
     CredentialPersistenceError,
@@ -1089,8 +1090,8 @@ async def test_codex_subscription_settings_use_bound_thread_not_gateway_header()
         "X-Session-ID": "thread-1",
         "Thread-ID": "explicit-thread",
         "X-Custom": "custom",
-        "session-id": "bound-thread",
-        "x-client-request-id": "bound-thread",
+        "session-id": derive_model_affinity_id("bound-thread"),
+        "x-client-request-id": derive_model_affinity_id("bound-thread"),
     }
     assert original["openai_store"] is True
     assert original["extra_headers"] == {
@@ -1183,9 +1184,9 @@ async def test_codex_official_dialect_and_cached_credentials_are_used_without_ga
     def handle(request: httpx2.Request) -> httpx2.Response:
         bodies.append(json.loads(request.content))
         assert request.headers["originator"] == "pydantic-ai"
-        assert request.headers["session-id"] == "thread-native"
-        assert request.headers["thread-id"] == "thread-native"
-        assert request.headers["x-client-request-id"] == "thread-native"
+        assert request.headers["session-id"] == derive_model_affinity_id("thread-native")
+        assert request.headers["thread-id"] == derive_model_affinity_id("thread-native")
+        assert request.headers["x-client-request-id"] == derive_model_affinity_id("thread-native")
         assert "x-session-id" not in request.headers
         return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=_responses_sse())
 

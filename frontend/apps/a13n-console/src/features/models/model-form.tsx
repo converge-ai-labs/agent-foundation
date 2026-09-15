@@ -325,7 +325,7 @@ export function ModelForm({
         <ReadOnlyField
           label={t("Session affinity header")}
           description={t(
-            "Inherited from the provider connection. The current Thread ID is supplied automatically; edit the provider to change the header.",
+            "Inherited from the provider connection. A stable UUID derived from the current Thread ID is supplied automatically; edit the provider to change the header.",
           )}
         >
           <span>

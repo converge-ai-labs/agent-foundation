@@ -61,7 +61,7 @@ _QUESTIONS = (
     Question("base_url", "Base URL (HTTP or HTTPS; no credentials in the URL)", ""),
     Question(
         "session_affinity_header",
-        "Gateway session affinity header (optional). The current Thread ID is supplied automatically.\n"
+        "Gateway session affinity header (optional). A stable UUID derived from the current Thread ID is supplied automatically.\n"
         "Choose a preset or enter a custom header name; your gateway must be configured to use it.",
         "off",
         allow_custom=True,

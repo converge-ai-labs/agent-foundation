@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncIterator
 from typing import Any
+from uuid import UUID
 
 import a13n_harness.execution as execution_module
 import httpx2
@@ -16,6 +17,7 @@ from a13n_harness import (
     RunBindings,
     SubagentDefinition,
 )
+from a13n_harness.model_affinity import derive_model_affinity_id
 from a13n_harness.models import (
     MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV,
     MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV,
@@ -30,6 +32,30 @@ from pydantic_ai.providers.openrouter import OpenRouterProvider
 from pydantic_ai.settings import ModelSettings
 
 pytestmark = pytest.mark.anyio
+
+
+@pytest.mark.parametrize(
+    ("thread_id", "expected"),
+    [
+        ("thread-example", "c9b5a8bc-0a44-5dc0-836d-6f0af4c8e71d"),
+        ("thr_hostroot", "df691c98-450b-52de-a38a-b23a1c790bc4"),
+        ("thread a/b\r\n\u4f1a\u8bdd", "3ec0222d-0e01-5754-a45f-c5a2bde6e6de"),
+        ("a" * 10_000, "e459fd37-7a46-5f27-842f-8d697d27ef68"),
+        ("c9b5a8bc-0a44-5dc0-836d-6f0af4c8e71d", "151e4eb1-13ab-5a6b-a7ab-8930dd4cc9d5"),
+    ],
+)
+def test_affinity_id_has_stable_uuid_v5_wire_format(thread_id: str, expected: str) -> None:
+    actual = derive_model_affinity_id(thread_id)
+    assert actual == expected == derive_model_affinity_id(thread_id)
+    assert len(actual) == 36
+    assert str(UUID(actual)) == actual
+    assert UUID(actual).version == 5
+    assert actual != thread_id
+
+
+def test_affinity_derivation_does_not_normalize_or_truncate_thread_ids() -> None:
+    ids = ["thread-a", "thread_a", "Thread-a", "thread-a ", "a" * 10_000, "a" * 10_000 + "b"]
+    assert len({derive_model_affinity_id(thread_id) for thread_id in ids}) == len(ids)
 
 
 @pytest.mark.parametrize(
@@ -87,7 +113,7 @@ async def test_cache_key_uses_final_model_name(
     assert result.state is not None
     settings = ModelSettings()
     if expected:
-        settings["openai_prompt_cache_key"] = result.state.thread_id
+        settings["openai_prompt_cache_key"] = derive_model_affinity_id(result.state.thread_id)
     assert seen == [settings]
 
 
@@ -127,9 +153,9 @@ async def test_builder_overrides_environment_for_parent_and_child(
         assert result.state is not None
         expected = ModelSettings()
         if session_enabled:
-            expected["extra_headers"] = {"x-session-id": result.state.thread_id}
+            expected["extra_headers"] = {"x-session-id": derive_model_affinity_id(result.state.thread_id)}
         if cache_enabled:
-            expected["openai_prompt_cache_key"] = result.state.thread_id
+            expected["openai_prompt_cache_key"] = derive_model_affinity_id(result.state.thread_id)
         assert seen[-1] == (expected or None)
 
 
@@ -153,9 +179,9 @@ async def test_unspecified_builder_switch_still_follows_environment(
     assert result.state is not None
     expected = ModelSettings()
     if override == "x_session_id_enabled":
-        expected["extra_headers"] = {"x-session-id": result.state.thread_id}
+        expected["extra_headers"] = {"x-session-id": derive_model_affinity_id(result.state.thread_id)}
     else:
-        expected["openai_prompt_cache_key"] = result.state.thread_id
+        expected["openai_prompt_cache_key"] = derive_model_affinity_id(result.state.thread_id)
     assert seen == [expected]
 
 
@@ -200,21 +226,31 @@ async def test_gpt_cache_affinity_survives_continuation_and_changes_on_fork() ->
         seen.append(info.model_settings)
         yield "ok"
 
-    executable = HarnessBuilder().build(
-        AgentSpec(), model=FunctionModel(stream_function=stream, model_name="gpt-5-codex"), output_type=str
-    )
+    def build():
+        return HarnessBuilder(session_affinity_header="x-session-id").build(
+            AgentSpec(), model=FunctionModel(stream_function=stream, model_name="gpt-5-codex"), output_type=str
+        )
+
+    executable = build()
     state = HarnessState.new(thread_id="thr_hostroot")
     first = await executable.run("hello", bindings=RunBindings.embedded(), previous_state=state)
     assert first.state is not None
-    second = await executable.run("continue", bindings=RunBindings.embedded(), previous_state=first.state)
+    restored = HarnessState.model_validate_json(first.state.model_dump_json())
+    second = await build().run("continue", bindings=RunBindings.embedded(), previous_state=restored)
     fork = await executable.run("branch", bindings=RunBindings.embedded(), previous_state=first.state.fork())
     assert second.state is not None and fork.state is not None
     assert first.output_or_raise() == second.output_or_raise() == fork.output_or_raise() == "ok"
-    assert first.state.thread_id == second.state.thread_id != fork.state.thread_id
+    assert first.state.thread_id == second.state.thread_id == state.thread_id
+    assert fork.state.thread_id != state.thread_id
+    assert all(
+        settings["extra_headers"]["x-session-id"] == settings["openai_prompt_cache_key"]
+        for settings in seen
+        if settings
+    )
     assert [settings["openai_prompt_cache_key"] for settings in seen if settings] == [
-        first.state.thread_id,
-        second.state.thread_id,
-        fork.state.thread_id,
+        derive_model_affinity_id(first.state.thread_id),
+        derive_model_affinity_id(second.state.thread_id),
+        derive_model_affinity_id(fork.state.thread_id),
     ]
 
 
@@ -260,9 +296,9 @@ async def test_openrouter_request_body_only_gets_automatic_cache_key_for_gpt(
     assert result.state is not None
     assert len(bodies) == 1
     assert "x-session-id" not in headers[0]
-    assert headers[0]["x-litellm-session-id"] == result.state.thread_id
+    assert headers[0]["x-litellm-session-id"] == derive_model_affinity_id(result.state.thread_id)
     if expect_cache_key:
-        assert bodies[0]["prompt_cache_key"] == result.state.thread_id
+        assert bodies[0]["prompt_cache_key"] == derive_model_affinity_id(result.state.thread_id)
     else:
         assert "prompt_cache_key" not in bodies[0]
 
@@ -290,13 +326,17 @@ async def test_opt_in_affinity_is_thread_scoped_across_continuation_child_and_fo
     )
     first = await executable.run("hello", bindings=RunBindings.embedded())
     assert first.state is not None
-    second = await executable.run("continue", bindings=RunBindings.embedded(), previous_state=first.state)
+    restored = HarnessState.model_validate_json(first.state.model_dump_json())
+    second = await executable.run("continue", bindings=RunBindings.embedded(), previous_state=restored)
     fork = await executable.run("fork", bindings=RunBindings.embedded(), previous_state=first.state.fork())
     child = await executable.subagents["child"].executable.run("child", bindings=RunBindings.embedded())
     states = [first.state, second.state, fork.state, child.state]
     ids = [state.thread_id for state in states if state is not None]
     assert len(ids) == 4 and ids[0] == ids[1] and len(set(ids)) == 3
-    assert seen == [({"extra_headers": {header.lower(): thread_id}} if header else {}) for thread_id in ids]
+    assert seen == [
+        ({"extra_headers": {header.lower(): derive_model_affinity_id(thread_id)}} if header else {})
+        for thread_id in ids
+    ]
 
 
 @pytest.mark.parametrize(

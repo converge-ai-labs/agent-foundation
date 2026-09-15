@@ -215,7 +215,7 @@ export function ProviderConnection({
           <FormField
             label={t("Session affinity header")}
             description={t(
-              "Choose a preset above or type a custom header name. The current Thread ID is supplied automatically as its value. Leave empty to disable.",
+              "Choose a preset above or type a custom header name. A stable UUID derived from the current Thread ID is supplied automatically as its value. Leave empty to disable.",
             )}
           >
             <Input

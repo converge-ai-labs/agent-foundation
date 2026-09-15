@@ -8,6 +8,7 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from random import uniform
 from typing import Any, cast
 
+from a13n_harness.model_affinity import derive_model_affinity_id
 from a13n_harness.models.inference import RequestHeadersModel
 from a13n_logging import get_logger
 from anyio import current_time, fail_after, sleep
@@ -66,7 +67,9 @@ class LiveProviderModel(WrapperModel):
         model = await self._model_factory.build(self._snapshot, provider)
         header = provider.configuration.get("session_affinity_header")
         if isinstance(header, str) and self._harness_thread_id is not None:
-            return RequestHeadersModel(model, common_headers={header: self._harness_thread_id})
+            return RequestHeadersModel(
+                model, common_headers={header: derive_model_affinity_id(self._harness_thread_id)}
+            )
         return model
 
     @classmethod
@@ -147,7 +150,9 @@ class LiveProviderModel(WrapperModel):
 
     def _validate_request_settings(self, settings: ModelSettings | None) -> None:
         value = dict(settings or {})
-        if self._harness_thread_id is not None and value.get("openai_prompt_cache_key") == self._harness_thread_id:
+        if self._harness_thread_id is not None and value.get("openai_prompt_cache_key") == derive_model_affinity_id(
+            self._harness_thread_id
+        ):
             del value["openai_prompt_cache_key"]
         # Caller settings retain the strict schema. Gateway affinity is injected
         # only after validation, using the live Provider configuration.

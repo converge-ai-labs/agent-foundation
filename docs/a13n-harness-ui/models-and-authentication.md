@@ -27,7 +27,7 @@ model_configuration:
   session_affinity_header: x-litellm-session-id
 ```
 
-Set this inside the Model file, alongside `base_url`, **not** in `settings.extra_headers` or the root process configuration. Do not supply a session value: the current Thread ID is inserted automatically. Leave the field absent or set it to `null` to disable it. To replace a preset, change only the name, for example to `x-company-session`.
+Set this inside the Model file, alongside `base_url`, **not** in `settings.extra_headers` or the root process configuration. Do not supply a session value: a stable UUID v5 derived from the current Thread ID is inserted automatically, using the [shared Harness derivation](../a13n-harness/models.md#automatic-model-request-affinity). The derived value is not saved in the recipe or Thread state. Leave the field absent or set it to `null` to disable it. To replace a preset, change only the name, for example to `x-company-session`.
 
 | Preset                         | Header name            | Gateway prerequisite / boundary                                                |
 | ------------------------------ | ---------------------- | ------------------------------------------------------------------------------ |
@@ -39,6 +39,8 @@ Set this inside the Model file, alongside `base_url`, **not** in `settings.extra
 Presets do not configure or detect the gateway. Sending the header requests affinity; it is not proof of a fixed target. Check the gateway's routing logs or target identifier if you need to verify routing. A connection test proves neither sticky routing nor cache reuse.
 
 The value stays stable for the same Thread across turns and retries; independent Threads, child Threads, and forks use their own IDs. The name is captured in the immutable Run recipe. Editing the Model affects new compositions, not an already captured Run. This is separate from OpenAI prompt caching and Codex subscription protocol headers. Native xAI gRPC and subscription connections do not offer this gateway setting.
+
+**Affinity value upgrade:** automatic gateway headers, prompt-cache keys, and bound Codex native session defaults now use a derived UUID rather than the raw Thread ID. Existing Threads may lose upstream cache or routing affinity once; their local IDs and history do not change and need no migration.
 
 **Upgrade note:** older releases implicitly sent `x-session-id`. Omitted fields now disable gateway affinity, including in existing files and captures. Add `session_affinity_header: x-session-id` and start a new composition to retain that behavior. The legacy process-wide environment switch does not override Harness UI Model recipes. Configuration files are never automatically rewritten.
 

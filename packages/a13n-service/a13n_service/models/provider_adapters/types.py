@@ -26,7 +26,7 @@ class ProviderConfiguration(BaseModel):
     session_affinity_header: SessionAffinityHeader | None = Field(
         default=None,
         title="Session affinity header",
-        description="Optional gateway header name. Its value is the current Thread ID, supplied automatically. "
+        description="Optional gateway header name. Its value is a stable UUID derived from the current Thread ID. "
         "Leave empty to disable. The gateway must be configured to route by this header.",
     )
 

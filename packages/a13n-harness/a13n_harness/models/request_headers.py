@@ -17,7 +17,7 @@ from pydantic_ai.settings import ModelSettings
 
 from a13n_harness.context import AgentContext
 from a13n_harness.errors import DefinitionError
-from a13n_harness.model_affinity import validate_session_affinity_header
+from a13n_harness.model_affinity import derive_model_affinity_id, validate_session_affinity_header
 from a13n_harness.models.inference import _merge_headers
 
 MODEL_REQUEST_HEADERS_CAPABILITY_ID = "a13n.model.request-headers"
@@ -145,10 +145,11 @@ class ModelRequestHeadersCapability(AbstractCapability[AgentContext]):
         if configuration.session_affinity_header is None and not configuration.openai_prompt_cache_key_enabled:
             return await handler(request_context)
 
+        affinity_id = derive_model_affinity_id(ctx.deps.thread_id)
         settings: dict[str, Any] = dict(request_context.model_settings or {})
         if configuration.session_affinity_header is not None:
             settings["extra_headers"] = _merge_headers(
-                {configuration.session_affinity_header: ctx.deps.thread_id},
+                {configuration.session_affinity_header: affinity_id},
                 cast(Mapping[str, str] | None, settings.get("extra_headers")),
             )
         # This is a conservative naming policy, not endpoint capability detection.
@@ -157,7 +158,7 @@ class ModelRequestHeadersCapability(AbstractCapability[AgentContext]):
             and "openai_prompt_cache_key" not in settings
             and re.match(r"(?:openai/)?gpt-[0-9]", request_context.model.model_name) is not None
         ):
-            settings["openai_prompt_cache_key"] = ctx.deps.thread_id
+            settings["openai_prompt_cache_key"] = affinity_id
 
         updated = copy(request_context)
         updated.model_settings = cast(ModelSettings, settings)

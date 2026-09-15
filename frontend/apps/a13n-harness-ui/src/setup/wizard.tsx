@@ -678,7 +678,7 @@ export function SetupWizard({ status }: { status: Schema<"SetupStatus"> }) {
                             />
                             <FormField
                               label="Session affinity header"
-                              description="Choose a preset above or type any custom header name. Its value is the current Thread ID, supplied automatically. Leave empty to disable. Configure your gateway to route by this header; sending it alone does not guarantee provider pinning."
+                              description="Choose a preset above or type any custom header name. Its value is a stable UUID derived from the current Thread ID. Leave empty to disable. Configure your gateway to route by this header; sending it alone does not guarantee provider pinning."
                             >
                               <Input
                                 name="session_affinity_header"

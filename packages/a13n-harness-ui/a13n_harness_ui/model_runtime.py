@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from a13n_harness import AgentContext, infer_model
 from a13n_harness.errors import ModelResolutionError
+from a13n_harness.model_affinity import derive_model_affinity_id
 from a13n_harness.model_auth import GrokCredentials, GrokCredentialSource
 from a13n_harness.models.inference import RequestHeadersModel
 from pydantic_ai.models import Model, ModelResolutionContext
@@ -96,7 +97,9 @@ class HarnessUiModelResolver:
             model = await self._api_key_model(recipe, authentication)
             header = recipe.model_configuration.get("session_affinity_header")
             if isinstance(header, str):
-                return RequestHeadersModel(model, common_headers={header: context.deps.thread_id})
+                return RequestHeadersModel(
+                    model, common_headers={header: derive_model_affinity_id(context.deps.thread_id)}
+                )
             return model
         if isinstance(authentication, CodexSubscriptionAuthentication):
             from a13n_harness.model_auth import CodexRequestModel

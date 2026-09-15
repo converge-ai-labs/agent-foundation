@@ -49,11 +49,13 @@ The HTTP field belongs to the Provider's `configuration`, next to its endpoint:
 }
 ```
 
-Only the **name** is configured. Service supplies the current Harness Thread ID as its value on inference requests. Do not add a fixed session value to the secret `extra_headers` mapping or Model request settings. Static headers, authentication, and protocol fields cannot claim the selected affinity name.
+Only the **name** is configured. Service supplies a stable UUID v5 derived from the current Harness Thread ID as its value on inference requests, using the [shared Harness derivation](../a13n-harness/models.md#automatic-model-request-affinity). The derived value is not persisted. Do not add a fixed session value to the secret `extra_headers` mapping or Model request settings. Static headers, authentication, and protocol fields cannot claim the selected affinity name.
 
 The [shared preset guide](../a13n-harness-ui/models-and-authentication.md#gateway-session-affinity) describes LiteLLM, Conversation ID, Bifrost API-key affinity, and the legacy `x-session-id` choice. Presets store a concrete, freely editable name; they do not configure gateway routing. Verify affinity using gateway target information, not a successful connection test. Discovery and ordinary connection probes do not invent a persistent session.
 
-Leave the field absent or set it to `null` to disable it. Provider updates replace `configuration`, so retain other connection fields when updating it. The next outbound attempt reads the current header together with the current endpoint, including retries within a Run. It keeps the same Thread ID but stops sending the old header. Independent Threads, child Threads, and forks have distinct IDs. OpenAI prompt caching remains independently controlled.
+Leave the field absent or set it to `null` to disable it. Provider updates replace `configuration`, so retain other connection fields when updating it. The next outbound attempt reads the current header together with the current endpoint, including retries within a Run. It keeps the same derived affinity value but stops sending the old header. Independent Threads, child Threads, and forks have distinct IDs. OpenAI prompt caching remains independently controlled.
+
+**Affinity value upgrade:** automatic gateway headers and prompt-cache keys now use the derived UUID rather than the raw Thread ID. Existing Threads switch outbound values once, which may reset upstream cache or routing affinity. Internal Thread IDs and history remain unchanged; no state migration is needed.
 
 **Upgrade note:** the previous implicit `x-session-id` default is removed. Explicitly select `session_affinity_header: x-session-id` on existing Providers that need it. No database migration or automatic Provider rewrite is performed. Service ignores the legacy global header switch; Provider connection configuration is authoritative, including for retained Runs.
 

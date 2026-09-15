@@ -149,7 +149,7 @@ it("fills a preset, replaces it with a custom name and saves only the header nam
   await user.click(
     screen.getByRole("combobox", { name: "Gateway session affinity" }),
   );
-  await user.click(screen.getByRole("option", { name: /LiteLLM/ }));
+  await user.click(await screen.findByRole("option", { name: /LiteLLM/ }));
   expect(input.value).toBe("x-litellm-session-id");
   await user.clear(input);
   await user.type(input, "x-company-session");
@@ -174,7 +174,9 @@ it("clears a preset without changing the endpoint or static headers", async () =
   await user.click(
     screen.getByRole("combobox", { name: "Gateway session affinity" }),
   );
-  await user.click(screen.getByRole("option", { name: "Disabled (default)" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Disabled (default)" }),
+  );
   expect(input.value).toBe("");
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(state.close).toHaveBeenCalled());

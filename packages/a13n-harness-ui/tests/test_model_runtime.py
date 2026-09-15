@@ -7,6 +7,7 @@ from unittest.mock import Mock
 import pytest
 from a13n_harness import AgentContext
 from a13n_harness.errors import ModelResolutionError
+from a13n_harness.model_affinity import derive_model_affinity_id
 from a13n_harness.model_auth import GrokCredentials
 from a13n_harness_ui.composition.models import ResolvedModelRecipe
 from a13n_harness_ui.configuration import CodexSubscriptionAuthentication, GrokSubscriptionAuthentication
@@ -65,6 +66,9 @@ async def test_codex_subscription_resolution_uses_official_provider_and_affinity
     assert isinstance(resolved, CodexRequestModel)
     assert isinstance(resolved.wrapped, OpenAIResponsesModel)
     assert isinstance(resolved.provider, OpenAICodexProvider)
+    assert resolved._affinity_settings(None)["extra_headers"] == {
+        name: derive_model_affinity_id("thread-current") for name in ("session-id", "thread-id", "x-client-request-id")
+    }
     async with resolved:
         assert resolved.model_name == "model-name"
 
@@ -158,7 +162,7 @@ async def test_api_recipe_affinity_uses_current_resolution_thread_and_immutable_
         model = await resolver.fresh()(context, "primary")
         if header:
             assert isinstance(model, RequestHeadersModel)
-            assert model.common_headers == {header: thread_id}
+            assert model.common_headers == {header: derive_model_affinity_id(thread_id)}
         else:
             assert isinstance(model, TestModel)
 

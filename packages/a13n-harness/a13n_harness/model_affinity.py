@@ -1,4 +1,4 @@
-"""Shared authoring contract for opt-in gateway session affinity.
+"""Shared authoring and Thread-derived values for model request affinity.
 
 Presets are suggestions for header names, not gateway detection or routing policy.
 Hosts bind the value to the current Thread at Model resolution or request time.
@@ -8,8 +8,17 @@ from __future__ import annotations
 
 import re
 from typing import Annotated
+from uuid import UUID, uuid5
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field
+
+# Wire compatibility: keep this namespace and the UUID v5 derivation unchanged.
+_MODEL_AFFINITY_NAMESPACE = UUID("abaa2d61-05a5-4e7b-b89c-44e34066e70a")
+
+
+def derive_model_affinity_id(thread_id: str) -> str:
+    """Derive a stable UUID from the exact Thread ID without storing another identity."""
+    return str(uuid5(_MODEL_AFFINITY_NAMESPACE, thread_id))
 
 
 class SessionAffinityPreset(BaseModel):

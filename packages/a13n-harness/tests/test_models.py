@@ -19,6 +19,7 @@ from a13n_harness import (
     SubagentDefinition,
 )
 from a13n_harness import AgentSpec as HarnessAgentSpec
+from a13n_harness.model_affinity import derive_model_affinity_id
 from a13n_harness.models import (
     MODEL_REQUEST_OPENAI_PROMPT_CACHE_KEY_ENABLED_ENV,
     MODEL_REQUEST_X_SESSION_ID_ENABLED_ENV,
@@ -358,10 +359,10 @@ async def test_automatic_request_affinity_runs_inside_other_innermost_request_wr
     assert result.state is not None
     assert seen == [
         ModelSettings(
-            openai_prompt_cache_key=result.state.thread_id,
+            openai_prompt_cache_key=derive_model_affinity_id(result.state.thread_id),
             extra_headers={
                 "X-Other": "other",
-                "x-session-id": result.state.thread_id,
+                "x-session-id": derive_model_affinity_id(result.state.thread_id),
             },
         )
     ]
@@ -402,9 +403,9 @@ async def test_model_request_patches_can_be_disabled_independently_at_builder_cr
     assert result.state is not None
     expected = ModelSettings()
     if expect_session_header:
-        expected["extra_headers"] = {"x-session-id": result.state.thread_id}
+        expected["extra_headers"] = {"x-session-id": derive_model_affinity_id(result.state.thread_id)}
     if expect_prompt_cache_key:
-        expected["openai_prompt_cache_key"] = result.state.thread_id
+        expected["openai_prompt_cache_key"] = derive_model_affinity_id(result.state.thread_id)
     assert seen == [expected]
 
 
