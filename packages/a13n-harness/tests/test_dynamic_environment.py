@@ -41,7 +41,6 @@ from a13n_harness.environment import (
     EnvironmentError,
     EnvironmentPath,
     EnvironmentPermissionSet,
-    FileMediaUnderstandingRunCapability,
 )
 from a13n_harness.environment.advanced import (
     create_empty_environment_runtime,
@@ -1226,10 +1225,8 @@ async def test_view_uses_run_scoped_understanding_when_active_model_lacks_native
         "view",
         bindings=RunBindings.embedded(
             environment=_local_binding(tmp_path),
-            capabilities=(
-                _policy(),
-                FileMediaUnderstandingRunCapability(provider=UnderstandingProvider()),
-            ),
+            capabilities=(_policy(),),
+            file_media_understanding=UnderstandingProvider(),
         ),
     )
 

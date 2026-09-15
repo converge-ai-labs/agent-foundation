@@ -6,11 +6,11 @@ from typing import Any, TypeVar
 from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
-T = TypeVar("T", bound="ModelDiscoverySettingsSchemasAdditionalProperty")
+T = TypeVar("T", bound="ModelProviderDefinitionSettingsSchemasAdditionalProperty")
 
 
 @_attrs_define(repr=False)
-class ModelDiscoverySettingsSchemasAdditionalProperty:
+class ModelProviderDefinitionSettingsSchemasAdditionalProperty:
     additional_properties: dict[str, Any] = _attrs_field(init=False, factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
@@ -23,10 +23,10 @@ class ModelDiscoverySettingsSchemasAdditionalProperty:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         d = dict(src_dict)
-        model_discovery_settings_schemas_additional_property = cls()
+        model_provider_definition_settings_schemas_additional_property = cls()
 
-        model_discovery_settings_schemas_additional_property.additional_properties = d
-        return model_discovery_settings_schemas_additional_property
+        model_provider_definition_settings_schemas_additional_property.additional_properties = d
+        return model_provider_definition_settings_schemas_additional_property
 
     @property
     def additional_keys(self) -> list[str]:

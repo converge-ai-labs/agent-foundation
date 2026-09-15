@@ -8,6 +8,7 @@ from attrs import define as _attrs_define
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
+    from ..models.model_declarations import ModelDeclarations
     from ..models.update_model_request_settings_type_0 import UpdateModelRequestSettingsType0
 
 
@@ -18,6 +19,8 @@ T = TypeVar("T", bound="UpdateModelRequest")
 class UpdateModelRequest:
     """
     Attributes:
+        base_model (None | str | Unset):
+        declarations (ModelDeclarations | None | Unset):
         description (None | str | Unset):
         enabled (bool | None | Unset):
         model_api (None | str | Unset):
@@ -26,6 +29,8 @@ class UpdateModelRequest:
         upstream_model (None | str | Unset):
     """
 
+    base_model: str | Unset | None = UNSET
+    declarations: ModelDeclarations | Unset | None = UNSET
     description: str | Unset | None = UNSET
     enabled: bool | Unset | None = UNSET
     model_api: str | Unset | None = UNSET
@@ -34,7 +39,22 @@ class UpdateModelRequest:
     upstream_model: str | Unset | None = UNSET
 
     def to_dict(self) -> dict[str, Any]:
+        from ..models.model_declarations import ModelDeclarations
         from ..models.update_model_request_settings_type_0 import UpdateModelRequestSettingsType0
+
+        base_model: str | Unset | None
+        if isinstance(self.base_model, Unset):
+            base_model = UNSET
+        else:
+            base_model = self.base_model
+
+        declarations: dict[str, Any] | Unset | None
+        if isinstance(self.declarations, Unset):
+            declarations = UNSET
+        elif isinstance(self.declarations, ModelDeclarations):
+            declarations = self.declarations.to_dict()
+        else:
+            declarations = self.declarations
 
         description: str | Unset | None
         if isinstance(self.description, Unset):
@@ -77,6 +97,10 @@ class UpdateModelRequest:
         field_dict: dict[str, Any] = {}
 
         field_dict.update({})
+        if base_model is not UNSET:
+            field_dict["base_model"] = base_model
+        if declarations is not UNSET:
+            field_dict["declarations"] = declarations
         if description is not UNSET:
             field_dict["description"] = description
         if enabled is not UNSET:
@@ -94,9 +118,36 @@ class UpdateModelRequest:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+        from ..models.model_declarations import ModelDeclarations
         from ..models.update_model_request_settings_type_0 import UpdateModelRequestSettingsType0
 
         d = dict(src_dict)
+
+        def _parse_base_model(data: object) -> str | Unset | None:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(str | Unset | None, data)
+
+        base_model = _parse_base_model(d.pop("base_model", UNSET))
+
+        def _parse_declarations(data: object) -> ModelDeclarations | Unset | None:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                declarations_type_0 = ModelDeclarations.from_dict(data)
+
+                return declarations_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(ModelDeclarations | Unset | None, data)
+
+        declarations = _parse_declarations(d.pop("declarations", UNSET))
 
         def _parse_description(data: object) -> str | Unset | None:
             if data is None:
@@ -161,6 +212,8 @@ class UpdateModelRequest:
         upstream_model = _parse_upstream_model(d.pop("upstream_model", UNSET))
 
         update_model_request = cls(
+            base_model=base_model,
+            declarations=declarations,
             description=description,
             enabled=enabled,
             model_api=model_api,

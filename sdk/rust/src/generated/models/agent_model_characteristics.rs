@@ -11,22 +11,19 @@
 use crate::generated::models;
 use serde::{Deserialize, Serialize};
 
-/// HarnessModelCharacteristics : Resolved Harness characteristics of the active Agent model.
+/// AgentModelCharacteristics : Agent-owned context policy layered over Model declarations.
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
-pub struct HarnessModelCharacteristics {
-    #[serde(rename = "capabilities", skip_serializing_if = "Option::is_none")]
-    pub capabilities: Option<Vec<models::ModelCapability>>,
-
+pub struct AgentModelCharacteristics {
     #[serde(rename = "compact_threshold", skip_serializing_if = "Option::is_none")]
     pub compact_threshold: Option<f64>,
 
     #[serde(
-        rename = "context_window",
+        rename = "context_window_tokens",
         default,
         with = "::serde_with::rust::double_option",
         skip_serializing_if = "Option::is_none"
     )]
-    pub context_window: Option<Option<i32>>,
+    pub context_window_tokens: Option<Option<i32>>,
 
     #[serde(
         rename = "proactive_context_management_threshold",
@@ -37,13 +34,12 @@ pub struct HarnessModelCharacteristics {
     pub proactive_context_management_threshold: Option<Option<f64>>,
 }
 
-impl HarnessModelCharacteristics {
-    /// Resolved Harness characteristics of the active Agent model.
-    pub fn new() -> HarnessModelCharacteristics {
-        HarnessModelCharacteristics {
-            capabilities: None,
+impl AgentModelCharacteristics {
+    /// Agent-owned context policy layered over Model declarations.
+    pub fn new() -> AgentModelCharacteristics {
+        AgentModelCharacteristics {
             compact_threshold: None,
-            context_window: None,
+            context_window_tokens: None,
             proactive_context_management_threshold: None,
         }
     }

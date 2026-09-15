@@ -8,8 +8,8 @@ from attrs import define as _attrs_define
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
+    from ..models.agent_model_characteristics import AgentModelCharacteristics
     from ..models.agent_model_settings import AgentModelSettings
-    from ..models.harness_model_characteristics import HarnessModelCharacteristics
 
 
 T = TypeVar("T", bound="AgentModel")
@@ -20,13 +20,12 @@ class AgentModel:
     """
     Attributes:
         model_key (str):
-        characteristics (HarnessModelCharacteristics | Unset): Resolved Harness characteristics of the active Agent
-            model.
+        characteristics (AgentModelCharacteristics | Unset): Agent-owned context policy layered over Model declarations.
         settings (AgentModelSettings | Unset):
     """
 
     model_key: str
-    characteristics: HarnessModelCharacteristics | Unset = UNSET
+    characteristics: AgentModelCharacteristics | Unset = UNSET
     settings: AgentModelSettings | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
@@ -56,18 +55,18 @@ class AgentModel:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+        from ..models.agent_model_characteristics import AgentModelCharacteristics
         from ..models.agent_model_settings import AgentModelSettings
-        from ..models.harness_model_characteristics import HarnessModelCharacteristics
 
         d = dict(src_dict)
         model_key = d.pop("model_key")
 
         _characteristics = d.pop("characteristics", UNSET)
-        characteristics: HarnessModelCharacteristics | Unset
+        characteristics: AgentModelCharacteristics | Unset
         if isinstance(_characteristics, Unset):
             characteristics = UNSET
         else:
-            characteristics = HarnessModelCharacteristics.from_dict(_characteristics)
+            characteristics = AgentModelCharacteristics.from_dict(_characteristics)
 
         _settings = d.pop("settings", UNSET)
         settings: AgentModelSettings | Unset

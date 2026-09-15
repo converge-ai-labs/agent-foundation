@@ -6,7 +6,7 @@ from typing import Any
 import httpx2
 from pydantic_ai.providers.openrouter import OpenRouterProvider
 
-from ..descriptions import positive_token_limit
+from ..candidates import positive_token_limit
 from ..domain import ModelCandidate, ModelLimits, ModelProfile
 from ..service_common import ModelError
 from ..settings import JsonObject, settings_schema, validate_settings
@@ -32,13 +32,13 @@ def _build_provider(
 
 
 class OpenRouterDiscovery(OpenAIModelDiscovery):
-    def describe(
+    def candidate(
         self, model_api: str, upstream_model: str, display_name: str | None, metadata: Mapping[str, Any]
     ) -> ModelCandidate:
-        result = super().describe(model_api, upstream_model, display_name, metadata)
+        result = super().candidate(model_api, upstream_model, display_name, metadata)
         schema = settings_schema(model_api)
         support = dict(result.parameter_support)
-        profile = ModelProfile()
+        profile_values: dict[str, object] = {}
         defaults: JsonObject = {}
         parameters = metadata.get("supported_parameters")
         if isinstance(parameters, list):
@@ -47,17 +47,19 @@ class OpenRouterDiscovery(OpenAIModelDiscovery):
                     support[f"/{name}"] = "supported"
                 elif name not in {"extra_headers", "extra_body", "timeout", "thinking", "service_tier"}:
                     support[f"/{name}"] = "supported" if _outbound_parameter(name) in parameters else "unsupported"
-            architecture = metadata.get("architecture")
-            modalities = architecture.get("input_modalities") if isinstance(architecture, Mapping) else None
-            profile = ModelProfile(
-                input_modalities=tuple(v for v in modalities if v in ("text", "image", "audio", "video"))
-                if isinstance(modalities, list)
-                else None,
+            profile_values.update(
                 supports_tools="tools" in parameters,
                 supports_json_schema_output="structured_outputs" in parameters,
                 supports_json_object_output="response_format" in parameters,
                 supports_thinking="reasoning" in parameters,
             )
+        architecture = metadata.get("architecture")
+        modalities = architecture.get("input_modalities") if isinstance(architecture, Mapping) else None
+        if isinstance(modalities, list):
+            profile_values["input_modalities"] = tuple(
+                value for value in modalities if value in ("text", "image", "audio", "video")
+            )
+        profile = ModelProfile.model_validate(profile_values)
         top_provider = metadata.get("top_provider")
         limits = ModelLimits(
             context_window_tokens=positive_token_limit(metadata.get("context_length")),
@@ -93,6 +95,7 @@ INTEGRATION = ProviderIntegration(
     build_provider=_build_provider,
     endpoint="https://openrouter.ai/api/v1",
     model_discovery=OpenRouterDiscovery(bearer_models_request, ModelListSchema("data", "id", ("name",))),
+    model_profile=OpenRouterProvider.model_profile,
 )
 
 

@@ -5,17 +5,17 @@ from typing import Any, cast
 
 import httpcore2
 import pytest
+from a13n_harness import RunBindings
 from a13n_harness.capabilities import (
     DocumentConversionRequest,
-    DocumentsRunCapability,
+    WebBinding,
     WebProviderError,
-    WebRunCapability,
 )
 from a13n_harness_ui.capability_runtime import (
     LocalDocumentConverter,
     PublicWebPolicy,
     _PinnedNetworkBackend,
-    production_run_capabilities,
+    production_run_bindings,
 )
 from openpyxl import Workbook
 
@@ -77,11 +77,96 @@ async def test_local_document_converter_converts_a_real_workbook() -> None:
 
 
 def test_production_capabilities_bind_only_required_fresh_collaborators() -> None:
-    none = production_run_capabilities(frozenset())
-    web = production_run_capabilities(frozenset({"a13n.web"}))
-    documents = production_run_capabilities(frozenset({"a13n.documents"}))
+    baseline = RunBindings.embedded()
+    none = production_run_bindings(baseline, frozenset())
+    web = production_run_bindings(baseline, frozenset({"a13n.web"}))
+    documents = production_run_bindings(baseline, frozenset({"a13n.documents"}))
 
-    assert none == ()
-    assert len(web) == 1 and isinstance(web[0], WebRunCapability)
-    assert len(documents) == 1 and isinstance(documents[0], DocumentsRunCapability)
-    assert web[0] is not production_run_capabilities(frozenset({"a13n.web"}))[0]
+    assert none is baseline
+    assert isinstance(web.web, WebBinding) and web.document_converter is None
+    assert isinstance(documents.document_converter, LocalDocumentConverter) and documents.web is None
+    assert web.web is not production_run_bindings(baseline, frozenset({"a13n.web"})).web
+    assert web.instance is baseline.instance and documents.instance is baseline.instance
+
+
+async def test_existing_web_yaml_runs_host_scrape_with_search_off(monkeypatch: pytest.MonkeyPatch) -> None:
+    import yaml
+    from a13n_harness import AgentSpec, HarnessBuilder
+    from a13n_harness.capabilities import WebCapability, WebResponse
+    from a13n_harness_ui.capability_runtime import HttpxWebClient
+    from a13n_harness_ui.configuration.models import AgentResource
+    from a13n_harness_ui.extensions import HarnessUiExtensionCatalog
+    from pydantic_ai.messages import ToolReturnPart
+    from pydantic_ai.models.function import DeltaToolCall, FunctionModel
+
+    selections = yaml.safe_load("""
+- capability: web
+  configuration:
+    search:
+      mode: 'off'
+    scrape:
+      mode: host
+""")
+    resource = AgentResource.model_validate(
+        {
+            "schema_version": "1",
+            "kind": "agent",
+            "id": "agent-legacy-web",
+            "name": "Legacy Web",
+            "capabilities": selections,
+        }
+    )
+    selected = HarnessUiExtensionCatalog().capabilities(
+        tuple((item.capability, item.configuration) for item in resource.capabilities)
+    )
+    capability = selected[0].capability
+    assert isinstance(capability, WebCapability)
+    assert capability.configuration.search.mode == "off"
+    assert capability.configuration.scrape.mode == "host"
+    assert resource.model_dump(mode="json")["capabilities"] == selections
+    requests = []
+    closed = []
+
+    async def body():
+        yield b"<html><body><h1>Legacy configuration works</h1></body></html>"
+
+    async def close():
+        closed.append(True)
+
+    async def request(self, request, *, policy):
+        requests.append(request)
+        return WebResponse(
+            status_code=200,
+            final_url=request.url,
+            canonical_url=request.url,
+            headers={"content-type": "text/html"},
+            body=body(),
+            _close=close,
+        )
+
+    monkeypatch.setattr(HttpxWebClient, "request", request)
+
+    async def model(messages, info):
+        assert {tool.name for tool in info.function_tools} == {"scrape", "fetch", "download"}
+        assert not info.model_request_parameters.native_tools
+        returns = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
+        if not returns:
+            yield {
+                0: DeltaToolCall(
+                    name="scrape", json_args='{"url":"https://example.com/article"}', tool_call_id="scrape-1"
+                )
+            }
+        else:
+            assert "Legacy configuration works" in str(returns[-1].content)
+            yield "done"
+
+    executable = HarnessBuilder().build(
+        AgentSpec(), output_type=str, model=FunctionModel(stream_function=model), capabilities=(capability,)
+    )
+    result = await executable.run(
+        "Read the page",
+        bindings=production_run_bindings(RunBindings.embedded(), frozenset({"a13n.web"})),
+    )
+    assert result.output_or_raise() == "done"
+    assert len(requests) == 1 and requests[0].purpose == "scrape"
+    assert closed == [True]

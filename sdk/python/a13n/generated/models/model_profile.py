@@ -13,7 +13,7 @@ T = TypeVar("T", bound="ModelProfile")
 
 @_attrs_define(repr=False)
 class ModelProfile:
-    """Read-only Provider capability information returned by discovery and description.
+    """Read-only Provider capability information returned by discovery.
 
     Attributes:
         input_modalities (list[ModelProfileInputModalitiesType0Item] | None | Unset):

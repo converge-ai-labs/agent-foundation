@@ -2,7 +2,7 @@ import { ManageProvidersLink } from "../providers/manage-link";
 import { ResourceReference } from "../../shared/resource-reference";
 import { ConnectionTest } from "./connection-test";
 import { ProviderIcon } from "../../shared/provider-icon";
-import { apiLabel, suggestedKey } from "./model-options";
+import { suggestedKey } from "./model-options";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
@@ -104,8 +104,8 @@ export function ModelForm({
     (item) => item.type === selectedProvider?.type,
   );
   const callingApi = modelApiKey || definition?.default_model_api || "";
-  const catalog = useQuery({
-    queryKey: ["model-catalog", scope.kind, scope.id, provider],
+  const discovery = useQuery({
+    queryKey: ["model-discovery", scope.kind, scope.id, provider],
     queryFn: () => api.discover(provider),
     enabled:
       !!provider &&
@@ -118,9 +118,9 @@ export function ModelForm({
     const timer = setTimeout(() => setSettledUpstream(upstream.trim()), 400);
     return () => clearTimeout(timer);
   }, [upstream]);
-  const describe = useQuery({
+  const suggestions = useQuery({
     queryKey: [
-      "model-description",
+      "model-catalog-suggestions",
       scope.kind,
       scope.id,
       provider,
@@ -128,19 +128,25 @@ export function ModelForm({
       callingApi,
     ],
     queryFn: () =>
-      api.describe(provider, {
+      api.suggestions({
+        provider_id: provider,
         upstream_model: settledUpstream,
         model_api: callingApi || undefined,
       }),
     enabled:
+      !original &&
       !!provider &&
       !!settledUpstream &&
       !!callingApi &&
       settledUpstream === upstream.trim(),
     retry: false,
   });
-  const metadata =
-    settledUpstream === upstream.trim() ? describe.data : undefined;
+  const currentSuggestions =
+    settledUpstream === upstream.trim() ? suggestions.data?.items : undefined;
+  const suggestion =
+    currentSuggestions?.length === 1 ? currentSuggestions[0] : undefined;
+  const callingApiLabel =
+    definition?.model_api_labels[callingApi] ?? callingApi;
   function chooseUpstream(
     value: string,
     suggestion?: Schema["ModelCandidate"],
@@ -173,7 +179,8 @@ export function ModelForm({
       let settings: ReturnType<typeof jsonObject>;
       try {
         settings = jsonObject(settingsText);
-        if (metadata) validateSettings(metadata.settings_schema, settings);
+        if (definition)
+          validateSettings(definition.settings_schemas[callingApi], settings);
         setParameterError(undefined);
       } catch (error) {
         setParameterError(
@@ -188,6 +195,17 @@ export function ModelForm({
         settings,
         description: description || null,
         enabled,
+        ...(original
+          ? {
+              base_model: original.value.base_model,
+              declarations: original.value.declarations,
+            }
+          : suggestion
+            ? {
+                base_model: suggestion.base_model,
+                declarations: suggestion.declarations,
+              }
+            : {}),
       };
       if (!original)
         return api.createModel({ ...body, key, provider_id: provider });
@@ -354,9 +372,9 @@ export function ModelForm({
       <div className={styles.twoColumns}>
         {!original && !manual && definition?.supports_model_discovery ? (
           <div className={styles.stack}>
-            {catalog.isPending ? (
+            {discovery.isPending ? (
               <Loading variant="list" rows={3} />
-            ) : catalog.data?.items.length ? (
+            ) : discovery.data?.items.length ? (
               <FormField label={t("Model")}>
                 <SearchPicker
                   label={t("Model")}
@@ -368,7 +386,7 @@ export function ModelForm({
                   onValueChange={(value) =>
                     chooseUpstream(
                       value,
-                      catalog.data?.items.find(
+                      discovery.data?.items.find(
                         (item) => item.upstream_model === value,
                       ),
                     )
@@ -376,7 +394,7 @@ export function ModelForm({
                   groups={[
                     {
                       label: t("Models"),
-                      options: catalog.data.items.map((item) => ({
+                      options: discovery.data.items.map((item) => ({
                         value: item.upstream_model,
                         label: item.display_name ?? item.upstream_model,
                         description:
@@ -394,8 +412,8 @@ export function ModelForm({
                 {t("Catalog unavailable. Enter a model ID to continue.")}
               </p>
             )}
-            {(catalog.error ||
-              (!catalog.data?.items.length && !catalog.isPending)) && (
+            {(discovery.error ||
+              (!discovery.data?.items.length && !discovery.isPending)) && (
               <Button
                 type="button"
                 variant="ghost"
@@ -429,7 +447,7 @@ export function ModelForm({
             options={
               definition?.supported_model_apis.map((value) => ({
                 value,
-                label: apiLabel(value),
+                label: definition.model_api_labels[value] ?? value,
               })) ?? []
             }
           />
@@ -482,10 +500,7 @@ export function ModelForm({
         </>
       )}
       {original ? (
-        <DisclosureSection
-          title={t("Connection")}
-          summary={apiLabel(callingApi)}
-        >
+        <DisclosureSection title={t("Connection")} summary={callingApiLabel}>
           {connectionFields}
         </DisclosureSection>
       ) : (
@@ -501,11 +516,7 @@ export function ModelForm({
             setParameterError(undefined);
           }}
           error={parameterError}
-          schema={
-            metadata?.settings_schema ??
-            catalog.data?.settings_schemas[callingApi]
-          }
-          support={metadata?.parameter_support}
+          schema={definition?.settings_schemas[callingApi]}
         />
       </section>
       <ErrorNotice

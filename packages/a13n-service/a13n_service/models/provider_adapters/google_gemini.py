@@ -7,7 +7,7 @@ import httpx2
 from google.genai import Client
 from pydantic_ai.providers.google import GoogleProvider
 
-from ..descriptions import positive_token_limit
+from ..candidates import positive_token_limit
 from ..domain import ModelCandidate, ModelLimits
 from .base import (
     DiscoveredModelIdentity,
@@ -60,10 +60,10 @@ class GeminiDiscovery(JsonModelDiscoveryAdapter):
             return {"pageToken": token}
         return super().next_page(payload)
 
-    def describe(
+    def candidate(
         self, model_api: str, upstream_model: str, display_name: str | None, metadata: Mapping[str, Any]
     ) -> ModelCandidate:
-        result = super().describe(model_api, upstream_model, display_name, metadata)
+        result = super().candidate(model_api, upstream_model, display_name, metadata)
         limits = ModelLimits(
             context_window_tokens=positive_token_limit(metadata.get("inputTokenLimit")),
             max_output_tokens=positive_token_limit(metadata.get("outputTokenLimit")),
@@ -88,4 +88,5 @@ INTEGRATION = ProviderIntegration(
             identifier_prefix="models/",
         ),
     ),
+    model_profile=GoogleProvider.model_profile,
 )

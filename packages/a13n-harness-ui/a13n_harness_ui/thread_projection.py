@@ -358,7 +358,9 @@ class ThreadProjectionService:
         return ContextUsageView(
             thread_id=thread_id,
             latest_request_tokens=latest,
-            context_window=None if model.model_characteristics is None else model.model_characteristics.context_window,
+            context_window=(
+                None if model.model_characteristics is None else model.model_characteristics.context_window_tokens
+            ),
             model_id=model.model_id,
             thinking=thinking if isinstance(thinking, (str, bool)) else None,
         )

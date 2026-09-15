@@ -6,7 +6,7 @@ import json
 import os
 from collections.abc import AsyncGenerator, AsyncIterator, Sequence
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from decimal import Decimal
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -46,7 +46,6 @@ from a13n_harness.capabilities import (
 from a13n_harness.environment import (
     DynamicEnvironmentCapability,
     DynamicEnvironmentConfiguration,
-    FileMediaUnderstandingRunCapability,
 )
 from a13n_harness.environment.advanced import EmptyEnvironmentRuntime
 from a13n_harness.pricing import (
@@ -554,12 +553,7 @@ async def _run_scenario(
     if scenario == "subagent":
         executable = _build_subagent_scenario(instrumentation)
         bindings = await _subagent_bindings()
-        bindings = RunBindings(
-            instance=bindings.instance,
-            environment=bindings.environment,
-            capabilities=bindings.capabilities,
-            observation=observation,
-        )
+        bindings = replace(bindings, observation=observation)
     elif scenario == "view":
         workspace = TemporaryDirectory(prefix="observation-demo-")
         root = Path(workspace.name)
@@ -572,10 +566,8 @@ async def _run_scenario(
                 agent_instance_id="observation-view-instance",
                 actor="observation-demo-host",
             ),
-            capabilities=(
-                InvocationPolicyCapability(evaluator=_AllowInvocations(), max_dispatch_retries=0),
-                FileMediaUnderstandingRunCapability(provider=_media_provider()),
-            ),
+            capabilities=(InvocationPolicyCapability(evaluator=_AllowInvocations(), max_dispatch_retries=0),),
+            file_media_understanding=_media_provider(),
             observation=observation,
         )
     else:

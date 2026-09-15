@@ -29,4 +29,5 @@ INTEGRATION = ProviderIntegration(
     build_provider=_build_provider,
     endpoint="https://open.bigmodel.cn/api/paas/v4",
     model_discovery=openai_style_discovery(bearer_models_request),
+    model_profile=ZaiProvider.model_profile,
 )

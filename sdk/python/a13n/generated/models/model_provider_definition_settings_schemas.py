@@ -7,17 +7,17 @@ from attrs import define as _attrs_define
 from attrs import field as _attrs_field
 
 if TYPE_CHECKING:
-    from ..models.model_discovery_settings_schemas_additional_property import (
-        ModelDiscoverySettingsSchemasAdditionalProperty,
+    from ..models.model_provider_definition_settings_schemas_additional_property import (
+        ModelProviderDefinitionSettingsSchemasAdditionalProperty,
     )
 
 
-T = TypeVar("T", bound="ModelDiscoverySettingsSchemas")
+T = TypeVar("T", bound="ModelProviderDefinitionSettingsSchemas")
 
 
 @_attrs_define(repr=False)
-class ModelDiscoverySettingsSchemas:
-    additional_properties: dict[str, ModelDiscoverySettingsSchemasAdditionalProperty] = _attrs_field(
+class ModelProviderDefinitionSettingsSchemas:
+    additional_properties: dict[str, ModelProviderDefinitionSettingsSchemasAdditionalProperty] = _attrs_field(
         init=False, factory=dict
     )
 
@@ -31,30 +31,30 @@ class ModelDiscoverySettingsSchemas:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.model_discovery_settings_schemas_additional_property import (
-            ModelDiscoverySettingsSchemasAdditionalProperty,
+        from ..models.model_provider_definition_settings_schemas_additional_property import (
+            ModelProviderDefinitionSettingsSchemasAdditionalProperty,
         )
 
         d = dict(src_dict)
-        model_discovery_settings_schemas = cls()
+        model_provider_definition_settings_schemas = cls()
 
         additional_properties = {}
         for prop_name, prop_dict in d.items():
-            additional_property = ModelDiscoverySettingsSchemasAdditionalProperty.from_dict(prop_dict)
+            additional_property = ModelProviderDefinitionSettingsSchemasAdditionalProperty.from_dict(prop_dict)
 
             additional_properties[prop_name] = additional_property
 
-        model_discovery_settings_schemas.additional_properties = additional_properties
-        return model_discovery_settings_schemas
+        model_provider_definition_settings_schemas.additional_properties = additional_properties
+        return model_provider_definition_settings_schemas
 
     @property
     def additional_keys(self) -> list[str]:
         return list(self.additional_properties.keys())
 
-    def __getitem__(self, key: str) -> ModelDiscoverySettingsSchemasAdditionalProperty:
+    def __getitem__(self, key: str) -> ModelProviderDefinitionSettingsSchemasAdditionalProperty:
         return self.additional_properties[key]
 
-    def __setitem__(self, key: str, value: ModelDiscoverySettingsSchemasAdditionalProperty) -> None:
+    def __setitem__(self, key: str, value: ModelProviderDefinitionSettingsSchemasAdditionalProperty) -> None:
         self.additional_properties[key] = value
 
     def __delitem__(self, key: str) -> None:

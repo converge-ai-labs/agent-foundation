@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from a13n_harness import HarnessModelCharacteristics
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_service.connectivity.selection_resolution import (
@@ -36,6 +35,7 @@ from ..errors import (
     map_authorization_error,
     map_model_error,
 )
+from ..model_characteristics import compose_model_characteristics
 from ..toolsets import web_selection
 from .contracts import (
     AgentSelectorKind,
@@ -173,9 +173,14 @@ class AgentInvocationFreezer:
             "resolved_model": EffectiveAgentModel(
                 execution=execution,
                 settings=effective_settings(
-                    execution.model_api, prepared.model.resource.settings, prepared.merged.model.settings
+                    execution.model_api,
+                    prepared.model.resource.settings,
+                    *prepared.model.settings_layers,
                 ),
-                characteristics=prepared.merged.model.characteristics,
+                characteristics=compose_model_characteristics(
+                    prepared.model.resource.declarations,
+                    prepared.merged.model.characteristics,
+                ),
             ),
             "toolsets": prepared.merged.toolsets,
             "reviewer": prepared.merged.reviewer,
@@ -185,9 +190,9 @@ class AgentInvocationFreezer:
                     settings=effective_settings(
                         reviewer_execution.model_api,
                         prepared.reviewer_model.resource.settings,
-                        prepared.merged.reviewer.model_settings or {},
+                        *prepared.reviewer_model.settings_layers,
                     ),
-                    characteristics=HarnessModelCharacteristics(),
+                    characteristics=compose_model_characteristics(prepared.reviewer_model.resource.declarations),
                 )
                 if reviewer_execution is not None
                 and prepared.reviewer_model is not None

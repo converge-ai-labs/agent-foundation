@@ -18,10 +18,9 @@ async def test_real_model_management_and_tool_grounded_structured_output(configu
     assert (await journey.post(provider_path + "/test", {}, expected=200))["success"]
     catalog = await journey.post(provider_path + "/discover-models", {}, expected=200)
     assert any(item["upstream_model"] == model["upstream_model"] for item in catalog["items"])
-    described = await journey.post(
-        provider_path + "/describe-model", {"upstream_model": model["upstream_model"]}, expected=200
-    )
-    assert described["settings_schema"]
+    definitions = await journey.live.collection("/api/v1/model-provider-types")
+    definition = next(item for item in definitions if item["type"] == before["type"])
+    assert definition["settings_schemas"][model["model_api"]]
     assert (await journey.post(journey.base + "/models/" + model["id"] + "/test", {}, expected=200))["success"]
     assert await journey.live.request("GET", provider_path) == before
     schema = {

@@ -19,5 +19,5 @@ async def test_environment_tool_writes_and_reads_file(live):
     assert_stream(events, run["id"])
     assert any(event.kind == "agui.tool_call_start" for event in events)
     assert any(event.kind == "agui.tool_call_result" for event in events)
-    items = await live.collection(f"/api/v1/runs/{run['id']}/items")
+    items = await live.retained_items(run["id"])
     assert any(item["kind"] == "tool_call" and item["state"] == "completed" for item in items)

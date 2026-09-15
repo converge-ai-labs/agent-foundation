@@ -55,7 +55,7 @@ async def test_agent_revision_and_invocation_use_connectivity_resolver(
             "model": {
                 "model_key": MODEL_KEY,
                 "settings": {},
-                "characteristics": {"context_window": 128000},
+                "characteristics": {"context_window_tokens": 128000},
             },
             "input_adapter": {"adapter_key": "native"},
             "reviewer": {"model": MODEL_ID},

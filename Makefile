@@ -77,6 +77,7 @@ examples-smoke: examples-sync ## Run every offline example path
 	@(cd examples/plugins && uv run --locked plugin-example-environment-extension-code)
 	@(cd examples/plugins && uv run --locked plugin-example-harness-entrypoint)
 	@(cd examples/plugins && uv run --locked plugin-example-harness-code)
+	@(cd examples/plugins && uv run --locked python -m a13n_plugin_examples.demo_web)
 	@workspace_dir=$$(mktemp -d); trap 'rm -rf "$$workspace_dir"' EXIT; \
 		(cd examples/environment-provider && uv run --locked environment-provider-example direct-local --workspace "$$workspace_dir")
 	@state_dir=$$(mktemp -d); trap 'rm -rf "$$state_dir"' EXIT; \
@@ -170,7 +171,7 @@ live-test-local: sync ## Run first-round HTTP journeys with owned Docker depende
 	@uv run --locked python -m dev.live_tests.isolated $(LIVE_TEST_ARGS)
 
 .PHONY: live-test-ci live-test-ci-environment-build
-live-test-ci: sync ## Run a reviewed account-free suite manually (suite=core|functional|control|fork-queue|run-faults|environment-native|environment-service)
+live-test-ci: sync ## Run reviewed live journeys (suite=smoke|core|functional|control|fork-queue|run-faults|environment-native|environment-service; LIVE_TEST_ARGS selects infrastructure)
 	@uv run --locked python -m dev.live_tests.ci $(suite) $(LIVE_TEST_ARGS)
 
 live-test-ci-environment-build: image-sandbox ## Build the native daemon and fixture images for the manual Environment matrices

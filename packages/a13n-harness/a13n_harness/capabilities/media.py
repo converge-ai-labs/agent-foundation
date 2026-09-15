@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Literal, Protocol, runtime_checkable
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -22,7 +22,6 @@ from a13n_harness.toolsets.media import MediaToolset
 from a13n_harness.usage import ProviderUsage
 
 MEDIA_CAPABILITY_ID = "a13n.media"
-MEDIA_RUN_CAPABILITY_ID = "a13n.media.run"
 _MEDIA_TOOLSET_ID = "a13n-media-tools"
 
 type MediaKind = Literal["image", "video", "audio"]
@@ -124,20 +123,6 @@ class MediaConfiguration(BaseModel):
         return self.max_audio_bytes
 
 
-@dataclass(kw_only=True)
-class MediaRunCapability(AbstractCapability[AgentContext]):
-    """Fresh run attachment carrying media transport authority."""
-
-    id: str | None = MEDIA_RUN_CAPABILITY_ID
-    reader: MediaReader = field()
-
-    def __post_init__(self) -> None:
-        if self.id != MEDIA_RUN_CAPABILITY_ID:
-            raise ValueError(f"MediaRunCapability.id must be {MEDIA_RUN_CAPABILITY_ID!r}")
-        if not isinstance(self.reader, MediaReader):
-            raise TypeError("reader must implement MediaReader")
-
-
 @dataclass(init=False)
 class MediaCapability(AbstractCapability[AgentContext]):
     """Expose read_media while keeping transport and credentials run-scoped."""
@@ -167,7 +152,6 @@ class _MediaActiveCapability(MediaCapability):
     def __init__(self, configuration: MediaConfiguration, *, context: AgentContext) -> None:
         super().__init__(configuration)
         self._context = context
-        self._reader: MediaReader | None = None
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
         if ctx.deps is not self._context:
@@ -188,20 +172,10 @@ class _MediaActiveCapability(MediaCapability):
             raise DefinitionError(
                 "The finalized Media owner has an incompatible identity.", code="capability_scope_invalid"
             )
-        attachment = ctx.capabilities.get(MEDIA_RUN_CAPABILITY_ID)
-        if type(attachment) is not MediaRunCapability:
-            raise DefinitionError(
-                "MediaCapability requires one fresh MediaRunCapability.", code="media_binding_missing"
-            )
-        if MEDIA_RUN_CAPABILITY_ID not in ctx.deps._capability_provenance.run_ids:
-            raise DefinitionError(
-                "MediaRunCapability must originate from RunBindings.", code="capability_scope_invalid"
-            )
-        if self._reader is None:
-            self._reader = attachment.reader
-        elif self._reader is not attachment.reader:
-            raise DefinitionError("Media reader identity changed within one run.", code="capability_scope_invalid")
-        return self._reader
+        provider = ctx.deps.media_reader
+        if provider is None:
+            raise DefinitionError("MediaCapability requires RunBindings.media_reader.", code="media_binding_missing")
+        return provider
 
 
 def _main_media_type(value: str) -> str:
@@ -216,5 +190,4 @@ __all__ = [
     "MediaReadRequest",
     "MediaReader",
     "MediaResource",
-    "MediaRunCapability",
 ]

@@ -86,7 +86,7 @@ from a13n_harness.capabilities import WorkingStateCapability
 capabilities = (WorkingStateCapability(),)
 ```
 
-This embedded mode is useful for one process-local or state-resumed Agent. Provider mode replaces task storage with a fresh `TaskStateRunCapability`; the provider remains authoritative, while Harness events report bounded committed deltas.
+This embedded mode is useful for one process-local or state-resumed Agent. Provider mode replaces task storage with a fresh `TaskStateBinding` in `RunBindings.task_state`; the provider remains authoritative, while Harness events report bounded committed deltas.
 
 The Notes tools have explicit mutation semantics:
 

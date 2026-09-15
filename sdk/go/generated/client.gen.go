@@ -1637,6 +1637,36 @@ func (e ModelCapability) Valid() bool {
 	}
 }
 
+// Defines values for ModelCatalogMatchSource.
+const (
+	ModelCatalogMatchSourceAmbiguous  ModelCatalogMatchSource = "ambiguous"
+	ModelCatalogMatchSourceExact      ModelCatalogMatchSource = "exact"
+	ModelCatalogMatchSourceExplicit   ModelCatalogMatchSource = "explicit"
+	ModelCatalogMatchSourceNameTokens ModelCatalogMatchSource = "name_tokens"
+	ModelCatalogMatchSourceNone       ModelCatalogMatchSource = "none"
+	ModelCatalogMatchSourceNormalized ModelCatalogMatchSource = "normalized"
+)
+
+// Valid indicates whether the value is a known member of the ModelCatalogMatchSource enum.
+func (e ModelCatalogMatchSource) Valid() bool {
+	switch e {
+	case ModelCatalogMatchSourceAmbiguous:
+		return true
+	case ModelCatalogMatchSourceExact:
+		return true
+	case ModelCatalogMatchSourceExplicit:
+		return true
+	case ModelCatalogMatchSourceNameTokens:
+		return true
+	case ModelCatalogMatchSourceNone:
+		return true
+	case ModelCatalogMatchSourceNormalized:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ModelConnectionTestResultMayConsumeQuotaOrIncurCost.
 const (
 	True ModelConnectionTestResultMayConsumeQuotaOrIncurCost = true
@@ -1652,21 +1682,27 @@ func (e ModelConnectionTestResultMayConsumeQuotaOrIncurCost) Valid() bool {
 	}
 }
 
-// Defines values for ModelDescriptionParameterSupport.
+// Defines values for ModelDeclarationsThinkingEfforts.
 const (
-	ModelDescriptionParameterSupportSupported   ModelDescriptionParameterSupport = "supported"
-	ModelDescriptionParameterSupportUnknown     ModelDescriptionParameterSupport = "unknown"
-	ModelDescriptionParameterSupportUnsupported ModelDescriptionParameterSupport = "unsupported"
+	ModelDeclarationsThinkingEffortsHigh    ModelDeclarationsThinkingEfforts = "high"
+	ModelDeclarationsThinkingEffortsLow     ModelDeclarationsThinkingEfforts = "low"
+	ModelDeclarationsThinkingEffortsMedium  ModelDeclarationsThinkingEfforts = "medium"
+	ModelDeclarationsThinkingEffortsMinimal ModelDeclarationsThinkingEfforts = "minimal"
+	ModelDeclarationsThinkingEffortsXhigh   ModelDeclarationsThinkingEfforts = "xhigh"
 )
 
-// Valid indicates whether the value is a known member of the ModelDescriptionParameterSupport enum.
-func (e ModelDescriptionParameterSupport) Valid() bool {
+// Valid indicates whether the value is a known member of the ModelDeclarationsThinkingEfforts enum.
+func (e ModelDeclarationsThinkingEfforts) Valid() bool {
 	switch e {
-	case ModelDescriptionParameterSupportSupported:
+	case ModelDeclarationsThinkingEffortsHigh:
 		return true
-	case ModelDescriptionParameterSupportUnknown:
+	case ModelDeclarationsThinkingEffortsLow:
 		return true
-	case ModelDescriptionParameterSupportUnsupported:
+	case ModelDeclarationsThinkingEffortsMedium:
+		return true
+	case ModelDeclarationsThinkingEffortsMinimal:
+		return true
+	case ModelDeclarationsThinkingEffortsXhigh:
 		return true
 	default:
 		return false
@@ -2527,22 +2563,22 @@ func (e ToolReviewRuleOnFlagged) Valid() bool {
 
 // Defines values for ToolRiskLevel.
 const (
-	ExtraHigh ToolRiskLevel = "extra_high"
-	High      ToolRiskLevel = "high"
-	Low       ToolRiskLevel = "low"
-	Medium    ToolRiskLevel = "medium"
+	ToolRiskLevelExtraHigh ToolRiskLevel = "extra_high"
+	ToolRiskLevelHigh      ToolRiskLevel = "high"
+	ToolRiskLevelLow       ToolRiskLevel = "low"
+	ToolRiskLevelMedium    ToolRiskLevel = "medium"
 )
 
 // Valid indicates whether the value is a known member of the ToolRiskLevel enum.
 func (e ToolRiskLevel) Valid() bool {
 	switch e {
-	case ExtraHigh:
+	case ToolRiskLevelExtraHigh:
 		return true
-	case High:
+	case ToolRiskLevelHigh:
 		return true
-	case Low:
+	case ToolRiskLevelLow:
 		return true
-	case Medium:
+	case ToolRiskLevelMedium:
 		return true
 	default:
 		return false
@@ -3117,10 +3153,17 @@ type AgentInputSchemaVersion string
 
 // AgentModel defines model for AgentModel.
 type AgentModel struct {
-	// Characteristics Resolved Harness characteristics of the active Agent model.
-	Characteristics *HarnessModelCharacteristics `json:"characteristics,omitempty"`
-	ModelKey        string                       `json:"model_key"`
-	Settings        *map[string]JsonValue        `json:"settings,omitempty"`
+	// Characteristics Agent-owned context policy layered over Model declarations.
+	Characteristics *AgentModelCharacteristics `json:"characteristics,omitempty"`
+	ModelKey        string                     `json:"model_key"`
+	Settings        *map[string]JsonValue      `json:"settings,omitempty"`
+}
+
+// AgentModelCharacteristics Agent-owned context policy layered over Model declarations.
+type AgentModelCharacteristics struct {
+	CompactThreshold                    *float32                   `json:"compact_threshold,omitempty"`
+	ContextWindowTokens                 nullable.Nullable[int]     `json:"context_window_tokens,omitempty"`
+	ProactiveContextManagementThreshold nullable.Nullable[float32] `json:"proactive_context_management_threshold,omitempty"`
 }
 
 // AgentReviewer Reviewer selected by immutable managed Model ID, never a provider route.
@@ -3356,6 +3399,18 @@ type AuthorizationActionType string
 // AuthorizationRedirect defines model for AuthorizationRedirect.
 type AuthorizationRedirect struct {
 	Url string `json:"url"`
+}
+
+// BaseModelCandidate defines model for BaseModelCandidate.
+type BaseModelCandidate struct {
+	BaseModel        string                    `json:"base_model"`
+	InferredModelApi nullable.Nullable[string] `json:"inferred_model_api"`
+	ModelApiLabel    nullable.Nullable[string] `json:"model_api_label"`
+}
+
+// BaseModelCandidateCollection defines model for BaseModelCandidateCollection.
+type BaseModelCandidateCollection struct {
+	Items []BaseModelCandidate `json:"items"`
 }
 
 // BinaryContent defines model for BinaryContent.
@@ -3824,10 +3879,14 @@ type CreateModelProviderRequest struct {
 
 // CreateModelRequest defines model for CreateModelRequest.
 type CreateModelRequest struct {
+	BaseModel nullable.Nullable[string] `json:"base_model,omitempty"`
+
+	// Declarations Harness-facing facts and authoring choices declared for one saved Model.
+	Declarations  *ModelDeclarations        `json:"declarations,omitempty"`
 	Description   nullable.Nullable[string] `json:"description,omitempty"`
 	Enabled       *bool                     `json:"enabled,omitempty"`
 	Key           string                    `json:"key"`
-	ModelApi      string                    `json:"model_api"`
+	ModelApi      nullable.Nullable[string] `json:"model_api,omitempty"`
 	Name          string                    `json:"name"`
 	ProviderId    string                    `json:"provider_id"`
 	Settings      *map[string]JsonValue     `json:"settings,omitempty"`
@@ -3957,12 +4016,6 @@ type DelegationContextPolicyTaskState string
 // DeleteQueuedSubmissionRequest defines model for DeleteQueuedSubmissionRequest.
 type DeleteQueuedSubmissionRequest struct {
 	ExpectedVersion int `json:"expected_version"`
-}
-
-// DescribeModelRequest defines model for DescribeModelRequest.
-type DescribeModelRequest struct {
-	ModelApi      nullable.Nullable[string] `json:"model_api,omitempty"`
-	UpstreamModel string                    `json:"upstream_model"`
 }
 
 // DeveloperMessage A developer message.
@@ -4226,14 +4279,6 @@ type GrantRoleKey string
 // HTTPValidationError defines model for HTTPValidationError.
 type HTTPValidationError struct {
 	Detail *[]ValidationError `json:"detail,omitempty"`
-}
-
-// HarnessModelCharacteristics Resolved Harness characteristics of the active Agent model.
-type HarnessModelCharacteristics struct {
-	Capabilities                        *[]ModelCapability         `json:"capabilities,omitempty"`
-	CompactThreshold                    *float32                   `json:"compact_threshold,omitempty"`
-	ContextWindow                       nullable.Nullable[int]     `json:"context_window,omitempty"`
-	ProactiveContextManagementThreshold nullable.Nullable[float32] `json:"proactive_context_management_threshold,omitempty"`
 }
 
 // HookSubscription defines model for HookSubscription.
@@ -4697,8 +4742,12 @@ type MemoryWrite struct {
 
 // Model defines model for Model.
 type Model struct {
-	CreatedAt      time.Time                 `json:"created_at"`
-	CreatedBy      PrincipalRef              `json:"created_by"`
+	BaseModel nullable.Nullable[string] `json:"base_model,omitempty"`
+	CreatedAt time.Time                 `json:"created_at"`
+	CreatedBy PrincipalRef              `json:"created_by"`
+
+	// Declarations Harness-facing facts and authoring choices declared for one saved Model.
+	Declarations   *ModelDeclarations        `json:"declarations,omitempty"`
 	Description    nullable.Nullable[string] `json:"description"`
 	Enabled        bool                      `json:"enabled"`
 	Id             string                    `json:"id"`
@@ -4716,11 +4765,14 @@ type Model struct {
 
 // ModelCandidate defines model for ModelCandidate.
 type ModelCandidate struct {
-	DisplayName      nullable.Nullable[string]                  `json:"display_name,omitempty"`
-	Limits           *ModelLimits                               `json:"limits,omitempty"`
+	DisplayName nullable.Nullable[string] `json:"display_name,omitempty"`
+	Limits      *ModelLimits              `json:"limits,omitempty"`
+
+	// NativeProfile Read-only Provider capability information returned by discovery.
+	NativeProfile    *ModelProfile                              `json:"native_profile,omitempty"`
 	ParameterSupport *map[string]ModelCandidateParameterSupport `json:"parameter_support,omitempty"`
 
-	// Profile Read-only Provider capability information returned by discovery and description.
+	// Profile Read-only Provider capability information returned by discovery.
 	Profile           *ModelProfile         `json:"profile,omitempty"`
 	SuggestedModelApi string                `json:"suggested_model_api"`
 	SuggestedSettings *map[string]JsonValue `json:"suggested_settings,omitempty"`
@@ -4732,6 +4784,33 @@ type ModelCandidateParameterSupport string
 
 // ModelCapability Harness-owned capabilities of the active Agent model.
 type ModelCapability string
+
+// ModelCatalogMatch defines model for ModelCatalogMatch.
+type ModelCatalogMatch struct {
+	Items  *[]ModelCatalogSuggestion `json:"items,omitempty"`
+	Source ModelCatalogMatchSource   `json:"source"`
+}
+
+// ModelCatalogMatchSource defines model for ModelCatalogMatch.Source.
+type ModelCatalogMatchSource string
+
+// ModelCatalogSuggestion defines model for ModelCatalogSuggestion.
+type ModelCatalogSuggestion struct {
+	BaseModel string `json:"base_model"`
+
+	// Declarations Harness-facing facts and authoring choices declared for one saved Model.
+	Declarations  ModelDeclarations         `json:"declarations"`
+	ModelApi      nullable.Nullable[string] `json:"model_api"`
+	ModelApiLabel nullable.Nullable[string] `json:"model_api_label"`
+}
+
+// ModelCatalogSuggestionRequest defines model for ModelCatalogSuggestionRequest.
+type ModelCatalogSuggestionRequest struct {
+	BaseModel     nullable.Nullable[string] `json:"base_model,omitempty"`
+	ModelApi      nullable.Nullable[string] `json:"model_api,omitempty"`
+	ProviderId    string                    `json:"provider_id"`
+	UpstreamModel string                    `json:"upstream_model"`
+}
 
 // ModelCollection defines model for ModelCollection.
 type ModelCollection struct {
@@ -4751,27 +4830,22 @@ type ModelConnectionTestResult struct {
 // ModelConnectionTestResultMayConsumeQuotaOrIncurCost defines model for ModelConnectionTestResult.MayConsumeQuotaOrIncurCost.
 type ModelConnectionTestResultMayConsumeQuotaOrIncurCost bool
 
-// ModelDescription defines model for ModelDescription.
-type ModelDescription struct {
-	DisplayName      nullable.Nullable[string]                    `json:"display_name,omitempty"`
-	Limits           *ModelLimits                                 `json:"limits,omitempty"`
-	ParameterSupport *map[string]ModelDescriptionParameterSupport `json:"parameter_support,omitempty"`
-
-	// Profile Read-only Provider capability information returned by discovery and description.
-	Profile           *ModelProfile          `json:"profile,omitempty"`
-	SettingsSchema    map[string]interface{} `json:"settings_schema"`
-	SuggestedModelApi string                 `json:"suggested_model_api"`
-	SuggestedSettings *map[string]JsonValue  `json:"suggested_settings,omitempty"`
-	UpstreamModel     string                 `json:"upstream_model"`
+// ModelDeclarations Harness-facing facts and authoring choices declared for one saved Model.
+type ModelDeclarations struct {
+	Capabilities        *[]ModelCapability                  `json:"capabilities,omitempty"`
+	ContextWindowTokens nullable.Nullable[int]              `json:"context_window_tokens,omitempty"`
+	MaxOutputTokens     nullable.Nullable[int]              `json:"max_output_tokens,omitempty"`
+	Pricing             nullable.Nullable[ModelPricing]     `json:"pricing,omitempty"`
+	StructuredOutput    nullable.Nullable[bool]             `json:"structured_output,omitempty"`
+	ThinkingEfforts     *[]ModelDeclarationsThinkingEfforts `json:"thinking_efforts,omitempty"`
 }
 
-// ModelDescriptionParameterSupport defines model for ModelDescription.ParameterSupport.
-type ModelDescriptionParameterSupport string
+// ModelDeclarationsThinkingEfforts defines model for ModelDeclarations.ThinkingEfforts.
+type ModelDeclarationsThinkingEfforts string
 
 // ModelDiscovery defines model for ModelDiscovery.
 type ModelDiscovery struct {
-	Items           []ModelCandidate                  `json:"items"`
-	SettingsSchemas map[string]map[string]interface{} `json:"settings_schemas"`
+	Items []ModelCandidate `json:"items"`
 }
 
 // ModelIdentity defines model for ModelIdentity.
@@ -4788,12 +4862,20 @@ type ModelLimits struct {
 
 // ModelOverride defines model for ModelOverride.
 type ModelOverride struct {
-	Characteristics nullable.Nullable[HarnessModelCharacteristics] `json:"characteristics,omitempty"`
-	ModelKey        nullable.Nullable[string]                      `json:"model_key,omitempty"`
-	Settings        nullable.Nullable[map[string]JsonValue]        `json:"settings,omitempty"`
+	Characteristics nullable.Nullable[AgentModelCharacteristics] `json:"characteristics,omitempty"`
+	ModelKey        nullable.Nullable[string]                    `json:"model_key,omitempty"`
+	Settings        nullable.Nullable[map[string]JsonValue]      `json:"settings,omitempty"`
 }
 
-// ModelProfile Read-only Provider capability information returned by discovery and description.
+// ModelPricing Editable USD prices per million tokens.
+type ModelPricing struct {
+	CacheRead  nullable.Nullable[float32] `json:"cache_read,omitempty"`
+	CacheWrite nullable.Nullable[float32] `json:"cache_write,omitempty"`
+	Input      nullable.Nullable[float32] `json:"input,omitempty"`
+	Output     nullable.Nullable[float32] `json:"output,omitempty"`
+}
+
+// ModelProfile Read-only Provider capability information returned by discovery.
 type ModelProfile struct {
 	InputModalities          nullable.Nullable[[]ModelProfileInputModalities] `json:"input_modalities,omitempty"`
 	SupportsAudioInput       nullable.Nullable[bool]                          `json:"supports_audio_input,omitempty"`
@@ -4833,13 +4915,15 @@ type ModelProviderCollection struct {
 
 // ModelProviderDefinition defines model for ModelProviderDefinition.
 type ModelProviderDefinition struct {
-	ConfigurationSchema    map[string]interface{} `json:"configuration_schema"`
-	CredentialSchema       map[string]interface{} `json:"credential_schema"`
-	DefaultModelApi        string                 `json:"default_model_api"`
-	DisplayName            string                 `json:"display_name"`
-	SupportedModelApis     []string               `json:"supported_model_apis"`
-	SupportsModelDiscovery bool                   `json:"supports_model_discovery"`
-	Type                   string                 `json:"type"`
+	ConfigurationSchema    map[string]interface{}            `json:"configuration_schema"`
+	CredentialSchema       map[string]interface{}            `json:"credential_schema"`
+	DefaultModelApi        string                            `json:"default_model_api"`
+	DisplayName            string                            `json:"display_name"`
+	ModelApiLabels         map[string]string                 `json:"model_api_labels"`
+	SettingsSchemas        map[string]map[string]interface{} `json:"settings_schemas"`
+	SupportedModelApis     []string                          `json:"supported_model_apis"`
+	SupportsModelDiscovery bool                              `json:"supports_model_discovery"`
+	Type                   string                            `json:"type"`
 }
 
 // ModelProviderDefinitionCollection defines model for ModelProviderDefinitionCollection.
@@ -5209,11 +5293,11 @@ type ReplaceTargetRequestTargetKind string
 
 // ResolvedAgentModel defines model for ResolvedAgentModel.
 type ResolvedAgentModel struct {
-	// Characteristics Resolved Harness characteristics of the active Agent model.
-	Characteristics HarnessModelCharacteristics `json:"characteristics"`
-	ModelId         string                      `json:"model_id"`
-	ModelKey        string                      `json:"model_key"`
-	Settings        map[string]JsonValue        `json:"settings"`
+	// Characteristics Agent-owned context policy layered over Model declarations.
+	Characteristics AgentModelCharacteristics `json:"characteristics"`
+	ModelId         string                    `json:"model_id"`
+	ModelKey        string                    `json:"model_key"`
+	Settings        map[string]JsonValue      `json:"settings"`
 }
 
 // ResolvedSkillBinding defines model for ResolvedSkillBinding.
@@ -6210,6 +6294,8 @@ type UpdateModelProviderRequest struct {
 
 // UpdateModelRequest defines model for UpdateModelRequest.
 type UpdateModelRequest struct {
+	BaseModel     nullable.Nullable[string]               `json:"base_model,omitempty"`
+	Declarations  nullable.Nullable[ModelDeclarations]    `json:"declarations,omitempty"`
 	Description   nullable.Nullable[string]               `json:"description,omitempty"`
 	Enabled       nullable.Nullable[bool]                 `json:"enabled,omitempty"`
 	ModelApi      nullable.Nullable[string]               `json:"model_api,omitempty"`
@@ -7551,14 +7637,14 @@ type PostOrganizationsOrganizationEnvironmentTemplatesJSONRequestBody = CreateTe
 // PostOrganizationsOrganizationInvitationsJSONRequestBody defines body for PostOrganizationsOrganizationInvitations for application/json ContentType.
 type PostOrganizationsOrganizationInvitationsJSONRequestBody = CreateInvitationRequest
 
+// PostOrganizationsOrganizationModelCatalogSuggestionsJSONRequestBody defines body for PostOrganizationsOrganizationModelCatalogSuggestions for application/json ContentType.
+type PostOrganizationsOrganizationModelCatalogSuggestionsJSONRequestBody = ModelCatalogSuggestionRequest
+
 // PostOrganizationsOrganizationModelProvidersJSONRequestBody defines body for PostOrganizationsOrganizationModelProviders for application/json ContentType.
 type PostOrganizationsOrganizationModelProvidersJSONRequestBody = CreateModelProviderRequest
 
 // PatchOrganizationsOrganizationModelProvidersProviderIdJSONRequestBody defines body for PatchOrganizationsOrganizationModelProvidersProviderId for application/json ContentType.
 type PatchOrganizationsOrganizationModelProvidersProviderIdJSONRequestBody = UpdateModelProviderRequest
-
-// PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelJSONRequestBody defines body for PostOrganizationsOrganizationModelProvidersProviderIdDescribeModel for application/json ContentType.
-type PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelJSONRequestBody = DescribeModelRequest
 
 // PostOrganizationsOrganizationModelsJSONRequestBody defines body for PostOrganizationsOrganizationModels for application/json ContentType.
 type PostOrganizationsOrganizationModelsJSONRequestBody = CreateModelRequest
@@ -7710,14 +7796,14 @@ type PostWorkspacesWorkspaceMemoriesSearchJSONRequestBody = MemorySearch
 // PutWorkspacesWorkspaceMemoriesMemoryIdJSONRequestBody defines body for PutWorkspacesWorkspaceMemoriesMemoryId for application/json ContentType.
 type PutWorkspacesWorkspaceMemoriesMemoryIdJSONRequestBody = MemoryWrite
 
+// PostWorkspacesWorkspaceModelCatalogSuggestionsJSONRequestBody defines body for PostWorkspacesWorkspaceModelCatalogSuggestions for application/json ContentType.
+type PostWorkspacesWorkspaceModelCatalogSuggestionsJSONRequestBody = ModelCatalogSuggestionRequest
+
 // PostWorkspacesWorkspaceModelProvidersJSONRequestBody defines body for PostWorkspacesWorkspaceModelProviders for application/json ContentType.
 type PostWorkspacesWorkspaceModelProvidersJSONRequestBody = CreateModelProviderRequest
 
 // PatchWorkspacesWorkspaceModelProvidersProviderIdJSONRequestBody defines body for PatchWorkspacesWorkspaceModelProvidersProviderId for application/json ContentType.
 type PatchWorkspacesWorkspaceModelProvidersProviderIdJSONRequestBody = UpdateModelProviderRequest
-
-// PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelJSONRequestBody defines body for PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModel for application/json ContentType.
-type PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelJSONRequestBody = DescribeModelRequest
 
 // PostWorkspacesWorkspaceModelsJSONRequestBody defines body for PostWorkspacesWorkspaceModels for application/json ContentType.
 type PostWorkspacesWorkspaceModelsJSONRequestBody = CreateModelRequest
@@ -12785,6 +12871,11 @@ type ClientInterface interface {
 	// Corresponds with POST /api/v1/auth/password-reset/complete (the `PostAuthPasswordResetComplete` operationId).
 	PostAuthPasswordResetComplete(ctx context.Context, body PostAuthPasswordResetCompleteJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetBaseModels List Base Models
+	//
+	// Corresponds with GET /api/v1/base-models (the `GetBaseModels` operationId).
+	GetBaseModels(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetConnectionAuthorizationsAuthorizationId Get Connection Authorization
 	//
 	// Corresponds with GET /api/v1/connection-authorizations/{authorization_id} (the `GetConnectionAuthorizationsAuthorizationId` operationId).
@@ -13448,6 +13539,20 @@ type ClientInterface interface {
 	// Corresponds with POST /api/v1/organizations/{organization}/invitations (the `PostOrganizationsOrganizationInvitations` operationId).
 	PostOrganizationsOrganizationInvitations(ctx context.Context, organization string, body PostOrganizationsOrganizationInvitationsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// PostOrganizationsOrganizationModelCatalogSuggestionsWithBody Suggest Organization Model Declarations
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v1/organizations/{organization}/model-catalog/suggestions (the `PostOrganizationsOrganizationModelCatalogSuggestions` operationId).
+	PostOrganizationsOrganizationModelCatalogSuggestionsWithBody(ctx context.Context, organization string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostOrganizationsOrganizationModelCatalogSuggestions Suggest Organization Model Declarations
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v1/organizations/{organization}/model-catalog/suggestions (the `PostOrganizationsOrganizationModelCatalogSuggestions` operationId).
+	PostOrganizationsOrganizationModelCatalogSuggestions(ctx context.Context, organization string, body PostOrganizationsOrganizationModelCatalogSuggestionsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetOrganizationsOrganizationModelProviders Organization List Model Providers
 	//
 	// Corresponds with GET /api/v1/organizations/{organization}/model-providers (the `GetOrganizationsOrganizationModelProviders` operationId).
@@ -13485,20 +13590,6 @@ type ClientInterface interface {
 	//
 	// Corresponds with PATCH /api/v1/organizations/{organization}/model-providers/{provider_id} (the `PatchOrganizationsOrganizationModelProvidersProviderId` operationId).
 	PatchOrganizationsOrganizationModelProvidersProviderId(ctx context.Context, organization string, providerId string, params *PatchOrganizationsOrganizationModelProvidersProviderIdParams, body PatchOrganizationsOrganizationModelProvidersProviderIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelWithBody Organization Describe Provider Model
-	//
-	// Takes any type of body and a specified content type.
-	//
-	// Corresponds with POST /api/v1/organizations/{organization}/model-providers/{provider_id}/describe-model (the `PostOrganizationsOrganizationModelProvidersProviderIdDescribeModel` operationId).
-	PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelWithBody(ctx context.Context, organization string, providerId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PostOrganizationsOrganizationModelProvidersProviderIdDescribeModel Organization Describe Provider Model
-	//
-	// Takes a body of the `application/json` content type.
-	//
-	// Corresponds with POST /api/v1/organizations/{organization}/model-providers/{provider_id}/describe-model (the `PostOrganizationsOrganizationModelProvidersProviderIdDescribeModel` operationId).
-	PostOrganizationsOrganizationModelProvidersProviderIdDescribeModel(ctx context.Context, organization string, providerId string, body PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostOrganizationsOrganizationModelProvidersProviderIdDiscoverModels Organization Discover Provider Models
 	//
@@ -14623,6 +14714,20 @@ type ClientInterface interface {
 	// Corresponds with PUT /api/v1/workspaces/{workspace}/memories/{memory_id} (the `PutWorkspacesWorkspaceMemoriesMemoryId` operationId).
 	PutWorkspacesWorkspaceMemoriesMemoryId(ctx context.Context, workspace string, memoryId string, params *PutWorkspacesWorkspaceMemoriesMemoryIdParams, body PutWorkspacesWorkspaceMemoriesMemoryIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// PostWorkspacesWorkspaceModelCatalogSuggestionsWithBody Suggest Workspace Model Declarations
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v1/workspaces/{workspace}/model-catalog/suggestions (the `PostWorkspacesWorkspaceModelCatalogSuggestions` operationId).
+	PostWorkspacesWorkspaceModelCatalogSuggestionsWithBody(ctx context.Context, workspace string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostWorkspacesWorkspaceModelCatalogSuggestions Suggest Workspace Model Declarations
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v1/workspaces/{workspace}/model-catalog/suggestions (the `PostWorkspacesWorkspaceModelCatalogSuggestions` operationId).
+	PostWorkspacesWorkspaceModelCatalogSuggestions(ctx context.Context, workspace string, body PostWorkspacesWorkspaceModelCatalogSuggestionsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetWorkspacesWorkspaceModelProviders List Model Providers
 	//
 	// Corresponds with GET /api/v1/workspaces/{workspace}/model-providers (the `GetWorkspacesWorkspaceModelProviders` operationId).
@@ -14660,20 +14765,6 @@ type ClientInterface interface {
 	//
 	// Corresponds with PATCH /api/v1/workspaces/{workspace}/model-providers/{provider_id} (the `PatchWorkspacesWorkspaceModelProvidersProviderId` operationId).
 	PatchWorkspacesWorkspaceModelProvidersProviderId(ctx context.Context, workspace string, providerId string, params *PatchWorkspacesWorkspaceModelProvidersProviderIdParams, body PatchWorkspacesWorkspaceModelProvidersProviderIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelWithBody Describe Provider Model
-	//
-	// Takes any type of body and a specified content type.
-	//
-	// Corresponds with POST /api/v1/workspaces/{workspace}/model-providers/{provider_id}/describe-model (the `PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModel` operationId).
-	PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelWithBody(ctx context.Context, workspace string, providerId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModel Describe Provider Model
-	//
-	// Takes a body of the `application/json` content type.
-	//
-	// Corresponds with POST /api/v1/workspaces/{workspace}/model-providers/{provider_id}/describe-model (the `PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModel` operationId).
-	PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModel(ctx context.Context, workspace string, providerId string, body PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PostWorkspacesWorkspaceModelProvidersProviderIdDiscoverModels Discover Provider Models
 	//
@@ -15448,6 +15539,21 @@ func (c *Client) PostAuthPasswordResetCompleteWithBody(ctx context.Context, cont
 // Corresponds with POST /api/v1/auth/password-reset/complete (the `PostAuthPasswordResetComplete` operationId).
 func (c *Client) PostAuthPasswordResetComplete(ctx context.Context, body PostAuthPasswordResetCompleteJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPostAuthPasswordResetCompleteRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetBaseModels List Base Models
+//
+// Corresponds with GET /api/v1/base-models (the `GetBaseModels` operationId).
+func (c *Client) GetBaseModels(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetBaseModelsRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -17171,6 +17277,40 @@ func (c *Client) PostOrganizationsOrganizationInvitations(ctx context.Context, o
 	return c.Client.Do(req)
 }
 
+// PostOrganizationsOrganizationModelCatalogSuggestionsWithBody Suggest Organization Model Declarations
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v1/organizations/{organization}/model-catalog/suggestions (the `PostOrganizationsOrganizationModelCatalogSuggestions` operationId).
+func (c *Client) PostOrganizationsOrganizationModelCatalogSuggestionsWithBody(ctx context.Context, organization string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostOrganizationsOrganizationModelCatalogSuggestionsRequestWithBody(c.Server, organization, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostOrganizationsOrganizationModelCatalogSuggestions Suggest Organization Model Declarations
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v1/organizations/{organization}/model-catalog/suggestions (the `PostOrganizationsOrganizationModelCatalogSuggestions` operationId).
+func (c *Client) PostOrganizationsOrganizationModelCatalogSuggestions(ctx context.Context, organization string, body PostOrganizationsOrganizationModelCatalogSuggestionsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostOrganizationsOrganizationModelCatalogSuggestionsRequest(c.Server, organization, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // GetOrganizationsOrganizationModelProviders Organization List Model Providers
 //
 // Corresponds with GET /api/v1/organizations/{organization}/model-providers (the `GetOrganizationsOrganizationModelProviders` operationId).
@@ -17259,40 +17399,6 @@ func (c *Client) PatchOrganizationsOrganizationModelProvidersProviderIdWithBody(
 // Corresponds with PATCH /api/v1/organizations/{organization}/model-providers/{provider_id} (the `PatchOrganizationsOrganizationModelProvidersProviderId` operationId).
 func (c *Client) PatchOrganizationsOrganizationModelProvidersProviderId(ctx context.Context, organization string, providerId string, params *PatchOrganizationsOrganizationModelProvidersProviderIdParams, body PatchOrganizationsOrganizationModelProvidersProviderIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPatchOrganizationsOrganizationModelProvidersProviderIdRequest(c.Server, organization, providerId, params, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelWithBody Organization Describe Provider Model
-//
-// Takes any type of body and a specified content type.
-//
-// Corresponds with POST /api/v1/organizations/{organization}/model-providers/{provider_id}/describe-model (the `PostOrganizationsOrganizationModelProvidersProviderIdDescribeModel` operationId).
-func (c *Client) PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelWithBody(ctx context.Context, organization string, providerId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostOrganizationsOrganizationModelProvidersProviderIdDescribeModelRequestWithBody(c.Server, organization, providerId, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// PostOrganizationsOrganizationModelProvidersProviderIdDescribeModel Organization Describe Provider Model
-//
-// Takes a body of the `application/json` content type.
-//
-// Corresponds with POST /api/v1/organizations/{organization}/model-providers/{provider_id}/describe-model (the `PostOrganizationsOrganizationModelProvidersProviderIdDescribeModel` operationId).
-func (c *Client) PostOrganizationsOrganizationModelProvidersProviderIdDescribeModel(ctx context.Context, organization string, providerId string, body PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostOrganizationsOrganizationModelProvidersProviderIdDescribeModelRequest(c.Server, organization, providerId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -20256,6 +20362,40 @@ func (c *Client) PutWorkspacesWorkspaceMemoriesMemoryId(ctx context.Context, wor
 	return c.Client.Do(req)
 }
 
+// PostWorkspacesWorkspaceModelCatalogSuggestionsWithBody Suggest Workspace Model Declarations
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v1/workspaces/{workspace}/model-catalog/suggestions (the `PostWorkspacesWorkspaceModelCatalogSuggestions` operationId).
+func (c *Client) PostWorkspacesWorkspaceModelCatalogSuggestionsWithBody(ctx context.Context, workspace string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostWorkspacesWorkspaceModelCatalogSuggestionsRequestWithBody(c.Server, workspace, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostWorkspacesWorkspaceModelCatalogSuggestions Suggest Workspace Model Declarations
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v1/workspaces/{workspace}/model-catalog/suggestions (the `PostWorkspacesWorkspaceModelCatalogSuggestions` operationId).
+func (c *Client) PostWorkspacesWorkspaceModelCatalogSuggestions(ctx context.Context, workspace string, body PostWorkspacesWorkspaceModelCatalogSuggestionsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostWorkspacesWorkspaceModelCatalogSuggestionsRequest(c.Server, workspace, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // GetWorkspacesWorkspaceModelProviders List Model Providers
 //
 // Corresponds with GET /api/v1/workspaces/{workspace}/model-providers (the `GetWorkspacesWorkspaceModelProviders` operationId).
@@ -20344,40 +20484,6 @@ func (c *Client) PatchWorkspacesWorkspaceModelProvidersProviderIdWithBody(ctx co
 // Corresponds with PATCH /api/v1/workspaces/{workspace}/model-providers/{provider_id} (the `PatchWorkspacesWorkspaceModelProvidersProviderId` operationId).
 func (c *Client) PatchWorkspacesWorkspaceModelProvidersProviderId(ctx context.Context, workspace string, providerId string, params *PatchWorkspacesWorkspaceModelProvidersProviderIdParams, body PatchWorkspacesWorkspaceModelProvidersProviderIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPatchWorkspacesWorkspaceModelProvidersProviderIdRequest(c.Server, workspace, providerId, params, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelWithBody Describe Provider Model
-//
-// Takes any type of body and a specified content type.
-//
-// Corresponds with POST /api/v1/workspaces/{workspace}/model-providers/{provider_id}/describe-model (the `PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModel` operationId).
-func (c *Client) PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelWithBody(ctx context.Context, workspace string, providerId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelRequestWithBody(c.Server, workspace, providerId, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModel Describe Provider Model
-//
-// Takes a body of the `application/json` content type.
-//
-// Corresponds with POST /api/v1/workspaces/{workspace}/model-providers/{provider_id}/describe-model (the `PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModel` operationId).
-func (c *Client) PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModel(ctx context.Context, workspace string, providerId string, body PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewPostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelRequest(c.Server, workspace, providerId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -22128,6 +22234,33 @@ func NewPostAuthPasswordResetCompleteRequestWithBody(server string, contentType 
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetBaseModelsRequest constructs an http.Request for the GetBaseModels method
+func NewGetBaseModelsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/base-models")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return req, nil
 }
@@ -25646,6 +25779,53 @@ func NewPostOrganizationsOrganizationInvitationsRequestWithBody(server string, o
 	return req, nil
 }
 
+// NewPostOrganizationsOrganizationModelCatalogSuggestionsRequest calls the generic PostOrganizationsOrganizationModelCatalogSuggestions builder with application/json body
+func NewPostOrganizationsOrganizationModelCatalogSuggestionsRequest(server string, organization string, body PostOrganizationsOrganizationModelCatalogSuggestionsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostOrganizationsOrganizationModelCatalogSuggestionsRequestWithBody(server, organization, "application/json", bodyReader)
+}
+
+// NewPostOrganizationsOrganizationModelCatalogSuggestionsRequestWithBody constructs an http.Request for the PostOrganizationsOrganizationModelCatalogSuggestions method, with any body, and a specified content type
+func NewPostOrganizationsOrganizationModelCatalogSuggestionsRequestWithBody(server string, organization string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "organization", organization, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/organizations/%s/model-catalog/suggestions", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewGetOrganizationsOrganizationModelProvidersRequest constructs an http.Request for the GetOrganizationsOrganizationModelProviders method
 func NewGetOrganizationsOrganizationModelProvidersRequest(server string, organization string, params *GetOrganizationsOrganizationModelProvidersParams) (*http.Request, error) {
 	var err error
@@ -25906,60 +26086,6 @@ func NewPatchOrganizationsOrganizationModelProvidersProviderIdRequestWithBody(se
 		req.Header.Set("If-Match", headerParam0)
 
 	}
-
-	return req, nil
-}
-
-// NewPostOrganizationsOrganizationModelProvidersProviderIdDescribeModelRequest calls the generic PostOrganizationsOrganizationModelProvidersProviderIdDescribeModel builder with application/json body
-func NewPostOrganizationsOrganizationModelProvidersProviderIdDescribeModelRequest(server string, organization string, providerId string, body PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewPostOrganizationsOrganizationModelProvidersProviderIdDescribeModelRequestWithBody(server, organization, providerId, "application/json", bodyReader)
-}
-
-// NewPostOrganizationsOrganizationModelProvidersProviderIdDescribeModelRequestWithBody constructs an http.Request for the PostOrganizationsOrganizationModelProvidersProviderIdDescribeModel method, with any body, and a specified content type
-func NewPostOrganizationsOrganizationModelProvidersProviderIdDescribeModelRequestWithBody(server string, organization string, providerId string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "organization", organization, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider_id", providerId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/organizations/%s/model-providers/%s/describe-model", pathParam0, pathParam1)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -33627,6 +33753,53 @@ func NewPutWorkspacesWorkspaceMemoriesMemoryIdRequestWithBody(server string, wor
 	return req, nil
 }
 
+// NewPostWorkspacesWorkspaceModelCatalogSuggestionsRequest calls the generic PostWorkspacesWorkspaceModelCatalogSuggestions builder with application/json body
+func NewPostWorkspacesWorkspaceModelCatalogSuggestionsRequest(server string, workspace string, body PostWorkspacesWorkspaceModelCatalogSuggestionsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostWorkspacesWorkspaceModelCatalogSuggestionsRequestWithBody(server, workspace, "application/json", bodyReader)
+}
+
+// NewPostWorkspacesWorkspaceModelCatalogSuggestionsRequestWithBody constructs an http.Request for the PostWorkspacesWorkspaceModelCatalogSuggestions method, with any body, and a specified content type
+func NewPostWorkspacesWorkspaceModelCatalogSuggestionsRequestWithBody(server string, workspace string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/model-catalog/suggestions", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewGetWorkspacesWorkspaceModelProvidersRequest constructs an http.Request for the GetWorkspacesWorkspaceModelProviders method
 func NewGetWorkspacesWorkspaceModelProvidersRequest(server string, workspace string, params *GetWorkspacesWorkspaceModelProvidersParams) (*http.Request, error) {
 	var err error
@@ -33887,60 +34060,6 @@ func NewPatchWorkspacesWorkspaceModelProvidersProviderIdRequestWithBody(server s
 		req.Header.Set("If-Match", headerParam0)
 
 	}
-
-	return req, nil
-}
-
-// NewPostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelRequest calls the generic PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModel builder with application/json body
-func NewPostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelRequest(server string, workspace string, providerId string, body PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewPostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelRequestWithBody(server, workspace, providerId, "application/json", bodyReader)
-}
-
-// NewPostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelRequestWithBody constructs an http.Request for the PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModel method, with any body, and a specified content type
-func NewPostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelRequestWithBody(server string, workspace string, providerId string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	var pathParam1 string
-
-	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "provider_id", providerId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/model-providers/%s/describe-model", pathParam0, pathParam1)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -36523,6 +36642,13 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /api/v1/auth/password-reset/complete (the `PostAuthPasswordResetComplete` operationId).
 	PostAuthPasswordResetCompleteWithResponse(ctx context.Context, body PostAuthPasswordResetCompleteJSONRequestBody, reqEditors ...RequestEditorFn) (*PostAuthPasswordResetCompleteResponse, error)
 
+	// GetBaseModelsWithResponse List Base Models
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/base-models (the `GetBaseModels` operationId).
+	GetBaseModelsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetBaseModelsResponse, error)
+
 	// GetConnectionAuthorizationsAuthorizationIdWithResponse Get Connection Authorization
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -37258,6 +37384,20 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /api/v1/organizations/{organization}/invitations (the `PostOrganizationsOrganizationInvitations` operationId).
 	PostOrganizationsOrganizationInvitationsWithResponse(ctx context.Context, organization string, body PostOrganizationsOrganizationInvitationsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostOrganizationsOrganizationInvitationsResponse, error)
 
+	// PostOrganizationsOrganizationModelCatalogSuggestionsWithBodyWithResponse Suggest Organization Model Declarations
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/organizations/{organization}/model-catalog/suggestions (the `PostOrganizationsOrganizationModelCatalogSuggestions` operationId).
+	PostOrganizationsOrganizationModelCatalogSuggestionsWithBodyWithResponse(ctx context.Context, organization string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostOrganizationsOrganizationModelCatalogSuggestionsResponse, error)
+
+	// PostOrganizationsOrganizationModelCatalogSuggestionsWithResponse Suggest Organization Model Declarations
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/organizations/{organization}/model-catalog/suggestions (the `PostOrganizationsOrganizationModelCatalogSuggestions` operationId).
+	PostOrganizationsOrganizationModelCatalogSuggestionsWithResponse(ctx context.Context, organization string, body PostOrganizationsOrganizationModelCatalogSuggestionsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostOrganizationsOrganizationModelCatalogSuggestionsResponse, error)
+
 	// GetOrganizationsOrganizationModelProvidersWithResponse Organization List Model Providers
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -37299,20 +37439,6 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with PATCH /api/v1/organizations/{organization}/model-providers/{provider_id} (the `PatchOrganizationsOrganizationModelProvidersProviderId` operationId).
 	PatchOrganizationsOrganizationModelProvidersProviderIdWithResponse(ctx context.Context, organization string, providerId string, params *PatchOrganizationsOrganizationModelProvidersProviderIdParams, body PatchOrganizationsOrganizationModelProvidersProviderIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchOrganizationsOrganizationModelProvidersProviderIdResponse, error)
-
-	// PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelWithBodyWithResponse Organization Describe Provider Model
-	//
-	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with POST /api/v1/organizations/{organization}/model-providers/{provider_id}/describe-model (the `PostOrganizationsOrganizationModelProvidersProviderIdDescribeModel` operationId).
-	PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelWithBodyWithResponse(ctx context.Context, organization string, providerId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelResponse, error)
-
-	// PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelWithResponse Organization Describe Provider Model
-	//
-	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with POST /api/v1/organizations/{organization}/model-providers/{provider_id}/describe-model (the `PostOrganizationsOrganizationModelProvidersProviderIdDescribeModel` operationId).
-	PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelWithResponse(ctx context.Context, organization string, providerId string, body PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelJSONRequestBody, reqEditors ...RequestEditorFn) (*PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelResponse, error)
 
 	// PostOrganizationsOrganizationModelProvidersProviderIdDiscoverModelsWithResponse Organization Discover Provider Models
 	//
@@ -38595,6 +38721,20 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with PUT /api/v1/workspaces/{workspace}/memories/{memory_id} (the `PutWorkspacesWorkspaceMemoriesMemoryId` operationId).
 	PutWorkspacesWorkspaceMemoriesMemoryIdWithResponse(ctx context.Context, workspace string, memoryId string, params *PutWorkspacesWorkspaceMemoriesMemoryIdParams, body PutWorkspacesWorkspaceMemoriesMemoryIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PutWorkspacesWorkspaceMemoriesMemoryIdResponse, error)
 
+	// PostWorkspacesWorkspaceModelCatalogSuggestionsWithBodyWithResponse Suggest Workspace Model Declarations
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/workspaces/{workspace}/model-catalog/suggestions (the `PostWorkspacesWorkspaceModelCatalogSuggestions` operationId).
+	PostWorkspacesWorkspaceModelCatalogSuggestionsWithBodyWithResponse(ctx context.Context, workspace string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceModelCatalogSuggestionsResponse, error)
+
+	// PostWorkspacesWorkspaceModelCatalogSuggestionsWithResponse Suggest Workspace Model Declarations
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/workspaces/{workspace}/model-catalog/suggestions (the `PostWorkspacesWorkspaceModelCatalogSuggestions` operationId).
+	PostWorkspacesWorkspaceModelCatalogSuggestionsWithResponse(ctx context.Context, workspace string, body PostWorkspacesWorkspaceModelCatalogSuggestionsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceModelCatalogSuggestionsResponse, error)
+
 	// GetWorkspacesWorkspaceModelProvidersWithResponse List Model Providers
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -38636,20 +38776,6 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with PATCH /api/v1/workspaces/{workspace}/model-providers/{provider_id} (the `PatchWorkspacesWorkspaceModelProvidersProviderId` operationId).
 	PatchWorkspacesWorkspaceModelProvidersProviderIdWithResponse(ctx context.Context, workspace string, providerId string, params *PatchWorkspacesWorkspaceModelProvidersProviderIdParams, body PatchWorkspacesWorkspaceModelProvidersProviderIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchWorkspacesWorkspaceModelProvidersProviderIdResponse, error)
-
-	// PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelWithBodyWithResponse Describe Provider Model
-	//
-	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with POST /api/v1/workspaces/{workspace}/model-providers/{provider_id}/describe-model (the `PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModel` operationId).
-	PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelWithBodyWithResponse(ctx context.Context, workspace string, providerId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelResponse, error)
-
-	// PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelWithResponse Describe Provider Model
-	//
-	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with POST /api/v1/workspaces/{workspace}/model-providers/{provider_id}/describe-model (the `PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModel` operationId).
-	PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelWithResponse(ctx context.Context, workspace string, providerId string, body PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelJSONRequestBody, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelResponse, error)
 
 	// PostWorkspacesWorkspaceModelProvidersProviderIdDiscoverModelsWithResponse Discover Provider Models
 	//
@@ -40649,6 +40775,69 @@ func (r PostAuthPasswordResetCompleteResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r PostAuthPasswordResetCompleteResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetBaseModelsResponse200Headers the declared response headers of an HTTP 200 response for GetBaseModels
+type GetBaseModelsResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetBaseModelsResponseDefaultHeaders the declared response headers of an HTTP default response for GetBaseModels
+type GetBaseModelsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetBaseModelsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *BaseModelCandidateCollection
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetBaseModelsResponse200Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetBaseModelsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetBaseModelsResponse) GetJSON200() *BaseModelCandidateCollection {
+	return r.JSON200
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetBaseModelsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetBaseModelsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetBaseModelsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetBaseModelsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetBaseModelsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -46045,6 +46234,83 @@ func (r PostOrganizationsOrganizationInvitationsResponse) ContentType() string {
 	return ""
 }
 
+// PostOrganizationsOrganizationModelCatalogSuggestionsResponse200Headers the declared response headers of an HTTP 200 response for PostOrganizationsOrganizationModelCatalogSuggestions
+type PostOrganizationsOrganizationModelCatalogSuggestionsResponse200Headers struct {
+	XRequestID *string
+}
+
+// PostOrganizationsOrganizationModelCatalogSuggestionsResponse400Headers the declared response headers of an HTTP 400 response for PostOrganizationsOrganizationModelCatalogSuggestions
+type PostOrganizationsOrganizationModelCatalogSuggestionsResponse400Headers struct {
+	XRequestID *string
+}
+
+// PostOrganizationsOrganizationModelCatalogSuggestionsResponseDefaultHeaders the declared response headers of an HTTP default response for PostOrganizationsOrganizationModelCatalogSuggestions
+type PostOrganizationsOrganizationModelCatalogSuggestionsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PostOrganizationsOrganizationModelCatalogSuggestionsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ModelCatalogMatch
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PostOrganizationsOrganizationModelCatalogSuggestionsResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PostOrganizationsOrganizationModelCatalogSuggestionsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PostOrganizationsOrganizationModelCatalogSuggestionsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PostOrganizationsOrganizationModelCatalogSuggestionsResponse) GetJSON200() *ModelCatalogMatch {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PostOrganizationsOrganizationModelCatalogSuggestionsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PostOrganizationsOrganizationModelCatalogSuggestionsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PostOrganizationsOrganizationModelCatalogSuggestionsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostOrganizationsOrganizationModelCatalogSuggestionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostOrganizationsOrganizationModelCatalogSuggestionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostOrganizationsOrganizationModelCatalogSuggestionsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // GetOrganizationsOrganizationModelProvidersResponse200Headers the declared response headers of an HTTP 200 response for GetOrganizationsOrganizationModelProviders
 type GetOrganizationsOrganizationModelProvidersResponse200Headers struct {
 	XRequestID *string
@@ -46347,83 +46613,6 @@ func (r PatchOrganizationsOrganizationModelProvidersProviderIdResponse) StatusCo
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r PatchOrganizationsOrganizationModelProvidersProviderIdResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-// PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelResponse200Headers the declared response headers of an HTTP 200 response for PostOrganizationsOrganizationModelProvidersProviderIdDescribeModel
-type PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelResponse200Headers struct {
-	XRequestID *string
-}
-
-// PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelResponse400Headers the declared response headers of an HTTP 400 response for PostOrganizationsOrganizationModelProvidersProviderIdDescribeModel
-type PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelResponse400Headers struct {
-	XRequestID *string
-}
-
-// PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelResponseDefaultHeaders the declared response headers of an HTTP default response for PostOrganizationsOrganizationModelProvidersProviderIdDescribeModel
-type PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelResponseDefaultHeaders struct {
-	RetryAfter *string
-	XRequestID *string
-}
-
-type PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *ModelDescription
-	// JSON400 the response for an HTTP 400 `application/json` response
-	JSON400 *ErrorResponse
-	// JSONDefault the response for an HTTP default `application/json` response
-	JSONDefault *ErrorResponse
-	// Headers200 the parsed response headers for an HTTP 200 response
-	Headers200 *PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelResponse200Headers
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelResponse400Headers
-	// HeadersDefault the parsed response headers for an HTTP default response
-	HeadersDefault *PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelResponseDefaultHeaders
-}
-
-// GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelResponse) GetJSON200() *ModelDescription {
-	return r.JSON200
-}
-
-// GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelResponse) GetJSON400() *ErrorResponse {
-	return r.JSON400
-}
-
-// GetJSONDefault returns the response for an HTTP default `application/json` response
-func (r PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelResponse) GetJSONDefault() *ErrorResponse {
-	return r.JSONDefault
-}
-
-// GetBody returns the raw response body bytes
-func (r PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelResponse) GetBody() []byte {
-	return r.Body
-}
-
-// Status returns HTTPResponse.Status
-func (r PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -56562,6 +56751,83 @@ func (r PutWorkspacesWorkspaceMemoriesMemoryIdResponse) ContentType() string {
 	return ""
 }
 
+// PostWorkspacesWorkspaceModelCatalogSuggestionsResponse200Headers the declared response headers of an HTTP 200 response for PostWorkspacesWorkspaceModelCatalogSuggestions
+type PostWorkspacesWorkspaceModelCatalogSuggestionsResponse200Headers struct {
+	XRequestID *string
+}
+
+// PostWorkspacesWorkspaceModelCatalogSuggestionsResponse400Headers the declared response headers of an HTTP 400 response for PostWorkspacesWorkspaceModelCatalogSuggestions
+type PostWorkspacesWorkspaceModelCatalogSuggestionsResponse400Headers struct {
+	XRequestID *string
+}
+
+// PostWorkspacesWorkspaceModelCatalogSuggestionsResponseDefaultHeaders the declared response headers of an HTTP default response for PostWorkspacesWorkspaceModelCatalogSuggestions
+type PostWorkspacesWorkspaceModelCatalogSuggestionsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PostWorkspacesWorkspaceModelCatalogSuggestionsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ModelCatalogMatch
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PostWorkspacesWorkspaceModelCatalogSuggestionsResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PostWorkspacesWorkspaceModelCatalogSuggestionsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PostWorkspacesWorkspaceModelCatalogSuggestionsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PostWorkspacesWorkspaceModelCatalogSuggestionsResponse) GetJSON200() *ModelCatalogMatch {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PostWorkspacesWorkspaceModelCatalogSuggestionsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PostWorkspacesWorkspaceModelCatalogSuggestionsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PostWorkspacesWorkspaceModelCatalogSuggestionsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostWorkspacesWorkspaceModelCatalogSuggestionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostWorkspacesWorkspaceModelCatalogSuggestionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostWorkspacesWorkspaceModelCatalogSuggestionsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // GetWorkspacesWorkspaceModelProvidersResponse200Headers the declared response headers of an HTTP 200 response for GetWorkspacesWorkspaceModelProviders
 type GetWorkspacesWorkspaceModelProvidersResponse200Headers struct {
 	XRequestID *string
@@ -56864,83 +57130,6 @@ func (r PatchWorkspacesWorkspaceModelProvidersProviderIdResponse) StatusCode() i
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r PatchWorkspacesWorkspaceModelProvidersProviderIdResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-// PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelResponse200Headers the declared response headers of an HTTP 200 response for PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModel
-type PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelResponse200Headers struct {
-	XRequestID *string
-}
-
-// PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelResponse400Headers the declared response headers of an HTTP 400 response for PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModel
-type PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelResponse400Headers struct {
-	XRequestID *string
-}
-
-// PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelResponseDefaultHeaders the declared response headers of an HTTP default response for PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModel
-type PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelResponseDefaultHeaders struct {
-	RetryAfter *string
-	XRequestID *string
-}
-
-type PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *ModelDescription
-	// JSON400 the response for an HTTP 400 `application/json` response
-	JSON400 *ErrorResponse
-	// JSONDefault the response for an HTTP default `application/json` response
-	JSONDefault *ErrorResponse
-	// Headers200 the parsed response headers for an HTTP 200 response
-	Headers200 *PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelResponse200Headers
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelResponse400Headers
-	// HeadersDefault the parsed response headers for an HTTP default response
-	HeadersDefault *PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelResponseDefaultHeaders
-}
-
-// GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelResponse) GetJSON200() *ModelDescription {
-	return r.JSON200
-}
-
-// GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelResponse) GetJSON400() *ErrorResponse {
-	return r.JSON400
-}
-
-// GetJSONDefault returns the response for an HTTP default `application/json` response
-func (r PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelResponse) GetJSONDefault() *ErrorResponse {
-	return r.JSONDefault
-}
-
-// GetBody returns the raw response body bytes
-func (r PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelResponse) GetBody() []byte {
-	return r.Body
-}
-
-// Status returns HTTPResponse.Status
-func (r PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -60048,6 +60237,19 @@ func (c *ClientWithResponses) PostAuthPasswordResetCompleteWithResponse(ctx cont
 	return ParsePostAuthPasswordResetCompleteResponse(rsp)
 }
 
+// GetBaseModelsWithResponse List Base Models
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/base-models (the `GetBaseModels` operationId).
+func (c *ClientWithResponses) GetBaseModelsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetBaseModelsResponse, error) {
+	rsp, err := c.GetBaseModels(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetBaseModelsResponse(rsp)
+}
+
 // GetConnectionAuthorizationsAuthorizationIdWithResponse Get Connection Authorization
 //
 // Returns a wrapper object for the known response body format(s).
@@ -61413,6 +61615,32 @@ func (c *ClientWithResponses) PostOrganizationsOrganizationInvitationsWithRespon
 	return ParsePostOrganizationsOrganizationInvitationsResponse(rsp)
 }
 
+// PostOrganizationsOrganizationModelCatalogSuggestionsWithBodyWithResponse Suggest Organization Model Declarations
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/organizations/{organization}/model-catalog/suggestions (the `PostOrganizationsOrganizationModelCatalogSuggestions` operationId).
+func (c *ClientWithResponses) PostOrganizationsOrganizationModelCatalogSuggestionsWithBodyWithResponse(ctx context.Context, organization string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostOrganizationsOrganizationModelCatalogSuggestionsResponse, error) {
+	rsp, err := c.PostOrganizationsOrganizationModelCatalogSuggestionsWithBody(ctx, organization, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostOrganizationsOrganizationModelCatalogSuggestionsResponse(rsp)
+}
+
+// PostOrganizationsOrganizationModelCatalogSuggestionsWithResponse Suggest Organization Model Declarations
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/organizations/{organization}/model-catalog/suggestions (the `PostOrganizationsOrganizationModelCatalogSuggestions` operationId).
+func (c *ClientWithResponses) PostOrganizationsOrganizationModelCatalogSuggestionsWithResponse(ctx context.Context, organization string, body PostOrganizationsOrganizationModelCatalogSuggestionsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostOrganizationsOrganizationModelCatalogSuggestionsResponse, error) {
+	rsp, err := c.PostOrganizationsOrganizationModelCatalogSuggestions(ctx, organization, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostOrganizationsOrganizationModelCatalogSuggestionsResponse(rsp)
+}
+
 // GetOrganizationsOrganizationModelProvidersWithResponse Organization List Model Providers
 //
 // Returns a wrapper object for the known response body format(s).
@@ -61489,32 +61717,6 @@ func (c *ClientWithResponses) PatchOrganizationsOrganizationModelProvidersProvid
 		return nil, err
 	}
 	return ParsePatchOrganizationsOrganizationModelProvidersProviderIdResponse(rsp)
-}
-
-// PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelWithBodyWithResponse Organization Describe Provider Model
-//
-// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
-//
-// Corresponds with POST /api/v1/organizations/{organization}/model-providers/{provider_id}/describe-model (the `PostOrganizationsOrganizationModelProvidersProviderIdDescribeModel` operationId).
-func (c *ClientWithResponses) PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelWithBodyWithResponse(ctx context.Context, organization string, providerId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelResponse, error) {
-	rsp, err := c.PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelWithBody(ctx, organization, providerId, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostOrganizationsOrganizationModelProvidersProviderIdDescribeModelResponse(rsp)
-}
-
-// PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelWithResponse Organization Describe Provider Model
-//
-// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
-//
-// Corresponds with POST /api/v1/organizations/{organization}/model-providers/{provider_id}/describe-model (the `PostOrganizationsOrganizationModelProvidersProviderIdDescribeModel` operationId).
-func (c *ClientWithResponses) PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelWithResponse(ctx context.Context, organization string, providerId string, body PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelJSONRequestBody, reqEditors ...RequestEditorFn) (*PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelResponse, error) {
-	rsp, err := c.PostOrganizationsOrganizationModelProvidersProviderIdDescribeModel(ctx, organization, providerId, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostOrganizationsOrganizationModelProvidersProviderIdDescribeModelResponse(rsp)
 }
 
 // PostOrganizationsOrganizationModelProvidersProviderIdDiscoverModelsWithResponse Organization Discover Provider Models
@@ -63896,6 +64098,32 @@ func (c *ClientWithResponses) PutWorkspacesWorkspaceMemoriesMemoryIdWithResponse
 	return ParsePutWorkspacesWorkspaceMemoriesMemoryIdResponse(rsp)
 }
 
+// PostWorkspacesWorkspaceModelCatalogSuggestionsWithBodyWithResponse Suggest Workspace Model Declarations
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/workspaces/{workspace}/model-catalog/suggestions (the `PostWorkspacesWorkspaceModelCatalogSuggestions` operationId).
+func (c *ClientWithResponses) PostWorkspacesWorkspaceModelCatalogSuggestionsWithBodyWithResponse(ctx context.Context, workspace string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceModelCatalogSuggestionsResponse, error) {
+	rsp, err := c.PostWorkspacesWorkspaceModelCatalogSuggestionsWithBody(ctx, workspace, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostWorkspacesWorkspaceModelCatalogSuggestionsResponse(rsp)
+}
+
+// PostWorkspacesWorkspaceModelCatalogSuggestionsWithResponse Suggest Workspace Model Declarations
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/workspaces/{workspace}/model-catalog/suggestions (the `PostWorkspacesWorkspaceModelCatalogSuggestions` operationId).
+func (c *ClientWithResponses) PostWorkspacesWorkspaceModelCatalogSuggestionsWithResponse(ctx context.Context, workspace string, body PostWorkspacesWorkspaceModelCatalogSuggestionsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceModelCatalogSuggestionsResponse, error) {
+	rsp, err := c.PostWorkspacesWorkspaceModelCatalogSuggestions(ctx, workspace, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostWorkspacesWorkspaceModelCatalogSuggestionsResponse(rsp)
+}
+
 // GetWorkspacesWorkspaceModelProvidersWithResponse List Model Providers
 //
 // Returns a wrapper object for the known response body format(s).
@@ -63972,32 +64200,6 @@ func (c *ClientWithResponses) PatchWorkspacesWorkspaceModelProvidersProviderIdWi
 		return nil, err
 	}
 	return ParsePatchWorkspacesWorkspaceModelProvidersProviderIdResponse(rsp)
-}
-
-// PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelWithBodyWithResponse Describe Provider Model
-//
-// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
-//
-// Corresponds with POST /api/v1/workspaces/{workspace}/model-providers/{provider_id}/describe-model (the `PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModel` operationId).
-func (c *ClientWithResponses) PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelWithBodyWithResponse(ctx context.Context, workspace string, providerId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelResponse, error) {
-	rsp, err := c.PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelWithBody(ctx, workspace, providerId, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelResponse(rsp)
-}
-
-// PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelWithResponse Describe Provider Model
-//
-// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
-//
-// Corresponds with POST /api/v1/workspaces/{workspace}/model-providers/{provider_id}/describe-model (the `PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModel` operationId).
-func (c *ClientWithResponses) PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelWithResponse(ctx context.Context, workspace string, providerId string, body PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelJSONRequestBody, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelResponse, error) {
-	rsp, err := c.PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModel(ctx, workspace, providerId, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParsePostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelResponse(rsp)
 }
 
 // PostWorkspacesWorkspaceModelProvidersProviderIdDiscoverModelsWithResponse Discover Provider Models
@@ -66343,6 +66545,69 @@ func ParsePostAuthPasswordResetCompleteResponse(rsp *http.Response) (*PostAuthPa
 		response.Headers400 = &headers
 	case true:
 		var headers PostAuthPasswordResetCompleteResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetBaseModelsResponse parses an HTTP response from a GetBaseModelsWithResponse call
+func ParseGetBaseModelsResponse(rsp *http.Response) (*GetBaseModelsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetBaseModelsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BaseModelCandidateCollection
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetBaseModelsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case true:
+		var headers GetBaseModelsResponseDefaultHeaders
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
@@ -71960,6 +72225,86 @@ func ParsePostOrganizationsOrganizationInvitationsResponse(rsp *http.Response) (
 	return response, nil
 }
 
+// ParsePostOrganizationsOrganizationModelCatalogSuggestionsResponse parses an HTTP response from a PostOrganizationsOrganizationModelCatalogSuggestionsWithResponse call
+func ParsePostOrganizationsOrganizationModelCatalogSuggestionsResponse(rsp *http.Response) (*PostOrganizationsOrganizationModelCatalogSuggestionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostOrganizationsOrganizationModelCatalogSuggestionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ModelCatalogMatch
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PostOrganizationsOrganizationModelCatalogSuggestionsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PostOrganizationsOrganizationModelCatalogSuggestionsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PostOrganizationsOrganizationModelCatalogSuggestionsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
 // ParseGetOrganizationsOrganizationModelProvidersResponse parses an HTTP response from a GetOrganizationsOrganizationModelProvidersWithResponse call
 func ParseGetOrganizationsOrganizationModelProvidersResponse(rsp *http.Response) (*GetOrganizationsOrganizationModelProvidersResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -72260,86 +72605,6 @@ func ParsePatchOrganizationsOrganizationModelProvidersProviderIdResponse(rsp *ht
 		response.Headers400 = &headers
 	case true:
 		var headers PatchOrganizationsOrganizationModelProvidersProviderIdResponseDefaultHeaders
-		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.RetryAfter = &value
-		}
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.HeadersDefault = &headers
-	}
-
-	return response, nil
-}
-
-// ParsePostOrganizationsOrganizationModelProvidersProviderIdDescribeModelResponse parses an HTTP response from a PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelWithResponse call
-func ParsePostOrganizationsOrganizationModelProvidersProviderIdDescribeModelResponse(rsp *http.Response) (*PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest ModelDescription
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	switch {
-	case rsp.StatusCode == 200:
-		var headers PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelResponse200Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers200 = &headers
-	case rsp.StatusCode == 400:
-		var headers PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers400 = &headers
-	case true:
-		var headers PostOrganizationsOrganizationModelProvidersProviderIdDescribeModelResponseDefaultHeaders
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
@@ -82930,6 +83195,86 @@ func ParsePutWorkspacesWorkspaceMemoriesMemoryIdResponse(rsp *http.Response) (*P
 	return response, nil
 }
 
+// ParsePostWorkspacesWorkspaceModelCatalogSuggestionsResponse parses an HTTP response from a PostWorkspacesWorkspaceModelCatalogSuggestionsWithResponse call
+func ParsePostWorkspacesWorkspaceModelCatalogSuggestionsResponse(rsp *http.Response) (*PostWorkspacesWorkspaceModelCatalogSuggestionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostWorkspacesWorkspaceModelCatalogSuggestionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ModelCatalogMatch
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PostWorkspacesWorkspaceModelCatalogSuggestionsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PostWorkspacesWorkspaceModelCatalogSuggestionsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PostWorkspacesWorkspaceModelCatalogSuggestionsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
 // ParseGetWorkspacesWorkspaceModelProvidersResponse parses an HTTP response from a GetWorkspacesWorkspaceModelProvidersWithResponse call
 func ParseGetWorkspacesWorkspaceModelProvidersResponse(rsp *http.Response) (*GetWorkspacesWorkspaceModelProvidersResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -83230,86 +83575,6 @@ func ParsePatchWorkspacesWorkspaceModelProvidersProviderIdResponse(rsp *http.Res
 		response.Headers400 = &headers
 	case true:
 		var headers PatchWorkspacesWorkspaceModelProvidersProviderIdResponseDefaultHeaders
-		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.RetryAfter = &value
-		}
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.HeadersDefault = &headers
-	}
-
-	return response, nil
-}
-
-// ParsePostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelResponse parses an HTTP response from a PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelWithResponse call
-func ParsePostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelResponse(rsp *http.Response) (*PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest ModelDescription
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest ErrorResponse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSONDefault = &dest
-
-	}
-
-	switch {
-	case rsp.StatusCode == 200:
-		var headers PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelResponse200Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers200 = &headers
-	case rsp.StatusCode == 400:
-		var headers PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = &value
-		}
-		response.Headers400 = &headers
-	case true:
-		var headers PostWorkspacesWorkspaceModelProvidersProviderIdDescribeModelResponseDefaultHeaders
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {

@@ -1100,7 +1100,7 @@ def _compaction_snapshot(
     threshold = characteristics.compact_threshold
     context_window = ctx.model.context_window
     if context_window is None:
-        context_window = characteristics.context_window
+        context_window = characteristics.context_window_tokens
     if context_window is None or context_window <= 0:
         return None
 

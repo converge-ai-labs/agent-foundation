@@ -39,7 +39,6 @@ from a13n_harness.model_context import (
 )
 
 WORKING_STATE_CAPABILITY_ID = "a13n.working-state"
-TASK_STATE_RUN_CAPABILITY_ID = "a13n.working-state.tasks.run"
 _WORKING_STATE_VERSION = "1"
 _NOTES_CONTEXT_SOURCE_ID = f"{WORKING_STATE_CAPABILITY_ID}.notes"
 _TASKS_CONTEXT_SOURCE_ID = f"{WORKING_STATE_CAPABILITY_ID}.tasks"
@@ -495,21 +494,18 @@ class EmbeddedTaskStateCell:
         self._backend.state = state
 
 
-@dataclass(kw_only=True)
-class TaskStateRunCapability(AbstractCapability[AgentContext]):
-    """Fresh Host attachment carrying one already identity-bound task cell."""
+@dataclass(frozen=True, slots=True, kw_only=True)
+class TaskStateBinding:
+    """Host binding carrying one already identity-bound task cell."""
 
-    id: str | None = TASK_STATE_RUN_CAPABILITY_ID
     source: Literal["embedded_borrowed", "provider"]
     cell: TaskStateCell
     provider_type: str = "embedded"
     state_version: str = "1"
 
     def __post_init__(self) -> None:
-        if self.id != TASK_STATE_RUN_CAPABILITY_ID:
-            raise ValueError(f"TaskStateRunCapability.id must be {TASK_STATE_RUN_CAPABILITY_ID!r}")
         if not isinstance(self.cell, TaskStateCell):
-            raise TypeError("TaskStateRunCapability.cell must implement TaskStateCell")
+            raise TypeError("TaskStateBinding.cell must implement TaskStateCell")
         if not self.provider_type.strip() or not self.state_version.strip():
             raise ValueError("task provider metadata must be non-blank")
 
@@ -541,7 +537,7 @@ class WorkingStateCapability(AbstractModelContextCapability):
         ctx: RunContext[AgentContext],
         *,
         owner: str,
-    ) -> TaskStateRunCapability | None:
+    ) -> TaskStateBinding | None:
         """Borrow the exact active embedded task store for one trusted child identity."""
         del ctx, owner
         raise DefinitionError(
@@ -620,11 +616,11 @@ class _WorkingStateRunCapability(WorkingStateCapability):
         ctx: RunContext[AgentContext],
         *,
         owner: str,
-    ) -> TaskStateRunCapability | None:
+    ) -> TaskStateBinding | None:
         cell = await self._toolset.embedded_task_cell(ctx)
         if cell is None:
             return None
-        return TaskStateRunCapability(source="embedded_borrowed", cell=cell.bind(owner))
+        return TaskStateBinding(source="embedded_borrowed", cell=cell.bind(owner))
 
     def get_toolset(self) -> AbstractToolset[AgentContext] | None:
         return self._toolset.get_toolset(
@@ -920,9 +916,9 @@ __all__ = [
     "Task",
     "TaskMutation",
     "TaskState",
+    "TaskStateBinding",
     "TaskStateCell",
     "TaskStateError",
-    "TaskStateRunCapability",
     "WorkingState",
     "WorkingStateCapability",
     "WorkingStateConfiguration",

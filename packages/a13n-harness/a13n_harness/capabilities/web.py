@@ -43,15 +43,13 @@ from a13n_harness.toolsets.web import (
 )
 
 WEB_CAPABILITY_ID = "a13n.web"
-WEB_RUN_CAPABILITY_ID = "a13n.web.run"
 _WEB_TOOLSET_ID = "a13n-web-tools"
 
 
-@dataclass(kw_only=True)
-class WebRunCapability(AbstractCapability[AgentContext]):
-    """Fresh run attachment carrying Web transport, policy, and optional providers."""
+@dataclass(frozen=True, slots=True, kw_only=True)
+class WebBinding:
+    """Host-owned Web transport, policy, and providers for one logical run."""
 
-    id: str | None = WEB_RUN_CAPABILITY_ID
     client: WebClient = field()
     policy: WebPolicy = field()
     search_provider: WebSearchProvider | None = None
@@ -60,8 +58,6 @@ class WebRunCapability(AbstractCapability[AgentContext]):
     scrape_backends: tuple[WebScrapeBackendBinding, ...] = ()
 
     def __post_init__(self) -> None:
-        if self.id != WEB_RUN_CAPABILITY_ID:
-            raise ValueError(f"WebRunCapability.id must be {WEB_RUN_CAPABILITY_ID!r}")
         if not isinstance(self.client, WebClient):
             raise TypeError("client must implement WebClient")
         if not isinstance(self.policy, WebPolicy):
@@ -78,11 +74,21 @@ class WebRunCapability(AbstractCapability[AgentContext]):
             raise TypeError("search_backends must contain WebSearchBackendBinding values")
         if not all(isinstance(item, WebScrapeBackendBinding) for item in self.scrape_backends):
             raise TypeError("scrape_backends must contain WebScrapeBackendBinding values")
-        self.search_backends = tuple(self.search_backends) or (
-            (WebSearchBackendBinding("default", self.search_provider),) if self.search_provider is not None else ()
+        object.__setattr__(
+            self,
+            "search_backends",
+            tuple(self.search_backends)
+            or (
+                (WebSearchBackendBinding("default", self.search_provider),) if self.search_provider is not None else ()
+            ),
         )
-        self.scrape_backends = tuple(self.scrape_backends) or (
-            (WebScrapeBackendBinding("default", self.scrape_provider),) if self.scrape_provider is not None else ()
+        object.__setattr__(
+            self,
+            "scrape_backends",
+            tuple(self.scrape_backends)
+            or (
+                (WebScrapeBackendBinding("default", self.scrape_provider),) if self.scrape_provider is not None else ()
+            ),
         )
         if len({item.backend_id for item in self.search_backends}) != len(self.search_backends):
             raise ValueError("search backend IDs must be unique")
@@ -126,8 +132,6 @@ class _WebActiveCapability(WebCapability):
     def __init__(self, configuration: WebConfiguration, *, context: AgentContext) -> None:
         super().__init__(configuration)
         self._context = context
-        self._attachment: WebRunCapability | None = None
-        self._collaborators: tuple[object, ...] | None = None
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
         if ctx.deps is not self._context:
@@ -149,7 +153,7 @@ class _WebActiveCapability(WebCapability):
             file_scopes=ctx.deps.environment,
         ).get_toolset()
 
-    def _bind(self, ctx: RunContext[AgentContext]) -> WebRunCapability:
+    def _bind(self, ctx: RunContext[AgentContext]) -> WebBinding:
         if ctx.deps is not self._context:
             raise DefinitionError("Web run replacement cannot cross logical runs.", code="capability_scope_invalid")
         owner = ctx.capabilities.get(WEB_CAPABILITY_ID)
@@ -157,31 +161,10 @@ class _WebActiveCapability(WebCapability):
             raise DefinitionError(
                 "The finalized Web owner has an incompatible identity.", code="capability_scope_invalid"
             )
-        attachment = ctx.capabilities.get(WEB_RUN_CAPABILITY_ID)
-        if type(attachment) is not WebRunCapability:
-            raise DefinitionError("WebCapability requires one fresh WebRunCapability.", code="web_binding_missing")
-        if WEB_RUN_CAPABILITY_ID not in ctx.deps._capability_provenance.run_ids:
-            raise DefinitionError("WebRunCapability must originate from RunBindings.", code="capability_scope_invalid")
-        collaborators = (
-            attachment.client,
-            attachment.policy,
-            attachment.search_provider,
-            attachment.scrape_provider,
-            attachment.search_backends,
-            attachment.scrape_backends,
-        )
-        if self._attachment is None:
-            self._attachment = attachment
-            self._collaborators = collaborators
-        elif (
-            self._attachment is not attachment
-            or self._collaborators is None
-            or any(
-                current is not captured for current, captured in zip(collaborators, self._collaborators, strict=True)
-            )
-        ):
-            raise DefinitionError("Web binding identity changed within one run.", code="capability_scope_invalid")
-        return attachment
+        binding = ctx.deps.web
+        if binding is None:
+            raise DefinitionError("WebCapability requires RunBindings.web.", code="web_binding_missing")
+        return binding
 
 
 __all__ = [
@@ -192,6 +175,7 @@ __all__ = [
     "WEB_SEARCH_BACKEND_PRIORITY_ENV",
     "WEB_SEARCH_CONTEXT_SIZE_ENV",
     "WEB_SEARCH_MODE_ENV",
+    "WebBinding",
     "WebCapability",
     "WebClient",
     "WebConfiguration",
@@ -202,7 +186,6 @@ __all__ = [
     "WebProviderError",
     "WebRequest",
     "WebResponse",
-    "WebRunCapability",
     "WebScrapeBackendBinding",
     "WebScrapeConfiguration",
     "WebScrapeProvider",

@@ -91,6 +91,10 @@ def authenticated_control(config: dict):
 
 
 def local_app(config: dict, role: str):
+    if config.get("smoke") and role == "worker":
+        from .smoke_host import install
+
+        install()
     if config.get("environment_workers"):
         from ..environment.environment_worker_host import install
 

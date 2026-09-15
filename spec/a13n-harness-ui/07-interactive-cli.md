@@ -141,7 +141,7 @@ Codex defaults to `openai-codex:gpt-5.6-sol`, high reasoning, and a 350,000-toke
 | balanced |        350,000 | Repository-work recommendation aligned with the reference YAACLI profile |
 | extended |        872,000 | Current catalog maximum; not an account entitlement guarantee            |
 
-The local budget does not change provider limits. Generated Model resources declare `model_characteristics.context_window`, `proactive_context_management_threshold: 0.65`, and `compact_threshold: 0.90`. They are captured and supplied through native `HarnessModelCharacteristics`. Generated coding Agents select the native runtime-context, handoff, and compaction capabilities. At 350,000 tokens the derived reminder and compaction thresholds are 227,500 and 315,000. Explicit capability policies can override their native derived defaults.
+The local budget does not change provider limits. Generated Model resources declare `model_characteristics.context_window_tokens`, `proactive_context_management_threshold: 0.65`, and `compact_threshold: 0.90`. They are captured and supplied through native `HarnessModelCharacteristics`. Generated coding Agents select the native runtime-context, handoff, and compaction capabilities. At 350,000 tokens the derived reminder and compaction thresholds are 227,500 and 315,000. Explicit capability policies can override their native derived defaults.
 
 The last root request's reported usage controls the native thresholds; accumulated usage does not. Codex subscription requests do not receive an API `max_tokens` cap copied from YAACLI presets. Provider-specific request settings pass through to Harness/Pydantic AI and remain subject to native subscription constraints.
 

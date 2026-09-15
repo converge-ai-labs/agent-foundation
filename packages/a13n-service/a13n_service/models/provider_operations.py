@@ -8,14 +8,12 @@ from contextlib import aclosing
 from typing import Protocol
 
 import httpx2
-from a13n_harness.errors import ModelResolutionError
 
-from .descriptions import describe_candidate, describe_model
-from .domain import ModelCandidate, ModelDescription, ModelDiscovery
+from .candidates import candidate_from_catalog
+from .domain import ModelCandidate, ModelDiscovery
 from .provider_adapters.base import DiscoveredModelIdentity, ProviderOperationError, ProviderOperationUnsupported
 from .provider_adapters.types import RuntimeProvider
 from .providers import ProviderRegistry
-from .settings import settings_schema
 
 _MAX_DISCOVERY_RESPONSE_BYTES = 4 * 1024 * 1024
 _MAX_DISCOVERY_PAGES = 100
@@ -44,16 +42,15 @@ class NativeProviderOperations:
 
     async def discover(self, *, provider_id: str, organization_id: str, workspace_id: str | None) -> ModelDiscovery:
         provider = await self._resolve(provider_id, organization_id, workspace_id)
-        schemas = {api: settings_schema(api) for api in self._registry.integration(provider.type).supported_model_apis}
         indexed: dict[str, ModelCandidate] = {}
         sizes: dict[str, int] = {}
-        output_bytes = len(ModelDiscovery(items=(), settings_schemas=schemas).model_dump_json().encode())
+        output_bytes = len(ModelDiscovery(items=()).model_dump_json().encode())
         if output_bytes > _MAX_DISCOVERY_OUTPUT_BYTES:
             raise ProviderOperationError("the Provider catalog exceeds the output byte limit")
         async with aclosing(self._pages(provider)) as pages:
             async for identities in pages:
                 for item in identities:
-                    candidate = describe_candidate(
+                    candidate = candidate_from_catalog(
                         self._registry,
                         provider.type,
                         item.upstream_model,
@@ -67,38 +64,7 @@ class NativeProviderOperations:
                         raise ProviderOperationError("the Provider catalog exceeds the output byte limit")
                     indexed[item.upstream_model] = candidate
                     sizes[item.upstream_model] = size
-        return ModelDiscovery(items=tuple(indexed[key] for key in sorted(indexed)), settings_schemas=schemas)
-
-    async def describe(
-        self,
-        *,
-        provider_id: str,
-        organization_id: str,
-        workspace_id: str | None,
-        provider_type: str,
-        upstream_model: str,
-        model_api: str | None,
-    ) -> ModelDescription:
-        # Validate the requested binding before attempting optional remote metadata.
-        local = describe_model(self._registry, provider_type, upstream_model, model_api=model_api)
-        try:
-            provider = await self._resolve(provider_id, organization_id, workspace_id)
-            async with aclosing(self._pages(provider)) as pages:
-                async for identities in pages:
-                    match = next((item for item in identities if item.upstream_model == upstream_model), None)
-                    if match is not None:
-                        return describe_model(
-                            self._registry,
-                            provider_type,
-                            upstream_model,
-                            model_api=model_api,
-                            display_name=match.display_name,
-                            metadata=match.metadata,
-                        )
-        except (ProviderOperationError, ModelResolutionError, TimeoutError):
-            # Metadata is advisory; cancellation (BaseException) still propagates.
-            return local
-        return local
+        return ModelDiscovery(items=tuple(indexed[key] for key in sorted(indexed)))
 
     async def _resolve(self, provider_id: str, organization_id: str, workspace_id: str | None) -> RuntimeProvider:
         return await self._provider_resolver.resolve_provider(

@@ -2263,8 +2263,8 @@ export interface components {
         HarnessModelCharacteristics: {
             /** Capabilities */
             capabilities?: components["schemas"]["ModelCapability"][];
-            /** Context Window */
-            context_window?: number | null;
+            /** Context Window Tokens */
+            context_window_tokens?: number | null;
             /**
              * Proactive Context Management Threshold
              * @default 0.65

@@ -83,17 +83,23 @@ Image content lives at `organizations/{organization_id}/workspaces/{workspace_id
 `AgentConfig` is finite Service-owned serializable data. A caller supplies one complete config when creating an Agent or Agent Revision; Service stores no independently editable draft. Referenced resource schemas remain owned by their management documents.
 
 ```python
+class AgentModelCharacteristics:
+    context_window_tokens: int | None = None
+    proactive_context_management_threshold: float | None = 0.65
+    compact_threshold: float = 0.90
+
+
 class AgentModel:
     model_key: str
     settings: JsonObject
-    characteristics: HarnessModelCharacteristics
+    characteristics: AgentModelCharacteristics
 
 
 class ResolvedAgentModel:
     model_id: ModelId
     model_key: str
     settings: JsonObject
-    characteristics: HarnessModelCharacteristics
+    characteristics: AgentModelCharacteristics
 
 
 class EffectiveAgentModel:
@@ -205,7 +211,9 @@ The `web` Toolset independently configures Provider-backed search and scrape and
 
 `connection_tools` is an ordered list keyed semantically by managed connection IDs, with no caller-defined aliases. Duplicate connection IDs within the list are invalid. Omitted or null `tools` selects all currently available authorized source tools; an empty list selects none; explicit names select only those source-native tools. Duplicate tool names are invalid. `defer_loading` defaults to false and uses the [Harness loading contract](40-connectivity/04-agent-facing-tools.md#deferred-loading). These fields control one Agent or Run selection rather than the connection resource itself.
 
-`AgentModel.settings` defaults to an empty object and stores only Agent-authored overrides. Its JSON representation is validated against the selected Model's serializable native settings contract, including provider-specific fields, under [Model Management](30-model-management.md#parameter-schemas-and-validation). The same owner defines parameter descriptions, reserved fields, and [settings precedence](30-model-management.md#settings-precedence). `ResolvedAgentModel` retains these overrides, while `EffectiveAgentModel.settings` contains the final merged values used for execution.
+`AgentModel.settings` defaults to an empty object and stores only Agent-authored overrides. Its JSON representation is validated against the selected Model's serializable native settings contract, including provider-specific fields, under [Model Management](30-model-management.md#parameter-schemas-and-validation). The same owner defines parameter schemas, reserved fields, and [settings precedence](30-model-management.md#settings-precedence). `ResolvedAgentModel` retains these overrides, while `EffectiveAgentModel.settings` contains the final merged values used for execution.
+
+`AgentModel.characteristics` retains the Agent's nullable context-window override and context-management thresholds. It contains no media capabilities. Run acceptance composes it with the selected Model's declarations through the one Model Management composition path; a null window inherits the Model declaration. `EffectiveAgentModel.characteristics` is the resulting complete Harness value. Reviewer Models use their declarations with default context policy.
 
 `OutputSpec` permits either one top-level schema with optional local resources or at least two mutually exclusive variants; it never permits nested variants. Reconstruction resolves the supplied resources and uses the Harness shared structured-output validator for each schema or variant. Completed model and plugin outputs must satisfy Draft 2020-12 instance constraints; invalid model output consumes the structured-output correction budget. `RetryConfig` contains bounded non-negative tool-argument and structured-output correction budgets, not provider transport, Worker recovery, whole-Run, or business-workflow retries.
 
@@ -265,7 +273,7 @@ One Run request may carry a finite typed `config_override`. It is request data, 
 class ModelOverride:
     model_key: str | None
     settings: JsonObject | None
-    characteristics: HarnessModelCharacteristics | None
+    characteristics: AgentModelCharacteristics | None
 
 
 class SubagentOverride:
@@ -337,7 +345,7 @@ class EffectiveAgentConfig:
 
 `subagent_mode` selects one standard Harness Tool surface for the accepted Run. The default `inline` executes the entire descendant graph in the parent Attempt and borrows its Environment facade. `async` delegates each direct child as an independent durable Run; when that child is claimed, its own accepted `subagent_mode` governs its descendants. A single Harness invocation does not mix the inline and asynchronous Tool surfaces. This field is selected by the Agent Revision, not a Run override.
 
-Each `child_configs` entry contains the child `agent_id`, `revision_content_digest`, complete recursive `effective_config`, and frozen `connection_selections`. Its key is the exact child Revision ID from a resolved edge. The parent acceptance prepares the complete finite graph and revalidates all prepared evidence in the final transaction. Each node freezes its own Model execution, merged settings, Skill locks, authored Plugin configuration, and connection selections. The root digest covers these descendant snapshots. A child never substitutes the parent's Model or selectable capabilities. Asynchronous child admission copies the accepted child snapshot and rejects a changed config or connection scope; a retained child continuation preserves its own source snapshot.
+Each `child_configs` entry contains the child `agent_id`, `revision_content_digest`, complete recursive `effective_config`, and frozen `connection_selections`. Its key is the exact child Revision ID from a resolved edge. The parent acceptance prepares the complete finite graph and revalidates all prepared evidence in the final transaction. Each node freezes its own Model execution, merged settings, composed Model characteristics, Skill locks, authored Plugin configuration, and connection selections. The root digest covers these descendant snapshots. A child never substitutes the parent's Model or declared capabilities. Asynchronous child admission copies the accepted child snapshot and rejects a changed config or connection scope; a retained child continuation preserves its own source snapshot.
 
 Acceptance merges and resolves the selected Revision and request exactly once, then persists a complete immutable `EffectiveAgentConfig` plus its digest. Its Skill entries are the exact five-field [`SkillRevisionLock`](31-skill-management.md#agent-selection-and-run-locking) values selected at that acceptance boundary. Retry, waiting Continue, deferred-action completion, and other successor operations preserve the source snapshot when their owning contract requires it; Worker replacement of the same accepted Run always reuses it. No execution attempt re-reads an Agent or Skill head or reapplies merge rules. Input, Environment selection, attachments, timeout, usage budget, metadata, priority, idempotency, and scheduling mode remain Run fields rather than Agent config overrides.
 

@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any, TypeVar
 from attrs import define as _attrs_define
 
 if TYPE_CHECKING:
-    from ..models.harness_model_characteristics import HarnessModelCharacteristics
+    from ..models.agent_model_characteristics import AgentModelCharacteristics
     from ..models.resolved_agent_model_settings import ResolvedAgentModelSettings
 
 
@@ -17,13 +17,13 @@ T = TypeVar("T", bound="ResolvedAgentModel")
 class ResolvedAgentModel:
     """
     Attributes:
-        characteristics (HarnessModelCharacteristics): Resolved Harness characteristics of the active Agent model.
+        characteristics (AgentModelCharacteristics): Agent-owned context policy layered over Model declarations.
         model_id (str):
         model_key (str):
         settings (ResolvedAgentModelSettings):
     """
 
-    characteristics: HarnessModelCharacteristics
+    characteristics: AgentModelCharacteristics
     model_id: str
     model_key: str
     settings: ResolvedAgentModelSettings
@@ -52,11 +52,11 @@ class ResolvedAgentModel:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
-        from ..models.harness_model_characteristics import HarnessModelCharacteristics
+        from ..models.agent_model_characteristics import AgentModelCharacteristics
         from ..models.resolved_agent_model_settings import ResolvedAgentModelSettings
 
         d = dict(src_dict)
-        characteristics = HarnessModelCharacteristics.from_dict(d.pop("characteristics"))
+        characteristics = AgentModelCharacteristics.from_dict(d.pop("characteristics"))
 
         model_id = d.pop("model_id")
 

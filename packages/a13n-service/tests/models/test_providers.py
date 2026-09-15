@@ -16,6 +16,10 @@ def test_registry_separates_provider_type_from_calling_api() -> None:
     )
     assert registry.definition("openrouter").supported_model_apis == ("openrouter.chat_completions",)
     assert registry.definition("ollama").supported_model_apis == ("ollama.chat_completions",)
+    assert registry.definition("openai").model_api_labels == {
+        "openai.responses": "OpenAI Responses",
+        "openai.chat_completions": "OpenAI Chat Completions",
+    }
 
 
 def test_registry_rejects_unbound_provider_api_combinations() -> None:

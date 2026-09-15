@@ -64,9 +64,7 @@ from a13n_harness.capabilities.context import (
 )
 from a13n_harness.capabilities.documents import (
     DOCUMENTS_CAPABILITY_ID,
-    DOCUMENTS_RUN_CAPABILITY_ID,
     DocumentsCapability,
-    DocumentsRunCapability,
 )
 from a13n_harness.capabilities.interaction import (
     USER_INTERACTION_CAPABILITY_ID,
@@ -78,15 +76,11 @@ from a13n_harness.capabilities.lifecycle import (
 )
 from a13n_harness.capabilities.media import (
     MEDIA_CAPABILITY_ID,
-    MEDIA_RUN_CAPABILITY_ID,
     MediaCapability,
-    MediaRunCapability,
 )
 from a13n_harness.capabilities.skills import (
-    SKILL_SELECTION_RUN_CAPABILITY_ID,
     SKILLS_CAPABILITY_ID,
     SkillsCapability,
-    SkillSelectionRunCapability,
 )
 from a13n_harness.capabilities.steering import (
     STEERING_CAPABILITY_ID,
@@ -102,14 +96,10 @@ from a13n_harness.capabilities.tool_proxy import (
 )
 from a13n_harness.capabilities.web import (
     WEB_CAPABILITY_ID,
-    WEB_RUN_CAPABILITY_ID,
     WebCapability,
-    WebRunCapability,
 )
 from a13n_harness.capabilities.working_state import (
-    TASK_STATE_RUN_CAPABILITY_ID,
     WORKING_STATE_CAPABILITY_ID,
-    TaskStateRunCapability,
     WorkingStateCapability,
 )
 from a13n_harness.capability_types import (
@@ -126,9 +116,7 @@ from a13n_harness.context import (
 )
 from a13n_harness.environment.dynamic import (
     DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
-    FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID,
     DynamicEnvironmentCapability,
-    FileMediaUnderstandingRunCapability,
 )
 from a13n_harness.environment.models import EnvironmentChange, EnvironmentError
 from a13n_harness.environment.providers import BoundEnvironment, EnvironmentRuntime
@@ -230,9 +218,7 @@ from a13n_harness.spec import _default_usage_limits
 from a13n_harness.state import AgentContextState, HarnessState
 from a13n_harness.tools.client import (
     CLIENT_TOOLS_CAPABILITY_ID,
-    CLIENT_TOOLS_RUN_CAPABILITY_ID,
     ClientToolsCapability,
-    ClientToolsRunCapability,
 )
 from a13n_harness.tools.deferred import (
     DeferredToolResume,
@@ -454,7 +440,7 @@ class SubagentDefinition:
     context: DelegationContextPolicy = field(default_factory=DelegationContextPolicy)
     identity: SubagentIdentityPolicy = field(default_factory=SubagentIdentityPolicy)
     usage_limits: UsageLimits | None = None
-    run_capability_factory: Callable[[], Sequence[AbstractCapability[AgentContext]]] | None = None
+    run_bindings_factory: Callable[[RunBindings], RunBindings] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.name, str) or not self.name.strip():
@@ -472,8 +458,8 @@ class SubagentDefinition:
             raise DefinitionError("Subagent identity must be SubagentIdentityPolicy.", code="subagent_identity_invalid")
         if self.usage_limits is not None and not isinstance(self.usage_limits, UsageLimits):
             raise DefinitionError("Subagent usage_limits must be UsageLimits or None.", code="subagent_limits_invalid")
-        if self.run_capability_factory is not None and not callable(self.run_capability_factory):
-            raise DefinitionError("Child run capability factory must be callable.", code="subagent_binding_invalid")
+        if self.run_bindings_factory is not None and not callable(self.run_bindings_factory):
+            raise DefinitionError("Child run bindings factory must be callable.", code="subagent_binding_invalid")
         object.__setattr__(self, "usage_limits", deepcopy(self.usage_limits))
 
 
@@ -656,7 +642,7 @@ def _resolve_model_characteristics_capabilities(
                     )
                     resolved.append(HandoffCapability(configuration))
                     continue
-                if model_characteristics.context_window is not None:
+                if model_characteristics.context_window_tokens is not None:
                     reminder_tokens = model_characteristics.summary_reminder_tokens
                     assert reminder_tokens is not None
                     configuration = configuration.model_copy(
@@ -893,7 +879,9 @@ class HarnessBuilder:
         model_characteristics = (
             definition.agent.model_characteristics if isinstance(definition.agent, HarnessAgentSpec) else None
         )
-        profile_context_window = model_characteristics.context_window if model_characteristics is not None else None
+        profile_context_window = (
+            model_characteristics.context_window_tokens if model_characteristics is not None else None
+        )
         selected_model_costs = _model_cost_capabilities(definition.capabilities)
         if len(selected_model_costs) > 1:
             raise DefinitionError(
@@ -1252,7 +1240,6 @@ class ExecutableAgent[OutputT]:
             advanced_binding=resolved_bindings.environment,
         )
         run_reserved_ids = _validate_capability_source(resolved_bindings.capabilities, source="run")
-        skill_selection_names = _capture_skill_selection_names(resolved_bindings.capabilities)
         normalized_resume = (
             preflight_deferred_resume(deferred_resume, previous_state=previous_state)
             if deferred_resume is not None
@@ -1271,7 +1258,6 @@ class ExecutableAgent[OutputT]:
             tool_recovery=tool_recovery,
             deferred_resume=normalized_resume,
             run_reserved_capability_ids=run_reserved_ids,
-            skill_selection_names=skill_selection_names,
             usage=usage,
             usage_limits=effective_usage_limits,
         )
@@ -1292,7 +1278,6 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         tool_recovery: ToolRecoveryMode,
         deferred_resume: DeferredToolResume | None,
         run_reserved_capability_ids: frozenset[str],
-        skill_selection_names: frozenset[str] | None,
         usage: RunUsage | None,
         usage_limits: UsageLimits | None,
     ) -> None:
@@ -1313,7 +1298,6 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
         )
         self._deferred_resume = deferred_resume
         self._run_reserved_capability_ids = run_reserved_capability_ids
-        self._skill_selection_names = skill_selection_names
         self._usage = usage if usage is not None else RunUsage()
         self._usage_limits = usage_limits
         self._emitter = _RunEventEmitter(self.thread_id, self.run_id)
@@ -1494,7 +1478,13 @@ class HarnessRunStream[OutputT](AsyncIterator[HarnessStreamEvent[OutputT]]):
                         ),
                         events=self._emitter,
                     ),
-                    _skill_selection_names=self._skill_selection_names,
+                    web=self._bindings.web,
+                    media_reader=self._bindings.media_reader,
+                    document_converter=self._bindings.document_converter,
+                    file_media_understanding=self._bindings.file_media_understanding,
+                    skill_selection=self._bindings.skill_selection,
+                    task_state=self._bindings.task_state,
+                    client_toolsets=self._bindings.client_toolsets,
                     _capability_provenance=_CapabilityProvenance(
                         definition_ids=self._executable._definition_reserved_capability_ids,
                         run_ids=self._run_reserved_capability_ids,
@@ -2911,12 +2901,10 @@ def _validate_built_capability_tree(
         USAGE_CAPABILITY_ID,
         MODEL_COST_CAPABILITY_ID,
         CLIENT_TOOLS_CAPABILITY_ID,
-        CLIENT_TOOLS_RUN_CAPABILITY_ID,
         CODEACT_CAPABILITY_ID,
         TOOL_PROXY_CAPABILITY_ID,
         DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
         TOOL_PERMISSIONS_CAPABILITY_ID,
-        FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID,
         RUNTIME_CONTEXT_CAPABILITY_ID,
         WORKSPACE_OUTLINE_CAPABILITY_ID,
         FILE_CONTEXT_CAPABILITY_ID,
@@ -2924,15 +2912,10 @@ def _validate_built_capability_tree(
         COMPACTION_CAPABILITY_ID,
         USER_INTERACTION_CAPABILITY_ID,
         SKILLS_CAPABILITY_ID,
-        SKILL_SELECTION_RUN_CAPABILITY_ID,
         MEDIA_CAPABILITY_ID,
-        MEDIA_RUN_CAPABILITY_ID,
         DOCUMENTS_CAPABILITY_ID,
-        DOCUMENTS_RUN_CAPABILITY_ID,
         WEB_CAPABILITY_ID,
-        WEB_RUN_CAPABILITY_ID,
         WORKING_STATE_CAPABILITY_ID,
-        TASK_STATE_RUN_CAPABILITY_ID,
         SUBAGENT_CAPABILITY_ID,
     }
     for capability in leaves:
@@ -3079,8 +3062,7 @@ def _validate_built_capability_tree(
             and capability_id in definition_reserved_ids
         )
         if (
-            isinstance(capability, InvocationPolicyCapability | ClientToolsRunCapability)
-            or capability_id in reserved_ids
+            isinstance(capability, InvocationPolicyCapability) or capability_id in reserved_ids
         ) and not allowed_definition_reserved:
             raise DefinitionError(
                 "A reserved Harness Capability is present in the built Agent tree from the wrong source.",
@@ -3178,19 +3160,6 @@ def _validate_built_capability_tree(
         )
 
 
-def _capture_skill_selection_names(
-    capabilities: Sequence[AbstractCapability[AgentContext]],
-) -> frozenset[str] | None:
-    selections = tuple(capability for capability in capabilities if type(capability) is SkillSelectionRunCapability)
-    if len(selections) > 1:
-        raise DefinitionError(
-            "RunBindings contains duplicate Host skill selections.",
-            code="capability_id_duplicate",
-            details={"capability_id": SKILL_SELECTION_RUN_CAPABILITY_ID, "source": "run"},
-        )
-    return frozenset(selections[0].names) if selections else None
-
-
 def _validate_capability_source(
     capabilities: Sequence[AbstractCapability[AgentContext]],
     *,
@@ -3200,13 +3169,6 @@ def _validate_capability_source(
     run_types = (
         MCP,
         InvocationPolicyCapability,
-        ClientToolsRunCapability,
-        SkillSelectionRunCapability,
-        MediaRunCapability,
-        DocumentsRunCapability,
-        FileMediaUnderstandingRunCapability,
-        WebRunCapability,
-        TaskStateRunCapability,
     )
     leaves: list[AbstractCapability[AgentContext]] = []
     for capability in capabilities:
@@ -3224,7 +3186,7 @@ def _validate_capability_source(
             )
         if source == "run" and type(capability) not in run_types:
             raise DefinitionError(
-                "RunBindings accepts only exact documented run attachment Capability types.",
+                "RunBindings.capabilities accepts only documented runtime policy and MCP types.",
                 code="capability_scope_invalid",
                 details={
                     "capability_id": capability.id,
@@ -3253,12 +3215,10 @@ def _validate_capability_source(
         USAGE_CAPABILITY_ID,
         MODEL_COST_CAPABILITY_ID,
         CLIENT_TOOLS_CAPABILITY_ID,
-        CLIENT_TOOLS_RUN_CAPABILITY_ID,
         CODEACT_CAPABILITY_ID,
         TOOL_PROXY_CAPABILITY_ID,
         DYNAMIC_ENVIRONMENT_CAPABILITY_ID,
         TOOL_PERMISSIONS_CAPABILITY_ID,
-        FILE_MEDIA_UNDERSTANDING_RUN_CAPABILITY_ID,
         RUNTIME_CONTEXT_CAPABILITY_ID,
         WORKSPACE_OUTLINE_CAPABILITY_ID,
         FILE_CONTEXT_CAPABILITY_ID,
@@ -3266,15 +3226,10 @@ def _validate_capability_source(
         COMPACTION_CAPABILITY_ID,
         USER_INTERACTION_CAPABILITY_ID,
         SKILLS_CAPABILITY_ID,
-        SKILL_SELECTION_RUN_CAPABILITY_ID,
         MEDIA_CAPABILITY_ID,
-        MEDIA_RUN_CAPABILITY_ID,
         DOCUMENTS_CAPABILITY_ID,
-        DOCUMENTS_RUN_CAPABILITY_ID,
         WEB_CAPABILITY_ID,
-        WEB_RUN_CAPABILITY_ID,
         WORKING_STATE_CAPABILITY_ID,
-        TASK_STATE_RUN_CAPABILITY_ID,
         SUBAGENT_CAPABILITY_ID,
     }
     accepted: set[str] = set()
@@ -3326,7 +3281,6 @@ def _validate_capability_source(
             | UsageCapability
             | AbstractModelCostCapability
             | ClientToolsCapability
-            | ClientToolsRunCapability
             | CodeActCapability
             | _ToolProxySurfaceCapability
             | DynamicEnvironmentCapability
@@ -3337,16 +3291,10 @@ def _validate_capability_source(
             | CompactionCapability
             | UserInteractionCapability
             | SkillsCapability
-            | SkillSelectionRunCapability
             | MediaCapability
-            | MediaRunCapability
-            | FileMediaUnderstandingRunCapability
             | DocumentsCapability
-            | DocumentsRunCapability
             | WebCapability
-            | WebRunCapability
             | WorkingStateCapability
-            | TaskStateRunCapability
             | SubagentCapability,
         )
         if reserved_type or capability.id in reserved_ids:

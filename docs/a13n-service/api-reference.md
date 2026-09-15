@@ -3019,25 +3019,6 @@ Responses:
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 
-### `POST /api/v1/organizations/{organization}/model-providers/{provider_id}/describe-model`
-
-Organization Describe Provider Model.
-
-| Parameter      | Location | Required | Type / schema | Constraints and default |
-| -------------- | -------- | -------- | ------------- | ----------------------- |
-| `provider_id`  | path     | true     | string        | —                       |
-| `organization` | path     | true     | string        | —                       |
-
-Request body: required.
-
-- `application/json`: `DescribeModelRequest`.
-
-Responses:
-
-- **200** — Successful Response (`application/json: ModelDescription`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
 ### `POST /api/v1/organizations/{organization}/model-providers/{provider_id}/discover-models`
 
 Organization Discover Provider Models.
@@ -3228,25 +3209,6 @@ Request body: required.
 Responses:
 
 - **200** — Successful Response (`application/json: ModelProvider`).
-- **400** — Invalid request. (`application/json: ErrorResponse`).
-- **default** — Service error. (`application/json: ErrorResponse`).
-
-### `POST /api/v1/workspaces/{workspace}/model-providers/{provider_id}/describe-model`
-
-Describe Provider Model.
-
-| Parameter     | Location | Required | Type / schema | Constraints and default |
-| ------------- | -------- | -------- | ------------- | ----------------------- |
-| `provider_id` | path     | true     | string        | —                       |
-| `workspace`   | path     | true     | string        | —                       |
-
-Request body: required.
-
-- `application/json`: `DescribeModelRequest`.
-
-Responses:
-
-- **200** — Successful Response (`application/json: ModelDescription`).
 - **400** — Invalid request. (`application/json: ErrorResponse`).
 - **default** — Service error. (`application/json: ErrorResponse`).
 

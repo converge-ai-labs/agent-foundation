@@ -98,7 +98,6 @@ Advanced integrations can replace the environment-configured default for one run
 
 ```python
 from a13n_harness import RunBindings
-from a13n_harness.environment import FileMediaUnderstandingRunCapability
 from a13n_harness.toolsets import (
     MediaUnderstandingRequest,
     MediaUnderstandingResult,
@@ -115,11 +114,7 @@ class CustomMediaUnderstandingProvider:
 
 
 bindings = RunBindings.embedded(
-    capabilities=(
-        FileMediaUnderstandingRunCapability(
-            provider=CustomMediaUnderstandingProvider(),
-        ),
-    )
+    file_media_understanding=CustomMediaUnderstandingProvider(),
 )
 ```
 

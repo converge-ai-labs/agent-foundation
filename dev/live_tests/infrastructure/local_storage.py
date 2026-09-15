@@ -95,10 +95,18 @@ async def wait_ready(client):
 
 
 @asynccontextmanager
-async def open_object_storage(*, endpoint_url=None, region="us-east-1"):
+async def open_object_storage(*, endpoint_url=None, region="us-east-1", credentials=None):
     async with AsyncExitStack() as stack:
-        credentials = {}
-        environment = {}
+        credentials = dict(credentials or {})
+        environment = (
+            {
+                "AWS_ACCESS_KEY_ID": credentials["aws_access_key_id"],
+                "AWS_SECRET_ACCESS_KEY": credentials["aws_secret_access_key"],
+                "AWS_SESSION_TOKEN": credentials.get("aws_session_token", ""),
+            }
+            if credentials
+            else {}
+        )
         if endpoint_url:
             endpoint = local_origin(endpoint_url)
         else:
