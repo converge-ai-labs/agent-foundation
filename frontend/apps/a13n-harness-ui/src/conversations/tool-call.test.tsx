@@ -307,7 +307,7 @@ const questionTool = {
   },
 };
 
-it("shows answered question titles and all answers by default, with original questions behind a disclosure", () => {
+it("shows question context and selected option descriptions by default, keeping all options in the disclosure", () => {
   render(
     <ToolCall
       tool={{
@@ -323,20 +323,31 @@ it("shows answered question titles and all answers by default, with original que
   );
   expect(
     Array.from(document.querySelectorAll("dt"), (item) => item.textContent),
-  ).toEqual(["Scope", "Checks"]);
+  ).toEqual(["ScopeWhich scope?", "ChecksWhich checks?"]);
   const receipt = screen.getByRole("region", { name: "Your answers" });
-  for (const text of ["Scope", "WebUI", "Checks", "Tests", "Browser"])
+  for (const text of [
+    "Scope",
+    "Which scope?",
+    "WebUI",
+    "Only the browser surface",
+    "Checks",
+    "Which checks?",
+    "Tests",
+    "Run tests",
+    "Browser",
+    "Check rendering",
+  ])
     expect(within(receipt).getByText(text)).toBeTruthy();
-  expect(screen.queryByText("Which scope?")).toBeNull();
-  expect(screen.queryByText("Only the browser surface")).toBeNull();
+  expect(screen.queryByText("Every surface")).toBeNull();
   const toggle = screen.getByRole("button", { name: "Questions & details" });
   expect(toggle.getAttribute("aria-expanded")).toBe("false");
   fireEvent.click(toggle);
-  expect(screen.getByText("Which scope?")).toBeTruthy();
-  expect(screen.getByText("Only the browser surface")).toBeTruthy();
+  expect(screen.getAllByText("Which scope?")).toHaveLength(2);
+  expect(screen.getAllByText("Only the browser surface")).toHaveLength(2);
   expect(screen.getByText("Every surface")).toBeTruthy();
   fireEvent.click(toggle);
-  expect(screen.queryByText("Which scope?")).toBeNull();
+  expect(screen.getByText("Which scope?")).toBeTruthy();
+  expect(screen.getByText("Only the browser surface")).toBeTruthy();
   expect(screen.getByText("WebUI")).toBeTruthy();
 });
 
@@ -364,6 +375,8 @@ it("preserves free-text and general responses in live and saved question receipt
     result.answers["Which scope?"],
   );
   expect(screen.getByText("Please keep the rest unchanged.")).toBeTruthy();
+  expect(screen.getByText("Which scope?")).toBeTruthy();
+  expect(screen.queryByText("Only the browser surface")).toBeNull();
   unmount();
   const entries = [
     {
@@ -404,9 +417,39 @@ it("preserves free-text and general responses in live and saved question receipt
     1,
   );
   expect(screen.getByText("Scope")).toBeTruthy();
+  expect(screen.getByText("Which scope?")).toBeTruthy();
+  expect(screen.queryByText("Only the browser surface")).toBeNull();
   expect(screen.getByText(/A custom scope/).textContent).toBe(
     result.answers["Which scope?"],
   );
+});
+
+it("keeps questions and answers readable without original headers or matching options", () => {
+  render(
+    <ToolCall
+      tool={{
+        ...questionTool,
+        input: {
+          questions: [
+            {
+              question: "Which scope?",
+              options: [{ label: "WebUI" }, null],
+            },
+          ],
+        },
+        result: {
+          answers: {
+            "Which scope?": "WebUI",
+            "Another question?": "Custom answer",
+          },
+        },
+      }}
+    />,
+  );
+  expect(screen.getAllByText("Which scope?")).toHaveLength(1);
+  expect(screen.getByText("WebUI")).toBeTruthy();
+  expect(screen.getAllByText("Another question?")).toHaveLength(1);
+  expect(screen.getByText("Custom answer")).toBeTruthy();
 });
 
 it("keeps missing, omitted, malformed and unsuccessful question results in the ordinary tool view", () => {

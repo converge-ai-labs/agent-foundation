@@ -72,7 +72,6 @@ export type Submission =
   | {
       kind: "accepted";
       action?: "send" | "steer";
-      message: string;
       receipt: string;
     }
   | { kind: "rejected"; message: string };

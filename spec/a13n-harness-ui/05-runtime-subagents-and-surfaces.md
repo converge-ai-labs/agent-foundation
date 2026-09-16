@@ -161,6 +161,16 @@ A response command names the exact selected continuation and supplies exactly on
 
 Only the App reconstructs the native deferred request and result batch. A response is a new root operation with fresh Run composition and collaborators; it does not reuse the suspended operation's runtime objects. The selected suspended continuation remains current unless the response operation publishes and compare-and-selects another acceptable continuation.
 
+### WebUI Interaction Deadlines
+
+A WebUI-mode App arms one process-local deadline for the complete deferred request batch after a root operation successfully selects a suspended continuation. It uses `tools.interaction_timeout_seconds` from that operation's captured configuration. All browser participants share the same deadline; reading, editing, refreshing, navigating away, or disconnecting neither restarts nor cancels it. CLI interactions retain their [per-question terminal policy](07-interactive-cli.md#waiting-and-cancellation); embedded and one-shot Apps do not arm WebUI timers implicitly.
+
+On expiry, the App submits one complete response against the exact continuation through ordinary root admission. Every approval is denied; every external result is explicitly failed. Structured questions report that no answer or approval was received and instruct the Agent not to repeat the question, continuing with reasonable assumptions where possible. Unsubmitted browser drafts are not responses and are discarded as input to this continuation. Timeout never fabricates answers, execution, or permission.
+
+Human response and expiry share the root admission boundary. A matching response admitted before expiry disarms the timer; one arriving after expiry is rejected with `thread_interaction_expired`, even if the timer has not run yet. An admitted timeout response is never automatically retried after preparation, execution, or save failure. A stale continuation cannot resume newer work. Archiving or stopping the App disarms outstanding waits without submitting a timeout. Deadlines are not persisted or rearmed from old checkpoints after restart; retained unanswered requests remain available for explicit response.
+
+`DecisionBatchView` exposes nullable `expires_at` and `server_time` timestamps. A null expiry means no automatic timeout is armed in this process. Browser countdowns are advisory and use server time to avoid participant clock skew; reaching zero refetches state and disables the expiring form, without submitting anything. Existing root-operation and Thread invalidations deliver the authoritative outcome. A countdown or admission receipt never establishes successful continuation saving.
+
 ## Harness UI Subagent Operator
 
 ### Admission and Identity
@@ -318,6 +328,8 @@ The optional root `webui.sidekick` mapping selects collaboration preferences, no
 Sidekick is disabled when its mapping is absent or null. This removes only its conditional instructions; all generic collaboration and discovery tools remain available subject to normal tool visibility policy. Configuration changes affect future Run captures, not active requests. Terminal Runs and delegated children receive no WebUI collaboration capability or Sidekick instructions. There is no additional Skill, task launcher, startup execution, or supervisor.
 
 ## Live Presentation
+
+Root transcript pages and entry reads project the selected continuation's [independent display history](03-local-storage-and-recovery.md#run-composition-and-continuation), falling back to native history for older objects. Display positions remain separate from model-history positions after context replacement. Context summaries expose their operation identities consistently in saved metadata and live observations so clients can preserve disclosure state without text-based matching.
 
 Saved transcript tool results preserve the native `ToolReturnPart.outcome` (`success`, `failed`, `denied`, or `interrupted`) as an optional projection field. Absence remains compatible with older projections and non-result parts; clients do not infer success solely from arbitrary result content. Retry parts retain their distinct kind. This presentation projection does not change persisted history.
 

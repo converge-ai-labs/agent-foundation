@@ -31,6 +31,8 @@ import { Changes, DiffView, type DiffSelection } from "./changes";
 import styles from "./native.module.css";
 import { TerminalPanel } from "./terminal";
 import { useThread } from "../conversations/queries";
+import { ComposerDrafts } from "../conversations/composer";
+import { conversationTitle } from "../conversations/local-input";
 import { nativeLink, pageLink } from "../shell/page-links";
 import { OpenHostFile } from "../conversations/tool-call";
 
@@ -56,6 +58,7 @@ export function NativeWorkspace({
   const threadId = matchPath("/threads/:threadId", location.pathname)?.params
     .threadId;
   const thread = useThread(threadId ?? "");
+  const composers = useContext(ComposerDrafts);
   const isNew =
     location.pathname === "/" ||
     !!matchPath("/new/:draftId?", location.pathname);
@@ -358,9 +361,10 @@ export function NativeWorkspace({
         {navigation}
         <h1 className={styles.workspaceTitle}>
           {threadId
-            ? thread.data?.thread.title ||
-              thread.data?.thread.excerpt?.first_input ||
-              "Untitled conversation"
+            ? conversationTitle(
+                thread.data?.thread,
+                composers.get(threadId)?.localInputs,
+              )
             : isWorkspace
               ? "New conversation"
               : location.pathname === "/archived"

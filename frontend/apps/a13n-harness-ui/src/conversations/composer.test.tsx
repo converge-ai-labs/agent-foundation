@@ -11,7 +11,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as Y from "yjs";
 import { Composer, ComposerDrafts, useDraft, submitDraft } from "./composer";
-import { SteerNotice } from "./transcript";
+import { ConversationTranscript } from "./transcript";
 import { ThreadDraft, encode, values } from "./draft";
 import { TransportContext } from "../transport/context";
 import type { Schema, Transport } from "../transport/client";
@@ -20,7 +20,12 @@ function MessageStream() {
   const draft = useDraft("thread-one");
   return (
     <section aria-label="Message stream">
-      <SteerNotice draft={draft} />
+      <ConversationTranscript
+        entries={[]}
+        blocks={[]}
+        localInputs={draft.localInputs}
+        threadId="thread-one"
+      />
     </section>
   );
 }
@@ -232,21 +237,10 @@ it.each(["accepted", "rejected", "unknown"] as const)(
     await waitFor(() => expect(draft.submission.kind).toBe(outcome));
     expect(draft.localInputs.at(-1)?.state).toBe(outcome);
     if (outcome === "accepted") {
-      const status = screen.getByRole("status");
+      expect(screen.queryByRole("status")).toBeNull();
       expect(
-        screen.getByRole("region", { name: "Message stream" }).contains(status),
-      ).toBe(true);
-      expect(
-        screen.getByRole("region", { name: "Next message" }).contains(status),
-      ).toBe(false);
-      expect(status.textContent).toContain("Steer sent.");
-      expect(screen.getByRole("status").textContent).toContain(
-        "application is not yet confirmed",
-      );
-      fireEvent.click(
-        screen.getByRole("button", { name: "Dismiss steer notification" }),
-      );
-      expect(screen.queryByText(/Steer sent\./)).toBeNull();
+        screen.getByRole("region", { name: "Message stream" }).textContent,
+      ).toContain("before");
     }
     expect(values(draft.doc)).toEqual({
       prompt: outcome === "accepted" ? "NEXT " : "NEXT before after",
@@ -273,7 +267,6 @@ it("keeps accepted receipts and healthy sync quiet while preserving errors and a
   draft.submission = {
     kind: "accepted",
     receipt: "receipt-hidden",
-    message: "Input accepted. Execution may still be preparing.",
   };
   const query = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -296,12 +289,7 @@ it("keeps accepted receipts and healthy sync quiet while preserving errors and a
       </TransportContext>
     </QueryClientProvider>,
   );
-  expect(screen.queryByText(/Input accepted/)).toBeNull();
-  expect(screen.queryByText(/receipt-hidden/)).toBeNull();
-  expect(screen.queryByText("Synchronized")).toBeNull();
-  expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Attach files" })).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Composer help" })).toBeNull();
+  expect(screen.queryByRole("status")).toBeNull();
   expect(
     screen
       .getByRole("textbox", { name: "Shared prompt" })

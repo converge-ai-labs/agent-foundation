@@ -215,10 +215,6 @@ export async function submitDraft(
       kind: "accepted",
       action,
       receipt: acceptedReceipt,
-      message:
-        action === "send"
-          ? "Input accepted. Execution may still be preparing."
-          : "Steer sent. The running operation accepted your instruction; application is not yet confirmed.",
     };
   } catch (error) {
     // A definite application rejection differs from a lost response/proxy failure.
@@ -334,10 +330,10 @@ export function Composer({
   const synchronized = draft.synchronized;
   useEffect(() => {
     setSyncDelayed(false);
-    if (synchronized || draft.status !== "Connected") return;
+    if (synchronized || local) return;
     const timer = setTimeout(() => setSyncDelayed(true), 700);
     return () => clearTimeout(timer);
-  }, [synchronized, draft.status]);
+  }, [synchronized, draft.status, local]);
   const [preview, setPreview] = useState<{
     name: string;
     text: string;
@@ -498,8 +494,11 @@ export function Composer({
       reconcile();
       if (!controller.signal.aborted) await onSubmitted?.();
     } catch (failure) {
-      localInput.state = "rejected";
-      draft.notify();
+      // A failed follow-up observation cannot undo an admission receipt.
+      if (localInput.state === "preparing") {
+        localInput.state = "rejected";
+        draft.notify();
+      }
       if (!controller.signal.aborted)
         setError(
           failure instanceof Error
@@ -658,16 +657,13 @@ export function Composer({
           Comment added to your message. Review it below, then send when ready.
         </p>
       )}
-      {!local &&
-        !synchronized &&
-        !draft.replacement &&
-        (draft.status !== "Connected" || syncDelayed) && (
-          <p role="status" className={styles.composerConnection}>
-            {draft.status === "Connected"
-              ? "Syncing edits…"
-              : `${draft.status} · your edits are still in this tab`}
-          </p>
-        )}
+      {!local && !synchronized && !draft.replacement && syncDelayed && (
+        <p role="status" className={styles.composerConnection}>
+          {draft.status === "Connected"
+            ? "Syncing edits…"
+            : `${draft.status} · your edits are still in this tab`}
+        </p>
+      )}
       {draft.replacement && (
         <div role="alert" className={styles.warning}>
           <p>
@@ -869,10 +865,10 @@ export function Composer({
               size="icon"
               className={styles.sendButton}
               aria-label={
-                preparing
-                  ? "Preparing"
-                  : pending
-                    ? "Submitting"
+                pending
+                  ? "Submitting"
+                  : preparing
+                    ? "Preparing"
                     : stopAction
                       ? "Stop"
                       : busy

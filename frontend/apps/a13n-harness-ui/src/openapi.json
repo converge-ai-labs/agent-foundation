@@ -6076,6 +6076,30 @@
             "maxItems": 256,
             "minItems": 1,
             "title": "Requests"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "server_time": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Server Time"
           }
         },
         "additionalProperties": false,
@@ -11505,8 +11529,7 @@
           "text": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 65536
+                "type": "string"
               },
               {
                 "type": "null"

@@ -248,8 +248,8 @@ it("locates a deep-linked selected row without fetching preceding pages and pres
       .getAttribute("aria-current"),
   ).toBe("page");
   expect(
-    screen.getByText("Selected conversation · outside this page"),
-  ).toBeTruthy();
+    screen.queryByText("Selected conversation · outside this page"),
+  ).toBeNull();
   expect(activity).toHaveLength(1);
   fireEvent.click(screen.getByRole("button", { name: "One" }));
   await act(() =>
@@ -734,14 +734,15 @@ it("shows every active conversation before five recent rows and reconciles compl
   }));
   mount("/threads/Active%200");
   const project = await screen.findByRole("region", { name: "One" });
-  const running = await within(project).findByRole("group", {
-    name: "Running conversations",
-  });
-  expect(
-    within(running)
+  await within(project).findByText("Running · 6");
+  const runningLinks = () =>
+    within(project)
       .getAllByRole("link")
-      .map((link) => link.textContent),
-  ).toEqual(activeThreads.map((item) => expect.stringContaining(item.title)));
+      .filter((link) => /Running|Preparing/.test(link.textContent ?? ""));
+  const selectedRow = within(project).getByRole("link", { name: /Active 0/ });
+  expect(runningLinks().map((link) => link.textContent)).toEqual(
+    activeThreads.map((item) => expect.stringContaining(item.title)),
+  );
   expect(within(project).getAllByRole("link")).toHaveLength(11);
   expect(within(project).queryByText(/outside this page/)).toBeNull();
   expect(
@@ -753,7 +754,7 @@ it("shows every active conversation before five recent rows and reconciles compl
   // More applies only to inactive history; repeated active_rows must not duplicate.
   fireEvent.click(within(project).getByRole("button", { name: /Show more/ }));
   await within(project).findByRole("link", { name: /Older one/ });
-  expect(within(running).getAllByRole("link")).toHaveLength(6);
+  expect(runningLinks()).toHaveLength(6);
   expect(within(project).getAllByRole("link")).toHaveLength(13);
 
   // Live presentation changes do not trigger a frontend re-sort or touch request.
@@ -762,23 +763,50 @@ it("shows every active conversation before five recent rows and reconciles compl
     await queryClient.invalidateQueries({ queryKey: ["threads"] });
   });
   await waitFor(() =>
-    expect(
-      within(running)
-        .getAllByRole("link")
-        .map((link) => link.textContent),
-    ).toEqual(activeThreads.map((item) => expect.stringContaining(item.title))),
+    expect(runningLinks().map((link) => link.textContent)).toEqual(
+      activeThreads.map((item) => expect.stringContaining(item.title)),
+    ),
   );
   activeThreads = activeThreads.slice(1);
   recentTitle = "Active 0";
   await act(async () => {
     await queryClient.invalidateQueries({ queryKey: ["threads"] });
   });
-  await waitFor(() =>
-    expect(within(running).getAllByRole("link")).toHaveLength(5),
-  );
+  await waitFor(() => expect(runningLinks()).toHaveLength(5));
   expect(
     within(project).getAllByRole("link", { name: /Active 0/ }),
   ).toHaveLength(1);
   expect(within(project).queryByText(/outside this page/)).toBeNull();
+  expect(within(project).getByRole("link", { name: /Active 0/ })).toBe(
+    selectedRow,
+  );
   expect(writes).toEqual([]);
+});
+
+it("keeps the selected lifecycle observation across pagination but accepts a refreshed first page", async () => {
+  activeThreads = [
+    { ...thread("Selected"), root_activity: { state: "running" } },
+  ];
+  mount("/threads/Selected");
+  const project = await screen.findByRole("region", { name: "One" });
+  await within(project).findByText("Running · 1");
+  const row = within(project).getByRole("link", { name: /Selected/ });
+
+  await act(async () => {
+    queryClient.setQueryData(["thread", "Selected", "detail"], {
+      thread: thread("Selected"),
+    });
+  });
+  await waitFor(() => expect(within(row).queryByText("Running")).toBeNull());
+  const more = within(project).getByRole("button", { name: /Show more/ });
+  expect(more.textContent).toBe("More");
+  fireEvent.click(more);
+  await within(project).findByRole("link", { name: /Older one/ });
+  expect(within(row).queryByText("Running")).toBeNull();
+  expect(within(project).getByRole("link", { name: /Selected/ })).toBe(row);
+
+  // A real first-page refresh is a newer observation, unlike an appended page.
+  await act(() => queryClient.invalidateQueries({ queryKey: ["threads"] }));
+  await within(row).findByText("Running");
+  expect(within(project).getByRole("link", { name: /Selected/ })).toBe(row);
 });

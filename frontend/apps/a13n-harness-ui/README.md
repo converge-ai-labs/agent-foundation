@@ -28,7 +28,7 @@ make frontend-check-all
 make a13n-harness-ui-build
 ```
 
-The frontend gate covers formatting, generated contract drift, TypeScript and Vitest/jsdom behavior tests. Automated tests do not require a real browser or a browser CI runner. Local browser verification supplements unit and protocol tests for CodeMirror, responsive layout, presence and integrated server flows without becoming a test-suite dependency. Tests and smoke sessions use isolated configuration/data and do not require paid models.
+The frontend gate covers formatting, generated contract drift, TypeScript and Vitest/jsdom behavior tests. Vitest keeps per-file isolation and prebundles external UI dependencies instead of reloading their full module trees in each jsdom suite. The CodeMirror/Yjs entries share one optimized module graph to preserve class identity; Node crypto remains native. Local runs use two workers; CI uses four on an eight-core runner, leaving capacity for isolated Python App fixtures. CI reports WebUI checking, testing, and asset building as separate steps. Automated tests do not require a real browser or a browser CI runner. Local browser verification supplements unit and protocol tests for CodeMirror, responsive layout, presence and integrated server flows without becoming a test-suite dependency. Tests and smoke sessions use isolated configuration/data and do not require paid models.
 
 ## Collaborative conversations
 

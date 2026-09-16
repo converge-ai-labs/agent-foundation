@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
 import { consumeSse, summaryFrame } from "./events";
-import { createTransport, result } from "./client";
+import { ApiError, createTransport, result } from "./client";
 
 afterEach(() => vi.unstubAllGlobals());
 it("decodes split UTF-8, CRLF, comments and multiple data lines", async () => {
@@ -64,15 +64,16 @@ it("announces unauthorized responses and never retries the write", async () => {
   const fetcher = vi.fn().mockResolvedValue(new Response("", { status: 401 }));
   vi.stubGlobal("fetch", fetcher);
   const transport = createTransport("example-key", expired);
-  await expect(
-    result(
-      transport.client.PUT("/api/auth/keys", {
-        body: { credential_ref: "key-one", key: "provider-secret" },
-      }),
-    ),
-  ).rejects.toMatchObject({ status: 401 });
+  const request = result(
+    transport.client.PUT("/api/auth/keys", {
+      body: { credential_ref: "key-one", key: "provider-secret" },
+    }),
+  );
+  await expect(request).rejects.toBeInstanceOf(ApiError);
+  await expect(request).rejects.toMatchObject({ status: 401 });
   expect(fetcher).toHaveBeenCalledTimes(1);
   expect(expired).toHaveBeenCalledOnce();
+  transport.close();
 });
 
 it("closes pending writes on rejected access and ignores their late success", async () => {

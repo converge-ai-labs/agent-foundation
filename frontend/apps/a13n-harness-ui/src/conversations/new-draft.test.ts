@@ -60,7 +60,6 @@ it("clears an accepted slot even after leaving New and never lets the old compos
   first.composer.submission = {
     kind: "accepted",
     receipt: "receipt-one",
-    message: "Accepted",
   };
   first.composer.notify();
   expect(localStorage.getItem("a13n-harness-ui.new-draft")).toBeNull();
@@ -114,7 +113,6 @@ it("does not reuse a completed Thread when storage cleanup is unavailable", () =
   first.composer.submission = {
     kind: "accepted",
     receipt: "receipt-one",
-    message: "Accepted",
   };
   first.composer.notify();
   expect(owner.get(composers).threadId).not.toBe(first.threadId);

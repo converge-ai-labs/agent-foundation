@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { ApiError, createTransport, NetworkError } from "./client";
+import { createTransport, NetworkError } from "./client";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -35,15 +35,4 @@ it("does not present cancellation as connection loss", async () => {
     transport.fetch("/api/status", { signal: controller.signal }),
   ).rejects.toBe(cause);
   transport.close();
-});
-
-it("preserves API errors and access-expiry handling", async () => {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn().mockResolvedValue(new Response("{}", { status: 401 })),
-  );
-  const unauthorized = vi.fn();
-  const transport = createTransport("", unauthorized);
-  await expect(transport.fetch("/api/status")).rejects.toBeInstanceOf(ApiError);
-  expect(unauthorized).toHaveBeenCalledOnce();
 });

@@ -449,7 +449,7 @@ def create_webui(
             "host_git_permission_denied",
         }:
             status = 403
-        elif code in {"host_files_partial_failure", "thread_run_active", "thread_exists"}:
+        elif code in {"host_files_partial_failure", "thread_run_active", "thread_exists", "thread_interaction_expired"}:
             status = 409
         elif code == "host_files_io_error":
             status = 500

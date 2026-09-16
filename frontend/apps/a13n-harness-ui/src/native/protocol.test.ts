@@ -1,15 +1,15 @@
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
-import { startNativeApp } from "../../tests/app-fixture";
+import { startApp } from "../../tests/app-fixture";
 import { createTransport, result, type Transport } from "../transport/client";
 import { FileBuffer, joinPath } from "./buffer";
 import { captureSource } from "./capture";
 import { ThreadDraft, values } from "../conversations/draft";
 import { submitDraft } from "../conversations/composer";
 
-let app: Awaited<ReturnType<typeof startNativeApp>>;
+let app: Awaited<ReturnType<typeof startApp>>;
 let transport: Transport;
 beforeAll(async () => {
-  app = await startNativeApp();
+  app = await startApp("--native");
   vi.stubGlobal("window", { location: { origin: app.origin } });
   transport = createTransport("test-only-key", () => {
     throw new Error("Unexpected authentication failure");

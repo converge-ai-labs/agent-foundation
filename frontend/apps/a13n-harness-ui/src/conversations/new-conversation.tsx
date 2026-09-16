@@ -166,8 +166,7 @@ function NewConversation({
     mutationFn: () => ensureConversation(transport, threadId, draft),
     onSettled: (_data, error) => {
       if (draft.created) void refreshThreadLists(queries);
-      if (draft.created && error && active.current)
-        void openConversation().catch(() => {});
+      if (draft.created && error && active.current) openConversation();
     },
   });
   const [search, setSearch] = useSearchParams();
@@ -227,35 +226,10 @@ function NewConversation({
         ? "Sandbox"
         : "Custom environment";
   const choicesDisabled = preparing || draft.attempted;
-  const openConversation = async () => {
-    // Keep the current composer visible until the saved route has its first frame.
-    // Never retry admission here: this is only an exact-identity observation.
-    const detail = await queries.fetchQuery({
-      queryKey: ["thread", threadId, "detail"],
-      queryFn: () =>
-        result(
-          transport.client.GET("/api/threads/{thread_id}", {
-            params: { path: { thread_id: threadId } },
-          }),
-        ),
-      staleTime: 0,
-    });
-    await queries.prefetchInfiniteQuery({
-      queryKey: ["thread", threadId, "history", detail.continuation_id],
-      initialPageParam: undefined as string | undefined,
-      queryFn: () =>
-        result(
-          transport.client.GET("/api/threads/{thread_id}/transcript", {
-            params: {
-              path: { thread_id: threadId },
-              query: {
-                expected_continuation_id: detail.continuation_id ?? undefined,
-                limit: 30,
-              },
-            },
-          }),
-        ),
-    });
+  const openConversation = () => {
+    // Admission and page observation are independent. Open the retained identity
+    // immediately so detail and focused output can load together; the saved page
+    // keeps local input visible while history catches up.
     if (!active.current) return;
     navigate(`/threads/${encodeURIComponent(threadId)}?compose=1`, {
       replace: true,
