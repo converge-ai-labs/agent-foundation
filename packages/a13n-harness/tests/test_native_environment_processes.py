@@ -15,8 +15,8 @@ from a13n_environment import (
     EnvironmentAction,
     EnvironmentPermissionSet,
 )
+from a13n_environment._guest_files import GuestFiles
 from a13n_environment.e2b.commands import GuestCommands
-from a13n_environment.e2b.files import E2BFiles
 from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
 from a13n_harness.environment import DynamicEnvironmentCapability, DynamicEnvironmentConfiguration
 from a13n_harness.tools import InvocationPolicyCapability, InvocationPolicyDecision
@@ -81,7 +81,7 @@ class NativeCommands:
 async def test_cross_run_discovery_authorization_lazy_observation_and_explicit_kill(monkeypatch, discovery_only):
     native = NativeCommands()
     sandbox = SimpleNamespace(sandbox_id="sandbox-persistent", commands=native)
-    monkeypatch.setattr(E2BFiles, "stat", AsyncMock())
+    monkeypatch.setattr(GuestFiles, "stat", AsyncMock())
     monkeypatch.setattr(GuestCommands, "files", AsyncMock(return_value={"path": "/home/user"}))
 
     class NativeEnvironment(E2BEnvironment):

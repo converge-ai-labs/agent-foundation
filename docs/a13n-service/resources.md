@@ -56,7 +56,7 @@ Standard Harness deferred approvals bind resolved paths, not backing generations
 
 ### Host-local placement
 
-Host-local Providers record `host_id` when configured. Docker also records `docker_host`, so an existing Provider keeps using the same daemon even when a worker's environment variables change. Run workers and maintenance must execute on that host with access to the same protected bootstrap storage. Register an existing target once and reuse its Environment ID; another Provider record does not create a separate owner for the target.
+Direct Local and Docker require `deployment.mode = "single_host"`. All participating Workers must share the same configured filesystem and Docker backend; Service does not route Runs by hostname. Docker records its `docker_host` endpoint. Managed Direct Local templates use their root as a base and allocate `environments/<env_id>` underneath it. Share an Environment ID to share its files; another Environment gets its own directory.
 
 Capacity reservations and idle retention belong to [worker maintenance](background-tasks.md#environment-capacity), not to the Provider constructor.
 

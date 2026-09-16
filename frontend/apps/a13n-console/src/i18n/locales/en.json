@@ -2619,5 +2619,7 @@
   "Validation status": "Validation status",
   "Checked at": "Checked at",
   "Validation scope": "Validation scope",
-  "Warnings": "Warnings"
+  "Warnings": "Warnings",
+  "Direct Local and Docker require a single-host deployment and operator configuration.": "Direct Local and Docker require a single-host deployment and operator configuration.",
+  "Root path is a base directory. Each environment gets its own environments/<environment_id> subdirectory.": "Root path is a base directory. Each environment gets its own environments/<environment_id> subdirectory."
 }

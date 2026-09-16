@@ -27,6 +27,7 @@ from a13n_service.storage import short_session
 from .configuration import load_configuration
 from .domain import TemplateConfiguration
 from .lifecycle import EnvironmentLifecycle, EnvironmentOperationBusy
+from .local_directory import instance_configuration
 from .models import EnvironmentProviderRecord, EnvironmentRecord
 
 if TYPE_CHECKING:
@@ -229,7 +230,8 @@ async def validate_run_environment(
         configuration = await load_configuration(session, row)
         implementation = lifecycle.catalog.require(provider.type)
         validated = implementation.validate_configuration(
-            schema_version=configuration.configuration_schema_version, value=configuration.configuration
+            schema_version=configuration.configuration_schema_version,
+            value=instance_configuration(provider.type, row.id, configuration),
         )
         descriptor = implementation.describe_configuration(validated)
         if run.environment_access is None:

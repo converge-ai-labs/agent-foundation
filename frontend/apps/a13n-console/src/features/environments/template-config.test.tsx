@@ -75,7 +75,7 @@ beforeEach(() => {
               template_configuration_schemas: { "1": e2bSchema },
             },
             {
-              type: "a13n.local-envd",
+              type: "a13n.docker",
               supports_managed: true,
               supports_stop: false,
               supports_destroy: false,
@@ -88,7 +88,7 @@ beforeEach(() => {
             { id: "envp_e2b", type: "a13n.e2b", name: "E2B", enabled: true },
             {
               id: "envp_local",
-              type: "a13n.local-envd",
+              type: "a13n.docker",
               name: "Local",
               enabled: true,
             },

@@ -20,7 +20,7 @@ from a13n_service.ids import ObjectId
 from a13n_service.labels import Labels
 
 EnvironmentName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=128)]
-type LocalProviderType = Literal["a13n.direct-local", "a13n.local-envd", "a13n.docker"]
+type LocalProviderType = Literal["a13n.direct-local", "a13n.docker"]
 LOCAL_PROVIDER_TYPES = frozenset(get_args(LocalProviderType.__value__))
 JsonObject = dict[str, JsonValue]
 Duration = Annotated[int, Field(ge=0, strict=True)]

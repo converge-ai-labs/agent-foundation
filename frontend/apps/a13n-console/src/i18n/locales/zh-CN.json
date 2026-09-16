@@ -2619,5 +2619,7 @@
   "Validation status": "校验状态",
   "Checked at": "校验时间",
   "Validation scope": "校验范围",
-  "Warnings": "警告"
+  "Warnings": "警告",
+  "Direct Local and Docker require a single-host deployment and operator configuration.": "Direct Local 和 Docker 需要单机部署，并由部署管理员配置。",
+  "Root path is a base directory. Each environment gets its own environments/<environment_id> subdirectory.": "Root path 是基础目录，每个环境使用独立的 environments/<environment_id> 子目录。"
 }

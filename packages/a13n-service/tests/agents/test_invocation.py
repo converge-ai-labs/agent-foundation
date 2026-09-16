@@ -163,7 +163,7 @@ def test_subagent_patch_is_name_keyed_and_supports_default_selection() -> None:
     assert merged.subagents["researcher"].version is None
     assert merged.subagents["researcher"].description is None
     assert merged.subagents["writer"].context.history == "none"
-    assert merged.subagents["writer"].environment.mode == "none"
+    assert merged.subagents["writer"].environment.mode == "shared"
 
 
 def test_connection_tool_overrides_replace_complete_lists() -> None:

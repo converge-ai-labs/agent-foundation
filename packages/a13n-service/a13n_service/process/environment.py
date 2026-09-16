@@ -18,10 +18,8 @@ def build_environment_catalog(
 
     if settings.environments.local_providers and components.request_authenticator is not None:
         raise ValueError("Deployment local Providers require the OSS identity runtime")
-    if components.environment_provider_catalog is not None:
-        return components.environment_provider_catalog
     selected_providers = providers or load_provider_catalogs(())
-    selected = build_environment_provider_catalog(
+    selected = components.environment_provider_catalog or build_environment_provider_catalog(
         builtin_keys=(*settings.environments.provider_builtins, *settings.environments.local_providers),
         explicit_providers=(
             provider
@@ -30,6 +28,12 @@ def build_environment_catalog(
             and provider.key not in settings.environments.local_providers
         ),
     )
+    if "a13n.local-envd" in selected:
+        raise ValueError("Local Envd is not supported by Service")
+    if settings.deployment.mode == "distributed" and any(
+        key in selected for key in ("a13n.direct-local", "a13n.docker")
+    ):
+        raise ValueError("Local Environment Providers require deployment.mode=single_host")
     return selected
 
 

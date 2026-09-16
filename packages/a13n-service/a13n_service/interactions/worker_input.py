@@ -115,10 +115,16 @@ class WorkerInputSources:
 
         return AcquiredBinary(asset_chunks(), asset.media_type)
 
-    async def replace(self, path: str, chunks: AsyncIterable[bytes]) -> None:
-        files = self._require_environment().files
+    async def replace(self, path: str, chunks: AsyncIterable[bytes]) -> str:
+        environment = self._require_environment()
+        selection = await environment.resolve_files(path, alias="workspace")
+        if selection.mount_path is None:
+            raise AgentInputError("input_environment_unavailable", "The input Environment has no aggregate path")
+        path = selection.mount_path.rstrip("/") + selection.resolved_path.path
+        files = environment.files
         await files.mkdir(posixpath.dirname(path), parents=True, exist_ok=True)
         await files.write_bytes_stream(path, chunks, mode="upsert")
+        return path
 
     def close(self) -> None:
         self.environment = None

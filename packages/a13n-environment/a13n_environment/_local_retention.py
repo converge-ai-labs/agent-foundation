@@ -1,4 +1,4 @@
-"""Private Direct Local retained-output store with actual-byte spool accounting."""
+"""Provider-local retained-output store with actual-byte spool accounting."""
 
 from __future__ import annotations
 
@@ -10,8 +10,8 @@ from pathlib import Path
 from secrets import token_hex
 from typing import BinaryIO
 
-from ..models import EnvironmentError, EnvironmentOperationReceipt
-from ..retention import (
+from .models import EnvironmentError, EnvironmentOperationReceipt
+from .retention import (
     BoundOutputCursor,
     BoundOutputReference,
     EnvironmentOutputCapture,

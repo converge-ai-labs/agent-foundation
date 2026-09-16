@@ -108,7 +108,7 @@ class SkillSelection(StrictModel):
 
 
 class ChildEnvironmentPolicy(StrictModel):
-    mode: Literal["none", "shared", "dedicated"] = "none"
+    mode: Literal["none", "shared", "dedicated"] = "shared"
     template_revision_id: ObjectId | None = None
 
     @model_validator(mode="after")

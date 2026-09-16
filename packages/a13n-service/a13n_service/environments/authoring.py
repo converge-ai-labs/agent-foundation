@@ -7,7 +7,7 @@ from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.authorization import WorkspaceAction, authorize_workspace
 from a13n_service.iam.resource_scope import visible_workspace
 
-from .errors import environment_not_found
+from .errors import environment_not_found, invalid_environment
 from .models import EnvironmentProviderRecord, EnvironmentTemplateRecord, EnvironmentTemplateRevisionRecord
 
 
@@ -43,5 +43,10 @@ async def authorize_template(
             EnvironmentTemplateRevisionRecord.id == EnvironmentTemplateRecord.current_revision_id,
         )
     )
-    if await session.scalar(query) is None:
+    revision = await session.scalar(query)
+    if revision is None:
         raise environment_not_found()
+    if revision_id is not None:
+        provider = await session.get(EnvironmentProviderRecord, revision.provider_id)
+        if provider is not None and provider.type == "a13n.direct-local":
+            raise invalid_environment("Direct Local does not support dedicated child environments")

@@ -135,22 +135,21 @@ async def test_provider_disable_blocks_new_allocation(environment_service, tmp_p
         )
 
 
-async def test_local_provider_rejects_destructive_retention(environment_service, tmp_path):
+async def test_local_provider_accepts_managed_retention(environment_service, tmp_path):
     provider = await environment_service.create_provider(
         actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type="a13n.direct-local", name="Local")
     )
-    with pytest.raises(EnvironmentManagementError, match="support stop"):
-        await environment_service.create_template(
-            actor=actor(),
-            workspace_id=WORKSPACE_ID,
-            idempotency_key="unsupported",
-            request=CreateTemplateRequest(
-                name="Bad",
-                provider_id=provider.id,
-                configuration={"root": {"path": str(tmp_path)}},
-                retention={"idle": {"stop_after": 10, "delete_after": None}},
-            ),
-        )
+    await environment_service.create_template(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="unsupported",
+        request=CreateTemplateRequest(
+            name="Managed local",
+            provider_id=provider.id,
+            configuration={"root": {"path": str(tmp_path)}},
+            retention={"idle": {"stop_after": 10, "delete_after": 20}},
+        ),
+    )
 
 
 async def test_stop_never_resets_deletion_deadline():

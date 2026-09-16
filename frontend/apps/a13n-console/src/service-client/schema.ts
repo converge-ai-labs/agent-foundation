@@ -5341,7 +5341,7 @@ export interface components {
     ChildEnvironmentPolicy: {
       /**
        * Mode
-       * @default none
+       * @default shared
        * @enum {string}
        */
       mode?: "none" | "shared" | "dedicated";

@@ -16,6 +16,7 @@ from pathlib import Path
 from secrets import token_hex
 from typing import TYPE_CHECKING, Literal
 
+from .._local_retention import LocalRetentionStore, LocalRetentionWriter
 from ..commands import (
     ArgvCommand,
     BoundProcessHandle,
@@ -47,7 +48,6 @@ from ..retention import (
     _unwrap_opaque,
     materialize_capture,
 )
-from .retention import LocalRetentionStore, LocalRetentionWriter
 
 if TYPE_CHECKING:
     from .._windows_job import WindowsJob

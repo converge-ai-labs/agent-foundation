@@ -105,6 +105,10 @@ class ProviderPluginsSettings(Section):
     enabled: tuple[str, ...] = Field(default=(), max_length=128)
 
 
+class DeploymentSettings(Section):
+    mode: Literal["single_host", "distributed"] = "single_host"
+
+
 class WorkerSettings(Section):
     concurrency: int = Field(default=8, ge=1, le=1024)
     poll_interval_seconds: float = Field(default=1, gt=0, le=60)
@@ -130,6 +134,8 @@ class EnvironmentsSettings(Section):
 
     @model_validator(mode="after")
     def local_provider_configuration(self) -> Self:
+        if "a13n.local-envd" in self.provider_builtins:
+            raise ValueError("Local Envd is not supported by Service")
         if LOCAL_PROVIDER_TYPES.intersection(self.provider_builtins):
             raise ValueError("Configure local backends through environments.local_providers, not provider_builtins")
         return self

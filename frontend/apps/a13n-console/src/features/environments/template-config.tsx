@@ -231,6 +231,13 @@ export function TemplateConfig({
               ]}
             />
           </div>
+          {definition?.type === "a13n.direct-local" && (
+            <p>
+              {t(
+                "Root path is a base directory. Each environment gets its own environments/<environment_id> subdirectory.",
+              )}
+            </p>
+          )}
           {providerId && (
             <ProviderConfiguration
               key={configurationKey}

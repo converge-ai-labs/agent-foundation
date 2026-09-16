@@ -101,7 +101,7 @@ async def test_run_automatically_allocates_and_prepares_at_configured_boundary(
             assert (await session.get(RunRecord, run.id)).environment_use_started_at is None
     await environment.ensure_ready(frozenset({"files"}))
     await environment.operations.files.write_text("/created.txt", "hello", mode="create")
-    assert (tmp_path / "created.txt").read_text() == "hello"
+    assert (tmp_path / "environments" / environment_id / "created.txt").read_text() == "hello"
     await environment.close()
     async with short_session(interaction_sessions) as session:
         stored = await session.get(RunRecord, run.id)
@@ -109,7 +109,7 @@ async def test_run_automatically_allocates_and_prepares_at_configured_boundary(
         assert stored.environment_use_started_at is not None
         assert actual.status == "running" and actual.generation == 1
         assert actual.operation_id is None
-    assert (tmp_path / "created.txt").read_text() == "hello"
+    assert (tmp_path / "environments" / environment_id / "created.txt").read_text() == "hello"
 
 
 async def test_switching_defaults_does_not_retarget_retry_or_reuse_template_allocations(
@@ -238,24 +238,6 @@ async def test_reconnect_preserves_backing_generation_after_cleanup_failure(
     assert environment.descriptor.backing_identity == original
     await environment.ensure_ready(frozenset({"files"}))
     await environment.close()
-
-
-async def test_worker_cannot_claim_environment_from_another_host(
-    interaction_sessions, interaction_object_store, tmp_path
-):
-    from a13n_service.environments.models import EnvironmentProviderRecord
-
-    _, _, _ = await template_config(interaction_sessions, tmp_path, "on_use")
-    _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
-    async with transaction(interaction_sessions) as session:
-        stored = await session.get(RunRecord, run.id)
-        selected = await session.get(EnvironmentRecord, stored.environment_id)
-        provider = await session.get(EnvironmentProviderRecord, selected.provider_id)
-        provider.configuration = {"host_id": "another-worker-host"}
-    scheduler = AttemptScheduler(
-        interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
-    )
-    assert await scheduler.claim(run.id, _worker()) is None
 
 
 async def test_close_during_readiness_never_recovers_or_leaks_connection(

@@ -11,9 +11,9 @@ from pathlib import Path
 import pytest
 from a13n_environment import DirectLocalEnvironmentProvider, DirectLocalProviderRuntime
 from a13n_environment._file_patterns import PathPattern, PatternError, content_pattern
+from a13n_environment._guest.files import execute
 from a13n_environment.e2b.commands import GuestCommands
 from a13n_environment.e2b.configuration import E2BProviderConfiguration
-from a13n_environment.e2b.guest.files import execute
 from a13n_environment.files import FileQueryRequest, FileTextSearchRequest
 from a13n_environment.models import EnvironmentError
 
@@ -317,7 +317,7 @@ async def test_bracket_classes_in_query_and_include_and_terminal_recursive(tmp_p
 
 
 def test_guest_queries_page_without_metadata_for_all_matches_and_batches_ignore(tmp_path, monkeypatch):
-    from a13n_environment.e2b.guest import files
+    from a13n_environment._guest import files
 
     for index in range(50):
         (tmp_path / f"file-{index:02}.py").write_text("needle")

@@ -15,14 +15,14 @@ It covers the common Provider lifecycle:
 
 ## Choose a route
 
-| Route  | Provider                    | Use it for                               | Operation and ownership boundary                          |
-| ------ | --------------------------- | ---------------------------------------- | --------------------------------------------------------- |
-| Native | `a13n.direct-local`         | Trusted local automation                 | Host OS operations; existing directory, no sandbox claim  |
-| Native | `a13n.e2b`                  | Native managed cloud sandbox             | E2B SDK; sandbox create/pause/resume/renew/destroy        |
-| Envd   | `a13n.local-envd`           | CLI and local Agents                     | Private stdio daemon; close preserves workspace           |
-| Envd   | `a13n.docker` (Docker Envd) | Small single-node self-hosted services   | Docker lifecycle plus HTTP EIP; close preserves container |
-| Envd   | `a13n.http-envd`            | Network-reachable external environments  | HTTP(S) EIP; connect-only                                 |
-| Envd   | `a13n.websocket-envd`       | Environments that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only  |
+| Route  | Provider                      | Use it for                               | Operation and ownership boundary                            |
+| ------ | ----------------------------- | ---------------------------------------- | ----------------------------------------------------------- |
+| Native | `a13n.direct-local`           | Trusted local automation                 | Host OS operations; existing directory, no sandbox claim    |
+| Native | `a13n.e2b`                    | Native managed cloud sandbox             | E2B SDK; sandbox create/pause/resume/renew/destroy          |
+| Envd   | `a13n.local-envd`             | CLI and local Agents                     | Private stdio daemon; close preserves workspace             |
+| Envd   | `a13n.docker` (Native Docker) | Small single-node self-hosted services   | Docker lifecycle and native exec; close preserves container |
+| Envd   | `a13n.http-envd`              | Network-reachable external environments  | HTTP(S) EIP; connect-only                                   |
+| Envd   | `a13n.websocket-envd`         | Environments that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only    |
 
 ## Try remote providers in one command
 
@@ -103,13 +103,13 @@ Docker needs a local Docker Engine. Build the repository sandbox image, then run
 
 ```bash
 # From the repository root
-make image-sandbox
+make image-docker-environment
 
 cd examples/environment-provider
 uv run environment-provider-example docker
 ```
 
-The example defaults to `a13n-sandbox:local`, the image built by that Make target. Use `--image IMAGE` to select another compatible sandbox image; ordinary Docker authentication and pull behavior apply.
+The example defaults to `a13n-docker-environment:local`, the image built by that Make target. Use `--image IMAGE` to select another compatible sandbox image; ordinary Docker authentication and pull behavior apply.
 
 The example intentionally exercises the complete stateful lifecycle:
 
@@ -120,9 +120,7 @@ The example intentionally exercises the complete stateful lifecycle:
 5. close the re-entry adapter;
 6. construct a third fresh adapter and call `destroy()` explicitly.
 
-Bootstrap material defaults to `.environment-provider-example/docker-bootstrap`. Override it with `--bootstrap-root`. The directory is Host state: keep it durable and private while a container is retained. The example removes its Provider-owned allocation when destruction succeeds.
-
-If the process is interrupted after target creation, inspect the retained Docker container and bootstrap directory before retrying or removing them. State is the exact soft reference needed for safe re-entry or destruction; do not guess a replacement target from a name.
+If the process is interrupted after target creation, inspect the retained Docker container before retrying or removing them. State is the exact soft reference needed for safe re-entry or destruction; do not guess a replacement target from a name.
 
 ## Test and inspect
 
@@ -147,7 +145,7 @@ Read [`application.py`](src/a13n_environment_example/application.py) for the com
 ## Boundaries
 
 - Provider configuration contains desired behavior, not credentials or current target identity.
-- Runtime collaborators such as the daemon path, Docker client, and bootstrap store are fresh process-local values.
+- Runtime collaborators such as the daemon path, Docker client, and Engine endpoint are fresh process-local values.
 - Every independent Run or Host lifecycle action uses a fresh adapter.
 - `dump_state()` performs no I/O and may be read during unconditional finalization.
 - `close()` releases process-local resources without destroying a backing target.

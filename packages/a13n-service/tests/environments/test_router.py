@@ -226,7 +226,7 @@ async def test_template_schemas_are_versioned_and_provider_specific(environment_
     assert set(definition["template_configuration_schemas"]) == set(definition["configuration_versions"])
     template_config = definition["template_configuration_schemas"]["1"]
     assert "root" in template_config["required"]
-    assert "host_id" in definition["configuration_schema"]["properties"]
+    assert "host_id" not in definition["configuration_schema"]["properties"]
     assert "host_id" not in template_config["properties"]
 
 

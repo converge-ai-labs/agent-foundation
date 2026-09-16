@@ -58,7 +58,7 @@ class EnvironmentMount:
 
     environment: Environment
     access: EnvironmentAccess | EnvironmentPermissionSet = EnvironmentAccess.FULL
-    working_directory: str | None = "/"
+    working_directory: str | None = None
     mount_path: str | None = None
 
     def __post_init__(self) -> None:
@@ -68,6 +68,8 @@ class EnvironmentMount:
             raise TypeError("EnvironmentMount access must be an EnvironmentAccess or EnvironmentPermissionSet")
         if isinstance(self.access, EnvironmentPermissionSet):
             object.__setattr__(self, "access", self.access.model_copy(deep=True))
+        if self.working_directory is None:
+            object.__setattr__(self, "working_directory", self.environment.descriptor.working_directory)
         validate_working_directory(self.working_directory)
         if self.mount_path is not None:
             parse_mount_path(self.mount_path)

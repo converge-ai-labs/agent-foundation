@@ -191,6 +191,7 @@ class WorkerAttemptPreparer:
         )
         if self._control.current_state.envelope.prepared_plugins is None:
             await self._control.prepare_plugins(prepared)
+        selection = await validate_run_environment(self._environments, self._control.current_context)
         self._prepared_skills = await validate_agent_resources(
             sessions=self._sessions,
             run=self._run,
@@ -199,8 +200,8 @@ class WorkerAttemptPreparer:
             current_context=lambda: self._control.current_context,
             skills=self._skills,
             external_tools=self._external_tools,
+            working_directory=selection.descriptor.working_directory if selection is not None else "/",
         )
-        await validate_run_environment(self._environments, self._control.current_context)
 
     @asynccontextmanager
     async def open_runtime(self, context: AttemptContext) -> AsyncIterator[HarnessInvocation[Any]]:

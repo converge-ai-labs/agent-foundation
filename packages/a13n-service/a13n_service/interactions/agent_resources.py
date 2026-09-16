@@ -46,6 +46,7 @@ async def validate_agent_resources(
     current_context: Callable[[], AttemptContext],
     skills: SkillRuntimePreparer,
     external_tools: ExternalToolRuntime,
+    working_directory: str = "/",
 ) -> dict[str | None, PreparedSkillRuntime]:
     """Validate retained dependencies without opening execution resources."""
     children = inline_child_executions(config)
@@ -90,6 +91,7 @@ async def validate_agent_resources(
             workspace_id=workspace_id,
             locks=selected.skills,
             fence=CurrentSkillAttempt(sessions, current_context),
+            working_directory=working_directory,
         )
     return prepared
 

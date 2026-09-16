@@ -167,21 +167,26 @@ def _locks(
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("working_directory", ["/", "/workspace"])
 async def test_worker_materializes_every_effective_skill(
     runtime_fixture: RuntimeFixture,
     tmp_path: Path,
+    working_directory: str,
 ) -> None:
     locks = _locks(runtime_fixture, (REVIEW_REVISION_ID, DEPLOY_REVISION_ID))
     runtime = await runtime_fixture.runtime.prepare(
         organization_id=ORG_ID,
         workspace_id=WORKSPACE_ID,
         locks=locks,
+        working_directory=working_directory,
     )
 
     assert runtime.manager is not None
     assert tuple(item.name for item in await runtime.manager.scan(files=_files(tmp_path))) == ("deploy", "review")
     assert runtime.materialization_root is not None
-    assert runtime.materialization_root.startswith("/environment/workspace/.a13n/skills/version-1/")
+    assert runtime.materialization_root.startswith(
+        f"/environment/workspace{working_directory.rstrip('/')}/.a13n/skills/version-1/"
+    )
     root = tmp_path / runtime.materialization_root.lstrip("/")
     assert (root / runtime_fixture.review.manifest.content_digest / "checklist.md").read_bytes() == b"# Checklist\n"
     assert (root / runtime_fixture.deploy.manifest.content_digest / "scripts/deploy.sh").is_file()

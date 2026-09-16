@@ -159,7 +159,10 @@ export function SchemaFields({
               {label}
             </Label>
           );
-        if (field.contentMediaType === "application/x-pem-file")
+        if (
+          field.contentMediaType === "application/x-pem-file" ||
+          field.format === "multiline"
+        )
           return (
             <label key={key} className={styles.field}>
               <span>{label}</span>

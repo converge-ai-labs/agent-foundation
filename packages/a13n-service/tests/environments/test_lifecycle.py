@@ -186,7 +186,9 @@ async def test_suspended_owner_cannot_dispatch_a_new_destructive_effect(
 async def test_known_stop_failure_releases_operation_and_records_failed_command(
     environment_service, environment_sessions, provider_catalog, protector, tmp_path, monkeypatch, caplog
 ):
-    from a13n_environment.docker._errors import missing_failure
+    from a13n_environment import EnvironmentProviderError
+    from a13n_environment.errors import EnvironmentProviderErrorCategory as Category
+    from a13n_environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
     from a13n_service.environments.domain import EnvironmentCommandRequest
     from a13n_service.environments.models import EnvironmentCommandRecord
 
@@ -196,7 +198,12 @@ async def test_known_stop_failure_releases_operation_and_records_failed_command(
 
     class MissingTarget(Target):
         async def _stop(self):
-            raise missing_failure("Docker target is missing")
+            raise EnvironmentProviderError(
+                "Docker target is missing",
+                code="provider_missing",
+                category=Category.MISSING,
+                certainty=Certainty.KNOWN,
+            )
 
     async def construct(operation):
         return MissingTarget(operation.state, [])
@@ -297,10 +304,11 @@ async def test_absent_docker_allocation_releases_capacity_and_delete_is_idempote
     from unittest.mock import Mock
 
     from a13n_environment import EnvironmentError
-    from a13n_environment.docker.runtime import DockerEngine, DockerSDKEngine
+    from a13n_environment.docker.runtime import DockerSDKEngine
     from a13n_service.environments.capacity import CapacityLimits
     from a13n_service.environments.domain import EnvironmentCommandRequest
     from a13n_service.environments.models import EnvironmentCommandRecord, EnvironmentTemplateRevisionRecord
+    from docker.errors import NotFound
 
     first = await fixture_environment(environment_service)
     async with short_session(environment_sessions) as session:
@@ -317,8 +325,8 @@ async def test_absent_docker_allocation_releases_capacity_and_delete_is_idempote
     lifecycle = EnvironmentLifecycle(
         environment_sessions, provider_catalog, protector, tmp_path, clock=lambda: now, capacity=capacity
     )
-    engine = Mock(spec=DockerEngine)
-    engine.find_containers.return_value = ()
+    engine = DockerSDKEngine(Mock())
+    engine.client.containers.get.side_effect = NotFound("absent")
     monkeypatch.setattr(DockerSDKEngine, "connect", lambda _: engine)
     async with transaction(environment_sessions) as session:
         row = await session.get(EnvironmentRecord, first.id)
@@ -347,10 +355,8 @@ async def test_absent_docker_allocation_releases_capacity_and_delete_is_idempote
         row = await session.get(EnvironmentRecord, first.id)
         assert row.status == "deleted" and row.operation_id is row.state is None
         assert (await session.get(EnvironmentCommandRecord, command.id)).status == "completed"
-    engine.find_containers.assert_awaited_once()
-    engine.create_container.assert_not_awaited()
-    engine.stop_container.assert_not_awaited()
-    engine.remove_container.assert_not_awaited()
+    assert engine.client.containers.get.called
+    engine.client.containers.create.assert_not_called()
     await admit(second.id)
     with pytest.raises(EnvironmentError, match="capacity is exhausted"):
         await admit(first.id)
@@ -428,7 +434,9 @@ async def test_periodic_batches_advance_past_failures_and_exclude_deleted_and_ex
 async def test_unknown_stop_retains_operation_receipt_until_reconciled(
     environment_service, environment_sessions, provider_catalog, protector, tmp_path, monkeypatch
 ):
-    from a13n_environment.docker._errors import unknown_failure
+    from a13n_environment import EnvironmentProviderError
+    from a13n_environment.errors import EnvironmentProviderErrorCategory as Category
+    from a13n_environment.errors import EnvironmentProviderOutcomeCertainty as Certainty
     from a13n_service.environments.domain import EnvironmentCommandRequest
     from a13n_service.environments.models import EnvironmentCommandRecord
 
@@ -442,7 +450,12 @@ async def test_unknown_stop_retains_operation_receipt_until_reconciled(
             nonlocal failed
             if not failed:
                 failed = True
-                raise unknown_failure("Stop response lost")
+                raise EnvironmentProviderError(
+                    "Stop response lost",
+                    code="provider_unknown_outcome",
+                    category=Category.UNKNOWN_OUTCOME,
+                    certainty=Certainty.UNKNOWN,
+                )
 
     async def construct(operation):
         return UncertainTarget(operation.state, [])

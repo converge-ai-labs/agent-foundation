@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 
 from a13n_environment import (
     DirectLocalEnvironment,
-    DirectoryDockerBootstrapStore,
     DockerEnvironment,
     DockerProviderRuntime,
     DockerSDKEngine,
@@ -24,7 +24,7 @@ from a13n_environment import (
     resolve_a13n_envd_executable,
 )
 
-DEFAULT_EXAMPLE_DOCKER_IMAGE = "a13n-sandbox:local"
+DEFAULT_EXAMPLE_DOCKER_IMAGE = "a13n-docker-environment:local"
 _MESSAGE_PATH = "/provider-example.txt"
 _FILE_OPERATIONS: frozenset[EnvironmentOperationFamily] = frozenset({"files"})
 
@@ -142,7 +142,6 @@ async def run_local_envd(
 
 
 async def run_docker(
-    bootstrap_root: Path,
     *,
     image: str = DEFAULT_EXAMPLE_DOCKER_IMAGE,
 ) -> DockerExampleResult:
@@ -161,8 +160,9 @@ async def run_docker(
         value=spec.configuration,
     )
     runtime = DockerProviderRuntime(
-        engine=DockerSDKEngine.from_env(),
-        bootstrap_store=DirectoryDockerBootstrapStore(bootstrap_root.expanduser().resolve()),
+        engine=await asyncio.to_thread(
+            DockerSDKEngine.connect, os.environ.get("DOCKER_HOST", "unix:///var/run/docker.sock")
+        ),
     )
 
     current_state: EnvironmentState | None = None
