@@ -39,32 +39,6 @@ def snapshot(root=ROOT):
     return {path.name: hashlib.sha256(path.read_bytes()).hexdigest() for path in root.iterdir()}
 
 
-def native_evidence(action, root):
-    """Independent OS probes for the Docker Provider's bounded external volume."""
-    assert os.geteuid() != 0 and root.is_mount()
-    fs = os.statvfs(root)
-    capacity = fs.f_blocks * fs.f_frsize
-    assert 0 < capacity <= 1024 * 1024
-    if action == "prepare":
-        (root / "destination").write_text("ORIGINAL")
-        fs = os.statvfs(root)
-        (root / "filler").write_bytes(b"x" * (fs.f_bavail * fs.f_frsize - 65536))
-    elif action == "probe":
-        try:
-            (root / "probe").write_bytes(b"z" * (2 * 1024 * 1024))
-        except OSError as error:
-            assert error.errno == errno.ENOSPC
-        else:
-            raise AssertionError("The kernel did not report ENOSPC")
-        finally:
-            (root / "probe").unlink(missing_ok=True)
-    elif action == "free":
-        (root / "filler").unlink()
-    else:
-        assert action == "snapshot"
-    return {"capacity": capacity, "files": snapshot(root), "errno": errno.ENOSPC if action == "probe" else None}
-
-
 @asynccontextmanager
 async def environment(kind):
     async with AsyncExitStack() as stack:
@@ -266,7 +240,4 @@ async def main(kind):
 
 
 if __name__ == "__main__":
-    if sys.argv[1] == "evidence":
-        print(json.dumps(native_evidence(sys.argv[2], Path(sys.argv[3]))))
-    else:
-        asyncio.run(main(sys.argv[1]))
+    asyncio.run(main(sys.argv[1]))

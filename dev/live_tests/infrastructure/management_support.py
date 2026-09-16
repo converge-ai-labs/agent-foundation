@@ -93,19 +93,9 @@ class ManagementJourney:
             },
         }
         if provider_type == "a13n.docker":
-            # The sandbox user needs write access to this lab-owned bind directory.
-            root.chmod(0o777)
             template_config["configuration"] = {
-                "image": os.environ.get("LIVE_TEST_SANDBOX_IMAGE", "a13n-sandbox:local"),
+                "image": os.environ.get("LIVE_TEST_DOCKER_IMAGE", "a13n-docker-environment:local"),
                 "pull_policy": "never",
-                "mounts": [
-                    {
-                        "mount_id": "workspace",
-                        "container_path": "/workspace",
-                        "source": {"kind": "bind", "path": str(root)},
-                    }
-                ],
-                "shell_profiles": [{"profile_id": "default", "executable": "/bin/sh", "fixed_arguments": ["-c"]}],
             }
         template = await self.post(self.base + "/environment-templates", {"name": name, **template_config})
         return template, template_config, root
@@ -113,6 +103,9 @@ class ManagementJourney:
     async def environment(self, **options):
         template, _, root = await self.environment_template(**options)
         resource = await self.post(self.base + "/environments", {"template_id": template["id"]})
+        if options.get("provider_type", "a13n.direct-local") == "a13n.direct-local":
+            root = root / "environments" / resource["id"]
+            root.mkdir(parents=True, exist_ok=True)
         return resource, root
 
     async def environment_command(self, environment_id, action):

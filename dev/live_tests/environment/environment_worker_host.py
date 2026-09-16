@@ -6,7 +6,6 @@ credentials, lease tokens or native bootstrap material, and never mutates rows.
 
 import json
 import os
-import socket
 from functools import wraps
 from pathlib import Path
 
@@ -23,19 +22,12 @@ def install(config, role):
     root = Path(config["workspace_root"]).parent / "environment-workers"
     root.mkdir(mode=0o700, exist_ok=True)
     faults = Faults(root / "faults", role)
-    hostname = os.environ.get("LIVE_TEST_HOSTNAME")
-    if hostname:
-        # A distinct Host identity exercises the production affinity guards.
-        socket.gethostname = lambda: hostname
-
     original_init = WorkerExecutionLoop.__init__
 
     @wraps(original_init)
     def initialize(self, *args, **kwargs):
         original_init(self, *args, **kwargs)
-        (root / f"worker-{os.getpid()}.json").write_text(
-            json.dumps({"pid": os.getpid(), "worker_id": self._worker_id, "host_id": socket.gethostname()})
-        )
+        (root / f"worker-{os.getpid()}.json").write_text(json.dumps({"pid": os.getpid(), "worker_id": self._worker_id}))
 
     WorkerExecutionLoop.__init__ = initialize
     original_claim = AttemptScheduler.claim

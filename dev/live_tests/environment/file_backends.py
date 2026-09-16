@@ -14,10 +14,6 @@ import anyio
 from a13n_environment import (
     DirectLocalEnvironmentProvider,
     DirectLocalProviderRuntime,
-    DirectoryDockerBootstrapStore,
-    DockerEnvironmentProvider,
-    DockerProviderRuntime,
-    DockerSDKEngine,
     EnvironmentProviderError,
     EnvironmentState,
     HttpEnvdBackendConfiguration,
@@ -37,7 +33,7 @@ from websockets.asyncio.server import serve
 from ..infrastructure.round_two_lab import REPOSITORY, free_origin, private_json
 from ..infrastructure.tcp_proxy import TCPProxy
 
-KINDS = ("direct-local", "local-envd", "http-envd", "websocket-envd", "docker")
+KINDS = ("direct-local", "local-envd", "http-envd", "websocket-envd")
 logger = logging.getLogger(__name__)
 
 
@@ -63,9 +59,8 @@ class FileBackend:
         self.proxy = None
         self.identity = "env-" + uuid4().hex
         self.root = directory / "workspace"
-        self.outside = "/tmp/" + self.identity if kind == "docker" else str(directory / "outside")
+        self.outside = str(directory / "outside")
         self.process = None
-        self.engine = None
         self.adapters = []
         self.configuration = None
         self.state = None
@@ -92,26 +87,6 @@ class FileBackend:
                     executable=self.binary(),
                     allocate_private_runtime=TemporaryLocalEnvdRuntimeAllocator(parent=self.directory),
                 )
-            elif self.kind == "docker":
-                self.provider = DockerEnvironmentProvider()
-                self.engine = DockerSDKEngine.from_env(timeout_seconds=30)
-                stack.push_async_callback(self.engine.close)
-                self.runtime = DockerProviderRuntime(
-                    self.engine, DirectoryDockerBootstrapStore(self.directory / "bootstrap")
-                )
-                configuration = {
-                    "image": os.environ.get("LIVE_TEST_SANDBOX_IMAGE", "a13n-sandbox:local"),
-                    "pull_policy": "never",
-                    "mounts": [
-                        {
-                            "mount_id": "workspace",
-                            "container_path": "/workspace",
-                            "source": {"kind": "bind", "path": str(self.root)},
-                            "read_only": self.read_only,
-                            "allow_command_execution": self.commands,
-                        }
-                    ],
-                }
             else:
                 configuration = {}
                 token = secrets.token_urlsafe(24)
@@ -167,7 +142,7 @@ class FileBackend:
                     state={"daemon_environment_id": self.identity},
                 )
                 await self.start_daemon(origin, token, stack)
-            if self.commands and self.kind in {"direct-local", "local-envd", "docker"}:
+            if self.commands and self.kind in {"direct-local", "local-envd"}:
                 configuration["shell_profiles"] = [
                     {"profile_id": "default", "executable": "/bin/bash", "fixed_arguments": ["-c"]}
                 ]
@@ -178,11 +153,8 @@ class FileBackend:
                 self.environment = self.adapter()
                 if prepare:
                     await self.prepare(self.environment)
-                if self.kind == "docker" and prepare:
-                    await self.native_shell('mkdir -m 777 "$1"; printf OUTSIDE_UNCHANGED > "$1/sentinel"', self.outside)
-                elif self.kind != "docker":
-                    Path(self.outside).mkdir()
-                    (Path(self.outside) / "sentinel").write_text("OUTSIDE_UNCHANGED")
+                Path(self.outside).mkdir()
+                (Path(self.outside) / "sentinel").write_text("OUTSIDE_UNCHANGED")
                 yield self
             finally:
                 with anyio.CancelScope(shield=True), anyio.fail_after(90):
@@ -192,22 +164,6 @@ class FileBackend:
                             await adapter.close()
                         except Exception as error:
                             errors.append(error)
-                    if self.engine is not None:
-                        try:
-                            # Metadata recovery also finds a create whose response was lost.
-                            cleanup = self.adapter(state=self.environment.dump_state())
-                            if await cleanup.reconcile() != "absent":
-                                await cleanup.destroy()
-                        except Exception as error:
-                            errors.append(error)
-                        owned = {"io.a13n.environment-provider": "a13n.docker", "io.a13n.environment-id": self.identity}
-                        for target in await self.engine.find_containers(owned):
-                            try:
-                                await self.engine.stop_container(target.container_id, timeout_seconds=1)
-                                await self.engine.remove_container(target.container_id)
-                            except Exception as error:
-                                errors.append(error)
-                        assert not await self.engine.find_containers(owned), "Owned Docker fixture leaked"
                     if errors:
                         raise ExceptionGroup("File fixture cleanup failed", errors)
 
@@ -320,22 +276,7 @@ class FileBackend:
             self.process.kill()
             await self.process.wait()
 
-    async def native_shell(self, script, *arguments, user="root"):
-        """Fixture-only Docker evidence; Agent operations still exclusively use EIP."""
-        state = self.environment.dump_state()
-        container_id = state.state["container_id"].removeprefix("sha256:")
-
-        def run():
-            target = self.engine._client.containers.get(container_id)
-            return target.exec_run(["/bin/sh", "-eu", "-c", script, "fixture", *arguments], user=user)
-
-        result = await asyncio.to_thread(run)
-        assert result.exit_code == 0, result.output.decode(errors="replace")
-        return result.output.decode()
-
     async def outside_content(self):
-        if self.kind == "docker":
-            return await self.native_shell('cat "$1/sentinel"', self.outside)
         return (Path(self.outside) / "sentinel").read_text()
 
     def snapshot(self):

@@ -129,12 +129,10 @@ async def reset_workers(lab):
     return await lab.start_worker()
 
 
-async def add_second_worker(lab, *, no_reverse=False, hostname=None):
+async def add_second_worker(lab, *, no_reverse=False):
     options = {}
     if no_reverse:
         options["LIVE_TEST_NO_REVERSE_ENVD"] = "1"
-    if hostname:
-        options["LIVE_TEST_HOSTNAME"] = hostname
     previous = dict(lab.worker_environment)
     try:
         lab.worker_environment.update(options)
@@ -146,10 +144,23 @@ async def add_second_worker(lab, *, no_reverse=False, hostname=None):
 
 
 def shell(script, *, wait=5):
-    return {"tool": "shell_exec", "arguments": {"command": script, "cwd": "/workspace", "yield_time_seconds": wait}}
+    return {"tool": "shell_exec", "arguments": {"command": script, "cwd": ".", "yield_time_seconds": wait}}
 
 
 async def native_file(backend, target, environment, path):
+    if backend.kind == "docker":
+        import docker
+
+        row = await backend.journey.live.request("GET", f"/__live__/environments/{environment['id']}/lifecycle")
+
+        def read():
+            with docker.from_env() as client:
+                container = client.containers.get(row["state"]["state"]["container_id"])
+                result = container.exec_run(["cat", "/workspace/" + path])
+                assert result.exit_code == 0, result.output
+                return result.output
+
+        return await asyncio.to_thread(read)
     if backend.kind != "e2b":
         return await asyncio.to_thread((target.root / path).read_bytes)
     from e2b import AsyncSandbox

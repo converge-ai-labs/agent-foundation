@@ -44,9 +44,6 @@ async def environment_backend(request):
             pytest.skip("Configure the optional E2B environment section to run its matrix")
     async with open_lab(suite="management", websocket_envd=kind == "websocket-envd") as lab:
         backend = EnvironmentBackend(lab, kind, binary, settings)
-        if kind == "local-envd":
-            lab.worker_environment["A13N_ENVD_EXECUTABLE"] = str(binary)
-            await backend.restart_worker()
         yield backend
 
 
@@ -59,7 +56,7 @@ async def test_environment_backend_tools_and_access(environment_backend):
                 journey,
                 environment,
                 access,
-                root=None if backend.kind == "e2b" else target.root,
+                root=None if backend.kind in {"e2b", "docker"} else target.root,
                 read_text=target.read_text,
             )
             logger.info(
@@ -92,7 +89,7 @@ async def test_environment_backend_templates_and_preparation(environment_backend
                     backend.kind, target.root.parent / "version-two", backend.settings
                 ),
             }
-            roots = None if backend.kind == "e2b" else (target.root, target.root.parent / "version-two")
+            roots = None if backend.kind in {"e2b", "docker"} else (target.root, target.root.parent / "version-two")
             await assert_template_preparation(
                 journey, template, revised, preparation=preparation, initial_access="read_write", roots=roots
             )
@@ -109,7 +106,7 @@ async def test_environment_backend_lifecycle_and_continuity(environment_backend)
     async with backend.target() as target:
         environment = await target.allocate()
         if backend.kind in {"docker", "e2b"}:
-            await assert_managed_continuity(journey, environment, preserves_files=backend.kind == "docker")
+            await assert_managed_continuity(journey, environment, preserves_files=False)
             return
         marker = "CONTINUITY_" + uuid4().hex
         original, _ = await execute(journey, environment, [write("/workspace/proof.txt", marker)])

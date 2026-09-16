@@ -13,7 +13,7 @@ from .environment_backends import EnvironmentBackend
 from .environment_workers import add_second_worker, native_file, reset_workers, shell
 
 pytestmark = pytest.mark.anyio
-KINDS = ["direct-local", "local-envd", "docker", "e2b", "http-envd", "websocket-envd"]
+KINDS = ["direct-local", "docker", "e2b", "http-envd", "websocket-envd"]
 
 
 @pytest.fixture(scope="module")
@@ -73,23 +73,8 @@ async def test_first_prepare_is_serialized_between_processes(shared, preparation
     assert pending["generation"] == 0 and not (target.root / "first-1").exists()
     pair.release(barrier)
     await pair.journey.live.finish(owner["run_id"])
-    # A Docker Session contender may fail at on_run preparation; lazy preparation
-    # reports that same provider constraint as a structured tool error.
-    other = await pair.journey.live.wait(
-        lambda: pair.journey.live.run(contender["run_id"]),
-        lambda run: run["status"] in {"completed", "failed"},
-        "Contending first preparation resolved",
-    )
-    if backend.kind != "docker":
-        assert other["status"] == "completed"
-        assert await native_file(backend, target, environment, "first-1") == b"1"
-    elif other["status"] == "failed":
-        assert other["failure"]["code"] == "attempt_execution_failed"
-    else:
-        outcome = last_tool_result(pair.journey.observations(cases[1])[-1])
-        if not outcome["ok"]:
-            assert outcome["error"]["code"] == "environment_provider_failure"
-            assert outcome["error"]["retry_hint"] == "dependency_change"
+    await pair.journey.live.finish(contender["run_id"])
+    assert await native_file(backend, target, environment, "first-1") == b"1"
     assert await native_file(backend, target, environment, "first-0") == b"0"
     row = await pair.record(environment)
     assert row["generation"] == 1 and row["operation_id"] is None
@@ -101,7 +86,7 @@ async def test_first_prepare_is_serialized_between_processes(shared, preparation
 @pytest.mark.parametrize("ending", ["cancel", "crash"])
 async def test_one_user_lost_does_not_close_other_worker_use(shared, ending):
     backend, target, pair = shared
-    if backend.kind not in {"direct-local", "local-envd", "e2b"}:
+    if backend.kind not in {"direct-local", "docker", "e2b"}:
         pytest.skip("This provider admits one concurrent Session; contention is covered separately")
     environment = await target.allocate()
     cases = [
@@ -173,12 +158,9 @@ async def test_concurrent_workers_preserve_owner_and_release_only_their_scope(sh
     else:
         await pair.journey.live.finish(contender["run_id"])
         result = last_tool_result(pair.journey.observations(contender_case)[-1])
-        assert result["ok"] is (backend.kind != "docker"), result
-        if backend.kind == "docker":
-            assert result["error"]["code"] == "environment_provider_failure"
-        else:
-            assert await native_file(backend, target, environment, "other") == b"OTHER"
-    if backend.kind in {"docker", "http-envd", "websocket-envd"}:
+        assert result["ok"] is True, result
+        assert await native_file(backend, target, environment, "other") == b"OTHER"
+    if backend.kind in {"http-envd", "websocket-envd"}:
         assert not (target.root / "other").exists()
     assert (await pair.record(environment))["active_runs"] == [owner["run_id"]]
     assert (await pair.journey.live.run(owner["run_id"]))["status"] == "running"

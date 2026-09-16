@@ -1,12 +1,13 @@
 """Real Docker loss during partial Skill preparation and obsolete Worker recovery."""
 
+import json
 import signal
 
 import anyio
 import pytest
-from a13n_environment import DockerSDKEngine
 
 from ..environment.environment_workers import add_second_worker, reset_workers
+from ..environment.test_51_docker_service_lifecycle import DockerTargets
 from ..infrastructure.management_packages import publish_skill
 from ..infrastructure.round_two_lab import private_json
 from ..protocol.stream import assert_stream
@@ -25,10 +26,10 @@ async def test_docker_loss_preserves_frozen_skill(skills: SkillJourney, preparat
     first = await skills.skill()
     key = first["skill"]["key"]
     agent = await skills.agent(skills=[{"skill_key": key}])
-    environment, root = await skills.environment(preparation=preparation, provider_type="a13n.docker")
+    environment, _ = await skills.environment(preparation=preparation, provider_type="a13n.docker")
     case = await skills.case(steps=[proof(key)])
-    engine = DockerSDKEngine.from_env(timeout_seconds=30)
-    labels = {"io.a13n.environment-provider": "a13n.docker", "io.a13n.environment-id": environment["id"]}
+    pool = DockerTargets()
+    pool.identities.add(environment["id"])
     pair = None
     stopped = None
     barrier = None
@@ -49,21 +50,23 @@ async def test_docker_loss_preserves_frozen_skill(skills: SkillJourney, preparat
             )
         await skills.reached(barrier)
         assert skills.observations(case) == []
-        assert not list(root.rglob(".a13n-service-complete.json"))
-        targets = await engine.find_containers(labels)
+        targets = await pool.targets(environment["id"])
         assert len(targets) == 1
         original = targets[0].container_id
-        assert (await engine.inspect_container(original)).status == "running"
+        assert not (await storage_evidence(pool, original))["markers"]
+        pool.container_ids.add(original)
+        assert (await pool.info(original)).status == "running"
         await publish_skill(skills, key, "DOCUMENT_TWO", "ATTACHMENT_TWO", previous=first["skill"])
         if pair:
             stopped = pair.workers[0]
             skills.lab.send(stopped, signal.SIGSTOP)
-        await engine.stop_container(original, timeout_seconds=1)
+        container = await anyio.to_thread.run_sync(pool.engine.client.containers.get, original)
+        await anyio.to_thread.run_sync(lambda: container.stop(timeout=1))
         if fault != "stop":
-            await engine.remove_container(original)
-            assert await engine.inspect_container(original) is None
+            await pool.remove(original)
+            assert await pool.info(original) is None
         else:
-            assert (await engine.inspect_container(original)).status == "exited"
+            assert (await pool.info(original)).status == "exited"
         if not pair:
             skills.release(barrier)
         result = await skills.live.wait(
@@ -95,8 +98,8 @@ async def test_docker_loss_preserves_frozen_skill(skills: SkillJourney, preparat
             retried = await skills.live.finish(retry["run_id"])
             assert "ATTACHMENT_ONE" in retried["output_text"] and "ATTACHMENT_TWO" not in retried["output_text"]
             assert (await locks(skills, retry["run_id"]))["skills"][0]["version"] == 1
-            assert [p.read_text() for p in root.rglob("proof.txt")] == ["ATTACHMENT_ONE"]
-            assert len(list(root.rglob(".a13n-service-complete.json"))) == 1
+            target = (await pool.targets(environment["id"]))[0]
+            assert_storage(await storage_evidence(pool, target.container_id))
             evidence["manual_retry"] = {"run_id": retry["run_id"], "status": "completed", "skill_version": 1}
             private_json(evidence_path, evidence)
             pytest.fail(
@@ -106,9 +109,10 @@ async def test_docker_loss_preserves_frozen_skill(skills: SkillJourney, preparat
             )
         assert "ATTACHMENT_ONE" in result["output_text"] and "ATTACHMENT_TWO" not in result["output_text"]
         assert len(attempts) == 2 and attempts[-1]["status"] == "succeeded", attempts
-        recovered = await engine.find_containers(labels)
+        recovered = await pool.targets(environment["id"])
         assert len(recovered) == 1
-        assert (await engine.inspect_container(recovered[0].container_id)).status == "running"
+        pool.container_ids.add(recovered[0].container_id)
+        assert (await pool.info(recovered[0].container_id)).status == "running"
         if fault != "stop":
             assert recovered[0].container_id != original
         if pair:
@@ -124,8 +128,7 @@ async def test_docker_loss_preserves_frozen_skill(skills: SkillJourney, preparat
             await skills.live.assert_stable(lambda: skills.live.run(receipt["run_id"]), result, seconds=2)
             assert len(skills.observations(case)) == observed_count
         assert (await locks(skills, receipt["run_id"]))["skills"][0]["version"] == 1
-        assert [p.read_text() for p in root.rglob("proof.txt")] == ["ATTACHMENT_ONE"]
-        assert len(list(root.rglob(".a13n-service-complete.json"))) == 1
+        assert_storage(await storage_evidence(pool, recovered[0].container_id))
         events = await skills.live.events(receipt["run_id"])
         assert_stream(events, receipt["run_id"])
         assert await skills.live.events(receipt["run_id"], after=events[-1].cursor) == []
@@ -143,9 +146,31 @@ async def test_docker_loss_preserves_frozen_skill(skills: SkillJourney, preparat
                 if worker.returncode is None:
                     await skills.lab.stop(worker)
             try:
-                for target in await engine.find_containers(labels):
-                    await engine.stop_container(target.container_id, timeout_seconds=1)
-                    await engine.remove_container(target.container_id)
-                assert not await engine.find_containers(labels)
+                for target in await pool.targets(environment["id"]):
+                    await pool.remove(target.container_id)
+                assert not await pool.targets(environment["id"])
             finally:
-                await engine.close()
+                await pool.engine.close()
+
+
+async def storage_evidence(pool, container_id):
+    def read():
+        container = pool.engine.client.containers.get(container_id)
+        result = container.exec_run(
+            [
+                "python3",
+                "-c",
+                "import json,pathlib; p=pathlib.Path('/workspace'); "
+                "print(json.dumps({'proofs':[f.read_text() for f in p.rglob('proof.txt')],"
+                "'markers':[str(f) for f in p.rglob('.a13n-service-complete.json')]}))",
+            ]
+        )
+        assert result.exit_code == 0, result.output
+        return json.loads(result.output)
+
+    return await anyio.to_thread.run_sync(read)
+
+
+def assert_storage(evidence):
+    assert evidence["proofs"] == ["ATTACHMENT_ONE"]
+    assert len(evidence["markers"]) == 1

@@ -8,7 +8,7 @@ from typing import Annotated, Self
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-DEFAULT_DOCKER_IMAGE = "ghcr.io/converge-ai-labs/a13n-docker-environment:latest"
+DEFAULT_DOCKER_IMAGE = "ghcr.io/converge-ai-labs/a13n-docker-environment:dev"
 
 
 class DockerImagePullPolicy(StrEnum):

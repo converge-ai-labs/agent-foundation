@@ -11,6 +11,7 @@ on:
       - "deploy/containers/a13n-service/Dockerfile"
       - "deploy/containers/a13n-service/service.toml"
       - "deploy/containers/sandbox/Dockerfile"
+      - "deploy/containers/docker-environment/Dockerfile"
       - "LICENSE"
       - "crates/a13n-envd/**"
       - "packages/a13n-envd-client/*"
@@ -128,6 +129,10 @@ jobs:
               - 'pyproject.toml'
               - 'uv.lock'
               - 'Makefile'
+            docker_environment:
+              - ".github/workflows/images.yml"
+              - "deploy/containers/docker-environment/Dockerfile"
+              - "Makefile"
             sandbox:
               - '.dockerignore'
               - '.github/workflows/images.yml'
@@ -141,6 +146,7 @@ jobs:
         id: matrix
         env:
           A13N_SERVICE_CHANGED: ${{ steps.filter.outputs.service }}
+          DOCKER_ENVIRONMENT_CHANGED: ${{ steps.filter.outputs.docker_environment }}
           SANDBOX_CHANGED: ${{ steps.filter.outputs.sandbox }}
           HARNESS_UI_CHANGED: ${{ steps.filter.outputs.harness_ui }}
         run: |
@@ -172,6 +178,14 @@ jobs:
                   "file": "deploy/containers/a13n-harness-ui/Dockerfile",
                   "image": "ghcr.io/converge-ai-labs/a13n-harness-ui",
                   "context": "dist/a13n-harness-ui-image",
+              })
+          if os.environ["GITHUB_EVENT_NAME"] == "workflow_dispatch" or os.environ["DOCKER_ENVIRONMENT_CHANGED"] == "true":
+              images.append({
+                  "name": "a13n-docker-environment",
+                  "runner": "ubuntu-latest",
+                  "file": "deploy/containers/docker-environment/Dockerfile",
+                  "image": "ghcr.io/converge-ai-labs/a13n-docker-environment",
+                  "context": "deploy/containers/docker-environment",
               })
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
               output.write(f"images={json.dumps(images, separators=(',', ':'))}\n")

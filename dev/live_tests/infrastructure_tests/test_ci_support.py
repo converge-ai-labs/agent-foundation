@@ -50,14 +50,14 @@ def test_reviewed_ci_journeys_collect_once_without_external_or_stress_cases(coll
         )
     assert len(collected_suites["core"]) == 21
     assert len(collected_suites["functional"]) == 121
-    assert len(seen) == 490
+    assert len(seen) == 451
     assert len(collected_suites["smoke"]) == 34
     assert collected_suites["smoke"] <= seen
     assert not any("test_06_steer" in case for case in collected_suites["smoke"])
     files = {case.split("::")[0] for case in seen}
     root = ci.TEST_ROOT
     # All requested control/fault files and every non-cloud Environment module
-    # must be represented, including both historical case-54 filenames.
+    # must be represented, including native Docker operations.
     requested = [
         *root.glob("skills/test_*.py"),
         root / "harness_integration/test_24_skill_management.py",

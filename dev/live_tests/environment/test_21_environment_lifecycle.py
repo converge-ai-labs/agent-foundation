@@ -32,8 +32,7 @@ async def docker_environment(management):
                     all=True,
                     filters={
                         "label": [
-                            "io.a13n.environment-provider=a13n.docker",
-                            "io.a13n.environment-id=" + environment["id"],
+                            "a13n.environment=" + environment["id"],
                         ]
                     },
                 ):
@@ -43,8 +42,8 @@ async def docker_environment(management):
 
 
 async def test_stopped_and_deleted_managed_environment_recovers(management, docker_environment):
-    environment, root = docker_environment
-    await assert_managed_continuity(management, environment, preserves_files=True, root=root)
+    environment, _ = docker_environment
+    await assert_managed_continuity(management, environment, preserves_files=False)
 
 
 @pytest.mark.parametrize("operation", ["continue", "retry", "fork", "feedback"])
