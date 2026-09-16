@@ -8,6 +8,250 @@ Download [the complete Native OpenAPI JSON](../assets/reference/service-openapi.
 
 This document excludes non-Native boundaries: operational probes, schema/documentation routes, provider event ingress, AG-UI, A2A, and the notification WebSocket. Those are described under [Streams, events, and gateways](streams-and-events.md) and [Background tasks](background-tasks.md).
 
+## agent-configuration
+
+### `GET /api/v1/configuration-drafts/{draft_id}`
+
+Get Draft.
+
+| Parameter  | Location | Required | Type / schema | Constraints and default |
+| ---------- | -------- | -------- | ------------- | ----------------------- |
+| `draft_id` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: ConfigurationDraftReview`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `PATCH /api/v1/configuration-drafts/{draft_id}`
+
+Update Draft.
+
+| Parameter         | Location | Required | Type / schema | Constraints and default    |
+| ----------------- | -------- | -------- | ------------- | -------------------------- |
+| `draft_id`        | path     | true     | string        | —                          |
+| `Idempotency-Key` | header   | true     | string        | minLength=1; maxLength=512 |
+| `If-Match`        | header   | true     | string        | minLength=1; maxLength=256 |
+
+Request body: required.
+
+- `application/json`: `UpdateConfigurationDraftRequest`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: ConfigurationDraft`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/configuration-drafts/{draft_id}/applications`
+
+List Applications.
+
+| Parameter  | Location | Required | Type / schema  | Constraints and default            |
+| ---------- | -------- | -------- | -------------- | ---------------------------------- |
+| `draft_id` | path     | true     | string         | —                                  |
+| `limit`    | query    | false    | integer        | minimum=1; maximum=100; default=50 |
+| `cursor`   | query    | false    | string or null | —                                  |
+
+Responses:
+
+- **200** — Successful Response (`application/json: ConfigurationApplicationCollection`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/configuration-drafts/{draft_id}/apply`
+
+Apply Draft.
+
+| Parameter         | Location | Required | Type / schema | Constraints and default    |
+| ----------------- | -------- | -------- | ------------- | -------------------------- |
+| `draft_id`        | path     | true     | string        | —                          |
+| `Idempotency-Key` | header   | true     | string        | minLength=1; maxLength=512 |
+| `If-Match`        | header   | true     | string        | minLength=1; maxLength=256 |
+
+Request body: required.
+
+- `application/json`: `ApplyDraftRequest`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: ConfigurationApplicationReceipt`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/configuration-drafts/{draft_id}/discard`
+
+Discard Draft.
+
+| Parameter         | Location | Required | Type / schema | Constraints and default    |
+| ----------------- | -------- | -------- | ------------- | -------------------------- |
+| `draft_id`        | path     | true     | string        | —                          |
+| `Idempotency-Key` | header   | true     | string        | minLength=1; maxLength=512 |
+| `If-Match`        | header   | true     | string        | minLength=1; maxLength=256 |
+
+Request body: required.
+
+- `application/json`: `DiscardDraftRequest`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: ConfigurationDraft`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/configuration-drafts/{draft_id}/rebase`
+
+Rebase Draft.
+
+| Parameter         | Location | Required | Type / schema | Constraints and default    |
+| ----------------- | -------- | -------- | ------------- | -------------------------- |
+| `draft_id`        | path     | true     | string        | —                          |
+| `Idempotency-Key` | header   | true     | string        | minLength=1; maxLength=512 |
+| `If-Match`        | header   | true     | string        | minLength=1; maxLength=256 |
+
+Request body: required.
+
+- `application/json`: `RebaseDraftRequest`.
+
+Responses:
+
+- **200** — Successful Response (`application/json: ConfigurationDraft`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/configuration-sessions/{session_id}`
+
+Get Session.
+
+| Parameter    | Location | Required | Type / schema | Constraints and default |
+| ------------ | -------- | -------- | ------------- | ----------------------- |
+| `session_id` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: ConfigurationSessionView`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/configuration-sessions/{session_id}/threads`
+
+List Threads.
+
+| Parameter    | Location | Required | Type / schema  | Constraints and default            |
+| ------------ | -------- | -------- | -------------- | ---------------------------------- |
+| `session_id` | path     | true     | string         | —                                  |
+| `limit`      | query    | false    | integer        | minimum=1; maximum=100; default=50 |
+| `cursor`     | query    | false    | string or null | —                                  |
+
+Responses:
+
+- **200** — Successful Response (`application/json: ConfigurationThreadCollection`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/configuration-sessions/{session_id}/threads`
+
+Create Thread.
+
+| Parameter         | Location | Required | Type / schema | Constraints and default    |
+| ----------------- | -------- | -------- | ------------- | -------------------------- |
+| `session_id`      | path     | true     | string        | —                          |
+| `Idempotency-Key` | header   | true     | string        | minLength=1; maxLength=512 |
+
+Request body: required.
+
+- `application/json`: `CreateConfigurationThreadRequest`.
+
+Responses:
+
+- **201** — Successful Response (`application/json: ConfigurationThreadView`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/configuration-threads/{thread_id}`
+
+Get Thread.
+
+| Parameter   | Location | Required | Type / schema | Constraints and default |
+| ----------- | -------- | -------- | ------------- | ----------------------- |
+| `thread_id` | path     | true     | string        | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: ConfigurationThreadView`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/configuration-threads/{thread_id}/inputs`
+
+Submit Input.
+
+| Parameter         | Location | Required | Type / schema | Constraints and default    |
+| ----------------- | -------- | -------- | ------------- | -------------------------- |
+| `thread_id`       | path     | true     | string        | —                          |
+| `Idempotency-Key` | header   | true     | string        | minLength=1; maxLength=512 |
+
+Request body: required.
+
+- `application/json`: `ConfigurationInputRequest`.
+
+Responses:
+
+- **202** — Successful Response (`application/json: RunAcceptanceReceipt`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/workspaces/{workspace}/configuration-assistant/readiness`
+
+Readiness.
+
+| Parameter         | Location | Required | Type / schema  | Constraints and default |
+| ----------------- | -------- | -------- | -------------- | ----------------------- |
+| `workspace`       | path     | true     | string         | —                       |
+| `target_agent_id` | query    | false    | string or null | —                       |
+
+Responses:
+
+- **200** — Successful Response (`application/json: AssistantReadiness`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `GET /api/v1/workspaces/{workspace}/configuration-sessions`
+
+List Sessions.
+
+| Parameter   | Location | Required | Type / schema  | Constraints and default            |
+| ----------- | -------- | -------- | -------------- | ---------------------------------- |
+| `workspace` | path     | true     | string         | —                                  |
+| `limit`     | query    | false    | integer        | minimum=1; maximum=100; default=50 |
+| `cursor`    | query    | false    | string or null | —                                  |
+
+Responses:
+
+- **200** — Successful Response (`application/json: ConfigurationSessionCollection`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
+### `POST /api/v1/workspaces/{workspace}/configuration-sessions`
+
+Create Session.
+
+| Parameter         | Location | Required | Type / schema | Constraints and default    |
+| ----------------- | -------- | -------- | ------------- | -------------------------- |
+| `workspace`       | path     | true     | string        | —                          |
+| `Idempotency-Key` | header   | true     | string        | minLength=1; maxLength=512 |
+
+Request body: required.
+
+- `application/json`: `CreateSessionRequest`.
+
+Responses:
+
+- **201** — Successful Response (`application/json: ConfigurationSessionView`).
+- **400** — Invalid request. (`application/json: ErrorResponse`).
+- **default** — Service error. (`application/json: ErrorResponse`).
+
 ## agent-management
 
 ### `GET /api/v1/agent-revisions/{agent_revision_id}`

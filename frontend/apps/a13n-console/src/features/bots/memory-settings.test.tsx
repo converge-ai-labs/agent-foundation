@@ -90,9 +90,11 @@ it("blocks unsupported bindings and saves a declared document provider", async (
     screen.getByRole("combobox", { name: "Memory Provider" }),
   );
   expect(
-    screen
-      .getByRole("option", { name: "Legacy · Document memory unsupported" })
-      .getAttribute("aria-disabled"),
+    (
+      await screen.findByRole("option", {
+        name: "Legacy · Document memory unsupported",
+      })
+    ).getAttribute("aria-disabled"),
   ).toBe("true");
   await userEvent.click(screen.getByRole("option", { name: "Documents" }));
   await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
@@ -114,7 +116,7 @@ it("lets an administrator disable memory when capability discovery fails", async
     screen.getByRole("combobox", { name: "Memory Provider" }),
   );
   expect(
-    screen.getByRole("option", { name: "Legacy · Unavailable" }),
+    await screen.findByRole("option", { name: "Legacy · Unavailable" }),
   ).toBeTruthy();
   expect(
     screen.queryByRole("option", { name: /Document memory unsupported/ }),

@@ -78,18 +78,9 @@ async def run(args: argparse.Namespace, key: str, client: httpx2.AsyncClient) ->
     if not model_id.strip():
         raise ValueError("Model ID must not be empty")
     if args.command != "call":
-        async with asyncio.timeout(60):
-            description = await operations.describe(
-                provider_id="local",
-                organization_id="local",
-                workspace_id="local",
-                provider_type=provider.type,
-                upstream_model=model_id,
-                model_api=model_api,
-            )
-        print("\n[3] Model module description (capability information is advisory)", flush=True)
-        show(description.model_dump(mode="json", exclude={"settings_schema"}))
-        properties = cast(dict[str, object], description.settings_schema.get("properties", {}))
+        print("\n[3] Local Model API settings (not upstream capability discovery)", flush=True)
+        show({"upstream_model": model_id, "model_api": model_api})
+        properties = cast(dict[str, object], definition.settings_schemas[model_api].get("properties", {}))
         print("Available settings:", ", ".join(sorted(properties)))
         if args.command == "describe":
             return

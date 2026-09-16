@@ -20,7 +20,7 @@ Each script accepts `--help` for individual commands. Missing keys are requested
 
 Composio previews tools before account authorization. Hosted OAuth requires an existing auth configuration, your browser callback URL, and `AUTHORIZE` confirmation. After completing authorization in the browser, return to verify the account and its exact provider user ID. The script rechecks ownership, readiness, and the pinned tool definition before a call. Tool execution requires `CALL` or an explicit `--execute`.
 
-OpenRouter `discover` lists lightweight candidates; `describe --model vendor/model` uses the single-model description operation to show its settings schema without enumerating the complete catalog first. `call --model vendor/model` validates the native endpoint and invokes the model without discovery. Inference consumes quota. The Composio script neither retries calls automatically nor revokes accounts on exit.
+OpenRouter `discover` lists lightweight candidates; `describe --model vendor/model` shows the local Model API settings schema without a network request. It does not discover upstream capabilities or prove that the selected model is available. `call --model vendor/model` validates the native endpoint and invokes the model without discovery. Inference consumes quota. The Composio script neither retries calls automatically nor revokes accounts on exit.
 
 ## Diagnostics and local checks
 

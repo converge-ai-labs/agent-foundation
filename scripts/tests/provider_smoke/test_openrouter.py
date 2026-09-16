@@ -60,11 +60,11 @@ def smoke(monkeypatch):
 
 
 @pytest.mark.parametrize("command", ["discover", "describe"])
-def test_preview_uses_current_discovery_and_description_contracts(smoke, capsys, command):
+def test_preview_uses_remote_discovery_or_local_settings(smoke, capsys, command):
     args, calls, run = smoke
     args.command = command
     run()
-    assert len(calls) == 1 and calls[0].method == "GET"
+    assert [call.method for call in calls] == (["GET"] if command == "discover" else [])
     output = capsys.readouterr().out
     assert "vendor/model" in output
     assert "dummy-key" not in output
@@ -77,7 +77,7 @@ def test_description_of_manual_model_keeps_local_schema(smoke, capsys):
     args.command = "describe"
     args.model = "vendor/unlisted"
     run()
-    assert len(calls) == 1 and calls[0].method == "GET"
+    assert calls == []
     output = capsys.readouterr().out
     assert "vendor/unlisted" in output and "Available settings:" in output
 
@@ -88,7 +88,7 @@ def test_inference_uses_async_native_factory(smoke, monkeypatch, capsys, command
     args.command = command
     monkeypatch.setattr("builtins.input", lambda _: "")
     run()
-    assert [call.method for call in calls] == (["POST"] if command == "call" else ["GET", "GET", "POST"])
+    assert [call.method for call in calls] == (["POST"] if command == "call" else ["GET", "POST"])
     output = capsys.readouterr().out
     assert '"text": "OK"' in output
     assert "dummy-key" not in output
