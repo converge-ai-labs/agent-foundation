@@ -277,14 +277,15 @@ it("keeps failed pagination local, retries it, and queries projectless and unava
   expect(activity.at(-1)?.searchParams.get("project_scope")).toBe(
     "unavailable",
   );
-  fireEvent.click(screen.getByRole("checkbox", { name: "Include archived" }));
-  await waitFor(() =>
-    expect(
-      activity.filter(
-        (url) => url.searchParams.get("include_archived") === "true",
-      ),
-    ).toHaveLength(4),
-  );
+  expect(
+    activity.every(
+      (url) => url.searchParams.get("include_archived") === "false",
+    ),
+  ).toBe(true);
+  expect(
+    screen.queryByRole("checkbox", { name: "Include archived" }),
+  ).toBeNull();
+  expect(screen.queryByRole("button", { name: "New conversation" })).toBeNull();
 });
 
 it("reorders whole project groups with keyboard, cancels preview, and persists only in this browser", async () => {
@@ -471,7 +472,10 @@ it("preserves project scope filtering and cached independent pages through scope
   await screen.findByText("Older two");
   await user.click(screen.getByRole("button", { name: "Two" }));
   await screen.findByText("Other project");
-  await user.click(screen.getByRole("combobox", { name: "Project scope" }));
+  await user.click(screen.getByRole("button", { name: "Filter by project" }));
+  await user.click(
+    await screen.findByRole("combobox", { name: "Project scope" }),
+  );
   await user.click(await screen.findByRole("option", { name: "Two" }));
   expect(screen.queryByRole("button", { name: "One" })).toBeNull();
   expect(screen.getByRole("link", { name: "Other project" })).toBeTruthy();
@@ -487,7 +491,10 @@ it("preserves project scope filtering and cached independent pages through scope
     { target: { value: "" } },
   );
   const calls = activity.length;
-  await user.click(screen.getByRole("combobox", { name: "Project scope" }));
+  await user.click(screen.getByRole("button", { name: "Filter by project" }));
+  await user.click(
+    await screen.findByRole("combobox", { name: "Project scope" }),
+  );
   await user.click(await screen.findByRole("option", { name: "All Projects" }));
   expect(screen.getByRole("link", { name: "Older two" })).toBeTruthy();
   expect(activity).toHaveLength(calls);
@@ -568,7 +575,7 @@ it("does not claim empty search results when the list fails", async () => {
   expect(screen.queryByText("No conversations yet")).toBeNull();
 });
 
-it("keeps rows and DOM identity across an archive toggle and failed refresh without reusing old cursors", async () => {
+it("keeps rows, title and DOM identity across a failed background refresh", async () => {
   mount();
   fireEvent.click(await screen.findByRole("button", { name: "One" }));
   const original = await screen.findByRole("link", { name: "Recent 1" });
@@ -583,25 +590,25 @@ it("keeps rows and DOM identity across an archive toggle and failed refresh with
   });
   vi.mocked(fetch).mockImplementation(async (input, init) => {
     const request = input as Request;
-    if (request.url.includes("include_archived=true")) {
+    if (request.url.includes("/api/threads/activity")) {
       await pause;
       return json({ error: { message: "Archive filter unavailable" } }, 503);
     }
     return originalFetch(input, init);
   });
-  fireEvent.click(screen.getByRole("checkbox", { name: "Include archived" }));
+  act(() => {
+    void queryClient.invalidateQueries({ queryKey: ["threads"] });
+  });
   expect(screen.getByRole("link", { name: "Recent 1" })).toBe(original);
   expect(screen.queryByLabelText("Loading conversations")).toBeNull();
-  expect(
-    screen.queryByRole("button", { name: "Show more conversations in One" }),
-  ).toBeNull();
+  expect(screen.getByTitle("One").textContent).toBe("One");
   expect(scroller.scrollTop).toBe(40);
   await act(async () => release());
   await screen.findByText("Archive filter unavailable");
   expect(screen.getByRole("link", { name: "Recent 1" })).toBe(original);
 });
 
-it("hides archived rows immediately when filtering them out while retaining non-archived rows", async () => {
+it("never mixes archived rows into ordinary navigation", async () => {
   const originalFetch = vi.mocked(fetch).getMockImplementation()!;
   let pause: Promise<void> | null = null;
   let release!: () => void;
@@ -620,16 +627,16 @@ it("hides archived rows immediately when filtering them out while retaining non-
     return originalFetch(input, init);
   });
   mount();
-  fireEvent.click(
-    await screen.findByRole("checkbox", { name: "Include archived" }),
-  );
-  fireEvent.click(screen.getByRole("button", { name: "One" }));
-  await screen.findByRole("link", { name: /^Archived/ });
+  fireEvent.click(await screen.findByRole("button", { name: "One" }));
+  await screen.findByRole("link", { name: "Active" });
+  expect(screen.queryByRole("link", { name: /^Archived/ })).toBeNull();
   const active = screen.getByRole("link", { name: "Active" });
   pause = new Promise<void>((resolve) => {
     release = resolve;
   });
-  fireEvent.click(screen.getByRole("checkbox", { name: "Include archived" }));
+  act(() => {
+    void queryClient.invalidateQueries({ queryKey: ["threads"] });
+  });
   expect(screen.queryByRole("link", { name: /^Archived/ })).toBeNull();
   expect(screen.getByRole("link", { name: "Active" })).toBe(active);
   await act(async () => release());
@@ -659,10 +666,12 @@ it("targets execution refreshes without invalidating settings or native queries"
     queryClient.getQueryState(["thread", "thread-other", "detail"])
       ?.isInvalidated,
   ).toBe(false);
-  expect(
-    queryClient.getQueryState(["thread", "thread-changed", "detail"])
-      ?.isInvalidated,
-  ).toBe(true);
+  await waitFor(() =>
+    expect(
+      queryClient.getQueryState(["thread", "thread-changed", "detail"])
+        ?.isInvalidated,
+    ).toBe(true),
+  );
 });
 
 it("puts the current server directory first by default and on reset, while respecting explicit browser order", async () => {

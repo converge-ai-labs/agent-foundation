@@ -1086,6 +1086,7 @@ def create_webui(
         project_scope: Literal["all", "projectless", "unavailable"] = "all",
         query: Annotated[str | None, Query(max_length=512)] = None,
         include_archived: bool = False,
+        archived_only: bool = False,
         cursor: Annotated[str | None, Query(max_length=2048)] = None,
         limit: Annotated[int, Query(ge=1, le=100)] = 20,
     ) -> ThreadActivityPage:
@@ -1094,6 +1095,7 @@ def create_webui(
             project_scope=project_scope,
             query=query,
             include_archived=include_archived,
+            archived_only=archived_only,
             cursor=cursor,
             limit=limit,
         )

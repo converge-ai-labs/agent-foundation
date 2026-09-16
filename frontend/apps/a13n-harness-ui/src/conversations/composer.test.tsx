@@ -218,6 +218,16 @@ it.each(["accepted", "rejected", "unknown"] as const)(
       );
     });
     await waitFor(() => expect(draft.submission.kind).toBe(outcome));
+    if (outcome === "accepted") {
+      expect(screen.getByRole("status").textContent).toContain("Steer sent.");
+      expect(screen.getByRole("status").textContent).toContain(
+        "application is not yet confirmed",
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Dismiss steer notification" }),
+      );
+      expect(screen.queryByText(/Steer sent\./)).toBeNull();
+    }
     expect(values(draft.doc)).toEqual({
       prompt: outcome === "accepted" ? "NEXT " : "NEXT before after",
       attachment_ids:
@@ -353,6 +363,64 @@ it("uses one action for empty Stop and authored Steer, without turning the keybo
       params: { path: { receipt_id: "current" } },
     }),
   );
+  view.unmount();
+  query.clear();
+});
+
+it("keeps Send enabled during ordinary edit echoes but waits for synchronization before capturing once", async () => {
+  const draft = new ThreadDraft();
+  vi.spyOn(draft, "connect").mockReturnValue({
+    presence: () => {},
+    close: () => {},
+  });
+  const acknowledge = () =>
+    draft.receive({
+      draft_id: "draft-one",
+      participant_id: "person",
+      participants: {},
+      update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+    });
+  acknowledge();
+  const post = vi.fn().mockResolvedValue({
+    data: { receipt_id: "receipt-one", thread_id: "thread-one" },
+  });
+  const transport = { client: { POST: post } } as unknown as Transport;
+  const query = new QueryClient();
+  const view = render(
+    <QueryClientProvider client={query}>
+      <TransportContext value={transport}>
+        <ComposerDrafts value={new Map([["thread-one", draft]])}>
+          <Composer
+            threadId="thread-one"
+            activity={{ state: "inactive" } as Schema<"RootActivityView">}
+            canRun
+            profile={{ display_name: "Alice", color: "#000000" }}
+            unauthorized={() => {}}
+            reconcile={() => {}}
+          />
+        </ComposerDrafts>
+      </TransportContext>
+    </QueryClientProvider>,
+  );
+  act(() => draft.doc.getText("text").insert(0, "hello"));
+  const button = screen.getByRole("button", {
+    name: "Send",
+  }) as HTMLButtonElement;
+  expect(draft.synchronized).toBe(false);
+  expect(button.disabled).toBe(false);
+  act(acknowledge);
+  act(() => draft.doc.getText("text").insert(5, " again"));
+  expect(button.disabled).toBe(false);
+  fireEvent.click(button);
+  expect(post).not.toHaveBeenCalled();
+  expect(
+    (screen.getByRole("button", { name: "Preparing" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  act(acknowledge);
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+  expect(post.mock.calls[0][1].body.parts).toEqual(["hello again"]);
+  await waitFor(() => expect(values(draft.doc).prompt).toBe(""));
   view.unmount();
   query.clear();
 });

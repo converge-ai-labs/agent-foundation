@@ -116,9 +116,7 @@ it("keeps shell command/output reads in one disclosure and late failures visible
     />,
   );
   expect(
-    screen
-      .getByRole("button", { name: /Shell.*Failed/ })
-      .getAttribute("aria-expanded"),
+    screen.getByRole("button", { name: /Shell/ }).getAttribute("aria-expanded"),
   ).toBe("true");
   expect(screen.getByText("Check failed")).toBeTruthy();
 });
@@ -190,7 +188,7 @@ it("surfaces the OpenAI adapter's failed native-search status in live and saved 
   expect(describeTool(tool).phase).toBe("Failed");
   expect(activitySummary([tool])).toMatchObject({
     issue: true,
-    status: "Failed",
+    status: "",
   });
   const entries = [
     {
@@ -217,10 +215,11 @@ it("surfaces the OpenAI adapter's failed native-search status in live and saved 
   const saved = savedToolGroups(entries).get(entries[0].parts[0])!;
   render(<ToolActivity tools={saved} />);
   const toggle = screen.getByRole("button", {
-    name: /Browsed the web.*Failed/,
+    name: /Browsed the web/,
   });
+  expect(toggle.textContent).not.toContain("Failed");
   fireEvent.click(toggle);
-  expect(screen.getAllByText("Failed")).toHaveLength(2);
+  expect(screen.getByText("Failed")).toBeTruthy();
   expect(describeTool({ ...tool, provider: undefined }).failed).toBe(false);
 });
 
@@ -495,6 +494,6 @@ it("folds task/note and subagent operations with semantic details and visible fa
   ).toMatchObject({
     title: "Subagents · 1 operation",
     issue: true,
-    status: "Failed",
+    status: "",
   });
 });

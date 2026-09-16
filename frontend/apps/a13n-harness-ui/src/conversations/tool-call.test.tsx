@@ -115,7 +115,7 @@ it("shows actual applied content without confusing source +++ lines or missing f
       }}
     />,
   );
-  fireEvent.click(screen.getByRole("button", { name: /Edit.*Failed/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Edit/ }));
   expect(screen.getByText("Applied edit")).toBeTruthy();
   expect(screen.getByText("+1")).toBeTruthy();
   expect(screen.queryByText("Requested replacement")).toBeNull();

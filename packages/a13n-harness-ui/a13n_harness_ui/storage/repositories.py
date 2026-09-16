@@ -232,6 +232,7 @@ class ThreadRepository:
         include_children: bool = False,
         projectless: bool = False,
         include_archived: bool = False,
+        archived_only: bool = False,
         project_ids: tuple[str, ...] | None = None,
         sort: Literal["updated", "activity"] = "updated",
         before: tuple[datetime, str] | None = None,
@@ -269,7 +270,9 @@ class ThreadRepository:
                 predicates.append(ThreadConfigurationRecord.project_id.is_(None))
             if not include_children:
                 predicates.append(ThreadRecord.parent_thread_id.is_(None))
-            if not include_archived:
+            if archived_only:
+                predicates.append(ThreadRecord.archived.is_(True))
+            elif not include_archived:
                 predicates.append(ThreadRecord.archived.is_(False))
             normalized = None if query is None else query.strip().casefold()
             if normalized:

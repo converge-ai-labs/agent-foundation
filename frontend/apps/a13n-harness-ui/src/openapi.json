@@ -2755,6 +2755,16 @@
             }
           },
           {
+            "name": "archived_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Archived Only"
+            }
+          },
+          {
             "name": "cursor",
             "in": "query",
             "required": false,

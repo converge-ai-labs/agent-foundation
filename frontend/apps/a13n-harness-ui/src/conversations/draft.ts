@@ -68,7 +68,12 @@ export type Submission =
       message: string;
       receipt?: string;
     }
-  | { kind: "accepted"; message: string; receipt: string }
+  | {
+      kind: "accepted";
+      action?: "send" | "steer";
+      message: string;
+      receipt: string;
+    }
   | { kind: "rejected"; message: string };
 
 export class ThreadDraft {

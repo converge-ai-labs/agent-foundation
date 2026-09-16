@@ -149,6 +149,7 @@ class TerminalProjectionService:
         project_scope: Literal["all", "projectless", "unavailable"] = "all",
         query: str | None = None,
         include_archived: bool = False,
+        archived_only: bool = False,
         cursor: str | None = None,
         limit: int = 20,
     ) -> ThreadActivityPage:
@@ -157,7 +158,7 @@ class TerminalProjectionService:
             raise ThreadError("Choose a Project or a Project scope.", code="thread_page_invalid")
         unavailable = None
         if project_scope == "unavailable":
-            recency = await self._store.threads.project_recency(include_archived=include_archived)
+            recency = await self._store.threads.project_recency(include_archived=include_archived or archived_only)
             unavailable = tuple(sorted(set(recency) - source.projects.keys()))
         page = await self._threads.list_threads(
             query=query,
@@ -165,6 +166,7 @@ class TerminalProjectionService:
             projectless=project_scope == "projectless",
             project_ids=unavailable,
             include_archived=include_archived,
+            archived_only=archived_only,
             cursor=cursor,
             limit=limit,
         )

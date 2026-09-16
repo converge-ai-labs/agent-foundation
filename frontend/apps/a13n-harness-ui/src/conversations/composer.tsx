@@ -16,6 +16,7 @@ import {
   attachmentToken,
   isReadyAttachment,
 } from "./inline-attachments";
+import { ImagePreview } from "./image-preview";
 import { AttachmentThumbnail } from "./attachment-thumbnail";
 import { useTransport } from "../transport/context";
 import {
@@ -149,11 +150,12 @@ export async function submitDraft(
     draft.clear(captured);
     draft.submission = {
       kind: "accepted",
+      action,
       receipt: acceptedReceipt,
       message:
         action === "send"
           ? "Input accepted. Execution may still be preparing."
-          : "Instruction accepted by the current operation.",
+          : "Steer sent. The running operation accepted your instruction; application is not yet confirmed.",
     };
   } catch (error) {
     // A definite application rejection differs from a lost response/proxy failure.
@@ -301,9 +303,12 @@ export function Composer({
   const hasInput = !!(input.prompt.trim() || selections.length);
   const valid = hasInput && !missing;
   const [stopping, setStopping] = useState(false);
+  const ready =
+    local ||
+    (draft.status === "Connected" && !draft.replacement && !draft.error);
   const canSteer =
     busy &&
-    draft.synchronized &&
+    ready &&
     !preparing &&
     !pending &&
     !unknown &&
@@ -339,18 +344,12 @@ export function Composer({
     }
   };
   const canSend =
-    canRun &&
-    !busy &&
-    (local || draft.synchronized) &&
-    !preparing &&
-    !pending &&
-    !unknown &&
-    valid;
+    canRun && !busy && ready && !preparing && !pending && !unknown && valid;
   const submit = async (action: "send" | "steer") => {
     if (action === "send" && !canSend) return;
     if (
       action === "steer" &&
-      (!draft.synchronized ||
+      (!ready ||
         pending ||
         unknown ||
         !valid ||
@@ -361,10 +360,10 @@ export function Composer({
     const controller = new AbortController();
     preparation.current = controller;
     try {
+      setPreparing(true);
+      onPreparing?.(true);
+      setError("");
       if (prepareThread) {
-        setPreparing(true);
-        onPreparing?.(true);
-        setError("");
         await prepareThread();
         controller.signal.throwIfAborted();
         await Promise.all(
@@ -373,8 +372,11 @@ export function Composer({
             return item?.status === "staged" ? [uploadOne(key, item.file)] : [];
           }),
         );
-        await waitForSynchronization(draft, controller.signal);
       }
+      // Typing need not toggle the button while each edit awaits its echo.
+      // Explicit Send/Steer still waits for the complete shared snapshot.
+      if (!draft.synchronized)
+        await waitForSynchronization(draft, controller.signal);
       controller.signal.throwIfAborted();
       await submitDraft(
         draft,
@@ -665,6 +667,23 @@ export function Composer({
           {error || draft.error}
         </p>
       )}
+      {draft.submission.kind === "accepted" &&
+        draft.submission.action === "steer" && (
+          <div role="status" className={styles.steerNotice}>
+            <span>{draft.submission.message}</span>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Dismiss steer notification"
+              onClick={() => {
+                draft.submission = { kind: "idle" };
+                draft.notify();
+              }}
+            >
+              <X />
+            </Button>
+          </div>
+        )}
       {(draft.submission.kind === "rejected" || unknown) && (
         <div role="alert" className={styles.warning}>
           <p>{"message" in draft.submission && draft.submission.message}</p>
@@ -754,8 +773,15 @@ export function Composer({
           </Button>
         </div>
       </div>
+      {preview?.image && preview.url && (
+        <ImagePreview
+          src={preview.url}
+          name={preview.name}
+          close={() => setPreview(null)}
+        />
+      )}
       <ModalFrame
-        open={!!preview}
+        open={!!preview && !preview.image}
         onOpenChange={(open) => {
           if (!open) {
             previewRequest.current?.abort();
@@ -795,12 +821,6 @@ export function Composer({
         )}
         {comment && preview ? (
           <CommentReferenceContent source={comment} text={preview.text} />
-        ) : preview?.image && preview.url ? (
-          <img
-            className={styles.attachmentPreview}
-            src={preview.url}
-            alt={preview.name}
-          />
         ) : (
           <pre className={styles.code}>{preview?.text}</pre>
         )}

@@ -746,6 +746,7 @@ class HarnessUiApp:
         project_scope: Literal["all", "projectless", "unavailable"] = "all",
         query: str | None = None,
         include_archived: bool = False,
+        archived_only: bool = False,
         cursor: str | None = None,
         limit: int = 20,
     ) -> ThreadActivityPage:
@@ -755,6 +756,7 @@ class HarnessUiApp:
                 project_scope=project_scope,
                 query=query,
                 include_archived=include_archived,
+                archived_only=archived_only,
                 cursor=cursor,
                 limit=limit,
             )

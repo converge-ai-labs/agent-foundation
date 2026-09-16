@@ -17,7 +17,15 @@ import {
   SheetPopup,
   SheetTitle,
 } from "a13n-ui";
-import { House, Moon, Sun, List, Users, Gear } from "@phosphor-icons/react";
+import {
+  Archive,
+  House,
+  Moon,
+  Sun,
+  List,
+  Users,
+  Gear,
+} from "@phosphor-icons/react";
 import { useSetup, useSources, useStatus } from "../transport/context";
 import type { Schema } from "../transport/client";
 import { AccountsPage } from "../setup/accounts";
@@ -35,6 +43,7 @@ import { ErrorNotice, Panel, TextField } from "./ui";
 import { useLiveWorkbench, type Profile } from "./presence";
 import { SharedPointers } from "./shared-pointers";
 import styles from "./workbench.module.css";
+import { ArchivedPage } from "../conversations/archived";
 import { ConversationNavigation } from "../conversations/navigation";
 import { ConversationPage } from "../conversations/conversation";
 import { NewConversationPage } from "../conversations/new-conversation";
@@ -129,6 +138,7 @@ export function Workbench({
   const updateProfile = (next: Profile) => setProfile(next);
   const links = [
     { to: "/", label: "Home", icon: House },
+    { to: "/archived", label: "Archived", icon: Archive },
     { to: "/settings", label: "Settings", icon: Gear },
   ];
   const themeToggle = (
@@ -307,6 +317,7 @@ export function Workbench({
                   />
                 }
               />
+              <Route path="/archived" element={<ArchivedPage />} />
               <Route element={<SettingsLayout />}>
                 <Route path="/setup" element={<SetupPage />} />
                 <Route path="/projects" element={<ProjectsPage />} />

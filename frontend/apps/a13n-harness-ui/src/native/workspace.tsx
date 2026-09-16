@@ -363,7 +363,9 @@ export function NativeWorkspace({
               "Untitled conversation"
             : isWorkspace
               ? "New conversation"
-              : "Settings"}
+              : location.pathname === "/archived"
+                ? "Archived conversations"
+                : "Settings"}
         </h1>
         {isWorkspace && (
           <div className={styles.panelTools} aria-label="Workbench views">

@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useState } from "react";
 import { ToolActivity } from "./tool-call";
 import {
   activityKind,
@@ -18,6 +18,20 @@ function systemNotice(metadata?: Record<string, unknown> | null) {
   return (
     metadata?.["a13n.steering-source"] === "background_process" ||
     metadata?.["a13n.steering-source"] === "async_subagent"
+  );
+}
+
+function Reasoning({ text }: { text: string }) {
+  const [open, setOpen] = useState(true);
+  return (
+    <details
+      className={styles.reasoning}
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary>Reasoning</summary>
+      <MessageText text={text} />
+    </details>
   );
 }
 
@@ -90,11 +104,11 @@ export const SavedEntry = memo(function SavedEntry({
               />
             </section>
           );
+        if (part.kind === "thinking")
+          return <Reasoning key={index} text={part.text ?? ""} />;
         return (
           <details key={index} className={styles.activity}>
-            <summary>
-              {part.kind === "thinking" ? "Reasoning" : part.kind}
-            </summary>
+            <summary>{part.kind}</summary>
             <pre className={styles.code}>
               {part.text ?? JSON.stringify(part.value, null, 2)}
               {part.value_omitted ? "\nContent omitted by the server." : ""}
@@ -178,13 +192,11 @@ export function LiveOutput({
             )}
             <MessageText text={block.text} />
           </div>
+        ) : block.kind === "thinking" ? (
+          <Reasoning key={block.id} text={block.text} />
         ) : (
           <details key={block.id} className={styles.activity}>
-            <summary>
-              {block.kind === "thinking"
-                ? "Reasoning"
-                : block.name || "Activity"}
-            </summary>
+            <summary>{block.name || "Activity"}</summary>
             {block.text && <pre className={styles.code}>{block.text}</pre>}
             {block.result && <MessageText text={block.result} />}
           </details>

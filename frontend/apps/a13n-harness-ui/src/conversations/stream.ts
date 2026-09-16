@@ -1,4 +1,5 @@
 import { ApiError, type Schema, type Transport } from "../transport/client";
+import type { ThreadRefresh } from "./refresh";
 import { consumeSse } from "../transport/events";
 import {
   sourceText,
@@ -736,13 +737,27 @@ export function showFocusedOutput(
   );
 }
 
+export function focusRefresh(frame: FocusFrame): ThreadRefresh | undefined {
+  if (frame.kind === "snapshot" || frame.kind === "reset") return "reconcile";
+  if (frame.kind !== "event") return;
+  const event = frame.event;
+  if (["RUN_STARTED", "RUN_FINISHED", "RUN_ERROR"].includes(event.event_type))
+    return "lifecycle";
+  const content = object(event.payload) ? event.payload : {};
+  const value = object(content.value) ? content.value : {};
+  const source = object(value.event) ? value.event : {};
+  const payload = object(source.payload) ? source.payload : {};
+  if (content.name === "a13n.harness_ui.checkpoint") return "checkpoint";
+  if (payload.type === "usage_report") return "usage";
+}
+
 export function watchThread(
   transport: Transport,
   threadId: string,
   display: FocusDisplay,
   changed: () => void,
   connection: (value: string) => void,
-  invalidate: () => void,
+  invalidate: (reason: ThreadRefresh) => void,
 ) {
   const abort = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -770,16 +785,8 @@ export function watchThread(
           display.cursor = undefined;
           throw error;
         }
-        if (frame.kind === "snapshot" || frame.kind === "reset") invalidate();
-        if (
-          frame.kind === "event" &&
-          ![
-            "TEXT_MESSAGE_CONTENT",
-            "TOOL_CALL_ARGS",
-            "REASONING_MESSAGE_CONTENT",
-          ].includes(frame.event.event_type)
-        )
-          invalidate();
+        const reason = focusRefresh(frame);
+        if (reason) invalidate(reason);
         failures = 0;
         connection(display.ready ? "Live" : "Loading current output");
         changed();

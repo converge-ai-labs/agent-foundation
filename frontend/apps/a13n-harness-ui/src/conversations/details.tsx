@@ -7,7 +7,7 @@ import { ErrorNotice, TextField } from "../shell/ui";
 import { ConversationConfiguration } from "./configuration";
 import { MessageText } from "./message-text";
 import { ChildSavedOutputs } from "./comments";
-import { useThreads } from "./queries";
+import { useOperation, useThreads } from "./queries";
 import type { FocusDisplay } from "./stream";
 import { LiveOutput } from "./transcript";
 import { ToolActivity } from "./tool-call";
@@ -30,7 +30,9 @@ export function ConversationDetails({
   const [tab, setTab] = useState("execution");
   // Activity owns the latest process-local terminal receipt. Focus snapshots only
   // carry an active operation, so an inactive snapshot cannot substitute for it.
-  const activity = useThreads(threadId, undefined, true);
+  const activity = useThreads(threadId, undefined, true, {
+    enabled: tab === "execution" && !receipt,
+  });
   const row = activity.data?.pages
     .flatMap((page) => page.rows)
     .find((item) => item.thread.thread_id === threadId);
@@ -53,7 +55,8 @@ export function ConversationDetails({
             retry={() => void activity.refetch()}
           />
           <Operation
-            receipt={row?.latest_operation?.receipt.receipt_id ?? receipt}
+            threadId={threadId}
+            receipt={receipt ?? row?.latest_operation?.receipt.receipt_id}
           />
           {!row && activity.hasNextPage && (
             <Button
@@ -76,23 +79,14 @@ export function ConversationDetails({
     </div>
   );
 }
-function Operation({ receipt }: { receipt?: string | null }) {
-  const { client } = useTransport();
-  const operation = useQuery({
-    queryKey: ["operation", receipt],
-    enabled: !!receipt,
-    queryFn: ({ signal }) =>
-      result(
-        client.GET("/api/operations/{receipt_id}", {
-          params: { path: { receipt_id: receipt! } },
-          signal,
-        }),
-      ),
-    refetchInterval: (query) =>
-      ["preparing", "running"].includes(query.state.data?.status ?? "")
-        ? 2000
-        : false,
-  });
+function Operation({
+  threadId,
+  receipt,
+}: {
+  threadId: string;
+  receipt?: string | null;
+}) {
+  const operation = useOperation(threadId, receipt);
   if (!receipt)
     return (
       <p>

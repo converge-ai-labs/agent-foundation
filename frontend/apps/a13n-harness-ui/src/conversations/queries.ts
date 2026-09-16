@@ -47,15 +47,25 @@ export function useThreads(
     scope = "all",
     enabled = true,
     limit = 30,
+    archivedOnly = false,
   }: {
     scope?: "all" | "projectless" | "unavailable";
     enabled?: boolean;
     limit?: number;
+    archivedOnly?: boolean;
   } = {},
 ) {
   const { client } = useTransport();
   const list = useInfiniteQuery({
-    queryKey: ["threads", query, projectId, archived, scope, limit],
+    queryKey: [
+      "threads",
+      query,
+      projectId,
+      archived,
+      scope,
+      limit,
+      archivedOnly,
+    ],
     enabled,
     initialPageParam: undefined as string | undefined,
     queryFn: ({ pageParam, signal }) =>
@@ -67,6 +77,7 @@ export function useThreads(
               project_id: projectId,
               project_scope: scope,
               include_archived: archived,
+              archived_only: archivedOnly,
               cursor: pageParam,
               limit,
             },
@@ -83,7 +94,13 @@ export function useThreads(
     identity: string;
     data: typeof list.data;
   }>(undefined);
-  const identity = JSON.stringify([query, projectId, scope, limit]);
+  const identity = JSON.stringify([
+    query,
+    projectId,
+    scope,
+    limit,
+    archivedOnly,
+  ]);
   useEffect(() => {
     if (list.isSuccess)
       previous.current = { client, identity, data: list.data };
@@ -100,14 +117,30 @@ export function useThreads(
       ...data,
       pages: data.pages.map((page) => ({
         ...page,
-        rows: archived
-          ? page.rows
-          : page.rows.filter((row) => !row.thread.archived),
+        rows: archivedOnly
+          ? page.rows.filter((row) => row.thread.archived)
+          : archived
+            ? page.rows
+            : page.rows.filter((row) => !row.thread.archived),
       })),
     },
     isPreviousData: !list.data && !!retained,
     hasNextPage: !!list.data && list.hasNextPage,
   };
+}
+export function useOperation(threadId: string, receipt?: string | null) {
+  const { client } = useTransport();
+  return useQuery({
+    queryKey: ["thread", threadId, "operation", receipt],
+    enabled: !!receipt,
+    queryFn: ({ signal }) =>
+      result(
+        client.GET("/api/operations/{receipt_id}", {
+          params: { path: { receipt_id: receipt! } },
+          signal,
+        }),
+      ),
+  });
 }
 export function useThread(threadId: string) {
   const { client } = useTransport();

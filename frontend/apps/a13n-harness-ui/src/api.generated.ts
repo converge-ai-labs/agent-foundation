@@ -6310,6 +6310,7 @@ export interface operations {
                 project_scope?: "all" | "projectless" | "unavailable";
                 query?: string | null;
                 include_archived?: boolean;
+                archived_only?: boolean;
                 cursor?: string | null;
                 limit?: number;
             };

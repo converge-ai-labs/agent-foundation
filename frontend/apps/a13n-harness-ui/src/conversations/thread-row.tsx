@@ -7,6 +7,7 @@ import {
   CircleNotch,
   WarningCircleIcon,
   Archive,
+  ArrowCounterClockwise,
   DotsThree,
   PencilSimple,
   ShareNetwork,
@@ -54,9 +55,11 @@ type ActivityRow = Pick<Schema<"ThreadActivityView">, "thread"> &
 export function ThreadRow({
   row,
   presence,
+  showRestore = false,
 }: {
   row: ActivityRow;
   presence: Schema<"PresenceFrame"> | null;
+  showRestore?: boolean;
 }) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -122,6 +125,19 @@ export function ThreadRow({
             "Untitled conversation"
           }
         />
+        {showRestore && row.thread.archived && (
+          <Button
+            variant="ghost"
+            size="sm"
+            loading={archive.isPending}
+            disabled={row.thread.root_activity.state !== "inactive"}
+            onClick={() => archive.mutate()}
+            aria-label={`Restore ${row.thread.title || "Untitled conversation"}`}
+          >
+            <ArrowCounterClockwise />
+            Restore
+          </Button>
+        )}
         <Menu>
           <MenuTrigger
             render={<Button variant="ghost" size="icon-sm" />}
