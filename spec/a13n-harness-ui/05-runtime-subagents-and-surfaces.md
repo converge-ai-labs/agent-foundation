@@ -319,6 +319,8 @@ Sidekick is disabled when its mapping is absent or null. This removes only its c
 
 ## Live Presentation
 
+Root transcript pages and entry reads project the selected continuation's [independent display history](03-local-storage-and-recovery.md#run-composition-and-continuation), falling back to native history for older objects. Display positions remain separate from model-history positions after context replacement. Context summaries expose their operation identities consistently in saved metadata and live observations so clients can preserve disclosure state without text-based matching.
+
 Saved transcript tool results preserve the native `ToolReturnPart.outcome` (`success`, `failed`, `denied`, or `interrupted`) as an optional projection field. Absence remains compatible with older projections and non-result parts; clients do not infer success solely from arbitrary result content. Retry parts retain their distinct kind. This presentation projection does not change persisted history.
 
 Live input uses the [Stream Protocol input mapping](../a13n-stream-protocol/00-overview.md#standard-event-conversion), not a second terminal echo of submitted text. Transcript parts retain the same `ContentMetadata` projection from native `TextContent`. CLI history and live rendering hide parts marked `display: false`; absence of the flag remains visible for compatibility. HTTP transcript and event projections retain this metadata, and browser rendering respects the same display flag without changing saved history. Filtering affects presentation only, never the continuation or persisted message history. Event type strings use AG-UI wire values such as `TEXT_MESSAGE_CONTENT`, not Python Enum representations.

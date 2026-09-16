@@ -11505,8 +11505,7 @@
           "text": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 65536
+                "type": "string"
               },
               {
                 "type": "null"

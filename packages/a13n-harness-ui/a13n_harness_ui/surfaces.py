@@ -202,7 +202,7 @@ class TranscriptPart(SurfaceModel):
         "media",
         "other",
     ]
-    text: str | None = Field(default=None, max_length=64 * 1024)
+    text: str | None = None
     tool_name: str | None = Field(default=None, max_length=128)
     tool_call_id: str | None = Field(default=None, max_length=256)
     outcome: Literal["success", "failed", "denied", "interrupted"] | None = None
@@ -210,6 +210,13 @@ class TranscriptPart(SurfaceModel):
     applied_edit: AppliedEditView | None = None
     value: JsonValue | None = None
     value_omitted: bool = False
+
+    @model_validator(mode="after")
+    def _bounded_ordinary_text(self) -> Self:
+        context = (self.metadata.model_extra or {}).get("a13n.context")
+        if self.text is not None and len(self.text) > 64 * 1024 and context not in ("handoff", "compaction"):
+            raise ValueError("Ordinary transcript text must not exceed 65536 characters")
+        return self
 
 
 class TranscriptEntry(SurfaceModel):

@@ -1238,8 +1238,30 @@
 .contextActivity[open] > summary {
   margin-bottom: 12px;
 }
-.contextActivity > small {
-  color: var(--a13n-secondary);
+.contextStatus {
+  margin-left: 12px;
+  color: var(--a13n-text-supporting);
+  font-size: 12px;
+  font-weight: 400;
+}
+.contextPreview {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  margin-top: 4px;
+  color: var(--a13n-text-supporting);
+  font-weight: 400;
+  line-height: 1.5;
+}
+.contextActivity[open] .contextPreview {
+  display: none;
+}
+.contextActivity > summary:focus-visible {
+  outline: 2px solid var(--context-accent);
+  outline-offset: 4px;
+  border-radius: 2px;
 }
 
 .childAnswer {

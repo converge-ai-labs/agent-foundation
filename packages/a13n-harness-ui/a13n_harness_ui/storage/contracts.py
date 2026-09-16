@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, m
 from pydantic_ai.tools import DeferredToolRequests
 
 from a13n_harness_ui.conversation import ConversationExcerpt
+from a13n_harness_ui.display_history import DisplayHistory, saved_display_history
 
 from .objects import ObjectKind, ObjectRef
 
@@ -142,6 +143,10 @@ class StoredContinuation(StoredContract):
     excerpt: ConversationExcerpt = Field(default_factory=ConversationExcerpt)
     deferred_requests: DeferredToolRequests | None = None
     created_at: datetime
+
+    @property
+    def display_history(self) -> DisplayHistory | None:
+        return saved_display_history(self.harness_state)
 
     @field_validator("created_at")
     @classmethod
