@@ -77,3 +77,31 @@ def test_validation_diagnostics_are_bounded_and_sanitize_dynamic_paths():
     feedback = update_failure_feedback(caught.value)
     assert "private-secret" not in feedback
     assert len(json.loads(feedback)["issues"]) == 8
+
+
+@pytest.mark.parametrize("operations", [None, []])
+def test_empty_update_rejected_at_model_boundary(operations):
+    from a13n_service.agent_configuration.runtime import ModelDraftUpdate
+    from pydantic import ValidationError
+
+    payload = {"expected_version": 1, "content_digest": "a" * 64}
+    if operations is not None:
+        payload["operations"] = operations
+    with pytest.raises(ValidationError, match="Provide configuration operations"):
+        ModelDraftUpdate.model_validate(payload)
+    payload["creation_metadata"] = {"name": "New agent"}
+    assert ModelDraftUpdate.model_validate(payload).creation_metadata.name == "New agent"
+
+
+@pytest.mark.parametrize("old_text", ["missing", "this"])
+def test_text_match_errors_keep_actionable_reason(old_text):
+    with pytest.raises(ApplicationError) as caught:
+        edit(
+            config(),
+            {"op": "replace_text", "path": ["instructions"], "old_text": old_text, "new_text": "private-secret"},
+        )
+    result = json.loads(update_failure_feedback(caught.value))
+    assert result["reason"] == "text_match_required"
+    assert result["operation_index"] == 0
+    assert "exactly one" in result["hint"]
+    assert "private-secret" not in str(result)

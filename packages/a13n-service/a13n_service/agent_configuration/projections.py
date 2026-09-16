@@ -1,5 +1,6 @@
 """Withhold known credential-bearing configuration fields from model context."""
 
+import json
 import re
 from collections.abc import Mapping
 from typing import Annotated
@@ -132,17 +133,35 @@ def select_fields(
     if fields is None:
         return safe
     selected: dict[tuple[str, ...], JsonValue] = {}
-    for field in (*fields, *required):
+    for field_index, field in enumerate((*fields, *required)):
         try:
             path = read_path_parts(field)
         except ValueError as error:
             raise ModelRetry(str(error)) from error
         value: JsonValue = safe
-        for part in path:
+        for part_index, part in enumerate(path):
             if not isinstance(value, dict) or part not in value:
+                reason = (
+                    "field_missing"
+                    if isinstance(value, dict)
+                    else "null_parent"
+                    if value is None
+                    else "array_parent"
+                    if isinstance(value, list)
+                    else "protected_parent"
+                    if value == PROTECTED
+                    else "scalar_parent"
+                )
                 raise ModelRetry(
-                    "Unknown or unavailable field path. Select existing object fields from the safe response; "
-                    "arrays, nulls and protected values cannot be traversed."
+                    json.dumps(
+                        {
+                            "code": "configuration_field_selection_invalid",
+                            "field_index": field_index,
+                            "segment_index": part_index,
+                            "reason": reason,
+                            "hint": "Correct this fields entry. Select the existing parent to inspect its safe structure; arrays must be selected whole and protected values cannot be traversed.",
+                        }
+                    )
                 )
             value = value[part]
         selected[path] = value

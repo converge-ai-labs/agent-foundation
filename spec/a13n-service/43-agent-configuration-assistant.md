@@ -306,3 +306,7 @@ Run cost belongs to the real assistant Agent, exact accepted snapshot and actual
 10. Verification cannot mutate the target head or claim execution without valid admission and exact candidate provenance; changed drafts make prior evidence stale.
 11. Recovery retains accepted effective configuration and stable context while re-evaluating authority and fencing. It does not replace the snapshot from current YAML; subsequent built-in Skill reads use the current deployment files.
 12. Usage, receipts and interaction evidence retain their identities and deduplication; hiding assistant management does not hide the owner's configuration conversation.
+
+### Tool Correction Feedback
+
+An empty model update is rejected at argument validation with guidance to supply operations or creation metadata. Edit failures retain reviewed operation reasons, including the requirement that text replacement matches exactly once. Invalid pagination cursors are distinguished from concealed resource failures and instruct the model to restart pagination with the same query scope. Field selection failures identify the zero-based selection entry and failing path segment, distinguishing missing fields, null, array, scalar and protected parents without returning their values. Run evidence reads include the safe public failure projection (or null), including its error code and retry hint; they do not expose raw exceptions or Trace state.

@@ -48,7 +48,7 @@ def test_overlapping_paths_and_literal_keys_preserve_subtrees_without_mutation()
 
 @pytest.mark.parametrize("path", ["missing", "nullable.key", "items['0']", "name.key"])
 def test_invalid_paths_fail_instead_of_returning_full_content(path):
-    with pytest.raises(ModelRetry, match="Unknown or unavailable"):
+    with pytest.raises(ModelRetry, match="configuration_field_selection_invalid"):
         select_fields({"nullable": None, "items": [1], "name": "text"}, (path,))
 
 
@@ -127,3 +127,23 @@ def test_quoted_keys_escape_quotes_and_backslashes():
             escaped = key.replace("\\", "\\\\").replace(quote, "\\" + quote)
             path = f"config[{quote}{escaped}{quote}]"
             assert select_fields({"config": {key: True}}, (path,)) == {"config": {key: True}}
+
+
+@pytest.mark.parametrize(
+    "parent, suffix, reason",
+    [
+        ({}, "missing", "field_missing"),
+        (None, "name", "null_parent"),
+        ([], "name", "array_parent"),
+        ("text", "name", "scalar_parent"),
+        (PROTECTED, "name", "protected_parent"),
+    ],
+)
+def test_invalid_selection_identifies_entry_and_segment_without_values(parent, suffix, reason):
+    with pytest.raises(ModelRetry) as caught:
+        select_fields({"ok": 1, "config": parent}, ("ok", f"config.{suffix}"))
+    feedback = json.loads(str(caught.value))
+    assert feedback["field_index"] == 1
+    assert feedback["segment_index"] == 1
+    assert feedback["reason"] == reason
+    assert "text" not in str(caught.value)

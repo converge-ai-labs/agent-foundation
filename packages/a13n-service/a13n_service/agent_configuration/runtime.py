@@ -17,7 +17,7 @@ from a13n_harness.model_context import (
 )
 from a13n_harness.tools import current_invocation_scope
 from a13n_harness.tools.metadata import HarnessTool, HarnessToolMetadata, ToolOutputPolicy
-from pydantic import Field, JsonValue
+from pydantic import Field, JsonValue, model_validator
 from pydantic_ai import ModelRetry, RunContext
 from pydantic_ai.toolsets import FunctionToolset
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -39,7 +39,7 @@ from .definition import READ_TOOLS
 from .domain import ConfigurationDraft, CreationMetadata
 from .drafts import ConfigurationDrafts
 from .editing import Operation
-from .errors import update_failure_feedback
+from .errors import read_failure_feedback, update_failure_feedback
 from .persistence import failure
 from .projections import ReadFields, contains_protected_input, model_safe, protected_field, select_fields
 from .requests import UpdateConfigurationDraftRequest
@@ -52,6 +52,12 @@ class ModelDraftUpdate(StrictModel):
     content_digest: str = Field(pattern=r"^[a-f0-9]{64}$")
     operations: tuple[Operation, ...] = Field(default=(), max_length=32)
     creation_metadata: CreationMetadata | None = None
+
+    @model_validator(mode="after")
+    def require_change(self) -> ModelDraftUpdate:
+        if not self.operations and "creation_metadata" not in self.model_fields_set:
+            raise ValueError("Provide configuration operations or creation metadata.")
+        return self
 
 
 def validate_configuration_definition(*, run: Run, config: EffectiveAgentConfig) -> None:
@@ -276,7 +282,11 @@ class ConfigurationCapability(AbstractModelContextCapability):
                 snapshot=attempt.authorization.snapshot,
             )
         except (ApplicationError, AuthorizationError) as error:
-            raise ModelRetry("The requested resource collection is unavailable or unauthorized.") from error
+            raise ModelRetry(
+                read_failure_feedback(
+                    error, fallback="The requested resource collection is unavailable or unauthorized."
+                )
+            ) from error
         return page.model_dump(mode="json")
 
     async def get_configuration_resource(
@@ -320,11 +330,16 @@ class ConfigurationCapability(AbstractModelContextCapability):
             run = await self._queries.get_run(actor=self._actor, run_id=run_id)
             items = await self._queries.items(actor=self._actor, run_id=run_id, limit=limit, cursor=cursor)
         except (ApplicationError, AuthorizationError) as error:
-            raise ModelRetry("Run evidence is unavailable or unauthorized; do not infer a passing result.") from error
+            raise ModelRetry(
+                read_failure_feedback(
+                    error, fallback="Run evidence is unavailable or unauthorized; do not infer a passing result."
+                )
+            ) from error
         await self._authorize(ctx, "read_interaction_run")
         return {
             "run_id": run.id,
             "status": run.status.value,
+            "failure": model_safe(run.failure),
             "input_text": run.input_text,
             "output_text": run.output_text,
             "items": items.model_dump(mode="json"),

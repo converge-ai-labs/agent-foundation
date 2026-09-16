@@ -24,6 +24,18 @@ def validation_issues(error: ValidationError) -> list[dict[str, object]]:
     ]
 
 
+EDIT_REASONS = {
+    "operation_count": "A command requires between 1 and 32 operations.",
+    "root_set_required": "Only set with a complete configuration can replace the root.",
+    "replacement_incomplete": "Complete replacement must explicitly retain or clear existing fields.",
+    "initialization_required": "Initialize the complete configuration before editing fields.",
+    "parent_missing": "The path must traverse existing configuration objects.",
+    "object_required": "Arrays must be replaced as complete values.",
+    "field_missing": "The field to remove does not exist.",
+    "text_match_required": "Text replacement requires exactly one literal match in a string.",
+}
+
+
 _HINTS = {
     "configuration_edit_invalid": "Correct the indicated operation or config field using the AgentConfig schema. Paths in issues are relative to config.",
     "configuration_metadata_invalid": "Omit creation_metadata in update mode; it is only accepted in create mode.",
@@ -47,6 +59,10 @@ def update_failure_feedback(error: ApplicationError | AuthorizationError) -> str
         )
     result: dict[str, object] = {"code": error.code, "hint": _HINTS[error.code]}
     if error.code == "configuration_edit_invalid":
+        reason = error.details.get("reason")
+        if isinstance(reason, str) and reason in EDIT_REASONS:
+            result["reason"] = reason
+            result["hint"] = EDIT_REASONS[reason]
         index = error.details.get("operation_index")
         if isinstance(index, int) and 0 <= index < 32:
             result["operation_index"] = index
@@ -72,3 +88,14 @@ def update_failure_feedback(error: ApplicationError | AuthorizationError) -> str
                 "Set toolsets.web.tools.search.config.provider_id (or scrape.config.provider_id) to an authorized Web Provider ID in the same update that enables the tool."
             )
     return json.dumps(result)
+
+
+def read_failure_feedback(error: ApplicationError | AuthorizationError, *, fallback: str) -> str:
+    if isinstance(error, ApplicationError) and error.code == "invalid_cursor":
+        return json.dumps(
+            {
+                "code": "invalid_cursor",
+                "hint": "Omit cursor to restart pagination. Use only the returned next_cursor with the same query and resource scope.",
+            }
+        )
+    return fallback
