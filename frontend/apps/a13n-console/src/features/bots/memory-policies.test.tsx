@@ -50,7 +50,7 @@ async function open() {
     </QueryClientProvider>,
   );
   await userEvent.click(
-    screen.getByRole("button", { name: "Sharing settings" }),
+    screen.getByRole("button", { name: "Cross-group sharing" }),
   );
   await screen.findByRole("button", { name: "New sharing policy" });
 }

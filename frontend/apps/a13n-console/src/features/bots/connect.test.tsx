@@ -105,10 +105,44 @@ it("does not fetch accounts or credentials for a viewer", () => {
   expect(state.http.GET).not.toHaveBeenCalled();
 });
 
+it("separates account reuse from creation without creating a duplicate", async () => {
+  state.http.GET.mockResolvedValue(
+    response({
+      items: [
+        { account: { ...account, provider_config: { team_id: "T_EXISTING" } } },
+      ],
+      next_cursor: null,
+    }),
+  );
+  setup();
+  expect(
+    screen
+      .getByRole("tab", { name: "Use an existing account" })
+      .getAttribute("aria-selected"),
+  ).toBe("true");
+  expect(
+    (await screen.findByRole("link", { name: /Pilot/ })).getAttribute("href"),
+  ).toBe("/workspace/test/bots/acct_test");
+  expect(screen.getByText("Slack · T_EXISTING")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Slack" })).toBeNull();
+  await userEvent.click(
+    screen.getByRole("tab", { name: "Create a new account" }),
+  );
+  expect(await screen.findByRole("button", { name: "Slack" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Feishu" })).toBeTruthy();
+  expect(screen.queryByRole("link", { name: /Pilot/ })).toBeNull();
+  await userEvent.keyboard("{ArrowLeft}{Enter}");
+  expect(await screen.findByRole("link", { name: /Pilot/ })).toBeTruthy();
+  expect(state.http.POST).not.toHaveBeenCalled();
+});
+
 it("saves a new pilot with reception off and clears credentials before verification", async () => {
   state.http.POST.mockResolvedValue(response(account));
   setup();
-  await userEvent.click(screen.getByRole("button", { name: "Slack" }));
+  await userEvent.click(
+    screen.getByRole("tab", { name: "Create a new account" }),
+  );
+  await userEvent.click(await screen.findByRole("button", { name: "Slack" }));
   await userEvent.type(
     await screen.findByRole("textbox", { name: "Name" }),
     "Pilot",
@@ -160,7 +194,10 @@ it("reconciles a lost save using the same command and rejects changed credential
     new TypeError("Network error"),
   ).mockResolvedValue(response(account));
   setup();
-  await userEvent.click(screen.getByRole("button", { name: "Slack" }));
+  await userEvent.click(
+    screen.getByRole("tab", { name: "Create a new account" }),
+  );
+  await userEvent.click(await screen.findByRole("button", { name: "Slack" }));
   await userEvent.type(
     await screen.findByRole("textbox", { name: "Name" }),
     "Pilot",

@@ -28,12 +28,12 @@ export function MemoryPolicies({ account }: { account: BotAccount }) {
       onOpenChange={(value) => {
         if (!busy) setOpen(value);
       }}
-      title={t("Sharing settings")}
+      title={t("Cross-group sharing")}
       size="lg"
       closeLabel={t("Close")}
       trigger={
         <Button type="button" size="sm" variant="outline">
-          {t("Sharing settings")}
+          {t("Cross-group sharing")}
         </Button>
       }
     >

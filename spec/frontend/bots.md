@@ -91,7 +91,7 @@ Row activation opens detail. An incomplete setup shows a resume action. Empty st
 
 The wizard has five stages: **Platform and account → Connect → Verify → Agent and reception → Test**.
 
-1. Select Slack or Feishu. Reuse an eligible existing Account or connect a new application. An Account already represented in Bots opens its existing page rather than creating a duplicate.
+1. Choose between equally prominent Use an existing account and Create a new account options. The existing-account option shows selectable Accounts; the new-account option shows a compact Slack or Feishu platform selection. An Account already represented in Bots opens its existing page rather than creating a duplicate.
 2. Follow the provider-specific instructions below. Required credentials use write-only fields. Provider identity is resolved or verified by trusted API responses and authenticated events where possible; manual identifiers are an advanced fallback, not trusted proof of identity.
 3. Save the Account with reception disabled. Display its exact HTTP event endpoint, explain how to configure provider verification, and track verification independently from saving credentials. Challenge validation works before production reception is enabled.
 4. Select an existing same-Workspace Agent and an eligible execution Service Account. Explain that the latter controls the permissions under which incoming messages execute. No browser login or external sender supplies Service authority. New Agent creation is a linked flow that preserves the non-secret wizard draft.

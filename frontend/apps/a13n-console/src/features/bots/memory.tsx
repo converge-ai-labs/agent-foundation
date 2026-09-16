@@ -16,23 +16,17 @@ import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
 import { MarkdownContent } from "../../shared/markdown";
 import { Confirm } from "../../shared/form";
 import styles from "./bots.module.css";
-import { MemorySettings, GroupMemorySettings } from "./memory-settings";
+import { GroupMemorySettings } from "./memory-settings";
 import { MemoryComposer } from "./memory-compose";
 import { MemoryPublications } from "./memory-publications";
-import { MemoryOperations } from "./memory-operations";
+import { GroupMemoryActions } from "./memory-toolbar";
 import { refreshMemory } from "./memory-actions";
 import { MemorySearch } from "./memory-search";
 import { MemoryProvenance } from "./memory-provenance";
 import { MemoryPolicies } from "./memory-policies";
 
-export function BotMemory({
-  account,
-  reload,
-}: {
-  account: BotAccount;
-  reload: () => Promise<void>;
-}) {
-  const { can } = useWorkspace(),
+export function BotMemory({ account }: { account: BotAccount }) {
+  const { can, basePath } = useWorkspace(),
     { t } = useTranslation();
   // Do not mount queries at all for a non-administrator, including direct route navigation.
   if (!can("bot_memory.read"))
@@ -46,27 +40,23 @@ export function BotMemory({
     );
   return (
     <>
-      <div className={styles.memoryActions}>
-        <MemorySettings account={account} reload={reload} />
-        {account.memory && (
-          <>
-            <GroupMemorySettings account={account} />
-            <MemoryPolicies account={account} />
-          </>
-        )}
-      </div>
       {account.memory ? (
         <MemoryBrowser
           account={account}
           providerId={account.memory.provider_id}
         />
       ) : (
-        <Empty
-          title={t("Memory is not configured")}
-          description={t(
-            "Select a Memory Provider for this bot before enabling group memory.",
-          )}
-        />
+        <>
+          <Empty
+            title={t("Memory is not configured")}
+            description={t(
+              "Choose memory storage in Bot settings to get started.",
+            )}
+          />
+          <Link to={`${basePath}/bots/${account.id}/settings`}>
+            {t("Open Bot settings")}
+          </Link>
+        </>
       )}
     </>
   );
@@ -99,8 +89,8 @@ export function BotGroupMemory({
             "Select a Memory Provider for this bot before enabling group memory.",
           )}
         />
-        <Link to={`${basePath}/bots/${account.id}/memory`}>
-          {t("Bot memory settings")}
+        <Link to={`${basePath}/bots/${account.id}/settings`}>
+          {t("Open Bot settings")}
         </Link>
       </>
     );
@@ -147,9 +137,11 @@ function GroupMemoryScope({
   const scope = query.data?.items[0];
   return (
     <>
-      <div className={styles.memoryActions}>
-        <GroupMemorySettings account={account} target={target} />
-      </div>
+      {!scope && !query.isPending && !query.error && (
+        <div className={styles.memoryActions}>
+          <GroupMemorySettings account={account} target={target} />
+        </div>
+      )}
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
       {query.isPending ? (
         <Loading variant="detail" />
@@ -158,6 +150,7 @@ function GroupMemoryScope({
           account={account}
           providerId={providerId}
           fixedScope={scope}
+          target={target}
         />
       ) : (
         <Empty
@@ -175,10 +168,12 @@ function MemoryBrowser({
   account,
   providerId,
   fixedScope,
+  target,
 }: {
   account: BotAccount;
   providerId: string;
   fixedScope?: Schema["Scope"];
+  target?: Schema["AccountTarget"];
 }) {
   const client = useClient(),
     { t } = useTranslation(),
@@ -209,28 +204,7 @@ function MemoryBrowser({
           <h2>{t("Conversation memory")}</h2>
           <p>{t("Browse the index, then open only the documents you need.")}</p>
         </div>
-        {scopeId && (
-          <div className={styles.memoryActions}>
-            {can("bot_memory.create") && (
-              <MemoryComposer
-                account={account}
-                scopeId={scopeId}
-                mode="create"
-                onCreated={(id) => {
-                  const next = new URLSearchParams(search);
-                  next.set("memory_doc", id);
-                  setSearch(next);
-                }}
-              />
-            )}
-            {can("bot_memory.share") && (
-              <>
-                <MemoryPublications account={account} scopeId={scopeId} />
-                <MemoryOperations account={account} scopeId={scopeId} />
-              </>
-            )}
-          </div>
-        )}
+        {!fixedScope && <MemoryPolicies account={account} />}
       </div>
       <div className={styles.memoryBrowser}>
         <aside className={styles.scopePane} aria-label={t("Memory scopes")}>
@@ -275,6 +249,8 @@ function MemoryBrowser({
             account={account}
             scopeId={scopeId}
             scopeName={selected?.name ?? t("Selected conversation")}
+            scope={selected}
+            target={target}
           />
         ) : (
           <div className={styles.unselected}>
@@ -293,10 +269,14 @@ function ScopeDocuments({
   account,
   scopeId,
   scopeName,
+  scope,
+  target,
 }: {
   account: BotAccount;
   scopeId: string;
   scopeName: string;
+  scope?: Schema["Scope"];
+  target?: Schema["AccountTarget"];
 }) {
   const client = useClient(),
     cache = useQueryClient(),
@@ -391,7 +371,25 @@ function ScopeDocuments({
         className={styles.documentPane}
         aria-label={t("Memory documents")}
       >
-        <h3>{scopeName}</h3>
+        <header className={styles.groupMemoryHeading}>
+          <h3>{scopeName}</h3>
+          <div className={styles.groupMemoryActions}>
+            {can("bot_memory.create") && (
+              <MemoryComposer
+                account={account}
+                scopeId={scopeId}
+                mode="create"
+                onCreated={select}
+              />
+            )}
+            <GroupMemoryActions
+              account={account}
+              scopeId={scopeId}
+              scope={scope}
+              target={target}
+            />
+          </div>
+        </header>
         <button
           className={styles.documentItem}
           type="button"

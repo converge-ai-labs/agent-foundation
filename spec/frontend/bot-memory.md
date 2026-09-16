@@ -181,7 +181,7 @@ Legacy records without metadata are not automatically attached to a group or sha
 
 ### Shared browser shell
 
-All memory interactions reuse the same Bot detail shell and consistent tabs, filters, and controls. The Memory toolbar exposes Memory settings and Sharing settings. Feishu uses enterprise/group labels within the same interaction model as Slack. Responsive, accessibility, localization, and non-success states follow the requirements below.
+All memory interactions reuse the same Bot detail shell and consistent tabs, filters, and controls. Bot-level memory storage and defaults are managed in the Bot's Settings tab; an unconfigured Memory page links there. The Memory page header exposes only cross-group sharing rules. The selected group heading owns memory creation and a More menu containing that group's memory settings, published shared content, and pending operations. Group settings opened from this menu retain the selected group. A pending-operation count appears only when unfinished operations exist; a paginated first-page count is marked as a lower bound. The menu retains access when the summary is empty or unavailable. Unconfigured groups remain configurable from their Channels/group detail page. Feishu uses enterprise/group labels within the same interaction model as Slack. Responsive, accessibility, localization, and non-success states follow the requirements below.
 
 ### 8.1 Three-pane browser
 

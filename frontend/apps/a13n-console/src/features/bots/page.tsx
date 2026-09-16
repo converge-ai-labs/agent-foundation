@@ -23,6 +23,7 @@ import {
 import { AccountForm } from "../application-accounts/form";
 import { AccountTargets } from "../application-accounts/targets";
 import { AccountCredentials } from "../application-accounts/credentials";
+import { MemorySettings } from "./memory-settings";
 import { BotMemory } from "./memory";
 import { BotOverview } from "./overview";
 import { BotConversations } from "./conversations";
@@ -125,10 +126,23 @@ export function BotDetail() {
           )}
         </TabsPanel>
         <TabsPanel value="memory">
-          {tab === "memory" && <BotMemory account={account} reload={reload} />}
+          {tab === "memory" && <BotMemory account={account} />}
         </TabsPanel>
         <TabsPanel value="settings">
           <div className={styles.settings} key={generation}>
+            {can("bot_memory.read") && (
+              <section className={styles.memorySettingRow}>
+                <div>
+                  <h2>{t("Memory storage and defaults")}</h2>
+                  <p>
+                    {t(
+                      "Choose storage and default memory behavior for this bot. Group settings can be configured in Channels.",
+                    )}
+                  </p>
+                </div>
+                <MemorySettings account={account} reload={reload} />
+              </section>
+            )}
             {can("application_account.manage") && (
               <AccountForm
                 bot

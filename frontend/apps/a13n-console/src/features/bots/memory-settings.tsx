@@ -1,4 +1,5 @@
 import type { BotAccount } from "./account";
+import type { MemoryDialogControl } from "./memory-actions";
 import {
   Button,
   ChoiceField,
@@ -216,9 +217,13 @@ function SettingsForm({
 export function GroupMemorySettings({
   account,
   target,
+  initialScope,
+  dialog,
 }: {
   account: BotAccount;
   target?: Schema["AccountTarget"];
+  initialScope?: Schema["Scope"];
+  dialog?: MemoryDialogControl;
 }) {
   const { t } = useTranslation(),
     [open, setOpen] = useState(false);
@@ -226,20 +231,24 @@ export function GroupMemorySettings({
     <ModalFrame
       open={open}
       onOpenChange={setOpen}
+      {...dialog}
       title={t("Configure group memory")}
       closeLabel={t("Close")}
       size="md"
       trigger={
-        <Button variant="outline" onClick={() => setOpen(true)}>
-          {t("Configure group")}
-        </Button>
+        dialog ? undefined : (
+          <Button variant="outline" onClick={() => setOpen(true)}>
+            {t("Configure group")}
+          </Button>
+        )
       }
     >
-      {open && (
+      {(dialog?.open ?? open) && (
         <GroupForm
           account={account}
           target={target}
-          close={() => setOpen(false)}
+          initialScope={initialScope}
+          close={() => (dialog ? dialog.onOpenChange(false) : setOpen(false))}
         />
       )}
     </ModalFrame>
@@ -250,15 +259,21 @@ function GroupForm({
   account,
   close,
   target,
+  initialScope,
 }: {
   account: BotAccount;
   target?: Schema["AccountTarget"];
+  initialScope?: Schema["Scope"];
   close: () => void;
 }) {
   const client = useClient(),
     cache = useQueryClient(),
     { t } = useTranslation();
-  const [group, setGroup] = useState(target?.external_target_id ?? ""),
+  const [group, setGroup] = useState(
+      target?.external_target_id ??
+        initialScope?.external_conversation_id ??
+        "",
+    ),
     [enabled, setEnabled] = useState(true),
     [read, setRead] = useState(true),
     [write, setWrite] = useState(true);
@@ -326,7 +341,7 @@ function GroupForm({
   const scope = choices.data?.scopes.find(
     (item) => item.external_conversation_id === group,
   );
-  if (target && choices.data && !loaded) {
+  if ((target || initialScope) && choices.data && !loaded) {
     setLoaded(true);
     setEnabled(scope?.enabled ?? true);
     setRead(scope?.use_memory ?? true);
@@ -372,7 +387,7 @@ function GroupForm({
           label={t("Conversation")}
           value={group}
           required
-          readOnly={!!target}
+          readOnly={!!target || !!initialScope}
           options={(choices.data?.targets ?? [])
             .filter((target) => target.target_kind === "conversation")
             .map((target) => ({
