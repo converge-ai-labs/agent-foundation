@@ -7,7 +7,6 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from a13n_service.agents.domain import AgentRunOverride, ModelOverride, SkillSelection
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.selection_domain import ConnectionToolSelection
-from a13n_service.memory.bots.domain import MemorySettings
 
 
 class InputBatchingPolicy(BaseModel):
@@ -41,7 +40,6 @@ class ReceptionScope(StrEnum):
 
 class Reception(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
-    memory: MemorySettings | None = None
     reception_scope: ReceptionScope = ReceptionScope.all_accessible
     receive_enabled: bool = False
     default_agent_id: str | None = None

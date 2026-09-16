@@ -1,3 +1,4 @@
+import type { BotAccount } from "./account";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -14,8 +15,9 @@ vi.mock("react-i18next", () => ({
 }));
 const account = {
   id: "acct_test",
+  memoryVersion: 1,
   memory: { provider_id: "mp_test" },
-} as Schema["Account"];
+} as BotAccount;
 const groups = [
   { id: "mscope_eng", name: "Engineering", audience: "private", enabled: true },
   { id: "mscope_support", name: "Support", audience: "public", enabled: true },

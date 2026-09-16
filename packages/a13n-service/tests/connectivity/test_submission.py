@@ -5,9 +5,9 @@ from datetime import timedelta
 
 import pytest
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
+from a13n_service.bots.connectivity.models import BotTestRecord
 from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.accounts.target_models import AccountTargetRecord
-from a13n_service.connectivity.bots.models import BotTestRecord
 from a13n_service.connectivity.ingress.admission_models import AgentThreadBindingRecord, IngressBatchRecord
 from a13n_service.connectivity.ingress.submission import IngressInputAcceptor
 from a13n_service.iam.models import RoleBindingRecord, ServiceAccountRecord
@@ -28,7 +28,15 @@ EXECUTOR = "sa_aaaaaaaaaaaaaaaa"
 
 
 async def _exercise(
-    sessions, objects, protector, *, waiting=False, stale_claim=False, before_accept=None, setup_tests=False
+    sessions,
+    objects,
+    protector,
+    *,
+    waiting=False,
+    stale_claim=False,
+    before_accept=None,
+    setup_tests=False,
+    native_slack=False,
 ):
     await _seed_interaction_database(sessions)
     async with transaction(sessions) as session:
@@ -110,10 +118,58 @@ async def _exercise(
         preparation,
         _Freezing([_frozen(), _frozen(), replace(_frozen(), agent_id=next_agent, agent_revision_id=next_revision)]),
     )
-    acceptor = IngressInputAcceptor(sessions, commands, clock=lambda: now[0])
+
+    class SetupContribution:
+        async def prepare(self, session, account, external_conversation_id):
+            return self
+
+        async def accept(self, session, batch, receipt, now):
+            from a13n_service.bots.connectivity.setup_tests import record_test_acceptance
+            from a13n_service.interactions.control_domain import SteerReceipt
+
+            await record_test_acceptance(
+                session,
+                batch_id=batch.batch_id,
+                run_id=receipt.run_id,
+                steer_id=receipt.steer_id if isinstance(receipt, SteerReceipt) else None,
+                now=now,
+            )
+
+    acceptor = IngressInputAcceptor(
+        sessions, commands, clock=lambda: now[0], contributions={"fake": SetupContribution()} if setup_tests else {}
+    )
     delivery = _event_service(sessions, protector, clock=lambda: now[0])
+    first_request, expected_status = _request("first"), 202
+    if native_slack:
+        from a13n_service.connectivity.ingress.admission import IngressEventService
+        from a13n_service.connectivity.providers.registry import built_in_ingress_adapter_registry
+
+        from .test_slack import _config, _event_payload, _signed_request
+
+        assert before_accept is not None  # This fixture branch exercises a single native admission.
+        async with transaction(sessions) as session:
+            account = await session.get(AccountRecord, ACCOUNT)
+            account.provider_key = "slack"
+            account.provider_config_version = "slack_http_v1"
+            account.provider_config_json = _config()
+            account.replace_credential('{"bot_token":"fictional-token","signing_secret":"signing-secret"}', protector)
+        delivery = IngressEventService(
+            sessions,
+            built_in_ingress_adapter_registry(),
+            protector,
+            request_max_bytes=1024 * 1024,
+            workspace_pending_max_count=100,
+            workspace_pending_max_bytes=1024 * 1024,
+            account_pending_max_count=100,
+            account_pending_max_bytes=1024 * 1024,
+            batch_max_bytes=1024 * 1024,
+            dedup_horizon_seconds=3600,
+            clock=lambda: now[0],
+        )
+        first_request = _signed_request(_event_payload(event_id="first"), timestamp=int(now[0].timestamp()))
+        expected_status = 200
     worker = reconciler(sessions, acceptor, clock=lambda: now[0])
-    assert (await delivery.receive(account_id=ACCOUNT, request=_request("first"))).status_code == 202
+    assert (await delivery.receive(account_id=ACCOUNT, request=first_request)).status_code == expected_status
     claim = await worker._claim()
     prepared = await worker._prepare(claim)
     if stale_claim:
@@ -293,3 +349,70 @@ async def test_setup_probe_acceptance_is_atomic_with_real_run_and_steer(
     connectivity_sessions, connectivity_objects, credential_protector
 ):
     await _exercise(connectivity_sessions, connectivity_objects, credential_protector, setup_tests=True)
+
+
+async def test_bot_settings_change_between_selection_and_commit_rolls_back_acceptance(
+    connectivity_sessions, connectivity_objects, credential_protector, monkeypatch
+):
+    from a13n_service.bots.connectivity.ingress import BotIngress
+    from a13n_service.bots.memory.behavior import ConversationMemory
+    from a13n_service.bots.memory.bindings import RunMemoryBindingRecord
+    from a13n_service.bots.memory.settings import AccountSettingsRecord
+    from a13n_service.memory.behaviors import MemoryBehaviors, RunMemorySelectionRecord
+
+    from tests.memory.selection_support import ordinary_memory
+
+    sessions = connectivity_sessions
+
+    async def check_admitted(prepared, acceptor, delivery):
+        ordinary = ordinary_memory(sessions).default
+        bindings = MemoryBehaviors(sessions, default=ordinary, behaviors=(ConversationMemory(ordinary.service, None),))
+        acceptance = acceptor._commands.acceptance
+        monkeypatch.setattr(acceptance, "_bindings", bindings)
+        monkeypatch.setattr(acceptor, "_contributions", {"slack": BotIngress()})
+        publish = acceptance._publish_initial
+
+        async def publish_then_change_configuration(run, state):
+            await publish(run, state)
+            # Commit independently after selection and before canonical acceptance.
+            # The memory remains disabled: generation alone must reject the stale selection.
+            async with transaction(sessions) as session:
+                session.add(
+                    AccountSettingsRecord(
+                        account_id=ACCOUNT,
+                        version=1,
+                        provider_id=None,
+                        use_memory=False,
+                        save_on_request=False,
+                        timezone="UTC",
+                    )
+                )
+
+        monkeypatch.setattr(acceptance, "_publish_initial", publish_then_change_configuration)
+        outcome = await acceptor.accept_ingress_batch(prepared)
+        assert outcome.kind == "lost_race"
+        async with transaction(sessions) as session:
+            for model in (RunRecord, RunMemorySelectionRecord, RunMemoryBindingRecord):
+                assert await session.scalar(select(func.count()).select_from(model)) == 0
+            batch = await session.get(IngressBatchRecord, prepared.batch_id)
+            assert batch.status == "pending" and batch.result_id is None
+            assert batch.claim_owner == prepared.claim_owner and batch.claim_generation == prepared.claim_generation
+            assert await session.scalar(select(AgentThreadBindingRecord.thread_id)) is None
+            assert (await session.get(AccountSettingsRecord, ACCOUNT)).version == 1
+
+        monkeypatch.setattr(acceptance, "_publish_initial", publish)
+        accepted = await acceptor.accept_ingress_batch(prepared)
+        assert accepted.kind == "accepted"
+        assert await acceptor.accept_ingress_batch(prepared) == accepted
+        async with transaction(sessions) as session:
+            for model in (RunRecord, RunMemorySelectionRecord, RunMemoryBindingRecord):
+                assert await session.scalar(select(func.count()).select_from(model)) == 1
+            retained = await session.get(RunMemoryBindingRecord, accepted.receipt_id)
+            assert retained.account_id == ACCOUNT and retained.external_conversation_id == "C123"
+            assert not retained.use_memory and not retained.save_on_request
+            assert (await session.get(RunMemorySelectionRecord, accepted.receipt_id)).behavior_key == "bot_conversation"
+            assert (await session.get(IngressBatchRecord, prepared.batch_id)).result_id == accepted.receipt_id
+
+    await _exercise(
+        sessions, connectivity_objects, credential_protector, before_accept=check_admitted, native_slack=True
+    )

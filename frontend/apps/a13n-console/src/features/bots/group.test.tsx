@@ -89,8 +89,15 @@ beforeEach(() => {
   state.manage = true;
   state.http.GET.mockImplementation(async (path: string) =>
     response(
-      path.endsWith("/{account_id}")
-        ? account
+      path.endsWith("/bot/summary")
+        ? {
+            account,
+            memory_settings: {
+              account_id: account.id,
+              version: 0,
+              memory: null,
+            },
+          }
         : path.endsWith("/{target_id}")
           ? target
           : { items: [], next_cursor: null },
@@ -151,7 +158,10 @@ it("does not offer a target editor without management authority", async () => {
 
 it("does not read target or memory data when the account belongs to another workspace", async () => {
   state.http.GET.mockResolvedValue(
-    response({ ...account, workspace_id: "ws_other" }),
+    response({
+      account: { ...account, workspace_id: "ws_other" },
+      memory_settings: { account_id: account.id, version: 0, memory: null },
+    }),
   );
   setup("/memory");
   expect(await screen.findByText("Bot not found")).toBeTruthy();

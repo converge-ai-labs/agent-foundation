@@ -1,3 +1,4 @@
+import type { BotAccount } from "./account";
 import { Button, Checkbox, FormField, Input, Label, ModalFrame } from "a13n-ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -17,7 +18,7 @@ import styles from "./bots.module.css";
 import shared from "../../shared/shared.module.css";
 
 type Policy = Schema["SharingPolicy"];
-export function MemoryPolicies({ account }: { account: Schema["Account"] }) {
+export function MemoryPolicies({ account }: { account: BotAccount }) {
   const { t } = useTranslation(),
     [open, setOpen] = useState(false),
     [busy, setBusy] = useState(false);
@@ -44,7 +45,7 @@ function Policies({
   account,
   setBusy,
 }: {
-  account: Schema["Account"];
+  account: BotAccount;
   setBusy: (busy: boolean) => void;
 }) {
   const { t } = useTranslation(),
@@ -129,7 +130,7 @@ function PolicyForm({
   setBusy,
   close,
 }: {
-  account: Schema["Account"];
+  account: BotAccount;
   policy: Policy | null;
   setBusy: (busy: boolean) => void;
   close: () => void;

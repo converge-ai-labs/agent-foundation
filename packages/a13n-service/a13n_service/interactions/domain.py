@@ -22,7 +22,6 @@ from a13n_service.digests import Sha256Digest
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.ids import ObjectId, new_object_id
 from a13n_service.labels import Labels
-from a13n_service.memory.bots.binding import BotMemoryBinding
 from a13n_service.models.domain import ModelExecutionObservation
 from a13n_service.temporal import UtcDateTime
 
@@ -271,7 +270,6 @@ class Run(StrictModel):
     model_execution_observation: ModelExecutionObservation
     connection_selections: tuple[JsonObject, ...] = Field(default=(), max_length=512)
     native_tool_contexts: tuple[JsonObject, ...] = Field(default=(), max_length=128, repr=False)
-    bot_memory: BotMemoryBinding | None = None
     priority: int
     queue_name: BoundedText
     available_at: UtcDateTime
@@ -504,7 +502,6 @@ def accepted_run(
     connection_selections: tuple[JsonObject, ...] = (),
     native_tool_contexts: tuple[JsonObject, ...] = (),
     configuration_context: ConfigurationRunContext | None = None,
-    bot_memory: BotMemoryBinding | None = None,
     priority: int,
     queue_name: BoundedText,
     execution_budget: ExecutionBudget,
@@ -541,7 +538,6 @@ def accepted_run(
         connection_selections=connection_selections,
         native_tool_contexts=native_tool_contexts,
         configuration_context=configuration_context,
-        bot_memory=bot_memory,
         priority=priority,
         queue_name=queue_name,
         execution_budget=execution_budget,

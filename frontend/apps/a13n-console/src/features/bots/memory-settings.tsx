@@ -1,3 +1,4 @@
+import type { BotAccount } from "./account";
 import {
   Button,
   ChoiceField,
@@ -22,7 +23,7 @@ export function MemorySettings({
   account,
   reload,
 }: {
-  account: Schema["Account"];
+  account: BotAccount;
   reload: () => Promise<void>;
 }) {
   const [open, setOpen] = useState(false),
@@ -56,7 +57,7 @@ function SettingsForm({
   close,
   reload,
 }: {
-  account: Schema["Account"];
+  account: BotAccount;
   close: () => void;
   reload: () => Promise<void>;
 }) {
@@ -115,10 +116,10 @@ function SettingsForm({
       if (unavailable)
         throw new Error(t("Choose a Provider that supports document memory."));
       await client.http
-        .PATCH("/api/v1/application-accounts/{account_id}", {
+        .PUT("/api/v1/application-accounts/{account_id}/bot/memory-settings", {
           params: { path: { account_id: account.id } },
           body: {
-            expected_version: account.version,
+            expected_version: account.memoryVersion,
             memory:
               providerId === "none"
                 ? null
@@ -216,7 +217,7 @@ export function GroupMemorySettings({
   account,
   target,
 }: {
-  account: Schema["Account"];
+  account: BotAccount;
   target?: Schema["AccountTarget"];
 }) {
   const { t } = useTranslation(),
@@ -250,7 +251,7 @@ function GroupForm({
   close,
   target,
 }: {
-  account: Schema["Account"];
+  account: BotAccount;
   target?: Schema["AccountTarget"];
   close: () => void;
 }) {

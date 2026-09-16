@@ -4,9 +4,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from a13n_service.connectivity.inspection import ConversationInfo, InstallationInfo
 from a13n_service.connectivity.providers.common.messaging import MessagingPolicy
-
-from .observations import ConversationInfo, InstallationInfo
 
 
 class BotSetup(BaseModel):

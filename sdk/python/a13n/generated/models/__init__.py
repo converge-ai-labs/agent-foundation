@@ -5,6 +5,7 @@ from .accept_invitation_request import AcceptInvitationRequest
 from .account import Account
 from .account_collection import AccountCollection
 from .account_command_request import AccountCommandRequest
+from .account_memory_settings import AccountMemorySettings
 from .account_provider_config import AccountProviderConfig
 from .account_provider_definition import AccountProviderDefinition
 from .account_provider_definition_collection import AccountProviderDefinitionCollection
@@ -511,6 +512,7 @@ from .replace_connector_provider_credentials_request_credentials import (
 )
 from .replace_credential_request import ReplaceCredentialRequest
 from .replace_credential_request_credential_type_0 import ReplaceCredentialRequestCredentialType0
+from .replace_memory_settings import ReplaceMemorySettings
 from .replace_sharing_policy import ReplaceSharingPolicy
 from .replace_sharing_policy_kinds_item import ReplaceSharingPolicyKindsItem
 from .replace_target_request import ReplaceTargetRequest
@@ -732,6 +734,7 @@ __all__ = (
     "Account",
     "AccountCollection",
     "AccountCommandRequest",
+    "AccountMemorySettings",
     "AccountProviderConfig",
     "AccountProviderDefinition",
     "AccountProviderDefinitionCollection",
@@ -1222,6 +1225,7 @@ __all__ = (
     "ReplaceConnectorProviderCredentialsRequestCredentials",
     "ReplaceCredentialRequest",
     "ReplaceCredentialRequestCredentialType0",
+    "ReplaceMemorySettings",
     "ReplaceSharingPolicy",
     "ReplaceSharingPolicyKindsItem",
     "ReplaceTargetRequest",

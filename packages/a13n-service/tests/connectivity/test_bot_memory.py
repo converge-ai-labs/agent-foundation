@@ -8,11 +8,17 @@ import httpx2
 import pytest
 from a13n_harness.capabilities.mem0_backends import Mem0OSSBackend
 from a13n_service.application_errors import ApplicationError
-from a13n_service.connectivity.accounts.domain import UpdateAccountRequest
+from a13n_service.bots.memory.domain import ConfigureScope, CreateDocument, SearchDocuments
+from a13n_service.bots.memory.mutations import create, delete
+from a13n_service.bots.memory.service import BotMemoryService
+from a13n_service.bots.memory.settings import (
+    AccountSettingsRecord,
+    ReplaceMemorySettings,
+    read_settings,
+    replace_settings,
+)
 from a13n_service.connectivity.accounts.targets import TargetConfig
-from a13n_service.memory.bots.domain import ConfigureScope, CreateDocument, MemorySettings, SearchDocuments
-from a13n_service.memory.bots.mutations import create, delete
-from a13n_service.memory.bots.service import BotMemoryService
+from a13n_service.storage import transaction
 
 from ..memory.support import memory_service
 from .conftest import ACCOUNT_ID, WORKSPACE_ID, actor
@@ -21,7 +27,7 @@ pytestmark = pytest.mark.anyio
 
 
 async def test_uncertain_write_reconciles_without_repeating_add(bot_memory):
-    from a13n_service.memory.bots.operations import list_operations, reconcile
+    from a13n_service.bots.memory.operations import list_operations, reconcile
 
     lab = bot_memory
     lab.failures["get"] = True
@@ -48,9 +54,9 @@ async def test_uncertain_write_reconciles_without_repeating_add(bot_memory):
 
 
 async def test_withdrawal_is_terminal_and_keeps_source(bot_memory, target_service, connectivity_sessions):
-    from a13n_service.memory.bots.domain import PublicationAudience, PublishDocument
-    from a13n_service.memory.bots.operations import operation
-    from a13n_service.memory.bots.publications import audience, get_audience, publish, withdraw
+    from a13n_service.bots.memory.domain import PublicationAudience, PublishDocument
+    from a13n_service.bots.memory.operations import operation
+    from a13n_service.bots.memory.publications import audience, get_audience, publish, withdraw
 
     lab = bot_memory
     recipient = await sharing_groups(lab, target_service, connectivity_sessions)
@@ -89,9 +95,9 @@ async def test_source_delete_fences_unconfirmed_publication_during_reconciliatio
     target_service,
     connectivity_sessions,
 ):
-    from a13n_service.memory.bots.domain import PublishDocument
-    from a13n_service.memory.bots.operations import list_operations, reconcile
-    from a13n_service.memory.bots.publications import publish
+    from a13n_service.bots.memory.domain import PublishDocument
+    from a13n_service.bots.memory.operations import list_operations, reconcile
+    from a13n_service.bots.memory.publications import publish
 
     lab = bot_memory
     recipient = await sharing_groups(lab, target_service, connectivity_sessions)
@@ -177,15 +183,17 @@ async def bot_memory(connectivity_sessions, account_service, target_service):
         memory, provider, _ = await memory_service(
             connectivity_sessions, Mem0OSSBackend(client), principal=actor(), workspace_id=WORKSPACE_ID
         )
-        account_service._memory_catalog = memory.catalog
-        account = await account_service.get_account(actor=actor(), account_id=ACCOUNT_ID)
-        await account_service.update_account(
-            actor=actor(),
-            account_id=ACCOUNT_ID,
-            request=UpdateAccountRequest(
-                expected_version=account.version, memory=MemorySettings(provider_id=provider.id)
-            ),
-        )
+        async with transaction(connectivity_sessions) as session:
+            session.add(
+                AccountSettingsRecord(
+                    account_id=ACCOUNT_ID,
+                    version=1,
+                    provider_id=provider.id,
+                    use_memory=True,
+                    save_on_request=True,
+                    timezone="UTC",
+                )
+            )
         await target_service.create(
             actor=actor(),
             account_id=ACCOUNT_ID,
@@ -273,7 +281,7 @@ async def test_provider_body_tampering_is_not_returned_as_saved_memory(bot_memor
 
 
 async def sharing_groups(lab, target_service, sessions):
-    from a13n_service.memory.bots.models import ScopeRecord
+    from a13n_service.bots.memory.models import ScopeRecord
     from a13n_service.storage import transaction
     from sqlalchemy import update
 
@@ -296,8 +304,8 @@ async def sharing_groups(lab, target_service, sessions):
 async def test_publication_is_separate_immutable_content_and_source_delete_withdraws_all(
     bot_memory, target_service, connectivity_sessions
 ):
-    from a13n_service.memory.bots.domain import PublishDocument
-    from a13n_service.memory.bots.publications import publish
+    from a13n_service.bots.memory.domain import PublishDocument
+    from a13n_service.bots.memory.publications import publish
 
     lab = bot_memory
     recipient = await sharing_groups(lab, target_service, connectivity_sessions)
@@ -336,8 +344,8 @@ async def test_publication_is_separate_immutable_content_and_source_delete_withd
 async def test_group_policy_defaults_exclude_history_and_leave_revokes_access(
     bot_memory, target_service, connectivity_sessions
 ):
-    from a13n_service.memory.bots.domain import ReplaceSharingPolicy, SharingPolicyInput
-    from a13n_service.memory.bots.sharing import save_policy
+    from a13n_service.bots.memory.domain import ReplaceSharingPolicy, SharingPolicyInput
+    from a13n_service.bots.memory.sharing import save_policy
 
     lab = bot_memory
     recipient = await sharing_groups(lab, target_service, connectivity_sessions)
@@ -384,14 +392,18 @@ async def test_viewer_cannot_read_index_or_provider_body(bot_memory, connectivit
 
 
 async def test_builder_cannot_change_or_remove_bot_memory_settings(bot_memory, account_service, connectivity_sessions):
-    from a13n_service.connectivity.errors import NativeError
+    from a13n_service.connectivity.accounts.models import AccountRecord
+    from a13n_service.iam import AuthorizationError
     from a13n_service.iam.models import RoleBindingRecord
     from a13n_service.storage import transaction
     from sqlalchemy import update
 
     from .conftest import USER_ID
 
-    account = await account_service.get_account(actor=actor(), account_id=ACCOUNT_ID)
+    async with transaction(connectivity_sessions) as session:
+        row = await session.get(AccountRecord, ACCOUNT_ID)
+        row.provider_key = "slack"
+        settings = await read_settings(session, ACCOUNT_ID)
     async with transaction(connectivity_sessions) as session:
         await session.execute(
             update(RoleBindingRecord)
@@ -401,14 +413,16 @@ async def test_builder_cannot_change_or_remove_bot_memory_settings(bot_memory, a
             )
             .values(role_key="builder")
         )
-    for value in (None, account.memory.model_copy(update={"use_memory": False})):
-        with pytest.raises(NativeError):
-            await account_service.update_account(
-                actor=actor(),
-                account_id=ACCOUNT_ID,
-                request=UpdateAccountRequest(expected_version=account.version, memory=value),
+    for value in (None, settings.memory.model_copy(update={"use_memory": False})):
+        with pytest.raises(AuthorizationError):
+            await replace_settings(
+                bot_memory.service.memory,
+                actor(),
+                ACCOUNT_ID,
+                ReplaceMemorySettings(expected_version=settings.version, memory=value),
             )
-    assert (await account_service.get_account(actor=actor(), account_id=ACCOUNT_ID)).memory == account.memory
+    async with transaction(connectivity_sessions) as session:
+        assert await read_settings(session, ACCOUNT_ID) == settings
 
 
 async def test_audit_records_lifecycle_without_document_content(bot_memory, connectivity_sessions):
@@ -441,12 +455,12 @@ async def test_audit_records_lifecycle_without_document_content(bot_memory, conn
 async def test_group_configuration_uses_verified_metadata_and_target_recreation_requires_a_new_check(
     bot_memory, target_service, connectivity_sessions
 ):
+    from a13n_service.bots.connectivity.domain import BotCheck
+    from a13n_service.bots.connectivity.models import BotCheckRecord
+    from a13n_service.bots.memory.models import ScopeRecord
     from a13n_service.connectivity.accounts.models import AccountRecord
     from a13n_service.connectivity.accounts.target_models import AccountTargetRecord
-    from a13n_service.connectivity.bots.domain import BotCheck
-    from a13n_service.connectivity.bots.models import BotCheckRecord
-    from a13n_service.connectivity.bots.observations import ConversationInfo, InstallationInfo
-    from a13n_service.memory.bots.models import ScopeRecord
+    from a13n_service.connectivity.inspection import ConversationInfo, InstallationInfo
     from a13n_service.storage import transaction
     from a13n_service.temporal import utc_now
     from sqlalchemy import select
@@ -530,8 +544,8 @@ async def test_group_configuration_uses_verified_metadata_and_target_recreation_
 async def test_exact_target_scope_lookup_is_bounded_and_uses_no_provider_io(
     bot_memory, target_service, connectivity_sessions
 ):
+    from a13n_service.bots.memory.models import ScopeRecord
     from a13n_service.connectivity.accounts.target_models import AccountTargetRecord
-    from a13n_service.memory.bots.models import ScopeRecord
     from a13n_service.storage import short_session
     from sqlalchemy import select
 
@@ -572,9 +586,9 @@ async def test_exact_target_scope_lookup_is_bounded_and_uses_no_provider_io(
 async def test_scope_lookup_keeps_admin_and_account_deletion_boundaries(
     bot_memory, connectivity_sessions, account_service
 ):
+    from a13n_service.bots.memory.models import ScopeRecord
     from a13n_service.iam import AuthorizationError
     from a13n_service.iam.models import RoleBindingRecord
-    from a13n_service.memory.bots.models import ScopeRecord
     from a13n_service.storage import transaction
 
     lab = bot_memory
@@ -636,12 +650,11 @@ async def test_index_pages_by_encoded_budget_without_skipping_documents(bot_memo
 
 @pytest.mark.parametrize("operation", ["create", "configure", "account"])
 async def test_unsupported_provider_is_rejected_before_any_document_operation(bot_memory, account_service, operation):
-    from a13n_service.memory.bots.operations import list_operations
+    from a13n_service.bots.memory.operations import list_operations
 
     lab = bot_memory
     plugin = next(iter(lab.service.memory.catalog.values()))
     plugin.supports_documents = False
-    account_service._memory_catalog = lab.service.memory.catalog
     opened = plugin.opened
     with pytest.raises(ApplicationError) as denied:
         if operation == "create":
@@ -658,11 +671,17 @@ async def test_unsupported_provider_is_rejected_before_any_document_operation(bo
                 actor(), ACCOUNT_ID, ConfigureScope(external_conversation_id="engineering", expected_version=1)
             )
         else:
-            account = await account_service.get_account(actor=actor(), account_id=ACCOUNT_ID)
-            await account_service.update_account(
-                actor=actor(),
-                account_id=ACCOUNT_ID,
-                request=UpdateAccountRequest(expected_version=account.version, memory=account.memory),
+            from a13n_service.connectivity.accounts.models import AccountRecord
+
+            async with transaction(lab.service.sessions) as session:
+                account = await session.get(AccountRecord, ACCOUNT_ID)
+                account.provider_key = "slack"
+                settings = await read_settings(session, ACCOUNT_ID)
+            await replace_settings(
+                lab.service.memory,
+                actor(),
+                ACCOUNT_ID,
+                ReplaceMemorySettings(expected_version=settings.version, memory=settings.memory),
             )
     assert denied.value.code == "memory_documents_unsupported"
     assert plugin.opened == opened and not lab.records
@@ -670,8 +689,8 @@ async def test_unsupported_provider_is_rejected_before_any_document_operation(bo
 
 
 async def test_detail_explains_only_current_policy_grants(bot_memory, target_service, connectivity_sessions):
-    from a13n_service.memory.bots.domain import ReplaceSharingPolicy, SharingPolicyInput
-    from a13n_service.memory.bots.sharing import save_policy
+    from a13n_service.bots.memory.domain import ReplaceSharingPolicy, SharingPolicyInput
+    from a13n_service.bots.memory.sharing import save_policy
 
     lab = bot_memory
     recipient = await sharing_groups(lab, target_service, connectivity_sessions)
@@ -723,8 +742,8 @@ async def test_detail_explains_only_current_policy_grants(bot_memory, target_ser
 
 
 async def test_detail_bounds_policy_explanations(bot_memory, target_service, connectivity_sessions):
-    from a13n_service.memory.bots.domain import SharingPolicyInput
-    from a13n_service.memory.bots.sharing import save_policy
+    from a13n_service.bots.memory.domain import SharingPolicyInput
+    from a13n_service.bots.memory.sharing import save_policy
 
     lab = bot_memory
     recipient = await sharing_groups(lab, target_service, connectivity_sessions)

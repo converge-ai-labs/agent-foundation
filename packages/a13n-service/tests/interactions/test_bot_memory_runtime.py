@@ -7,19 +7,22 @@ import httpx2
 import pytest
 from a13n_harness.capabilities.mem0_backends import Mem0OSSBackend
 from a13n_service.application_errors import ApplicationError
+from a13n_service.bots.memory.binding import BotMemoryBinding
+from a13n_service.bots.memory.bindings import bind, require_binding
+from a13n_service.bots.memory.domain import CreateDocument, ScopeSettings
+from a13n_service.bots.memory.models import ScopeRecord
+from a13n_service.bots.memory.mutations import create
+from a13n_service.bots.memory.runtime import bot_memory_capability
+from a13n_service.bots.memory.selection import select_binding
+from a13n_service.bots.memory.service import BotMemoryService
+from a13n_service.bots.memory.settings import AccountSettingsRecord
+from a13n_service.bots.memory.verification import BotMemoryVerifier
 from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.iam.models import RoleBindingRecord
 from a13n_service.interactions.inheritance import inherited_run_fields
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord
-from a13n_service.memory.bots.binding import BotMemoryBinding
-from a13n_service.memory.bots.domain import CreateDocument, MemorySettings, ScopeSettings
-from a13n_service.memory.bots.models import ScopeRecord
-from a13n_service.memory.bots.mutations import create
-from a13n_service.memory.bots.runtime import bot_memory_capability
-from a13n_service.memory.bots.selection import select_binding
-from a13n_service.memory.bots.service import BotMemoryService
-from a13n_service.memory.bots.verification import BotMemoryVerifier
+from a13n_service.memory.models import MemoryProviderRecord
 from a13n_service.storage import transaction
 from sqlalchemy import select
 
@@ -42,7 +45,7 @@ def platform_state():
 @pytest.fixture
 async def runtime_memory(interaction_sessions, interaction_object_store, monkeypatch, platform_state):
     run, context = await accepted_running_attempt(interaction_sessions, interaction_object_store)
-    monkeypatch.setattr("a13n_service.memory.bots.access.utc_now", lambda: NOW)
+    monkeypatch.setattr("a13n_service.bots.memory.access.utc_now", lambda: NOW)
     records, calls = {}, []
 
     async def handle(request):
@@ -118,7 +121,6 @@ async def runtime_memory(interaction_sessions, interaction_object_store, monkeyp
                 default_agent_id=run.agent_id,
                 created_by_type="user",
                 created_by_id=hook_actor().principal.principal_id,
-                memory_json=MemorySettings(provider_id=provider.id).model_dump(mode="json"),
                 created_at=NOW,
                 updated_at=NOW,
             )
@@ -127,6 +129,16 @@ async def runtime_memory(interaction_sessions, interaction_object_store, monkeyp
             )
             session.add(account)
             await session.flush()
+            session.add(
+                AccountSettingsRecord(
+                    account_id=ACCOUNT,
+                    version=1,
+                    provider_id=provider.id,
+                    use_memory=True,
+                    save_on_request=True,
+                    timezone="UTC",
+                )
+            )
             session.add(
                 ScopeRecord(
                     id=SCOPE,
@@ -146,7 +158,11 @@ async def runtime_memory(interaction_sessions, interaction_object_store, monkeyp
             account = await session.get(AccountRecord, ACCOUNT)
             binding = await select_binding(session, account, "C-engineering")
             stored = await session.get(RunRecord, run.id)
-            stored.bot_memory_json = binding.model_dump(mode="json")
+            from a13n_service.memory.behaviors import RunMemorySelectionRecord
+
+            await session.delete(await session.get(RunMemorySelectionRecord, run.id))
+            await session.flush()
+            await bind(session, run.id, binding)
             run = stored.to_resource()
         async with transaction(interaction_sessions) as session:
             role = await session.scalar(
@@ -158,7 +174,7 @@ async def runtime_memory(interaction_sessions, interaction_object_store, monkeyp
             )
             original_role = role.role_key
             role.role_key = "admin"
-        memory.bot_verifier = BotMemoryVerifier(interaction_sessions, client, EndpointPolicy(), memory.protector)
+        verifier = BotMemoryVerifier(interaction_sessions, client, EndpointPolicy(), memory.protector)
         service = BotMemoryService(memory)
         document = await create(
             service, hook_actor(), ACCOUNT, SCOPE, CreateDocument(text="Group evidence", title="Release"), "seed"
@@ -166,19 +182,30 @@ async def runtime_memory(interaction_sessions, interaction_object_store, monkeyp
         async with transaction(interaction_sessions) as session:
             role = await session.get(RoleBindingRecord, role.id)
             role.role_key = original_role
-        yield memory, service, run, context, document, calls
+        yield memory, service, run, context, document, calls, binding, verifier
 
 
 async def test_retained_binding_survives_agent_and_provider_selection_changes(runtime_memory, interaction_sessions):
-    memory, _service, run, context, document, calls = runtime_memory
-    capability = bot_memory_capability(memory, run=run, agent_id=run.agent_id, current_context=lambda: context)
+    memory, _service, run, context, document, calls, binding, verifier = runtime_memory
+    capability = bot_memory_capability(
+        memory, run=run, binding=binding, verifier=verifier, agent_id=run.agent_id, current_context=lambda: context
+    )
     assert capability is not None
-    assert inherited_run_fields(run)["bot_memory"] == run.bot_memory
+    assert "bot_memory" not in inherited_run_fields(run)
+    async with transaction(interaction_sessions) as session:
+        assert await require_binding(session, run.id) == binding
     async with transaction(interaction_sessions) as session:
         account = await session.get(AccountRecord, ACCOUNT)
         account.default_agent_id = None
         # A later Provider selection must not redirect an already accepted binding.
-        account.memory_json = MemorySettings(provider_id="mp_otherprovider123456").model_dump(mode="json")
+        original = await session.get(MemoryProviderRecord, binding.provider_id)
+        values = {column.key: getattr(original, column.key) for column in MemoryProviderRecord.__table__.columns}
+        values.update(id="mp_otherprovider123456", name="Other memory", normalized_name="other memory")
+        session.add(MemoryProviderRecord(**values))
+        await session.flush()
+        settings = await session.get(AccountSettingsRecord, ACCOUNT)
+        settings.provider_id = "mp_otherprovider123456"
+        settings.version += 1
         account.version += 1
     before = len(calls)
     index = await capability.document_store.index()
@@ -187,7 +214,9 @@ async def test_retained_binding_survives_agent_and_provider_selection_changes(ru
     assert (await capability.document_store.read(document.id)).text == "Group evidence"
     async with transaction(interaction_sessions) as session:
         account = await session.get(AccountRecord, ACCOUNT)
-        account.memory_json = {**account.memory_json, "use_memory": False}
+        settings = await session.get(AccountSettingsRecord, ACCOUNT)
+        settings.use_memory = False
+        settings.version += 1
     before = len(calls)
     with pytest.raises(ApplicationError):
         await capability.document_store.read(document.id)
@@ -195,8 +224,10 @@ async def test_retained_binding_survives_agent_and_provider_selection_changes(ru
 
 
 async def test_scope_and_attempt_revocation_block_before_native_read(runtime_memory, interaction_sessions):
-    memory, _service, run, context, document, calls = runtime_memory
-    capability = bot_memory_capability(memory, run=run, agent_id=run.agent_id, current_context=lambda: context)
+    memory, _service, run, context, document, calls, binding, verifier = runtime_memory
+    capability = bot_memory_capability(
+        memory, run=run, binding=binding, verifier=verifier, agent_id=run.agent_id, current_context=lambda: context
+    )
     async with transaction(interaction_sessions) as session:
         scope = await session.get(ScopeRecord, SCOPE)
         scope.audience = "unknown"
@@ -217,7 +248,7 @@ async def test_scope_and_attempt_revocation_block_before_native_read(runtime_mem
 
 
 async def test_forged_group_binding_and_unconfigured_group_cannot_expand_memory(runtime_memory, interaction_sessions):
-    memory, _service, run, context, _document, calls = runtime_memory
+    memory, _service, run, context, _document, calls, binding, verifier = runtime_memory
     async with transaction(interaction_sessions) as session:
         original = await session.get(ScopeRecord, SCOPE)
         values = {column.key: getattr(original, column.key) for column in ScopeRecord.__table__.columns}
@@ -229,7 +260,9 @@ async def test_forged_group_binding_and_unconfigured_group_cannot_expand_memory(
     assert (
         bot_memory_capability(
             memory,
-            run=run.model_copy(update={"bot_memory": disabled}),
+            run=run,
+            binding=disabled,
+            verifier=verifier,
             agent_id=run.agent_id,
             current_context=lambda: context,
         )
@@ -238,14 +271,16 @@ async def test_forged_group_binding_and_unconfigured_group_cannot_expand_memory(
     forged = BotMemoryBinding(
         account_id=ACCOUNT,
         external_conversation_id="C-other",
-        provider_id=run.bot_memory.provider_id,
+        provider_id=binding.provider_id,
         scope_id="mscope_othergroup123456",
         scope_version=1,
         use_memory=True,
     )
     capability = bot_memory_capability(
         memory,
-        run=run.model_copy(update={"bot_memory": forged}),
+        run=run,
+        binding=forged,
+        verifier=verifier,
         agent_id=run.agent_id,
         current_context=lambda: context,
     )
@@ -257,8 +292,10 @@ async def test_forged_group_binding_and_unconfigured_group_cannot_expand_memory(
 
 @pytest.mark.parametrize("membership", [False, None])
 async def test_platform_removal_or_unknown_membership_blocks_all_memory_io(runtime_memory, platform_state, membership):
-    memory, _service, run, context, document, calls = runtime_memory
-    capability = bot_memory_capability(memory, run=run, agent_id=run.agent_id, current_context=lambda: context)
+    memory, _service, run, context, document, calls, binding, verifier = runtime_memory
+    capability = bot_memory_capability(
+        memory, run=run, binding=binding, verifier=verifier, agent_id=run.agent_id, current_context=lambda: context
+    )
     store = capability.document_store
     platform_state["members"]["C-engineering"] = membership
     before = len(calls)
@@ -275,8 +312,10 @@ async def test_platform_removal_or_unknown_membership_blocks_all_memory_io(runti
 
 
 async def test_live_unknown_audience_does_not_trust_previous_private_flag(runtime_memory, platform_state):
-    memory, _service, run, context, document, calls = runtime_memory
-    capability = bot_memory_capability(memory, run=run, agent_id=run.agent_id, current_context=lambda: context)
+    memory, _service, run, context, document, calls, binding, verifier = runtime_memory
+    capability = bot_memory_capability(
+        memory, run=run, binding=binding, verifier=verifier, agent_id=run.agent_id, current_context=lambda: context
+    )
     platform_state["private"] = None
     before = len(calls)
     with pytest.raises(ApplicationError):
@@ -287,7 +326,7 @@ async def test_live_unknown_audience_does_not_trust_previous_private_flag(runtim
 async def test_credential_rotation_after_platform_check_blocks_body_dispatch(
     runtime_memory, platform_state, interaction_sessions
 ):
-    memory, _service, run, context, document, calls = runtime_memory
+    memory, _service, run, context, document, calls, binding, verifier = runtime_memory
 
     async def rotate():
         async with transaction(interaction_sessions) as session:
@@ -297,7 +336,9 @@ async def test_credential_rotation_after_platform_check_blocks_body_dispatch(
             )
 
     platform_state["after_check"] = rotate
-    capability = bot_memory_capability(memory, run=run, agent_id=run.agent_id, current_context=lambda: context)
+    capability = bot_memory_capability(
+        memory, run=run, binding=binding, verifier=verifier, agent_id=run.agent_id, current_context=lambda: context
+    )
     before = len(calls)
     with pytest.raises(ApplicationError) as error:
         await capability.document_store.read(document.id)
@@ -308,10 +349,10 @@ async def test_credential_rotation_after_platform_check_blocks_body_dispatch(
 async def test_shared_source_group_is_verified_before_its_body_or_index_is_returned(
     runtime_memory, platform_state, interaction_sessions
 ):
-    from a13n_service.memory.bots.domain import SharingPolicyInput
-    from a13n_service.memory.bots.sharing import save_policy
+    from a13n_service.bots.memory.domain import SharingPolicyInput
+    from a13n_service.bots.memory.sharing import save_policy
 
-    memory, service, run, context, _document, calls = runtime_memory
+    memory, service, run, context, _document, calls, binding, verifier = runtime_memory
     other_id = "mscope_sharedsource12345"
     async with transaction(interaction_sessions) as session:
         original = await session.get(ScopeRecord, SCOPE)
@@ -344,7 +385,9 @@ async def test_shared_source_group_is_verified_before_its_body_or_index_is_retur
     async with transaction(interaction_sessions) as session:
         row = await session.get(RoleBindingRecord, role.id)
         row.role_key = original_role
-    capability = bot_memory_capability(memory, run=run, agent_id=run.agent_id, current_context=lambda: context)
+    capability = bot_memory_capability(
+        memory, run=run, binding=binding, verifier=verifier, agent_id=run.agent_id, current_context=lambda: context
+    )
     assert source.id in (await capability.document_store.index()).text
     assert (await capability.document_store.read(source.id)).text == "Shared source evidence"
     platform_state["members"]["C-source"] = False
@@ -360,7 +403,7 @@ async def test_shared_source_group_is_verified_before_its_body_or_index_is_retur
 async def test_credential_rotation_during_body_read_prevents_return(
     runtime_memory, platform_state, interaction_sessions
 ):
-    memory, _service, run, context, document, calls = runtime_memory
+    memory, _service, run, context, document, calls, binding, verifier = runtime_memory
 
     async def rotate():
         async with transaction(interaction_sessions) as session:
@@ -370,9 +413,238 @@ async def test_credential_rotation_during_body_read_prevents_return(
             )
 
     platform_state["before_body"] = rotate
-    capability = bot_memory_capability(memory, run=run, agent_id=run.agent_id, current_context=lambda: context)
+    capability = bot_memory_capability(
+        memory, run=run, binding=binding, verifier=verifier, agent_id=run.agent_id, current_context=lambda: context
+    )
     before = len(calls)
     with pytest.raises(ApplicationError) as error:
         await capability.document_store.read(document.id)
     assert error.value.code == "memory_scope_unverified"
     assert len(calls) == before + 1
+
+
+async def test_missing_or_unknown_selection_never_falls_back(
+    runtime_memory, interaction_sessions, interaction_object_store
+):
+    from a13n_harness.errors import RunError
+    from a13n_service.bots.memory.behavior import ConversationMemory
+    from a13n_service.interactions.objects import RunStateStore
+    from a13n_service.memory.behaviors import MemoryBehaviors, RunMemorySelectionRecord
+    from a13n_service.memory.ordinary import OrdinaryMemory
+
+    memory, _, run, context, _, _, _binding, verifier = runtime_memory
+    registry = MemoryBehaviors(
+        interaction_sessions, default=OrdinaryMemory(memory), behaviors=(ConversationMemory(memory, verifier),)
+    )
+    config = (await RunStateStore(interaction_object_store).read_run(run)).envelope.effective_agent_config
+    unavailable = MemoryBehaviors(
+        interaction_sessions, default=OrdinaryMemory(memory), behaviors=(ConversationMemory(memory, None),)
+    )
+    with pytest.raises(RunError, match="verification is unavailable"):
+        await unavailable.prepare(run=run, workspace_id=WORKSPACE_ID, config=config, current_context=lambda: context)
+    async with transaction(interaction_sessions) as session:
+        selection = await session.get(RunMemorySelectionRecord, run.id)
+        selection.binding_schema_version = 2
+    with pytest.raises(RunError, match="unavailable"):
+        await registry.prepare(run=run, workspace_id=WORKSPACE_ID, config=config, current_context=lambda: context)
+    async with transaction(interaction_sessions) as session:
+        selection = await session.get(RunMemorySelectionRecord, run.id)
+        selection.binding_schema_version = 1
+        selection.behavior_key = "uninstalled_behavior"
+    with pytest.raises(RunError, match="unavailable"):
+        await registry.prepare(run=run, workspace_id=WORKSPACE_ID, config=config, current_context=lambda: context)
+    async with transaction(interaction_sessions) as session:
+        await session.delete(await session.get(RunMemorySelectionRecord, run.id))
+    with pytest.raises(RunError, match="missing"):
+        await registry.prepare(run=run, workspace_id=WORKSPACE_ID, config=config, current_context=lambda: context)
+
+
+async def test_retention_is_atomic_and_disabled_does_not_prepare_ordinary_memory(
+    runtime_memory, interaction_sessions, interaction_object_store, monkeypatch
+):
+    from a13n_service.agents.reconstruction import AgentDefinitionReconstructionContext
+    from a13n_service.bots.memory.behavior import ConversationMemory
+    from a13n_service.bots.memory.bindings import RunMemoryBindingRecord
+    from a13n_service.interactions.objects import RunStateStore
+    from a13n_service.interactions.records import run_record
+    from a13n_service.memory.behaviors import MemoryBehaviors, RunMemorySelectionRecord
+    from a13n_service.memory.ordinary import OrdinaryMemory
+
+    memory, _, run, context, _, _, binding, verifier = runtime_memory
+    ordinary = OrdinaryMemory(memory)
+    registry = MemoryBehaviors(
+        interaction_sessions, default=ordinary, behaviors=(ConversationMemory(memory, verifier),)
+    )
+    from a13n_service.interactions.models import ThreadRecord
+
+    async with transaction(interaction_sessions) as session:
+        original = await session.get(ThreadRecord, run.thread_id)
+        values = {c.name: getattr(original, c.name) for c in ThreadRecord.__table__.columns}
+        values.update(
+            id="thread_retained_memory",
+            role="child",
+            origin_kind="fork",
+            origin_thread_id=run.thread_id,
+            origin_run_id=run.id,
+            current_run_id=None,
+            head_run_id=None,
+        )
+        session.add(ThreadRecord(**values))
+    successor = run.model_copy(
+        update={
+            "id": "run_retained_memory",
+            "thread_id": "thread_retained_memory",
+            "parent_run_id": run.id,
+            "lineage_kind": type(run.lineage_kind).fork,
+            "current_run_attempt_id": None,
+            "idempotency_key": None,
+        }
+    )
+    with pytest.raises(RuntimeError, match="abort acceptance"):
+        async with transaction(interaction_sessions) as session:
+            session.add(run_record(successor))
+            await session.flush()
+            await registry.finalize(session, successor, source_run_id=run.id)
+            raise RuntimeError("abort acceptance")
+    async with transaction(interaction_sessions) as session:
+        assert await session.get(RunRecord, successor.id) is None
+        assert await session.get(RunMemorySelectionRecord, successor.id) is None
+        assert await session.get(RunMemoryBindingRecord, successor.id) is None
+        session.add(run_record(successor))
+        await session.flush()
+        await registry.finalize(session, successor, source_run_id=run.id)
+        assert await require_binding(session, successor.id) == binding
+
+    # Fixture corruption/disable is deliberate: execution must obey the selected
+    # document behavior even when an ordinary Agent configuration has memory.
+    async with transaction(interaction_sessions) as session:
+        stored = await session.get(RunMemoryBindingRecord, successor.id)
+        stored.use_memory = False
+        stored.save_on_request = False
+
+    async def unexpected(**kwargs):
+        raise AssertionError("ordinary memory must not be prepared")
+
+    monkeypatch.setattr(ordinary, "prepare", unexpected)
+    config = (await RunStateStore(interaction_object_store).read_run(run)).envelope.effective_agent_config
+    prepared = await registry.prepare(
+        run=successor, workspace_id=WORKSPACE_ID, config=config, current_context=lambda: context
+    )
+    for is_root in (True, False):
+        node = AgentDefinitionReconstructionContext(
+            run.agent_id, run.agent_revision_id, run.effective_agent_config_digest, is_root, config
+        )
+        from a13n_service.interactions.ports.memory import DisabledMemory
+
+        assert isinstance(prepared.for_node(node), DisabledMemory)
+    async with transaction(interaction_sessions) as session:
+        await session.delete(await session.get(RunMemoryBindingRecord, successor.id))
+    from a13n_harness.errors import RunError
+
+    with pytest.raises(RunError, match="binding is missing"):
+        await registry.prepare(run=successor, workspace_id=WORKSPACE_ID, config=config, current_context=lambda: context)
+
+
+async def test_deleted_group_does_not_restore_an_old_binding(runtime_memory, interaction_sessions):
+    from a13n_service.bots.memory.lifecycle import invalidate_conversation
+
+    memory, _, run, context, document, _, binding, verifier = runtime_memory
+    capability = bot_memory_capability(
+        memory, run=run, binding=binding, verifier=verifier, agent_id=run.agent_id, current_context=lambda: context
+    )
+    async with transaction(interaction_sessions) as session:
+        await invalidate_conversation(session, ACCOUNT, binding.external_conversation_id)
+        scope = await session.get(ScopeRecord, binding.scope_id)
+        # A new discovery/configuration may restore eligibility, never an old Run.
+        scope.audience = "private"
+        scope.version += 1
+    assert capability is not None and capability.document_store is not None
+    with pytest.raises(ApplicationError, match="unavailable"):
+        await capability.document_store.read(document.id)
+
+
+@pytest.mark.parametrize("kind", ["ordinary", "enabled", "disabled"])
+@pytest.mark.parametrize("sealed", [False, True])
+async def test_memory_cutover_preserves_run_and_binding(
+    runtime_memory, interaction_sessions, interaction_object_store, service_database, kind, sealed
+):
+    import anyio
+    from a13n_service.bots.memory.bindings import RunMemoryBindingRecord
+    from a13n_service.database.migration import DatabaseMigrator
+    from a13n_service.memory.behaviors import RunMemorySelectionRecord
+
+    _, _, run, _, _, _, _, _ = runtime_memory
+    if sealed:
+        from a13n_harness import SafeFailure
+        from a13n_service.interactions.models import ThreadRecord
+        from a13n_service.interactions.objects import RunPayloadStore
+        from a13n_service.interactions.outcomes import RunOutcomeService
+
+        from tests.lifecycle_support import test_lifecycle_writer
+
+        async with transaction(interaction_sessions) as session:
+            current = await session.get(RunRecord, run.id)
+            thread = await session.get(ThreadRecord, run.thread_id)
+            run_version, thread_version = current.version, thread.version
+        await RunOutcomeService(
+            interaction_sessions, RunPayloadStore(interaction_object_store), lifecycle=test_lifecycle_writer()
+        ).cancel(
+            organization_id=ORGANIZATION_ID,
+            run_id=run.id,
+            expected_run_version=run_version,
+            expected_thread_version=thread_version,
+            failure=SafeFailure(code="cancelled_by_user", message="Cancelled."),
+        )
+    async with transaction(interaction_sessions) as session:
+        stored = await session.get(RunMemoryBindingRecord, run.id)
+        selection = await session.get(RunMemorySelectionRecord, run.id)
+        if kind == "ordinary":
+            await session.delete(stored)
+            selection.behavior_key = "agent"
+        elif kind == "disabled":
+            stored.use_memory = stored.save_on_request = False
+        expected = None if kind == "ordinary" else stored.binding()
+        original = (await session.get(RunRecord, run.id)).to_resource()
+    migrator = DatabaseMigrator(service_database)
+    await anyio.to_thread.run_sync(migrator.downgrade, "0264713d02b1")
+    await anyio.to_thread.run_sync(migrator.upgrade)
+    async with transaction(interaction_sessions) as session:
+        assert (await session.get(RunRecord, run.id)).to_resource() == original
+        selection = await session.get(RunMemorySelectionRecord, run.id)
+        assert selection.behavior_key == ("agent" if kind == "ordinary" else "bot_conversation")
+        if expected is not None:
+            assert await require_binding(session, run.id) == expected
+        else:
+            assert await session.get(RunMemoryBindingRecord, run.id) is None
+
+
+async def test_invalid_old_binding_aborts_cutover(runtime_memory, interaction_sessions, service_database):
+    import anyio
+    from a13n_service.database.migration import DatabaseMigrator
+    from sqlalchemy import text
+
+    migrator = DatabaseMigrator(service_database)
+    await anyio.to_thread.run_sync(migrator.downgrade, "0264713d02b1")
+    async with transaction(interaction_sessions) as session:
+        await session.execute(text("UPDATE runs SET bot_memory_json = :invalid"), {"invalid": "[]"})
+    with pytest.raises(RuntimeError, match="Invalid retained memory"):
+        await anyio.to_thread.run_sync(migrator.upgrade)
+    async with transaction(interaction_sessions) as session:
+        assert (await session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one() == "0264713d02b1"
+
+
+async def test_cutover_downgrade_preserves_revocation_fences(runtime_memory, interaction_sessions, service_database):
+    import anyio
+    from a13n_service.bots.memory.lifecycle import invalidate_conversation
+    from a13n_service.database.migration import DatabaseMigrator
+    from sqlalchemy import text
+
+    _, _, _, _, _, _, binding, _ = runtime_memory
+    async with transaction(interaction_sessions) as session:
+        await invalidate_conversation(session, ACCOUNT, binding.external_conversation_id)
+    with pytest.raises(RuntimeError, match="revocation fences cannot be downgraded"):
+        await anyio.to_thread.run_sync(DatabaseMigrator(service_database).downgrade, "4662868f6a0f")
+    async with transaction(interaction_sessions) as session:
+        scope = await session.get(ScopeRecord, binding.scope_id)
+        assert scope.binding_floor > binding.scope_version
+        assert (await session.execute(text("SELECT version_num FROM alembic_version"))).scalar_one() == "eb41d745e5d0"

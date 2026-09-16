@@ -1,3 +1,4 @@
+import type { BotAccount } from "./account";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -27,8 +28,9 @@ const account = {
   id: "acct_test",
   workspace_id: "ws_test",
   provider_key: "slack",
+  memoryVersion: 1,
   memory: { provider_id: "mp_test" },
-} as Schema["Account"];
+} as BotAccount;
 const scope = {
   id: "mscope_test",
   name: "Engineering",

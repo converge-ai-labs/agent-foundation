@@ -7,15 +7,15 @@ from fastapi import APIRouter, Depends, Query, Request
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.accounts.domain import Account
 from a13n_service.connectivity.errors import NativeError
+from a13n_service.connectivity.inspection import ConversationPage
 from a13n_service.http_types import IdempotencyKey
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.iam.http.resource_dependencies import WorkspaceId
-from a13n_service.request_runtime import get_connectivity_control_runtime
+from a13n_service.request_runtime import get_process_runtime
 
 from .collection import BotCollection, BotPlatform, BotSetupCondition, BotSummary
 from .domain import ActivateBotRequest, BotCheck, BotCheckHistory, BotCheckRequest, BotSetup
 from .history import BotThreadCollection
-from .observations import ConversationPage
 from .reply_queries import BotReplyCollection
 from .service import BotService
 from .setup_tests import BotTest, BotTestHistory, CreateBotTest
@@ -26,7 +26,7 @@ Actor = Annotated[AuthenticatedActor, Depends(authenticate_request)]
 
 
 def _service(request: Request) -> BotService:
-    runtime = get_connectivity_control_runtime(request)
+    runtime = get_process_runtime(request)
     if runtime is None or runtime.bots is None:
         raise NativeError("bot_checks_unavailable", "Bot checks are unavailable.", category=ErrorCategory.unavailable)
     return runtime.bots

@@ -2,13 +2,13 @@
 
 from pydantic import ValidationError
 
-from a13n_service.connectivity.bots.observations import (
+from a13n_service.connectivity.domain import JsonObject
+from a13n_service.connectivity.inspection import (
     ConversationCandidate,
     ConversationInfo,
     ConversationPage,
     InstallationInfo,
 )
-from a13n_service.connectivity.domain import JsonObject
 
 from .api import LarkApiError
 

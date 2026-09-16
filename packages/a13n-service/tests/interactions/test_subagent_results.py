@@ -43,6 +43,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.lifecycle_support import test_lifecycle_writer
+from tests.memory.selection_support import ordinary_memory
 
 from .conftest import NOW, ORGANIZATION_ID, effective_agent_config
 from .test_attempt_execution import _authority, _worker
@@ -511,6 +512,7 @@ async def _accept_child(
         sessions,
         RunStateStore(objects),
         RunPayloadStore(objects),
+        bindings=ordinary_memory(sessions),
         clock=lambda: NOW + timedelta(seconds=2),
         lifecycle=test_lifecycle_writer(),
     ).accept(prepared, authority)
@@ -629,6 +631,7 @@ async def test_deferred_result_does_not_starve_the_next_scan_page(
         interaction_sessions,
         states,
         RunPayloadStore(interaction_object_store),
+        bindings=ordinary_memory(interaction_sessions),
         clock=lambda: NOW + timedelta(seconds=2),
         lifecycle=test_lifecycle_writer(),
     ).accept(next_child, authority)

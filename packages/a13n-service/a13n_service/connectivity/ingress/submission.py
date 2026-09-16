@@ -1,5 +1,6 @@
 """Accept provider batches through the canonical Run and Steer commands."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import timedelta
 
@@ -11,7 +12,6 @@ from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.accounts.reception import InputOverride
 from a13n_service.connectivity.accounts.target_models import AccountTargetRecord
-from a13n_service.connectivity.bots.setup_tests import record_test_acceptance
 from a13n_service.connectivity.native_context import InboundRunContext
 from a13n_service.iam import (
     AuthenticatedActor,
@@ -25,11 +25,10 @@ from a13n_service.iam import (
 from a13n_service.interactions.command_values import ContinueRunCommand, StartRunCommand
 from a13n_service.interactions.commands import InteractionCommands
 from a13n_service.interactions.control_domain import RunAcceptanceReceipt, SteerReceipt
+from a13n_service.interactions.control_models import ThreadInboxRecord
 from a13n_service.interactions.errors import InteractionCommandError
 from a13n_service.interactions.models import RunRecord, ThreadRecord
 from a13n_service.interactions.origin import SubmissionOrigin
-from a13n_service.memory.bots.binding import BotMemoryBinding
-from a13n_service.memory.bots.selection import select_binding
 from a13n_service.storage import short_session
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
@@ -41,6 +40,7 @@ from .admission_domain import (
     RejectedInputOutcome,
 )
 from .admission_models import AgentThreadBindingRecord, IngressBatchRecord
+from .contributions import IngressContribution, PreparedIngressContribution
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,16 +55,22 @@ class _Selection:
     thread_version: int | None
     run_id: str | None
     steer: bool
-    bot_memory: BotMemoryBinding | None
+    contribution: PreparedIngressContribution | None
 
 
 class IngressInputAcceptor:
     def __init__(
-        self, sessions: async_sessionmaker[AsyncSession], commands: InteractionCommands, *, clock: Clock = utc_now
+        self,
+        sessions: async_sessionmaker[AsyncSession],
+        commands: InteractionCommands,
+        *,
+        contributions: Mapping[str, IngressContribution] | None = None,
+        clock: Clock = utc_now,
     ) -> None:
         self._sessions = sessions
         self._commands = commands
         self._clock = clock
+        self._contributions = dict(contributions or {})
 
     async def accept_ingress_batch(self, batch: PreparedIngressBatch) -> InputAcceptanceOutcome:
         try:
@@ -76,6 +82,13 @@ class IngressInputAcceptor:
                 if stored.status == "accepted":
                     if stored.result_kind not in {"run", "steer"} or stored.result_id is None:
                         raise ValueError("batch_receipt_invalid")
+                    if stored.result_kind == "run":
+                        await self._commands.acceptance.validate_in_session(session, stored.result_id)
+                    else:
+                        steer = await session.get(ThreadInboxRecord, stored.result_id)
+                        if steer is None or steer.accepted_against_run_id is None:
+                            raise ValueError("batch_receipt_invalid")
+                        await self._commands.acceptance.validate_in_session(session, steer.accepted_against_run_id)
                     return AcceptedInputOutcome(
                         receipt_kind="run" if stored.result_kind == "run" else "steer", receipt_id=stored.result_id
                     )
@@ -83,11 +96,10 @@ class IngressInputAcceptor:
 
             async def commit(session: AsyncSession, receipt: RunAcceptanceReceipt | SteerReceipt) -> None:
                 current = await self._selection(session, batch, lock=True)
-                if (current.account_version, current.target_id, current.target_version, current.bot_memory) != (
+                if (current.account_version, current.target_id, current.target_version) != (
                     selection.account_version,
                     selection.target_id,
                     selection.target_version,
-                    selection.bot_memory,
                 ):
                     raise _LostClaim()
                 binding = await session.scalar(
@@ -123,13 +135,8 @@ class IngressInputAcceptor:
                 stored.updated_at = now
                 stored.claim_owner = None
                 stored.claim_expires_at = None
-                await record_test_acceptance(
-                    session,
-                    batch_id=batch.batch_id,
-                    run_id=receipt.run_id,
-                    steer_id=receipt.steer_id if isinstance(receipt, SteerReceipt) else None,
-                    now=now,
-                )
+                if selection.contribution is not None:
+                    await selection.contribution.accept(session, batch, receipt, now)
 
             key = batch.batch_id
             if selection.steer:
@@ -144,7 +151,6 @@ class IngressInputAcceptor:
                 return AcceptedInputOutcome(receipt_kind="steer", receipt_id=receipt.steer_id)
             origin = SubmissionOrigin(
                 trigger_type="inbound",
-                bot_memory=selection.bot_memory,
                 native_tool_contexts=(
                     InboundRunContext.from_batch(batch, execution_principal=selection.actor.principal).model_dump(
                         mode="json"
@@ -272,7 +278,11 @@ class IngressInputAcceptor:
             thread.version if thread else None,
             run_id,
             steer,
-            await select_binding(session, account, batch.configuration.external_target_id, lock=lock),
+            await self._contributions[account.provider_key].prepare(
+                session, account, batch.configuration.external_target_id
+            )
+            if account.provider_key in self._contributions
+            else None,
         )
 
 

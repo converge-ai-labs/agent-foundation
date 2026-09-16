@@ -23,9 +23,10 @@ from a13n_service.interactions.attempts import AttemptContext, read_attempt_auth
 from a13n_service.memory.service import failure
 from a13n_service.temporal import utc_now
 
-from .binding import BotMemoryBinding
-from .domain import MemorySettings, ScopeSettings
+from .bindings import require_binding
+from .domain import ScopeSettings
 from .models import ScopeRecord
+from .settings import read_settings
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +74,7 @@ async def authorize(
         scope.provider_id,
     ):
         raise failure("memory_scope_not_found", "Memory scope not found.", ErrorCategory.not_found)
+    account_settings = (await read_settings(session, account.id)).memory
     settings = ScopeSettings.model_validate(scope.settings_json)
     write = action in (WorkspaceAction.bot_memory_create, WorkspaceAction.bot_memory_delete)
     if action is WorkspaceAction.bot_memory_share:
@@ -80,7 +82,7 @@ async def authorize(
     if (
         account.deleted_at is not None
         or account.status != "active"
-        or account.memory_json is None
+        or account_settings is None
         or scope.audience == "unknown"
         or not settings.enabled
         or (not settings.save_on_request if write else not settings.use_memory)
@@ -96,14 +98,16 @@ async def authorize(
         )
     context = authority.context()
     run, _, _ = await read_attempt_authority(session, context, utc_now())
-    retained = BotMemoryBinding.model_validate(run.bot_memory_json) if run.bot_memory_json else None
-    account_settings = MemorySettings.model_validate(account.memory_json)
+    retained = await require_binding(session, run.id)
+    assert account_settings is not None
     if (
         retained is None
         or run.organization_id != scope.organization_id
         or (retained.account_id, retained.scope_id, retained.provider_id)
         != (scope.account_id, scope.id, scope.provider_id)
         or retained.external_conversation_id != scope.external_conversation_id
+        or retained.scope_version is None
+        or retained.scope_version < scope.binding_floor
         or (not retained.save_on_request if write else not retained.use_memory)
         or (not account_settings.save_on_request if write else not account_settings.use_memory)
     ):

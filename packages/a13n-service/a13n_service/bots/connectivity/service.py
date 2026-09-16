@@ -17,6 +17,7 @@ from a13n_service.connectivity.accounts.service import AccountService
 from a13n_service.connectivity.accounts.target_models import AccountTargetRecord
 from a13n_service.connectivity.errors import NativeError
 from a13n_service.connectivity.http import ConnectivityHttpError, EndpointValidator
+from a13n_service.connectivity.inspection import ConversationPage
 from a13n_service.connectivity.native_management import authorize, require_limit, require_version
 from a13n_service.credentials import CredentialSnapshot
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
@@ -28,7 +29,6 @@ from .collection import BotCollection, BotPlatform, BotSetupCondition, BotSummar
 from .domain import ActivateBotRequest, BotCheck, BotCheckHistory, BotCheckRequest, BotSetup
 from .history import BotThreadCollection, list_bot_threads
 from .models import BotCheckRecord
-from .observations import ConversationPage
 from .probe import InstallationProbe
 from .reply_queries import BotReplyCollection, list_bot_replies
 from .setup_tests import BotTest, BotTestHistory, CreateBotTest, create_bot_test, get_bot_test

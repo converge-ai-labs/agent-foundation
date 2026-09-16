@@ -16,17 +16,22 @@ from a13n_service.interactions.domain import Run
 from a13n_service.memory.service import MemoryService, failure
 
 from .access import RuntimeAuthority
+from .binding import BotMemoryBinding
 from .domain import CreateDocument, SearchDocuments
 from .mutations import create, delete
 from .service import BotMemoryService
+from .verification import BotMemoryVerifier
 
 
 class ConversationDocumentStore(MemoryDocumentStore):
-    def __init__(self, service: BotMemoryService, authority: RuntimeAuthority, run_id: str) -> None:
+    def __init__(
+        self, service: BotMemoryService, authority: RuntimeAuthority, run_id: str, verifier: BotMemoryVerifier | None
+    ) -> None:
         self.service, self.authority, self.run_id = service, authority, run_id
+        self.verifier = verifier
 
     async def _verified(self, *, write: bool = False, document_id: str | None = None) -> RuntimeAuthority:
-        verifier = self.service.memory.bot_verifier
+        verifier = self.verifier
         if verifier is None:
             raise failure("memory_scope_unverified", "Live conversation verification is unavailable.")
         return await verifier.verify(self.authority, write=write, document_id=document_id)
@@ -78,15 +83,20 @@ class ConversationDocumentStore(MemoryDocumentStore):
 
 
 def bot_memory_capability(
-    service: MemoryService, *, run: Run, agent_id: str, current_context: Callable[[], AttemptContext]
+    service: MemoryService,
+    *,
+    run: Run,
+    binding: BotMemoryBinding,
+    verifier: BotMemoryVerifier | None,
+    agent_id: str,
+    current_context: Callable[[], AttemptContext],
 ) -> MemoryCapability | None:
-    binding = run.bot_memory
-    if binding is None or not (binding.use_memory or binding.save_on_request):
+    if not (binding.use_memory or binding.save_on_request):
         return None
     assert binding.scope_id is not None and binding.provider_id is not None
     authority = RuntimeAuthority(binding.account_id, binding.scope_id, binding.provider_id, agent_id, current_context)
     return MemoryCapability(
-        document_store=ConversationDocumentStore(BotMemoryService(service), authority, run.id),
+        document_store=ConversationDocumentStore(BotMemoryService(service), authority, run.id, verifier),
         document_read=binding.use_memory,
         document_write=binding.save_on_request,
     )

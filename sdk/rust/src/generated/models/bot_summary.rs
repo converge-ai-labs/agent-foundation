@@ -34,6 +34,9 @@ pub struct BotSummary {
     )]
     pub external_organization_name: Option<String>,
 
+    #[serde(rename = "memory_settings")]
+    pub memory_settings: Box<models::AccountMemorySettings>,
+
     #[serde(rename = "setup_condition")]
     pub setup_condition: SetupCondition,
 
@@ -51,6 +54,7 @@ impl BotSummary {
         configured_target_count: i32,
         external_organization_id: Option<String>,
         external_organization_name: Option<String>,
+        memory_settings: models::AccountMemorySettings,
         setup_condition: SetupCondition,
         test_observed_at: Option<chrono::DateTime<chrono::FixedOffset>>,
         test_stage: Option<TestStage>,
@@ -61,6 +65,7 @@ impl BotSummary {
             configured_target_count,
             external_organization_id,
             external_organization_name,
+            memory_settings: Box::new(memory_settings),
             setup_condition,
             test_observed_at,
             test_stage,

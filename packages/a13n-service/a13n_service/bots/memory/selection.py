@@ -6,8 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from a13n_service.connectivity.accounts.models import AccountRecord
 
 from .binding import BotMemoryBinding
-from .domain import MemorySettings, ScopeSettings
+from .domain import ScopeSettings
 from .models import ScopeRecord
+from .settings import read_settings
 
 
 async def select_binding(
@@ -16,9 +17,9 @@ async def select_binding(
     if account.provider_key not in {"slack", "lark"}:
         return None
     disabled = BotMemoryBinding(account_id=account.id, external_conversation_id=external_conversation_id)
-    if account.memory_json is None:
+    settings = (await read_settings(session, account.id)).memory
+    if settings is None:
         return disabled
-    settings = MemorySettings.model_validate(account.memory_json)
     query = select(ScopeRecord).where(
         ScopeRecord.account_id == account.id,
         ScopeRecord.provider_id == settings.provider_id,

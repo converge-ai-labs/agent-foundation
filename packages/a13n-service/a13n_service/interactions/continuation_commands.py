@@ -106,6 +106,7 @@ class ContinuationCommands:
         )
         replay = await evidence.replay()
         if replay is not None:
+            await self._acceptance.validate_retained(replay.run_id)
             return replay
 
         source, thread, parent = await self._load_retry_source(actor=actor, run_id=run_id)
@@ -272,6 +273,7 @@ class ContinuationCommands:
         )
         replay = await evidence.replay()
         if replay is not None:
+            await self._acceptance.validate_retained(replay.run_id)
             return replay
         try:
             return await self._accept_waiting_successor(
@@ -321,6 +323,7 @@ class ContinuationCommands:
         )
         replay = await evidence.replay()
         if replay is not None:
+            await self._acceptance.validate_retained(replay.run_id)
             return replay
         try:
             return await self._accept_waiting_successor(

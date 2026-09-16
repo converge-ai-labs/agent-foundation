@@ -3731,7 +3731,6 @@ type Account struct {
 	ExecutionServiceAccountId nullable.Nullable[string]               `json:"execution_service_account_id,omitempty"`
 	Id                        string                                  `json:"id"`
 	InputBatching             nullable.Nullable[InputBatchingPolicy]  `json:"input_batching,omitempty"`
-	Memory                    nullable.Nullable[MemorySettings]       `json:"memory,omitempty"`
 	Name                      string                                  `json:"name"`
 	OrganizationId            string                                  `json:"organization_id"`
 	ProviderConfig            map[string]JsonValue                    `json:"provider_config"`
@@ -3755,6 +3754,13 @@ type AccountCollection struct {
 // AccountCommandRequest defines model for AccountCommandRequest.
 type AccountCommandRequest struct {
 	ExpectedVersion int `json:"expected_version"`
+}
+
+// AccountMemorySettings defines model for AccountMemorySettings.
+type AccountMemorySettings struct {
+	AccountId string                            `json:"account_id"`
+	Memory    nullable.Nullable[MemorySettings] `json:"memory"`
+	Version   int                               `json:"version"`
 }
 
 // AccountProviderDefinition defines model for AccountProviderDefinition.
@@ -4321,6 +4327,7 @@ type BotSummary struct {
 	ConfiguredTargetCount    int                                    `json:"configured_target_count"`
 	ExternalOrganizationId   nullable.Nullable[string]              `json:"external_organization_id"`
 	ExternalOrganizationName nullable.Nullable[string]              `json:"external_organization_name"`
+	MemorySettings           AccountMemorySettings                  `json:"memory_settings"`
 	SetupCondition           BotSummarySetupCondition               `json:"setup_condition"`
 	TestObservedAt           nullable.Nullable[time.Time]           `json:"test_observed_at"`
 	TestStage                nullable.Nullable[BotSummaryTestStage] `json:"test_stage"`
@@ -4916,7 +4923,6 @@ type CreateAccountRequest struct {
 	DefaultAgentId            nullable.Nullable[string]               `json:"default_agent_id,omitempty"`
 	ExecutionServiceAccountId nullable.Nullable[string]               `json:"execution_service_account_id,omitempty"`
 	InputBatching             nullable.Nullable[InputBatchingPolicy]  `json:"input_batching,omitempty"`
-	Memory                    nullable.Nullable[MemorySettings]       `json:"memory,omitempty"`
 	Name                      string                                  `json:"name"`
 	ProviderConfig            map[string]JsonValue                    `json:"provider_config"`
 	ProviderConfigVersion     string                                  `json:"provider_config_version"`
@@ -6679,6 +6685,12 @@ type ReplaceCredentialRequest struct {
 	Credential nullable.Nullable[map[string]JsonValue] `json:"credential"`
 }
 
+// ReplaceMemorySettings defines model for ReplaceMemorySettings.
+type ReplaceMemorySettings struct {
+	ExpectedVersion int                               `json:"expected_version"`
+	Memory          nullable.Nullable[MemorySettings] `json:"memory"`
+}
+
 // ReplaceSharingPolicy defines model for ReplaceSharingPolicy.
 type ReplaceSharingPolicy struct {
 	Enabled            *bool                        `json:"enabled,omitempty"`
@@ -7775,7 +7787,6 @@ type UpdateAccountRequest struct {
 	ExecutionServiceAccountId nullable.Nullable[string]               `json:"execution_service_account_id,omitempty"`
 	ExpectedVersion           int                                     `json:"expected_version"`
 	InputBatching             nullable.Nullable[InputBatchingPolicy]  `json:"input_batching,omitempty"`
-	Memory                    nullable.Nullable[MemorySettings]       `json:"memory,omitempty"`
 	Name                      nullable.Nullable[string]               `json:"name,omitempty"`
 	ProviderConfig            nullable.Nullable[map[string]JsonValue] `json:"provider_config,omitempty"`
 	ProviderPolicy            nullable.Nullable[map[string]JsonValue] `json:"provider_policy,omitempty"`
@@ -8925,9 +8936,8 @@ type GetWorkspacesWorkspaceApiKeysParams struct {
 
 // GetWorkspacesWorkspaceApplicationAccountsParams defines parameters for GetWorkspacesWorkspaceApplicationAccounts.
 type GetWorkspacesWorkspaceApplicationAccountsParams struct {
-	Limit    *int    `form:"limit,omitempty" json:"limit,omitempty"`
-	Cursor   *string `form:"cursor,omitempty" json:"cursor,omitempty"`
-	BotsOnly *bool   `form:"bots_only,omitempty" json:"bots_only,omitempty"`
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
 // PostWorkspacesWorkspaceApplicationAccountsParams defines parameters for PostWorkspacesWorkspaceApplicationAccounts.
@@ -9302,6 +9312,9 @@ type PostApplicationAccountsAccountIdBotActivateJSONRequestBody = ActivateBotReq
 
 // PostApplicationAccountsAccountIdBotChecksJSONRequestBody defines body for PostApplicationAccountsAccountIdBotChecks for application/json ContentType.
 type PostApplicationAccountsAccountIdBotChecksJSONRequestBody = BotCheckRequest
+
+// PutApplicationAccountsAccountIdBotMemorySettingsJSONRequestBody defines body for PutApplicationAccountsAccountIdBotMemorySettings for application/json ContentType.
+type PutApplicationAccountsAccountIdBotMemorySettingsJSONRequestBody = ReplaceMemorySettings
 
 // PostApplicationAccountsAccountIdBotTestsJSONRequestBody defines body for PostApplicationAccountsAccountIdBotTests for application/json ContentType.
 type PostApplicationAccountsAccountIdBotTestsJSONRequestBody = CreateBotTest
@@ -14809,6 +14822,25 @@ type ClientInterface interface {
 	// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/conversations (the `GetApplicationAccountsAccountIdBotConversations` operationId).
 	GetApplicationAccountsAccountIdBotConversations(ctx context.Context, accountId string, params *GetApplicationAccountsAccountIdBotConversationsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetApplicationAccountsAccountIdBotMemorySettings Memory Settings
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/memory-settings (the `GetApplicationAccountsAccountIdBotMemorySettings` operationId).
+	GetApplicationAccountsAccountIdBotMemorySettings(ctx context.Context, accountId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutApplicationAccountsAccountIdBotMemorySettingsWithBody Update Memory Settings
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /api/v1/application-accounts/{account_id}/bot/memory-settings (the `PutApplicationAccountsAccountIdBotMemorySettings` operationId).
+	PutApplicationAccountsAccountIdBotMemorySettingsWithBody(ctx context.Context, accountId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutApplicationAccountsAccountIdBotMemorySettings Update Memory Settings
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /api/v1/application-accounts/{account_id}/bot/memory-settings (the `PutApplicationAccountsAccountIdBotMemorySettings` operationId).
+	PutApplicationAccountsAccountIdBotMemorySettings(ctx context.Context, accountId string, body PutApplicationAccountsAccountIdBotMemorySettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetApplicationAccountsAccountIdBotReplies List Bot Reply Observations
 	//
 	// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/replies (the `GetApplicationAccountsAccountIdBotReplies` operationId).
@@ -17790,6 +17822,55 @@ func (c *Client) GetApplicationAccountsAccountIdBotChecksLatest(ctx context.Cont
 // Corresponds with GET /api/v1/application-accounts/{account_id}/bot/conversations (the `GetApplicationAccountsAccountIdBotConversations` operationId).
 func (c *Client) GetApplicationAccountsAccountIdBotConversations(ctx context.Context, accountId string, params *GetApplicationAccountsAccountIdBotConversationsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetApplicationAccountsAccountIdBotConversationsRequest(c.Server, accountId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetApplicationAccountsAccountIdBotMemorySettings Memory Settings
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/memory-settings (the `GetApplicationAccountsAccountIdBotMemorySettings` operationId).
+func (c *Client) GetApplicationAccountsAccountIdBotMemorySettings(ctx context.Context, accountId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApplicationAccountsAccountIdBotMemorySettingsRequest(c.Server, accountId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutApplicationAccountsAccountIdBotMemorySettingsWithBody Update Memory Settings
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /api/v1/application-accounts/{account_id}/bot/memory-settings (the `PutApplicationAccountsAccountIdBotMemorySettings` operationId).
+func (c *Client) PutApplicationAccountsAccountIdBotMemorySettingsWithBody(ctx context.Context, accountId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutApplicationAccountsAccountIdBotMemorySettingsRequestWithBody(c.Server, accountId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutApplicationAccountsAccountIdBotMemorySettings Update Memory Settings
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /api/v1/application-accounts/{account_id}/bot/memory-settings (the `PutApplicationAccountsAccountIdBotMemorySettings` operationId).
+func (c *Client) PutApplicationAccountsAccountIdBotMemorySettings(ctx context.Context, accountId string, body PutApplicationAccountsAccountIdBotMemorySettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutApplicationAccountsAccountIdBotMemorySettingsRequest(c.Server, accountId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -25557,6 +25638,87 @@ func NewGetApplicationAccountsAccountIdBotConversationsRequest(server string, ac
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewGetApplicationAccountsAccountIdBotMemorySettingsRequest constructs an http.Request for the GetApplicationAccountsAccountIdBotMemorySettings method
+func NewGetApplicationAccountsAccountIdBotMemorySettingsRequest(server string, accountId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/bot/memory-settings", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPutApplicationAccountsAccountIdBotMemorySettingsRequest calls the generic PutApplicationAccountsAccountIdBotMemorySettings builder with application/json body
+func NewPutApplicationAccountsAccountIdBotMemorySettingsRequest(server string, accountId string, body PutApplicationAccountsAccountIdBotMemorySettingsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPutApplicationAccountsAccountIdBotMemorySettingsRequestWithBody(server, accountId, "application/json", bodyReader)
+}
+
+// NewPutApplicationAccountsAccountIdBotMemorySettingsRequestWithBody constructs an http.Request for the PutApplicationAccountsAccountIdBotMemorySettings method, with any body, and a specified content type
+func NewPutApplicationAccountsAccountIdBotMemorySettingsRequestWithBody(server string, accountId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/bot/memory-settings", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -38554,18 +38716,6 @@ func NewGetWorkspacesWorkspaceApplicationAccountsRequest(server string, workspac
 
 		}
 
-		if params.BotsOnly != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "bots_only", *params.BotsOnly, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
 		if encoded := queryValues.Encode(); encoded != "" {
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
@@ -44058,6 +44208,27 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/conversations (the `GetApplicationAccountsAccountIdBotConversations` operationId).
 	GetApplicationAccountsAccountIdBotConversationsWithResponse(ctx context.Context, accountId string, params *GetApplicationAccountsAccountIdBotConversationsParams, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdBotConversationsResponse, error)
 
+	// GetApplicationAccountsAccountIdBotMemorySettingsWithResponse Memory Settings
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/memory-settings (the `GetApplicationAccountsAccountIdBotMemorySettings` operationId).
+	GetApplicationAccountsAccountIdBotMemorySettingsWithResponse(ctx context.Context, accountId string, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdBotMemorySettingsResponse, error)
+
+	// PutApplicationAccountsAccountIdBotMemorySettingsWithBodyWithResponse Update Memory Settings
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/v1/application-accounts/{account_id}/bot/memory-settings (the `PutApplicationAccountsAccountIdBotMemorySettings` operationId).
+	PutApplicationAccountsAccountIdBotMemorySettingsWithBodyWithResponse(ctx context.Context, accountId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutApplicationAccountsAccountIdBotMemorySettingsResponse, error)
+
+	// PutApplicationAccountsAccountIdBotMemorySettingsWithResponse Update Memory Settings
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/v1/application-accounts/{account_id}/bot/memory-settings (the `PutApplicationAccountsAccountIdBotMemorySettings` operationId).
+	PutApplicationAccountsAccountIdBotMemorySettingsWithResponse(ctx context.Context, accountId string, body PutApplicationAccountsAccountIdBotMemorySettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*PutApplicationAccountsAccountIdBotMemorySettingsResponse, error)
+
 	// GetApplicationAccountsAccountIdBotRepliesWithResponse List Bot Reply Observations
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -47973,6 +48144,160 @@ func (r GetApplicationAccountsAccountIdBotConversationsResponse) StatusCode() in
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetApplicationAccountsAccountIdBotConversationsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetApplicationAccountsAccountIdBotMemorySettingsResponse200Headers the declared response headers of an HTTP 200 response for GetApplicationAccountsAccountIdBotMemorySettings
+type GetApplicationAccountsAccountIdBotMemorySettingsResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdBotMemorySettingsResponse400Headers the declared response headers of an HTTP 400 response for GetApplicationAccountsAccountIdBotMemorySettings
+type GetApplicationAccountsAccountIdBotMemorySettingsResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdBotMemorySettingsResponseDefaultHeaders the declared response headers of an HTTP default response for GetApplicationAccountsAccountIdBotMemorySettings
+type GetApplicationAccountsAccountIdBotMemorySettingsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetApplicationAccountsAccountIdBotMemorySettingsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AccountMemorySettings
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetApplicationAccountsAccountIdBotMemorySettingsResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetApplicationAccountsAccountIdBotMemorySettingsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetApplicationAccountsAccountIdBotMemorySettingsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetApplicationAccountsAccountIdBotMemorySettingsResponse) GetJSON200() *AccountMemorySettings {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetApplicationAccountsAccountIdBotMemorySettingsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetApplicationAccountsAccountIdBotMemorySettingsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetApplicationAccountsAccountIdBotMemorySettingsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApplicationAccountsAccountIdBotMemorySettingsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApplicationAccountsAccountIdBotMemorySettingsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApplicationAccountsAccountIdBotMemorySettingsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PutApplicationAccountsAccountIdBotMemorySettingsResponse200Headers the declared response headers of an HTTP 200 response for PutApplicationAccountsAccountIdBotMemorySettings
+type PutApplicationAccountsAccountIdBotMemorySettingsResponse200Headers struct {
+	XRequestID *string
+}
+
+// PutApplicationAccountsAccountIdBotMemorySettingsResponse400Headers the declared response headers of an HTTP 400 response for PutApplicationAccountsAccountIdBotMemorySettings
+type PutApplicationAccountsAccountIdBotMemorySettingsResponse400Headers struct {
+	XRequestID *string
+}
+
+// PutApplicationAccountsAccountIdBotMemorySettingsResponseDefaultHeaders the declared response headers of an HTTP default response for PutApplicationAccountsAccountIdBotMemorySettings
+type PutApplicationAccountsAccountIdBotMemorySettingsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PutApplicationAccountsAccountIdBotMemorySettingsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AccountMemorySettings
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PutApplicationAccountsAccountIdBotMemorySettingsResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PutApplicationAccountsAccountIdBotMemorySettingsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PutApplicationAccountsAccountIdBotMemorySettingsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PutApplicationAccountsAccountIdBotMemorySettingsResponse) GetJSON200() *AccountMemorySettings {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PutApplicationAccountsAccountIdBotMemorySettingsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PutApplicationAccountsAccountIdBotMemorySettingsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PutApplicationAccountsAccountIdBotMemorySettingsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PutApplicationAccountsAccountIdBotMemorySettingsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutApplicationAccountsAccountIdBotMemorySettingsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PutApplicationAccountsAccountIdBotMemorySettingsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -72626,6 +72951,45 @@ func (c *ClientWithResponses) GetApplicationAccountsAccountIdBotConversationsWit
 	return ParseGetApplicationAccountsAccountIdBotConversationsResponse(rsp)
 }
 
+// GetApplicationAccountsAccountIdBotMemorySettingsWithResponse Memory Settings
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/memory-settings (the `GetApplicationAccountsAccountIdBotMemorySettings` operationId).
+func (c *ClientWithResponses) GetApplicationAccountsAccountIdBotMemorySettingsWithResponse(ctx context.Context, accountId string, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdBotMemorySettingsResponse, error) {
+	rsp, err := c.GetApplicationAccountsAccountIdBotMemorySettings(ctx, accountId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApplicationAccountsAccountIdBotMemorySettingsResponse(rsp)
+}
+
+// PutApplicationAccountsAccountIdBotMemorySettingsWithBodyWithResponse Update Memory Settings
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/v1/application-accounts/{account_id}/bot/memory-settings (the `PutApplicationAccountsAccountIdBotMemorySettings` operationId).
+func (c *ClientWithResponses) PutApplicationAccountsAccountIdBotMemorySettingsWithBodyWithResponse(ctx context.Context, accountId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutApplicationAccountsAccountIdBotMemorySettingsResponse, error) {
+	rsp, err := c.PutApplicationAccountsAccountIdBotMemorySettingsWithBody(ctx, accountId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutApplicationAccountsAccountIdBotMemorySettingsResponse(rsp)
+}
+
+// PutApplicationAccountsAccountIdBotMemorySettingsWithResponse Update Memory Settings
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/v1/application-accounts/{account_id}/bot/memory-settings (the `PutApplicationAccountsAccountIdBotMemorySettings` operationId).
+func (c *ClientWithResponses) PutApplicationAccountsAccountIdBotMemorySettingsWithResponse(ctx context.Context, accountId string, body PutApplicationAccountsAccountIdBotMemorySettingsJSONRequestBody, reqEditors ...RequestEditorFn) (*PutApplicationAccountsAccountIdBotMemorySettingsResponse, error) {
+	rsp, err := c.PutApplicationAccountsAccountIdBotMemorySettings(ctx, accountId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutApplicationAccountsAccountIdBotMemorySettingsResponse(rsp)
+}
+
 // GetApplicationAccountsAccountIdBotRepliesWithResponse List Bot Reply Observations
 //
 // Returns a wrapper object for the known response body format(s).
@@ -79265,6 +79629,166 @@ func ParseGetApplicationAccountsAccountIdBotConversationsResponse(rsp *http.Resp
 		response.Headers400 = &headers
 	case true:
 		var headers GetApplicationAccountsAccountIdBotConversationsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetApplicationAccountsAccountIdBotMemorySettingsResponse parses an HTTP response from a GetApplicationAccountsAccountIdBotMemorySettingsWithResponse call
+func ParseGetApplicationAccountsAccountIdBotMemorySettingsResponse(rsp *http.Response) (*GetApplicationAccountsAccountIdBotMemorySettingsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApplicationAccountsAccountIdBotMemorySettingsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AccountMemorySettings
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetApplicationAccountsAccountIdBotMemorySettingsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetApplicationAccountsAccountIdBotMemorySettingsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetApplicationAccountsAccountIdBotMemorySettingsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePutApplicationAccountsAccountIdBotMemorySettingsResponse parses an HTTP response from a PutApplicationAccountsAccountIdBotMemorySettingsWithResponse call
+func ParsePutApplicationAccountsAccountIdBotMemorySettingsResponse(rsp *http.Response) (*PutApplicationAccountsAccountIdBotMemorySettingsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutApplicationAccountsAccountIdBotMemorySettingsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AccountMemorySettings
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PutApplicationAccountsAccountIdBotMemorySettingsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PutApplicationAccountsAccountIdBotMemorySettingsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PutApplicationAccountsAccountIdBotMemorySettingsResponseDefaultHeaders
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {

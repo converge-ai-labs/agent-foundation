@@ -17,7 +17,6 @@ from a13n_service.temporal import assume_utc, utc_now
 
 from .audit import audit
 from .domain import (
-    MemorySettings,
     ReplaceSharingPolicy,
     ScopeSettings,
     SharingPolicy,
@@ -26,6 +25,7 @@ from .domain import (
 )
 from .models import ScopeRecord, SharingParticipantRecord, SharingPolicyRecord
 from .service import require_version
+from .settings import read_settings
 
 if TYPE_CHECKING:
     from .service import BotMemoryService
@@ -96,9 +96,10 @@ async def save_policy(
 ) -> SharingPolicy:
     async with transaction(service.sessions) as session:
         account = await _account(session, actor, account_id, lock=True)
-        if account.memory_json is None:
+        settings = (await read_settings(session, account.id)).memory
+        if settings is None:
             raise failure("bot_memory_disabled", "Select a Memory Provider first.", ErrorCategory.conflict)
-        provider_id = MemorySettings.model_validate(account.memory_json).provider_id
+        provider_id = settings.provider_id
         if len(set(body.scope_ids)) != len(body.scope_ids):
             raise failure("duplicate_group", "Select each group once.", ErrorCategory.invalid_request)
         if not body.kinds or len(set(body.kinds)) != len(body.kinds):
@@ -195,9 +196,10 @@ async def list_policies(
 ) -> SharingPolicyCollection:
     async with short_session(service.sessions) as session:
         account = await _account(session, actor, account_id)
-        if account.memory_json is None:
+        settings = (await read_settings(session, account.id)).memory
+        if settings is None:
             return SharingPolicyCollection(items=())
-        provider_id = MemorySettings.model_validate(account.memory_json).provider_id
+        provider_id = settings.provider_id
         binding = {
             "account_id": account_id,
             "provider_id": provider_id,

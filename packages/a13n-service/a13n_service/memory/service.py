@@ -3,7 +3,6 @@
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING
 
 from a13n_harness.memory import (
     MemoryPaginationUnsupported,
@@ -23,9 +22,6 @@ from a13n_service.secrets.crypto import SecretProtector
 from .domain import Memory, MemoryAccess, MemoryCollection, MemoryPagination, MemoryScope, MemorySearch
 from .execution import open_memory_backend
 from .scopes import MemoryAuthorizer
-
-if TYPE_CHECKING:
-    from .bots.verification import BotMemoryVerifier
 
 
 def failure(code: str, message: str, category: ErrorCategory = ErrorCategory.dependency_failure) -> ApplicationError:
@@ -71,13 +67,11 @@ class MemoryService:
         authorizer: MemoryAuthorizer,
         *,
         timeout: float = 30,
-        bot_verifier: "BotMemoryVerifier | None" = None,
     ) -> None:
         self.catalog = catalog
         self.protector = protector
         self.authorizer = authorizer
         self.timeout = timeout
-        self.bot_verifier = bot_verifier
 
     async def access(
         self, *, actor: AuthenticatedActor, workspace_id: str, provider_id: str, selection: MemoryScope

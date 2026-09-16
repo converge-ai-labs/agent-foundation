@@ -6,7 +6,6 @@ from dataclasses import dataclass
 
 from a13n_service.connectivity.accounts.service import AccountService
 from a13n_service.connectivity.accounts.target_service import AccountTargetService
-from a13n_service.connectivity.bots.service import BotService
 from a13n_service.connectivity.connections.authorization import AuthorizationService
 from a13n_service.connectivity.connections.checks import ConnectionChecks
 from a13n_service.connectivity.connections.service import ConnectionService
@@ -33,7 +32,6 @@ class ConnectivityControlRuntime:
     checks: ConnectionChecks
     connections: ConnectionService
     authorizations: AuthorizationService
-    bots: BotService | None = None
 
 
 @dataclass(frozen=True, slots=True)

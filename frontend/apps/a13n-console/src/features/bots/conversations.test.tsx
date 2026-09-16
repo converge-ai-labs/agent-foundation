@@ -88,6 +88,11 @@ beforeEach(() => {
         : path.endsWith("/summary")
           ? {
               account,
+              memory_settings: {
+                account_id: account.id,
+                version: 0,
+                memory: null,
+              },
               setup_condition: "receiving",
               configured_target_count: 1,
               test_stage: null,

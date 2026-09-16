@@ -10,8 +10,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
+from a13n_service.bots.connectivity.probe import InstallationProbe
 from a13n_service.connectivity.accounts.models import AccountRecord
-from a13n_service.connectivity.bots.probe import InstallationProbe
 from a13n_service.connectivity.http import ConnectivityHttpError, EndpointValidator
 from a13n_service.iam import WorkspaceAction
 from a13n_service.memory.service import failure

@@ -1,3 +1,4 @@
+import type { BotAccount } from "./account";
 import {
   FileTextIcon,
   FolderSimpleIcon,
@@ -28,7 +29,7 @@ export function BotMemory({
   account,
   reload,
 }: {
-  account: Schema["Account"];
+  account: BotAccount;
   reload: () => Promise<void>;
 }) {
   const { can } = useWorkspace(),
@@ -75,7 +76,7 @@ export function BotGroupMemory({
   account,
   target,
 }: {
-  account: Schema["Account"];
+  account: BotAccount;
   target: Schema["AccountTarget"];
 }) {
   const { can, basePath } = useWorkspace(),
@@ -118,7 +119,7 @@ function GroupMemoryScope({
   target,
   providerId,
 }: {
-  account: Schema["Account"];
+  account: BotAccount;
   target: Schema["AccountTarget"];
   providerId: string;
 }) {
@@ -175,7 +176,7 @@ function MemoryBrowser({
   providerId,
   fixedScope,
 }: {
-  account: Schema["Account"];
+  account: BotAccount;
   providerId: string;
   fixedScope?: Schema["Scope"];
 }) {
@@ -293,7 +294,7 @@ function ScopeDocuments({
   scopeId,
   scopeName,
 }: {
-  account: Schema["Account"];
+  account: BotAccount;
   scopeId: string;
   scopeName: string;
 }) {

@@ -39,6 +39,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.hooks.support import seed_hook_actor_access
 from tests.lifecycle_support import test_lifecycle_writer
+from tests.memory.selection_support import ordinary_memory
 
 from .conftest import (
     AGENT_ID,
@@ -431,6 +432,7 @@ async def test_queue_consumption_and_run_acceptance_commit_together(
         RunStateStore(interaction_object_store),
         RunPayloadStore(interaction_object_store),
         inline_hooks,
+        bindings=ordinary_memory(interaction_sessions),
         clock=lambda: NOW,
         lifecycle=test_lifecycle_writer(),
     )
@@ -548,6 +550,7 @@ async def test_post_terminal_drain_can_fail_a_permanently_invalid_queue_head(
         RunStateStore(interaction_object_store),
         RunPayloadStore(interaction_object_store),
         _inline_hooks(),
+        bindings=ordinary_memory(interaction_sessions),
         clock=lambda: NOW + timedelta(seconds=1),
         lifecycle=test_lifecycle_writer(),
     ).fail_queued_permanently(

@@ -156,3 +156,7 @@ Checks run outside database transactions with a bounded total deadline. Before s
 4. Account disablement blocks dispatch; reception closure alone does not revoke accepted replies.
 5. Account use, action allowlists, and target authority are separately validated.
 6. Recovery never replaces a missing or disabled account with another account.
+
+## Application-owned Memory Settings
+
+Bot Memory settings use the [Bot-owned versioned settings API](../42-memory.md#bot-memory-configuration). They are not Account fields or generic Account mutation inputs. Bot summary carries the separate `memory_settings` projection. Bot-only listing uses the Bot collection, not a `bots_only` parameter on common Account listing. Setup-test staleness and reply correlation include the independent memory-settings version.

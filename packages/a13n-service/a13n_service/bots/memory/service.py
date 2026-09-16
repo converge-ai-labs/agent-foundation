@@ -11,11 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from a13n_service.application_errors import ErrorCategory
+from a13n_service.bots.connectivity.domain import BotCheck
+from a13n_service.bots.connectivity.models import BotCheckRecord
 from a13n_service.collection_cursors import decode_collection_cursor, encode_collection_cursor
 from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.accounts.target_models import AccountTargetRecord
-from a13n_service.connectivity.bots.domain import BotCheck
-from a13n_service.connectivity.bots.models import BotCheckRecord
 from a13n_service.iam import AuthenticatedActor, WorkspaceAction, authorize_workspace
 from a13n_service.ids import new_object_id
 from a13n_service.memory.execution import MemoryProviderAccess, open_memory_backend
@@ -32,7 +32,6 @@ from .domain import (
     DocumentAccessReason,
     DocumentCollection,
     MemoryIndex,
-    MemorySettings,
     Scope,
     ScopeCollection,
     ScopeSettings,
@@ -41,6 +40,7 @@ from .domain import (
 from .enrollment import initialize_sharing
 from .models import DocumentRecord, ScopeRecord, SharingPolicyRecord
 from .queries import matching_policies, visible_documents
+from .settings import read_settings
 
 
 def visibility(authority: Authority, scope: ScopeRecord, *, include_shared: bool = True) -> ColumnElement[bool]:
@@ -142,9 +142,9 @@ class BotMemoryService:
             await authorize_workspace(
                 session, actor=actor, workspace_id=account.workspace_id, action=WorkspaceAction.bot_memory_share
             )
-            if account.memory_json is None:
+            settings = (await read_settings(session, account.id)).memory
+            if settings is None:
                 raise failure("bot_memory_disabled", "Select a Memory Provider first.", ErrorCategory.conflict)
-            settings = MemorySettings.model_validate(account.memory_json)
             target = await session.scalar(
                 select(AccountTargetRecord).where(
                     AccountTargetRecord.account_id == account_id,

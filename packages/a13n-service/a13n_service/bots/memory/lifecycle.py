@@ -3,7 +3,7 @@
 from sqlalchemy import delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from a13n_service.connectivity.bots.models import BotCheckRecord
+from a13n_service.bots.connectivity.models import BotCheckRecord
 
 from .models import ScopeRecord
 
@@ -16,7 +16,7 @@ async def invalidate_conversation(session: AsyncSession, account_id: str, extern
             ScopeRecord.account_id == account_id,
             ScopeRecord.external_conversation_id == external_id,
         )
-        .values(audience="unknown", version=ScopeRecord.version + 1)
+        .values(audience="unknown", version=ScopeRecord.version + 1, binding_floor=ScopeRecord.version + 1)
     )
     await session.execute(
         delete(BotCheckRecord).where(

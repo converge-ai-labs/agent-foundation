@@ -1,3 +1,4 @@
+import type { BotAccount } from "./account";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -7,7 +8,7 @@ import { MemorySettings } from "./memory-settings";
 
 const state = vi.hoisted(() => ({
   typesFailed: false,
-  http: { GET: vi.fn(), PATCH: vi.fn() },
+  http: { GET: vi.fn(), PUT: vi.fn() },
 }));
 vi.mock("../../auth/context", () => ({
   useClient: () => ({ http: state.http }),
@@ -22,8 +23,9 @@ const account = {
   id: "acct_test",
   version: 3,
   workspace_id: "ws_test",
+  memoryVersion: 1,
   memory: { provider_id: "mp_legacy", timezone: "UTC" },
-} as Schema["Account"];
+} as BotAccount;
 const response = (data: unknown) => ({
   data,
   response: new Response(null, { status: 200 }),
@@ -54,7 +56,7 @@ beforeEach(() => {
       next_cursor: null,
     });
   });
-  state.http.PATCH.mockResolvedValue(response(account));
+  state.http.PUT.mockResolvedValue(response(account));
 });
 afterEach(cleanup);
 async function setup() {
@@ -97,8 +99,8 @@ it("blocks unsupported bindings and saves a declared document provider", async (
   await userEvent.click(screen.getByRole("option", { name: "Documents" }));
   await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
   await waitFor(() => expect(reload).toHaveBeenCalledOnce());
-  expect(state.http.PATCH).toHaveBeenCalledOnce();
-  expect(state.http.PATCH.mock.calls[0][1].body.memory.provider_id).toBe(
+  expect(state.http.PUT).toHaveBeenCalledOnce();
+  expect(state.http.PUT.mock.calls[0][1].body.memory.provider_id).toBe(
     "mp_documents",
   );
 });
@@ -121,6 +123,6 @@ it("lets an administrator disable memory when capability discovery fails", async
   ).toBeNull();
   await userEvent.click(screen.getByRole("option", { name: "Disabled" }));
   await userEvent.click(screen.getByRole("button", { name: "Save changes" }));
-  await waitFor(() => expect(state.http.PATCH).toHaveBeenCalledOnce());
-  expect(state.http.PATCH.mock.calls[0][1].body.memory).toBeNull();
+  await waitFor(() => expect(state.http.PUT).toHaveBeenCalledOnce());
+  expect(state.http.PUT.mock.calls[0][1].body.memory).toBeNull();
 });

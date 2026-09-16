@@ -39,6 +39,7 @@ from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.lifecycle_support import test_lifecycle_writer
+from tests.memory.selection_support import ordinary_memory
 
 from .conftest import AGENT_ID, AGENT_REVISION_ID, NOW, ORGANIZATION_ID, effective_agent_config
 from .test_acceptance import _accepted_run
@@ -508,6 +509,7 @@ async def test_waiting_outcome_rolls_delivery_and_feedback_binds_it_to_successor
         RunStateStore(interaction_object_store),
         RunPayloadStore(interaction_object_store),
         InlineHookValidator(EndpointPolicy()),
+        bindings=ordinary_memory(interaction_sessions),
         clock=lambda: NOW + timedelta(seconds=5),
         lifecycle=test_lifecycle_writer(),
     ).advance_thread(

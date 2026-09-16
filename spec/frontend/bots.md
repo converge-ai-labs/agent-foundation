@@ -221,3 +221,7 @@ Memory management is owned by [Bot Memory](bot-memory.md). Backend content and c
 - [Messaging Reception](../a13n-service/40-connectivity/02-messaging-ingress.md)
 - [Console](console.md)
 - [Bot Memory](bot-memory.md)
+
+## Memory Settings API Boundary
+
+Console reads and updates the [Bot-owned settings resource](../a13n-service/42-memory.md#bot-memory-configuration), using its `expected_version` independently of Account version. Bot summaries supply separate Account and Memory settings projections. Existing-account selection uses the Bot collection endpoint. Generic Application Account forms neither read nor write memory configuration. This changes API ownership without changing the administrator-only management boundary or document browsing behavior.

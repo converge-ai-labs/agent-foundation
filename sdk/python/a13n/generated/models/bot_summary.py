@@ -11,6 +11,7 @@ from ..models.bot_summary_test_stage_type_0 import BotSummaryTestStageType0
 
 if TYPE_CHECKING:
     from ..models.account import Account
+    from ..models.account_memory_settings import AccountMemorySettings
 
 
 T = TypeVar("T", bound="BotSummary")
@@ -25,6 +26,7 @@ class BotSummary:
         configured_target_count (int):
         external_organization_id (None | str):
         external_organization_name (None | str):
+        memory_settings (AccountMemorySettings):
         setup_condition (BotSummarySetupCondition):
         test_observed_at (datetime.datetime | None):
         test_stage (BotSummaryTestStageType0 | None):
@@ -35,6 +37,7 @@ class BotSummary:
     configured_target_count: int
     external_organization_id: str | None
     external_organization_name: str | None
+    memory_settings: AccountMemorySettings
     setup_condition: BotSummarySetupCondition
     test_observed_at: datetime.datetime | None
     test_stage: BotSummaryTestStageType0 | None
@@ -55,6 +58,8 @@ class BotSummary:
 
         external_organization_name: str | None
         external_organization_name = self.external_organization_name
+
+        memory_settings = self.memory_settings.to_dict()
 
         setup_condition = self.setup_condition.value
 
@@ -79,6 +84,7 @@ class BotSummary:
                 "configured_target_count": configured_target_count,
                 "external_organization_id": external_organization_id,
                 "external_organization_name": external_organization_name,
+                "memory_settings": memory_settings,
                 "setup_condition": setup_condition,
                 "test_observed_at": test_observed_at,
                 "test_stage": test_stage,
@@ -90,6 +96,7 @@ class BotSummary:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         from ..models.account import Account
+        from ..models.account_memory_settings import AccountMemorySettings
 
         d = dict(src_dict)
         account = Account.from_dict(d.pop("account"))
@@ -124,6 +131,8 @@ class BotSummary:
             return cast(str | None, data)
 
         external_organization_name = _parse_external_organization_name(d.pop("external_organization_name"))
+
+        memory_settings = AccountMemorySettings.from_dict(d.pop("memory_settings"))
 
         setup_condition = BotSummarySetupCondition(d.pop("setup_condition"))
 
@@ -163,6 +172,7 @@ class BotSummary:
             configured_target_count=configured_target_count,
             external_organization_id=external_organization_id,
             external_organization_name=external_organization_name,
+            memory_settings=memory_settings,
             setup_condition=setup_condition,
             test_observed_at=test_observed_at,
             test_stage=test_stage,

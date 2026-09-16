@@ -27,10 +27,12 @@ async def setup(journey, platform, *, agent=None):
             **account_config(platform),
             "receive_enabled": False,
             "reception_scope": "configured_targets",
-            "memory": {"provider_id": provider["id"]},
         },
     )
     base = f"/api/v1/application-accounts/{account['id']}"
+    await journey.live.request(
+        "PUT", base + "/bot/memory-settings", json={"expected_version": 0, "memory": {"provider_id": provider["id"]}}
+    )
     target = await journey.post(base + "/targets", {"target_kind": "conversation", "external_target_id": conversation})
     check = await journey.post(
         base + "/bot/checks",

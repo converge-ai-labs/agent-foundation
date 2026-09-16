@@ -61,9 +61,9 @@ async def test_bot_memory_reaches_retried_and_delegated_execution(request, mode)
                 },
             )
             await live.request(
-                "PATCH",
-                base,
-                json={"expected_version": account["version"], "memory": {"provider_id": replacement["id"]}},
+                "PUT",
+                base + "/bot/memory-settings",
+                json={"expected_version": 1, "memory": {"provider_id": replacement["id"]}},
             )
             changed = True
             await live.request("POST", f"/__live__/cases/{case['case_id']}/release")
@@ -88,10 +88,10 @@ async def test_bot_memory_reaches_retried_and_delegated_execution(request, mode)
                 assert document["id"] in memory_index(observed[0]["body"])
         finally:
             if changed:
-                current = await live.request("GET", base)
+                current = await live.request("GET", base + "/bot/memory-settings")
                 await live.request(
-                    "PATCH",
-                    base,
+                    "PUT",
+                    base + "/bot/memory-settings",
                     json={"expected_version": current["version"], "memory": {"provider_id": provider["id"]}},
                 )
             removed = await live.http.delete(path + "/documents/" + document["id"])

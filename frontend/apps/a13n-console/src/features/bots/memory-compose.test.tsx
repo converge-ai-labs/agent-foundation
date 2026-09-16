@@ -1,3 +1,4 @@
+import type { BotAccount } from "./account";
 import { ApiError } from "@converge.ai/a13n";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
@@ -19,8 +20,9 @@ vi.mock("react-i18next", () => ({
 }));
 const account = {
   id: "acct_test",
+  memoryVersion: 1,
   memory: { provider_id: "mp_test" },
-} as Schema["Account"];
+} as BotAccount;
 const source = {
   id: "mdoc_source",
   scope_id: "mscope_source",

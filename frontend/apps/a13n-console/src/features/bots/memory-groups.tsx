@@ -1,3 +1,4 @@
+import type { BotAccount } from "./account";
 import { Checkbox, Label } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -6,7 +7,7 @@ import { allPages, data, type Schema } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import styles from "./bots.module.css";
 
-export function useMemoryGroups(account: Schema["Account"], enabled = true) {
+export function useMemoryGroups(account: BotAccount, enabled = true) {
   const client = useClient();
   return useQuery({
     queryKey: [

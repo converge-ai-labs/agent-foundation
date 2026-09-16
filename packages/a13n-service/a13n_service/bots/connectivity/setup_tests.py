@@ -8,6 +8,7 @@ from sqlalchemy import case, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
+from a13n_service.bots.memory.settings import settings_version
 from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.accounts.queries import require_account
 from a13n_service.connectivity.accounts.target_models import AccountTargetRecord
@@ -78,7 +79,9 @@ def test_marker(text: str | None) -> str | None:
     return first.group() if first is not None and next(matches, None) is None else None
 
 
-def _project(record: BotTestRecord, account: AccountRecord, target: AccountTargetRecord | None) -> BotTest:
+def _project(
+    record: BotTestRecord, account: AccountRecord, target: AccountTargetRecord | None, current_settings_version: int
+) -> BotTest:
     return BotTest(
         **{
             name: getattr(record, name)
@@ -87,6 +90,7 @@ def _project(record: BotTestRecord, account: AccountRecord, target: AccountTarge
         },
         stale=(
             account.version != record.account_version
+            or record.settings_version != current_settings_version
             or account.credential_generation != record.credential_generation
             or account.status != "active"
             or not account.receive_enabled
@@ -148,6 +152,7 @@ async def create_bot_test(
             workspace_id=account.workspace_id,
             account_id=account.id,
             account_version=account.version,
+            settings_version=await settings_version(database, account.id),
             credential_generation=account.credential_generation,
             target_id=target.id,
             target_version=target.version,
@@ -157,7 +162,7 @@ async def create_bot_test(
         )
         database.add(record)
         await database.flush()
-        resource = _project(record, account, target)
+        resource = _project(record, account, target, await settings_version(database, account.id))
         record_command(
             database,
             actor=actor,
@@ -231,7 +236,7 @@ async def get_bot_test(
                 )
             reply = reply_observation(evidence, reply_run, attempt, clock())
         return BotTestHistory(
-            latest=_project(record, account, target).model_copy(
+            latest=_project(record, account, target, await settings_version(database, account.id)).model_copy(
                 update={
                     "reply": reply,
                     "session_id": run.session_id if run else None,
@@ -261,6 +266,7 @@ async def record_test_admission(
             BotTestRecord.id == marker,
             BotTestRecord.account_id == account.id,
             BotTestRecord.account_version == account.version,
+            BotTestRecord.settings_version == await settings_version(database, account.id),
             BotTestRecord.credential_generation == account.credential_generation,
             BotTestRecord.target_id == configuration.target_id,
             BotTestRecord.target_version == configuration.target_version,
@@ -321,6 +327,7 @@ async def record_test_ignored(
             BotTestRecord.id == marker,
             BotTestRecord.account_id == account.id,
             BotTestRecord.account_version == account.version,
+            BotTestRecord.settings_version == await settings_version(database, account.id),
             BotTestRecord.credential_generation == account.credential_generation,
             BotTestRecord.target_id == target.id,
             BotTestRecord.target_version == target.version,
@@ -331,3 +338,9 @@ async def record_test_ignored(
         )
         .values(event_received_at=event.received_at, rejection_code=reason_code)
     )
+
+
+class SetupObservations:
+    ignored = staticmethod(record_test_ignored)
+    admitted = staticmethod(record_test_admission)
+    rejected = staticmethod(record_test_rejection)

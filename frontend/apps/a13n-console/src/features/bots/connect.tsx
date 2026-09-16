@@ -250,10 +250,10 @@ function ExistingAccounts() {
     enabled: show,
     queryFn: ({ signal }) =>
       client.http
-        .GET("/api/v1/workspaces/{workspace}/application-accounts", {
+        .GET("/api/v1/workspaces/{workspace}/bots", {
           params: {
             path: { workspace: workspace.id },
-            query: { bots_only: true, limit: 20 },
+            query: { limit: 20 },
           },
           signal,
         })
@@ -275,7 +275,7 @@ function ExistingAccounts() {
             <Loading />
           ) : (
             <ul className={styles.existing}>
-              {query.data?.items.map((item) => (
+              {query.data?.items.map(({ account: item }) => (
                 <li key={item.id}>
                   <Link to={`${basePath}/bots/${item.id}`}>{item.name}</Link>
                   <small>

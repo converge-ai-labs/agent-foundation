@@ -44,6 +44,7 @@ from a13n_service.interactions.outcomes import RunOutcomeError, RunOutcomeServic
 from a13n_service.storage import ObjectStoreError, short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
+from .acceptance import RunAcceptanceService
 from .access import authorize_interaction
 from .command_evidence import (
     command_identity,
@@ -64,8 +65,10 @@ class ActiveRunCommands:
         inbox: ThreadInboxStore,
         inputs: CommandInput,
         *,
+        acceptance: RunAcceptanceService,
         clock: Clock = utc_now,
     ) -> None:
+        self._acceptance = acceptance
         self._sessions = sessions
         self._states = states
         self._outcomes = outcomes
@@ -213,6 +216,7 @@ class ActiveRunCommands:
                 raise command_not_found() from error
 
         async def record_evidence(database: AsyncSession, receipt: SteerReceipt) -> None:
+            await self._acceptance.validate_in_session(database, receipt.run_id)
             try:
                 existing = await load_evidence(database, scope=scope, identity=identity, now=now)
             except IdempotencyConflict as error:
@@ -321,6 +325,7 @@ class ActiveRunCommands:
                     "The Run steer replay evidence is invalid.",
                     category=ErrorCategory.unavailable,
                 )
+            await self._acceptance.validate_in_session(database, run_id)
             steer_id = evidence.result_ref
             organization_id = run.organization_id
         try:

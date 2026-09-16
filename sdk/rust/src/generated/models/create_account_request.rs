@@ -40,14 +40,6 @@ pub struct CreateAccountRequest {
     )]
     pub input_batching: Option<Option<Box<models::InputBatchingPolicy>>>,
 
-    #[serde(
-        rename = "memory",
-        default,
-        with = "::serde_with::rust::double_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub memory: Option<Option<Box<models::MemorySettings>>>,
-
     #[serde(rename = "name")]
     pub name: String,
 
@@ -88,7 +80,6 @@ impl CreateAccountRequest {
             default_agent_id: None,
             execution_service_account_id: None,
             input_batching: None,
-            memory: None,
             name,
             provider_config,
             provider_config_version,

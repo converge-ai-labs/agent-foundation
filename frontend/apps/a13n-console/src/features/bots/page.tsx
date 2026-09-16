@@ -1,3 +1,4 @@
+import { botAccount } from "./account";
 import { Tabs, TabsList, TabsPanel, TabsTab } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
@@ -65,7 +66,7 @@ export function BotDetail() {
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
     );
   const summary = query.data,
-    account = summary.account;
+    account = botAccount(summary);
   if (
     account.workspace_id !== workspace.id ||
     !["slack", "lark"].includes(account.provider_key)

@@ -79,6 +79,8 @@ class WorkerAttempts:
         web_registry: WebProviderRegistry,
         configuration_drafts: ConfigurationDrafts | None = None,
     ) -> None:
+        if shared.memory_behaviors is None:
+            raise RuntimeError("Execution memory behavior composition is required")
         self._configuration_drafts = configuration_drafts
         self._shared = shared
         self._resources = execution
@@ -108,6 +110,7 @@ class WorkerAttempts:
             ThreadInboxStore(shared.storage.sessions, signals=self._signals),
             outcomes,
             lifecycle=shared.lifecycle,
+            bindings=shared.memory_behaviors,
         )
 
     async def run(
@@ -212,7 +215,7 @@ class WorkerAttempts:
                 subagent_capability=subagent_capability,
                 secrets=self._secrets,
                 web=self._web,
-                memory=self._shared.memories,
+                memory=self._shared.memory_behaviors,
                 configuration_capability=configuration_capability if self._configuration_drafts is not None else None,
             )
             projector = AttemptRunStreamProjector(self._stream, context)

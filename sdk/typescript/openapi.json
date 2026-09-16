@@ -123,16 +123,6 @@
               }
             ]
           },
-          "memory": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/MemorySettings"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "name": {
             "maxLength": 128,
             "minLength": 1,
@@ -257,6 +247,33 @@
         },
         "required": ["expected_version"],
         "title": "AccountCommandRequest",
+        "type": "object"
+      },
+      "AccountMemorySettings": {
+        "additionalProperties": false,
+        "properties": {
+          "account_id": {
+            "title": "Account Id",
+            "type": "string"
+          },
+          "memory": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemorySettings"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "version": {
+            "minimum": 0.0,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": ["account_id", "version", "memory"],
+        "title": "AccountMemorySettings",
         "type": "object"
       },
       "AccountProviderDefinition": {
@@ -2962,6 +2979,9 @@
             ],
             "title": "External Organization Name"
           },
+          "memory_settings": {
+            "$ref": "#/components/schemas/AccountMemorySettings"
+          },
           "setup_condition": {
             "enum": [
               "disabled",
@@ -3008,6 +3028,7 @@
         },
         "required": [
           "account",
+          "memory_settings",
           "external_organization_id",
           "external_organization_name",
           "setup_condition",
@@ -5697,16 +5718,6 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/InputBatchingPolicy"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "memory": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/MemorySettings"
               },
               {
                 "type": "null"
@@ -13287,6 +13298,29 @@
         "title": "ReplaceCredentialRequest",
         "type": "object"
       },
+      "ReplaceMemorySettings": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_version": {
+            "minimum": 0.0,
+            "title": "Expected Version",
+            "type": "integer"
+          },
+          "memory": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemorySettings"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": ["expected_version", "memory"],
+        "title": "ReplaceMemorySettings",
+        "type": "object"
+      },
       "ReplaceSharingPolicy": {
         "additionalProperties": false,
         "properties": {
@@ -18322,16 +18356,6 @@
               }
             ]
           },
-          "memory": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/MemorySettings"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "name": {
             "anyOf": [
               {
@@ -21113,6 +21137,182 @@
         ],
         "summary": "Discover Bot Conversations",
         "tags": ["bots"]
+      }
+    },
+    "/api/v1/application-accounts/{account_id}/bot/memory-settings": {
+      "get": {
+        "operationId": "get_application_accounts_account_id_bot_memory_settings",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "title": "Account Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountMemorySettings"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Memory Settings",
+        "tags": ["bot-memory"]
+      },
+      "put": {
+        "operationId": "put_application_accounts_account_id_bot_memory_settings",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "account_id",
+            "required": true,
+            "schema": {
+              "title": "Account Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReplaceMemorySettings"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AccountMemorySettings"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Update Memory Settings",
+        "tags": ["bot-memory"]
       }
     },
     "/api/v1/application-accounts/{account_id}/bot/replies": {
@@ -45001,16 +45201,6 @@
                 }
               ],
               "title": "Cursor"
-            }
-          },
-          {
-            "in": "query",
-            "name": "bots_only",
-            "required": false,
-            "schema": {
-              "default": false,
-              "title": "Bots Only",
-              "type": "boolean"
             }
           }
         ],

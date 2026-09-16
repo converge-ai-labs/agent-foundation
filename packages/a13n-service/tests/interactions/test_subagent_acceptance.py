@@ -39,6 +39,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.lifecycle_support import test_lifecycle_writer
+from tests.memory.selection_support import ordinary_memory
 
 from .conftest import (
     AGENT_ID,
@@ -127,6 +128,7 @@ async def test_child_acceptance_is_fenced_atomic_and_non_idempotent(
         interaction_sessions,
         states,
         RunPayloadStore(interaction_object_store),
+        bindings=ordinary_memory(interaction_sessions),
         clock=lambda: NOW + timedelta(seconds=3),
         lifecycle=test_lifecycle_writer(),
     )
@@ -238,6 +240,7 @@ async def test_child_acceptance_rejects_stale_fence_before_publishing_state(
             interaction_sessions,
             states,
             RunPayloadStore(interaction_object_store),
+            bindings=ordinary_memory(interaction_sessions),
             clock=lambda: NOW + timedelta(seconds=2),
             lifecycle=test_lifecycle_writer(),
         ).accept(prepared, authority)
@@ -278,6 +281,7 @@ async def test_child_acceptance_reauthorizes_persisted_parent_principal(
         interaction_sessions,
         states,
         RunPayloadStore(interaction_object_store),
+        bindings=ordinary_memory(interaction_sessions),
         clock=lambda: NOW + timedelta(seconds=2),
         lifecycle=test_lifecycle_writer(),
     )
@@ -329,6 +333,7 @@ async def test_concurrent_child_acceptance_keeps_distinct_relationships_on_postg
         sessions,
         states,
         RunPayloadStore(interaction_object_store),
+        bindings=ordinary_memory(sessions),
         clock=lambda: NOW + timedelta(seconds=2),
         lifecycle=test_lifecycle_writer(),
     )
@@ -381,6 +386,7 @@ async def test_completed_child_can_resume_as_linked_continuation(
         interaction_sessions,
         states,
         RunPayloadStore(interaction_object_store),
+        bindings=ordinary_memory(interaction_sessions),
         clock=lambda: NOW + timedelta(seconds=2),
         lifecycle=test_lifecycle_writer(),
     )
@@ -604,6 +610,7 @@ async def _accept_parent(
         states,
         RunPayloadStore(objects),
         _inline_hooks(),
+        bindings=ordinary_memory(sessions),
         clock=lambda: NOW,
         lifecycle=test_lifecycle_writer(),
     ).accept_new_thread(

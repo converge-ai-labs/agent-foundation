@@ -125,3 +125,9 @@ One final distribution graph creates a serialization point for otherwise indepen
 09. Worker-only and Connectivity-only processes check the expected distribution head and never mutate it.
 10. Unknown, unsupported-distribution, or failed migration state blocks readiness and is never bypassed by automatic stamping.
 11. Generation, verification, migration, and readiness consume the same artifact-fixed distribution metadata and revision graph.
+
+## Execution Memory and Application Bindings
+
+[Memory](42-memory.md#execution-memory-selection) owns `run_memory_selections`, keyed by Run ID with trusted behavior key and binding version. Bot owns `bot_account_settings` and `bot_run_memory_bindings`, with typed Account, Provider and conversation-scope references; ordinary Run and Account rows contain no Bot Memory JSON. Bot setup and reply evidence also retain the independent settings version.
+
+The coordinated cutover preserves Account, Run, scope and document IDs. Generated migrations copy all non-null prior bindings, including explicitly disabled bindings, validate ownership and required fields, and backfill ordinary selections for remaining Runs before dropping superseded columns. Malformed bindings abort the migration. No migration performs Provider I/O. Old and new writers must not run concurrently across this contract change. Stop admissions and drain active Attempts/native sends before migration; queued and waiting work remains resumable. Downtime and large-table backfill costs must be measured for the deployment. Downgrade requires the tested reverse migration or a matching backup, not merely an old binary. Once conversation revocation fences have been recorded, downgrade to a schema without those fences is rejected; retain the newer schema and roll forward so old Runs cannot regain revoked access.

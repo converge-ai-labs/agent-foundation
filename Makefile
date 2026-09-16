@@ -760,3 +760,7 @@ dev-state-check: sync ## Validate local state tools and seed journeys in disposa
 	@uv run --locked ruff format --check dev/service
 	@uv run --locked pyright dev/service
 	@uv run --locked pytest dev/service/tests -q --tb=short
+
+.PHONY: db-migrate-core-verification
+db-migrate-core-verification: sync ## Generate the isolated Bot-free verification schema
+	@bash dev/service/db-migrate.sh "$(msg)" core-verification

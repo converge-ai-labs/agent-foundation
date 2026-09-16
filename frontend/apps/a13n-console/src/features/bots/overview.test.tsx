@@ -46,6 +46,7 @@ const account: Schema["Account"] = {
 };
 const summary = {
   account,
+  memory_settings: { account_id: account.id, version: 0, memory: null },
   setup_condition: "receiving",
   configured_target_count: 2,
   external_organization_id: "T1",
@@ -168,6 +169,10 @@ it("provides recovery links for incomplete setup without hiding independent memo
       receive_enabled: false,
       default_agent_id: null,
       execution_service_account_id: null,
+    },
+    memory_settings: {
+      account_id: account.id,
+      version: 1,
       memory: {
         provider_id: "mem_test",
         use_memory: false,

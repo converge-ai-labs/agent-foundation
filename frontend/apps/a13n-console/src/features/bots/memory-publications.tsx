@@ -1,3 +1,4 @@
+import type { BotAccount } from "./account";
 import { Button, ModalFrame } from "a13n-ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -12,7 +13,7 @@ import { refreshMemory } from "./memory-actions";
 import { GroupPicker, useMemoryGroups } from "./memory-groups";
 import styles from "./bots.module.css";
 
-type Props = { account: Schema["Account"]; scopeId: string; sourceId?: string };
+type Props = { account: BotAccount; scopeId: string; sourceId?: string };
 export function MemoryPublications(props: Props) {
   const [open, setOpen] = useState(false),
     { t } = useTranslation();
@@ -121,7 +122,7 @@ function PublicationDetail({
   entry,
   onWithdraw,
 }: {
-  account: Schema["Account"];
+  account: BotAccount;
   scopeId: string;
   entry: Schema["DocumentEntry"];
   onWithdraw: () => void;

@@ -13,7 +13,6 @@ if TYPE_CHECKING:
     from ..models.create_account_request_provider_config import CreateAccountRequestProviderConfig
     from ..models.create_account_request_provider_policy_type_0 import CreateAccountRequestProviderPolicyType0
     from ..models.input_batching_policy import InputBatchingPolicy
-    from ..models.memory_settings import MemorySettings
 
 
 T = TypeVar("T", bound="CreateAccountRequest")
@@ -31,7 +30,6 @@ class CreateAccountRequest:
         default_agent_id (None | str | Unset):
         execution_service_account_id (None | str | Unset):
         input_batching (InputBatchingPolicy | None | Unset):
-        memory (MemorySettings | None | Unset):
         provider_policy (CreateAccountRequestProviderPolicyType0 | None | Unset):
         receive_enabled (bool | Unset):
         reception_scope (ReceptionScope | Unset):
@@ -45,7 +43,6 @@ class CreateAccountRequest:
     default_agent_id: str | Unset | None = UNSET
     execution_service_account_id: str | Unset | None = UNSET
     input_batching: InputBatchingPolicy | Unset | None = UNSET
-    memory: MemorySettings | Unset | None = UNSET
     provider_policy: CreateAccountRequestProviderPolicyType0 | Unset | None = UNSET
     receive_enabled: bool | Unset = UNSET
     reception_scope: ReceptionScope | Unset = UNSET
@@ -53,7 +50,6 @@ class CreateAccountRequest:
     def to_dict(self) -> dict[str, Any]:
         from ..models.create_account_request_provider_policy_type_0 import CreateAccountRequestProviderPolicyType0
         from ..models.input_batching_policy import InputBatchingPolicy
-        from ..models.memory_settings import MemorySettings
 
         credentials = self.credentials.to_dict()
 
@@ -84,14 +80,6 @@ class CreateAccountRequest:
             input_batching = self.input_batching.to_dict()
         else:
             input_batching = self.input_batching
-
-        memory: dict[str, Any] | Unset | None
-        if isinstance(self.memory, Unset):
-            memory = UNSET
-        elif isinstance(self.memory, MemorySettings):
-            memory = self.memory.to_dict()
-        else:
-            memory = self.memory
 
         provider_policy: dict[str, Any] | Unset | None
         if isinstance(self.provider_policy, Unset):
@@ -124,8 +112,6 @@ class CreateAccountRequest:
             field_dict["execution_service_account_id"] = execution_service_account_id
         if input_batching is not UNSET:
             field_dict["input_batching"] = input_batching
-        if memory is not UNSET:
-            field_dict["memory"] = memory
         if provider_policy is not UNSET:
             field_dict["provider_policy"] = provider_policy
         if receive_enabled is not UNSET:
@@ -143,7 +129,6 @@ class CreateAccountRequest:
             CreateAccountRequestProviderPolicyType0,
         )
         from ..models.input_batching_policy import InputBatchingPolicy
-        from ..models.memory_settings import MemorySettings
 
         d = dict(src_dict)
         credentials = CreateAccountRequestCredentials.from_dict(d.pop("credentials"))
@@ -191,23 +176,6 @@ class CreateAccountRequest:
 
         input_batching = _parse_input_batching(d.pop("input_batching", UNSET))
 
-        def _parse_memory(data: object) -> MemorySettings | Unset | None:
-            if data is None:
-                return data
-            if isinstance(data, Unset):
-                return data
-            try:
-                if not isinstance(data, dict):
-                    raise TypeError()
-                memory_type_0 = MemorySettings.from_dict(data)
-
-                return memory_type_0
-            except (TypeError, ValueError, AttributeError, KeyError):
-                pass
-            return cast(MemorySettings | Unset | None, data)
-
-        memory = _parse_memory(d.pop("memory", UNSET))
-
         def _parse_provider_policy(data: object) -> CreateAccountRequestProviderPolicyType0 | Unset | None:
             if data is None:
                 return data
@@ -243,7 +211,6 @@ class CreateAccountRequest:
             default_agent_id=default_agent_id,
             execution_service_account_id=execution_service_account_id,
             input_batching=input_batching,
-            memory=memory,
             provider_policy=provider_policy,
             receive_enabled=receive_enabled,
             reception_scope=reception_scope,

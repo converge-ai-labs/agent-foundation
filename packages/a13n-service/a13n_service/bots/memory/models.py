@@ -53,6 +53,7 @@ class ScopeRecord(Base):
     settings_json: Mapped[dict[str, object]] = mapped_column(JSON)
     version: Mapped[int] = mapped_column(Integer, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    binding_floor: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     sharing_initialized: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
 
     def to_resource(self) -> Scope:

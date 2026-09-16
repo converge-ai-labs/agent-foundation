@@ -5,10 +5,10 @@ from datetime import timedelta
 
 import httpx2
 import pytest
+from a13n_service.bots.connectivity.models import BotReplyRecord
+from a13n_service.bots.connectivity.replies import BotReplyObserver
+from a13n_service.bots.connectivity.reply_queries import list_bot_replies
 from a13n_service.connectivity.accounts.models import AccountRecord
-from a13n_service.connectivity.bots.models import BotReplyRecord
-from a13n_service.connectivity.bots.replies import BotReplyObserver
-from a13n_service.connectivity.bots.reply_queries import list_bot_replies
 from a13n_service.connectivity.http import ConnectivityHttpError
 from a13n_service.connectivity.native_context import InboundRunContext
 from a13n_service.connectivity.providers.registry import require_native_provider
@@ -256,7 +256,9 @@ async def test_worker_native_capability_wires_attempt_to_durable_observer(reply_
     from unittest.mock import Mock
 
     from a13n_harness import AgentSpec, HarnessBuilder
-    from a13n_service.connectivity import execution, native
+    from a13n_service.bots.connectivity import replies
+    from a13n_service.bots.connectivity.replies import ReplyObservations
+    from a13n_service.connectivity import execution
     from a13n_service.connectivity.connectors.registry import ConnectorProviderRegistry
     from a13n_service.connectivity.execution import ExternalToolRuntime
     from a13n_service.connectivity.mcp.refresh import OAuthCredentialRefresh
@@ -274,7 +276,7 @@ async def test_worker_native_capability_wires_attempt_to_durable_observer(reply_
         run = (await database.get(RunRecord, RUN_ID)).to_resource()
     await prepare_permissions(sessions, run, attempt)
     monkeypatch.setattr(execution, "utc_now", lambda: NOW)
-    monkeypatch.setattr(native, "BotReplyObserver", partial(BotReplyObserver, clock=lambda: NOW))
+    monkeypatch.setattr(replies, "BotReplyObserver", partial(BotReplyObserver, clock=lambda: NOW))
     policy = EndpointPolicy()
     calls = []
 
@@ -307,6 +309,7 @@ async def test_worker_native_capability_wires_attempt_to_durable_observer(reply_
             policy,
             http,
             Mock(spec=OAuthCredentialRefresh),
+            observations=ReplyObservations(sessions),
         )
         async with runtime.capabilities(lambda: attempt) as capabilities:
             harness = HarnessBuilder().build(
