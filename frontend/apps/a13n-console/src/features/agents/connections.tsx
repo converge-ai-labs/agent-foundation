@@ -10,7 +10,6 @@ import {
   Input,
   Label,
   Spinner,
-  resolveBrand,
 } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
 import { useState, type Dispatch, type SetStateAction } from "react";
@@ -22,6 +21,7 @@ import { data, type Schema } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import type { useAgentChoices } from "./choices";
 import type { AgentConfig } from "./configuration";
+import { MCPConnectionIcon } from "../connections/mcp-icon";
 import { EditorSection } from "./section";
 import { ToolPermissions, type PermissionChoice } from "./tool-permissions";
 import styles from "./agents.module.css";
@@ -44,13 +44,8 @@ function ConnectionBrandIcon({ connection }: { connection: Connection }) {
       {connection.source.kind === "connector" ? (
         <BrandIcon alias={connection.source.connector_key} size={18} />
       ) : (
-        <BrandIcon
+        <MCPConnectionIcon
           endpoint={connection.source.endpoint_url}
-          identity={
-            resolveBrand({ endpoint: connection.source.endpoint_url })
-              ? undefined
-              : "mcp"
-          }
           size={18}
         />
       )}

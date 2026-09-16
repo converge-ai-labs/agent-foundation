@@ -30,6 +30,7 @@ import styles from "../../shared/shared.module.css";
 import { ConnectionSetup } from "../connectors/setup";
 import { MCPAuthorization } from "../mcp/authorization";
 import { MCPTools } from "../mcp/tools";
+import { MCPConnectionIcon } from "./mcp-icon";
 
 export function ConnectionDetails({
   connectionId,
@@ -83,18 +84,17 @@ export function ConnectionDetails({
       size="lg"
       title={
         <span className="flex min-w-0 items-center gap-3">
-          <BrandIcon
-            alias={
-              query.data?.source.kind === "connector"
-                ? query.data.source.connector_key
-                : undefined
-            }
-            endpoint={
-              query.data?.source.kind === "mcp"
-                ? query.data.source.endpoint_url
-                : undefined
-            }
-          />
+          {query.data?.source.kind === "mcp" ? (
+            <MCPConnectionIcon endpoint={query.data.source.endpoint_url} />
+          ) : (
+            <BrandIcon
+              alias={
+                query.data?.source.kind === "connector"
+                  ? query.data.source.connector_key
+                  : undefined
+              }
+            />
+          )}
           <ResourceModalTitle
             name={query.data?.name ?? t("Connection")}
             id={connectionId}
