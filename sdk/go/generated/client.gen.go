@@ -4619,14 +4619,16 @@ type ConfigurationSessionCollection struct {
 
 // ConfigurationSessionView defines model for ConfigurationSessionView.
 type ConfigurationSessionView struct {
-	ConfigurationDraftId string    `json:"configuration_draft_id"`
-	CreatedAt            time.Time `json:"created_at"`
-	Id                   string    `json:"id"`
-	OrganizationId       string    `json:"organization_id"`
-	OwnerUserId          string    `json:"owner_user_id"`
-	RootThreadId         string    `json:"root_thread_id"`
-	UpdatedAt            time.Time `json:"updated_at"`
-	WorkspaceId          string    `json:"workspace_id"`
+	ConfigurationDraftId string                    `json:"configuration_draft_id"`
+	CreatedAt            time.Time                 `json:"created_at"`
+	HasRuns              *bool                     `json:"has_runs,omitempty"`
+	Id                   string                    `json:"id"`
+	OrganizationId       string                    `json:"organization_id"`
+	OwnerUserId          string                    `json:"owner_user_id"`
+	RootThreadId         string                    `json:"root_thread_id"`
+	Title                nullable.Nullable[string] `json:"title,omitempty"`
+	UpdatedAt            time.Time                 `json:"updated_at"`
+	WorkspaceId          string                    `json:"workspace_id"`
 }
 
 // ConfigurationThreadCollection defines model for ConfigurationThreadCollection.
@@ -5800,7 +5802,6 @@ type LifecycleEvent struct {
 	ProjectionAttempts       int                            `json:"projection_attempts"`
 	ProjectionError          nullable.Nullable[SafeFailure] `json:"projection_error,omitempty"`
 	ProjectionLeaseExpiresAt nullable.Nullable[time.Time]   `json:"projection_lease_expires_at,omitempty"`
-	ProjectionLeaseOwner     nullable.Nullable[string]      `json:"projection_lease_owner,omitempty"`
 	ProjectionNextAttemptAt  nullable.Nullable[time.Time]   `json:"projection_next_attempt_at,omitempty"`
 	ProjectionState          LifecycleProjectionState       `json:"projection_state"`
 	ResourceSeq              int                            `json:"resource_seq"`

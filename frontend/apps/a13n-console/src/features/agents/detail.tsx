@@ -4,6 +4,7 @@ import {
   ClockCounterClockwiseIcon,
   PencilSimpleIcon,
   PlayIcon,
+  SparkleIcon,
 } from "@phosphor-icons/react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -203,6 +204,7 @@ export function AgentDetail() {
                 navigate(`${basePath}/configuration/new?agent=${agent.id}`)
               }
             >
+              <SparkleIcon size={16} aria-hidden="true" />
               {t("Configure with assistant")}
             </Button>
           )}

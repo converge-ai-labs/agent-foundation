@@ -14,6 +14,8 @@ from pydantic import Field, JsonValue, StringConstraints, ValidationError
 from a13n_service.agents.domain import AgentConfig, StrictModel
 from a13n_service.application_errors import ApplicationError, ErrorCategory
 
+from .errors import validation_issues
+
 PathPart = Annotated[str, StringConstraints(min_length=1, max_length=128)]
 ConfigPath = Annotated[tuple[PathPart, ...], Field(max_length=16)]
 
@@ -92,4 +94,9 @@ def edit_config(config: AgentConfig | None, operations: tuple[Operation, ...]) -
         return AgentConfig.model_validate(candidate)
     except ValidationError as error:
         # Validation inputs and exception text may contain credentials or prompts.
-        raise invalid_edit("The complete candidate does not satisfy the Agent configuration contract.") from error
+        raise ApplicationError(
+            "configuration_edit_invalid",
+            "The complete candidate does not satisfy the Agent configuration contract.",
+            category=ErrorCategory.invalid_input,
+            details={"issues": validation_issues(error)},
+        ) from error

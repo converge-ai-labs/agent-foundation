@@ -118,10 +118,11 @@ class LifecycleEvent(_StrictModel):
     actor_id: ResourceId | None = None
     occurred_at: UtcDateTime
     created_at: UtcDateTime
+
     projection_state: LifecycleProjectionState
     projection_attempts: int = Field(ge=0)
     projection_next_attempt_at: UtcDateTime | None = None
-    projection_lease_owner: str | None = None
+    projection_lease_owner: str | None = Field(default=None, exclude=True)
     projection_lease_expires_at: UtcDateTime | None = None
     projected_at: UtcDateTime | None = None
     projection_error: SafeFailure | None = None

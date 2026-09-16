@@ -19,6 +19,9 @@ pub struct ConfigurationSessionView {
     #[serde(rename = "created_at")]
     pub created_at: chrono::DateTime<chrono::FixedOffset>,
 
+    #[serde(rename = "has_runs", skip_serializing_if = "Option::is_none")]
+    pub has_runs: Option<bool>,
+
     #[serde(rename = "id")]
     pub id: String,
 
@@ -30,6 +33,14 @@ pub struct ConfigurationSessionView {
 
     #[serde(rename = "root_thread_id")]
     pub root_thread_id: String,
+
+    #[serde(
+        rename = "title",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub title: Option<Option<String>>,
 
     #[serde(rename = "updated_at")]
     pub updated_at: chrono::DateTime<chrono::FixedOffset>,
@@ -52,10 +63,12 @@ impl ConfigurationSessionView {
         ConfigurationSessionView {
             configuration_draft_id,
             created_at,
+            has_runs: None,
             id,
             organization_id,
             owner_user_id,
             root_thread_id,
+            title: None,
             updated_at,
             workspace_id,
         }

@@ -82,14 +82,6 @@ pub struct LifecycleEvent {
     pub projection_lease_expires_at: Option<Option<chrono::DateTime<chrono::FixedOffset>>>,
 
     #[serde(
-        rename = "projection_lease_owner",
-        default,
-        with = "::serde_with::rust::double_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub projection_lease_owner: Option<Option<String>>,
-
-    #[serde(
         rename = "projection_next_attempt_at",
         default,
         with = "::serde_with::rust::double_option",
@@ -174,7 +166,6 @@ impl LifecycleEvent {
             projection_attempts,
             projection_error: None,
             projection_lease_expires_at: None,
-            projection_lease_owner: None,
             projection_next_attempt_at: None,
             projection_state,
             resource_seq,

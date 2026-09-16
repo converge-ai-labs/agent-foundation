@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import datetime
 from collections.abc import Mapping
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 from attrs import define as _attrs_define
+
+from ..types import UNSET, Unset
 
 T = TypeVar("T", bound="ConfigurationSessionView")
 
@@ -21,6 +23,8 @@ class ConfigurationSessionView:
         root_thread_id (str):
         updated_at (datetime.datetime):
         workspace_id (str):
+        has_runs (bool | Unset):
+        title (None | str | Unset):
     """
 
     configuration_draft_id: str
@@ -31,6 +35,8 @@ class ConfigurationSessionView:
     root_thread_id: str
     updated_at: datetime.datetime
     workspace_id: str
+    has_runs: bool | Unset = UNSET
+    title: str | Unset | None = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         configuration_draft_id = self.configuration_draft_id
@@ -49,6 +55,14 @@ class ConfigurationSessionView:
 
         workspace_id = self.workspace_id
 
+        has_runs = self.has_runs
+
+        title: str | Unset | None
+        if isinstance(self.title, Unset):
+            title = UNSET
+        else:
+            title = self.title
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update(
@@ -63,6 +77,10 @@ class ConfigurationSessionView:
                 "workspace_id": workspace_id,
             }
         )
+        if has_runs is not UNSET:
+            field_dict["has_runs"] = has_runs
+        if title is not UNSET:
+            field_dict["title"] = title
 
         return field_dict
 
@@ -85,6 +103,17 @@ class ConfigurationSessionView:
 
         workspace_id = d.pop("workspace_id")
 
+        has_runs = d.pop("has_runs", UNSET)
+
+        def _parse_title(data: object) -> str | Unset | None:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(str | Unset | None, data)
+
+        title = _parse_title(d.pop("title", UNSET))
+
         configuration_session_view = cls(
             configuration_draft_id=configuration_draft_id,
             created_at=created_at,
@@ -94,6 +123,8 @@ class ConfigurationSessionView:
             root_thread_id=root_thread_id,
             updated_at=updated_at,
             workspace_id=workspace_id,
+            has_runs=has_runs,
+            title=title,
         )
 
         return configuration_session_view

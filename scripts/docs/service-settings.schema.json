@@ -42,6 +42,26 @@
       "title": "AssetsSettings",
       "type": "object"
     },
+    "ConfigurationAssistantSettings": {
+      "additionalProperties": false,
+      "properties": {
+        "total_tokens_limit": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Total Tokens Limit"
+        }
+      },
+      "title": "ConfigurationAssistantSettings",
+      "type": "object"
+    },
     "ConnectivitySettings": {
       "additionalProperties": false,
       "properties": {
@@ -1797,6 +1817,9 @@
     },
     "memory": {
       "$ref": "#/$defs/MemorySettings"
+    },
+    "configuration_assistant": {
+      "$ref": "#/$defs/ConfigurationAssistantSettings"
     },
     "webhooks": {
       "$ref": "#/$defs/WebhooksSettings"

@@ -2,6 +2,7 @@ import {
   CaretDownIcon,
   FileArrowUpIcon,
   PlusIcon,
+  SparkleIcon,
 } from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -57,6 +58,7 @@ export function AgentCreationMenu() {
         </MenuTrigger>
         <MenuPopup align="end" className="min-w-48">
           <MenuItem onClick={() => navigate(`${basePath}/configuration/new`)}>
+            <SparkleIcon size={16} aria-hidden="true" />
             {t("Configure with assistant")}
           </MenuItem>
           <MenuItem onClick={() => navigate("new")}>

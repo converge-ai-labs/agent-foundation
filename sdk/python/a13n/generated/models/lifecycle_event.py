@@ -43,7 +43,6 @@ class LifecycleEvent:
         projected_at (datetime.datetime | None | Unset):
         projection_error (None | SafeFailure | Unset):
         projection_lease_expires_at (datetime.datetime | None | Unset):
-        projection_lease_owner (None | str | Unset):
         projection_next_attempt_at (datetime.datetime | None | Unset):
         run_attempt_id (None | str | Unset):
         session_id (None | str | Unset):
@@ -71,7 +70,6 @@ class LifecycleEvent:
     projected_at: datetime.datetime | Unset | None = UNSET
     projection_error: SafeFailure | Unset | None = UNSET
     projection_lease_expires_at: datetime.datetime | Unset | None = UNSET
-    projection_lease_owner: str | Unset | None = UNSET
     projection_next_attempt_at: datetime.datetime | Unset | None = UNSET
     run_attempt_id: str | Unset | None = UNSET
     session_id: str | Unset | None = UNSET
@@ -144,12 +142,6 @@ class LifecycleEvent:
         else:
             projection_lease_expires_at = self.projection_lease_expires_at
 
-        projection_lease_owner: str | Unset | None
-        if isinstance(self.projection_lease_owner, Unset):
-            projection_lease_owner = UNSET
-        else:
-            projection_lease_owner = self.projection_lease_owner
-
         projection_next_attempt_at: str | Unset | None
         if isinstance(self.projection_next_attempt_at, Unset):
             projection_next_attempt_at = UNSET
@@ -207,8 +199,6 @@ class LifecycleEvent:
             field_dict["projection_error"] = projection_error
         if projection_lease_expires_at is not UNSET:
             field_dict["projection_lease_expires_at"] = projection_lease_expires_at
-        if projection_lease_owner is not UNSET:
-            field_dict["projection_lease_owner"] = projection_lease_owner
         if projection_next_attempt_at is not UNSET:
             field_dict["projection_next_attempt_at"] = projection_next_attempt_at
         if run_attempt_id is not UNSET:
@@ -320,15 +310,6 @@ class LifecycleEvent:
 
         projection_lease_expires_at = _parse_projection_lease_expires_at(d.pop("projection_lease_expires_at", UNSET))
 
-        def _parse_projection_lease_owner(data: object) -> str | Unset | None:
-            if data is None:
-                return data
-            if isinstance(data, Unset):
-                return data
-            return cast(str | Unset | None, data)
-
-        projection_lease_owner = _parse_projection_lease_owner(d.pop("projection_lease_owner", UNSET))
-
         def _parse_projection_next_attempt_at(data: object) -> datetime.datetime | Unset | None:
             if data is None:
                 return data
@@ -395,7 +376,6 @@ class LifecycleEvent:
             projected_at=projected_at,
             projection_error=projection_error,
             projection_lease_expires_at=projection_lease_expires_at,
-            projection_lease_owner=projection_lease_owner,
             projection_next_attempt_at=projection_next_attempt_at,
             run_attempt_id=run_attempt_id,
             session_id=session_id,

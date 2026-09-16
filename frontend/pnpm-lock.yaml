@@ -47,6 +47,9 @@ importers:
       decimal.js-light:
         specifier: ^2.5.1
         version: 2.5.1
+      diff:
+        specifier: 8.0.4
+        version: 8.0.4
       fflate:
         specifier: ^0.8.3
         version: 0.8.3

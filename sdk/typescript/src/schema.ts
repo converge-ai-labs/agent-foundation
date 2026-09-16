@@ -5691,6 +5691,11 @@ export interface components {
        * Format: date-time
        */
       created_at: string;
+      /**
+       * Has Runs
+       * @default false
+       */
+      has_runs?: boolean;
       /** Id */
       id: string;
       /** Organization Id */
@@ -5699,6 +5704,8 @@ export interface components {
       owner_user_id: string;
       /** Root Thread Id */
       root_thread_id: string;
+      /** Title */
+      title?: string | null;
       /**
        * Updated At
        * Format: date-time
@@ -7555,8 +7562,6 @@ export interface components {
       projection_error?: components["schemas"]["SafeFailure"] | null;
       /** Projection Lease Expires At */
       projection_lease_expires_at?: string | null;
-      /** Projection Lease Owner */
-      projection_lease_owner?: string | null;
       /** Projection Next Attempt At */
       projection_next_attempt_at?: string | null;
       projection_state: components["schemas"]["LifecycleProjectionState"];

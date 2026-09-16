@@ -22,6 +22,7 @@ from a13n_service.run_stream import (
     RunStreamEntry,
     RunStreamReplayGap,
 )
+from a13n_service.run_stream.events import public_stream_event
 from a13n_service.storage import short_session
 
 
@@ -264,9 +265,8 @@ class NativeRunStreamService:
 
 
 def _sse_entry(entry: RunStreamEntry) -> bytes:
-    return (
-        f"id: {entry.stream_id}\nevent: {entry.event.event_type}\ndata: {entry.event.model_dump_json()}\n\n"
-    ).encode()
+    event = public_stream_event(entry.event)
+    return f"id: {entry.stream_id}\nevent: {event.event_type}\ndata: {event.model_dump_json()}\n\n".encode()
 
 
 def _sse_data(event_type: str, data: str) -> bytes:

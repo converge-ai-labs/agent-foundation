@@ -41,7 +41,7 @@ class AssistantDefinition(StrictModel):
     tools: tuple[str, ...] = Field(min_length=1, max_length=32)
     preferences: tuple[ModelPreference, ...] = Field(min_length=1, max_length=16)
     request_limit: int = Field(ge=1, le=100)
-    total_tokens_limit: int = Field(ge=1, le=1_000_000)
+    total_tokens_limit: int = Field(ge=1)
 
 
 class _DefinitionLoader(yaml.SafeLoader):
@@ -71,5 +71,8 @@ def parse_definition(content: bytes) -> AssistantDefinition:
         raise failure("configuration_definition_invalid", "The deployed assistant definition is invalid.") from error
 
 
-def load_definition() -> AssistantDefinition:
-    return parse_definition((ASSETS / "assistant.yaml").read_bytes())
+def load_definition(*, total_tokens_limit: int | None = None) -> AssistantDefinition:
+    definition = parse_definition((ASSETS / "assistant.yaml").read_bytes())
+    if total_tokens_limit is None:
+        return definition
+    return AssistantDefinition.model_validate({**definition.model_dump(), "total_tokens_limit": total_tokens_limit})

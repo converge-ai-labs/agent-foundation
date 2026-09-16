@@ -4701,6 +4701,11 @@
             "title": "Created At",
             "type": "string"
           },
+          "has_runs": {
+            "default": false,
+            "title": "Has Runs",
+            "type": "boolean"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -4716,6 +4721,17 @@
           "root_thread_id": {
             "title": "Root Thread Id",
             "type": "string"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
           },
           "updated_at": {
             "format": "date-time",
@@ -10107,17 +10123,6 @@
               }
             ],
             "title": "Projection Lease Expires At"
-          },
-          "projection_lease_owner": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Projection Lease Owner"
           },
           "projection_next_attempt_at": {
             "anyOf": [

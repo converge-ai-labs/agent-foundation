@@ -11,3 +11,11 @@ AgentConfig is a complete structured configuration. `model.model_key` selects an
 `subagents` is a named finite graph of existing Agent identities, optional exact versions, context, budgets and Environment policy. `subagent_mode` is `inline` or `async`. `client_tools`, `output_spec`, `retries` and optional `reviewer` retain their complete schema. Target lifecycle, default Environment, owner, version and system purpose are not editable configuration paths.
 
 For create mode, supply creation metadata with a name and optional description. For update mode, name and description remain business Agent metadata.
+
+## Enable Web search
+
+Set `toolsets.web.enabled` and `toolsets.web.tools.search.enabled` to true. In the same update, set `toolsets.web.tools.search.config` to `{"provider_id": "<authorized Web Provider ID>", "max_results": 5}`. Scrape uses `toolsets.web.tools.scrape.config.provider_id`. There is no `toolsets.web.config.web_provider_key`. Enabling search or scrape without its Provider ID fails validation; do not remove the Provider reference to isolate an enablement error.
+
+Omit `creation_metadata` entirely in update mode, including after the first application of a create draft. A retained creation metadata value in a read response does not make it editable.
+
+On a failed update, use the returned error code, field path, validation reason or operation index to correct the request. Validation issue paths are relative to config; operation indexes are zero-based. `extra_forbidden` means remove or relocate an unsupported field; `missing` means supply a required field. Consult the schema before retrying. For version/digest conflicts, reread the draft. Do not repeat unchanged invalid requests or guess by stripping required resource references.
