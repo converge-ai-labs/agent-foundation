@@ -5,12 +5,7 @@ import styles from "./bots.module.css";
 
 type Details = Pick<
   Schema["Document"],
-  | "owner_name"
-  | "access_reasons"
-  | "more_access_reasons"
-  | "correction_of"
-  | "publication_source_id"
-  | "shared"
+  "owner_name" | "access_reasons" | "correction_of" | "shared"
 >;
 
 export function MemoryProvenance({
@@ -33,26 +28,19 @@ export function MemoryProvenance({
       )}
       <ul>
         {(document.access_reasons ?? []).map((reason) => (
-          <li key={reason.policy_id ?? reason.kind}>
-            {reason.kind === "policy"
-              ? `${t("Shared through policy")}: ${reason.policy_name}`
-              : reason.kind === "publication"
-                ? t("This group received an approved publication.")
-                : t("This memory belongs to this group.")}
+          <li key={reason.kind}>
+            {reason.kind === "installation"
+              ? t(
+                  "The owning group makes its memory visible to all connected groups.",
+                )
+              : t("This memory belongs to this group.")}
           </li>
         ))}
       </ul>
-      {document.more_access_reasons && (
-        <p>
-          {t(
-            "Additional policies grant access. Review Sharing settings for the full policy list.",
-          )}
-        </p>
-      )}
       <p>
         {document.shared
           ? t(
-              "Shared memory is read-only. Access does not grant permission to modify, delete, or share it.",
+              "Shared memory is read-only. Only the owning group can delete it.",
             )
           : t("Saved memory is immutable. Corrections create a new document.")}
       </p>
@@ -63,14 +51,6 @@ export function MemoryProvenance({
             onClick={() => onOpen(document.correction_of!)}
           >
             {t("View corrected memory")}
-          </Button>
-        )}
-        {!document.shared && document.publication_source_id && (
-          <Button
-            variant="ghost"
-            onClick={() => onOpen(document.publication_source_id!)}
-          >
-            {t("View publication source")}
           </Button>
         )}
       </div>

@@ -186,9 +186,12 @@
 }
 .toolsetToolDescription {
   min-width: 0;
+  overflow: hidden;
   color: var(--a13n-secondary);
   font-size: 12px;
   line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .toolsetToolActions {
   display: flex;
@@ -296,13 +299,6 @@
   outline: 2px solid var(--a13n-focus);
   outline-offset: 2px;
 }
-.connectionRefresh {
-  flex: none;
-  color: var(--a13n-secondary);
-}
-.connectionRefresh:hover {
-  color: var(--a13n-text);
-}
 .connectionPickerList {
   max-height: 240px;
   overflow-y: auto;
@@ -338,12 +334,9 @@
   color: var(--a13n-secondary);
   font-size: 12px;
 }
-.connectionSearch {
-  padding: 12px 18px 4px 46px;
-}
 .connectionOptions {
   padding: 4px 18px 12px 46px;
-  border-top: 1px solid var(--a13n-border);
+  border-bottom: 1px solid var(--a13n-border);
 }
 .connectionOption {
   display: flex;

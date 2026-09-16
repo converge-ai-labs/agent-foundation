@@ -60,3 +60,27 @@ it("never loads an unsafe provider logo", () => {
   );
   expect(container.querySelector("img")).toBeNull();
 });
+
+it("uses the MCP icon when a remote endpoint has no known brand or usable logo", () => {
+  const { container } = render(
+    <BrandIcon
+      endpoint="https://mcp.zoom.us/mcp/zoom/streamable"
+      fallbackIdentity="mcp"
+    />,
+  );
+  expect(container.querySelector("img")?.src).toBe(brands.mcp.icon);
+});
+
+it("prefers an explicit remote logo before the MCP fallback", () => {
+  const { container } = render(
+    <BrandIcon
+      endpoint="https://search.parallel.ai/mcp"
+      logo="https://logos.example/parallel.svg"
+      fallbackIdentity="mcp"
+    />,
+  );
+  const logo = container.querySelector("img")!;
+  expect(logo.src).toBe("https://logos.example/parallel.svg");
+  fireEvent.error(logo);
+  expect(container.querySelector("img")?.src).toBe(brands.mcp.icon);
+});

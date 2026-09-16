@@ -38,6 +38,7 @@ import { ThreadDraft, values, type DraftCapture } from "./draft";
 import { ComposerEditor } from "./composer-editor";
 import { skillReferences, type LoadSkills } from "./skill-references";
 import styles from "./conversation.module.css";
+import { useResults } from "./results";
 import { commentReference, CommentReferenceContent } from "./comment-reference";
 import { previewInput, type LocalInput } from "./local-input";
 import type { OrderedInputPart } from "./inline-attachments";
@@ -262,6 +263,7 @@ export function submitContinuation(
   draft: ThreadDraft,
   transport: Transport,
   threadId: string,
+  prepare?: () => Promise<void>,
 ) {
   return submitDraft(
     draft,
@@ -275,6 +277,7 @@ export function submitContinuation(
     undefined,
     undefined,
     "Continue completing the previous task.",
+    prepare,
   );
 }
 
@@ -314,6 +317,7 @@ export function Composer({
   modelId?: string;
 }) {
   const draft = useDraft(threadId);
+  const { tracker: results } = useResults();
   const [preparing, setPreparing] = useState(false);
   const preparation = useRef<AbortController | null>(null);
   useEffect(() => () => preparation.current?.abort(), [threadId]);
@@ -519,7 +523,7 @@ export function Composer({
         loadSkills,
         controller.signal,
         undefined,
-        prepareThread || !draft.synchronized
+        prepareThread || results || !draft.synchronized
           ? async () => {
               if (prepareThread) {
                 await prepareThread();
@@ -533,6 +537,7 @@ export function Composer({
                   }),
                 );
               }
+              if (results) await results.beforeRun(threadId);
               // Explicit Send/Steer waits for the complete shared snapshot while
               // retaining ownership against other submission entry points.
               if (!draft.synchronized)

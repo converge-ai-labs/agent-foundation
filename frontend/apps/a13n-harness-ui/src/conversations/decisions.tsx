@@ -5,6 +5,7 @@ import { useTransport } from "../transport/context";
 import { ApiError, result, type Schema } from "../transport/client";
 import { ErrorNotice, TextField } from "../shell/ui";
 import styles from "./conversation.module.css";
+import { useResults } from "./results";
 
 type Response = Schema<"DecisionResponseBatch">["responses"][number];
 export function Decisions({
@@ -54,6 +55,7 @@ export function DecisionForm({
   reconcile: () => void;
 }) {
   const { client } = useTransport();
+  const { tracker: results } = useResults();
   const [responses, setResponses] = useState<Partial<Record<string, Response>>>(
     {},
   );
@@ -65,8 +67,9 @@ export function DecisionForm({
     if (expired) reconcile();
   }, [expired, reconcile]);
   const send = useMutation({
-    mutationFn: () =>
-      result(
+    mutationFn: async () => {
+      await results?.beforeRun(threadId);
+      return result(
         client.POST("/api/threads/{thread_id}/decisions", {
           params: { path: { thread_id: threadId } },
           body: {
@@ -76,7 +79,8 @@ export function DecisionForm({
             ),
           },
         }),
-      ),
+      );
+    },
     onSuccess: reconcile,
     onError: (error) => {
       if (!(error instanceof ApiError) || error.status >= 500) setUnknown(true);

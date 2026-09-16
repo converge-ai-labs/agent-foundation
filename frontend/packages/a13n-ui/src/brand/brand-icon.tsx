@@ -1,12 +1,15 @@
 import { CubeIcon } from "@phosphor-icons/react";
 import { useState } from "react";
-import { resolveBrand } from "./brands";
+import { resolveBrand, type Brand } from "./brands";
+
+type IconSource = { url: string; brand?: Brand };
 
 export interface BrandIconProps {
   identity?: string;
   alias?: string;
   endpoint?: string;
   logo?: string | null;
+  fallbackIdentity?: string;
   size?: number;
 }
 
@@ -15,13 +18,22 @@ export function BrandIcon({
   alias,
   endpoint,
   logo,
+  fallbackIdentity,
   size = 20,
 }: BrandIconProps) {
   const brand = resolveBrand({ identity, alias, endpoint });
+  const fallbackBrand = fallbackIdentity
+    ? resolveBrand({ identity: fallbackIdentity })
+    : undefined;
   const [failed, setFailed] = useState<readonly string[]>([]);
-  const src =
-    brand && !failed.includes(brand.icon) ? brand.icon : safeLogo(logo);
-  if (!src || failed.includes(src))
+  const providerLogo = safeLogo(logo);
+  const sources: (IconSource | undefined)[] = [
+    brand && { url: brand.icon, brand },
+    providerLogo ? { url: providerLogo } : undefined,
+    fallbackBrand && { url: fallbackBrand.icon, brand: fallbackBrand },
+  ];
+  const source = sources.find((item) => item && !failed.includes(item.url));
+  if (!source)
     return (
       <CubeIcon
         aria-hidden
@@ -29,8 +41,8 @@ export function BrandIcon({
         className="shrink-0 text-muted-foreground"
       />
     );
-  const branded = src === brand?.icon;
-  const darkIcon = branded ? brand.darkIcon : undefined;
+  const { url: src, brand: activeBrand } = source;
+  const darkIcon = activeBrand?.darkIcon;
   const props = {
     alt: "",
     width: size,
@@ -47,7 +59,7 @@ export function BrandIcon({
       <img
         {...props}
         src={src}
-        className={`size-full object-contain ${darkIcon ? "dark:hidden" : branded && brand.invertInDark ? "dark:invert" : ""}`}
+        className={`size-full object-contain ${darkIcon ? "dark:hidden" : activeBrand?.invertInDark ? "dark:invert" : ""}`}
       />
       {darkIcon && (
         <img

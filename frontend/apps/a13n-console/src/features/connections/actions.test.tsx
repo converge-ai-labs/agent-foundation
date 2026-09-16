@@ -8,6 +8,7 @@ import { ConnectionDetails } from "./editor";
 const http = vi.hoisted(() => ({
   GET: vi.fn(),
   POST: vi.fn(),
+  PATCH: vi.fn(),
   DELETE: vi.fn(),
 }));
 vi.mock("../../auth/context", () => ({ useClient: () => ({ http }) }));
@@ -25,6 +26,56 @@ vi.mock("../../shared/resource-modal-title", () => ({
 afterEach(() => {
   cleanup();
   vi.resetAllMocks();
+});
+
+it("submits a renamed Connection from the bottom action row", async () => {
+  const user = userEvent.setup();
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false, staleTime: Infinity } },
+  });
+  const resource = {
+    id: "connection_test",
+    workspace_id: "ws_test",
+    name: "Test connection",
+    status: "ready",
+    version: 2,
+    safe_metadata: {},
+    source: {
+      kind: "mcp",
+      auth_mode: "none",
+      endpoint_url: "https://mcp.example",
+    },
+    credential_configured: false,
+  };
+  cache.setQueryData(["connections", "ws_test", resource.id], resource);
+  http.PATCH.mockResolvedValue({
+    data: { ...resource, name: "Renamed" },
+    response: new Response(),
+  });
+  render(
+    <QueryClientProvider client={cache}>
+      <ConnectionDetails
+        connectionId={resource.id}
+        controlledOpen
+        onClose={vi.fn()}
+        onCleanup={vi.fn()}
+      />
+    </QueryClientProvider>,
+  );
+  const name = await screen.findByRole("textbox", { name: "Name" });
+  expect(screen.queryByText("Connection actions")).toBeNull();
+  await user.clear(name);
+  await user.type(name, "Renamed");
+  await user.click(screen.getByRole("button", { name: "Save" }));
+  await waitFor(() =>
+    expect(http.PATCH).toHaveBeenCalledWith(
+      "/api/v1/connections/{connection_id}",
+      expect.objectContaining({
+        body: { name: "Renamed", expected_version: 2 },
+      }),
+    ),
+  );
+  cache.clear();
 });
 
 for (const kind of ["connector", "mcp"] as const) {

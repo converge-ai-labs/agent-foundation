@@ -361,6 +361,11 @@ class RootRunExecutor:
                         state=result.state,
                         display=display,
                         deferred=result.deferred,
+                        completed_run_id=(
+                            stream.run_id
+                            if stream is not None and result.status == "completed" and run_error is None
+                            else None
+                        ),
                         excerpt=thread.excerpt if excerpts is None else excerpts.finish(result),
                         activity_changed=excerpts is not None and excerpts.changed,
                     )
@@ -498,6 +503,7 @@ class RootRunExecutor:
         deferred: DeferredToolRequests | None = None,
         excerpt: ConversationExcerpt,
         activity_changed: bool,
+        completed_run_id: str | None = None,
     ) -> RootContinuationSelection:
         if state is None:
             return RootContinuationSelection(status="not_available")
@@ -522,6 +528,7 @@ class RootRunExecutor:
                 thread_id=thread.thread_id,
                 expected=thread.continuation,
                 replacement=published_ref,
+                completed_run_id=completed_run_id,
                 excerpt=excerpt,
                 activity_changed=activity_changed,
             )

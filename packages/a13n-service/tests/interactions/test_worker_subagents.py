@@ -60,13 +60,18 @@ def rehash(config: EffectiveAgentConfig) -> EffectiveAgentConfig:
 def frozen_graph(mode, request_limit=None):
     connector = ConnectionRunSelection(
         kind="connector",
+        model_alias="conn_github",
         authorization_generation=1,
         connection_id=CONNECTOR_CONNECTION_ID,
         connector_provider_id=CONNECTOR_ID,
         tools=("issues.create",),
     )
     mcp = ConnectionRunSelection(
-        kind="mcp", authorization_generation=1, connection_id=MCP_CONNECTION_ID, tools=("search",)
+        kind="mcp",
+        model_alias="conn_notion",
+        authorization_generation=1,
+        connection_id=MCP_CONNECTION_ID,
+        tools=("search",),
     )
     base = effective_agent_config()
     child = rehash(

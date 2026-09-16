@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import re
 from collections.abc import Awaitable, Callable, Sequence
 
 from a13n_harness import AgentContext
@@ -18,22 +16,10 @@ from pydantic_ai.tools import Tool as FunctionTool
 from pydantic_ai.toolsets import AbstractToolset, FunctionToolset, RenamedToolset, ToolsetTool
 
 from .domain import JsonObject
+from .naming import portable_tool_name
 from .tool_validation import validate_result, validate_tools
 
 ToolHandler = Callable[[str, JsonObject], Awaitable[JsonValue]]
-
-
-def source_key(kind: str, identifier: str) -> str:
-    return f"{kind}_{hashlib.sha256(identifier.encode()).hexdigest()[:16]}"
-
-
-def connection_source_key(connection_id: str) -> str:
-    return source_key("connection", connection_id)
-
-
-def portable_tool_name(name: str) -> str:
-    stem = re.sub(r"[^a-zA-Z0-9_-]", "_", name)[:20]
-    return f"{stem}_{hashlib.sha256(name.encode()).hexdigest()[:16]}"
 
 
 class _PortableToolNames(RenamedToolset[AgentContext]):
@@ -51,8 +37,10 @@ class _PortableToolNames(RenamedToolset[AgentContext]):
         return renamed
 
 
-def namespaced(toolset: AbstractToolset[AgentContext], key: str) -> AbstractToolset[AgentContext]:
-    return _PortableToolNames(ToolIdentityToolset(toolset, source_id=key, kind="mcp"), {}).prefixed(key)
+def namespaced(
+    toolset: AbstractToolset[AgentContext], source_id: str, model_alias: str
+) -> AbstractToolset[AgentContext]:
+    return _PortableToolNames(ToolIdentityToolset(toolset, source_id=source_id, kind="mcp"), {}).prefixed(model_alias)
 
 
 def selected_tools(tools: Sequence[Tool], allowed: tuple[str, ...] | None) -> tuple[Tool, ...]:
@@ -93,6 +81,7 @@ def _bound_tool(definition: Tool, handler: ToolHandler) -> FunctionTool[AgentCon
 async def local_capability(
     *,
     key: str,
+    model_alias: str,
     tools: Sequence[Tool],
     allowed: tuple[str, ...] | None,
     handler: ToolHandler,
@@ -103,4 +92,4 @@ async def local_capability(
         return None
     toolset = FunctionToolset[AgentContext]([_bound_tool(tool, handler) for tool in selected], id=key)
     # Upstream accepts AbstractToolset at runtime; its MCP constructor annotation is narrower.
-    return MCP(local=namespaced(toolset, key), id=key, defer_loading=defer_loading)  # type: ignore[arg-type]
+    return MCP(local=namespaced(toolset, key, model_alias), id=model_alias, defer_loading=defer_loading)  # type: ignore[arg-type]

@@ -62,6 +62,7 @@ CHILD_REVISION_ID = "agtr_2222222222222222"
 CHILD_DEFINITION_ID = f"agent-config-{'3' * 24}"
 CONNECTOR_SELECTION = ConnectionRunSelection(
     kind="connector",
+    model_alias="conn_github",
     authorization_generation=1,
     connection_id="cconn_2222222222222222",
     connector_provider_id="cprv_2222222222222222",
@@ -70,6 +71,7 @@ CONNECTOR_SELECTION = ConnectionRunSelection(
 )
 MCP_SELECTION = ConnectionRunSelection(
     kind="mcp",
+    model_alias="conn_notion",
     authorization_generation=1,
     connection_id="mcpc_2222222222222222",
     defer_loading=True,

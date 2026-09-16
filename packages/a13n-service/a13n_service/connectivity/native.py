@@ -19,10 +19,11 @@ from a13n_service.storage import short_session
 
 from .connectors.management import decode_credentials
 from .domain import JsonObject
+from .naming import source_key
 from .native_actions import NativeAction, NativeObservationFactory
 from .native_context import AccountRunContext, InboundRunContext, NativeToolContext, authorized_account
 from .providers.registry import require_native_provider
-from .toolsets import local_capability, source_key
+from .toolsets import local_capability
 
 if TYPE_CHECKING:
     from .execution import AttemptToolScope
@@ -107,8 +108,9 @@ async def native_capability(
         return result
 
     identifier = context.binding_id if isinstance(context, InboundRunContext) else context.account_id
+    key = source_key(context.kind, identifier)
     return await local_capability(
-        key=source_key(context.kind, identifier), tools=definitions, allowed=context.allowed_actions, handler=call
+        key=key, model_alias=key, tools=definitions, allowed=context.allowed_actions, handler=call
     )
 
 

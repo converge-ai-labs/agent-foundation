@@ -25,6 +25,7 @@ const presets = {
     description: "Bases and records",
     endpoint_url: "https://mcp.airtable.com/mcp",
     auth_mode: "oauth",
+    documentation_url: "https://example.com/airtable/setup",
   },
   "google-compute-engine": {
     key: "google-compute-engine",
@@ -44,7 +45,7 @@ const presets = {
   },
 } satisfies Record<string, Schema["MCPServer"]>;
 
-it("shows preset authentication as read-only", () => {
+it("shows preset authentication as a disabled input with a setup link", () => {
   const preset = presets.airtable;
   const cache = new QueryClient();
   render(
@@ -59,9 +60,14 @@ it("shows preset authentication as read-only", () => {
   );
 
   expect(screen.queryByRole("combobox", { name: "Authentication" })).toBeNull();
-  expect(
-    screen.getByRole("group", { name: "Authentication" }).textContent,
-  ).toContain(`auth.${preset.auth_mode}`);
+  const authentication = screen.getByRole("textbox", {
+    name: "Authentication",
+  }) as HTMLInputElement;
+  expect(authentication.disabled).toBe(true);
+  expect(authentication.value).toBe(`auth.${preset.auth_mode}`);
+  const guide = screen.getByRole("link", { name: "Setup guide" });
+  expect(guide.getAttribute("href")).toBe(preset.documentation_url);
+  expect(guide.getAttribute("target")).toBe("_blank");
   cache.clear();
 });
 

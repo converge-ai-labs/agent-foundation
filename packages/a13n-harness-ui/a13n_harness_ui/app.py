@@ -1161,6 +1161,10 @@ class HarnessUiApp:
         async with self._operation():
             return await self._output_comments.child_outputs(parent_thread_id, execution_id, cursor=cursor, limit=limit)
 
+    async def lookup_threads(self, *, thread_ids: tuple[str, ...]) -> ThreadPage:
+        async with self._operation():
+            return await self._projections.lookup_threads(thread_ids)
+
     async def get_thread_transcript(
         self,
         *,

@@ -19,6 +19,30 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+it("keeps a failed template list query out of the create dialog", async () => {
+  const cache = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  await cache
+    .fetchQuery({
+      queryKey: ["environment-templates", "workspace", "ws_test", undefined],
+      queryFn: () => Promise.reject(new Error("List unavailable")),
+    })
+    .catch(() => undefined);
+  render(
+    <QueryClientProvider client={cache}>
+      <TemplateEditor
+        scope={{ kind: "workspace", id: "ws_test" }}
+        controlledOpen
+        onClose={vi.fn()}
+      />
+    </QueryClientProvider>,
+  );
+  expect(await screen.findByText("Recipe editor")).toBeTruthy();
+  expect(screen.queryByText("List unavailable")).toBeNull();
+  cache.clear();
+});
+
 it("keeps settings drafts across tabs and saves against the original version", async () => {
   const template = {
     id: "et_test",

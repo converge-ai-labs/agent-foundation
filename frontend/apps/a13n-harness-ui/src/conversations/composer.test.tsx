@@ -648,12 +648,27 @@ it("excludes Retry while skills load and retains uncertain acknowledgement owner
   expect(values(draft.doc).prompt).toBe("$review");
 });
 
-it("does not repeat a continuation after an uncertain acknowledgement", async () => {
+it("owns continuation preparation and does not repeat an uncertain acknowledgement", async () => {
   const draft = new ThreadDraft();
   draft.doc.getText("text").insert(0, "Untouched");
   const post = vi.fn().mockRejectedValue(new Error("Response lost"));
   const transport = { client: { POST: post } } as unknown as Transport;
+  let prepared!: () => void;
+  const preparation = new Promise<void>((resolve) => {
+    prepared = resolve;
+  });
+  const pending = submitContinuation(
+    draft,
+    transport,
+    "thread-one",
+    () => preparation,
+  );
+  expect(draft.submission.kind).toBe("pending");
+  await submitDraft(draft, transport, "thread-one", "send");
   await submitContinuation(draft, transport, "thread-one");
+  expect(post).not.toHaveBeenCalled();
+  prepared();
+  await pending;
   expect(draft.submission.kind).toBe("unknown");
   await submitContinuation(draft, transport, "thread-one");
   expect(post).toHaveBeenCalledTimes(1);

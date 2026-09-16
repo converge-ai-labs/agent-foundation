@@ -116,6 +116,7 @@ from a13n_harness_ui.surfaces import (
     ThreadConfigurationResolution,
     ThreadDetail,
     ThreadFocusSnapshot,
+    ThreadLookup,
     ThreadMetadataMutation,
     ThreadPage,
     ThreadSelectorCatalog,
@@ -1095,6 +1096,11 @@ def create_webui(
     @server.get("/api/selectors", response_model=ThreadSelectorCatalog)
     async def selectors() -> ThreadSelectorCatalog:
         return await app().thread_selectors()
+
+    @server.post("/api/threads/lookup", response_model=ThreadPage, openapi_extra=_body(ThreadLookup))
+    async def lookup_threads(request: Request) -> ThreadPage:
+        query = await _document(request, ThreadLookup)
+        return await app().lookup_threads(thread_ids=query.thread_ids)
 
     @server.get("/api/threads/activity", response_model=ThreadActivityPage)
     async def thread_activity(

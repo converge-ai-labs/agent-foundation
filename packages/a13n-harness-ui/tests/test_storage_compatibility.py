@@ -33,6 +33,7 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
     """
     newer = tmp_path / "comment-migrations"
     shutil.copytree(migration.MIGRATIONS_PATH, newer, ignore=shutil.ignore_patterns("__pycache__"))
+    (newer / "versions/20260916_57b54299e47e_add_durable_thread_completion_markers.py").unlink()
     (newer / "versions/20260916_122039abf689_add_thread_navigation_touch_time.py").unlink()
     older = tmp_path / "older-migrations"
     shutil.copytree(newer, older)
@@ -51,6 +52,10 @@ def older_package(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path
     engine = create_engine(f"sqlite:///{path}")
     try:
         with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE thread ADD COLUMN completion_version INTEGER NOT NULL DEFAULT 0"))
+            connection.execute(text("ALTER TABLE thread ADD COLUMN completion_run_id VARCHAR(80)"))
+            connection.execute(text("ALTER TABLE thread ADD COLUMN completion_digest VARCHAR(64)"))
+            connection.execute(text("ALTER TABLE thread ADD COLUMN completed_at DATETIME"))
             connection.execute(text("ALTER TABLE thread ADD COLUMN touched_at DATETIME"))
             connection.execute(text("CREATE INDEX ix_thread_touched_at ON thread (touched_at)"))
     finally:

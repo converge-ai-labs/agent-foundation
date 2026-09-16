@@ -15,6 +15,7 @@ from a13n_harness_ui.live import LiveEvent, RootStreamSummary
 from a13n_harness_ui.output_comment_models import SavedOutputTarget
 from a13n_harness_ui.storage import AgentResourceSource, MarkdownSubagentSource, ThreadConfiguration
 from a13n_harness_ui.storage import ThreadConfigurationPatch as StoredThreadConfigurationPatch
+from a13n_harness_ui.storage.contracts import ThreadCompletion
 
 _MAX_FAILURE_MESSAGE = 32 * 1024
 _MAX_DEFERRED_RESPONSE_BYTES = 1024 * 1024
@@ -125,6 +126,7 @@ class ThreadSummary(SurfaceModel):
     configuration: ThreadConfigurationView
     continuation_state: Literal["initial", "selected"]
     root_activity: RootActivityView
+    completion: ThreadCompletion | None = None
 
     @field_validator("created_at", "updated_at")
     @classmethod
@@ -132,6 +134,10 @@ class ThreadSummary(SurfaceModel):
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("Thread timestamps must include a UTC offset")
         return value.astimezone(UTC)
+
+
+class ThreadLookup(SurfaceModel):
+    thread_ids: tuple[Annotated[str, Field(min_length=1, max_length=80)], ...] = Field(min_length=1, max_length=100)
 
 
 class ThreadPage(SurfaceModel):
@@ -236,6 +242,7 @@ class TranscriptEntry(SurfaceModel):
 
 
 class TranscriptPage(SurfaceModel):
+    completion_version: int = Field(default=0, ge=0)
     continuation_id: str | None = Field(default=None, pattern=r"^(?:initial:)?[0-9a-f]{64}$")
     entries: tuple[TranscriptEntry, ...]
     total: int = Field(ge=0)

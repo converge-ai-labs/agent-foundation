@@ -18,6 +18,9 @@ import { createTransport } from "../transport/client";
 import { ConversationNavigation } from "./navigation";
 import { useLiveWorkbench } from "../shell/presence";
 import { watchSummary } from "../transport/events";
+import { IDBFactory } from "fake-indexeddb";
+import { ResultTracker, ResultsContext } from "./results";
+import type { Schema } from "../transport/client";
 
 vi.mock("../transport/events", () => ({ watchSummary: vi.fn(() => () => {}) }));
 
@@ -187,12 +190,14 @@ function Location() {
     </output>
   );
 }
-function mount(path = "/", live = false) {
+function mount(path = "/", live = false, results: ResultTracker | null = null) {
   return render(
     <QueryClientProvider client={queryClient}>
       <TransportContext value={createTransport("test", () => {})}>
         <MemoryRouter initialEntries={[path]}>
-          {live ? <LiveNavigation /> : <ConversationNavigation />}
+          <ResultsContext value={results}>
+            {live ? <LiveNavigation /> : <ConversationNavigation />}
+          </ResultsContext>
           <Location />
         </MemoryRouter>
       </TransportContext>
@@ -809,4 +814,67 @@ it("keeps the selected lifecycle observation across pagination but accepts a ref
   await act(() => queryClient.invalidateQueries({ queryKey: ["threads"] }));
   await within(row).findByText("Running");
   expect(within(project).getByRole("link", { name: /Selected/ })).toBe(row);
+});
+
+it("pins off-page unread results, counts collapsed groups, and keeps running dots independent of archive and pagination", async () => {
+  vi.stubGlobal("indexedDB", new IDBFactory());
+  const results = new ResultTracker(createTransport("test", () => {}));
+  vi.spyOn(results, "invalidate").mockImplementation(() => {});
+  const completion = {
+    version: 1,
+    run_id: "run-done",
+    continuation_id: "a".repeat(64),
+    completed_at: "2026-09-16T00:00:00Z",
+  };
+  const unread = {
+    ...thread("Off-page result"),
+    completion,
+  } as Schema<"ThreadSummary">;
+  const running = {
+    ...thread("Running result"),
+    root_activity: { state: "running", run_id: "run-next" },
+    completion,
+  } as Schema<"ThreadSummary">;
+  const archived = {
+    ...thread("Archived result"),
+    archived: true,
+    completion,
+  } as Schema<"ThreadSummary">;
+  for (const item of [unread, running, archived]) {
+    await results.follow({ ...item, completion: null });
+    results.observe(item);
+  }
+  mount("/", false, results);
+  const group = await screen.findByRole("region", { name: "One" });
+  expect(
+    within(group).getByLabelText("2 conversations with new results"),
+  ).toBeTruthy();
+  expect(
+    within(group).queryByRole("link", { name: /Off-page result/ }),
+  ).toBeNull();
+  fireEvent.click(
+    within(group).getByRole("button", { name: /^One/, expanded: false }),
+  );
+  await screen.findByText("Recent 5");
+  expect(within(group).getByText("New results · 1")).toBeTruthy();
+  expect(within(group).getByText("Running · 1")).toBeTruthy();
+  expect(
+    within(group).getAllByRole("img", { name: "New result" }),
+  ).toHaveLength(2);
+  expect(within(group).queryByText("Archived result")).toBeNull();
+  expect(
+    within(group).getAllByRole("link", { name: /Off-page result/ }),
+  ).toHaveLength(1);
+  expect(activity).toHaveLength(1);
+  expect(activity[0].searchParams.get("cursor")).toBeNull();
+  await act(async () => {
+    await results.acknowledge(unread.thread_id, 1);
+  });
+  expect(
+    within(group).queryByRole("link", { name: /Off-page result/ }),
+  ).toBeNull();
+  expect(
+    within(group).getByLabelText("1 conversations with new results"),
+  ).toBeTruthy();
+  vi.restoreAllMocks();
 });

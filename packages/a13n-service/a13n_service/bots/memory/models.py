@@ -128,6 +128,8 @@ class DocumentRecord(Base):
         )
 
 
+# Retained legacy tables preserve deployed data and audit history. No access predicate
+# or write path uses their grants; source deletion still cleans up old Provider copies.
 class PublicationRecipientRecord(Base):
     __tablename__ = "bot_memory_publication_recipients"
     document_id: Mapped[str] = mapped_column(

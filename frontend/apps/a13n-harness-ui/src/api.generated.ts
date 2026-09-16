@@ -848,6 +848,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/threads/lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Lookup Threads */
+        post: operations["lookup_threads_api_threads_lookup_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/activity": {
         parameters: {
             query?: never;
@@ -3648,6 +3665,23 @@ export interface components {
             source?: components["schemas"]["FileContextSource"] | components["schemas"]["GitContextSource"] | components["schemas"]["CommentContextSource"] | null;
             comment?: components["schemas"]["CommentReferencePreview"] | null;
         };
+        /**
+         * ThreadCompletion
+         * @description Latest successfully selected root result; independent of current operation state.
+         */
+        ThreadCompletion: {
+            /** Version */
+            version: number;
+            /** Run Id */
+            run_id: string;
+            /** Continuation Id */
+            continuation_id: string;
+            /**
+             * Completed At
+             * Format: date-time
+             */
+            completed_at: string;
+        };
         /** ThreadConfiguration */
         ThreadConfiguration: {
             /** Version */
@@ -3822,6 +3856,7 @@ export interface components {
              */
             continuation_state: "initial" | "selected";
             root_activity: components["schemas"]["RootActivityView"];
+            completion?: components["schemas"]["ThreadCompletion"] | null;
         };
         /** ThreadUsageView */
         ThreadUsageView: {
@@ -3907,6 +3942,11 @@ export interface components {
         };
         /** TranscriptPage */
         TranscriptPage: {
+            /**
+             * Completion Version
+             * @default 0
+             */
+            completion_version?: number;
             /** Continuation Id */
             continuation_id?: string | null;
             /** Entries */
@@ -4465,6 +4505,11 @@ export interface components {
             expected_continuation_id: string;
             /** Responses */
             responses: (components["schemas"]["ApprovalDecision"] | components["schemas"]["ExternalToolResult"] | components["schemas"]["QuestionResponse"])[];
+        };
+        /** ThreadLookup */
+        ThreadLookup: {
+            /** Thread Ids */
+            thread_ids: string[];
         };
         /** SteerRequest */
         SteerRequest: {
@@ -6468,6 +6513,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadSelectorCatalog"];
+                };
+            };
+        };
+    };
+    lookup_threads_api_threads_lookup_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ThreadLookup"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadPage"];
                 };
             };
         };
