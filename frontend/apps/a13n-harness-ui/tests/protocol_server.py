@@ -101,6 +101,11 @@ async def main() -> None:
                 instrumentation=None,
             ),
             api_key="test-only-key",
+            static_root=(
+                Path(sys.argv[sys.argv.index("--static-root") + 1])
+                if "--static-root" in sys.argv
+                else Path(__file__).resolve().parents[1] / "dist"
+            ),
         )
         sock = socket.socket()
         sock.bind(("127.0.0.1", 0))

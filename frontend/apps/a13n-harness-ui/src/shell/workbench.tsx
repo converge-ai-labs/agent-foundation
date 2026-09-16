@@ -10,6 +10,7 @@ import {
 } from "react-router";
 import {
   Button,
+  Logo,
   Wordmark,
   ChoiceField,
   ModalFrame,
@@ -203,9 +204,9 @@ export function Workbench({
       </a>
       <aside className={styles.sidebar} aria-label="Workbench navigation">
         <header className={styles.sidebarHeader}>
-          <Link to="/" className={styles.brand}>
-            <Wordmark className={styles.brandMark} />
-            <span>Harness UI</span>
+          <Link to="/" className={styles.brand} aria-label="Harness UI home">
+            <Logo alt="" width={28} height={28} />
+            <Wordmark />
           </Link>
           {themeToggle}
         </header>

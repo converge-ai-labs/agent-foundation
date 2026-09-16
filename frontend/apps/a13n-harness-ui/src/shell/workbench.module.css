@@ -25,11 +25,11 @@
 .brand {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   color: var(--a13n-text);
   text-decoration: none;
   white-space: nowrap;
-  font-size: 16px;
+  font-size: 20px;
 }
 .brandMark {
   display: inline-flex;

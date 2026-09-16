@@ -1386,6 +1386,18 @@ def create_webui(
 
     @server.get("/{path:path}", include_in_schema=False, response_model=None)
     async def static(path: str) -> FileResponse | JSONResponse:
+        install_assets = {
+            "manifest.webmanifest": "application/manifest+json",
+            "icons/icon-192.png": "image/png",
+            "icons/icon-512.png": "image/png",
+            "icons/icon-maskable-512.png": "image/png",
+            "icons/apple-touch-icon.png": "image/png",
+        }
+        if path in install_assets:
+            destination = static_root / path
+            if not destination.is_file():
+                return _error("not_found", "Asset not found.", 404)
+            return FileResponse(destination, media_type=install_assets[path], headers={"Cache-Control": "no-cache"})
         if path.startswith("assets/"):
             destination = (static_root / path).resolve()
             if destination.is_relative_to(static_root.resolve()) and destination.is_file():

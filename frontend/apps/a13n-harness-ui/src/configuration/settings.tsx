@@ -17,6 +17,7 @@ import {
   DraftLinks,
 } from "./sources";
 import type { ResourceKind } from "./documents";
+import { InstallSettings } from "../shell/install";
 import styles from "../shell/workbench.module.css";
 
 const sections = [
@@ -104,6 +105,7 @@ export function GeneralSettings() {
           <Link to="/setup">Start setup</Link>
         </Panel>
       )}
+      <InstallSettings />
       <details className={styles.details}>
         <summary>Setup & diagnostics</summary>
         <Link to="/setup">Guided setup and environment checks</Link>
