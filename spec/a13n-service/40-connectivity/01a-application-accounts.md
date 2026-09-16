@@ -90,6 +90,8 @@ Slack and Lark send actions accept the selected destination ID and provider-spec
 
 Account management uses `/api/v1/workspaces/{workspace}/application-accounts` for create/list and `/api/v1/application-accounts/{account_id}` for get/update/delete. Credential replacement uses `PUT .../credentials`; administrative commands use `POST .../enable` and `POST .../disable`. Creation and commands follow shared idempotency rules; mutations require exact version preconditions. Responses contain safe metadata only.
 
+`POST /api/v1/workspaces/{workspace}/bots/feishu/installation` performs read-only installation discovery before Account creation. It accepts `app_id` and write-only `app_secret`, requires current Workspace Account-management authority before and after bounded provider I/O, and contacts only the official Feishu origin. It returns the verified application, enterprise, and Bot identifiers and names using `InstallationInfo`. Inactive applications, rejected credentials, missing permissions, malformed responses, and timeouts fail without creating an Account or persisting credentials. This observation does not enable reception or replace subsequent installation and pilot checks. The Console uses the derived identifiers in the canonical idempotent Account creation request; uncertain creation retries retain the same resolved identity and request rather than discovering a different installation.
+
 Exact object management uses the Account `/targets` child collection. Workspace Builders can manage targets within their current Agent and capability authority. Account management and credentials require Workspace Admin. Possession of an Account or target ID grants no authority.
 
 ### Bot Pilot Activation

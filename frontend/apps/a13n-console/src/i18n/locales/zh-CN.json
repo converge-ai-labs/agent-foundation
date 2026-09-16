@@ -2438,5 +2438,17 @@
   "Structured response": "结构化回复",
   "Submit responses": "提交回应",
   "Tool results and responses must be valid JSON.": "工具结果和回应必须是有效的 JSON。",
-  "Your response is needed": "需要你的回应"
+  "Your response is needed": "需要你的回应",
+  "Enter your App ID and credentials. We automatically identify your Feishu enterprise and bot before saving.": "填写 App ID 和凭证。保存前，系统会自动识别飞书企业和机器人。",
+  "Set up memory": "配置记忆",
+  "Enable memory": "启用记忆",
+  "Memory storage": "记忆存储",
+  "Select memory storage": "选择记忆存储",
+  "Add memory storage": "添加记忆存储",
+  "Enable memory to choose storage and configure conversation defaults.": "启用后，选择记忆存储并设置会话记忆的默认行为。",
+  "No compatible memory storage is available. Add storage to continue.": "尚无可用的记忆存储，请先添加支持文档记忆的存储。",
+  "Ask a workspace administrator to add memory storage.": "请联系工作区管理员添加记忆存储。",
+  "Choose memory storage, then enable memory for the groups you select.": "先选择记忆存储，再为指定的群开启记忆。",
+  "Choose groups to enable memory": "选择要启用记忆的群",
+  "Memory storage is selected. Configure memory for each group; groups stay isolated unless you explicitly share.": "已选择记忆存储，请逐个配置群记忆。各群默认隔离，仅在明确共享后互通。"
 }

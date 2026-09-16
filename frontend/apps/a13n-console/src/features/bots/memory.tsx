@@ -16,7 +16,7 @@ import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
 import { MarkdownContent } from "../../shared/markdown";
 import { Confirm } from "../../shared/form";
 import styles from "./bots.module.css";
-import { GroupMemorySettings } from "./memory-settings";
+import { GroupMemorySettings, MemorySettings } from "./memory-settings";
 import { MemoryComposer } from "./memory-compose";
 import { MemoryPublications } from "./memory-publications";
 import { GroupMemoryActions } from "./memory-toolbar";
@@ -26,7 +26,7 @@ import { MemoryProvenance } from "./memory-provenance";
 import { MemoryPolicies } from "./memory-policies";
 
 export function BotMemory({ account }: { account: BotAccount }) {
-  const { can, basePath } = useWorkspace(),
+  const { can } = useWorkspace(),
     { t } = useTranslation();
   // Do not mount queries at all for a non-administrator, including direct route navigation.
   if (!can("bot_memory.read"))
@@ -46,17 +46,13 @@ export function BotMemory({ account }: { account: BotAccount }) {
           providerId={account.memory.provider_id}
         />
       ) : (
-        <>
-          <Empty
-            title={t("Memory is not configured")}
-            description={t(
-              "Choose memory storage in Bot settings to get started.",
-            )}
-          />
-          <Link to={`${basePath}/bots/${account.id}/settings`}>
-            {t("Open Bot settings")}
-          </Link>
-        </>
+        <Empty
+          title={t("Memory is not configured")}
+          description={t(
+            "Choose memory storage, then enable memory for the groups you select.",
+          )}
+          action={<MemorySettings account={account} setup />}
+        />
       )}
     </>
   );
@@ -69,7 +65,7 @@ export function BotGroupMemory({
   account: BotAccount;
   target: Schema["AccountTarget"];
 }) {
-  const { can, basePath } = useWorkspace(),
+  const { can } = useWorkspace(),
     { t } = useTranslation();
   if (!can("bot_memory.read"))
     return (
@@ -82,17 +78,13 @@ export function BotGroupMemory({
     );
   if (!account.memory)
     return (
-      <>
-        <Empty
-          title={t("Memory is not configured")}
-          description={t(
-            "Select a Memory Provider for this bot before enabling group memory.",
-          )}
-        />
-        <Link to={`${basePath}/bots/${account.id}/settings`}>
-          {t("Open Bot settings")}
-        </Link>
-      </>
+      <Empty
+        title={t("Memory is not configured")}
+        description={t(
+          "Select a Memory Provider for this bot before enabling group memory.",
+        )}
+        action={<MemorySettings account={account} setup />}
+      />
     );
   return (
     <GroupMemoryScope
@@ -137,11 +129,6 @@ function GroupMemoryScope({
   const scope = query.data?.items[0];
   return (
     <>
-      {!scope && !query.isPending && !query.error && (
-        <div className={styles.memoryActions}>
-          <GroupMemorySettings account={account} target={target} />
-        </div>
-      )}
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
       {query.isPending ? (
         <Loading variant="detail" />
@@ -158,6 +145,7 @@ function GroupMemoryScope({
           description={t(
             "Configure this conversation to give it its own memory index.",
           )}
+          action={<GroupMemorySettings account={account} target={target} />}
         />
       )}
     </>
@@ -197,6 +185,16 @@ function MemoryBrowser({
   });
   const items = fixedScope ? [fixedScope] : scopes.data?.items;
   const selected = items?.find((scope) => scope.id === scopeId);
+  if (!fixedScope && scopes.isSuccess && !items?.length)
+    return (
+      <Empty
+        title={t("Choose groups to enable memory")}
+        description={t(
+          "Memory storage is selected. Configure memory for each group; groups stay isolated unless you explicitly share.",
+        )}
+        action={<GroupMemorySettings account={account} />}
+      />
+    );
   return (
     <div className={styles.memorySection}>
       <div className={styles.memoryHeading}>

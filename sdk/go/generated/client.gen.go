@@ -5226,6 +5226,12 @@ type DiscardDraftRequest struct {
 	ExpectedVersion int `json:"expected_version"`
 }
 
+// DiscoverFeishuInstallationRequest defines model for DiscoverFeishuInstallationRequest.
+type DiscoverFeishuInstallationRequest struct {
+	AppId     string  `json:"app_id"`
+	AppSecret *string `json:"app_secret,omitempty"`
+}
+
 // Document defines model for Document.
 type Document struct {
 	AccessReasons       *[]DocumentAccessReason      `json:"access_reasons,omitempty"`
@@ -9618,6 +9624,9 @@ type PostWorkspacesWorkspaceAgentsAgentRevisionsRevisionIdRestoreJSONRequestBody
 
 // PostWorkspacesWorkspaceApplicationAccountsJSONRequestBody defines body for PostWorkspacesWorkspaceApplicationAccounts for application/json ContentType.
 type PostWorkspacesWorkspaceApplicationAccountsJSONRequestBody = CreateAccountRequest
+
+// PostWorkspacesWorkspaceBotsFeishuInstallationJSONRequestBody defines body for PostWorkspacesWorkspaceBotsFeishuInstallation for application/json ContentType.
+type PostWorkspacesWorkspaceBotsFeishuInstallationJSONRequestBody = DiscoverFeishuInstallationRequest
 
 // PostWorkspacesWorkspaceConfigurationSessionsJSONRequestBody defines body for PostWorkspacesWorkspaceConfigurationSessions for application/json ContentType.
 type PostWorkspacesWorkspaceConfigurationSessionsJSONRequestBody = CreateSessionRequest
@@ -16998,6 +17007,20 @@ type ClientInterface interface {
 	// Corresponds with GET /api/v1/workspaces/{workspace}/bots (the `GetWorkspacesWorkspaceBots` operationId).
 	GetWorkspacesWorkspaceBots(ctx context.Context, workspace string, params *GetWorkspacesWorkspaceBotsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// PostWorkspacesWorkspaceBotsFeishuInstallationWithBody Discover Feishu Installation
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v1/workspaces/{workspace}/bots/feishu/installation (the `PostWorkspacesWorkspaceBotsFeishuInstallation` operationId).
+	PostWorkspacesWorkspaceBotsFeishuInstallationWithBody(ctx context.Context, workspace string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostWorkspacesWorkspaceBotsFeishuInstallation Discover Feishu Installation
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v1/workspaces/{workspace}/bots/feishu/installation (the `PostWorkspacesWorkspaceBotsFeishuInstallation` operationId).
+	PostWorkspacesWorkspaceBotsFeishuInstallation(ctx context.Context, workspace string, body PostWorkspacesWorkspaceBotsFeishuInstallationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetWorkspacesWorkspaceConfigurationAssistantReadiness Readiness
 	//
 	// Corresponds with GET /api/v1/workspaces/{workspace}/configuration-assistant/readiness (the `GetWorkspacesWorkspaceConfigurationAssistantReadiness` operationId).
@@ -23518,6 +23541,40 @@ func (c *Client) PostWorkspacesWorkspaceAssetsWithBody(ctx context.Context, work
 // Corresponds with GET /api/v1/workspaces/{workspace}/bots (the `GetWorkspacesWorkspaceBots` operationId).
 func (c *Client) GetWorkspacesWorkspaceBots(ctx context.Context, workspace string, params *GetWorkspacesWorkspaceBotsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetWorkspacesWorkspaceBotsRequest(c.Server, workspace, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostWorkspacesWorkspaceBotsFeishuInstallationWithBody Discover Feishu Installation
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v1/workspaces/{workspace}/bots/feishu/installation (the `PostWorkspacesWorkspaceBotsFeishuInstallation` operationId).
+func (c *Client) PostWorkspacesWorkspaceBotsFeishuInstallationWithBody(ctx context.Context, workspace string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostWorkspacesWorkspaceBotsFeishuInstallationRequestWithBody(c.Server, workspace, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostWorkspacesWorkspaceBotsFeishuInstallation Discover Feishu Installation
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v1/workspaces/{workspace}/bots/feishu/installation (the `PostWorkspacesWorkspaceBotsFeishuInstallation` operationId).
+func (c *Client) PostWorkspacesWorkspaceBotsFeishuInstallation(ctx context.Context, workspace string, body PostWorkspacesWorkspaceBotsFeishuInstallationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostWorkspacesWorkspaceBotsFeishuInstallationRequest(c.Server, workspace, body)
 	if err != nil {
 		return nil, err
 	}
@@ -39080,6 +39137,53 @@ func NewGetWorkspacesWorkspaceBotsRequest(server string, workspace string, param
 	return req, nil
 }
 
+// NewPostWorkspacesWorkspaceBotsFeishuInstallationRequest calls the generic PostWorkspacesWorkspaceBotsFeishuInstallation builder with application/json body
+func NewPostWorkspacesWorkspaceBotsFeishuInstallationRequest(server string, workspace string, body PostWorkspacesWorkspaceBotsFeishuInstallationJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostWorkspacesWorkspaceBotsFeishuInstallationRequestWithBody(server, workspace, "application/json", bodyReader)
+}
+
+// NewPostWorkspacesWorkspaceBotsFeishuInstallationRequestWithBody constructs an http.Request for the PostWorkspacesWorkspaceBotsFeishuInstallation method, with any body, and a specified content type
+func NewPostWorkspacesWorkspaceBotsFeishuInstallationRequestWithBody(server string, workspace string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/bots/feishu/installation", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewGetWorkspacesWorkspaceConfigurationAssistantReadinessRequest constructs an http.Request for the GetWorkspacesWorkspaceConfigurationAssistantReadiness method
 func NewGetWorkspacesWorkspaceConfigurationAssistantReadinessRequest(server string, workspace string, params *GetWorkspacesWorkspaceConfigurationAssistantReadinessParams) (*http.Request, error) {
 	var err error
@@ -46671,6 +46775,20 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /api/v1/workspaces/{workspace}/bots (the `GetWorkspacesWorkspaceBots` operationId).
 	GetWorkspacesWorkspaceBotsWithResponse(ctx context.Context, workspace string, params *GetWorkspacesWorkspaceBotsParams, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceBotsResponse, error)
+
+	// PostWorkspacesWorkspaceBotsFeishuInstallationWithBodyWithResponse Discover Feishu Installation
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/workspaces/{workspace}/bots/feishu/installation (the `PostWorkspacesWorkspaceBotsFeishuInstallation` operationId).
+	PostWorkspacesWorkspaceBotsFeishuInstallationWithBodyWithResponse(ctx context.Context, workspace string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceBotsFeishuInstallationResponse, error)
+
+	// PostWorkspacesWorkspaceBotsFeishuInstallationWithResponse Discover Feishu Installation
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/workspaces/{workspace}/bots/feishu/installation (the `PostWorkspacesWorkspaceBotsFeishuInstallation` operationId).
+	PostWorkspacesWorkspaceBotsFeishuInstallationWithResponse(ctx context.Context, workspace string, body PostWorkspacesWorkspaceBotsFeishuInstallationJSONRequestBody, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceBotsFeishuInstallationResponse, error)
 
 	// GetWorkspacesWorkspaceConfigurationAssistantReadinessWithResponse Readiness
 	//
@@ -67092,6 +67210,83 @@ func (r GetWorkspacesWorkspaceBotsResponse) ContentType() string {
 	return ""
 }
 
+// PostWorkspacesWorkspaceBotsFeishuInstallationResponse200Headers the declared response headers of an HTTP 200 response for PostWorkspacesWorkspaceBotsFeishuInstallation
+type PostWorkspacesWorkspaceBotsFeishuInstallationResponse200Headers struct {
+	XRequestID *string
+}
+
+// PostWorkspacesWorkspaceBotsFeishuInstallationResponse400Headers the declared response headers of an HTTP 400 response for PostWorkspacesWorkspaceBotsFeishuInstallation
+type PostWorkspacesWorkspaceBotsFeishuInstallationResponse400Headers struct {
+	XRequestID *string
+}
+
+// PostWorkspacesWorkspaceBotsFeishuInstallationResponseDefaultHeaders the declared response headers of an HTTP default response for PostWorkspacesWorkspaceBotsFeishuInstallation
+type PostWorkspacesWorkspaceBotsFeishuInstallationResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PostWorkspacesWorkspaceBotsFeishuInstallationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *InstallationInfo
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PostWorkspacesWorkspaceBotsFeishuInstallationResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PostWorkspacesWorkspaceBotsFeishuInstallationResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PostWorkspacesWorkspaceBotsFeishuInstallationResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PostWorkspacesWorkspaceBotsFeishuInstallationResponse) GetJSON200() *InstallationInfo {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PostWorkspacesWorkspaceBotsFeishuInstallationResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PostWorkspacesWorkspaceBotsFeishuInstallationResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PostWorkspacesWorkspaceBotsFeishuInstallationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostWorkspacesWorkspaceBotsFeishuInstallationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostWorkspacesWorkspaceBotsFeishuInstallationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostWorkspacesWorkspaceBotsFeishuInstallationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // GetWorkspacesWorkspaceConfigurationAssistantReadinessResponse200Headers the declared response headers of an HTTP 200 response for GetWorkspacesWorkspaceConfigurationAssistantReadiness
 type GetWorkspacesWorkspaceConfigurationAssistantReadinessResponse200Headers struct {
 	XRequestID *string
@@ -77525,6 +77720,32 @@ func (c *ClientWithResponses) GetWorkspacesWorkspaceBotsWithResponse(ctx context
 		return nil, err
 	}
 	return ParseGetWorkspacesWorkspaceBotsResponse(rsp)
+}
+
+// PostWorkspacesWorkspaceBotsFeishuInstallationWithBodyWithResponse Discover Feishu Installation
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/workspaces/{workspace}/bots/feishu/installation (the `PostWorkspacesWorkspaceBotsFeishuInstallation` operationId).
+func (c *ClientWithResponses) PostWorkspacesWorkspaceBotsFeishuInstallationWithBodyWithResponse(ctx context.Context, workspace string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceBotsFeishuInstallationResponse, error) {
+	rsp, err := c.PostWorkspacesWorkspaceBotsFeishuInstallationWithBody(ctx, workspace, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostWorkspacesWorkspaceBotsFeishuInstallationResponse(rsp)
+}
+
+// PostWorkspacesWorkspaceBotsFeishuInstallationWithResponse Discover Feishu Installation
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/workspaces/{workspace}/bots/feishu/installation (the `PostWorkspacesWorkspaceBotsFeishuInstallation` operationId).
+func (c *ClientWithResponses) PostWorkspacesWorkspaceBotsFeishuInstallationWithResponse(ctx context.Context, workspace string, body PostWorkspacesWorkspaceBotsFeishuInstallationJSONRequestBody, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceBotsFeishuInstallationResponse, error) {
+	rsp, err := c.PostWorkspacesWorkspaceBotsFeishuInstallation(ctx, workspace, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostWorkspacesWorkspaceBotsFeishuInstallationResponse(rsp)
 }
 
 // GetWorkspacesWorkspaceConfigurationAssistantReadinessWithResponse Readiness
@@ -99378,6 +99599,86 @@ func ParseGetWorkspacesWorkspaceBotsResponse(rsp *http.Response) (*GetWorkspaces
 		response.Headers400 = &headers
 	case true:
 		var headers GetWorkspacesWorkspaceBotsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePostWorkspacesWorkspaceBotsFeishuInstallationResponse parses an HTTP response from a PostWorkspacesWorkspaceBotsFeishuInstallationWithResponse call
+func ParsePostWorkspacesWorkspaceBotsFeishuInstallationResponse(rsp *http.Response) (*PostWorkspacesWorkspaceBotsFeishuInstallationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostWorkspacesWorkspaceBotsFeishuInstallationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest InstallationInfo
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PostWorkspacesWorkspaceBotsFeishuInstallationResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PostWorkspacesWorkspaceBotsFeishuInstallationResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PostWorkspacesWorkspaceBotsFeishuInstallationResponseDefaultHeaders
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {

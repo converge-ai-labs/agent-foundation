@@ -140,7 +140,11 @@ export function BotDetail() {
                     )}
                   </p>
                 </div>
-                <MemorySettings account={account} reload={reload} />
+                <MemorySettings
+                  account={account}
+                  reload={reload}
+                  onConfigured={() => navigate(tabPath("memory"))}
+                />
               </section>
             )}
             {can("application_account.manage") && (

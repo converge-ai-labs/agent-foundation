@@ -57,6 +57,23 @@ const definitions = {
       reception_policy_schema: schema({}),
       target_kinds: ["conversation"],
     },
+    {
+      provider_key: "lark",
+      config_version: "lark_http_v1",
+      configuration_schema: schema({
+        brand: string("Brand"),
+        open_api_origin: string("Origin"),
+        app_id: string("App ID"),
+        tenant_key: string("Tenant Key"),
+        bot_open_id: string("Bot Open Id"),
+      }),
+      credential_schema: schema({
+        app_secret: string("App Secret"),
+        verification_token: string("Verification Token"),
+      }),
+      reception_policy_schema: schema({}),
+      target_kinds: ["conversation"],
+    },
   ],
 };
 function setup(path = "/workspace/test/bots/connect") {
@@ -278,4 +295,105 @@ it("does not reuse an installation check from an older credential generation", a
     ).disabled,
   ).toBe(true);
   expect(screen.queryByText("Choose a pilot conversation")).toBeNull();
+});
+
+const feishuIdentity = {
+  app_id: "cli_test",
+  organization_id: "tenant_verified",
+  organization_name: "Test enterprise",
+  bot_id: "ou_verified",
+  bot_name: "Test bot",
+  enabled: true,
+};
+async function fillFeishuCredentials() {
+  await userEvent.type(
+    screen.getByLabelText("App Secret"),
+    "fictional-app-secret",
+  );
+  await userEvent.type(
+    screen.getByLabelText("Verification Token"),
+    "fictional-verification",
+  );
+}
+async function startFeishu() {
+  setup();
+  await userEvent.click(
+    screen.getByRole("tab", { name: "Create a new account" }),
+  );
+  await userEvent.click(await screen.findByRole("button", { name: "Feishu" }));
+  await userEvent.type(
+    await screen.findByRole("textbox", { name: "Name" }),
+    "Pilot",
+  );
+  await userEvent.type(
+    screen.getByRole("textbox", { name: "App ID" }),
+    "cli_test",
+  );
+  expect(screen.queryByLabelText("Tenant Key")).toBeNull();
+  expect(screen.queryByLabelText("Bot Open Id")).toBeNull();
+  await fillFeishuCredentials();
+}
+it("discovers Feishu identity before saving without asking for installation IDs", async () => {
+  state.http.POST.mockImplementation(async (path: string) =>
+    response(path.endsWith("/feishu/installation") ? feishuIdentity : account),
+  );
+  await startFeishu();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Save and verify" }),
+  );
+  await screen.findByText("Configure HTTP events");
+  expect(state.http.POST).toHaveBeenNthCalledWith(
+    1,
+    "/api/v1/workspaces/{workspace}/bots/feishu/installation",
+    expect.objectContaining({
+      body: { app_id: "cli_test", app_secret: "fictional-app-secret" },
+    }),
+  );
+  expect(state.http.POST).toHaveBeenNthCalledWith(
+    2,
+    "/api/v1/workspaces/{workspace}/application-accounts",
+    expect.objectContaining({
+      body: expect.objectContaining({
+        provider_config: {
+          brand: "feishu",
+          open_api_origin: "https://open.feishu.cn",
+          app_id: "cli_test",
+          tenant_key: "tenant_verified",
+          bot_open_id: "ou_verified",
+        },
+        receive_enabled: false,
+      }),
+    }),
+  );
+});
+it("does not create an account when Feishu discovery fails", async () => {
+  state.http.POST.mockRejectedValue(
+    new Error("Feishu app credentials rejected"),
+  );
+  await startFeishu();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Save and verify" }),
+  );
+  await screen.findByText("Feishu app credentials rejected");
+  expect(state.http.POST).toHaveBeenCalledTimes(1);
+  expect((screen.getByLabelText("App Secret") as HTMLInputElement).value).toBe(
+    "",
+  );
+});
+it("reuses discovered identity and the creation command after an uncertain Feishu save", async () => {
+  state.http.POST.mockResolvedValueOnce(response(feishuIdentity))
+    .mockRejectedValueOnce(new TypeError("Lost save response"))
+    .mockResolvedValue(response(account));
+  await startFeishu();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Save and verify" }),
+  );
+  await screen.findByText("Lost save response");
+  await fillFeishuCredentials();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Save and verify" }),
+  );
+  await screen.findByText("Configure HTTP events");
+  expect(state.http.POST).toHaveBeenCalledTimes(3);
+  expect(state.http.POST.mock.calls[2]).toEqual(state.http.POST.mock.calls[1]);
 });

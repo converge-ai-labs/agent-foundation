@@ -7543,6 +7543,31 @@
         "title": "DiscardDraftRequest",
         "type": "object"
       },
+      "DiscoverFeishuInstallationRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "app_id": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "App Id",
+            "type": "string"
+          },
+          "app_secret": {
+            "format": "password",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "App Secret",
+            "type": "string",
+            "writeOnly": true
+          }
+        },
+        "required": [
+          "app_id",
+          "app_secret"
+        ],
+        "title": "DiscoverFeishuInstallationRequest",
+        "type": "object"
+      },
       "Document": {
         "additionalProperties": false,
         "properties": {
@@ -47678,6 +47703,102 @@
           }
         ],
         "summary": "Bot Collection",
+        "tags": [
+          "bots"
+        ]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/bots/feishu/installation": {
+      "post": {
+        "operationId": "post_workspaces_workspace_bots_feishu_installation",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscoverFeishuInstallationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstallationInfo"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Discover Feishu Installation",
         "tags": [
           "bots"
         ]

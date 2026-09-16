@@ -53,14 +53,17 @@ const response = (data: unknown) => ({
   response: new Response(null, { status: 200 }),
 });
 
-function setup() {
+function setup(
+  selected = account,
+  route = "/?tab=memory&memory_scope=mscope_test",
+) {
   const cache = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0 } },
   });
   render(
     <QueryClientProvider client={cache}>
-      <MemoryRouter initialEntries={["/?tab=memory&memory_scope=mscope_test"]}>
-        <BotMemory account={account} />
+      <MemoryRouter initialEntries={[route]}>
+        <BotMemory account={selected} />
       </MemoryRouter>
     </QueryClientProvider>,
   );
@@ -182,5 +185,28 @@ it("opens unfinished operations from a count without retrying a write", async ()
   expect(
     within(dialog).getByRole("button", { name: "Check result" }),
   ).toBeTruthy();
+  expect(state.http.POST).not.toHaveBeenCalled();
+});
+
+it("opens first-time memory settings directly from the Memory tab", async () => {
+  setup({ ...account, memory: null });
+  await userEvent.click(screen.getByRole("button", { name: "Set up memory" }));
+  expect(
+    await screen.findByRole("dialog", { name: "Bot memory settings" }),
+  ).toBeTruthy();
+  expect(
+    screen
+      .getByRole("switch", { name: "Enable memory" })
+      .getAttribute("aria-checked"),
+  ).toBe("false");
+  expect(state.http.POST).not.toHaveBeenCalled();
+});
+it("guides a configured bot without scopes to group setup", async () => {
+  state.http.GET.mockResolvedValue(response({ items: [], next_cursor: null }));
+  setup(account, "/");
+  expect(
+    await screen.findByText("Choose groups to enable memory"),
+  ).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Configure group" })).toBeTruthy();
   expect(state.http.POST).not.toHaveBeenCalled();
 });

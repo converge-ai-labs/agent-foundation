@@ -2438,5 +2438,17 @@
   "Structured response": "Structured response",
   "Submit responses": "Submit responses",
   "Tool results and responses must be valid JSON.": "Tool results and responses must be valid JSON.",
-  "Your response is needed": "Your response is needed"
+  "Your response is needed": "Your response is needed",
+  "Enter your App ID and credentials. We automatically identify your Feishu enterprise and bot before saving.": "Enter your App ID and credentials. We automatically identify your Feishu enterprise and bot before saving.",
+  "Set up memory": "Set up memory",
+  "Enable memory": "Enable memory",
+  "Memory storage": "Memory storage",
+  "Select memory storage": "Select memory storage",
+  "Add memory storage": "Add memory storage",
+  "Enable memory to choose storage and configure conversation defaults.": "Enable memory to choose storage and configure conversation defaults.",
+  "No compatible memory storage is available. Add storage to continue.": "No compatible memory storage is available. Add storage to continue.",
+  "Ask a workspace administrator to add memory storage.": "Ask a workspace administrator to add memory storage.",
+  "Choose memory storage, then enable memory for the groups you select.": "Choose memory storage, then enable memory for the groups you select.",
+  "Choose groups to enable memory": "Choose groups to enable memory",
+  "Memory storage is selected. Configure memory for each group; groups stay isolated unless you explicitly share.": "Memory storage is selected. Configure memory for each group; groups stay isolated unless you explicitly share."
 }

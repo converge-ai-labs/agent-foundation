@@ -174,7 +174,9 @@ function ConnectFlow() {
               </p>
               <p>
                 {t(
-                  "Enter the installation identifiers from your app settings. They are verified in the next step; entering an ID does not prove access.",
+                  platform === "lark"
+                    ? "Enter your App ID and credentials. We automatically identify your Feishu enterprise and bot before saving."
+                    : "Enter the installation identifiers from your app settings. They are verified in the next step; entering an ID does not prove access.",
                 )}
               </p>
               <AccountForm

@@ -37,11 +37,13 @@ export function MemoryProviderEditor({
   finalFocus,
   extra,
   readOnly = false,
+  onSaved,
 }: ResourceEditorControl & {
   scope: MemoryProviderScope;
   providerId?: string;
   extra?: ReactNode;
   readOnly?: boolean;
+  onSaved?: (provider: Schema["MemoryProvider"]) => void;
 }) {
   const { t } = useTranslation(),
     client = useClient();
@@ -108,7 +110,10 @@ export function MemoryProviderEditor({
             extra={extra}
             onPending={setPending}
             onCancel={() => state.setOpen(false)}
-            onSaved={() => state.setOpen(false)}
+            onSaved={(provider) => {
+              state.setOpen(false);
+              onSaved?.(provider);
+            }}
           />
         ))}
     </ModalFrame>
@@ -131,7 +136,7 @@ export function MemoryProviderForm({
   readOnly?: boolean;
   extra?: ReactNode;
   onCancel: () => void;
-  onSaved: () => void;
+  onSaved: (provider: Schema["MemoryProvider"]) => void;
   onPending?: (pending: boolean) => void;
 }) {
   const { t } = useTranslation(),
@@ -202,11 +207,11 @@ export function MemoryProviderForm({
             : {}),
       });
     },
-    onSuccess: () => {
+    onSuccess: (provider) => {
       setCredential({});
       void cache.invalidateQueries({ queryKey: ["memory-providers"] });
       void cache.invalidateQueries({ queryKey: ["memory-provider"] });
-      onSaved();
+      onSaved(provider);
     },
     onSettled: () => onPending?.(false),
   });
@@ -397,7 +402,11 @@ export function MemoryProviderForm({
                   <span>
                     {item.name} · {item.type}
                   </span>
-                  <Button variant="outline" size="sm" onClick={onSaved}>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => onSaved(item)}
+                  >
                     {t("Return to providers")}
                   </Button>
                 </div>

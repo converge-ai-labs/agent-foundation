@@ -7,14 +7,21 @@ from fastapi import APIRouter, Depends, Query, Request
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.accounts.domain import Account
 from a13n_service.connectivity.errors import NativeError
-from a13n_service.connectivity.inspection import ConversationPage
+from a13n_service.connectivity.inspection import ConversationPage, InstallationInfo
 from a13n_service.http_types import IdempotencyKey
 from a13n_service.iam import AuthenticatedActor, authenticate_request
 from a13n_service.iam.http.resource_dependencies import WorkspaceId
 from a13n_service.request_runtime import get_process_runtime
 
 from .collection import BotCollection, BotPlatform, BotSetupCondition, BotSummary
-from .domain import ActivateBotRequest, BotCheck, BotCheckHistory, BotCheckRequest, BotSetup
+from .domain import (
+    ActivateBotRequest,
+    BotCheck,
+    BotCheckHistory,
+    BotCheckRequest,
+    BotSetup,
+    DiscoverFeishuInstallationRequest,
+)
 from .history import BotThreadCollection
 from .reply_queries import BotReplyCollection
 from .service import BotService
@@ -144,3 +151,10 @@ async def bot_collection(
 @router.get("/summary", response_model=BotSummary)
 async def bot_summary(request: Request, actor: Actor, account_id: str) -> BotSummary:
     return await _service(request).summary(actor=actor, account_id=account_id)
+
+
+@collection_router.post("/workspaces/{workspace}/bots/feishu/installation", response_model=InstallationInfo)
+async def discover_feishu_installation(
+    request: Request, actor: Actor, workspace_id: WorkspaceId, body: DiscoverFeishuInstallationRequest
+) -> InstallationInfo:
+    return await _service(request).discover_feishu_installation(actor=actor, workspace_id=workspace_id, request=body)

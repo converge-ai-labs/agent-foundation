@@ -242,6 +242,7 @@ from .delegation_context_policy_task_state import DelegationContextPolicyTaskSta
 from .delete_queued_submission_request import DeleteQueuedSubmissionRequest
 from .developer_message import DeveloperMessage
 from .discard_draft_request import DiscardDraftRequest
+from .discover_feishu_installation_request import DiscoverFeishuInstallationRequest
 from .document import Document
 from .document_access_reason import DocumentAccessReason
 from .document_access_reason_kind import DocumentAccessReasonKind
@@ -971,6 +972,7 @@ __all__ = (
     "DeleteQueuedSubmissionRequest",
     "DeveloperMessage",
     "DiscardDraftRequest",
+    "DiscoverFeishuInstallationRequest",
     "Document",
     "DocumentAccessReason",
     "DocumentAccessReasonKind",

@@ -3347,6 +3347,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/workspaces/{workspace}/bots/feishu/installation": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Discover Feishu Installation */
+    post: operations["post_workspaces_workspace_bots_feishu_installation"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/workspaces/{workspace}/configuration-assistant/readiness": {
     parameters: {
       query?: never;
@@ -6641,6 +6658,16 @@ export interface components {
     DiscardDraftRequest: {
       /** Expected Version */
       expected_version: number;
+    };
+    /** DiscoverFeishuInstallationRequest */
+    DiscoverFeishuInstallationRequest: {
+      /** App Id */
+      app_id: string;
+      /**
+       * App Secret
+       * Format: password
+       */
+      app_secret: string;
     };
     /** Document */
     Document: {
@@ -23372,6 +23399,54 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["BotCollection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_workspaces_workspace_bots_feishu_installation: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["DiscoverFeishuInstallationRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["InstallationInfo"];
         };
       };
       /** @description Invalid request. */

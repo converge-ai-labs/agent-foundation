@@ -17,8 +17,10 @@ from a13n_service.connectivity.accounts.service import AccountService
 from a13n_service.connectivity.accounts.target_models import AccountTargetRecord
 from a13n_service.connectivity.errors import NativeError
 from a13n_service.connectivity.http import ConnectivityHttpError, EndpointValidator
-from a13n_service.connectivity.inspection import ConversationPage
+from a13n_service.connectivity.inspection import ConversationPage, InstallationInfo
 from a13n_service.connectivity.native_management import authorize, require_limit, require_version
+from a13n_service.connectivity.providers.lark.client import LarkNativeClient
+from a13n_service.connectivity.providers.lark.token import LarkTenantTokenProvider
 from a13n_service.credentials import CredentialSnapshot
 from a13n_service.iam.authorization import AuthenticatedActor, WorkspaceAction
 from a13n_service.secrets import SecretProtector
@@ -26,7 +28,14 @@ from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .collection import BotCollection, BotPlatform, BotSetupCondition, BotSummary, get_bot_summary, list_bots
-from .domain import ActivateBotRequest, BotCheck, BotCheckHistory, BotCheckRequest, BotSetup
+from .domain import (
+    ActivateBotRequest,
+    BotCheck,
+    BotCheckHistory,
+    BotCheckRequest,
+    BotSetup,
+    DiscoverFeishuInstallationRequest,
+)
 from .history import BotThreadCollection, list_bot_threads
 from .models import BotCheckRecord
 from .probe import InstallationProbe
@@ -64,6 +73,38 @@ class BotService:
         self._clock = clock
         self._public_origin = public_origin
         self._accounts = accounts
+
+    async def discover_feishu_installation(
+        self, *, actor: AuthenticatedActor, workspace_id: str, request: DiscoverFeishuInstallationRequest
+    ) -> InstallationInfo:
+        async with transaction(self._sessions) as session:
+            await authorize(session, actor, workspace_id, WorkspaceAction.application_account_manage)
+        # Discovery accepts credentials, never a caller-controlled destination or claimed identity.
+        origin = "https://open.feishu.cn"
+        tokens = LarkTenantTokenProvider(
+            self._http_client,
+            self._endpoint_validator,
+            open_api_origin=origin,
+            app_id=request.app_id,
+            app_secret=request.app_secret.get_secret_value(),
+        )
+        client = LarkNativeClient(self._http_client, self._endpoint_validator, tokens, open_api_origin=origin)
+        try:
+            with anyio.fail_after(self._timeout_seconds):
+                installation = await client.inspect_installation()
+                if not installation.enabled:
+                    raise ConnectivityHttpError("bot_inactive")
+        except (ConnectivityHttpError, TimeoutError) as error:
+            code = error.code if isinstance(error, ConnectivityHttpError) else "provider_unavailable"
+            message = (
+                "Enable and publish the Feishu bot before connecting it."
+                if code == "bot_inactive"
+                else "Could not identify the Feishu app. Check its credentials, publication status, and tenant information permission."
+            )
+            raise NativeError(code, message, category=ErrorCategory.unavailable) from error
+        async with transaction(self._sessions) as session:
+            await authorize(session, actor, workspace_id, WorkspaceAction.application_account_manage)
+        return installation
 
     async def summary(self, *, actor: AuthenticatedActor, account_id: str) -> BotSummary:
         return await get_bot_summary(self._sessions, actor=actor, account_id=account_id)

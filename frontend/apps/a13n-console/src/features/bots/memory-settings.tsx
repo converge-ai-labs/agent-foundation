@@ -10,7 +10,8 @@ import {
   Switch,
 } from "a13n-ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { MemoryProviderEditor } from "../memory/editor";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -23,9 +24,13 @@ import { BotChecks } from "./checks";
 export function MemorySettings({
   account,
   reload,
+  setup = false,
+  onConfigured,
 }: {
   account: BotAccount;
-  reload: () => Promise<void>;
+  reload?: () => Promise<void>;
+  setup?: boolean;
+  onConfigured?: () => void;
 }) {
   const [open, setOpen] = useState(false),
     { t } = useTranslation();
@@ -37,8 +42,11 @@ export function MemorySettings({
       closeLabel={t("Close")}
       size="md"
       trigger={
-        <Button variant="outline" onClick={() => setOpen(true)}>
-          {t("Memory settings")}
+        <Button
+          variant={setup ? "default" : "outline"}
+          onClick={() => setOpen(true)}
+        >
+          {t(setup ? "Set up memory" : "Memory settings")}
         </Button>
       }
     >
@@ -47,6 +55,7 @@ export function MemorySettings({
           account={account}
           close={() => setOpen(false)}
           reload={reload}
+          onConfigured={onConfigured}
         />
       )}
     </ModalFrame>
@@ -57,16 +66,22 @@ function SettingsForm({
   account,
   close,
   reload,
+  onConfigured,
 }: {
   account: BotAccount;
   close: () => void;
-  reload: () => Promise<void>;
+  reload?: () => Promise<void>;
+  onConfigured?: () => void;
 }) {
   const client = useClient(),
-    { workspace } = useWorkspace(),
+    cache = useQueryClient(),
+    { workspace, can } = useWorkspace(),
     { t } = useTranslation();
+  const [enabled, setEnabled] = useState(!!account.memory);
+  const [addingProvider, setAddingProvider] = useState(false);
+  const addTrigger = useRef<HTMLButtonElement>(null);
   const [providerId, setProviderId] = useState(
-    account.memory?.provider_id ?? "none",
+    account.memory?.provider_id ?? "",
   );
   const [useMemory, setUseMemory] = useState(
     account.memory?.use_memory ?? true,
@@ -105,7 +120,7 @@ function SettingsForm({
     ]),
   );
   const unavailable =
-    providerId !== "none" &&
+    enabled &&
     !(providers.data ?? []).some(
       (item) =>
         item.id === providerId &&
@@ -121,20 +136,21 @@ function SettingsForm({
           params: { path: { account_id: account.id } },
           body: {
             expected_version: account.memoryVersion,
-            memory:
-              providerId === "none"
-                ? null
-                : {
-                    provider_id: providerId,
-                    use_memory: useMemory,
-                    save_on_request: saveMemory,
-                    timezone,
-                  },
+            memory: !enabled
+              ? null
+              : {
+                  provider_id: providerId,
+                  use_memory: useMemory,
+                  save_on_request: saveMemory,
+                  timezone,
+                },
           },
         })
         .then(data);
-      await reload();
+      await cache.invalidateQueries({ queryKey: ["application-accounts"] });
+      await reload?.();
       close();
+      if (enabled && !account.memory) onConfigured?.();
     },
   });
   return (
@@ -150,37 +166,101 @@ function SettingsForm({
           "Only workspace administrators can view and manage connected private-group memory.",
         )}
       </p>
-      <ErrorNotice error={providers.error ?? types.error} />
-      {providers.isPending || types.isPending ? (
-        <Loading />
-      ) : (
-        <ChoiceField
-          label={t("Memory Provider")}
-          value={providerId}
-          onValueChange={setProviderId}
-          options={[
-            { value: "none", label: t("Disabled") },
-            ...(providers.data ?? []).map((item) => ({
-              value: item.id,
-              label: `${item.name}${!item.enabled ? ` · ${t("Disabled")}` : support.get(item.type) === false ? ` · ${t("Document memory unsupported")}` : support.get(item.type) !== true ? ` · ${t("Unavailable")}` : ""}`,
-              disabled: !item.enabled || support.get(item.type) !== true,
-            })),
-          ]}
-        />
-      )}
-      {unavailable && !providers.isPending && !types.isPending && (
-        <p role="note">
-          {t("Choose a Provider that supports document memory.")}
-        </p>
-      )}
-      {account.memory && providerId !== account.memory.provider_id && (
-        <p role="note">
+      <Label>
+        <Switch checked={enabled} onCheckedChange={setEnabled} />
+        {t("Enable memory")}
+      </Label>
+      {!enabled && (
+        <p>
           {t(
-            "Existing documents stay on the previous Provider. This does not migrate or delete them.",
+            "Enable memory to choose storage and configure conversation defaults.",
           )}
         </p>
       )}
-      {providerId !== "none" && (
+      {enabled && (
+        <>
+          <ErrorNotice
+            error={providers.error ?? types.error}
+            retry={() => {
+              void providers.refetch();
+              void types.refetch();
+            }}
+          />
+          {providers.isPending || types.isPending ? (
+            <Loading />
+          ) : (
+            <>
+              <ChoiceField
+                label={t("Memory storage")}
+                value={providerId}
+                onValueChange={setProviderId}
+                options={[
+                  {
+                    value: "",
+                    label: t("Select memory storage"),
+                    disabled: true,
+                  },
+                  ...(providers.data ?? []).map((item) => ({
+                    value: item.id,
+                    label: `${item.name}${!item.enabled ? ` · ${t("Disabled")}` : support.get(item.type) === false ? ` · ${t("Document memory unsupported")}` : support.get(item.type) !== true ? ` · ${t("Unavailable")}` : ""}`,
+                    disabled: !item.enabled || support.get(item.type) !== true,
+                  })),
+                ]}
+              />
+              {!providers.error &&
+                !types.error &&
+                !(providers.data ?? []).some(
+                  (item) => item.enabled && support.get(item.type) === true,
+                ) && (
+                  <p role="note">
+                    {t(
+                      "No compatible memory storage is available. Add storage to continue.",
+                    )}
+                  </p>
+                )}
+              {providerId && unavailable && (
+                <p role="note">
+                  {t("Choose a Provider that supports document memory.")}
+                </p>
+              )}
+              {can("memory_provider.manage") && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  ref={addTrigger}
+                  onClick={() => setAddingProvider(true)}
+                >
+                  {t("Add memory storage")}
+                </Button>
+              )}
+              {!can("memory_provider.manage") && (
+                <p>
+                  {t("Ask a workspace administrator to add memory storage.")}
+                </p>
+              )}
+            </>
+          )}
+        </>
+      )}
+      <MemoryProviderEditor
+        scope={{ kind: "workspace", id: workspace.id }}
+        controlledOpen={addingProvider}
+        onClose={() => setAddingProvider(false)}
+        finalFocus={addTrigger}
+        onSaved={(provider) => {
+          setProviderId(provider.id);
+          void providers.refetch();
+        }}
+      />
+      {account.memory &&
+        (!enabled || providerId !== account.memory.provider_id) && (
+          <p role="note">
+            {t(
+              "Existing documents stay on the previous Provider. This does not migrate or delete them.",
+            )}
+          </p>
+        )}
+      {enabled && providerId && !unavailable && (
         <>
           <Label>
             <Switch checked={useMemory} onCheckedChange={setUseMemory} />
@@ -207,7 +287,14 @@ function SettingsForm({
       <ErrorNotice error={save.error} />
       <FormActions
         pending={save.isPending}
-        disabled={unavailable}
+        disabled={
+          unavailable ||
+          (enabled &&
+            (providers.isPending ||
+              types.isPending ||
+              !!providers.error ||
+              !!types.error))
+        }
         onCancel={close}
       />
     </form>

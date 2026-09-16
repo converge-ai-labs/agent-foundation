@@ -306,6 +306,8 @@ pub mod developer_message;
 pub use self::developer_message::DeveloperMessage;
 pub mod discard_draft_request;
 pub use self::discard_draft_request::DiscardDraftRequest;
+pub mod discover_feishu_installation_request;
+pub use self::discover_feishu_installation_request::DiscoverFeishuInstallationRequest;
 pub mod document;
 pub use self::document::Document;
 pub mod document_access_reason;

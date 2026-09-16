@@ -83,19 +83,79 @@ export function AccountForm({
       initial?.input_batching ?? null,
     );
   const setupCommand = useRef<string | null>(null);
+  const discoveredInstallation = useRef<{
+    fingerprint: string;
+    installation: Schema["InstallationInfo"];
+  } | null>(null);
   const definition = definitions.data?.items.find(
     (item) => `${item.provider_key}@${item.config_version}` === provider,
   );
+  const configurationSchema =
+    definition && setupProvider === "lark"
+      ? {
+          ...definition.configuration_schema,
+          required: ["app_id"],
+          properties: Object.fromEntries(
+            Object.entries(
+              (definition.configuration_schema.properties ?? {}) as Record<
+                string,
+                unknown
+              >,
+            ).filter(([field]) => field === "app_id"),
+          ),
+        }
+      : definition?.configuration_schema;
   const save = useMutation({
     gcTime: 0,
     mutationFn: async () => {
       if (!definition) throw new Error(t("Select an account provider."));
-      validateSettings(definition.configuration_schema, configuration);
+      validateSettings(
+        configurationSchema!,
+        setupProvider === "lark"
+          ? { app_id: configuration.app_id }
+          : configuration,
+      );
+      let accountConfiguration = configuration;
+      if (setupProvider === "lark" && !basis) {
+        validateSettings(definition.credential_schema, credentials);
+        const appId = stringValues(configuration).app_id;
+        const appSecret = stringValues(credentials).app_secret;
+        const fingerprint = await setupFingerprint({
+          app_id: appId,
+          app_secret: appSecret,
+        });
+        if (
+          setupCommand.current &&
+          discoveredInstallation.current?.fingerprint !== fingerprint
+        )
+          throw new Error(
+            t(
+              "The previous save is unconfirmed. Re-enter the same credentials and retry the unchanged setup to recover its result.",
+            ),
+          );
+        if (discoveredInstallation.current?.fingerprint !== fingerprint) {
+          const installation = await client.http
+            .POST("/api/v1/workspaces/{workspace}/bots/feishu/installation", {
+              params: { path: { workspace: workspace.id } },
+              body: { app_id: appId, app_secret: appSecret },
+            })
+            .then(data);
+          discoveredInstallation.current = { fingerprint, installation };
+        }
+        const installation = discoveredInstallation.current.installation;
+        accountConfiguration = {
+          brand: "feishu",
+          open_api_origin: "https://open.feishu.cn",
+          app_id: installation.app_id,
+          tenant_key: installation.organization_id,
+          bot_open_id: installation.bot_id,
+        };
+      }
       if (Object.keys(policy).length)
         validateSettings(definition.reception_policy_schema, policy);
       const common = {
         name,
-        provider_config: jsonObject(JSON.stringify(configuration)),
+        provider_config: jsonObject(JSON.stringify(accountConfiguration)),
         receive_enabled: setupProvider ? false : receive,
         reception_scope:
           basis?.reception_scope ??
@@ -123,30 +183,7 @@ export function AccountForm({
         provider_config_version: definition.config_version,
         credentials: stringValues(credentials),
       };
-      const digest = setupProvider
-        ? Array.from(
-            new Uint8Array(
-              await crypto.subtle.digest(
-                "SHA-256",
-                new TextEncoder().encode(
-                  JSON.stringify(body, (_name, value: unknown) =>
-                    value !== null &&
-                    typeof value === "object" &&
-                    !Array.isArray(value)
-                      ? Object.fromEntries(
-                          Object.entries(value).sort(([a], [b]) =>
-                            a.localeCompare(b),
-                          ),
-                        )
-                      : value,
-                  ),
-                ),
-              ),
-            ),
-          )
-            .map((byte) => byte.toString(16).padStart(2, "0"))
-            .join("")
-        : null;
+      const digest = setupProvider ? await setupFingerprint(body) : null;
       if (digest && setupCommand.current && setupCommand.current !== digest)
         throw new Error(
           t(
@@ -240,22 +277,7 @@ export function AccountForm({
         <>
           <SchemaFields
             key={provider}
-            schema={
-              setupProvider === "lark"
-                ? {
-                    ...definition.configuration_schema,
-                    properties: Object.fromEntries(
-                      Object.entries(
-                        (definition.configuration_schema.properties ??
-                          {}) as Record<string, unknown>,
-                      ).filter(
-                        ([field]) =>
-                          !["brand", "open_api_origin"].includes(field),
-                      ),
-                    ),
-                  }
-                : definition.configuration_schema
-            }
+            schema={configurationSchema!}
             value={configuration}
             onChange={setConfiguration}
           />
@@ -406,4 +428,22 @@ export function BatchingFields({
       )}
     </div>
   );
+}
+
+async function setupFingerprint(value: unknown): Promise<string> {
+  const bytes = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(
+      JSON.stringify(value, (_name, item: unknown) =>
+        item !== null && typeof item === "object" && !Array.isArray(item)
+          ? Object.fromEntries(
+              Object.entries(item).sort(([a], [b]) => a.localeCompare(b)),
+            )
+          : item,
+      ),
+    ),
+  );
+  return Array.from(new Uint8Array(bytes))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
