@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
-import { EditorView, keymap, placeholder } from "@codemirror/view";
+import { EditorView, keymap } from "@codemirror/view";
 import { Compartment, Prec } from "@codemirror/state";
 import {
   autocompletion,
@@ -158,7 +158,6 @@ export function ComposerEditor({
           : []),
         attributes.current.of(initialAttributes.current),
         skills.current.of([]),
-        placeholder("What would you like to work on?"),
         keymap.of([
           ...["Enter", "Mod-Enter"].map((key) => ({
             key,
