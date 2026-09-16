@@ -394,20 +394,29 @@ class QueuedSubmissionService:
         request: DeleteQueuedSubmissionRequest,
         idempotency_key: str,
     ) -> ThreadQueueMutationReceipt:
-        if replayed := await self._pre_replay(
-            actor=actor,
-            operation="queue.delete",
-            scope_id=queued_submission_id,
-            idempotency_key=idempotency_key,
-            request=request,
-            response_type=ThreadQueueMutationReceipt,
-        ):
+        async def replay() -> ThreadQueueMutationReceipt | None:
+            return await self._pre_replay(
+                actor=actor,
+                operation="queue.delete",
+                scope_id=queued_submission_id,
+                idempotency_key=idempotency_key,
+                request=request,
+                response_type=ThreadQueueMutationReceipt,
+            )
+
+        if replayed := await replay():
             return replayed
-        scope = await self._submission_scope(
-            actor=actor,
-            queued_submission_id=queued_submission_id,
-            action=WorkspaceAction.queued_submission_delete,
-        )
+        try:
+            scope = await self._submission_scope(
+                actor=actor,
+                queued_submission_id=queued_submission_id,
+                action=WorkspaceAction.queued_submission_delete,
+            )
+        except InteractionCommandError:
+            # Another matching request can delete the row after preflight.
+            if replayed := await replay():
+                return replayed
+            raise
         return await self._mutate(
             actor=actor,
             scope=scope,

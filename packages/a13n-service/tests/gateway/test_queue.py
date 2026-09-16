@@ -596,3 +596,48 @@ async def test_delete_http_query_contract_and_empty_replay_after_row_removal(
             )
         ).all()
         assert len(evidence) == 1
+
+
+async def test_delete_replays_concurrent_commit_after_preflight(lifecycle_interaction_sessions, tmp_path, monkeypatch):
+
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    thread_id = await _active_thread(lifecycle_interaction_sessions, tmp_path)
+    service = await _service(lifecycle_interaction_sessions, tmp_path)
+    queued = await service.enqueue(
+        actor=_actor(),
+        thread_id=thread_id,
+        expected_thread_version=1,
+        submission=_intent("delete-race"),
+        idempotency_key="enqueue-race",
+    )
+    reached, release = Event(), Event()
+    original = service._submission_scope
+    pause = True
+
+    async def delayed(*args, **kwargs):
+        nonlocal pause
+        if pause:
+            pause = False
+            reached.set()
+            await release.wait()
+        return await original(*args, **kwargs)
+
+    monkeypatch.setattr(service, "_submission_scope", delayed)
+    kwargs = {
+        "actor": _actor(),
+        "queued_submission_id": queued.queued_submission.queued_submission_id,
+        "request": DeleteQueuedSubmissionRequest(expected_version=1),
+        "idempotency_key": "same-delete",
+    }
+    pending = asyncio.create_task(service.delete(**kwargs))
+    try:
+        async with asyncio.timeout(10):
+            await reached.wait()
+            committed = await service.delete(**kwargs)
+            release.set()
+            assert await pending == committed
+    finally:
+        release.set()
+        if not pending.done():
+            pending.cancel()
+        await asyncio.gather(pending, return_exceptions=True)
