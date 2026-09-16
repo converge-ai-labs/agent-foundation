@@ -79,6 +79,7 @@ async def test_queue_mutation_and_completion_handoff_use_one_committed_intent(co
         if winner == "mutation"
         else journey.arm("consumed-model", "model.request", role="control", case_id=cases[0]["case_id"], request=1)
     )
+    recovery = journey.arm("scanner", "control.queue_recovery", role="control", thread_id=source["thread_id"])
     journey.release(model)
     hit = await journey.reached(handoff)
     before = await live.thread(source["thread_id"])
@@ -101,6 +102,7 @@ async def test_queue_mutation_and_completion_handoff_use_one_committed_intent(co
         consumed = await journey.queue_row(rows[0])
         assert consumed["state"] == "consumed" and consumed["consumed_run_id"] == before["current_run_id"]
     journey.release(handoff)
+    journey.release(recovery)
     parent = await live.finish(source["run_id"])
     expected = list(zip(rows, cases, strict=True))
     if winner == "mutation":

@@ -8,7 +8,7 @@ def install(faults, options):
     from a13n_service.interactions.acceptance import RunAcceptanceService
     from a13n_service.interactions.queue import QueuedSubmissionStore
     from a13n_service.interactions.queue_commands import QueuedRunCommands
-    from a13n_service.interactions.queue_recovery import QueueRecovery
+    from a13n_service.interactions.queue_drain import QueueDrain
 
     consumer = ContextVar("live_queue_consumer", default=None)
     original_consume = QueuedRunCommands.consume_queued
@@ -55,7 +55,7 @@ def install(faults, options):
         return await original_enqueue(self, **kwargs)
 
     QueuedSubmissionStore.enqueue = enqueue
-    original_scan = QueueRecovery.scan
+    original_scan = QueueDrain.scan
 
     @wraps(original_scan)
     async def scan(self):
@@ -65,7 +65,7 @@ def install(faults, options):
         )
         return result
 
-    QueueRecovery.scan = scan
+    QueueDrain.scan = scan
     if limits := options.get("queue"):
         original_init = QueuedSubmissionStore.__init__
 
