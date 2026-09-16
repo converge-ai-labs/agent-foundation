@@ -143,11 +143,15 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
         f"{account_prefix}/bot/conversations",
         f"{account_prefix}/bot/threads",
         f"{account_prefix}/bot/replies",
+        f"{account_prefix}/bot/memory-settings",
         f"{account_prefix}/memory-scopes",
         f"{account_prefix}/memory-sharing-policies",
     } <= connectivity_paths.keys()
+    assert {"get", "put"} <= connectivity_paths[f"{account_prefix}/bot/memory-settings"].keys()
     for path, operations in connectivity_paths.items():
-        if path.startswith(f"{account_prefix}/bot/"):
+        if path == f"{account_prefix}/bot/memory-settings":
+            tag = "bot-memory"
+        elif path.startswith(f"{account_prefix}/bot/"):
             tag = "bots"
         elif path.startswith((f"{account_prefix}/memory-scopes", f"{account_prefix}/memory-sharing-policies")):
             tag = "bot-memory"
