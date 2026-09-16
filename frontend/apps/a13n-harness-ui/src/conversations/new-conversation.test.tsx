@@ -152,7 +152,23 @@ beforeEach(() => {
               {
                 model_id: "model-one",
                 name: "Primary model",
-                route: "openai:primary",
+                route: "custom:primary",
+                thinking: {
+                  status: "supported",
+                  default_summary: "High",
+                  options: [
+                    {
+                      value: null,
+                      label: "Model default",
+                      description: "High",
+                    },
+                    {
+                      value: "low",
+                      label: "Quick thinking",
+                      description: "Published by the backend",
+                    },
+                  ],
+                },
               },
               {
                 model_id: "model-two",
@@ -504,6 +520,10 @@ it("distinguishes inherited choices and sends an independent model without chang
   await user.click(
     screen.getByRole("option", { name: /Primary model.*model-one/ }),
   );
+  await user.click(screen.getByRole("combobox", { name: "Thinking" }));
+  await user.click(
+    await screen.findByRole("option", { name: /Quick thinking/ }),
+  );
   await user.click(screen.getByRole("link", { name: "Settings" }));
   await user.click(screen.getByRole("link", { name: "Return to draft" }));
   expect(screen.getByRole("combobox", { name: "Model" }).textContent).toContain(
@@ -525,6 +545,7 @@ it("distinguishes inherited choices and sends an independent model without chang
     parts: ["Build this"],
     source_id: expect.stringMatching(/^input_[0-9a-f]{32}$/),
     model_id: "model-one",
+    thinking: "low",
   });
 });
 

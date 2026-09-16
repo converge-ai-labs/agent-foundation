@@ -77,6 +77,8 @@ function Conversation({
       );
     },
     onSuccess: (updated) => {
+      draft.thinking = null;
+      draft.notify();
       queries.setQueryData<Schema<"ThreadDetail">>(
         ["thread", threadId, "detail"],
         (current) => {
@@ -657,6 +659,11 @@ function Conversation({
                 catalog={selectors.data}
                 agentId={thread?.configuration.agent_source.id ?? ""}
                 modelId={draft.modelId}
+                thinking={draft.thinking}
+                onThinkingChange={(value) => {
+                  draft.thinking = value;
+                  draft.notify();
+                }}
                 disabled={
                   !thread ||
                   agentSelection.isPending ||
@@ -667,6 +674,7 @@ function Conversation({
                 onAgentChange={(value) => agentSelection.mutate(value)}
                 onModelChange={(value) => {
                   draft.modelId = value;
+                  draft.thinking = null;
                   draft.notify();
                 }}
               />

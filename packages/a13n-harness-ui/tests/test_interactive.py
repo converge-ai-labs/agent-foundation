@@ -47,6 +47,9 @@ def test_command_registry_has_one_grammar_and_rejects_collisions() -> None:
     assert registry.parse("/mode detailed", busy=True).arguments == ("detailed",)
     assert registry.completions("/mo")[0][0] == "/mode"
     assert registry.completions("/mode d")[0][0] == "detailed"
+    registry.thinking_choices = (("default", "Configured native value"), ("off", "Disable thinking"))
+    assert registry.completions("/thinking o") == (("off", "Disable thinking"),)
+    assert registry.completions("/thinking h") == ()
     assert "Alt+Enter" in registry.help()
     for invalid in ("/unknown", "/model a b", "/mode invalid", '/attach "unclosed'):
         with pytest.raises(ValueError):
@@ -675,7 +678,14 @@ async def test_session_overrides_capture_native_context_and_resume(
         backend = SessionBackend(app, CliRequest(), tmp_path, status)
         assert await backend.initialize()
         assert status.context_window == 350000
+        choices = await backend.choices("thinking")
+        assert {item.value for item in choices} == {"default", "off", "low", "medium", "high", "xhigh"}
         await backend.thinking("low")
+        assert status.thinking == "Low"
+        assert "Thinking Low" in status.line(160)
+        with pytest.raises(ValueError, match="Unsupported"):
+            await backend.thinking("minimal")
+        assert backend.overrides.thinking == "low"
         renderer = StreamRenderer(status)
         assert await backend.execute(renderer, prompt="First") == ""
         assert "Hello from the mock." in renderer.drain()

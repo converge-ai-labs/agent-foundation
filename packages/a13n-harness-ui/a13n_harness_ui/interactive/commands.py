@@ -106,7 +106,7 @@ COMMANDS = (
         "Show or change reasoning effort for subsequent turns.",
         "[level]",
         maximum=1,
-        choices=("default", "low", "medium", "high", "xhigh"),
+        choices=(),
     ),
     Command(
         "environment",
@@ -139,6 +139,7 @@ class CommandRegistry:
     def __init__(self, commands: tuple[Command, ...] = COMMANDS) -> None:
         self.commands = commands
         self.skills: dict[str, tuple[str, SkillReference]] = {}
+        self.thinking_choices: tuple[tuple[str, str], ...] = ()
         self._index: dict[str, Command] = {}
         for command in commands:
             for name in (command.name, *command.aliases):
@@ -245,4 +246,6 @@ class CommandRegistry:
         command = self._index.get(head)
         if command is None:
             return ()
+        if command.name == "thinking":
+            return tuple(item for item in self.thinking_choices if item[0].startswith(tail))
         return tuple((value, command.summary) for value in command.choices if value.startswith(tail))

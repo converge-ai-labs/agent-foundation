@@ -84,6 +84,7 @@ async def test_run_cancellation_uses_status_until_one_final_notice(input_text: s
             cancel=cancel,
             interaction=AsyncMock(return_value=None),
             skill_catalog=AsyncMock(return_value=None),
+            thinking_choices=lambda: (),
         )
         shell.ready = True
         shell.launch(operation(), kind="run")

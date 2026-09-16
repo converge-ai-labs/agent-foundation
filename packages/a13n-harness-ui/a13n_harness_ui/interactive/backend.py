@@ -27,6 +27,7 @@ from a13n_harness_ui.environment_profiles import (
 from a13n_harness_ui.errors import HarnessUiError, ThreadError
 from a13n_harness_ui.live import LiveEvent, root_context_samples, root_model_usage
 from a13n_harness_ui.model_adapters import service_tier_setting
+from a13n_harness_ui.model_thinking import ThinkingControl, apply_thinking, describe_thinking, summarize_thinking
 from a13n_harness_ui.storage import (
     AgentResourceSource,
     ThreadConfiguration,
@@ -71,6 +72,7 @@ class SessionBackend:
         self.thread_id = request.thread_id
         self.agent_id = request.agent_id
         self.overrides = RunModelOverrides()
+        self.thinking_control: ThinkingControl | None = None
         self._model_preference_project_id: str | None = None
         self.environment = request.environment_profile_id or (
             environment_profile_id_for_mode(request.environment_mode) if request.environment_mode else None
@@ -169,6 +171,7 @@ class SessionBackend:
         if model is None:
             self.status.model = "not configured"
             self.status.thinking = "default"
+            self.thinking_control = None
             self.status.service_tier = None
             self.status.context_window = None
             return False
@@ -179,11 +182,16 @@ class SessionBackend:
             or model.settings.get("service_tier")
         )
         self.status.service_tier = tier if isinstance(tier, str) else None
-        self.status.thinking = str(
-            self.overrides.thinking
-            if self.overrides.thinking is not None
-            else model.settings.get("thinking", "default")
-        )
+        self.thinking_control = describe_thinking(model.route, model.settings)
+        try:
+            effective = apply_thinking(model.route, model.settings, self.overrides.thinking)
+            self.status.thinking = summarize_thinking(model.route, effective)
+            if self.overrides.thinking is None:
+                self.status.thinking += " (default)"
+        except HarnessUiError:
+            # A configuration publication can invalidate a draft choice. Keep
+            # the choice visible; capture rejects it rather than falling back.
+            self.status.thinking = "Unavailable selection — /thinking to reset"
         self.status.context_window = (
             None if model.model_characteristics is None else model.model_characteristics.context_window_tokens
         )
@@ -263,12 +271,19 @@ class SessionBackend:
         return f"Model · {self.status.model} · {scope}"
 
     async def thinking(self, selected: str | None) -> str:
+        await self.refresh()
+        control = self.thinking_control
+        if control is None:
+            raise ValueError("Configure a model before selecting thinking.")
         if selected is not None:
-            self.overrides = RunModelOverrides.model_validate(
-                {**self.overrides.model_dump(), "thinking": None if selected == "default" else selected}
-            )
+            option = next((item for item in control.options if item.command == selected), None)
+            if option is None:
+                raise ValueError(control.reason or "Unsupported thinking option. Use /thinking for available choices.")
+            if option.disabled_reason:
+                raise ValueError(option.disabled_reason)
+            self.overrides = self.overrides.model_copy(update={"thinking": option.value})
             await self.refresh()
-        return f"Reasoning · {self.status.thinking}"
+        return f"Thinking · {self.status.thinking}"
 
     async def fast(self, selected: str | None) -> str:
         if not await self.refresh():
@@ -536,6 +551,15 @@ class SessionBackend:
                 f"Import/enrollment incomplete: {exc}. Definitions already published or reused: {', '.join(published) or 'none'}. No rollback claimed; /import previews the current state before retry."
             ) from exc
 
+    def thinking_choices(self) -> tuple[Choice, ...]:
+        control = self.thinking_control
+        if control is None:
+            return ()
+        return tuple(
+            Choice(item.command, item.label, item.disabled_reason or control.reason or item.description)
+            for item in control.options
+        )
+
     async def choices(self, kind: str) -> tuple[Choice, ...]:
         if kind == "model":
             configuration = await self.app.current_configuration()
@@ -562,7 +586,8 @@ class SessionBackend:
                 else ()
             )
         if kind == "thinking":
-            return tuple(Choice(value, value) for value in ("default", "low", "medium", "high", "xhigh"))
+            await self.refresh()
+            return self.thinking_choices()
         if kind == "environment":
             return (
                 Choice("full-control", "Full Control", "Native host shell and files; no sandbox"),

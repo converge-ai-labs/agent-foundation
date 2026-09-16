@@ -1449,6 +1449,8 @@ export interface components {
             source_id: string;
             /** Model Id */
             model_id: string;
+            /** Thinking Summary */
+            thinking_summary?: string | null;
         };
         /** CapturedConfiguration */
         CapturedConfiguration: {
@@ -1901,6 +1903,8 @@ export interface components {
             model_id?: string | null;
             /** Thinking */
             thinking?: string | boolean | null;
+            /** Thinking Summary */
+            thinking_summary?: string | null;
         };
         /** ContinuationSelectionView */
         ContinuationSelectionView: {
@@ -2522,6 +2526,7 @@ export interface components {
             name: string;
             /** Route */
             route: string;
+            thinking?: components["schemas"]["ThinkingControl"] | null;
         };
         /** NotePage */
         NotePage: {
@@ -3611,6 +3616,31 @@ export interface components {
             /** Output End */
             output_end: number;
         };
+        /** ThinkingControl */
+        ThinkingControl: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "supported" | "unsupported" | "unknown";
+            /** Default Summary */
+            default_summary: string;
+            /** Options */
+            options: components["schemas"]["ThinkingOption"][];
+            /** Reason */
+            reason?: string | null;
+        };
+        /** ThinkingOption */
+        ThinkingOption: {
+            value: components["schemas"]["ThinkingSelection"] | null;
+            /** Label */
+            label: string;
+            /** Description */
+            description: string;
+            /** Disabled Reason */
+            disabled_reason?: string | null;
+        };
+        ThinkingSelection: boolean | ("minimal" | "low" | "medium" | "high" | "xhigh" | "max");
         /** ThreadActivityPage */
         ThreadActivityPage: {
             /** Project Id */
@@ -4577,6 +4607,7 @@ export interface components {
             source_id?: string | null;
             /** Model Id */
             model_id?: string | null;
+            thinking?: components["schemas"]["ThinkingSelection"] | null;
         };
         /** RootSteerRequest */
         RootSteerRequest: {

@@ -4707,6 +4707,17 @@
           "model_id": {
             "type": "string",
             "title": "Model Id"
+          },
+          "thinking_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thinking Summary"
           }
         },
         "additionalProperties": false,
@@ -5979,6 +5990,17 @@
               }
             ],
             "title": "Thinking"
+          },
+          "thinking_summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thinking Summary"
           }
         },
         "additionalProperties": false,
@@ -7650,6 +7672,16 @@
             "type": "string",
             "minLength": 1,
             "title": "Route"
+          },
+          "thinking": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThinkingControl"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -10489,6 +10521,108 @@
         ],
         "title": "TerminalView",
         "type": "object"
+      },
+      "ThinkingControl": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "supported",
+              "unsupported",
+              "unknown"
+            ],
+            "title": "Status"
+          },
+          "default_summary": {
+            "type": "string",
+            "title": "Default Summary"
+          },
+          "options": {
+            "items": {
+              "$ref": "#/components/schemas/ThinkingOption"
+            },
+            "type": "array",
+            "title": "Options"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "status",
+          "default_summary",
+          "options"
+        ],
+        "title": "ThinkingControl"
+      },
+      "ThinkingOption": {
+        "properties": {
+          "value": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThinkingSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "disabled_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disabled Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "value",
+          "label",
+          "description"
+        ],
+        "title": "ThinkingOption"
+      },
+      "ThinkingSelection": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "enum": [
+              "minimal",
+              "low",
+              "medium",
+              "high",
+              "xhigh",
+              "max"
+            ],
+            "type": "string"
+          }
+        ]
       },
       "ThreadActivityPage": {
         "properties": {
@@ -13361,6 +13495,16 @@
               }
             ],
             "title": "Model Id"
+          },
+          "thinking": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThinkingSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "title": "SubmitRequest",

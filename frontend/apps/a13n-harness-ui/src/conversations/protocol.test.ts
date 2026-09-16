@@ -293,14 +293,22 @@ it("selects a model for one HTTP admission without changing sticky configuration
   const receipt = await result(
     transport.client.POST("/api/threads/{thread_id}/submit", {
       params: { path: { thread_id: thread } },
-      body: { prompt: "Use the alternate model", model_id: "model-alternate" },
+      body: {
+        prompt: "Use the alternate model",
+        model_id: "model-alternate",
+        thinking: "low",
+      },
     }),
   );
   await expect(
     transport.fetch(`/api/operations/${receipt.receipt_id}/steer`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt: "Continue", model_id: "model-fixture" }),
+      body: JSON.stringify({
+        prompt: "Continue",
+        model_id: "model-fixture",
+        thinking: "high",
+      }),
     }),
   ).rejects.toMatchObject({ status: 400 });
   await vi.waitFor(
@@ -320,6 +328,12 @@ it("selects a model for one HTTP admission without changing sticky configuration
     }),
   );
   expect(inspection.captured?.agent.model_id).toBe("model-alternate");
+  expect(inspection.captured?.agent.thinking_summary).toBe("Low");
+  expect(
+    catalog.models
+      ?.find((item) => item.model_id === "model-alternate")
+      ?.thinking?.options.map((option) => option.value),
+  ).toEqual([null, "minimal", "low", "medium", "high"]);
   expect(inspection.next_model_id).toBe("model-fixture");
   const rejected = await transport.client.POST(
     "/api/threads/{thread_id}/submit",

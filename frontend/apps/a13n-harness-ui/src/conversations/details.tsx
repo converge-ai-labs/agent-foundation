@@ -546,6 +546,10 @@ function ContextDetails({
             <dt>Model</dt>
             <dd>{context.data?.model_id ?? "Not reported"}</dd>
           </div>
+          <div>
+            <dt>Thinking (last captured request)</dt>
+            <dd>{context.data?.thinking_summary ?? "Not reported"}</dd>
+          </div>
         </dl>
       </section>
       <section>

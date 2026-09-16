@@ -150,6 +150,7 @@ export async function submitDraft(
     draft.submission.kind === "unknown"
   )
     return;
+  const thinking = draft.thinking;
   // Own the shared submission state before any asynchronous preparation so
   // Retry and ordinary Send/Steer cannot race while synchronization or skills load.
   draft.submission = { kind: "pending", action };
@@ -193,6 +194,7 @@ export async function submitDraft(
             source_id: input.id,
             ...(references.length ? { skill_references: references } : {}),
             ...(modelId ? { model_id: modelId } : {}),
+            ...(thinking != null ? { thinking } : {}),
           },
         }),
       );

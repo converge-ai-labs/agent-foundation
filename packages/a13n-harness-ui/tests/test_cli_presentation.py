@@ -341,6 +341,9 @@ async def test_failed_admission_preserves_images_and_next_draft_is_not_overwritt
         thread_id = None
         resumed_transcript = None
 
+        def thinking_choices(self):
+            return ()
+
         async def skill_catalog(self):
             return None
 
@@ -384,6 +387,9 @@ async def test_menu_escape_and_multiline_paste_preserve_draft_and_images() -> No
     class Backend:
         thread_id = None
         resumed_transcript = None
+
+        def thinking_choices(self):
+            return ()
 
         async def skill_catalog(self):
             return None
@@ -472,6 +478,9 @@ async def test_failed_send_recovery_fences_next_drafts_pending_clipboard(monkeyp
     class Backend:
         thread_id = None
         resumed_transcript = None
+
+        def thinking_choices(self):
+            return ()
 
         async def skill_catalog(self):
             return None
@@ -590,6 +599,9 @@ async def test_cancel_key_stops_pending_menu_query_without_consuming_next_draft(
     class Backend:
         thread_id = None
         resumed_transcript = None
+
+        def thinking_choices(self):
+            return ()
 
         async def skill_catalog(self):
             return None

@@ -386,7 +386,9 @@ class ThreadProjectionService:
         if observed is not None:
             latest = observed.request_usage.input_tokens + observed.request_usage.output_tokens
         model = composition.root.model
-        thinking = model.settings.get("thinking")
+        from a13n_harness_ui.model_thinking import summarize_thinking
+
+        thinking = model.thinking_override if model.thinking_override is not None else model.settings.get("thinking")
         return ContextUsageView(
             thread_id=thread_id,
             latest_request_tokens=latest,
@@ -395,6 +397,7 @@ class ThreadProjectionService:
             ),
             model_id=model.model_id,
             thinking=thinking if isinstance(thinking, (str, bool)) else None,
+            thinking_summary=summarize_thinking(model.route, model.settings),
         )
 
     async def _history(self, thread: Thread) -> tuple[tuple[ModelMessage, ...], str]:

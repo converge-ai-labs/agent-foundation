@@ -95,6 +95,7 @@ export class ThreadDraft {
   localInputs: LocalInput[] = [];
   // A private, in-tab Send choice, not shared input or sticky Thread configuration.
   modelId: string | undefined;
+  thinking: Schema<"SubmitRequest">["thinking"] = null;
   replacement: Schema<"DraftFrame"> | undefined;
   private accepted: Y.Snapshot | undefined;
   private listeners = new Set<() => void>();

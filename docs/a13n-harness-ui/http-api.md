@@ -161,6 +161,8 @@ curl --fail-with-body "$HUI_URL/api/threads/$THREAD_ID/submit" \
   --data '{"prompt":"Explain this project without changing files."}'
 ```
 
+Ordinary `/submit` also accepts optional `model_id` and `thinking` for that Run only. Omitted or null thinking inherits the effective Model settings; false explicitly requests Off. Read the Model's `thinking` descriptor from `/api/selectors` for its accepted values, configured-default summary, and disabled reasons rather than assuming every model accepts every level. Invalid or blocked selections are rejected without fallback. Neither override updates sticky Thread configuration, and steering rejects them. Captured configuration exposes a requested-thinking summary separately from current resource defaults.
+
 The returned `RootRunReceipt` has `receipt_id`, `thread_id`, and `submitted_at`. Read `/api/operations/{receipt_id}` until terminal status; there is no root-operation HTTP `wait` endpoint. Preparing/running is not completion. Completed/suspended/failed/cancelled describes the operation; inspect any `outcome.execution`, `outcome.continuation`, and `outcome.environment` separately.
 
 Only one active root operation is allowed per Thread. A second submit is rejected, not queued. There is no Service-style durable acceptance/idempotency contract here. After losing an acknowledgement, read current Thread/root activity before deciding what to do; do not blindly submit the input again. After process restart, old receipts can be unavailable while the saved continuation remains readable.

@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue, field_validator, m
 from a13n_harness_ui.configuration.models import ProjectDefaults
 from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.live import LiveEvent, RootStreamSummary
+from a13n_harness_ui.model_thinking import ThinkingControl, ThinkingSelection
 from a13n_harness_ui.output_comment_models import SavedOutputTarget
 from a13n_harness_ui.storage import AgentResourceSource, MarkdownSubagentSource, ThreadConfiguration
 from a13n_harness_ui.storage import ThreadConfigurationPatch as StoredThreadConfigurationPatch
@@ -31,7 +32,7 @@ class RunModelOverrides(SurfaceModel):
     """Per-operation choices; never rewrite resources or sticky Thread heads."""
 
     model_id: str | None = Field(default=None, min_length=1, max_length=128)
-    thinking: bool | Literal["minimal", "low", "medium", "high", "xhigh"] | None = None
+    thinking: ThinkingSelection | None = None
     service_tier: Literal["auto", "default", "flex", "priority"] | None = None
 
 
@@ -41,6 +42,7 @@ class ContextUsageView(SurfaceModel):
     context_window: int | None = None
     model_id: str | None = None
     thinking: str | bool | None = None
+    thinking_summary: str | None = None
 
 
 class AgentSourceView(SurfaceModel):
@@ -621,6 +623,7 @@ class ModelSummary(SurfaceModel):
     model_id: str = Field(min_length=1, max_length=128)
     name: str = Field(min_length=1, max_length=256)
     route: str = Field(min_length=1)
+    thinking: ThinkingControl | None = None
 
 
 class ThreadSelectorCatalog(SurfaceModel):

@@ -9,6 +9,7 @@ from pydantic import Field
 from a13n_harness_ui.composition import ResolvedRunComposition
 from a13n_harness_ui.configuration.models import AgentToolProxy, SidekickConfiguration
 from a13n_harness_ui.configuration.views import AgentToolProxyView
+from a13n_harness_ui.model_thinking import summarize_thinking
 from a13n_harness_ui.surfaces import SurfaceModel, ThreadConfigurationResolution
 
 
@@ -17,6 +18,7 @@ class CapturedAgentSelection(SurfaceModel):
     source_kind: Literal["agent", "markdown"]
     source_id: str
     model_id: str
+    thinking_summary: str | None = None
 
 
 class CapturedConfiguration(SurfaceModel):
@@ -64,7 +66,11 @@ def captured_configuration(composition_id: str, value: ResolvedRunComposition) -
         project_roots=value.project_roots,
         webui_sidekick=value.webui_sidekick,
         agent=CapturedAgentSelection(
-            name=root.roster_name, source_kind=root.source_kind, source_id=root.source_id, model_id=root.model.model_id
+            name=root.roster_name,
+            source_kind=root.source_kind,
+            source_id=root.source_id,
+            model_id=root.model.model_id,
+            thinking_summary=summarize_thinking(root.model.route, root.model.settings),
         ),
         capability_ids=tuple(item.capability for item in root.capabilities),
         harness_plugin_ids=tuple(item.plugin_id for item in root.harness_plugins),
@@ -81,6 +87,7 @@ def captured_configuration(composition_id: str, value: ResolvedRunComposition) -
                 source_kind=child.source_kind,
                 source_id=child.source_id,
                 model_id=child.definition.model.model_id,
+                thinking_summary=summarize_thinking(child.definition.model.route, child.definition.model.settings),
             )
             for child in root.children[:100]
         ),

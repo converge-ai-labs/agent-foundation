@@ -70,6 +70,7 @@ from a13n_harness_ui.live import LiveCursor, LiveEvent, RootStreamEvent, Summary
 from a13n_harness_ui.model_accounts import AccountProjection, AccountStoreError, Provider
 from a13n_harness_ui.model_accounts.api_keys import ApiKeyInput, ApiKeyStatus
 from a13n_harness_ui.model_accounts.login import LoginRequest, LoginStatus
+from a13n_harness_ui.model_thinking import ThinkingSelection
 from a13n_harness_ui.output_comment_models import (
     CommentEdit,
     CommentPage,
@@ -206,6 +207,7 @@ class SteerRequest(SurfaceModel):
 
 class SubmitRequest(PromptRequest):
     model_id: str | None = Field(default=None, min_length=1, max_length=128)
+    thinking: ThinkingSelection | None = None
 
 
 class RootSteerRequest(PromptRequest):
@@ -1286,7 +1288,7 @@ def create_webui(
                 thread_id=thread_id,
                 prompt=document.input(),
                 attachment_ids=document.attachment_ids,
-                model_overrides=RunModelOverrides(model_id=document.model_id) if document.model_id else None,
+                model_overrides=RunModelOverrides(model_id=document.model_id, thinking=document.thinking),
                 skill_references=document.skill_references,
             )
         except ValueError as exc:

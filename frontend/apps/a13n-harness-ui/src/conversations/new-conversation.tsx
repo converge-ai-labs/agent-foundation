@@ -33,7 +33,7 @@ import type { Profile } from "../shell/presence";
 import { Composer, ComposerDrafts, useDraft } from "./composer";
 import { NewDraftStore, type NewDraft } from "./new-draft";
 import { attachmentSelections, isReadyAttachment } from "./inline-attachments";
-import { ModelPicker } from "./model-picker";
+import { ThreadRunChoices } from "./thread-run-choices";
 import { refreshThreadLists } from "./queries";
 import { ConversationTranscript } from "./transcript";
 import styles from "./new-conversation.module.css";
@@ -365,54 +365,28 @@ function NewConversation({
             )
           }
           controls={
-            <div className={styles.runChoices}>
-              <div className={styles.runChoice}>
-                <span>Agent</span>
-                <SearchPicker
-                  label="Agent"
-                  popupClassName={styles.choicePopup}
-                  placeholder={
-                    effectiveAgent
-                      ? `Default · ${effectiveAgent.name}`
-                      : "Default agent"
-                  }
-                  emptyMessage="No agents found."
-                  disabled={choicesDisabled}
-                  value={defaults.agent_id ?? ""}
-                  onValueChange={(value) => change({ agent_id: value || null })}
-                  groups={[
-                    {
-                      label: "Agents",
-                      options: [
-                        {
-                          value: "",
-                          label:
-                            !defaults.agent_id && effectiveAgent
-                              ? `Default · ${effectiveAgent.name}`
-                              : "Default agent",
-                          description: "Follow the project or app default.",
-                        },
-                        ...(selectors.data?.agents ?? []).map((item) => ({
-                          value: item.agent_id,
-                          label: item.name,
-                          description: item.agent_id,
-                        })),
-                      ],
-                    },
-                  ]}
-                />
-              </div>
-              <ModelPicker
-                models={selectors.data?.models ?? []}
-                defaultModelId={effectiveAgent?.model_id ?? undefined}
-                value={composerDraft.modelId}
-                disabled={choicesDisabled}
-                onChange={(value) => {
-                  composerDraft.modelId = value;
-                  composerDraft.notify();
-                }}
-              />
-            </div>
+            <ThreadRunChoices
+              catalog={selectors.data}
+              agentId={defaults.agent_id ?? ""}
+              defaultAgentId={effectiveAgent?.agent_id}
+              modelId={composerDraft.modelId}
+              thinking={composerDraft.thinking}
+              disabled={choicesDisabled}
+              onAgentChange={(value) => {
+                change({ agent_id: value || null });
+                composerDraft.thinking = null;
+                composerDraft.notify();
+              }}
+              onModelChange={(value) => {
+                composerDraft.modelId = value;
+                composerDraft.thinking = null;
+                composerDraft.notify();
+              }}
+              onThinkingChange={(value) => {
+                composerDraft.thinking = value;
+                composerDraft.notify();
+              }}
+            />
           }
         />
         {drafts.error && <p role="alert">{drafts.error}</p>}

@@ -111,6 +111,12 @@ export function ConversationConfiguration({
                     </dd>
                   </div>
                   <div>
+                    <dt>Thinking (requested)</dt>
+                    <dd>
+                      {data.captured.agent.thinking_summary ?? "Not captured"}
+                    </dd>
+                  </div>
+                  <div>
                     <dt>Environment</dt>
                     <dd>{data.captured.environment_profile_id}</dd>
                   </div>

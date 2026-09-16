@@ -484,6 +484,7 @@ it.each(["send", "steer"] as const)(
   "submits captured skill references for %s and preserves later edits",
   async (action) => {
     const draft = new ThreadDraft();
+    draft.thinking = false;
     draft.doc.getText("text").insert(0, "Use $review $review $unknown");
     draft.status = "Connected";
     draft.receive({
@@ -522,6 +523,7 @@ it.each(["send", "steer"] as const)(
       undefined,
       undefined,
       async () => {
+        draft.thinking = "high";
         draft.doc
           .getText("text")
           .insert(draft.doc.getText("text").length, " later");
@@ -538,6 +540,9 @@ it.each(["send", "steer"] as const)(
     expect(POST.mock.calls[0][1].body.parts).toEqual([
       "Use $review $review $unknown",
     ]);
+    if (action === "send")
+      expect(POST.mock.calls[0][1].body.thinking).toBe(false);
+    else expect(POST.mock.calls[0][1].body).not.toHaveProperty("thinking");
     expect(values(draft.doc).prompt).toBe(" later");
   },
 );
@@ -575,6 +580,7 @@ it("does not submit after navigation cancels a pending skill catalog read", asyn
 
 it("retries with an ordinary continuation without consuming the shared draft or attachments", async () => {
   const draft = new ThreadDraft();
+  draft.thinking = "low";
   draft.doc.getText("text").insert(0, "Keep my next question");
   draft.addAttachment("attachment-kept");
   const before = values(draft.doc);
@@ -593,6 +599,7 @@ it("retries with an ordinary continuation without consuming the shared draft or 
     body: {
       parts: ["Continue completing the previous task."],
       source_id: expect.any(String),
+      thinking: "low",
     },
   });
   resolve({ data: { receipt_id: "receipt-new", thread_id: "thread-one" } });
