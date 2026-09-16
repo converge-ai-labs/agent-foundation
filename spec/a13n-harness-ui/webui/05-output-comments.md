@@ -1,5 +1,11 @@
 # Saved Output Comments
 
+## Browser Availability
+
+The current browser disables comment entry points, discussion loading, selection actions, markers, and mutations. This document retains the App/API and storage contract; disabling the frontend does not delete records, migrate targets, or revoke API access. Captured references already present in submitted input remain readable. [Workbench interaction](04-workbench-interaction.md#saved-output-and-disabled-comments) owns the current browser surface.
+
+Saved child inspection returns the latest final result before activity excerpts. Its initial text window and subsequent exact-target reads use bounded pages with total character count and next offset. Pagination is inspection, not evidence that a partial excerpt is a complete comment source.
+
 ## Design Position
 
 Participants publish comments about saved AI output without editing that output or adding messages to the Agent's conversation. Comments are durable human collaboration records owned by `HarnessUiApp`. They are separate from [page/editor presence and shared prompt drafts](01-collaborative-conversations.md), and use the existing [local storage boundary](../03-local-storage-and-recovery.md#output-comment-storage).

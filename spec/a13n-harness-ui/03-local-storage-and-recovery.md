@@ -33,6 +33,10 @@ The store supports local restart and inspection, not durable work scheduling. Ha
 | Root receipts, active tasks, Models, credentials, clients, adapters, streams, and shell processes | Process memory                | Current App only                                                         |
 | Logs and OpenTelemetry                                                                            | Configured process outputs    | Diagnostics only                                                         |
 
+## Child Inspection Results
+
+The existing immutable child checkpoint retains bounded activity snapshots and the latest complete final answer. Activity budgets do not truncate that final answer; bounded HTTP windows paginate it for human inspection. A later failed or interrupted segment does not replace the previous complete result with an activity preview. This remains inspection state, not a separate event store or continuation authority. Older checkpoints whose answers were already truncated remain readable but cannot recover bytes that were never saved.
+
 ## Tool Presentation Evidence
 
 Root Runs can retain observed filesystem edit evidence in the corresponding tool-return's application-only metadata, under `a13n.harness-ui.applied_edit`. It contains the observed `file_path`, `before`, `after`, and an explicit `omitted` flag. The existing selected `HarnessState` continuation serializes this metadata; it is not added to model-facing tool content, stored in a new event log, or published as a separate execution authority. Other tool metadata remains unchanged.

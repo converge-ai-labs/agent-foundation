@@ -20,6 +20,7 @@ import type { Profile } from "../shell/presence";
 import { Composer, useDraft } from "./composer";
 import { ModelPicker } from "./model-picker";
 import { refreshThreadLists } from "./queries";
+import { ConversationTranscript } from "./transcript";
 import styles from "./new-conversation.module.css";
 
 export type NewDraft = {
@@ -275,6 +276,12 @@ function NewConversation({
         </h1>
       </div>
       <div className={styles.inputArea}>
+        <ConversationTranscript
+          entries={[]}
+          blocks={[]}
+          localInputs={composerDraft.localInputs}
+          threadId={threadId}
+        />
         <fieldset
           className={styles.context}
           disabled={preparing || draft.attempted}

@@ -21,12 +21,16 @@ import { ThreadRunChoices } from "./thread-run-choices";
 import { Decisions } from "./decisions";
 import { ConversationDetails } from "./details";
 import { WorkInspector } from "./work-inspector";
-import { Discussion } from "./comments";
+import { RootFailureNotice } from "./failure-notice";
 import { refreshThread } from "./refresh";
 import { refreshThreadLists, useHistory, useThread } from "./queries";
 import { FocusDisplay, showFocusedOutput, watchThread } from "./stream";
-import { LiveOutput, SavedEntry, SteerNotice } from "./transcript";
-import { savedToolGroups } from "./tool-presentation";
+import {
+  ConversationTranscript,
+  RecoveryNotice,
+  SteerNotice,
+} from "./transcript";
+import { inputSource } from "./local-input";
 import styles from "./conversation.module.css";
 
 export function ConversationPage(props: {
@@ -114,7 +118,6 @@ function Conversation({
     if (rename) setTitle(detail.data?.thread.title ?? "");
   }, [rename, detail.data?.thread.title]);
   const [message, setMessage] = useState("");
-  const [referenceAdded, setReferenceAdded] = useState(0);
   const reader = useRef<HTMLDivElement>(null);
   const restoreScroll = useRef(readPreference(`scroll.${threadId}`, ""));
   const follow = useRef(true);
@@ -206,7 +209,26 @@ function Conversation({
         .flatMap((page) => page.entries) ?? [],
     [history.data],
   );
-  const toolGroups = useMemo(() => savedToolGroups(entries), [entries]);
+  useEffect(() => {
+    const saved = new Set(
+      entries.flatMap((entry) => entry.parts.map(inputSource)),
+    );
+    const retained = draft.localInputs.filter((input) => !saved.has(input.id));
+    if (retained.length !== draft.localInputs.length) {
+      draft.localInputs = retained;
+      draft.notify();
+    }
+  }, [entries, draft]);
+  const latestLocalInput = draft.localInputs.at(-1)?.id;
+  const previousLocalInput = useRef(latestLocalInput);
+  useLayoutEffect(() => {
+    if (latestLocalInput && latestLocalInput !== previousLocalInput.current) {
+      follow.current = true;
+      setNewOutput(false);
+      scrollToLatest(true);
+    }
+    previousLocalInput.current = latestLocalInput;
+  }, [latestLocalInput, scrollToLatest]);
   const continuation = history.data?.pages[0]?.continuation_id;
   const operation = detail.data?.thread.root_activity;
   const [lastReceipt, setLastReceipt] = useState<string | null>(null);
@@ -227,14 +249,15 @@ function Conversation({
       : undefined);
   // Advance only after the replacement history query arrives. SSE completion alone
   // is not evidence that continuation was saved.
+  const presentation = display.presentationFor(continuation);
   const showLive = showFocusedOutput(
-    display,
+    presentation,
     continuation,
     operation?.run_id,
     history.isPreviousHistory,
   );
-  const liveBlocks = display.blocksAfter(continuation);
-  const visibleContent = `${continuation}:${entries.length}:${
+  const liveBlocks = presentation.blocksAfter(continuation);
+  const visibleContent = `${continuation}:${entries.length}:${draft.localInputs.map((input) => input.id).join(",")}:${
     showLive
       ? liveBlocks
           .filter((block) => !block.diagnostic)
@@ -373,13 +396,7 @@ function Conversation({
       </div>
     );
   return (
-    <Discussion
-      threadId={threadId}
-      profile={profile}
-      listOpen={dialog === "comments"}
-      closeList={closeDialog}
-      onReferenceAdded={() => setReferenceAdded((value) => value + 1)}
-    >
+    <>
       <div className={styles.page}>
         {connection !== "Live" && connection !== "Connecting" && (
           <div className={styles.activityBar}>
@@ -464,34 +481,20 @@ function Conversation({
                 Retry earlier messages
               </Button>
             )}
-            {entries.map((entry, index) => (
-              <div
-                key={`${continuation}:${entry.position}`}
-                data-presence-anchor={`entry:${continuation}:${entry.position}`}
-              >
-                <SavedEntry
-                  entry={entry}
-                  continuation={
-                    index > 0 &&
-                    !entries[index - 1].parts.some(
-                      (part) => part.kind === "user" || part.kind === "media",
-                    ) &&
-                    !entry.parts.some(
-                      (part) => part.kind === "user" || part.kind === "media",
-                    )
-                  }
-                  toolGroups={toolGroups}
-                  threadId={threadId}
-                />
-              </div>
-            ))}
-            {showLive && (
-              <LiveOutput
-                blocks={liveBlocks}
-                gap={display.gap}
-                threadId={threadId}
-              />
-            )}
+            <ConversationTranscript
+              entries={entries}
+              blocks={showLive ? liveBlocks : []}
+              localInputs={draft.localInputs}
+              continuation={continuation}
+              gap={showLive && display.gap}
+              threadId={threadId}
+            />
+            <RootFailureNotice
+              threadId={threadId}
+              receipt={receipt}
+              display={display}
+            />
+            <RecoveryNotice recovery={display.recovery} />
             <SteerNotice draft={draft} />
             {!!detail.data.deferred_requests?.length && (
               <Decisions
@@ -556,7 +559,6 @@ function Conversation({
         )}
         {!thread.archived && (
           <Composer
-            referenceAdded={referenceAdded}
             autoFocus={search.get("compose") === "1"}
             threadId={threadId}
             activity={thread.root_activity}
@@ -680,6 +682,6 @@ function Conversation({
             )}
         </ModalFrame>
       </div>
-    </Discussion>
+    </>
   );
 }

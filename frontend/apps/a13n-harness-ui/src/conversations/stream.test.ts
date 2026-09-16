@@ -335,10 +335,12 @@ it("dispatches native custom payloads and folds task/context operations without 
   expect(
     blocks.find((block) => block.id.endsWith("context:compact-one")),
   ).toMatchObject({
-    name: "compaction completed",
+    name: "Compact Summary",
+    context: "compaction",
     result: "Keep this context",
   });
-  expect(blocks.filter((block) => block.diagnostic)).toHaveLength(0);
+  expect(blocks.filter((block) => block.diagnostic)).toHaveLength(1);
+  expect(display.terminalFailure).toBe("Provider disconnected");
   expect(blocks.find((block) => block.id.endsWith(":execution"))).toMatchObject(
     { name: "Execution failed", text: "Provider disconnected" },
   );
@@ -886,3 +888,194 @@ it("updates context from the latest attributed root request, not cumulative or c
   display.reset();
   expect(display.contextUsage).toBeUndefined();
 });
+
+it("publishes a replacement snapshot only after its complete replay, retaining the last good presentation", async () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "original" }));
+  display.accept(event(110, "Original complete output"));
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  const stream = new ReadableStream<Uint8Array>({
+    start(value) {
+      controller = value;
+    },
+  });
+  const changed = vi.fn();
+  const invalidate = vi.fn();
+  const close = watchThread(
+    {
+      fetch: vi.fn().mockResolvedValue(new Response(stream)),
+    } as unknown as Transport,
+    "thread-one",
+    display,
+    changed,
+    vi.fn(),
+    invalidate,
+  );
+  const frame = async (value: unknown) => {
+    controller.enqueue(
+      new TextEncoder().encode(`data: ${JSON.stringify(value)}\n\n`),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  };
+  try {
+    await frame({ kind: "reset", reason: "expired" });
+    await frame(snapshot(2));
+    expect([...display.blocks.values()][0].text).toBe(
+      "Original complete output",
+    );
+    expect(changed).not.toHaveBeenCalled();
+    await frame({
+      kind: "root_stream",
+      run_id: "run-one",
+      events: [
+        {
+          index: 0,
+          event_type: "TEXT_MESSAGE_CONTENT",
+          payload: { message_id: "new", delta: "Replacement " },
+          payload_omitted: false,
+        },
+      ],
+    });
+    expect([...display.blocks.values()][0].text).toBe(
+      "Original complete output",
+    );
+    await frame({
+      kind: "root_stream",
+      run_id: "run-one",
+      events: [
+        {
+          index: 1,
+          event_type: "TEXT_MESSAGE_CONTENT",
+          payload: { message_id: "new", delta: "complete output" },
+          payload_omitted: false,
+        },
+      ],
+    });
+    expect(changed).not.toHaveBeenCalled();
+    await frame({ kind: "ready", resume_cursor: "replacement" });
+    expect([...display.blocks.values()][0].text).toBe(
+      "Replacement complete output",
+    );
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(display.cursor).toBe("replacement");
+    expect(invalidate).toHaveBeenCalledWith("reconcile");
+  } finally {
+    close();
+    controller.close();
+  }
+});
+
+it("hides recovery instructions and waits for visible progress before marking recovery resumed", () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  let sequence = 110;
+  const emit = (event_type: string, payload: unknown) => {
+    const frame = event(sequence++);
+    if (frame.kind !== "event") throw new Error("Expected event");
+    display.accept(
+      focusFrame({ ...frame, event: { ...frame.event, event_type, payload } }),
+    );
+  };
+  const retry = {
+    name: "a13n.harness.recovery",
+    value: {
+      event: { payload: { type: "model_retry_scheduled", attempt: 2 } },
+    },
+  };
+  emit("CUSTOM", retry);
+  emit("TEXT_MESSAGE_CONTENT", {
+    message_id: "recovery",
+    delta: "Internal instruction",
+    metadata: { display: false },
+  });
+  expect(display.blocks.size).toBe(0);
+  expect(display.recovery?.state).toBe("retrying");
+  emit("TEXT_MESSAGE_CONTENT", { message_id: "answer", delta: "Continuing" });
+  expect(display.recovery?.state).toBe("resumed");
+  emit("RUN_FINISHED", {});
+  expect(display.recovery).toBeUndefined();
+});
+
+it("does not resume an interrupted replacement using the old cursor", async () => {
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept(focusFrame({ kind: "ready", resume_cursor: "old" }));
+  display.accept(event(110, "Retained"));
+  const body = `data: ${JSON.stringify(snapshot(2))}\n\n`;
+  const fetch = vi.fn().mockResolvedValue(new Response(body));
+  const close = watchThread(
+    { fetch } as unknown as Transport,
+    "thread-one",
+    display,
+    vi.fn(),
+    vi.fn(),
+    vi.fn(),
+  );
+  try {
+    await vi.waitFor(() => expect(display.cursor).toBeUndefined());
+    expect([...display.blocks.values()][0].text).toBe("Retained");
+    await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2), {
+      timeout: 2000,
+    });
+    expect(fetch.mock.calls[1][0]).toBe("/api/threads/thread-one/events");
+  } finally {
+    close();
+  }
+});
+
+it.each([false, true])(
+  "retains visible output until replacement saved history arrives (next run: %s)",
+  async (nextRun) => {
+    const display = new FocusDisplay();
+    display.accept(snapshot(0));
+    display.accept(focusFrame({ kind: "ready", resume_cursor: "old" }));
+    display.accept(event(110, "Already visible answer"));
+    const replacement = snapshot(nextRun ? 0 : undefined);
+    if (replacement.kind !== "snapshot") throw new Error("Expected snapshot");
+    replacement.snapshot.thread.continuation_id = "saved-new";
+    if (replacement.snapshot.root_stream) {
+      replacement.snapshot.root_stream.run_id = "run-two";
+      replacement.snapshot.root_stream.base_continuation_id = "saved-new";
+    }
+    const frames = [
+      replacement,
+      ...(nextRun ? [{ kind: "ready", resume_cursor: "new-ready" }] : []),
+    ];
+    const body = frames
+      .map((frame) => `data: ${JSON.stringify(frame)}\n\n`)
+      .join("");
+    const invalidate = vi.fn();
+    const close = watchThread(
+      {
+        fetch: vi.fn().mockResolvedValue(new Response(body)),
+      } as unknown as Transport,
+      "thread-one",
+      display,
+      vi.fn(),
+      vi.fn(),
+      invalidate,
+    );
+    try {
+      await vi.waitFor(() =>
+        expect(invalidate).toHaveBeenCalledWith("reconcile"),
+      );
+      expect(display.cursor).toBe(nextRun ? "new-ready" : "cursor-one");
+      expect(display.runId).toBe(nextRun ? "run-two" : undefined);
+      // Deferred and failed history reads still select the last successful page.
+      for (const staleRead of ["deferred", "failed"]) {
+        const shown = display.presentationFor("initial:thread-one");
+        expect(
+          shown.blocksAfter(null).map((block) => block.text),
+          staleRead,
+        ).toEqual(["Already visible answer"]);
+      }
+      expect(display.presentationFor("saved-new")).toBe(display);
+      expect(display.retainedPresentation).toBeUndefined();
+      expect(display.blocksAfter("saved-new")).toEqual([]);
+    } finally {
+      close();
+    }
+  },
+);

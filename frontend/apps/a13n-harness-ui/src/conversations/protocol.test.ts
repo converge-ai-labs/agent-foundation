@@ -155,10 +155,11 @@ it("real JS Yjs replicas interoperate with App admission, HTTP metadata and focu
     expect(captured.parts[1]).toEqual({
       attachment_id: attachment.attachment_id,
     });
+    const sourceId = "input_0123456789abcdef0123456789abcdef";
     const receipt = await result(
       transport.client.POST("/api/threads/{thread_id}/submit", {
         params: { path: { thread_id: thread } },
-        body: { parts: captured.parts },
+        body: { parts: captured.parts, source_id: sourceId },
       }),
     );
     b.doc.getText("text").insert(0, "NEXT");
@@ -197,6 +198,13 @@ it("real JS Yjs replicas interoperate with App admission, HTTP metadata and focu
       transport.client.GET("/api/threads/{thread_id}/transcript", {
         params: { path: { thread_id: thread } },
       }),
+    );
+    const authored = history.entries
+      .flatMap((entry) => entry.parts)
+      .filter((part) => part.metadata?.source_id === sourceId);
+    expect(authored.length).toBeGreaterThanOrEqual(captured.parts.length);
+    expect(authored.some((part) => part.text?.includes("example.txt"))).toBe(
+      true,
     );
     const retained = await transport.fetch(
       `/api/threads/${thread}/attachments/${attachment.attachment_id}`,

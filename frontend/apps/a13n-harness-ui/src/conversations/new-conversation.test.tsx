@@ -284,6 +284,7 @@ it("keeps the blank composer and files local, then creates, uploads, synchronize
   });
   expect(await writes[2].json()).toEqual({
     parts: [{ attachment_id: "attachment-one" }, "Build this"],
+    source_id: expect.stringMatching(/^input_[0-9a-f]{32}$/),
   });
   expect(values(drafts.get(id)!.doc).prompt).toBe("");
 });
@@ -440,6 +441,7 @@ it("distinguishes inherited choices and sends an independent model without chang
   });
   expect(await writes[1].json()).toEqual({
     parts: ["Build this"],
+    source_id: expect.stringMatching(/^input_[0-9a-f]{32}$/),
     model_id: "model-one",
   });
 });

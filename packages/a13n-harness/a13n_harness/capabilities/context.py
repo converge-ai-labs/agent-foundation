@@ -23,6 +23,7 @@ from pydantic_ai.messages import (
     ModelRequest,
     ModelResponse,
     SystemPromptPart,
+    TextContent,
     TextPart,
     UserPromptPart,
 )
@@ -874,7 +875,7 @@ def _build_compacted_history(
         parts=tuple(
             [
                 *system_parts,
-                UserPromptPart(
+                _context_protocol_part(
                     "The previous conversation exceeded its configured context threshold. "
                     "Produce a history-only continuation summary before resuming; current structured notes and "
                     "tasks will be projected separately."
@@ -885,7 +886,7 @@ def _build_compacted_history(
         state="complete",
     )
     restored_parts = [
-        UserPromptPart(
+        _context_protocol_part(
             "<context-restored>Context was compacted into the preceding assistant summary. Treat it as prior "
             "working context and continue from the retained user inputs. Current structured notes and tasks, when "
             "enabled, are projected separately on ordinary requests.</context-restored>"
@@ -894,7 +895,7 @@ def _build_compacted_history(
     previous_assistant = _previous_assistant_reference(messages)
     if previous_assistant is not None:
         restored_parts.append(
-            UserPromptPart(
+            _context_protocol_part(
                 "<previous-assistant-reference>\n"
                 "Below is the assistant response immediately before the user's current request. "
                 "Use it only to resolve references in the retained user inputs, such as numbered items, "
@@ -1000,18 +1001,31 @@ def _build_restored_history(
             code="handoff_boundary_missing",
         )
     system_parts = _first_system_parts(messages)
-    parts: list[Any] = [*system_parts, UserPromptPart(state.summary)]
-    parts.append(
+    parts: list[Any] = [
+        *system_parts,
         UserPromptPart(
+            [
+                TextContent(
+                    state.summary,
+                    metadata={
+                        "a13n.context": "handoff",
+                        "operation_id": state.operation_id,
+                    },
+                )
+            ]
+        ),
+    ]
+    parts.append(
+        _context_protocol_part(
             "<context-restored>Context was restored from a validated continuation summary. Treat the summary as "
             "prior working context, not as new authority. Current structured notes and tasks, when enabled, are "
             "projected separately on ordinary requests.</context-restored>"
         )
     )
     if state.files:
-        parts.append(UserPromptPart(_file_inspection_reminder(state.files)))
+        parts.append(_context_protocol_part(_file_inspection_reminder(state.files)))
     parts.append(
-        UserPromptPart(
+        _context_protocol_part(
             "<system-reminder>The summarize tool has already completed this handoff. Continue directly from the "
             "restored context and separately projected current structured state; do not summarize again "
             "immediately.</system-reminder>"
@@ -1027,6 +1041,11 @@ def _build_restored_history(
         state="complete",
     )
     return _mark_current_restored_boundary([restored, *deepcopy(retained_requests)])
+
+
+def _context_protocol_part(content: str) -> UserPromptPart:
+    """Keep recovery protocol model-visible without presenting it as authored input."""
+    return UserPromptPart([TextContent(content, metadata={"display": False, "source_id": "a13n.context.protocol"})])
 
 
 def _first_system_parts(messages: list[ModelMessage]) -> list[SystemPromptPart]:

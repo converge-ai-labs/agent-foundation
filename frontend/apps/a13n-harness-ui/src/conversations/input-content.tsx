@@ -223,7 +223,9 @@ export function InputContent({
   parts,
   threadId,
   renderText,
+  status,
 }: {
+  status?: string;
   parts: InputPart[];
   threadId?: string;
   renderText: (text: string) => ReactNode;
@@ -232,7 +234,14 @@ export function InputContent({
   const seen = new Set<string>();
   return (
     <div className={styles.userMessage}>
-      <header>User</header>
+      <header>
+        User
+        {status && (
+          <span role="status" className={styles.inputStatus}>
+            {status}
+          </span>
+        )}
+      </header>
       {visible.map((part, index) => {
         const attachment = inputAttachment(part.metadata);
         if (attachment && threadId) {

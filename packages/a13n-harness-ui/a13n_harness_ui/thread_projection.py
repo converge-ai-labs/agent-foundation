@@ -11,7 +11,7 @@ from typing import Literal
 
 from a13n_harness import HarnessState
 from a13n_harness.model_context import user_prompt_content
-from a13n_stream_protocol.messages import project_input_content
+from a13n_stream_protocol.messages import ContentMetadata, project_input_content
 from pydantic import BaseModel, JsonValue, TypeAdapter, ValidationError
 from pydantic_ai.messages import (
     ModelMessage,
@@ -436,13 +436,51 @@ def _decode_cursor[CursorT: BaseModel](
 
 def _message_entry(position: int, message: ModelMessage, *, thread: Thread | None = None) -> TranscriptEntry:
     if isinstance(message, ModelRequest):
+        parts = tuple(part for source in message.parts for part in _request_parts(source))
+        if (message.metadata or {}).get("a13n.context") == "handoff":
+            # The owned handoff request contains the summary first, followed by
+            # internal restoration instructions. Retained user requests are separate.
+            summary_seen = False
+            projected: list[TranscriptPart] = []
+            for part in parts:
+                if part.kind == "user" and not summary_seen:
+                    projected.append(
+                        part.model_copy(
+                            update={
+                                "metadata": ContentMetadata.from_native(
+                                    {
+                                        **part.metadata.model_dump(),
+                                        "a13n.context": "handoff",
+                                    }
+                                )
+                            }
+                        )
+                    )
+                    summary_seen = True
+                else:
+                    projected.append(part.model_copy(update={"metadata": ContentMetadata(display=False)}))
+            parts = tuple(projected)
         return TranscriptEntry(
             position=position,
             message_kind="request",
             timestamp=message.timestamp,
-            parts=tuple(part for source in message.parts for part in _request_parts(source)),
+            parts=parts,
         )
     if isinstance(message, ModelResponse):
+        if (message.metadata or {}).get("keep") == "compact":
+            return TranscriptEntry(
+                position=position,
+                message_kind="response",
+                timestamp=message.timestamp,
+                parts=tuple(
+                    _response_part(part).model_copy(
+                        update={
+                            "metadata": ContentMetadata.from_native({"a13n.context": "compaction"}),
+                        }
+                    )
+                    for part in message.parts
+                ),
+            )
         return TranscriptEntry(
             position=position,
             message_kind="response",

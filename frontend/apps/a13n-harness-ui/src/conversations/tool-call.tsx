@@ -29,13 +29,22 @@ import {
   type ToolView,
 } from "./tool-presentation";
 import styles from "./tool-call.module.css";
+import { SyntaxCode, codeLanguage } from "./syntax-code";
 
 // Human lookup on the WebUI Host, not an Environment-to-Host path mapping.
 export const OpenHostFile = createContext<((path: string) => void) | undefined>(
   undefined,
 );
 
-function CodeContent({ title, value }: { title: string; value: unknown }) {
+function CodeContent({
+  title,
+  value,
+  language = "",
+}: {
+  title: string;
+  value: unknown;
+  language?: string;
+}) {
   const content = sourceText(value);
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState(false);
@@ -63,7 +72,12 @@ function CodeContent({ title, value }: { title: string; value: unknown }) {
       {error && (
         <small role="status">Copy unavailable. Select the text to copy.</small>
       )}
-      <pre>{content}</pre>
+      <pre>
+        <SyntaxCode
+          source={content}
+          language={language || (typeof value === "object" ? "json" : "")}
+        />
+      </pre>
     </section>
   );
 }
@@ -85,7 +99,14 @@ export function editPatch(edit: AppliedEdit) {
     { context: 3, maxEditLength: 2000, timeout: 100 },
   );
 }
-const EditDiff = memo(function EditDiff({ edit }: { edit: AppliedEdit }) {
+const EditDiff = memo(function EditDiff({
+  edit,
+  applied = true,
+}: {
+  edit: AppliedEdit;
+  applied?: boolean;
+}) {
+  const title = applied ? "Applied edit" : "Requested replacement";
   const patch = useMemo(() => editPatch(edit), [edit]);
   const [full, setFull] = useState(false);
   const lines = patch?.hunks.flatMap((hunk) => [
@@ -101,9 +122,9 @@ const EditDiff = memo(function EditDiff({ edit }: { edit: AppliedEdit }) {
     0,
   );
   return (
-    <section className={styles.diff} aria-label="Applied edit">
+    <section className={styles.diff} aria-label={title}>
       <header>
-        <span>Applied edit</span>
+        <span>{title}</span>
         {patch && (
           <span>
             <span className={styles.addCount}>+{added}</span>{" "}
@@ -111,7 +132,11 @@ const EditDiff = memo(function EditDiff({ edit }: { edit: AppliedEdit }) {
           </span>
         )}
       </header>
-      <small>Observed before/after content, not the current file.</small>
+      <small>
+        {applied
+          ? "Observed before/after content, not the current file."
+          : "Requested fragment diff only; not proof of an applied change."}
+      </small>
       {!lines ? (
         <p>
           Diff preview unavailable for this large change. Inspect the recorded
@@ -134,7 +159,7 @@ const EditDiff = memo(function EditDiff({ edit }: { edit: AppliedEdit }) {
                       : styles.context
               }
             >
-              {line || " "}
+              <SyntaxCode source={line || " "} language={"diff"} />
             </span>
           ))}
         </pre>
@@ -145,8 +170,16 @@ const EditDiff = memo(function EditDiff({ edit }: { edit: AppliedEdit }) {
         </Button>
       )}
       <DisclosureSection title="Recorded content">
-        <CodeContent title="Before" value={edit.before} />
-        <CodeContent title="After" value={edit.after} />
+        <CodeContent
+          title="Before"
+          value={edit.before}
+          language={codeLanguage(edit.file_path)}
+        />
+        <CodeContent
+          title="After"
+          value={edit.after}
+          language={codeLanguage(edit.file_path)}
+        />
       </DisclosureSection>
     </section>
   );
@@ -174,7 +207,14 @@ function ToolDetails({ tool }: { tool: ToolView }) {
           was reached. Current Host content is not a historical diff.
         </p>
       )}
-      {tool.edit && <EditDiff edit={tool.edit} />}
+      {tool.edit && tool.name !== "write" && <EditDiff edit={tool.edit} />}
+      {tool.edit && tool.name === "write" && (
+        <CodeContent
+          title="Written content"
+          value={tool.edit.after}
+          language={codeLanguage(tool.edit.file_path)}
+        />
+      )}
       {!tool.edit &&
         info.kind === "edit" &&
         !tool.editOmitted &&
@@ -184,26 +224,30 @@ function ToolDetails({ tool }: { tool: ToolView }) {
             typeof edit.new_string === "string",
         ) && (
           <section>
-            <h4>Requested replacement</h4>
-            <small>
-              Tool input only; an applied diff was not recorded in this view.
-            </small>
-            {replacements.map((edit, i) => (
-              <div key={i}>
-                {typeof edit.old_string === "string" && (
-                  <CodeContent title="Find" value={edit.old_string} />
-                )}
-                {typeof edit.new_string === "string" && (
-                  <CodeContent title="Replace with" value={edit.new_string} />
-                )}
-              </div>
-            ))}
+            {replacements.map((edit, i) =>
+              typeof edit.old_string === "string" &&
+              typeof edit.new_string === "string" ? (
+                <EditDiff
+                  key={i}
+                  applied={false}
+                  edit={{
+                    file_path: String(info.args.file_path ?? ""),
+                    before: edit.old_string,
+                    after: edit.new_string,
+                  }}
+                />
+              ) : null,
+            )}
           </section>
         )}
       {info.kind === "shell" && (
         <>
           {typeof info.args.command === "string" && (
-            <CodeContent title="Command" value={info.args.command} />
+            <CodeContent
+              title="Command"
+              value={info.args.command}
+              language="bash"
+            />
           )}
           {record(info.result.status) && (
             <small>
@@ -232,18 +276,25 @@ function ToolDetails({ tool }: { tool: ToolView }) {
         </>
       )}
       {tool.name === "view" && typeof info.result.content === "string" && (
-        <CodeContent title="Read content" value={info.result.content} />
-      )}
-      {tool.name === "write" && typeof info.args.content === "string" && (
         <CodeContent
-          title={
-            info.args.mode === "a" ? "Requested append" : "Requested content"
-          }
-          value={info.args.content}
+          title="Read content"
+          value={info.result.content}
+          language={codeLanguage(String(info.args.file_path ?? ""))}
         />
       )}
+      {!tool.edit &&
+        tool.name === "write" &&
+        typeof info.args.content === "string" && (
+          <CodeContent
+            title={
+              info.args.mode === "a" ? "Requested append" : "Requested content"
+            }
+            value={info.args.content}
+            language={codeLanguage(String(info.args.file_path ?? ""))}
+          />
+        )}
       {tool.name === "run_code" && typeof info.args.code === "string" && (
-        <CodeContent title="Code" value={info.args.code} />
+        <CodeContent title="Code" value={info.args.code} language="python" />
       )}
       <DisclosureSection title="Arguments & result">
         <div className={styles.format}>

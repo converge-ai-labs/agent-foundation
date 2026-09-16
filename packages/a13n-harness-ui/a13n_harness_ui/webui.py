@@ -170,9 +170,13 @@ class PromptRequest(SurfaceModel):
     prompt: str = Field(default="", max_length=256 * 1024)
     attachment_ids: tuple[str, ...] = Field(default=(), max_length=8)
     parts: tuple[str | InputAttachmentReference, ...] | None = Field(default=None, max_length=1024)
+    # Presentation correlation only; never an admission idempotency key.
+    source_id: str | None = Field(default=None, pattern=r"^input[-_][0-9a-f]{32}$")
 
     @model_validator(mode="after")
     def validate_ordered_input(self) -> PromptRequest:
+        if self.source_id is not None and self.parts is None:
+            raise ValueError("source_id requires ordered parts.")
         if self.parts is not None:
             if self.prompt or self.attachment_ids:
                 raise ValueError("Use ordered parts or prompt/attachment_ids, not both.")
@@ -187,7 +191,8 @@ class PromptRequest(SurfaceModel):
             parts=tuple(
                 part if isinstance(part, str) else ComposerAttachmentReference(part.attachment_id)
                 for part in self.parts
-            )
+            ),
+            source_id=self.source_id,
         )
 
 

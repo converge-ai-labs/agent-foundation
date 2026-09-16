@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, render, screen, fireEvent } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  fireEvent,
+  within,
+} from "@testing-library/react";
 import { ToolCall, OpenHostFile, editPatch } from "./tool-call";
 import {
   describeTool,
@@ -184,7 +190,9 @@ it("renders tool calls inline and exposes bounded shell output with raw fallback
     html.indexOf("After"),
   );
   fireEvent.click(screen.getByRole("button", { name: /Ran 1 command/ }));
-  expect(screen.getByText("hello")).toBeTruthy();
+  expect(
+    within(screen.getByRole("region", { name: "stdout" })).getByText("hello"),
+  ).toBeTruthy();
   expect(screen.getByText("warning")).toBeTruthy();
   expect(screen.getByText(/Partial process output/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Arguments & result" }));
@@ -224,4 +232,48 @@ it("does not present interrupted history repair as a received execution result",
   render(<ToolCall tool={tool} />);
   expect(screen.getByText("Interrupted", { exact: true })).toBeTruthy();
   expect(screen.queryByText("Result received")).toBeNull();
+});
+
+it("renders multi-edit requested fragments as diffs without claiming applied evidence", () => {
+  render(
+    <ToolCall
+      tool={{
+        id: "multi",
+        name: "multi_edit",
+        input: {
+          file_path: "/tmp/test.py",
+          edits: [
+            { old_string: "before-one", new_string: "after-one" },
+            { old_string: "before-two", new_string: "after-two" },
+          ],
+        },
+        result: { ok: true },
+      }}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: /Edit/ }));
+  expect(screen.getAllByText("Requested replacement")).toHaveLength(2);
+  expect(screen.queryByText("Applied edit")).toBeNull();
+  expect(screen.getByText("+after-one")).toBeTruthy();
+  expect(screen.getByText("-before-two")).toBeTruthy();
+});
+
+it("shows the whole recorded written file rather than a diff or a requested fragment", () => {
+  const after = 'const value = "saved";\n' + "// more\n".repeat(2000);
+  render(
+    <ToolCall
+      tool={{
+        id: "write",
+        name: "write",
+        input: { file_path: "/tmp/test.ts", content: "not the recorded file" },
+        edit: { file_path: "/tmp/test.ts", before: "old", after },
+        result: { ok: true },
+      }}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: /Edit/ }));
+  const region = screen.getByRole("region", { name: "Written content" });
+  expect(region.querySelector("code")?.textContent).toBe(after);
+  expect(region.querySelector(".hljs-keyword")).not.toBeNull();
+  expect(screen.queryByText("Applied edit")).toBeNull();
 });

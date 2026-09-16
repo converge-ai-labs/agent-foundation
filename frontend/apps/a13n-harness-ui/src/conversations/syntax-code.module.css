@@ -1,0 +1,30 @@
+.syntax {
+  color: inherit;
+}
+.syntax :global(.hljs-keyword),
+.syntax :global(.hljs-selector-tag),
+.syntax :global(.hljs-literal) {
+  color: light-dark(#8250df, #d2a8ff);
+}
+.syntax :global(.hljs-string),
+.syntax :global(.hljs-regexp),
+.syntax :global(.hljs-addition) {
+  color: light-dark(#116329, #a5d6ff);
+}
+.syntax :global(.hljs-number),
+.syntax :global(.hljs-attr),
+.syntax :global(.hljs-built_in) {
+  color: light-dark(#0550ae, #79c0ff);
+}
+.syntax :global(.hljs-title),
+.syntax :global(.hljs-section) {
+  color: light-dark(#953800, #ffa657);
+}
+.syntax :global(.hljs-comment),
+.syntax :global(.hljs-quote) {
+  color: light-dark(#6e7781, #919ba6);
+  font-style: italic;
+}
+.syntax :global(.hljs-deletion) {
+  color: light-dark(#a40e26, #ffa198);
+}

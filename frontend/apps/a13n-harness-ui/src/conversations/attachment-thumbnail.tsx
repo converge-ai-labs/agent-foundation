@@ -59,7 +59,15 @@ export function AttachmentThumbnail({
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   useEffect(() => {
     if (image) return retainedImage(image, transport, threadId, attachment);
-  }, [image, transport, threadId, attachment]);
+    // Metadata objects are replaced at live/history cutover; retained bytes are not.
+  }, [
+    image,
+    transport,
+    threadId,
+    attachment.attachment_id,
+    attachment.media_type,
+    attachment.name,
+  ]);
   if (!attachment.media_type.startsWith("image/")) return null;
   return (
     <img

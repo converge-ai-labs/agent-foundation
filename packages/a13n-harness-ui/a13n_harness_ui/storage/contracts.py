@@ -177,7 +177,8 @@ class CompactChildActivity(StoredContract):
 
 class CompactChildDisplay(StoredContract):
     activities: tuple[CompactChildActivity, ...] = Field(default=(), max_length=512)
-    final_answer: str | None = Field(default=None, max_length=64 * 1024)
+    # The latest completed answer is retained losslessly; transport reads are paged.
+    final_answer: str | None = None
 
 
 class StoredChildCheckpoint(StoredContract):

@@ -76,3 +76,12 @@
     box-shadow: none;
   }
 }
+
+@media (max-width: 700px) {
+  .frame {
+    position: fixed;
+    inset: var(--visible-top, 0px) 0 auto;
+    height: var(--visible-height, 100dvh);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}

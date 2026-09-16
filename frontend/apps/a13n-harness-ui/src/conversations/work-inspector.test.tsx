@@ -6,7 +6,6 @@ import {
   render,
   screen,
   waitFor,
-  within,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -163,9 +162,11 @@ it("updates an open child's actual observed output and fetches saved output sepa
   });
   fireEvent.click(screen.getByText("Explorer · running"));
   await screen.findByText("Investigating");
-  expect(screen.getByText(/Observed child output since focus/)).toBeTruthy();
-  expect(GET.mock.calls.some(([path]) => path.endsWith("/saved-output"))).toBe(
-    false,
+  expect(screen.getByText("Current observed output")).toBeTruthy();
+  await waitFor(() =>
+    expect(
+      GET.mock.calls.some(([path]) => path.endsWith("/saved-output")),
+    ).toBe(true),
   );
   live.blocks.set("text", {
     id: "text",
@@ -174,7 +175,6 @@ it("updates an open child's actual observed output and fetches saved output sepa
   });
   view.rerender(<Child child={child} live={live} reconcile={vi.fn()} />);
   expect(screen.getByText("Investigating the realtime details")).toBeTruthy();
-  fireEvent.click(screen.getByText("Saved child output and comments"));
   await waitFor(() =>
     expect(
       GET.mock.calls.filter(([path]) => path.endsWith("/saved-output")),
@@ -197,7 +197,7 @@ it("retains pending and unknown child controls when inspection unmounts and reop
         reject = fail;
       }),
   );
-  const GET = vi.fn(async () => ({ data: { title: "Execution record" } }));
+  const GET = vi.fn(async () => ({ data: { outputs: [] } }));
   const { wrapper } = harness(GET, POST);
   const child = {
     execution_id: "control-one",
@@ -253,16 +253,28 @@ it("retains pending and unknown child controls when inspection unmounts and reop
   expect(POST).toHaveBeenCalledOnce();
 });
 
-it("expands long child review text locally without losing the returned content", async () => {
+it("keeps completed output directly inspectable and tools collapsed without raw review events", async () => {
   const text =
     "A detailed finding.\n\n".repeat(600) + "Final review paragraph.";
-  const GET = vi.fn(async () => ({
+  const GET = vi.fn(async (_path: string) => ({
     data: {
-      title: "Execution record",
-      summary: text,
-      content: "Review content.\n\n".repeat(600) + "Final content paragraph.",
-      truncated: false,
-      omitted: false,
+      outputs: [
+        {
+          target: {
+            producing_thread_id: "child",
+            source_id: "b".repeat(64),
+            location: {
+              kind: "child_text",
+              execution_id: "long-review",
+              activity: null,
+            },
+          },
+          text,
+          offset: 0,
+          total_characters: text.length,
+          next_offset: null,
+        },
+      ],
     },
   }));
   const child = {
@@ -273,41 +285,33 @@ it("expands long child review text locally without losing the returned content",
     persisted_status: "succeeded",
     local_status: "unavailable",
     created_at: "2026-09-14T00:00:00Z",
-    activity: { output_preview: text },
+    activity: {
+      output_preview: "Short preview",
+      recent_tool_calls: [
+        {
+          tool_call_id: "tool-1",
+          tool_name: "view",
+          status: "success",
+          arguments: { file_path: "main.py" },
+          result: "Source",
+        },
+      ],
+    },
     available_actions: [],
   } as unknown as Schema<"ChildExecutionView">;
   render(<Child child={child} reconcile={vi.fn()} />, harness(GET));
-  const user = userEvent.setup();
-  await user.click(screen.getByText("Reviewer · succeeded"));
-  await screen.findByText("Execution record");
-  expect(screen.queryByRole("region", { name: "review summary" })).toBeNull();
-  const snapshot = screen.getByRole("region", { name: "activity snapshot" });
-  expect(within(snapshot).queryByText("Final review paragraph.")).toBeNull();
-  await user.click(
-    screen.getByRole("button", { name: "Show full activity snapshot" }),
+  await userEvent.setup().click(screen.getByText("Reviewer · succeeded"));
+  await screen.findByText("Final review paragraph.");
+  expect(screen.queryByText("Short preview")).toBeNull();
+  expect(screen.queryByText("Latest activity snapshot")).toBeNull();
+  expect(screen.queryByText("Saved child output and comments")).toBeNull();
+  expect(screen.getByText("Latest saved result")).toBeTruthy();
+  expect(GET.mock.calls.every(([path]) => path.endsWith("/saved-output"))).toBe(
+    true,
   );
-  expect(within(snapshot).getByText("Final review paragraph.")).toBeTruthy();
-  expect(snapshot.tabIndex).toBe(0);
-  await user.click(screen.getByText("Execution record"));
-  const summary = await screen.findByRole("region", { name: "review summary" });
-  expect(within(summary).queryByText("Final review paragraph.")).toBeNull();
-  const expand = screen.getByRole("button", {
-    name: "Show full review summary",
-  });
-  expect(expand.getAttribute("aria-expanded")).toBe("false");
-  expect(expand.getAttribute("aria-controls")).toBe(summary.id);
-  await user.click(expand);
-  expect(within(summary).getByText("Final review paragraph.")).toBeTruthy();
-  await user.click(
-    screen.getByRole("button", { name: "Show full review content" }),
-  );
-  expect(screen.getByText("Final content paragraph.")).toBeTruthy();
-  await user.click(
-    screen.getByRole("button", { name: "Show less review summary" }),
-  );
-  expect(within(summary).queryByText("Final review paragraph.")).toBeNull();
   expect(
-    screen.queryByText("Some content was omitted by the server."),
-  ).toBeNull();
-  expect(GET).toHaveBeenCalledOnce();
+    screen
+      .getByRole("button", { name: /Explored/ })
+      .getAttribute("aria-expanded"),
+  ).toBe("false");
 });

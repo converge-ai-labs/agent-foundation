@@ -151,7 +151,6 @@ export function ThreadRow({
               [
                 ["rename", "Rename conversation", PencilSimple],
                 ["share", "Share conversation", ShareNetwork],
-                ["comments", "Comments", ChatCircle],
                 ["details", "Conversation details", SlidersHorizontal],
               ] as const
             ).map(([action, label, Icon]) => (

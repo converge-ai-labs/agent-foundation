@@ -82,7 +82,25 @@ async def main() -> None:
             path.parent.mkdir(exist_ok=True)
             path.write_text(content, encoding="utf-8")
 
+        attempts = 0
+
         async def model(messages, info):
+            nonlocal attempts
+            attempts += 1
+            if "--retry" in sys.argv and attempts == 1:
+                import httpx2
+
+                yield "Preparing the review.\n\n"
+                await asyncio.sleep(1)
+                raise httpx2.ReadError("Isolated fixture interruption")
+            if "--rich-output" in sys.argv:
+                yield "## Review result\n\nThe conversation stays readable while work continues.\n\n"
+                await asyncio.sleep(2)
+                yield '| Surface | Status | Notes |\n| :--- | :---: | ---: |\n| Markdown | Ready | 12 |\n| Mermaid | Ready | 3 |\n\n```python\ndef greet(name: str) -> str:\n    # Preserve the original source\n    return f"Hello, {name}"\n```\n\n'
+                yield "```mermaid\nflowchart LR\n    A[Local input] --> B[Live output]\n    B --> C[Saved history]\n"
+                await asyncio.sleep(1)
+                yield "```\n\nAll checks are ready for human review."
+                return
             yield "Protocol "
             await asyncio.sleep(6 if "--slow" in sys.argv else 0.4)
             yield "response"

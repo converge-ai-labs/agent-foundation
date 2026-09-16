@@ -4423,6 +4423,8 @@ export interface components {
             attachment_ids?: string[];
             /** Parts */
             parts?: (string | components["schemas"]["InputAttachmentReference"])[] | null;
+            /** Source Id */
+            source_id?: string | null;
             /** Model Id */
             model_id?: string | null;
         };
@@ -4440,6 +4442,8 @@ export interface components {
             attachment_ids?: string[];
             /** Parts */
             parts?: (string | components["schemas"]["InputAttachmentReference"])[] | null;
+            /** Source Id */
+            source_id?: string | null;
         };
     };
     responses: never;

@@ -12939,6 +12939,18 @@
             ],
             "title": "Parts"
           },
+          "source_id": {
+            "anyOf": [
+              {
+                "pattern": "^input[-_][0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
+          },
           "model_id": {
             "anyOf": [
               {
@@ -12995,6 +13007,18 @@
               }
             ],
             "title": "Parts"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "pattern": "^input[-_][0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
           }
         },
         "title": "RootSteerRequest",

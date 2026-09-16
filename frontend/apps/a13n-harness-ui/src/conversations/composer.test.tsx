@@ -10,7 +10,7 @@ import {
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as Y from "yjs";
-import { Composer, ComposerDrafts, useDraft } from "./composer";
+import { Composer, ComposerDrafts, useDraft, submitDraft } from "./composer";
 import { SteerNotice } from "./transcript";
 import { ThreadDraft, encode, values } from "./draft";
 import { TransportContext } from "../transport/context";
@@ -212,7 +212,7 @@ it.each(["accepted", "rejected", "unknown"] as const)(
     fireEvent.click(button);
     expect(post).toHaveBeenCalledWith("/api/operations/{receipt_id}/steer", {
       params: { path: { receipt_id: "receipt-original" } },
-      body: input,
+      body: { ...input, source_id: draft.localInputs.at(-1)!.id },
     });
     act(() => {
       draft.doc.getText("text").insert(0, "NEXT ");
@@ -228,7 +228,9 @@ it.each(["accepted", "rejected", "unknown"] as const)(
             },
       );
     });
+    expect(draft.localInputs.at(-1)?.state).toBe("pending");
     await waitFor(() => expect(draft.submission.kind).toBe(outcome));
+    expect(draft.localInputs.at(-1)?.state).toBe(outcome);
     if (outcome === "accepted") {
       const status = screen.getByRole("status");
       expect(
@@ -441,4 +443,31 @@ it("keeps Send enabled during ordinary edit echoes but waits for synchronization
   await waitFor(() => expect(values(draft.doc).prompt).toBe(""));
   view.unmount();
   query.clear();
+});
+
+it("uses distinct source identities for consecutive steering of one receipt and keeps previews out of shared state", async () => {
+  const draft = new ThreadDraft();
+  const POST = vi.fn().mockResolvedValue({
+    data: { receipt_id: "same-receipt", accepted: true },
+  });
+  const transport = { client: { POST } } as unknown as Transport;
+  for (let index = 0; index < 2; index++) {
+    draft.doc.getText("text").insert(0, "same instruction");
+    draft.status = "Connected";
+    draft.receive({
+      draft_id: "draft-one",
+      participant_id: "participant-one",
+      participants: {},
+      update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+    });
+    await submitDraft(draft, transport, "thread-one", "steer", "same-receipt");
+  }
+  expect(POST).toHaveBeenCalledTimes(2);
+  const ids = POST.mock.calls.map((call) => call[1].body.source_id);
+  expect(ids[0]).toMatch(/^input_[0-9a-f]{32}$/);
+  expect(ids[1]).not.toBe(ids[0]);
+  expect(draft.localInputs.map((input) => input.id)).toEqual(ids);
+  expect(values(draft.doc).prompt).toBe("");
+  expect(JSON.stringify(draft.doc.toJSON())).not.toContain(ids[0]);
+  draft.doc.destroy();
 });

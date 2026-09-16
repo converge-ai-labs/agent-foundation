@@ -125,7 +125,8 @@ it("keeps saved raw output identity intact and does not load remote Markdown ima
         .getAttribute("data-saved-target")!,
     ),
   ).toEqual(target);
-  expect(screen.getByText("**Exact** source")).toBeTruthy();
+  expect(screen.getByText("Exact").tagName).toBe("STRONG");
+  expect(screen.queryByRole("button", { name: /comment/i })).toBeNull();
   view.rerender(
     <MessageText
       text={
@@ -208,4 +209,51 @@ it("opens saved and streaming reasoning by default and renders safe Markdown", (
   );
   expect(screen.getByText("Reasoning").closest("details")?.open).toBe(true);
   expect(screen.getByText("Streaming").tagName).toBe("STRONG");
+});
+
+it("omits model-only tool attachments without hiding genuine user media", () => {
+  const text = JSON.stringify({
+    kind: "binary",
+    media_type: "image/png",
+    size_bytes: 12,
+    payload_omitted: true,
+  });
+  const part = {
+    kind: "media",
+    text,
+    metadata: { media: true, display: false },
+  };
+  const view = render(
+    <SavedEntry
+      entry={
+        {
+          position: 0,
+          message_kind: "request",
+          parts: [part],
+        } as Schema<"TranscriptEntry">
+      }
+    />,
+  );
+  expect(view.container.textContent).toBe("");
+  view.rerender(
+    <LiveOutput
+      gap={false}
+      blocks={[{ ...part, kind: "media", id: "tool-image" }]}
+    />,
+  );
+  expect(view.container.textContent).toBe("");
+  view.rerender(
+    <SavedEntry
+      entry={
+        {
+          position: 0,
+          message_kind: "request",
+          parts: [{ ...part, metadata: { media: true, display: true } }],
+        } as Schema<"TranscriptEntry">
+      }
+    />,
+  );
+  expect(screen.getByText("User")).toBeTruthy();
+  expect(view.container.textContent).toContain("image/png");
+  expect(view.container.textContent).not.toContain("payload_omitted");
 });

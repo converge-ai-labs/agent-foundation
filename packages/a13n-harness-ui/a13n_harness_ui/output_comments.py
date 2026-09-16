@@ -177,7 +177,18 @@ class OutputComments:
                 source_id=head.selected_checkpoint.logical_digest,
                 location=ChildOutputLocation(execution_id=execution_id),
             )
-            values.append(SavedOutputView(target=target, text=text, offset=0, total_characters=len(text)))
+            end = min(len(text), 64 * 1024)
+            # Human inspection starts with the latest saved result, not an event log.
+            values.insert(
+                0,
+                SavedOutputView(
+                    target=target,
+                    text=text[:end],
+                    offset=0,
+                    total_characters=len(text),
+                    next_offset=end if end < len(text) else None,
+                ),
+            )
         if position > len(values):
             raise ThreadError("Child output cursor is outside saved output.", code="comment_cursor_invalid")
         end = min(len(values), position + limit)

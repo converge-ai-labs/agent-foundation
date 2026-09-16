@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { Link, useMatch, useNavigate } from "react-router";
+import { fitVisualViewport } from "./visual-viewport";
 import { useQueryClient } from "@tanstack/react-query";
 import { Bell } from "@phosphor-icons/react";
 import { Button, Switch, ToastProvider, useToast } from "a13n-ui";
@@ -80,6 +81,11 @@ export function NotificationsProvider({ children }: { children: ReactNode }) {
   );
 }
 function NotificationState({ children }: { children: ReactNode }) {
+  const frame = useRef<HTMLDivElement>(null);
+  useEffect(
+    () => (frame.current ? fitVisualViewport(frame.current) : undefined),
+    [],
+  );
   const [enabled, updateEnabled] = useState(
     () => readPreference(ENABLED, "true") !== "false",
   );
@@ -308,7 +314,7 @@ function NotificationState({ children }: { children: ReactNode }) {
   };
   return (
     <NotificationsContext value={value}>
-      <div className={styles.frame}>
+      <div className={styles.frame} ref={frame}>
         {children}
         {enabled && permission !== "granted" && <PermissionToast />}
       </div>

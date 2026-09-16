@@ -157,3 +157,14 @@ it("does not archive an active operation or silently retry a metadata conflict",
     "/threads/thread-one",
   );
 });
+
+it("does not expose the disabled comments entry in conversation actions", async () => {
+  mount();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Actions for Example" }),
+  );
+  expect(
+    await screen.findByRole("menuitem", { name: "Share conversation" }),
+  ).toBeTruthy();
+  expect(screen.queryByRole("menuitem", { name: "Comments" })).toBeNull();
+});

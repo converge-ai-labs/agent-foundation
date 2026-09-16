@@ -160,12 +160,12 @@ export function ComposerEditor({
           "&": {
             backgroundColor: "transparent",
             color: "var(--a13n-text)",
-            fontSize: "14px",
-            height: "88px",
+            fontSize: "var(--composer-font-size, 14px)",
+            height: "var(--composer-editor-height, 88px)",
           },
           ".cm-content": {
             fontFamily: "inherit",
-            minHeight: "64px",
+            minHeight: "var(--composer-content-height, 64px)",
             padding: "8px 2px",
             lineHeight: "1.6",
           },
