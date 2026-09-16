@@ -254,9 +254,86 @@ it("renders owned summaries as distinct collapsed Markdown activity, never headi
   ]) {
     const group = screen.getByText(title).closest("details")!;
     expect(group.open).toBe(false);
-    expect(screen.getByText(text).tagName).toBe("STRONG");
-    expect(screen.getByText(text).closest("details")).toBe(group);
+    expect(group.querySelector("summary")!.textContent).toContain(text);
+    expect(group.querySelector("strong")!.textContent).toBe(text);
+    expect(group.querySelector("summary")!.textContent).toContain("Saved");
   }
   expect(screen.getByText("Authored input").closest("details")).toBeNull();
   expect(screen.getAllByText("User")).toHaveLength(1);
+});
+it("keeps history and an expanded summary through saved cutover and later continuations", () => {
+  const text =
+    "# Context Summary\n\n**Keep decisions**\n\n- Verify the result\n\n```ts\nconst done = true;\n```";
+  const prior = saved([{ kind: "assistant", text: "Earlier answer" }]);
+  const view = render(
+    <ConversationTranscript
+      threadId="one"
+      entries={[prior]}
+      localInputs={[]}
+      blocks={[
+        {
+          id: "context:handoff-one",
+          kind: "activity",
+          context: "handoff",
+          name: "Summary",
+          text: "Completed",
+          result: text,
+        },
+      ]}
+    />,
+  );
+  const earlier = screen.getByText("Earlier answer");
+  const details = screen.getByText("Summary").closest("details")!;
+  expect(details.open).toBe(false);
+  expect(details.querySelector("summary")!.textContent).toContain(
+    "Keep decisions",
+  );
+  expect(details.querySelector("summary")!.textContent).not.toContain(
+    "Context Summary",
+  );
+  details.open = true;
+  const summary = saved(
+    [
+      {
+        kind: "user",
+        text,
+        metadata: { "a13n.context": "handoff", operation_id: "handoff-one" },
+      },
+    ],
+    1,
+  );
+  view.rerender(
+    <ConversationTranscript
+      threadId="one"
+      continuation="checkpoint-one"
+      entries={[prior, summary]}
+      localInputs={[]}
+      blocks={[]}
+    />,
+  );
+  expect(screen.getByText("Summary").closest("details")).toBe(details);
+  expect(details.open).toBe(true);
+  expect(screen.getByText("Earlier answer")).toBe(earlier);
+  expect(details.querySelector("h1")!.textContent).toBe("Context Summary");
+  expect(details.querySelector("strong")!.textContent).toBe("Keep decisions");
+  expect(details.querySelector("li")!.textContent).toBe("Verify the result");
+  expect(details.querySelector("code")!.textContent).toContain(
+    "const done = true;",
+  );
+  view.rerender(
+    <ConversationTranscript
+      threadId="one"
+      continuation="checkpoint-two"
+      entries={[
+        prior,
+        summary,
+        saved([{ kind: "assistant", text: "Continued answer" }], 2),
+      ]}
+      localInputs={[]}
+      blocks={[]}
+    />,
+  );
+  expect(screen.getByText("Summary").closest("details")).toBe(details);
+  expect(details.open).toBe(true);
+  expect(screen.getByText("Earlier answer")).toBe(earlier);
 });

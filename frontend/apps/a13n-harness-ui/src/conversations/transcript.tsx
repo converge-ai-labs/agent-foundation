@@ -8,6 +8,7 @@ import {
   type ToolView,
 } from "./tool-presentation";
 import { MessageText } from "./message-text";
+import { ContextActivity } from "./context-activity";
 export { MessageText } from "./message-text";
 import type { Schema } from "../transport/client";
 import type { DisplayBlock, FocusDisplay } from "./stream";
@@ -76,7 +77,13 @@ function savedRows(
       const id = `saved:${identity}:${index}`;
       const context = part.metadata?.["a13n.context"];
       if (context === "handoff" || context === "compaction") {
-        rows.push({ id, kind: "context", context, text: part.text ?? "" });
+        const operation = part.metadata?.operation_id;
+        rows.push({
+          id: typeof operation === "string" ? `context:${operation}` : id,
+          kind: "context",
+          context,
+          text: part.text ?? "",
+        });
       } else if (systemNotice(part.metadata)) {
         rows.push({
           id,
@@ -273,13 +280,11 @@ function Rows({
           )}
         </section>
       ) : row.kind === "context" ? (
-        <details className={styles.contextActivity} data-kind={row.context}>
-          <summary>
-            {row.context === "handoff" ? "Summary" : "Compact Summary"}
-          </summary>
-          {row.status && <small>{row.status}</small>}
-          <MessageText text={row.text} />
-        </details>
+        <ContextActivity
+          context={row.context}
+          text={row.text}
+          status={row.status}
+        />
       ) : (
         <details className={styles.activity}>
           <summary>{row.name}</summary>

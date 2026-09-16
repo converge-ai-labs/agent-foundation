@@ -2118,6 +2118,69 @@ async def test_checkpoint_cancellation_after_commit_preserves_terminal_head_and_
         ] == ["Keep this input after cancellation"]
 
 
+async def test_summary_preserves_display_history_after_checkpoint_and_app_reopen(tmp_path, monkeypatch):
+    calls = 0
+
+    async def model(messages, info):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            yield "Original answer"
+        elif calls == 2:
+            yield {
+                0: DeltaToolCall(
+                    name="summarize", json_args='{"content":"**Keep this decision**"}', tool_call_id="display-summary"
+                )
+            }
+        else:
+            yield "Continued answer"
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    settings = _settings(tmp_path / "state")
+    root = _write_configuration(tmp_path)
+    agent = tmp_path / "agents/assistant.yaml"
+    agent.write_text(agent.read_text() + "capabilities:\n  - capability: handoff\n")
+    async with open_harness_ui_app(settings, configuration_path=root) as app:
+        thread = await app.create_thread()
+        for prompt in ("Original question", "Summarize now"):
+            receipt = await app.submit_thread(thread_id=thread.thread_id, prompt=prompt)
+            with fail_after(10):
+                result = await app.wait_root_operation(receipt.receipt_id)
+            assert result.status is RootOperationStatus.completed
+        history = await app.get_thread_transcript(thread_id=thread.thread_id)
+        texts = [part.text for entry in history.entries for part in entry.parts if part.metadata.display and part.text]
+        assert texts.count("Original question") == 1
+        assert texts.count("Original answer") == 1
+        assert texts.count("Summarize now") == 1
+        assert texts.count("Continued answer") == 1
+        summaries = [
+            part
+            for entry in history.entries
+            for part in entry.parts
+            if part.metadata.model_dump().get("a13n.context") == "handoff"
+        ]
+        assert len(summaries) == 1
+        assert "**Keep this decision**" in summaries[0].text
+        assert summaries[0].metadata.model_dump().get("operation_id")
+        # Pages and entry reads share the independent display positions.
+        page = await app.get_thread_transcript(thread_id=thread.thread_id, limit=2)
+        assert page.total == history.total
+        assert page.next_cursor is not None
+        older = await app.get_thread_transcript(thread_id=thread.thread_id, cursor=page.next_cursor, limit=100)
+        assert (*older.entries, *page.entries) == history.entries
+    async with open_harness_ui_app(settings, configuration_path=root) as reopened:
+        assert await reopened.get_thread_transcript(thread_id=thread.thread_id) == history
+        receipt = await reopened.submit_thread(thread_id=thread.thread_id, prompt="Continue after reopening")
+        with fail_after(10):
+            result = await reopened.wait_root_operation(receipt.receipt_id)
+        assert result.status is RootOperationStatus.completed
+        after = await reopened.get_thread_transcript(thread_id=thread.thread_id)
+        assert [part.text for entry in after.entries for part in entry.parts].count("Original answer") == 1
+
+
 async def test_real_webui_app_resumes_and_restart_does_not_rearm_saved_questions(tmp_path):
     root = _write_configuration(tmp_path)
     root.write_text(root.read_text() + "tools:\n  interaction_timeout_seconds: 0.3\n")

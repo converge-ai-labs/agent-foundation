@@ -781,7 +781,7 @@ export class FocusDisplay {
         name === "a13n.context.handoff_summary"
           ? source
           : payload;
-      const key = `${this.runId}:context:${string(operation.operation_id)}`;
+      const key = `context:${string(operation.operation_id)}`;
       const previous = this.blocks.get(key);
       const summary =
         name === "a13n.context.compaction_summary" ||
@@ -797,8 +797,15 @@ export class FocusDisplay {
         context,
         name: context === "compaction" ? "Compact Summary" : "Summary",
         text: summary
-          ? previous?.text || ""
+          ? previous?.text || "Summary ready"
           : [
+              string(payload.type).endsWith("_failed")
+                ? "Failed"
+                : string(payload.type).endsWith("_completed")
+                  ? "Completed"
+                  : string(payload.type).endsWith("_prepared")
+                    ? "Prepared"
+                    : "In progress",
               string(payload.error_code),
               string(payload.failed_phase),
               string(payload.reason),
