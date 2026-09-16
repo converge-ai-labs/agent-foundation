@@ -75,7 +75,9 @@ Use the Makefile as the stable development interface:
 | `make help`                   | List available commands                                            |
 | `make install`                | Synchronize locked workspace, application, and SDK dependencies    |
 | `make setup`                  | Prepare this checkout's stores, shared Langfuse and Service schema |
-| `make dev`                    | Upgrade the schema and run a13n Service and Console                |
+| `make dev`                    | Upgrade the schema and start Service and Console in the background |
+| `make dev-foreground`         | Force Service and Console to remain attached to this terminal      |
+| `make dev-stop`               | Stop Service and Console started by a detached `make dev`          |
 | `make service-dev`            | Run only local Service and the scripted development model          |
 | `make dev-reset STATE=empty`  | Rebuild owned Service storage with no business data                |
 | `make dev-reset STATE=seeded` | Rebuild owned Service storage with fictional resources and history |
