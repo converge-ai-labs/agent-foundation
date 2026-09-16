@@ -37,6 +37,7 @@ from a13n_harness_ui.surfaces import (
     LaunchProjectResolution,
     LaunchProjectSelected,
     LaunchProjectUnmatched,
+    ModelSummary,
     NewThreadDefaults,
     NotePage,
     NoteView,
@@ -422,6 +423,10 @@ class TerminalProjectionService:
                     source_path=paths.get(item.id, "a13n-harness-ui.yaml"),
                 )
                 for item in sorted(source.agents.values(), key=lambda item: (item.name.casefold(), item.id))
+            ),
+            models=tuple(
+                ModelSummary(model_id=item.id, name=item.name, route=item.route)
+                for item in sorted(source.models.values(), key=lambda item: (item.name.casefold(), item.id))
             ),
             environments=environments,
             harness_plugins=tuple(

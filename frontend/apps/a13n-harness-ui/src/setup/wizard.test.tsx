@@ -473,7 +473,7 @@ it("offers affinity presets and captures a custom replacement alongside the endp
   await user.click(
     screen.getByRole("combobox", { name: "Gateway session affinity" }),
   );
-  await user.click(screen.getByRole("option", { name: /LiteLLM/ }));
+  await user.click(await screen.findByRole("option", { name: /LiteLLM/ }));
   expect(input.value).toBe("x-litellm-session-id");
   expect(
     screen.getByText("Enable session affinity on your gateway first."),

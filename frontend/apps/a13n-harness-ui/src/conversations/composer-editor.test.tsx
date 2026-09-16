@@ -373,3 +373,59 @@ it("renders a comment as the same atomic attachment with preview, removal, and u
   await screen.findByText("Comment · Reader");
   expect(values(draft.doc).attachment_ids).toEqual(["attachment-comment"]);
 });
+
+it("previews staged images locally and releases the thumbnail when removed", async () => {
+  const createObjectURL = vi.fn().mockReturnValue("blob:staged-image");
+  const revokeObjectURL = vi.fn();
+  vi.stubGlobal(
+    "URL",
+    class extends URL {
+      static createObjectURL = createObjectURL;
+      static revokeObjectURL = revokeObjectURL;
+    },
+  );
+  const { draft, context, rendered } = inlineEditor();
+  try {
+    let key = "";
+    const file = new File(["image"], "draft.png", { type: "image/png" });
+    act(() => {
+      key = draft.addAttachment("pending");
+      draft.uploads.set(key, { file, status: "staged" });
+      draft.notify();
+    });
+    const chip = await screen.findByRole("button", {
+      name: "draft.png · ready to upload",
+    });
+    expect(chip.textContent).toBe("draft.png");
+    expect(chip.querySelector("img")?.src).toBe("blob:staged-image");
+    expect(createObjectURL).toHaveBeenCalledWith(file);
+    expect(context.transport.fetch).not.toHaveBeenCalled();
+    act(() => draft.removeAttachment(key));
+    await waitFor(() =>
+      expect(revokeObjectURL).toHaveBeenCalledWith("blob:staged-image"),
+    );
+  } finally {
+    rendered.unmount();
+    vi.unstubAllGlobals();
+  }
+});
+
+it("changes draft-lifetime guidance without remounting the editor on Thread creation", () => {
+  const draft = new ThreadDraft();
+  const props = {
+    draft,
+    profile: { display_name: "Test", color: "#000000" },
+    presence() {},
+    submit() {},
+  };
+  const view = render(<ComposerEditor {...props} local />);
+  const editor = screen.getByRole("textbox", { name: "Shared prompt" });
+  expect(editor.getAttribute("aria-description")).toContain(
+    "Private to this tab",
+  );
+  view.rerender(<ComposerEditor {...props} local={false} />);
+  expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBe(editor);
+  expect(editor.getAttribute("aria-description")).toContain(
+    "Shared with this conversation",
+  );
+});

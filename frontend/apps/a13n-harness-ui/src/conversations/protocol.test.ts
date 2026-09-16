@@ -65,7 +65,7 @@ afterAll(async () => {
   vi.unstubAllGlobals();
 }, 20000);
 async function until(predicate: () => boolean) {
-  await vi.waitFor(() => expect(predicate()).toBe(true), {
+  await vi.waitFor(() => expect(predicate(), predicate.toString()).toBe(true), {
     timeout: 10000,
     interval: 20,
   });
@@ -83,13 +83,26 @@ it("real JS Yjs replicas interoperate with App admission, HTTP metadata and focu
   const first = a.connect(transport, thread, () => {}),
     second = b.connect(transport, thread, () => {});
   const display = new FocusDisplay();
+  let savedText = "";
+  const refreshHistory = async () => {
+    const history = await result(
+      transport.client.GET("/api/threads/{thread_id}/transcript", {
+        params: { path: { thread_id: thread } },
+      }),
+    );
+    savedText = history.entries
+      .flatMap((entry) => entry.parts.map((part) => part.text ?? ""))
+      .join("\n");
+  };
   const watch = watchThread(
     transport,
     thread,
     display,
     () => {},
     () => {},
-    () => {},
+    () => {
+      void refreshHistory();
+    },
   );
   try {
     await until(() => a.synchronized && b.synchronized && display.ready);
@@ -158,11 +171,17 @@ it("real JS Yjs replicas interoperate with App admission, HTTP metadata and focu
         values(b.doc).prompt === "NEXT",
     );
     expect(values(a.doc).attachment_ids).toEqual([]);
-    await until(() =>
-      [...display.blocks.values()].some((block) =>
-        block.text.includes("Protocol response"),
-      ),
+    // A fast Run may select final history before the changed-Run bootstrap
+    // reaches its reader. Production clients reconcile saved output on hints;
+    // live replay is not a durable delivery guarantee.
+    await until(
+      () =>
+        savedText.includes("Protocol response") ||
+        [...display.blocks.values()].some((block) =>
+          block.text.includes("Protocol response"),
+        ),
     );
+    expect(display.snapshot?.thread.thread.thread_id).toBe(thread);
     await vi.waitFor(
       async () => {
         const operation = await result(
@@ -293,4 +312,65 @@ it("delivers actual final output over the global SSE after the Host settles the 
   } finally {
     close();
   }
+});
+
+it("selects a model for one HTTP admission without changing sticky configuration and rejects overrides on steering", async () => {
+  const catalog = await result(transport.client.GET("/api/selectors"));
+  expect(catalog.models?.map((item) => item.model_id)).toContain(
+    "model-alternate",
+  );
+  const created = await result(
+    transport.client.POST("/api/threads", { body: {} }),
+  );
+  const thread = created.thread_id;
+  const receipt = await result(
+    transport.client.POST("/api/threads/{thread_id}/submit", {
+      params: { path: { thread_id: thread } },
+      body: { prompt: "Use the alternate model", model_id: "model-alternate" },
+    }),
+  );
+  await expect(
+    transport.fetch(`/api/operations/${receipt.receipt_id}/steer`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "Continue", model_id: "model-fixture" }),
+    }),
+  ).rejects.toMatchObject({ status: 400 });
+  await vi.waitFor(
+    async () => {
+      const operation = await result(
+        transport.client.GET("/api/operations/{receipt_id}", {
+          params: { path: { receipt_id: receipt.receipt_id } },
+        }),
+      );
+      expect(operation.status).toBe("completed");
+    },
+    { timeout: 10000 },
+  );
+  const inspection = await result(
+    transport.client.GET("/api/threads/{thread_id}/configuration", {
+      params: { path: { thread_id: thread } },
+    }),
+  );
+  expect(inspection.captured?.agent.model_id).toBe("model-alternate");
+  expect(inspection.next_model_id).toBe("model-fixture");
+  const rejected = await transport.client.POST(
+    "/api/threads/{thread_id}/submit",
+    {
+      params: { path: { thread_id: thread } },
+      body: { prompt: "Do not silently fall back", model_id: "missing-model" },
+    },
+  );
+  expect(rejected.data?.receipt_id).toBeTruthy();
+  await vi.waitFor(
+    async () => {
+      const operation = await result(
+        transport.client.GET("/api/operations/{receipt_id}", {
+          params: { path: { receipt_id: rejected.data!.receipt_id } },
+        }),
+      );
+      expect(operation.status).toBe("failed");
+    },
+    { timeout: 10000 },
+  );
 });

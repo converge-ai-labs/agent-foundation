@@ -83,6 +83,19 @@ export class FocusDisplay {
   replayCount = 0;
   sequence = 0;
   gap = false;
+  contextUsage?: { tokens: number; ordinal: number };
+  readonly checkpoints = new Map<string, number>();
+  private readonly savedBlocks = new Map<string, number>();
+  blocksAfter(continuation: string | null | undefined) {
+    const checkpoint = continuation
+      ? this.checkpoints.get(continuation)
+      : undefined;
+    return [...this.blocks.values()].filter(
+      (block) =>
+        checkpoint === undefined ||
+        (this.savedBlocks.get(block.id) ?? Infinity) > checkpoint,
+    );
+  }
   tasks?: Schema<"TaskPage">;
   readonly children = new Map<
     string,
@@ -118,6 +131,9 @@ export class FocusDisplay {
     this.replayCount = 0;
     this.sequence = 0;
     this.gap = false;
+    this.contextUsage = undefined;
+    this.checkpoints.clear();
+    this.savedBlocks.clear();
   }
   accept(frame: FocusFrame) {
     if (frame.kind === "reset") {
@@ -427,6 +443,43 @@ export class FocusDisplay {
     const source = object(value.event) ? value.event : {};
     const payload = object(source.payload) ? source.payload : {};
     if (
+      name === "a13n.harness_ui.checkpoint" &&
+      typeof source.continuation_id === "string"
+    ) {
+      const ordinal = this.checkpoints.size + 1;
+      this.checkpoints.set(source.continuation_id, ordinal);
+      for (const id of this.blocks.keys()) {
+        if (!this.savedBlocks.has(id)) this.savedBlocks.set(id, ordinal);
+      }
+      return;
+    }
+    if (payload.type === "usage_report" && Array.isArray(payload.records)) {
+      for (const record of payload.records) {
+        if (
+          !object(record) ||
+          record.kind !== "model" ||
+          record.run_id !== this.runId ||
+          record.parent_agent_instance_id != null ||
+          record.delegation_id != null ||
+          typeof record.response_ordinal !== "number" ||
+          !object(record.request_usage)
+        )
+          continue;
+        const { input_tokens, output_tokens } = record.request_usage;
+        if (
+          typeof input_tokens === "number" &&
+          typeof output_tokens === "number" &&
+          record.response_ordinal > (this.contextUsage?.ordinal ?? -1)
+        ) {
+          this.contextUsage = {
+            tokens: input_tokens + output_tokens,
+            ordinal: record.response_ordinal,
+          };
+        }
+      }
+      return;
+    }
+    if (
       ["a13n.pydantic_ai.part_start", "a13n.pydantic_ai.part_end"].includes(
         name,
       ) &&
@@ -615,13 +668,6 @@ export class FocusDisplay {
       name === "a13n.harness.context" &&
       payload.type === "context_snapshot"
     ) {
-      const key = `${this.runId}:context`;
-      this.blocks.set(key, {
-        id: key,
-        kind: "activity",
-        name: "Request context",
-        text: `${payload.request_tokens ?? "Unknown"} request tokens · ${payload.trigger_tokens ?? "Unknown"} compaction trigger (not context-window capacity)`,
-      });
       return;
     }
     if (
@@ -666,16 +712,7 @@ export class FocusDisplay {
       });
       return;
     }
-    // Unknown capability events remain inspectable together, not one expanded
-    // JSON transcript row for every request lifecycle or usage update.
-    const key = `${this.runId}:custom:${this.blocks.size}`;
-    this.blocks.set(key, {
-      id: key,
-      kind: "activity",
-      diagnostic: true,
-      name,
-      text: JSON.stringify(event.value, null, 2),
-    });
+    // Internal stream diagnostics are not conversation content.
   }
 }
 
@@ -693,7 +730,9 @@ export function showFocusedOutput(
     (replacingHistory ||
       selected === undefined ||
       selected === display.baseContinuation ||
-      activeRunId === display.runId)
+      (selected != null &&
+        display.checkpoints.has(selected) &&
+        (!activeRunId || activeRunId === display.runId)))
   );
 }
 

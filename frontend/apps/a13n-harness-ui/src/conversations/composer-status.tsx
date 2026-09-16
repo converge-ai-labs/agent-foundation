@@ -1,4 +1,7 @@
 import { useEffect, useState } from "react";
+import { useQuery } from "@tanstack/react-query";
+import { result } from "../transport/client";
+import { useTransport } from "../transport/context";
 import {
   Button,
   Popover,
@@ -16,13 +19,43 @@ import {
 } from "./usage";
 import styles from "./composer-status.module.css";
 
-export function ComposerStatus({ threadId }: { threadId: string }) {
+export function ComposerStatus({
+  threadId,
+  receipt,
+  busy = false,
+  liveTokens,
+}: {
+  threadId: string;
+  receipt?: string | null;
+  busy?: boolean;
+  liveTokens?: number;
+}) {
+  const { client } = useTransport();
   const activity = useThreads(threadId, undefined, true);
-  const operation = activity.data?.pages
-    .flatMap((page) => page.rows)
-    .find((row) => row.thread.thread_id === threadId)?.latest_operation;
+  const observed = useQuery({
+    queryKey: ["thread", threadId, "operation", receipt],
+    enabled: !!receipt,
+    queryFn: ({ signal }) =>
+      result(
+        client.GET("/api/operations/{receipt_id}", {
+          params: { path: { receipt_id: receipt! } },
+          signal,
+        }),
+      ),
+    refetchInterval: (query) =>
+      busy || ["running", "preparing"].includes(query.state.data?.status ?? "")
+        ? 1000
+        : false,
+  });
+  const operation =
+    observed.data ??
+    activity.data?.pages
+      .flatMap((page) => page.rows)
+      .find((row) => row.thread.thread_id === threadId)?.latest_operation;
   const active =
-    operation?.status === "running" || operation?.status === "preparing";
+    busy ||
+    operation?.status === "running" ||
+    operation?.status === "preparing";
   const usage = useThreadUsage(threadId, active);
   const context = useContextUsage(threadId, active);
   const [now, setNow] = useState(Date.now);
@@ -32,8 +65,19 @@ export function ComposerStatus({ threadId }: { threadId: string }) {
     const timer = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(timer);
   }, [active, operation?.receipt.receipt_id]);
-  const summary = usageSummary(usage.data, context.data);
-  const stale = !!(usage.error || context.error || activity.error);
+  const tokens = liveTokens ?? context.data?.latest_request_tokens;
+  const summary = usageSummary(
+    usage.data,
+    context.data
+      ? { ...context.data, latest_request_tokens: tokens }
+      : undefined,
+  );
+  const stale = !!(
+    usage.error ||
+    context.error ||
+    observed.error ||
+    activity.error
+  );
   return (
     <div className={styles.bar}>
       <Popover>
@@ -60,11 +104,10 @@ export function ComposerStatus({ threadId }: { threadId: string }) {
           <dl>
             <dt>Context</dt>
             <dd>
-              {context.data?.latest_request_tokens?.toLocaleString() ??
-                "Unknown"}{" "}
-              / {context.data?.context_window?.toLocaleString() ?? "unknown"}{" "}
-              tokens in the latest saved root request. Not cumulative usage;
-              live edits are not included.
+              {tokens?.toLocaleString() ?? "Unknown"} /{" "}
+              {context.data?.context_window?.toLocaleString() ?? "unknown"}{" "}
+              tokens reported by the latest root request. Updates during
+              execution, not cumulative usage; live edits are not included.
             </dd>
             <dt>Model cost</dt>
             <dd>
@@ -85,7 +128,11 @@ export function ComposerStatus({ threadId }: { threadId: string }) {
               timings are not estimated.
             </dd>
           </dl>
-          <ErrorNotice error={usage.error || context.error || activity.error} />
+          <ErrorNotice
+            error={
+              usage.error || context.error || observed.error || activity.error
+            }
+          />
           <Button
             variant="ghost"
             size="sm"
@@ -94,6 +141,7 @@ export function ComposerStatus({ threadId }: { threadId: string }) {
               void usage.refetch();
               void context.refetch();
               void activity.refetch();
+              if (receipt) void observed.refetch();
             }}
           >
             Refresh usage

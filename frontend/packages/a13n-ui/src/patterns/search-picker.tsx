@@ -1,5 +1,6 @@
 import { MagnifyingGlassIcon } from "@phosphor-icons/react";
 import { useState, type ReactNode } from "react";
+import { cn } from "../lib/utils";
 
 import {
   Combobox,
@@ -51,6 +52,7 @@ export function SearchPicker({
   disabled,
   onSearchChange,
   footer,
+  popupClassName,
   id,
   "aria-describedby": describedBy,
 }: {
@@ -63,6 +65,7 @@ export function SearchPicker({
   disabled?: boolean;
   onSearchChange?: (value: string) => void;
   footer?: ReactNode;
+  popupClassName?: string;
   id?: string;
   "aria-describedby"?: string;
 }) {
@@ -96,7 +99,10 @@ export function SearchPicker({
             <SelectValue placeholder={placeholder} />
           </span>
         </SelectTrigger>
-        <SelectPopup aria-label={label} className="w-(--anchor-width)">
+        <SelectPopup
+          aria-label={label}
+          className={cn("w-(--anchor-width)", popupClassName)}
+        >
           {groups.map((group) => (
             <SelectGroup key={group.label}>
               {groups.length > 1 && (
@@ -173,7 +179,10 @@ export function SearchPicker({
           </span>
         </span>
       </ComboboxTrigger>
-      <ComboboxPopup aria-label={label} className="w-(--anchor-width)">
+      <ComboboxPopup
+        aria-label={label}
+        className={cn("w-(--anchor-width)", popupClassName)}
+      >
         <div className="px-1 py-1">
           <ComboboxInput
             className="w-full"

@@ -44,11 +44,11 @@ from a13n_harness_ui.composition import (
     ThreadCompositionSelection,
 )
 from a13n_harness_ui.configuration import LoadedHarnessUiConfiguration
-from a13n_harness_ui.conversation import ConversationExcerpt, ExcerptCollector
+from a13n_harness_ui.conversation import ConversationExcerpt, ExcerptCollector, checkpoint_excerpt
 from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.environment_runtime import EnvironmentFinalization, EnvironmentRunService
 from a13n_harness_ui.errors import RunCoordinationError, ThreadError
-from a13n_harness_ui.live import HarnessUiLiveHub
+from a13n_harness_ui.live import HarnessUiLiveHub, HarnessUiSummaryHub
 from a13n_harness_ui.model_runtime import SubscriptionSource
 from a13n_harness_ui.observation import (
     phase,
@@ -57,6 +57,7 @@ from a13n_harness_ui.observation import (
     record_phase_result,
     record_skill_event,
 )
+from a13n_harness_ui.root_checkpoint import RootCheckpointCapability
 from a13n_harness_ui.root_input import RootInputFiles, detach_input
 from a13n_harness_ui.storage import (
     LocalStore,
@@ -104,6 +105,7 @@ class RootRunExecutor:
         subagent_operator: SubagentOperator | None = None,
         subscription_sources: Mapping[str, SubscriptionSource] | None = None,
         live_hub: HarnessUiLiveHub | None = None,
+        summary_hub: HarnessUiSummaryHub | None = None,
         cleanup_timeout_seconds: float = 30.0,
         thread_files: ThreadFiles | None = None,
     ) -> None:
@@ -116,6 +118,7 @@ class RootRunExecutor:
         self._subagent_operator = subagent_operator
         self._subscription_sources = dict(subscription_sources or {})
         self._live_hub = live_hub
+        self._summary_hub = summary_hub
         self._cleanup_timeout_seconds = cleanup_timeout_seconds
         self._thread_files = thread_files
         self._root_capability_factory: Callable[[ResolvedRunComposition], AbstractCapability[AgentContext]] | None = (
@@ -181,6 +184,28 @@ class RootRunExecutor:
                     "The selected Thread continuation has unresolved deferred tool requests.",
                     code="thread_deferred_pending",
                 )
+            base_continuation_id = thread.continuation.logical_digest if thread.continuation is not None else None
+
+            async def save_checkpoint(state: HarnessState) -> str:
+                nonlocal thread
+                excerpt = checkpoint_excerpt(thread.excerpt, state.message_history)
+                # RootCheckpointCapability joins this operation and its marker
+                # before propagating either native or AnyIO cancellation.
+                selected = await self._select_state(
+                    thread=thread,
+                    composition=published.reference,
+                    state=state,
+                    excerpt=excerpt,
+                    activity_changed=excerpt != thread.excerpt,
+                )
+                if selected.status != "selected" or selected.reference is None:
+                    assert selected.error is not None
+                    raise selected.error
+                thread = thread.model_copy(update={"continuation": selected.reference, "excerpt": excerpt})
+                if self._summary_hub is not None:
+                    await self._summary_hub.publish(kind="thread", thread_id=thread_id)
+                return selected.reference.logical_digest
+
             preparation_span.set_attribute("a13n.phase.step", "reconstruction")
             pricing_catalog = await to_thread.run_sync(get_current_pricing_catalog)
             reconstructed = self._agents.reconstruct(
@@ -188,7 +213,12 @@ class RootRunExecutor:
                 pricing_catalog=pricing_catalog,
                 subagent_operator=self._subagent_operator,
                 root_capabilities=(
-                    () if self._root_capability_factory is None else (self._root_capability_factory(published.value),)
+                    RootCheckpointCapability(save_checkpoint),
+                    *(
+                        ()
+                        if self._root_capability_factory is None
+                        else (self._root_capability_factory(published.value),)
+                    ),
                 ),
                 subscription_sources=self._subscription_sources,
             )
@@ -275,9 +305,7 @@ class RootRunExecutor:
                                 run_id=stream.run_id,
                                 events=observer.observe(item),
                                 observer=observer,
-                                base_continuation_id=(
-                                    thread.continuation.logical_digest if thread.continuation is not None else None
-                                ),
+                                base_continuation_id=base_continuation_id,
                             )
                         except Exception:
                             pass

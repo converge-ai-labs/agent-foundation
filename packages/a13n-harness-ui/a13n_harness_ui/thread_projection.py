@@ -353,6 +353,9 @@ class ThreadProjectionService:
             ),
             None,
         )
+        observed = await self._store.usage.latest_root_request(thread_id=thread_id)
+        if observed is not None:
+            latest = observed.request_usage.input_tokens + observed.request_usage.output_tokens
         model = composition.root.model
         thinking = model.settings.get("thinking")
         return ContextUsageView(

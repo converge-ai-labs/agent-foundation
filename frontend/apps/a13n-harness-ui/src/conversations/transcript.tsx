@@ -14,6 +14,13 @@ import type { DisplayBlock } from "./stream";
 import { InputContent } from "./input-content";
 import styles from "./conversation.module.css";
 
+function systemNotice(metadata?: Record<string, unknown> | null) {
+  return (
+    metadata?.["a13n.steering-source"] === "background_process" ||
+    metadata?.["a13n.steering-source"] === "async_subagent"
+  );
+}
+
 export const SavedEntry = memo(function SavedEntry({
   entry,
   threadId,
@@ -25,22 +32,36 @@ export const SavedEntry = memo(function SavedEntry({
   entry: Schema<"TranscriptEntry">;
   threadId?: string;
 }) {
-  const parts = entry.parts.filter((part) => part.metadata?.display !== false);
+  const parts = entry.parts.filter(
+    (part) => part.metadata?.display !== false && part.kind !== "system",
+  );
+  const input = parts.filter(
+    (part) =>
+      (part.kind === "user" || part.kind === "media") &&
+      !systemNotice(part.metadata),
+  );
   if (!parts.length) return null;
   const tools = toolGroups ?? savedToolGroups([entry]);
   if (parts.every((part) => tools.get(part) === null)) return null;
   return (
     <article className={styles.entry} data-position={entry.position}>
-      {parts.some((part) => part.kind === "user" || part.kind === "media") && (
+      {!!input.length && (
         <InputContent
           threadId={threadId}
-          parts={parts.filter(
-            (part) => part.kind === "user" || part.kind === "media",
-          )}
+          parts={input}
           renderText={(text) => <MessageText text={text} />}
         />
       )}
       {parts.map((part, index) => {
+        if (systemNotice(part.metadata))
+          return (
+            <details key={index} className={styles.activity}>
+              <summary>System notification</summary>
+              <pre className={styles.code}>
+                {part.text ?? JSON.stringify(part.value, null, 2)}
+              </pre>
+            </details>
+          );
         if (part.kind === "user" || part.kind === "media") return null;
         if (tools.has(part)) {
           const tool = tools.get(part);
@@ -72,11 +93,7 @@ export const SavedEntry = memo(function SavedEntry({
         return (
           <details key={index} className={styles.activity}>
             <summary>
-              {part.kind === "thinking"
-                ? "Reasoning"
-                : part.kind === "system"
-                  ? "System context"
-                  : part.kind}
+              {part.kind === "thinking" ? "Reasoning" : part.kind}
             </summary>
             <pre className={styles.code}>
               {part.text ?? JSON.stringify(part.value, null, 2)}
@@ -99,11 +116,13 @@ export function LiveOutput({
   gap: boolean;
   threadId?: string;
 }) {
-  const diagnostics = blocks.filter((block) => block.diagnostic);
   const items: (DisplayBlock | DisplayBlock[] | { tools: ToolView[] })[] = [];
-  for (const block of blocks.filter(
+  for (const original of blocks.filter(
     (block) => !block.diagnostic && block.kind !== "task",
   )) {
+    const block: DisplayBlock = systemNotice(original.metadata)
+      ? { ...original, kind: "activity", name: "System notification" }
+      : original;
     if (block.kind === "user" || block.kind === "media") {
       const previous = items.at(-1);
       const turn = (id: string) =>
@@ -134,7 +153,7 @@ export function LiveOutput({
   }
   return (
     <section className={styles.liveOutput} aria-label="Current unsaved output">
-      {blocks.length > 0 && <small>{label}</small>}
+      {items.length > 0 && <small>{label}</small>}
       {items.map((block, index) =>
         Array.isArray(block) ? (
           <InputContent
@@ -170,17 +189,6 @@ export function LiveOutput({
             {block.result && <MessageText text={block.result} />}
           </details>
         ),
-      )}
-      {!!diagnostics.length && (
-        <details className={styles.activity}>
-          <summary>Stream diagnostics · {diagnostics.length} events</summary>
-          {diagnostics.map((block) => (
-            <details key={block.id}>
-              <summary>{block.name}</summary>
-              <pre className={styles.code}>{block.text}</pre>
-            </details>
-          ))}
-        </details>
       )}
       {gap && (
         <p role="status">

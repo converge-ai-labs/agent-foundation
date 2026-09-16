@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Robot, Folder, Monitor } from "@phosphor-icons/react";
+import { Robot, Folder, Monitor, ShieldWarning } from "@phosphor-icons/react";
 import { SearchPicker } from "a13n-ui";
 import {
   useProjects,
@@ -17,7 +17,8 @@ import {
 } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
 import type { Profile } from "../shell/presence";
-import { Composer } from "./composer";
+import { Composer, useDraft } from "./composer";
+import { ModelPicker } from "./model-picker";
 import { refreshThreadLists } from "./queries";
 import styles from "./new-conversation.module.css";
 
@@ -168,6 +169,7 @@ function NewConversation({
   });
   const [defaults, setDefaults] = useState(draft.defaults);
   const [preparing, setPreparing] = useState(false);
+  const composerDraft = useDraft(threadId);
   const preview = useQuery({
     queryKey: ["new-thread-preview", defaults],
     queryFn: ({ signal }) =>
@@ -182,7 +184,8 @@ function NewConversation({
     mutationFn: () => ensureConversation(transport, threadId, draft),
     onSettled: (_data, error) => {
       if (draft.created) void refreshThreadLists(queries);
-      if (draft.created && error && active.current) openConversation();
+      if (draft.created && error && active.current)
+        void openConversation().catch(() => {});
     },
   });
   const [search, setSearch] = useSearchParams();
@@ -218,9 +221,37 @@ function NewConversation({
       : effectiveEnvironment?.mode === "sandbox"
         ? "Sandbox"
         : "Custom environment";
-  const agentLabel = (agent: Schema<"AgentSummary">) =>
-    agent.model_id ? `${agent.name} · ${agent.model_id}` : agent.name;
-  const openConversation = () => {
+  const choicesDisabled = preparing || draft.attempted;
+  const openConversation = async () => {
+    // Keep the current composer visible until the saved route has its first frame.
+    // Never retry admission here: this is only an exact-identity observation.
+    const detail = await queries.fetchQuery({
+      queryKey: ["thread", threadId, "detail"],
+      queryFn: () =>
+        result(
+          transport.client.GET("/api/threads/{thread_id}", {
+            params: { path: { thread_id: threadId } },
+          }),
+        ),
+      staleTime: 0,
+    });
+    await queries.prefetchInfiniteQuery({
+      queryKey: ["thread", threadId, "history", detail.continuation_id],
+      initialPageParam: undefined as string | undefined,
+      queryFn: () =>
+        result(
+          transport.client.GET("/api/threads/{thread_id}/transcript", {
+            params: {
+              path: { thread_id: threadId },
+              query: {
+                expected_continuation_id: detail.continuation_id ?? undefined,
+                limit: 30,
+              },
+            },
+          }),
+        ),
+    });
+    if (!active.current) return;
     if (drafts.get("@home") === draft) drafts.delete("@home");
     navigate(`/threads/${encodeURIComponent(threadId)}?compose=1`, {
       replace: true,
@@ -253,6 +284,7 @@ function NewConversation({
             <Folder aria-hidden="true" />
             <SearchPicker
               label="Project"
+              popupClassName={styles.choicePopup}
               placeholder="Without a project"
               emptyMessage="No projects found."
               disabled={preparing || draft.attempted}
@@ -285,6 +317,7 @@ function NewConversation({
             <Monitor aria-hidden="true" />
             <SearchPicker
               label="Environment"
+              popupClassName={styles.choicePopup}
               placeholder={effectiveEnvironment?.name ?? "Default environment"}
               emptyMessage="No environments found."
               disabled={preparing || draft.attempted}
@@ -299,7 +332,10 @@ function NewConversation({
                     {
                       value: "",
                       label:
-                        effectiveEnvironment?.name ?? "Default environment",
+                        !defaults.environment_profile_id && effectiveEnvironment
+                          ? `Default · ${effectiveEnvironment.name}`
+                          : "Default environment",
+                      description: "Follow the project or app default.",
                     },
                     ...(selectors.data?.environments ?? []).map((item) => ({
                       value: item.profile_id,
@@ -311,9 +347,6 @@ function NewConversation({
               ]}
             />
           </div>
-          {effectiveEnvironment && effectiveEnvironment.name !== isolation && (
-            <span className={styles.mode}>{isolation}</span>
-          )}
         </fieldset>
         <Composer
           autoFocus
@@ -329,34 +362,70 @@ function NewConversation({
           prepareThread={() => create.mutateAsync()}
           onPreparing={setPreparing}
           onSubmitted={openConversation}
-          controls={
-            <div className={styles.agentChoice}>
-              <SearchPicker
-                label="Agent & model"
-                placeholder={
-                  effectiveAgent ? agentLabel(effectiveAgent) : "Default agent"
+          modelId={composerDraft.modelId}
+          leadingControls={
+            effectiveEnvironment && (
+              <span
+                className={styles.mode}
+                data-full-control={effectiveEnvironment.mode === "full-control"}
+                title={
+                  effectiveEnvironment.mode === "full-control"
+                    ? "Runs on the host with your account permissions."
+                    : effectiveEnvironment.description
                 }
-                emptyMessage="No agents found."
-                disabled={preparing || draft.attempted}
-                value={defaults.agent_id ?? ""}
-                onValueChange={(value) => change({ agent_id: value || null })}
-                groups={[
-                  {
-                    label: "Agents & models",
-                    options: [
-                      {
-                        value: "",
-                        label: effectiveAgent
-                          ? agentLabel(effectiveAgent)
-                          : "Default agent",
-                      },
-                      ...(selectors.data?.agents ?? []).map((item) => ({
-                        value: item.agent_id,
-                        label: agentLabel(item),
-                      })),
-                    ],
-                  },
-                ]}
+              >
+                <ShieldWarning aria-hidden="true" />
+                {isolation}
+              </span>
+            )
+          }
+          controls={
+            <div className={styles.runChoices}>
+              <div className={styles.runChoice}>
+                <span>Agent</span>
+                <SearchPicker
+                  label="Agent"
+                  popupClassName={styles.choicePopup}
+                  placeholder={
+                    effectiveAgent
+                      ? `Default · ${effectiveAgent.name}`
+                      : "Default agent"
+                  }
+                  emptyMessage="No agents found."
+                  disabled={choicesDisabled}
+                  value={defaults.agent_id ?? ""}
+                  onValueChange={(value) => change({ agent_id: value || null })}
+                  groups={[
+                    {
+                      label: "Agents",
+                      options: [
+                        {
+                          value: "",
+                          label:
+                            !defaults.agent_id && effectiveAgent
+                              ? `Default · ${effectiveAgent.name}`
+                              : "Default agent",
+                          description: "Follow the project or app default.",
+                        },
+                        ...(selectors.data?.agents ?? []).map((item) => ({
+                          value: item.agent_id,
+                          label: item.name,
+                          description: item.agent_id,
+                        })),
+                      ],
+                    },
+                  ]}
+                />
+              </div>
+              <ModelPicker
+                models={selectors.data?.models ?? []}
+                defaultModelId={effectiveAgent?.model_id ?? undefined}
+                value={composerDraft.modelId}
+                disabled={choicesDisabled}
+                onChange={(value) => {
+                  composerDraft.modelId = value;
+                  composerDraft.notify();
+                }}
               />
             </div>
           }
@@ -364,7 +433,7 @@ function NewConversation({
         <ErrorNotice
           error={preview.error || selectors.error || projects.error}
         />
-        {draft.created && create.error && (
+        {draft.created && !preparing && (
           <Link to={`/threads/${encodeURIComponent(threadId)}?compose=1`}>
             Open conversation with retained input
           </Link>

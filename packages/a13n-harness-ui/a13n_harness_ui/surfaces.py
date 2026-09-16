@@ -601,8 +601,15 @@ class SelectableResourceSummary(SurfaceModel):
     source_path: str = Field(min_length=1, max_length=4096)
 
 
+class ModelSummary(SurfaceModel):
+    model_id: str = Field(min_length=1, max_length=128)
+    name: str = Field(min_length=1, max_length=256)
+    route: str = Field(min_length=1)
+
+
 class ThreadSelectorCatalog(SurfaceModel):
     agents: tuple[AgentSummary, ...]
+    models: tuple[ModelSummary, ...] = ()
     environments: tuple[EnvironmentProfileSummary, ...]
     harness_plugins: tuple[SelectableResourceSummary, ...]
     environment_run_extensions: tuple[SelectableResourceSummary, ...]

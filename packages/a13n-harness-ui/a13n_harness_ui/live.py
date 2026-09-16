@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from a13n_harness.usage import ModelUsageRecord
 from a13n_stream_protocol import HarnessAguiObserver
+from ag_ui.core import CustomEvent
 from ag_ui.core import Event as AguiEvent
 from anyio import (
     BrokenResourceError,
@@ -79,6 +80,19 @@ class RootStreamEvent(_StreamModel):
 class RootStreamReplay:
     summary: RootStreamSummary
     observer: HarnessAguiObserver
+
+    def includes_continuation(self, continuation_id: str | None) -> bool:
+        """The original base or a checkpoint covered by this exact replay prefix."""
+        if continuation_id == self.summary.base_continuation_id:
+            return True
+        for start in range(0, self.summary.event_count, 16):
+            for event in self.observer.snapshot(start=start, stop=min(start + 16, self.summary.event_count)):
+                if isinstance(event, CustomEvent) and event.name == "a13n.harness_ui.checkpoint":
+                    value = event.value
+                    source = value.get("event") if isinstance(value, dict) else None
+                    if isinstance(source, dict) and source.get("continuation_id") == continuation_id:
+                        return True
+        return False
 
     def batches(self) -> Iterator[tuple[RootStreamEvent, ...]]:
         """Read only the captured prefix; do not copy an entire Run per page."""

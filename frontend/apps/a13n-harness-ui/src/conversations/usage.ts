@@ -71,7 +71,7 @@ export function elapsedTime(
   operation: Schema<"RootOperationView"> | null | undefined,
   now: number,
 ) {
-  if (!operation?.started_at) return "—";
+  if (!operation) return "—";
   const active =
     operation.status === "preparing" || operation.status === "running";
   const end = operation.completed_at
@@ -79,7 +79,8 @@ export function elapsedTime(
     : active
       ? now
       : NaN;
-  const duration = end - Date.parse(operation.started_at);
+  const duration =
+    end - Date.parse(operation.started_at ?? operation.receipt.submitted_at);
   if (!Number.isFinite(duration)) return "—";
   const seconds = Math.max(0, Math.floor(duration / 1000));
   if (seconds < 60) return `${seconds}s`;

@@ -2442,6 +2442,15 @@ export interface components {
          */
         ModelCapability: "image_understanding" | "video_understanding" | "audio_understanding";
         ModelCharacteristics: components["schemas"]["HarnessModelCharacteristics"];
+        /** ModelSummary */
+        ModelSummary: {
+            /** Model Id */
+            model_id: string;
+            /** Name */
+            name: string;
+            /** Route */
+            route: string;
+        };
         /** NotePage */
         NotePage: {
             /** Continuation Id */
@@ -3676,6 +3685,11 @@ export interface components {
         ThreadSelectorCatalog: {
             /** Agents */
             agents: components["schemas"]["AgentSummary"][];
+            /**
+             * Models
+             * @default []
+             */
+            models?: components["schemas"]["ModelSummary"][];
             /** Environments */
             environments: components["schemas"]["EnvironmentProfileSummary"][];
             /** Harness Plugins */
@@ -4395,8 +4409,8 @@ export interface components {
             /** Attachment Id */
             attachment_id: string;
         };
-        /** PromptRequest */
-        PromptRequest: {
+        /** SubmitRequest */
+        SubmitRequest: {
             /**
              * Prompt
              * @default
@@ -4409,6 +4423,8 @@ export interface components {
             attachment_ids?: string[];
             /** Parts */
             parts?: (string | components["schemas"]["InputAttachmentReference"])[] | null;
+            /** Model Id */
+            model_id?: string | null;
         };
         /** RootSteerRequest */
         RootSteerRequest: {
@@ -6801,7 +6817,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["PromptRequest"];
+                "application/json": components["schemas"]["SubmitRequest"];
             };
         };
         responses: {

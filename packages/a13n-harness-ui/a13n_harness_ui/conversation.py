@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from pydantic_ai.messages import (
     EnqueuedMessagesEvent,
     ModelRequest,
+    ModelResponse,
     PartEndEvent,
     TextPart,
     UserContent,
@@ -60,6 +61,28 @@ def input_excerpt(content: Iterable[UserContent]) -> str:
             media_type = value.get("media_type", "media")
             attachments.append(f"[{media_type}]")
     return excerpt_text(" ".join(text or attachments))
+
+
+def checkpoint_excerpt(previous: ConversationExcerpt, history: Iterable[object]) -> ConversationExcerpt:
+    """Derive display excerpts from a complete checkpoint without waiting for stream delivery."""
+    value = previous
+    for message in history:
+        if isinstance(message, ModelRequest):
+            if (message.metadata or {}).get("a13n.context") in {"handoff", "compaction"}:
+                continue
+            text = input_excerpt(
+                content
+                for part in message.parts
+                if isinstance(part, UserPromptPart)
+                for content in user_prompt_content(part)
+            )
+            if text:
+                value = ConversationExcerpt(first_input=value.first_input or excerpt_text(text, 512), latest_input=text)
+        elif isinstance(message, ModelResponse):
+            text = excerpt_text(" ".join(part.content for part in message.parts if isinstance(part, TextPart)))
+            if text:
+                value = value.model_copy(update={"latest_reply": text, "reply_kind": "progress"})
+    return value
 
 
 class ExcerptCollector:

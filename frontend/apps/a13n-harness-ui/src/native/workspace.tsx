@@ -358,7 +358,9 @@ export function NativeWorkspace({
         {navigation}
         <h1 className={styles.workspaceTitle}>
           {threadId
-            ? thread.data?.thread.title || "Untitled conversation"
+            ? thread.data?.thread.title ||
+              thread.data?.thread.excerpt?.first_input ||
+              "Untitled conversation"
             : isWorkspace
               ? "New conversation"
               : "Settings"}

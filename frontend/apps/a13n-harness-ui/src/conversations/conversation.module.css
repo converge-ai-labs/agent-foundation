@@ -441,8 +441,8 @@
   width: 100%;
   margin: 0 auto;
   border: 1px solid var(--a13n-border);
-  border-radius: 16px;
-  padding: 8px 12px 10px;
+  border-radius: 20px;
+  padding: 8px 14px 12px;
   background: var(--a13n-canvas);
 }
 .composer:focus-within {
@@ -453,14 +453,10 @@
   font-size: 12px;
   color: var(--a13n-secondary);
 }
-.composerHelp {
-  width: min(340px, calc(100vw - 32px));
-  font-size: 13px;
-  line-height: 1.6;
-}
-.composerHelp p {
-  margin: 8px 0 0;
-  color: var(--a13n-secondary);
+.sendButton {
+  flex-shrink: 0;
+  border-radius: 50%;
+  box-shadow: none;
 }
 .composerContext {
   font-size: 12px;
@@ -476,13 +472,15 @@
 .composerActions > div {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  min-width: 0;
 }
 .composerActions > div:first-child {
   color: var(--a13n-secondary);
 }
 .composerActions > div:last-child {
   margin-left: auto;
+  justify-content: flex-end;
 }
 .attachments {
   list-style: none;
@@ -581,6 +579,10 @@
   }
   .composerActions > div {
     flex-wrap: wrap;
+  }
+  .composerActions > div:last-child {
+    flex: 1 1 100%;
+    flex-wrap: nowrap;
   }
   .userMessage {
     max-width: 95%;
@@ -912,7 +914,7 @@
   max-width: min(280px, 100%);
   margin: 2px 3px;
   border: 1px solid var(--a13n-border);
-  border-radius: 7px;
+  border-radius: 9px;
   background: var(--a13n-surface);
   font-family: inherit;
   font-size: 12px;
@@ -929,8 +931,15 @@
   color: inherit;
   font: inherit;
   cursor: pointer;
-  padding: 6px 8px;
+  padding: 4px 7px;
   min-width: 0;
+}
+.inlineAttachmentOpen img {
+  width: 24px;
+  height: 24px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
 }
 .inlineAttachmentOpen span {
   overflow: hidden;
@@ -940,7 +949,7 @@
 .inlineAttachmentRemove {
   align-self: stretch;
   color: var(--a13n-secondary);
-  border-left: 1px solid var(--a13n-border);
+  padding-inline: 7px;
   flex-shrink: 0;
 }
 .inlineAttachment button:hover {

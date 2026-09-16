@@ -125,3 +125,50 @@ it("keeps saved raw output identity intact and does not load remote Markdown ima
   );
   expect(view.container.querySelector("img,script")).toBeNull();
 });
+
+it.each(["background_process", "async_subagent"])(
+  "renders %s notices as system activity in saved and live output",
+  (source) => {
+    const text =
+      "Background process process-example has exited. Call shell_wait for available output.";
+    const parts = [
+      { kind: "user", text, metadata: { "a13n.steering-source": source } },
+      { kind: "system", text: "System context" },
+      { kind: "user", text: "Request context", metadata: { display: false } },
+    ];
+    const view = render(
+      <SavedEntry
+        entry={
+          {
+            position: 0,
+            message_kind: "request",
+            parts,
+          } as Schema<"TranscriptEntry">
+        }
+      />,
+    );
+    expect(screen.getByText("System notification")).toBeTruthy();
+    expect(screen.queryByText("You")).toBeNull();
+    expect(screen.queryByText("System context")).toBeNull();
+    expect(screen.queryByText("Request context")).toBeNull();
+    expect(screen.getByText(text).closest("details")).toBeTruthy();
+    view.rerender(
+      <LiveOutput
+        gap={false}
+        blocks={[
+          { id: "notice", kind: "user", text, metadata: parts[0].metadata },
+        ]}
+      />,
+    );
+    expect(screen.getByText(text).closest("details")).toBeTruthy();
+    expect(screen.queryByText("You")).toBeNull();
+    view.rerender(
+      <LiveOutput
+        gap={false}
+        blocks={[{ id: "real-user", kind: "user", text }]}
+      />,
+    );
+    expect(screen.queryByText("System notification")).toBeNull();
+    expect(screen.getByText(text).closest("details")).toBeNull();
+  },
+);

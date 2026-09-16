@@ -8,7 +8,6 @@ from datetime import UTC, datetime
 from typing import Literal, cast
 
 from sqlalchemy import and_, func, or_, select, true
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_harness_ui.conversation import ConversationExcerpt
 from a13n_harness_ui.errors import StoreConflictError, StoreIntegrityError
@@ -25,7 +24,7 @@ from .contracts import (
     Thread,
     ThreadConfiguration,
 )
-from .database import short_session, transaction
+from .database import DatabaseSessions, short_session, transaction
 from .models import (
     AcceptedConfigurationRecord,
     ChildExecutionRecord,
@@ -43,7 +42,7 @@ from .objects import ObjectKind, ObjectRef
 class ProjectModelPreferenceRepository:
     """Last explicit Model choice per Project, independent of resource definitions."""
 
-    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(self, sessions: DatabaseSessions) -> None:
         self._sessions = sessions
 
     async def get(self, project_id: str) -> str | None:
@@ -64,7 +63,7 @@ class ProjectModelPreferenceRepository:
 
 
 class ConfigurationRepository:
-    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(self, sessions: DatabaseSessions) -> None:
         self._sessions = sessions
 
     async def accept(
@@ -173,7 +172,7 @@ class ConfigurationRepository:
 
 
 class ThreadRepository:
-    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(self, sessions: DatabaseSessions) -> None:
         self._sessions = sessions
 
     async def create(
@@ -438,7 +437,7 @@ class ThreadRepository:
 
 
 class ChildExecutionRepository:
-    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(self, sessions: DatabaseSessions) -> None:
         self._sessions = sessions
 
     async def create(
@@ -728,7 +727,7 @@ class ChildExecutionRepository:
 
 
 class EnvironmentStateRepository:
-    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(self, sessions: DatabaseSessions) -> None:
         self._sessions = sessions
 
     async def get(self, key: EnvironmentBindingKey) -> EnvironmentBindingHead | None:

@@ -89,7 +89,9 @@ it("uses operation timestamps and stops at completion without inventing missing 
     ),
   ).toBe("1m 5s");
   expect(elapsedTime({ ...operation, status: "completed" }, now)).toBe("—");
-  expect(elapsedTime({ ...operation, started_at: null }, now)).toBe("—");
+  expect(
+    elapsedTime({ ...operation, started_at: null, status: "preparing" }, now),
+  ).toBe("1h 2m");
   expect(elapsedTime({ ...operation, started_at: "bad" }, now)).toBe("—");
   expect(elapsedTime(undefined, now)).toBe("—");
 });

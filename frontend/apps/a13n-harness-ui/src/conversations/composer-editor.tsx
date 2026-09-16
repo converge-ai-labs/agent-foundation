@@ -1,5 +1,6 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { EditorView, keymap, placeholder } from "@codemirror/view";
+import { Compartment } from "@codemirror/state";
 import { defaultKeymap } from "@codemirror/commands";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import { Awareness } from "y-protocols/awareness";
@@ -21,6 +22,7 @@ export function ComposerEditor({
   attachments,
   editor,
   autoFocus = false,
+  local = false,
 }: {
   draft: ThreadDraft;
   profile: Profile;
@@ -29,8 +31,25 @@ export function ComposerEditor({
   attachments?: ComposerAttachmentView;
   editor?: { current: EditorView | null };
   autoFocus?: boolean;
+  local?: boolean;
 }) {
   const host = useRef<HTMLDivElement>(null);
+  const attributes = useRef(new Compartment());
+  const currentView = useRef<EditorView | null>(null);
+  const description = local
+    ? "Private to this tab until you send. Files upload on Send. Reloading discards this draft. Enter for a new line; Ctrl or Command plus Enter to send."
+    : "Shared with this conversation. Drafts do not survive server restarts. Enter for a new line; Ctrl or Command plus Enter to send.";
+  const contentAttributes = useMemo(
+    () =>
+      EditorView.contentAttributes.of({
+        "aria-label": "Shared prompt",
+        "aria-multiline": "true",
+        "aria-description": description,
+        role: "textbox",
+      }),
+    [description],
+  );
+  const initialAttributes = useRef(contentAttributes);
   const send = useRef(submit);
   const report = useRef(presence);
   const person = useRef(profile);
@@ -122,11 +141,7 @@ export function ComposerEditor({
         ...(attachments
           ? [composerAttachments(draft, () => attachmentContext.current!)]
           : []),
-        EditorView.contentAttributes.of({
-          "aria-label": "Shared prompt",
-          "aria-multiline": "true",
-          role: "textbox",
-        }),
+        attributes.current.of(initialAttributes.current),
         placeholder("What would you like to work on?"),
         keymap.of([
           {
@@ -149,7 +164,7 @@ export function ComposerEditor({
           ".cm-content": {
             fontFamily: "inherit",
             minHeight: "76px",
-            padding: "20px 2px 8px",
+            padding: "14px 2px 8px",
             lineHeight: "1.6",
           },
           ".cm-scroller": {
@@ -187,6 +202,7 @@ export function ComposerEditor({
         }),
       ],
     });
+    currentView.current = view;
     if (editor) editor.current = view;
     window.addEventListener("blur", clearCursor);
     document.addEventListener("visibilitychange", clearCursor);
@@ -211,6 +227,7 @@ export function ComposerEditor({
       window.removeEventListener("blur", clearCursor);
       document.removeEventListener("visibilitychange", clearCursor);
       awareness.off("update", publish);
+      currentView.current = null;
       if (editor) editor.current = null;
       view.destroy();
       awareness.destroy();
@@ -222,6 +239,11 @@ export function ComposerEditor({
       });
     };
   }, [draft, doc, editor]);
+  useEffect(() => {
+    currentView.current?.dispatch({
+      effects: attributes.current.reconfigure(contentAttributes),
+    });
+  }, [contentAttributes]);
   useEffect(() => {
     editor?.current?.dispatch({ effects: refreshAttachments.of(null) });
   }, [attachments, editor]);
