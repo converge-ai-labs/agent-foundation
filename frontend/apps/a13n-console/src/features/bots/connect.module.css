@@ -235,6 +235,10 @@
   overflow-wrap: anywhere;
 }
 
+.testStages li > [data-slot="button"] {
+  display: inline-flex;
+}
+
 .prepareTest {
   margin-bottom: 18px;
 }

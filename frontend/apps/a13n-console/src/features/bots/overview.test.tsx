@@ -111,9 +111,11 @@ beforeEach(() => {
   state.admin = false;
   state.GET.mockImplementation(async (path: string) =>
     response(
-      path.endsWith("/summary")
-        ? summary
-        : { latest: path.endsWith("/tests/latest") ? test : null },
+      path.endsWith("/agents/{agent}")
+        ? { id: "agt_test", name: "Support agent" }
+        : path.endsWith("/summary")
+          ? summary
+          : { latest: path.endsWith("/tests/latest") ? test : null },
     ),
   );
 });
@@ -126,8 +128,21 @@ it("shows metadata to viewers without mounting private test requests or manageme
   expect(screen.getByText("Continue an activated discussion")).toBeTruthy();
   expect(screen.queryByText("Latest setup test")).toBeNull();
   expect(screen.queryByText("Manage memory")).toBeNull();
-  expect(state.GET).toHaveBeenCalledTimes(1);
-  expect(state.GET.mock.calls[0][0]).toContain("/checks/latest");
+  expect(
+    await screen.findByRole("link", { name: "Support agent" }),
+  ).toBeTruthy();
+  expect(screen.queryByText("agt_test")).toBeNull();
+  expect(
+    screen.getByRole("heading", { name: "Message responses" }),
+  ).toBeTruthy();
+  expect(screen.getByRole("heading", { name: "Group memory" })).toBeTruthy();
+  expect(
+    screen.getByRole("heading", { name: "Platform connection status" }),
+  ).toBeTruthy();
+  expect(state.GET).toHaveBeenCalledTimes(2);
+  expect(
+    state.GET.mock.calls.some(([path]) => path.endsWith("/tests/latest")),
+  ).toBe(false);
   expect(state.POST).not.toHaveBeenCalled();
 });
 
@@ -229,4 +244,25 @@ it("keeps denied detailed history distinct from an absent setup test", async () 
   expect(screen.queryByRole("link", { name: "Open run" })).toBeNull();
   expect(screen.queryByText("No setup test recorded")).toBeNull();
   expect(screen.getByText("Test accepted · reply unconfirmed")).toBeTruthy();
+});
+
+it("keeps the overview readable when the default agent cannot be viewed", async () => {
+  const original = state.GET.getMockImplementation()!;
+  state.GET.mockImplementation(async (path: string) => {
+    if (path.endsWith("/agents/{agent}"))
+      throw new ApiError(
+        403,
+        "permission_denied",
+        "Agent access denied.",
+        {},
+        null,
+      );
+    return original(path);
+  });
+  setup();
+  expect(await screen.findByText("Agent unavailable")).toBeTruthy();
+  expect(screen.queryByText("agt_test")).toBeNull();
+  expect(
+    screen.getByRole("heading", { name: "Message responses" }),
+  ).toBeTruthy();
 });

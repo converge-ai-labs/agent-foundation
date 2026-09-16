@@ -100,6 +100,7 @@ afterEach(() => cleanup());
 it("shows navigation before fetching only the selected document body", async () => {
   setup();
   await screen.findByText("Deployment steps");
+  expect(screen.queryByRole("button", { name: "Create memory" })).toBeNull();
   expect(screen.queryByText("Sensitive full document body")).toBeNull();
   expect(
     state.http.GET.mock.calls.some(([path]) => path.endsWith("/{document_id}")),
@@ -111,6 +112,8 @@ it("shows navigation before fetching only the selected document body", async () 
     ),
   );
   expect(await screen.findByText("Sensitive full document body")).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Add correction" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Delete" })).toBeTruthy();
   expect(
     state.http.GET.mock.calls.filter(([path]) =>
       path.endsWith("/{document_id}"),
@@ -143,43 +146,31 @@ it("shows a revoked read failure without displaying an old body", async () => {
   expect(screen.queryByText("Sensitive full document body")).toBeNull();
 });
 
-it("keeps group actions in the menu and hides the empty pending summary", async () => {
+it("exposes group settings directly without sharing menus or empty operation controls", async () => {
   setup();
   await screen.findByText("Deployment steps");
-  expect(screen.queryByRole("button", { name: "Memory settings" })).toBeNull();
   expect(
-    screen.queryByRole("button", { name: /Pending operations/ }),
-  ).toBeNull();
-  await userEvent.click(
-    screen.getByRole("button", { name: "Group memory actions" }),
-  );
-  expect(
-    await screen.findByRole("menuitem", {
-      name: "This group's memory settings",
-    }),
+    screen.getByRole("button", { name: "Group memory settings" }),
   ).toBeTruthy();
-  expect(screen.getByRole("menuitem", { name: "Shared content" })).toBeTruthy();
-  await userEvent.click(
-    screen.getByRole("menuitem", { name: "Pending operations" }),
-  );
-  const dialog = await screen.findByRole("dialog", {
-    name: "Pending operations",
-  });
-  expect(
-    await within(dialog).findByText("No pending operations."),
-  ).toBeTruthy();
-  await userEvent.keyboard("{Escape}");
-  expect(state.http.POST).not.toHaveBeenCalled();
+  for (const name of [
+    /Memory needs attention/,
+    "Group memory actions",
+    "Cross-group sharing",
+    "Share memory",
+  ]) {
+    expect(screen.queryByRole("button", { name })).toBeNull();
+  }
+  expect(screen.queryByRole("menuitem")).toBeNull();
 });
 
 it("opens unfinished operations from a count without retrying a write", async () => {
   state.pending = true;
   setup();
   await userEvent.click(
-    await screen.findByRole("button", { name: "Pending operations · 1" }),
+    await screen.findByRole("button", { name: "Memory needs attention · 1" }),
   );
   const dialog = await screen.findByRole("dialog", {
-    name: "Pending operations",
+    name: "Memory needs attention",
   });
   expect(await within(dialog).findByText("Release checklist")).toBeTruthy();
   expect(

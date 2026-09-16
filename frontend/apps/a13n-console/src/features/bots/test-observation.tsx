@@ -1,3 +1,10 @@
+import {
+  ArrowRightIcon,
+  ArrowClockwiseIcon,
+  CheckIcon,
+  ClockIcon,
+  XIcon,
+} from "@phosphor-icons/react";
 import { Button } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -14,6 +21,7 @@ import {
 } from "../../shared/feedback";
 import { runPath } from "../conversations/api";
 import styles from "./connect.module.css";
+import summaryStyles from "./test-observation.module.css";
 
 export function TestObservation({
   account,
@@ -21,12 +29,14 @@ export function TestObservation({
   refresh,
   refreshing,
   showMessage = false,
+  showRefresh = true,
 }: {
   account: Schema["Account"];
   test: Schema["BotTest"];
   refresh: () => void;
   refreshing: boolean;
   showMessage?: boolean;
+  showRefresh?: boolean;
 }) {
   const { t } = useTranslation(),
     { basePath } = useWorkspace();
@@ -45,12 +55,12 @@ export function TestObservation({
       })
     : "";
   return (
-    <div aria-label={t("Test observations")}>
-      <p>
-        {t("Pilot conversation")}: <code>{test.external_target_id}</code>
-      </p>
+    <div
+      className={summaryStyles.observation}
+      aria-label={t("Test observations")}
+    >
       {stale && (
-        <p role="status">
+        <p className={summaryStyles.notice} role="status">
           {t(
             "Configuration changed. These observations belong to the previous configuration; prepare a new test.",
           )}
@@ -71,24 +81,55 @@ export function TestObservation({
         </>
       )}
       {expired && (
-        <p role="status">
+        <p className={summaryStyles.notice} role="status">
           {t(
             "No matching message arrived before the deadline. Prepare a new test message.",
           )}
         </p>
       )}
-      <ol className={styles.testStages}>
+      <ol className={summaryStyles.steps}>
         <li>
+          <span
+            className={summaryStyles.stepIcon}
+            data-state={test.event_received_at ? "confirmed" : "waiting"}
+            aria-hidden="true"
+          >
+            {test.event_received_at ? <CheckIcon /> : <ClockIcon />}
+          </span>
           <strong>
             {test.event_received_at
               ? t("Test message received")
               : t("Awaiting test message")}
           </strong>
-          {test.event_received_at && (
-            <Timestamp value={test.event_received_at} />
-          )}
+          <div className={summaryStyles.stepTime}>
+            {test.event_received_at ? (
+              <Timestamp value={test.event_received_at} />
+            ) : (
+              t("Not yet observed")
+            )}
+          </div>
+          <span />
         </li>
         <li>
+          <span
+            className={summaryStyles.stepIcon}
+            data-state={
+              test.accepted_at
+                ? "confirmed"
+                : test.rejection_code
+                  ? "failed"
+                  : "waiting"
+            }
+            aria-hidden="true"
+          >
+            {test.accepted_at ? (
+              <CheckIcon />
+            ) : test.rejection_code ? (
+              <XIcon />
+            ) : (
+              <ClockIcon />
+            )}
+          </span>
           <strong>
             {test.accepted_at
               ? t("Agent execution accepted")
@@ -96,36 +137,71 @@ export function TestObservation({
                 ? t("Test message was not accepted for execution")
                 : t("Awaiting execution acceptance")}
           </strong>
-          {test.accepted_at && <Timestamp value={test.accepted_at} />}
+          <div className={summaryStyles.stepTime}>
+            {test.accepted_at ? (
+              <Timestamp value={test.accepted_at} />
+            ) : (
+              t("Not yet observed")
+            )}
+          </div>
+          <div className={summaryStyles.stepAction}>
+            {test.run_id && test.session_id && test.thread_id && (
+              <Button
+                size="sm"
+                variant="outline"
+                render={
+                  <Link
+                    to={runPath(basePath, {
+                      run_id: test.run_id,
+                      session_id: test.session_id,
+                      thread_id: test.thread_id,
+                    })}
+                  />
+                }
+              >
+                {t("Open run")}
+                <ArrowRightIcon aria-hidden="true" />
+              </Button>
+            )}
+          </div>
           {test.steer_id && (
-            <p>{t("Delivered to an existing run as a follow-up message.")}</p>
+            <p className={summaryStyles.stepNote}>
+              {t("Delivered to an existing run as a follow-up message.")}
+            </p>
           )}
           {test.rejection_code && (
-            <>
+            <p className={summaryStyles.stepNote}>
               <code>{test.rejection_code}</code>
-              <p>
-                {t(
-                  "Review the conversation response policy and execution permissions before testing again.",
-                )}
-              </p>
-            </>
-          )}
-          {test.run_id && test.session_id && test.thread_id && (
-            <Link
-              to={runPath(basePath, {
-                run_id: test.run_id,
-                session_id: test.session_id,
-                thread_id: test.thread_id,
-              })}
-            >
-              {t("Open run")}
-            </Link>
+              {" · "}
+              {t(
+                "Review the conversation response policy and execution permissions before testing again.",
+              )}
+            </p>
           )}
         </li>
         <li>
-          <strong>{t("Platform reply")}</strong>
-          {test.reply ? (
-            <>
+          <span
+            className={summaryStyles.stepIcon}
+            data-state={
+              test.reply?.status === "succeeded"
+                ? "confirmed"
+                : test.reply?.status === "rejected"
+                  ? "failed"
+                  : "waiting"
+            }
+            aria-hidden="true"
+          >
+            {test.reply?.status === "succeeded" ? (
+              <CheckIcon />
+            ) : test.reply?.status === "rejected" ? (
+              <XIcon />
+            ) : (
+              <ClockIcon />
+            )}
+          </span>
+          <div className={summaryStyles.stepLabel}>
+            <strong>{t("Platform reply")}</strong>
+            {test.reply && (
               <StateBadge
                 state={test.reply.status}
                 label={t(
@@ -139,26 +215,34 @@ export function TestObservation({
                   )[test.reply.status],
                 )}
               />
+            )}
+          </div>
+          <div className={summaryStyles.stepTime}>
+            {test.reply ? (
               <Timestamp
                 value={test.reply.finished_at ?? test.reply.started_at}
               />
-              {test.reply.status === "rejected" && (
-                <p>
-                  {t(
-                    "Review the provider permissions and conversation access before testing again.",
-                  )}
-                </p>
+            ) : (
+              t("Not yet observed")
+            )}
+          </div>
+          <span />
+          {test.reply?.status === "rejected" && (
+            <p className={summaryStyles.stepNote}>
+              {t(
+                "Review the provider permissions and conversation access before testing again.",
               )}
-              {test.reply.status === "outcome_unknown" && (
-                <p>
-                  {t(
-                    "The platform may have received the reply. Check the conversation before sending another test.",
-                  )}
-                </p>
+            </p>
+          )}
+          {test.reply?.status === "outcome_unknown" && (
+            <p className={summaryStyles.stepNote}>
+              {t(
+                "The platform may have received the reply. Check the conversation before sending another test.",
               )}
-            </>
-          ) : (
-            <p>
+            </p>
+          )}
+          {!test.reply && (
+            <p className={summaryStyles.stepNote}>
               {t(
                 "No provider-confirmed reply containing this test marker has been observed.",
               )}
@@ -166,14 +250,23 @@ export function TestObservation({
           )}
         </li>
       </ol>
-      <Button variant="outline" disabled={refreshing} onClick={refresh}>
-        {t("Refresh observations")}
-      </Button>
-      <p>
-        {t(
-          "Refreshing only reads observations; it does not send messages or rerun the agent.",
-        )}
-      </p>
+      {showRefresh && (
+        <Button variant="outline" disabled={refreshing} onClick={refresh}>
+          <ArrowClockwiseIcon aria-hidden="true" />
+          {t("Refresh observations")}
+        </Button>
+      )}
+      <details className={summaryStyles.details}>
+        <summary>{t("Test details")}</summary>
+        <p>
+          {t("Pilot conversation")}: <code>{test.external_target_id}</code>
+        </p>
+        <p>
+          {t(
+            "Refreshing only reads observations; it does not send messages or rerun the agent.",
+          )}
+        </p>
+      </details>
     </div>
   );
 }
@@ -201,7 +294,34 @@ function AdminTest({ account }: { account: Schema["Account"] }) {
   });
   return (
     <section aria-label={t("Latest setup test")}>
-      <h2>{t("Latest setup test")}</h2>
+      <header className={summaryStyles.header}>
+        <h2>{t("Latest setup test")}</h2>
+        <div className={summaryStyles.actions}>
+          <Button
+            size="sm"
+            variant="ghost"
+            aria-label={t("Refresh observations")}
+            title={t("Refresh observations")}
+            disabled={query.isFetching}
+            onClick={() => void query.refetch()}
+          >
+            <ArrowClockwiseIcon aria-hidden="true" />
+            {t("Refresh")}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            render={
+              <Link
+                to={`${basePath}/bots/connect?account=${account.id}&step=test`}
+              />
+            }
+          >
+            {t("Review test setup")}
+            <ArrowRightIcon aria-hidden="true" />
+          </Button>
+        </div>
+      </header>
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
       {query.isPending ? (
         <Loading />
@@ -211,6 +331,7 @@ function AdminTest({ account }: { account: Schema["Account"] }) {
           <TestObservation
             account={account}
             test={query.data.latest}
+            showRefresh={false}
             refreshing={query.isFetching}
             refresh={() => void query.refetch()}
           />
@@ -218,9 +339,6 @@ function AdminTest({ account }: { account: Schema["Account"] }) {
           <p>{t("No setup test recorded")}</p>
         ))
       )}
-      <Link to={`${basePath}/bots/connect?account=${account.id}&step=test`}>
-        {t("Review test setup")}
-      </Link>
     </section>
   );
 }
