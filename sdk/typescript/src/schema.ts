@@ -329,6 +329,23 @@ export interface paths {
     patch: operations["patch_configuration_drafts_draft_id"];
     trace?: never;
   };
+  "/api/v1/configuration-drafts/{draft_id}/applications": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Applications */
+    get: operations["get_configuration_drafts_draft_id_applications"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/configuration-drafts/{draft_id}/apply": {
     parameters: {
       query?: never;
@@ -3891,7 +3908,7 @@ export interface components {
       created_at: string;
       created_by: components["schemas"]["ActorRef"];
       /** Current Revision Id */
-      current_revision_id: string;
+      current_revision_id: string | null;
       /** Default Environment Template Id */
       default_environment_template_id?: string | null;
       /** Description */
@@ -4738,6 +4755,13 @@ export interface components {
       call_id: string;
       result: components["schemas"]["JsonValue"];
     };
+    /** ConfigurationApplicationCollection */
+    ConfigurationApplicationCollection: {
+      /** Items */
+      items: components["schemas"]["ConfigurationApplicationReceipt"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
     /** ConfigurationApplicationReceipt */
     ConfigurationApplicationReceipt: {
       /** Agent Id */
@@ -4757,8 +4781,21 @@ export interface components {
       draft_id: string;
       /** No Change */
       no_change: boolean;
+      /** Reviewed Base Agent Revision Id */
+      reviewed_base_agent_revision_id: string | null;
+      /** Reviewed Base Agent Version */
+      reviewed_base_agent_version: number | null;
+      reviewed_creation_metadata:
+        components["schemas"]["CreationMetadata"] | null;
       /** Reviewed Digest */
       reviewed_digest: string;
+      /**
+       * Reviewed Mode
+       * @enum {string}
+       */
+      reviewed_mode: "create" | "update";
+      /** Reviewed Target Agent Id */
+      reviewed_target_agent_id: string | null;
       /** Reviewed Version */
       reviewed_version: number;
       verification_acknowledgement?:
@@ -4782,8 +4819,6 @@ export interface components {
     };
     /** ConfigurationDraft */
     ConfigurationDraft: {
-      application_receipt?:
-        components["schemas"]["ConfigurationApplicationReceipt"] | null;
       /** Base Agent Revision Id */
       base_agent_revision_id: string | null;
       /** Base Agent Version */
@@ -4813,10 +4848,6 @@ export interface components {
       mode: "create" | "update";
       /** Organization Id */
       organization_id: string;
-      /** Owner User Id */
-      owner_user_id: string;
-      /** Predecessor Draft Id */
-      predecessor_draft_id?: string | null;
       /** Session Id */
       session_id: string;
       /** Source Agent Revision Id */
@@ -4832,13 +4863,11 @@ export interface components {
        * Status
        * @enum {string}
        */
-      status: "open" | "applied" | "discarded" | "expired";
+      status: "open" | "discarded" | "expired";
       /** Target Agent Id */
       target_agent_id: string | null;
       /** Terminal Reason */
       terminal_reason?: string | null;
-      /** Thread Id */
-      thread_id: string;
       /**
        * Updated At
        * Format: date-time
@@ -4851,8 +4880,6 @@ export interface components {
     };
     /** ConfigurationDraftReview */
     ConfigurationDraftReview: {
-      application_receipt?:
-        components["schemas"]["ConfigurationApplicationReceipt"] | null;
       base: components["schemas"]["ConfigurationRevisionView"] | null;
       /** Base Agent Revision Id */
       base_agent_revision_id: string | null;
@@ -4881,6 +4908,8 @@ export interface components {
       evidence_refs?: string[];
       /** Id */
       id: string;
+      latest_application_receipt:
+        components["schemas"]["ConfigurationApplicationReceipt"] | null;
       latest_validation?:
         components["schemas"]["ConfigurationValidation"] | null;
       /**
@@ -4890,10 +4919,6 @@ export interface components {
       mode: "create" | "update";
       /** Organization Id */
       organization_id: string;
-      /** Owner User Id */
-      owner_user_id: string;
-      /** Predecessor Draft Id */
-      predecessor_draft_id?: string | null;
       /** Session Id */
       session_id: string;
       source: components["schemas"]["ConfigurationRevisionView"] | null;
@@ -4912,15 +4937,13 @@ export interface components {
        * Status
        * @enum {string}
        */
-      status: "open" | "applied" | "discarded" | "expired";
+      status: "open" | "discarded" | "expired";
       /** Target Agent Id */
       target_agent_id: string | null;
       /** Target Conflict */
       target_conflict: boolean;
       /** Terminal Reason */
       terminal_reason?: string | null;
-      /** Thread Id */
-      thread_id: string;
       /**
        * Updated At
        * Format: date-time
@@ -4936,7 +4959,6 @@ export interface components {
       /** Expected Thread Version */
       expected_thread_version: number;
       input: components["schemas"]["AgentInput"];
-      source?: components["schemas"]["SourceSelection"] | null;
     };
     /** ConfigurationRevisionView */
     ConfigurationRevisionView: {
@@ -4957,6 +4979,8 @@ export interface components {
     };
     /** ConfigurationSessionView */
     ConfigurationSessionView: {
+      /** Configuration Draft Id */
+      configuration_draft_id: string;
       /**
        * Created At
        * Format: date-time
@@ -4970,8 +4994,6 @@ export interface components {
       owner_user_id: string;
       /** Root Thread Id */
       root_thread_id: string;
-      /** Target Agent Id */
-      target_agent_id: string | null;
       /**
        * Updated At
        * Format: date-time
@@ -4989,11 +5011,7 @@ export interface components {
     };
     /** ConfigurationThreadView */
     ConfigurationThreadView: {
-      /** Active Draft Id */
-      active_draft_id: string | null;
-      latest_draft: components["schemas"]["ConfigurationDraft"];
-      previous_application_receipt:
-        components["schemas"]["ConfigurationApplicationReceipt"] | null;
+      draft: components["schemas"]["ConfigurationDraft"];
       thread: components["schemas"]["Thread"];
     };
     /** ConfigurationValidation */
@@ -5435,7 +5453,6 @@ export interface components {
     CreateConfigurationThreadRequest: {
       /** Fork From Run Id */
       fork_from_run_id: string;
-      source?: components["schemas"]["SourceSelection"] | null;
     };
     /** CreateConnectionRequest */
     CreateConnectionRequest: {
@@ -8203,7 +8220,7 @@ export interface components {
       /** Agent Id */
       agent_id: string;
       /** Agent Revision Id */
-      agent_revision_id: string;
+      agent_revision_id: string | null;
       /** Completed At */
       completed_at: string | null;
       /** Configuration Draft Id */
@@ -8998,8 +9015,8 @@ export interface components {
     };
     /** ThreadResource */
     ThreadResource: {
-      /** Configuration Latest Draft Id */
-      configuration_latest_draft_id?: string | null;
+      /** Configuration Draft Id */
+      configuration_draft_id?: string | null;
       /**
        * Created At
        * Format: date-time
@@ -11097,6 +11114,53 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ConfigurationDraft"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_configuration_drafts_draft_id_applications: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path: {
+        draft_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConfigurationApplicationCollection"];
         };
       };
       /** @description Invalid request. */

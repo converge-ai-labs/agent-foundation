@@ -229,7 +229,7 @@ export function ThreadLayout() {
   const thread = useQuery(queries.thread(threadId));
   const navigate = useNavigate(),
     cache = useQueryClient();
-  if (thread.data?.configuration_latest_draft_id)
+  if (thread.data?.configuration_draft_id)
     return (
       <Navigate
         to={`${basePath}/configuration-threads/${threadId}${runId ? `?run=${runId}` : ""}`}

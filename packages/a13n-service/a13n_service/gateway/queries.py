@@ -44,7 +44,7 @@ class _Resource(BaseModel):
 
 
 class ThreadResource(_Resource):
-    configuration_latest_draft_id: str | None = None
+    configuration_draft_id: str | None = None
     id: str
     version: int
     queue_version: int
@@ -73,7 +73,7 @@ class RunResource(_Resource):
     lineage_kind: RunLineageKind
     trigger_type: str
     agent_id: str
-    agent_revision_id: str
+    agent_revision_id: str | None
     effective_agent_config_digest: str
     environment_id: str | None
     environment_access: str | None
@@ -220,7 +220,9 @@ class NativeInteractionQueries:
                 session_id=thread.session_id,
                 action=WorkspaceAction.thread_read,
             )
-            return _thread(thread)
+            conversation = await database.get(SessionRecord, thread.session_id)
+            assert conversation is not None
+            return _thread(thread, configuration_draft_id=conversation.configuration_draft_id)
 
     async def list_threads(
         self,
@@ -290,7 +292,10 @@ class NativeInteractionQueries:
                 )
             records = tuple((await database.scalars(query)).all())
         page, next_cursor = _page(records, limit=limit, scope=scope, kind="threads")
-        return ThreadCollection(items=tuple(_thread(item) for item in page), next_cursor=next_cursor)
+        return ThreadCollection(
+            items=tuple(_thread(item, configuration_draft_id=session.configuration_draft_id) for item in page),
+            next_cursor=next_cursor,
+        )
 
     async def get_run(self, *, actor: AuthenticatedActor, run_id: str) -> RunResource:
         async with short_session(self._sessions) as database:
@@ -666,9 +671,9 @@ async def _authorize_collection(database: AsyncSession, **kwargs):
         raise _not_found() from error
 
 
-def _thread(record: ThreadRecord) -> ThreadResource:
+def _thread(record: ThreadRecord, *, configuration_draft_id: str | None) -> ThreadResource:
     return ThreadResource(
-        configuration_latest_draft_id=record.configuration_latest_draft_id,
+        configuration_draft_id=configuration_draft_id,
         id=record.id,
         version=record.version,
         queue_version=record.queue_version,

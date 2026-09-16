@@ -13,7 +13,6 @@ from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
     from ..models.agent_config_output import AgentConfigOutput
-    from ..models.configuration_application_receipt import ConfigurationApplicationReceipt
     from ..models.configuration_validation import ConfigurationValidation
     from ..models.creation_metadata import CreationMetadata
 
@@ -32,22 +31,18 @@ class ConfigurationDraft:
         id (str):
         mode (ConfigurationDraftMode):
         organization_id (str):
-        owner_user_id (str):
         session_id (str):
         source_agent_revision_id (None | str):
         source_selector (ConfigurationDraftSourceSelector):
         status (ConfigurationDraftStatus):
         target_agent_id (None | str):
-        thread_id (str):
         updated_at (datetime.datetime):
         version (int):
         workspace_id (str):
-        application_receipt (ConfigurationApplicationReceipt | None | Unset):
         base_agent_version (int | None | Unset):
         creation_metadata (CreationMetadata | None | Unset):
         evidence_refs (list[str] | Unset):
         latest_validation (ConfigurationValidation | None | Unset):
-        predecessor_draft_id (None | str | Unset):
         source_agent_revision_version (int | None | Unset):
         terminal_reason (None | str | Unset):
     """
@@ -59,28 +54,23 @@ class ConfigurationDraft:
     id: str
     mode: ConfigurationDraftMode
     organization_id: str
-    owner_user_id: str
     session_id: str
     source_agent_revision_id: str | None
     source_selector: ConfigurationDraftSourceSelector
     status: ConfigurationDraftStatus
     target_agent_id: str | None
-    thread_id: str
     updated_at: datetime.datetime
     version: int
     workspace_id: str
-    application_receipt: ConfigurationApplicationReceipt | Unset | None = UNSET
     base_agent_version: int | Unset | None = UNSET
     creation_metadata: CreationMetadata | Unset | None = UNSET
     evidence_refs: list[str] | Unset = UNSET
     latest_validation: ConfigurationValidation | Unset | None = UNSET
-    predecessor_draft_id: str | Unset | None = UNSET
     source_agent_revision_version: int | Unset | None = UNSET
     terminal_reason: str | Unset | None = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.agent_config_output import AgentConfigOutput
-        from ..models.configuration_application_receipt import ConfigurationApplicationReceipt
         from ..models.configuration_validation import ConfigurationValidation
         from ..models.creation_metadata import CreationMetadata
 
@@ -103,8 +93,6 @@ class ConfigurationDraft:
 
         organization_id = self.organization_id
 
-        owner_user_id = self.owner_user_id
-
         session_id = self.session_id
 
         source_agent_revision_id: str | None
@@ -117,21 +105,11 @@ class ConfigurationDraft:
         target_agent_id: str | None
         target_agent_id = self.target_agent_id
 
-        thread_id = self.thread_id
-
         updated_at = self.updated_at.isoformat()
 
         version = self.version
 
         workspace_id = self.workspace_id
-
-        application_receipt: dict[str, Any] | Unset | None
-        if isinstance(self.application_receipt, Unset):
-            application_receipt = UNSET
-        elif isinstance(self.application_receipt, ConfigurationApplicationReceipt):
-            application_receipt = self.application_receipt.to_dict()
-        else:
-            application_receipt = self.application_receipt
 
         base_agent_version: int | Unset | None
         if isinstance(self.base_agent_version, Unset):
@@ -159,12 +137,6 @@ class ConfigurationDraft:
         else:
             latest_validation = self.latest_validation
 
-        predecessor_draft_id: str | Unset | None
-        if isinstance(self.predecessor_draft_id, Unset):
-            predecessor_draft_id = UNSET
-        else:
-            predecessor_draft_id = self.predecessor_draft_id
-
         source_agent_revision_version: int | Unset | None
         if isinstance(self.source_agent_revision_version, Unset):
             source_agent_revision_version = UNSET
@@ -188,20 +160,16 @@ class ConfigurationDraft:
                 "id": id,
                 "mode": mode,
                 "organization_id": organization_id,
-                "owner_user_id": owner_user_id,
                 "session_id": session_id,
                 "source_agent_revision_id": source_agent_revision_id,
                 "source_selector": source_selector,
                 "status": status,
                 "target_agent_id": target_agent_id,
-                "thread_id": thread_id,
                 "updated_at": updated_at,
                 "version": version,
                 "workspace_id": workspace_id,
             }
         )
-        if application_receipt is not UNSET:
-            field_dict["application_receipt"] = application_receipt
         if base_agent_version is not UNSET:
             field_dict["base_agent_version"] = base_agent_version
         if creation_metadata is not UNSET:
@@ -210,8 +178,6 @@ class ConfigurationDraft:
             field_dict["evidence_refs"] = evidence_refs
         if latest_validation is not UNSET:
             field_dict["latest_validation"] = latest_validation
-        if predecessor_draft_id is not UNSET:
-            field_dict["predecessor_draft_id"] = predecessor_draft_id
         if source_agent_revision_version is not UNSET:
             field_dict["source_agent_revision_version"] = source_agent_revision_version
         if terminal_reason is not UNSET:
@@ -222,7 +188,6 @@ class ConfigurationDraft:
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
         from ..models.agent_config_output import AgentConfigOutput
-        from ..models.configuration_application_receipt import ConfigurationApplicationReceipt
         from ..models.configuration_validation import ConfigurationValidation
         from ..models.creation_metadata import CreationMetadata
 
@@ -260,8 +225,6 @@ class ConfigurationDraft:
 
         organization_id = d.pop("organization_id")
 
-        owner_user_id = d.pop("owner_user_id")
-
         session_id = d.pop("session_id")
 
         def _parse_source_agent_revision_id(data: object) -> str | None:
@@ -282,30 +245,11 @@ class ConfigurationDraft:
 
         target_agent_id = _parse_target_agent_id(d.pop("target_agent_id"))
 
-        thread_id = d.pop("thread_id")
-
         updated_at = datetime.datetime.fromisoformat(d.pop("updated_at"))
 
         version = d.pop("version")
 
         workspace_id = d.pop("workspace_id")
-
-        def _parse_application_receipt(data: object) -> ConfigurationApplicationReceipt | Unset | None:
-            if data is None:
-                return data
-            if isinstance(data, Unset):
-                return data
-            try:
-                if not isinstance(data, dict):
-                    raise TypeError()
-                application_receipt_type_0 = ConfigurationApplicationReceipt.from_dict(data)
-
-                return application_receipt_type_0
-            except (TypeError, ValueError, AttributeError, KeyError):
-                pass
-            return cast(ConfigurationApplicationReceipt | Unset | None, data)
-
-        application_receipt = _parse_application_receipt(d.pop("application_receipt", UNSET))
 
         def _parse_base_agent_version(data: object) -> int | Unset | None:
             if data is None:
@@ -352,15 +296,6 @@ class ConfigurationDraft:
 
         latest_validation = _parse_latest_validation(d.pop("latest_validation", UNSET))
 
-        def _parse_predecessor_draft_id(data: object) -> str | Unset | None:
-            if data is None:
-                return data
-            if isinstance(data, Unset):
-                return data
-            return cast(str | Unset | None, data)
-
-        predecessor_draft_id = _parse_predecessor_draft_id(d.pop("predecessor_draft_id", UNSET))
-
         def _parse_source_agent_revision_version(data: object) -> int | Unset | None:
             if data is None:
                 return data
@@ -389,22 +324,18 @@ class ConfigurationDraft:
             id=id,
             mode=mode,
             organization_id=organization_id,
-            owner_user_id=owner_user_id,
             session_id=session_id,
             source_agent_revision_id=source_agent_revision_id,
             source_selector=source_selector,
             status=status,
             target_agent_id=target_agent_id,
-            thread_id=thread_id,
             updated_at=updated_at,
             version=version,
             workspace_id=workspace_id,
-            application_receipt=application_receipt,
             base_agent_version=base_agent_version,
             creation_metadata=creation_metadata,
             evidence_refs=evidence_refs,
             latest_validation=latest_validation,
-            predecessor_draft_id=predecessor_draft_id,
             source_agent_revision_version=source_agent_revision_version,
             terminal_reason=terminal_reason,
         )

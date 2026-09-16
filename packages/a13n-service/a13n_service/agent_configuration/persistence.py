@@ -11,10 +11,10 @@ from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.application_errors import ApplicationError, ErrorCategory
 from a13n_service.etags import etag_matches, resource_etag
 from a13n_service.iam import AuthenticatedActor, AuthorizationError
-from a13n_service.interactions.models import SessionRecord, ThreadRecord
+from a13n_service.interactions.models import SessionRecord
 
 from .authorization import authorize_session
-from .domain import ConfigurationDraft, candidate_digest, new_draft_id
+from .domain import ConfigurationDraft, candidate_digest
 from .models import ConfigurationDraftRecord
 from .requests import SourceSelection
 
@@ -47,8 +47,8 @@ async def load_owned_draft(
     draft_id: str,
     write: bool,
     lock: bool = False,
-) -> tuple[SessionRecord, ThreadRecord, ConfigurationDraftRecord]:
-    """Lock order is Session, Thread, draft; callers lock the target only afterwards."""
+) -> tuple[SessionRecord, ConfigurationDraftRecord]:
+    """Lock order is Session, draft, then the business target; no Thread owns a draft."""
     scope = await session.scalar(
         select(ConfigurationDraftRecord.session_id).where(ConfigurationDraftRecord.id == draft_id)
     )
@@ -59,36 +59,26 @@ async def load_owned_draft(
     except AuthorizationError as error:
         raise not_found() from error
     query = select(ConfigurationDraftRecord).where(
+        ConfigurationDraftRecord.id == conversation.configuration_draft_id,
         ConfigurationDraftRecord.id == draft_id,
-        ConfigurationDraftRecord.owner_user_id == actor.principal.principal_id,
         ConfigurationDraftRecord.workspace_id == actor.workspace_id,
     )
+    if lock:
+        query = query.with_for_update().execution_options(populate_existing=True)
     record = await session.scalar(query)
     if record is None:
         raise not_found()
-    thread_query = select(ThreadRecord).where(
-        ThreadRecord.id == record.thread_id, ThreadRecord.session_id == conversation.id
-    )
-    thread = await session.scalar(thread_query.with_for_update() if lock else thread_query)
-    if thread is None:
-        raise not_found()
-    if lock:
-        record = await session.scalar(query.with_for_update().execution_options(populate_existing=True))
-        assert record is not None
-    return conversation, thread, record
+    return conversation, record
 
 
 async def create_draft(
     session: AsyncSession,
     *,
     conversation: SessionRecord,
-    thread: ThreadRecord,
+    target_id: str | None,
     source: SourceSelection | None,
     now: datetime,
-    predecessor: ConfigurationDraftRecord | None = None,
-    persist: bool = True,
 ) -> ConfigurationDraftRecord:
-    target_id = conversation.configuration_target_agent_id
     selection = source or SourceSelection(selector="empty" if target_id is None else "current")
     target = None if target_id is None else await session.get(AgentRecord, target_id)
     revision = None
@@ -110,15 +100,12 @@ async def create_draft(
         if revision is None:
             raise not_found()
     config = None if revision is None else revision.to_resource().config
-    assert conversation.configuration_owner_user_id is not None
+    assert conversation.configuration_draft_id is not None
     value = ConfigurationDraft(
-        id=new_draft_id(),
+        id=conversation.configuration_draft_id,
         organization_id=conversation.organization_id,
         workspace_id=conversation.workspace_id,
-        owner_user_id=conversation.configuration_owner_user_id,
         session_id=conversation.id,
-        thread_id=thread.id,
-        predecessor_draft_id=None if predecessor is None else predecessor.id,
         mode="create" if target is None else "update",
         target_agent_id=target_id,
         source_selector=selection.selector,
@@ -136,8 +123,5 @@ async def create_draft(
     record = ConfigurationDraftRecord(
         **value.model_dump(mode="json", exclude={"created_at", "updated_at"}), created_at=now, updated_at=now
     )
-    if persist:
-        session.add(record)
-        thread.configuration_active_draft_id = record.id
-        thread.configuration_latest_draft_id = record.id
+    session.add(record)
     return record

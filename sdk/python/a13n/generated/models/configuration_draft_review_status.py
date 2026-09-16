@@ -2,7 +2,6 @@ from enum import StrEnum
 
 
 class ConfigurationDraftReviewStatus(StrEnum):
-    APPLIED = "applied"
     DISCARDED = "discarded"
     EXPIRED = "expired"
     OPEN = "open"

@@ -121,6 +121,7 @@ class AgentDuplication:
                 require_version(source, request.expected_version)
                 if source.archived_at is not None:
                     raise agent_archived()
+                assert source.current_revision_id is not None
                 source_revision = await lock_revision(
                     session,
                     organization_id=source_workspace.organization_id,

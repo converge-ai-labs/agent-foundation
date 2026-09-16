@@ -7,7 +7,6 @@ from dataclasses import dataclass, replace
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.agent_configuration.context import ConfigurationRunContext
 from a13n_service.agents.domain import AgentRunOverride, EffectiveAgentConfig
 from a13n_service.agents.invocation_resolution import (
     AgentInvocationResolver,
@@ -67,7 +66,6 @@ class CommandInput:
         inherited_environment_id: str | Omitted | None = Omitted.UNSET,
         environment_access_ceiling: str | None = None,
         prepared_assets: Mapping[str, Asset] | None = None,
-        configuration_context: ConfigurationRunContext | None = None,
     ) -> PreparedCommandInput:
         """Freeze a selected invocation, then accept its input outside the transaction.
 
@@ -80,7 +78,6 @@ class CommandInput:
             agent_revision_id=agent_revision_id,
             expected_current_revision_id=expected_current_revision_id,
             config_override=config_override,
-            configuration_context=configuration_context,
         )
         async with transaction(self._sessions) as database:
             frozen = await invocations.freezing.freeze_in_transaction(database, prepared=prepared)

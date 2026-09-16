@@ -23,6 +23,7 @@ from a13n_service.storage import short_session
 
 from ..connectivity_resolution import prepare_invocation_connectivity
 from ..domain import (
+    AgentConfig,
     AgentRevision,
     AgentRunOverride,
     ResolvedSubagentEdge,
@@ -82,7 +83,6 @@ class AgentInvocationPreparer:
         expected_current_revision_id: str | None = None,
         config_override: AgentRunOverride | None = None,
         root_state_policy: RootAgentStatePolicy = RootAgentStatePolicy.invocable,
-        configuration_context: ConfigurationRunContext | None = None,
         _active_agents: tuple[str, ...] = (),
         _budget: _GraphBudget | None = None,
     ) -> PreparedAgentInvocation:
@@ -97,20 +97,13 @@ class AgentInvocationPreparer:
         workspace_id = actor.workspace_id
         try:
             async with short_session(self._sessions) as session:
-                if configuration_context is not None:
-                    from a13n_service.agent_configuration.authorization import authorize_invocation
-
-                    authorized = await authorize_invocation(
-                        session, actor=actor, agent_id=agent_id, context=configuration_context
-                    )
-                else:
-                    authorized = await authorize_agent(
-                        session,
-                        actor=actor,
-                        workspace_id=workspace_id,
-                        agent_id=agent_id,
-                        action=WorkspaceAction.agent_invoke,
-                    )
+                authorized = await authorize_agent(
+                    session,
+                    actor=actor,
+                    workspace_id=workspace_id,
+                    agent_id=agent_id,
+                    action=WorkspaceAction.agent_invoke,
+                )
                 agent = await load_agent_record(
                     session,
                     organization_id=authorized.organization_id,
@@ -228,14 +221,63 @@ class AgentInvocationPreparer:
             selector_kind=selector_kind,
             expected_current_revision_id=expected_current_revision_id,
             revision_content_digest=revision.content_digest,
-            revision=revision,
             merged=merged,
             model=model,
             skills=skills,
             subagents=children,
             connectivity=connectivity,
             reviewer_model=reviewer_model,
-            configuration_context=configuration_context,
+        )
+
+    async def prepare_configuration(
+        self, *, actor: AuthenticatedActor, agent_id: str, config: AgentConfig, context: ConfigurationRunContext
+    ) -> PreparedAgentInvocation:
+        """Internal file-defined source; the public invocation path always selects a Revision."""
+        from a13n_service.agent_configuration.authorization import authorize_invocation
+
+        try:
+            async with short_session(self._sessions) as session:
+                authorized = await authorize_invocation(session, actor=actor, agent_id=agent_id, context=context)
+                await authorize_workspace(
+                    session, actor=actor, workspace_id=actor.workspace_id, action=WorkspaceAction.models_read
+                )
+            merged = merge_agent_run_override(config, None)
+            validate_agent_config(merged, protocol_policy=self._protocol_policy)
+            model = await self._model_selector.prepare(
+                organization_id=authorized.organization_id,
+                workspace_id=actor.workspace_id,
+                model_key=config.model.model_key,
+                settings=config.model.settings,
+            )
+            connectivity = await prepare_invocation_connectivity(
+                self._connectivity_resolver,
+                actor=actor,
+                organization_id=authorized.organization_id,
+                workspace_id=actor.workspace_id,
+                config=merged,
+            )
+        except AuthorizationError as error:
+            raise map_authorization_error(error) from error
+        except AgentConfigValidationError as error:
+            raise agent_revision_not_executable(error.reason) from error
+        except ModelError as error:
+            raise map_model_error(error) from error
+        return PreparedAgentInvocation(
+            root_state_policy=RootAgentStatePolicy.invocable,
+            actor=actor,
+            organization_id=authorized.organization_id,
+            workspace_id=actor.workspace_id,
+            agent_id=agent_id,
+            agent_revision_id=None,
+            selector_kind=AgentSelectorKind.configuration,
+            expected_current_revision_id=None,
+            revision_content_digest=None,
+            merged=merged,
+            model=model,
+            skills=(),
+            subagents=(),
+            connectivity=connectivity,
+            configuration_context=context,
         )
 
     async def _prepare_subagents(

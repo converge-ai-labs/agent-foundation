@@ -58,6 +58,11 @@ class AgentRecord(Base):
             name="system_purpose_valid",
         ),
         CheckConstraint("version >= 1", name="version_positive"),
+        CheckConstraint(
+            "(system_purpose IS NULL AND current_revision_id IS NOT NULL) OR "
+            "(system_purpose IS NOT NULL AND system_purpose = 'configuration_assistant' AND current_revision_id IS NULL AND version = 1)",
+            name="revision_source_valid",
+        ),
         CheckConstraint("length(name) BETWEEN 1 AND 128", name="name_bounded"),
         CheckConstraint("created_by_type IN ('user', 'service_account', 'system')", name="created_by_type_valid"),
         CheckConstraint("updated_by_type IN ('user', 'service_account', 'system')", name="updated_by_type_valid"),
@@ -88,7 +93,7 @@ class AgentRecord(Base):
         LABELS_SQL_TYPE, nullable=False, default=dict, server_default=text("'{}'")
     )
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    current_revision_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    current_revision_id: Mapped[str | None] = mapped_column(String(72))
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     duplicated_from_agent_id: Mapped[str | None] = mapped_column(String(72))
@@ -169,7 +174,6 @@ class AgentRevisionRecord(Base):
     resolved_subagents: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     content_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     source_revision_id: Mapped[str | None] = mapped_column(String(72))
-    system_definition: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True))
     created_by_type: Mapped[str] = mapped_column(String(32), nullable=False)
     created_by_id: Mapped[str] = mapped_column(String(72), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

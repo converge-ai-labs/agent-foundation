@@ -22,7 +22,7 @@ class RunResource:
     """
     Attributes:
         agent_id (str):
-        agent_revision_id (str):
+        agent_revision_id (None | str):
         completed_at (datetime.datetime | None):
         created_at (datetime.datetime):
         effective_agent_config_digest (str):
@@ -55,7 +55,7 @@ class RunResource:
     """
 
     agent_id: str
-    agent_revision_id: str
+    agent_revision_id: str | None
     completed_at: datetime.datetime | None
     created_at: datetime.datetime
     effective_agent_config_digest: str
@@ -89,6 +89,7 @@ class RunResource:
     def to_dict(self) -> dict[str, Any]:
         agent_id = self.agent_id
 
+        agent_revision_id: str | None
         agent_revision_id = self.agent_revision_id
 
         completed_at: str | None
@@ -229,7 +230,12 @@ class RunResource:
         d = dict(src_dict)
         agent_id = d.pop("agent_id")
 
-        agent_revision_id = d.pop("agent_revision_id")
+        def _parse_agent_revision_id(data: object) -> str | None:
+            if data is None:
+                return data
+            return cast(str | None, data)
+
+        agent_revision_id = _parse_agent_revision_id(d.pop("agent_revision_id"))
 
         def _parse_completed_at(data: object) -> datetime.datetime | None:
             if data is None:

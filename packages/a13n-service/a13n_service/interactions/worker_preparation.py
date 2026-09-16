@@ -27,7 +27,7 @@ from pydantic_ai import ToolDenied
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.agent_configuration.knowledge import KnowledgeBundles, knowledge_capability
+from a13n_service.agent_configuration.knowledge import KnowledgeFiles, knowledge_capability
 from a13n_service.agent_configuration.runtime import ConfigurationCapability, validate_configuration_definition
 from a13n_service.agents.execution_graph import inline_child_executions
 from a13n_service.agents.plugin_preparation import prepare_agent_plugins
@@ -122,7 +122,7 @@ class WorkerAttemptPreparer:
         self._skills = skills
         self._asset_publication = asset_publication
         self._async_results = async_results
-        self._prepared_skills: dict[str, PreparedSkillRuntime] | None = None
+        self._prepared_skills: dict[str | None, PreparedSkillRuntime] | None = None
 
     async def claim_state_writer(self) -> None:
         await self._control.claim_state_writer(self._run)
@@ -145,9 +145,8 @@ class WorkerAttemptPreparer:
         if self._run.configuration_context is not None:
             if self._configuration_capability is None:
                 raise RunError("Configuration tools are unavailable.", code="configuration_worker_incompatible")
-            async with short_session(self._sessions) as session:
-                await validate_configuration_definition(session, run=self._run, config=config)
-            await to_thread.run_sync(KnowledgeBundles().verify, self._run.configuration_context.knowledge_bundle)
+            validate_configuration_definition(run=self._run, config=config)
+            await to_thread.run_sync(KnowledgeFiles().validate)
         if graph_uses_memory(config):
             if self._memory is None:
                 raise RunError("Memory is unavailable.", code="memory_provider_unavailable")
@@ -210,9 +209,7 @@ class WorkerAttemptPreparer:
             stack.callback(self._sources.close)
             invocation = await self._prepare(context, stack)
             if self._run.configuration_context is not None:
-                environment = await to_thread.run_sync(
-                    KnowledgeBundles().environment, self._run.configuration_context.knowledge_bundle
-                )
+                environment = await to_thread.run_sync(KnowledgeFiles().environment)
                 invocation = replace(
                     invocation,
                     environment=MountedHarnessEnvironments(

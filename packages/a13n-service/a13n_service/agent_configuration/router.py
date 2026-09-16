@@ -12,14 +12,14 @@ from a13n_service.iam.http.resource_dependencies import workspace_actor
 from a13n_service.interactions.acceptance import RunAcceptanceReceipt
 from a13n_service.request_runtime import get_control_runtime
 
-from .context import ConfigurationApplicationReceipt
+from .application import ConfigurationApplicationCollection
 from .conversations import (
     ConfigurationSessionCollection,
     ConfigurationSessionView,
     ConfigurationThreadCollection,
     ConfigurationThreadView,
 )
-from .domain import ConfigurationDraft
+from .domain import ConfigurationApplicationReceipt, ConfigurationDraft
 from .inputs import ConfigurationInputRequest
 from .persistence import failure
 from .readiness import AssistantReadiness
@@ -191,4 +191,13 @@ async def apply_draft(
 ) -> ConfigurationApplicationReceipt:
     return await configuration(request).application.apply(
         actor=actor, draft_id=draft_id, request=body, idempotency_key=idempotency_key, if_match=if_match
+    )
+
+
+@router.get("/configuration-drafts/{draft_id}/applications")
+async def list_applications(
+    request: Request, actor: Actor, draft_id: str, limit: Limit = 50, cursor: Cursor = None
+) -> ConfigurationApplicationCollection:
+    return await configuration(request).application.list_applications(
+        actor=actor, draft_id=draft_id, limit=limit, cursor=cursor
     )

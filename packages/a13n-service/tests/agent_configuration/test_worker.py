@@ -1,15 +1,16 @@
-"""Exercise actual admission, Worker composition, Harness tools and successor binding."""
+"""Exercise actual admission, Worker composition, Harness tools and shared draft binding."""
 
 import json
 from unittest.mock import Mock
 
 import pytest
-from a13n_service.agent_configuration.definition import CONFIGURATION_TOOLS, READ_TOOLS
+from a13n_service.agent_configuration.definition import CONFIGURATION_TOOLS, READ_TOOLS, load_definition
 from a13n_service.agent_configuration.inputs import ConfigurationInputRequest
 from a13n_service.agent_configuration.requests import CreateConfigurationThreadRequest
 from a13n_service.agents.resolution import AgentResolver
 from a13n_service.etags import resource_etag
 from a13n_service.interactions.models import RunRecord
+from a13n_service.interactions.objects import RunStateStore
 from a13n_service.models.model_factory import NativeModelFactory
 from a13n_service.models.providers import built_in_provider_registry
 from a13n_service.models.runtime import AcceptedModelSelector
@@ -27,7 +28,7 @@ from .test_inputs import inputs_service
 pytestmark = pytest.mark.anyio
 
 
-async def test_real_worker_edits_draft_and_post_apply_input_uses_successor(agent_sessions, tmp_path, monkeypatch):
+async def test_real_worker_edits_draft_and_post_apply_input_keeps_shared_draft(agent_sessions, tmp_path, monkeypatch):
     conversations, drafts, application = services(agent_sessions)
     draft = await new_draft(conversations)
     inputs, objects = await inputs_service(agent_sessions, tmp_path)
@@ -38,8 +39,14 @@ async def test_real_worker_edits_draft_and_post_apply_input_uses_successor(agent
         }
     )
     first = await inputs.submit(
-        actor=actor(), thread_id=draft.thread_id, request=request, idempotency_key="worker-first"
+        actor=actor(),
+        thread_id=(await conversations.get_session(actor=actor(), session_id=draft.session_id)).root_thread_id,
+        request=request,
+        idempotency_key="worker-first",
     )
+    accepted_definition = load_definition()
+    deployed_definition = accepted_definition.model_copy(update={"instructions": "New deployment instructions"})
+    new_inputs, _ = await inputs_service(agent_sessions, tmp_path, definition=deployed_definition)
     requests = []
 
     async def respond(messages, info):
@@ -47,6 +54,7 @@ async def test_real_worker_edits_draft_and_post_apply_input_uses_successor(agent
         requests.append(messages)
         if len(requests) == 1:
             assert draft.id in repr(messages)
+            assert "New deployment instructions" not in repr(messages)
             yield {
                 0: DeltaToolCall(
                     name="view",
@@ -99,10 +107,23 @@ async def test_real_worker_edits_draft_and_post_apply_input_uses_successor(agent
         configuration_resolver=resolver,
     ) as (runtime, _shared):
         loop = runtime.execution_loop
+        errors = []
+        execute = loop._attempts.run
+
+        async def capture(*args, **kwargs):
+            try:
+                return await execute(*args, **kwargs)
+            except Exception as error:
+                errors.append(error)
+                raise
+
+        monkeypatch.setattr(loop._attempts, "run", capture)
         with fail_after(15):
             async with create_task_group() as tasks:
                 tasks.start_soon(loop.run)
                 while True:
+                    if errors:
+                        raise errors[0]
                     async with short_session(agent_sessions) as session:
                         run = await session.get(RunRecord, first.run_id)
                         assert run.status != "failed", run.failure_json
@@ -120,23 +141,32 @@ async def test_real_worker_edits_draft_and_post_apply_input_uses_successor(agent
         idempotency_key="apply-worker-draft",
         if_match=resource_etag(saved.id, saved.updated_at),
     )
-    thread = await conversations.get_thread(actor=actor(), thread_id=draft.thread_id)
-    second = await inputs.submit(
+    thread = await conversations.get_thread(
         actor=actor(),
-        thread_id=draft.thread_id,
+        thread_id=(await conversations.get_session(actor=actor(), session_id=draft.session_id)).root_thread_id,
+    )
+    second = await new_inputs.submit(
+        actor=actor(),
+        thread_id=(await conversations.get_session(actor=actor(), session_id=draft.session_id)).root_thread_id,
         request=request.model_copy(update={"expected_thread_version": thread.thread.version}),
         idempotency_key="worker-second",
     )
     async with short_session(agent_sessions) as session:
         original = (await session.get(RunRecord, first.run_id)).to_resource()
         successor = (await session.get(RunRecord, second.run_id)).to_resource()
+    original_state = (await RunStateStore(objects).read_run(original)).envelope
+    successor_state = (await RunStateStore(objects).read_run(successor)).envelope
+    assert original_state.effective_agent_config.instructions == accepted_definition.instructions
+    assert successor_state.effective_agent_config.instructions == deployed_definition.instructions
+    assert original.configuration_context.definition_digest != successor.configuration_context.definition_digest
+    assert original.agent_id == successor.agent_id and original.agent_revision_id is successor.agent_revision_id is None
     assert original.configuration_context.draft_id == draft.id
-    assert successor.configuration_context.draft_id != draft.id
-    assert successor.configuration_context.previous_application_receipt == receipt
-    assert successor.configuration_context.mode == "update"
-    assert successor.configuration_context.target_agent_id == receipt.agent_id
-    assert successor.configuration_context.source_agent_revision_id == receipt.agent_revision_id
-    # A second editing approach shares the existing Session identity and has its own draft.
+    assert successor.configuration_context.draft_id == draft.id
+    assert successor.configuration_context.initial_draft_version == saved.version + 1
+    continued = await drafts.get(actor=actor(), draft_id=draft.id)
+    assert continued.mode == "update" and continued.target_agent_id == receipt.agent_id
+    assert continued.base_agent_revision_id == receipt.agent_revision_id
+    # Threads and forks share the Session's long-lived draft.
     branch = await conversations.create_thread(
         actor=actor(),
         session_id=draft.session_id,
@@ -152,4 +182,5 @@ async def test_real_worker_edits_draft_and_post_apply_input_uses_successor(agent
     async with short_session(agent_sessions) as session:
         forked = (await session.get(RunRecord, fork.run_id)).to_resource()
     assert forked.parent_run_id == first.run_id
-    assert forked.configuration_context.draft_id == branch.latest_draft.id
+    assert forked.configuration_context.draft_id == branch.draft.id
+    assert branch.draft.id == draft.id

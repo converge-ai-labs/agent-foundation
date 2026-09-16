@@ -2,20 +2,19 @@ from dataclasses import replace
 
 import pytest
 from a13n_service.agent_configuration.definition import load_definition
-from a13n_service.agent_configuration.knowledge import KnowledgeBundles
+from a13n_service.agent_configuration.knowledge import KnowledgeFiles
 from a13n_service.agent_configuration.readiness import ConfigurationReadiness
 from a13n_service.agent_configuration.system_agent import SystemConfigurationAgent
-from a13n_service.agents.resolution import AgentResolver
+from a13n_service.agents.models import AgentRevisionRecord
 from a13n_service.application_errors import ApplicationError
 from a13n_service.gateway.queries import NativeInteractionQueries
 from a13n_service.iam import AuthorizationError, PrincipalRef
 from a13n_service.iam.models import RoleBindingRecord, UserRecord
 from a13n_service.models.models import ModelProviderRecord, ModelRecord
 from a13n_service.models.providers import built_in_provider_registry
-from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.run_stream import RunReplayStore
-from a13n_service.storage import transaction
-from sqlalchemy import select
+from a13n_service.storage import short_session, transaction
+from sqlalchemy import func, select
 
 from ..agents.conftest import MODEL_ID, NOW, ORG_ID, PROVIDER_ID, USER_ID, WORKSPACE_ID, actor
 from .test_drafts import new_draft, services
@@ -40,15 +39,14 @@ async def test_readiness_never_initializes_resources_and_exact_system_definition
     draft = await new_draft(conversations)
     system = SystemConfigurationAgent(
         agent_sessions,
-        AgentResolver(agent_sessions, AcceptedModelSelector(agent_sessions, built_in_provider_registry())),
         definition,
         clock=lambda: NOW,
     )
-    created = await system.ensure(actor=actor(), session_id=draft.session_id, model=ready.selected_model)
-    replay = await system.ensure(actor=actor(), session_id=draft.session_id, model=ready.selected_model)
+    created = await system.ensure(actor=actor(), session_id=draft.session_id)
+    replay = await system.ensure(actor=actor(), session_id=draft.session_id)
     assert created == replay
-    assert created.agent.system_purpose == "configuration_assistant"
-    assert created.agent.source.value == "builtin"
+    assert created.system_purpose == "configuration_assistant"
+    assert created.source.value == "builtin"
     assert (
         await agent_management.queries.list(
             actor=actor(),
@@ -61,24 +59,16 @@ async def test_readiness_never_initializes_resources_and_exact_system_definition
         )
     ).items == ()
     with pytest.raises((ApplicationError, AuthorizationError)):
-        await agent_management.queries.get(actor=actor(), agent_id=created.agent.id)
-    with pytest.raises((ApplicationError, AuthorizationError)):
-        await agent_management.queries.get_revision(actor=actor(), revision_id=created.revision.id)
-    assert KnowledgeBundles().verify(definition.knowledge_bundle).is_dir()
+        await agent_management.queries.get(actor=actor(), agent_id=created.id)
+    assert created.current_revision_id is None and created.version == 1
+    assert KnowledgeFiles().validate().is_dir()
     changed = definition.model_copy(update={"instructions": definition.instructions + "\nBe concise."})
-    resolver = AgentResolver(agent_sessions, AcceptedModelSelector(agent_sessions, built_in_provider_registry()))
-    with pytest.raises(ApplicationError):
-        await SystemConfigurationAgent(agent_sessions, resolver, changed).ensure(
-            actor=actor(), session_id=draft.session_id, model=ready.selected_model
-        )
-    newer = changed.model_copy(update={"generation": definition.generation + 1})
-    advanced = await SystemConfigurationAgent(agent_sessions, resolver, newer).ensure(
-        actor=actor(), session_id=draft.session_id, model=ready.selected_model
+    advanced = await SystemConfigurationAgent(agent_sessions, changed).ensure(
+        actor=actor(), session_id=draft.session_id
     )
-    assert advanced.agent.id == created.agent.id
-    assert advanced.revision.version == created.revision.version + 1
-    with pytest.raises(ApplicationError):
-        await system.ensure(actor=actor(), session_id=draft.session_id, model=ready.selected_model)
+    assert advanced == created
+    async with short_session(agent_sessions) as session:
+        assert await session.scalar(select(func.count()).select_from(AgentRevisionRecord)) == 0
 
 
 async def test_empty_configuration_conversation_is_visible_only_to_owner_even_for_admin(agent_sessions, tmp_path):
@@ -122,12 +112,20 @@ async def test_empty_configuration_conversation_is_visible_only_to_owner_even_fo
             )
     other = replace(actor(), principal=PrincipalRef(principal_type="user", principal_id=other_id))
     queries = NativeInteractionQueries(agent_sessions, RunReplayStore(LocalObjectStore(tmp_path / "objects")))
-    assert (await queries.get_thread(actor=actor(), thread_id=draft.thread_id)).id == draft.thread_id
+    assert (
+        await queries.get_thread(
+            actor=actor(),
+            thread_id=(await conversations.get_session(actor=actor(), session_id=draft.session_id)).root_thread_id,
+        )
+    ).id == (await conversations.get_session(actor=actor(), session_id=draft.session_id)).root_thread_id
     assert (
         len((await queries.list_sessions(actor=actor(), workspace_id=WORKSPACE_ID, limit=10, cursor=None)).items) == 1
     )
     assert (await queries.list_sessions(actor=other, workspace_id=WORKSPACE_ID, limit=10, cursor=None)).items == ()
     with pytest.raises((ApplicationError, AuthorizationError)):
-        await queries.get_thread(actor=other, thread_id=draft.thread_id)
+        await queries.get_thread(
+            actor=other,
+            thread_id=(await conversations.get_session(actor=actor(), session_id=draft.session_id)).root_thread_id,
+        )
     with pytest.raises((ApplicationError, AuthorizationError)):
         await queries.list_threads(actor=other, session_id=draft.session_id, limit=10, cursor=None)

@@ -13,17 +13,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ConfigurationThreadView {
-    #[serde(rename = "active_draft_id", deserialize_with = "Option::deserialize")]
-    pub active_draft_id: Option<String>,
-
-    #[serde(rename = "latest_draft")]
-    pub latest_draft: Box<models::ConfigurationDraft>,
-
-    #[serde(
-        rename = "previous_application_receipt",
-        deserialize_with = "Option::deserialize"
-    )]
-    pub previous_application_receipt: Option<Box<models::ConfigurationApplicationReceipt>>,
+    #[serde(rename = "draft")]
+    pub draft: Box<models::ConfigurationDraft>,
 
     #[serde(rename = "thread")]
     pub thread: Box<models::Thread>,
@@ -31,19 +22,11 @@ pub struct ConfigurationThreadView {
 
 impl ConfigurationThreadView {
     pub fn new(
-        active_draft_id: Option<String>,
-        latest_draft: models::ConfigurationDraft,
-        previous_application_receipt: Option<models::ConfigurationApplicationReceipt>,
+        draft: models::ConfigurationDraft,
         thread: models::Thread,
     ) -> ConfigurationThreadView {
         ConfigurationThreadView {
-            active_draft_id,
-            latest_draft: Box::new(latest_draft),
-            previous_application_receipt: if let Some(x) = previous_application_receipt {
-                Some(Box::new(x))
-            } else {
-                None
-            },
+            draft: Box::new(draft),
             thread: Box::new(thread),
         }
     }

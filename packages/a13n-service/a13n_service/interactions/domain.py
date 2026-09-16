@@ -262,7 +262,7 @@ class Run(StrictModel):
     delegation_id: BoundedText | None = None
     parent_tool_call_id: BoundedText | None = None
     agent_id: ObjectId
-    agent_revision_id: ObjectId
+    agent_revision_id: ObjectId | None
     environment_id: ObjectId | None = None
     environment_access: Literal["read_only", "read_write", "full"] | None = None
     environment_use_started_at: UtcDateTime | None = None
@@ -302,6 +302,13 @@ class Run(StrictModel):
 
     @model_validator(mode="after")
     def lifecycle_is_coherent(self) -> Run:
+        if (self.agent_revision_id is None) != (self.configuration_context is not None):
+            raise ValueError("Only protected configuration Runs omit an AgentRevision")
+        if self.configuration_context is not None and (
+            self.configuration_context.session_id != self.session_id
+            or self.configuration_context.thread_id != self.thread_id
+        ):
+            raise ValueError("Configuration context must match Run interaction identity")
         input_inline = "input" in self.model_fields_set
         if input_inline == (self.input_object is not None):
             raise ValueError("Run input requires exactly one inline or object representation")
@@ -487,7 +494,7 @@ def accepted_run(
     delegation_id: BoundedText | None = None,
     parent_tool_call_id: BoundedText | None = None,
     agent_id: ObjectId,
-    agent_revision_id: ObjectId,
+    agent_revision_id: ObjectId | None,
     environment_id: ObjectId | None = None,
     environment_access: Literal["read_only", "read_write", "full"] | None = None,
     effective_agent_config_digest: Sha256Digest,

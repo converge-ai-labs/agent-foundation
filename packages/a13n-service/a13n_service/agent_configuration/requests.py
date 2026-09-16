@@ -32,7 +32,6 @@ class CreateSessionRequest(StrictModel):
 
 
 class CreateConfigurationThreadRequest(StrictModel):
-    source: SourceSelection | None = None
     fork_from_run_id: ObjectId
 
 

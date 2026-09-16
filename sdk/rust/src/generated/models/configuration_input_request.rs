@@ -18,14 +18,6 @@ pub struct ConfigurationInputRequest {
 
     #[serde(rename = "input")]
     pub input: Box<models::AgentInput>,
-
-    #[serde(
-        rename = "source",
-        default,
-        with = "::serde_with::rust::double_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub source: Option<Option<Box<models::SourceSelection>>>,
 }
 
 impl ConfigurationInputRequest {
@@ -36,7 +28,6 @@ impl ConfigurationInputRequest {
         ConfigurationInputRequest {
             expected_thread_version,
             input: Box::new(input),
-            source: None,
         }
     }
 }

@@ -33,7 +33,7 @@ class ThreadResource:
         session_id (str):
         updated_at (datetime.datetime):
         version (int):
-        configuration_latest_draft_id (None | str | Unset):
+        configuration_draft_id (None | str | Unset):
     """
 
     created_at: datetime.datetime
@@ -50,7 +50,7 @@ class ThreadResource:
     session_id: str
     updated_at: datetime.datetime
     version: int
-    configuration_latest_draft_id: str | Unset | None = UNSET
+    configuration_draft_id: str | Unset | None = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         created_at = self.created_at.isoformat()
@@ -86,11 +86,11 @@ class ThreadResource:
 
         version = self.version
 
-        configuration_latest_draft_id: str | Unset | None
-        if isinstance(self.configuration_latest_draft_id, Unset):
-            configuration_latest_draft_id = UNSET
+        configuration_draft_id: str | Unset | None
+        if isinstance(self.configuration_draft_id, Unset):
+            configuration_draft_id = UNSET
         else:
-            configuration_latest_draft_id = self.configuration_latest_draft_id
+            configuration_draft_id = self.configuration_draft_id
 
         field_dict: dict[str, Any] = {}
 
@@ -112,8 +112,8 @@ class ThreadResource:
                 "version": version,
             }
         )
-        if configuration_latest_draft_id is not UNSET:
-            field_dict["configuration_latest_draft_id"] = configuration_latest_draft_id
+        if configuration_draft_id is not UNSET:
+            field_dict["configuration_draft_id"] = configuration_draft_id
 
         return field_dict
 
@@ -175,16 +175,14 @@ class ThreadResource:
 
         version = d.pop("version")
 
-        def _parse_configuration_latest_draft_id(data: object) -> str | Unset | None:
+        def _parse_configuration_draft_id(data: object) -> str | Unset | None:
             if data is None:
                 return data
             if isinstance(data, Unset):
                 return data
             return cast(str | Unset | None, data)
 
-        configuration_latest_draft_id = _parse_configuration_latest_draft_id(
-            d.pop("configuration_latest_draft_id", UNSET)
-        )
+        configuration_draft_id = _parse_configuration_draft_id(d.pop("configuration_draft_id", UNSET))
 
         thread_resource = cls(
             created_at=created_at,
@@ -201,7 +199,7 @@ class ThreadResource:
             session_id=session_id,
             updated_at=updated_at,
             version=version,
-            configuration_latest_draft_id=configuration_latest_draft_id,
+            configuration_draft_id=configuration_draft_id,
         )
 
         return thread_resource

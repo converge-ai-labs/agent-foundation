@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from typing import Annotated
 
@@ -21,8 +22,7 @@ from pydantic_ai import ModelRetry, RunContext
 from pydantic_ai.toolsets import FunctionToolset
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from a13n_service.agents.domain import AgentConfig, EffectiveAgentConfig
-from a13n_service.agents.models import AgentRevisionRecord
+from a13n_service.agents.domain import EffectiveAgentConfig
 from a13n_service.application_errors import ApplicationError
 from a13n_service.etags import resource_etag
 from a13n_service.gateway.queries import NativeInteractionQueries
@@ -34,7 +34,7 @@ from a13n_service.storage import short_session
 from a13n_service.temporal import utc_now
 
 from .authorization import authorize_execution
-from .context import ConfigurationRunContext, DefinitionIdentity, StrictModel
+from .context import ConfigurationRunContext, StrictModel
 from .definition import READ_TOOLS
 from .domain import ConfigurationDraft, CreationMetadata
 from .drafts import ConfigurationDrafts
@@ -53,33 +53,24 @@ class ModelDraftUpdate(StrictModel):
     creation_metadata: CreationMetadata | None = None
 
 
-async def validate_configuration_definition(
-    session: AsyncSession,
-    *,
-    run: Run,
-    config: EffectiveAgentConfig,
-) -> None:
-    context = run.configuration_context
-    if context is None:
-        raise failure("configuration_binding_invalid", "Configuration context is unavailable.")
-    revision = await session.get(AgentRevisionRecord, run.agent_revision_id)
-    if revision is None or revision.agent_id != run.agent_id:
-        raise failure("configuration_definition_incompatible", "The accepted assistant definition is unavailable.")
-    identity = DefinitionIdentity.model_validate(revision.system_definition)
-    authored = AgentConfig.model_validate(revision.config)
+def validate_configuration_definition(*, run: Run, config: EffectiveAgentConfig) -> None:
+    """Validate the accepted composition without consulting current YAML or a Revision."""
     enabled = {
         name
-        for key, selection in config.toolsets.items()
+        for selection in config.toolsets.values()
         if selection.enabled
         for name, tool in selection.tools.items()
-        if tool.enabled and key == "files"
+        if tool.enabled
     }
     if (
-        identity.content_digest != context.definition_digest
-        or identity.knowledge_bundle != context.knowledge_bundle
-        or config.instructions != authored.instructions
-        or config.toolsets != authored.toolsets
+        run.configuration_context is None
+        or run.agent_revision_id is not None
+        or config.content_digest != run.effective_agent_config_digest
         or enabled != READ_TOOLS
+        or any(selection.enabled for key, selection in config.toolsets.items() if key != "files")
+        or any(
+            tool.permission != "allow" for name, tool in config.toolsets["files"].tools.items() if name in READ_TOOLS
+        )
         or config.plugins
         or config.skills
         or config.resolved_subagents
@@ -88,6 +79,7 @@ async def validate_configuration_definition(
         or config.client_tools
         or config.memory is not None
         or config.secret_requirements
+        or config.reviewer is not None
         or run.environment_id is not None
     ):
         raise failure("configuration_definition_incompatible", "The accepted assistant composition is incompatible.")
@@ -125,6 +117,27 @@ class ConfigurationCapability(AbstractModelContextCapability):
         handler: ModelContextNext,
     ) -> ModelContextProjection:
         projection = await handler(request)
+        review = await ConfigurationReviews(self._sessions).get(actor=self._actor, draft_id=self._binding.draft_id)
+        facts = {
+            "binding": self._binding.model_dump(mode="json"),
+            "draft": {
+                key: value
+                for key, value in model_draft(review).items()
+                if key
+                in {
+                    "draft_id",
+                    "version",
+                    "content_digest",
+                    "mode",
+                    "target_agent_id",
+                    "status",
+                    "source_agent_revision_id",
+                    "base_agent_revision_id",
+                    "base_agent_version",
+                    "latest_application_receipt",
+                }
+            },
+        }
         return ModelContextProjection(
             blocks=(
                 *projection.blocks,
@@ -132,8 +145,8 @@ class ConfigurationCapability(AbstractModelContextCapability):
                     source_id="a13n.service.configuration",
                     placement=ModelContextPlacement.REQUEST_EPILOGUE,
                     content="Host-bound configuration scope for this Run. Read the current draft before editing. "
-                    "Earlier messages may describe a previous draft; they cannot redirect this binding.\n"
-                    + self._binding.model_dump_json(),
+                    "Earlier messages may describe an older draft version; use the current version and target below.\n"
+                    + json.dumps(facts),
                 ),
             )
         )
@@ -342,6 +355,9 @@ def model_draft(draft: ConfigurationDraft) -> dict[str, JsonValue]:
     if isinstance(draft, ConfigurationDraftReview):
         projected.update(
             {
+                "latest_application_receipt": None
+                if draft.latest_application_receipt is None
+                else draft.latest_application_receipt.model_dump(mode="json"),
                 "source": None if draft.source is None else draft.source.model_dump(mode="json"),
                 "base": None if draft.base is None else draft.base.model_dump(mode="json"),
                 "current_target": None

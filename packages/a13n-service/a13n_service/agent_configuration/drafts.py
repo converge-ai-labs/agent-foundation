@@ -12,10 +12,12 @@ from a13n_service.iam import AuthenticatedActor
 from a13n_service.iam.audit import security_audit_record
 from a13n_service.ids import new_object_id
 from a13n_service.interactions.attempts import AttemptContext, lock_attempt_authority
+from a13n_service.interactions.models import SessionRecord
 from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, next_updated_at, utc_now
 
-from .authorization import authorize_candidate_snapshot
+from .authorization import authorize_candidate_snapshot, authorize_execution
+from .context import ConfigurationRunContext
 from .domain import ConfigurationDraft, ConfigurationValidation, candidate_digest
 from .editing import edit_config
 from .models import ConfigurationDraftRecord
@@ -36,7 +38,7 @@ class ConfigurationDrafts:
 
     async def get(self, *, actor: AuthenticatedActor, draft_id: str) -> ConfigurationDraft:
         async with short_session(self._sessions) as session:
-            _, _, record = await load_owned_draft(session, actor=actor, draft_id=draft_id, write=False)
+            _, record = await load_owned_draft(session, actor=actor, draft_id=draft_id, write=False)
             return record.to_resource()
 
     async def update(
@@ -51,7 +53,7 @@ class ConfigurationDrafts:
     ) -> ConfigurationDraft:
         identity = request_identity(idempotency_key, request)
         async with transaction(self._sessions, sqlite_immediate=True) as session:
-            _, _, record = await load_owned_draft(session, actor=actor, draft_id=draft_id, write=True)
+            _, record = await load_owned_draft(session, actor=actor, draft_id=draft_id, write=True)
             await require_attempt(session, record=record, attempt=attempt, now=self._clock())
             replay = await load_replay(
                 session,
@@ -96,7 +98,7 @@ class ConfigurationDrafts:
         except Exception as error:
             raise resolution_error(error) from error
         async with transaction(self._sessions, sqlite_immediate=True) as session:
-            _, _, record = await load_owned_draft(session, actor=actor, draft_id=draft_id, write=True, lock=True)
+            _, record = await load_owned_draft(session, actor=actor, draft_id=draft_id, write=True, lock=True)
             await require_attempt(session, record=record, attempt=attempt, now=self._clock())
             if attempt is not None:
                 await authorize_candidate_snapshot(
@@ -168,7 +170,7 @@ class ConfigurationDrafts:
 
         identity = request_identity(idempotency_key, request)
         async with transaction(self._sessions, sqlite_immediate=True) as session:
-            _, _, record = await load_owned_draft(session, actor=actor, draft_id=draft_id, write=True)
+            _, record = await load_owned_draft(session, actor=actor, draft_id=draft_id, write=True)
             replay = await load_replay(
                 session,
                 actor=actor,
@@ -194,7 +196,7 @@ class ConfigurationDrafts:
         except Exception as error:
             raise resolution_error(error) from error
         async with transaction(self._sessions, sqlite_immediate=True) as session:
-            _, _, record = await load_owned_draft(session, actor=actor, draft_id=draft_id, write=True, lock=True)
+            _, record = await load_owned_draft(session, actor=actor, draft_id=draft_id, write=True, lock=True)
             replay = await load_replay(
                 session,
                 actor=actor,
@@ -214,7 +216,7 @@ class ConfigurationDrafts:
             except Exception as error:
                 raise resolution_error(error) from error
             record.config = request.config.model_dump(mode="json", by_alias=True)
-            record.content_digest = candidate_digest(request.config, None)
+            record.content_digest = candidate_digest(request.config, current.creation_metadata)
             record.base_agent_revision_id = target.current_revision_id
             record.base_agent_version = target.version
             record.version += 1
@@ -256,7 +258,7 @@ class ConfigurationDrafts:
     ) -> ConfigurationDraft:
         identity = request_identity(idempotency_key, request)
         async with transaction(self._sessions, sqlite_immediate=True) as session:
-            _, thread, record = await load_owned_draft(session, actor=actor, draft_id=draft_id, write=True, lock=True)
+            _, record = await load_owned_draft(session, actor=actor, draft_id=draft_id, write=True, lock=True)
             replay = await load_replay(
                 session,
                 actor=actor,
@@ -270,8 +272,6 @@ class ConfigurationDrafts:
             require_open(record, expected_version=request.expected_version, if_match=if_match)
             record.status, record.terminal_reason = "discarded", "user_discarded"
             record.updated_at = next_updated_at(record.updated_at, self._clock())
-            if thread.configuration_active_draft_id == record.id:
-                thread.configuration_active_draft_id = None
             result = record.to_resource()
             session.add(
                 evidence_record(
@@ -299,8 +299,24 @@ async def require_attempt(
         return
     run, _, _ = await lock_attempt_authority(session, attempt, now)
     context = run.configuration_context
-    if context is None or context.get("draft_id") != record.id or run.authority_principal_id != record.owner_user_id:
+    conversation = await session.get(SessionRecord, record.session_id)
+    if (
+        context is None
+        or context.get("draft_id") != record.id
+        or run.session_id != record.session_id
+        or conversation is None
+        or conversation.configuration_owner_user_id != run.authority_principal_id
+    ):
         raise failure("configuration_binding_invalid", "The Run is not bound to this draft.")
+    await authorize_execution(
+        session,
+        principal=run.to_resource().authority_principal,
+        organization_id=record.organization_id,
+        workspace_id=record.workspace_id,
+        agent_id=run.agent_id,
+        context=ConfigurationRunContext.model_validate(context),
+        snapshot=attempt.authorization.snapshot,
+    )
 
 
 def audit_draft(

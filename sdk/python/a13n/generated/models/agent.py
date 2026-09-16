@@ -25,7 +25,7 @@ class Agent:
         archived_at (datetime.datetime | None):
         created_at (datetime.datetime):
         created_by (PrincipalRef | SystemActorRef):
-        current_revision_id (str):
+        current_revision_id (None | str):
         description (None | str):
         duplicated_from_agent_id (None | str):
         duplicated_from_revision_id (None | str):
@@ -48,7 +48,7 @@ class Agent:
     archived_at: datetime.datetime | None
     created_at: datetime.datetime
     created_by: PrincipalRef | SystemActorRef
-    current_revision_id: str
+    current_revision_id: str | None
     description: str | None
     duplicated_from_agent_id: str | None
     duplicated_from_revision_id: str | None
@@ -84,6 +84,7 @@ class Agent:
         else:
             created_by = self.created_by.to_dict()
 
+        current_revision_id: str | None
         current_revision_id = self.current_revision_id
 
         description: str | None
@@ -217,7 +218,12 @@ class Agent:
 
         created_by = _parse_created_by(d.pop("created_by"))
 
-        current_revision_id = d.pop("current_revision_id")
+        def _parse_current_revision_id(data: object) -> str | None:
+            if data is None:
+                return data
+            return cast(str | None, data)
+
+        current_revision_id = _parse_current_revision_id(d.pop("current_revision_id"))
 
         def _parse_description(data: object) -> str | None:
             if data is None:

@@ -391,6 +391,7 @@ def _validate_new_child_parent(
     edge = require_frozen_subagent_edge(parent, parent_state, prepared.relationship.subagent_name)
     if (prepared.run.agent_id, prepared.run.agent_revision_id) != (edge.child_agent_id, edge.child_agent_revision_id):
         raise ChildRunAcceptanceError("child_run_edge_conflict", "Child Run does not match the frozen parent edge")
+    assert prepared.run.agent_revision_id is not None
     accepted = parent_state.effective_agent_config.child_configs.get(prepared.run.agent_revision_id)
     if accepted is None or (
         prepared.state.effective_agent_config != accepted.effective_config

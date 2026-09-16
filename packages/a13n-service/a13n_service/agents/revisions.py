@@ -267,6 +267,7 @@ class AgentRevisions:
                     actor=actor,
                     now=now,
                 )
+                assert record.current_revision_id is not None
                 current = await lock_revision(
                     session,
                     organization_id=record.organization_id,

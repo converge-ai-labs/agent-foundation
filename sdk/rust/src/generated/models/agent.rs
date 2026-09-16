@@ -22,8 +22,11 @@ pub struct Agent {
     #[serde(rename = "created_by")]
     pub created_by: Box<models::ActorRef>,
 
-    #[serde(rename = "current_revision_id")]
-    pub current_revision_id: String,
+    #[serde(
+        rename = "current_revision_id",
+        deserialize_with = "Option::deserialize"
+    )]
+    pub current_revision_id: Option<String>,
 
     #[serde(
         rename = "default_environment_template_id",
@@ -103,7 +106,7 @@ impl Agent {
         archived_at: Option<chrono::DateTime<chrono::FixedOffset>>,
         created_at: chrono::DateTime<chrono::FixedOffset>,
         created_by: models::ActorRef,
-        current_revision_id: String,
+        current_revision_id: Option<String>,
         description: Option<String>,
         duplicated_from_agent_id: Option<String>,
         duplicated_from_revision_id: Option<String>,

@@ -41,7 +41,7 @@ async def test_historical_source_review_uses_current_target_for_application(agen
             source=SourceSelection(selector="explicit", revision_id=original.revision.id),
         ),
     )
-    draft = (await conversations.get_thread(actor=actor(), thread_id=conversation.root_thread_id)).latest_draft
+    draft = (await conversations.get_thread(actor=actor(), thread_id=conversation.root_thread_id)).draft
     review = await ConfigurationReviews(agent_sessions).get(actor=actor(), draft_id=draft.id)
     assert review.source_to_candidate == review.base_to_candidate == ()
     assert not review.target_conflict and review.base_agent_version == 2
@@ -79,16 +79,26 @@ async def test_apply_failure_rolls_back_target_receipt_and_publication(agent_ses
         actor=actor(),
         subscriptions=(
             NotificationSubscription(
-                subscription_id="draft", scope="thread", resource_id=draft.thread_id, topics=("thread.updated",)
+                subscription_id="draft",
+                scope="thread",
+                resource_id=(
+                    await conversations.get_session(actor=actor(), session_id=draft.session_id)
+                ).root_thread_id,
+                topics=("thread.updated",),
             ),
         ),
     )
     subscription = replace(subscription, after_application=(NOW - timedelta(seconds=1), ""))
     hints = await notifications.read_applications(subscription, limit=10)
-    assert len(hints) == 1 and hints[0].thread_id == draft.thread_id and hints[0].run_id is None
+    assert (
+        len(hints) == 1
+        and hints[0].thread_id
+        == (await conversations.get_session(actor=actor(), session_id=draft.session_id)).root_thread_id
+        and hints[0].run_id is None
+    )
     await notifications.acknowledge_application(hints[0])
     async with short_session(agent_sessions) as session:
         intent = await session.scalar(select(OutboxRecord))
-        assert intent.status == "published" and intent.source_id == draft.id
+        assert intent.status == "published" and intent.source_id.startswith("capply_")
     # Publication is a best-effort hint; another subscriber can still observe it.
     assert await notifications.read_applications(subscription, limit=10) == hints

@@ -71,10 +71,12 @@ const draft = {
 };
 
 function setup() {
-  http.GET.mockResolvedValue({
-    data: draft,
+  http.GET.mockImplementation(async (path: string) => ({
+    data: path.endsWith("/applications")
+      ? { items: [], next_cursor: null }
+      : draft,
     response: new Response(null, { headers: { ETag: '"v2"' } }),
-  });
+  }));
   const cache = new QueryClient({
     defaultOptions: {
       queries: { retry: false, gcTime: 0 },
@@ -160,4 +162,57 @@ it("keeps the editor's original precondition when a newer draft is fetched", asy
     ),
   ).toEqual(draft.config);
   expect(http.POST).not.toHaveBeenCalled();
+});
+
+it("keeps the same draft editable after application and shows its retained receipt", async () => {
+  const { user } = setup();
+  await user.click(
+    await screen.findByRole("button", { name: "Review and apply" }),
+  );
+  const dialog = within(
+    screen.getByRole("dialog", { name: "Apply reviewed draft" }),
+  );
+  await user.type(
+    dialog.getByLabelText("Reason for applying without verification"),
+    "Reviewed changes",
+  );
+  const receipt = {
+    draft_id: draft.id,
+    reviewed_version: draft.version,
+    reviewed_digest: draft.content_digest,
+    agent_id: "agt_test",
+    agent_revision_id: "arev_applied",
+    agent_version: 8,
+    applied_at: draft.updated_at,
+    no_change: false,
+  };
+  const continued = {
+    ...draft,
+    version: 3,
+    base_agent_version: 8,
+    latest_validation: null,
+    latest_application_receipt: receipt,
+    current_target_to_candidate: [],
+  };
+  http.GET.mockImplementation(async (path: string) => ({
+    data: path.endsWith("/applications")
+      ? { items: [receipt], next_cursor: null }
+      : continued,
+    response: new Response(null, { headers: { ETag: '"v3"' } }),
+  }));
+  http.POST.mockResolvedValue({ data: receipt });
+  await user.click(
+    dialog.getByRole("button", { name: "Apply reviewed configuration" }),
+  );
+  await screen.findByRole("heading", { name: "Configuration draft · v3" });
+  expect(screen.getByRole("button", { name: "Edit draft" })).toBeTruthy();
+  expect(screen.getByText("arev_applied")).toBeTruthy();
+  expect(screen.getByText(draft.id)).toBeTruthy();
+  expect(
+    (
+      screen.getByRole("button", {
+        name: "Review and apply",
+      }) as HTMLButtonElement
+    ).disabled,
+  ).toBe(true);
 });

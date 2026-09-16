@@ -36,12 +36,12 @@ function ConfigurationConversation({ threadId }: { threadId: string }) {
   const cache = useQueryClient(),
     forkKey = useIdempotency();
   const thread = query.data?.thread,
-    latest = query.data?.latest_draft;
+    draft = query.data?.draft;
   const runId =
     params.get("run") ?? thread?.current_run_id ?? thread?.head_run_id;
   const run = useRun(runId),
     currentRun = useRun(thread?.current_run_id);
-  const readiness = useAssistantReadiness(latest?.target_agent_id);
+  const readiness = useAssistantReadiness(draft?.target_agent_id);
   const branches = useQuery({
     queryKey: ["configuration-branches", workspace.id, thread?.session_id],
     enabled: !!thread,
@@ -87,7 +87,7 @@ function ConfigurationConversation({ threadId }: { threadId: string }) {
     },
   });
   if (query.isPending) return <Loading page />;
-  if (!thread || !latest)
+  if (!thread || !draft)
     return (
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
     );
@@ -103,15 +103,20 @@ function ConfigurationConversation({ threadId }: { threadId: string }) {
         error={readiness.error}
         retry={() => void readiness.refetch()}
       />
-      {latest.status !== "open" && (
+      {draft.status !== "open" && (
         <p className={styles.notice}>
           {t(
-            "Your next message starts a new draft. The previous receipt remains available.",
+            "This draft is closed. Start a new conversation to configure another draft.",
           )}
         </p>
       )}
       <Composer
-        disabled={busy || !readiness.data?.ready || !can("run.continue")}
+        disabled={
+          busy ||
+          draft.status !== "open" ||
+          !readiness.data?.ready ||
+          !can("run.continue")
+        }
         label={t("Send to configuration assistant")}
         submit={async (input, key) =>
           accepted(
@@ -157,10 +162,15 @@ function ConfigurationConversation({ threadId }: { threadId: string }) {
             loading={fork.isPending}
             onClick={() => fork.mutate()}
           >
-            {t("Fork configuration")}
+            {t("Fork conversation")}
           </Button>
         )}
       </header>
+      <p className={styles.notice}>
+        {t(
+          "All threads in this conversation edit the same draft. Start a new conversation for an independent candidate.",
+        )}
+      </p>
       <ErrorNotice error={query.error ?? fork.error ?? branches.error} />
       <div className={styles.panes}>
         <div
@@ -190,11 +200,7 @@ function ConfigurationConversation({ threadId }: { threadId: string }) {
             </div>
           )}
         </div>
-        <DraftReview
-          key={latest.id}
-          draftId={latest.id}
-          previousReceipt={query.data?.previous_application_receipt}
-        />
+        <DraftReview key={draft.id} draftId={draft.id} />
       </div>
     </div>
   );

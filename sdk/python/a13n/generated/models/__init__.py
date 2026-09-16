@@ -94,7 +94,9 @@ from .complete_authorization_request import CompleteAuthorizationRequest
 from .complete_email_change_request import CompleteEmailChangeRequest
 from .complete_password_reset_request import CompletePasswordResetRequest
 from .complete_pending_resolution import CompletePendingResolution
+from .configuration_application_collection import ConfigurationApplicationCollection
 from .configuration_application_receipt import ConfigurationApplicationReceipt
+from .configuration_application_receipt_reviewed_mode import ConfigurationApplicationReceiptReviewedMode
 from .configuration_difference import ConfigurationDifference
 from .configuration_draft import ConfigurationDraft
 from .configuration_draft_mode import ConfigurationDraftMode
@@ -754,7 +756,9 @@ __all__ = (
     "CompleteEmailChangeRequest",
     "CompletePasswordResetRequest",
     "CompletePendingResolution",
+    "ConfigurationApplicationCollection",
     "ConfigurationApplicationReceipt",
+    "ConfigurationApplicationReceiptReviewedMode",
     "ConfigurationDifference",
     "ConfigurationDraft",
     "ConfigurationDraftMode",

@@ -34,8 +34,35 @@ pub struct ConfigurationApplicationReceipt {
     #[serde(rename = "no_change")]
     pub no_change: bool,
 
+    #[serde(
+        rename = "reviewed_base_agent_revision_id",
+        deserialize_with = "Option::deserialize"
+    )]
+    pub reviewed_base_agent_revision_id: Option<String>,
+
+    #[serde(
+        rename = "reviewed_base_agent_version",
+        deserialize_with = "Option::deserialize"
+    )]
+    pub reviewed_base_agent_version: Option<i32>,
+
+    #[serde(
+        rename = "reviewed_creation_metadata",
+        deserialize_with = "Option::deserialize"
+    )]
+    pub reviewed_creation_metadata: Option<Box<models::CreationMetadata>>,
+
     #[serde(rename = "reviewed_digest")]
     pub reviewed_digest: String,
+
+    #[serde(rename = "reviewed_mode")]
+    pub reviewed_mode: ReviewedMode,
+
+    #[serde(
+        rename = "reviewed_target_agent_id",
+        deserialize_with = "Option::deserialize"
+    )]
+    pub reviewed_target_agent_id: Option<String>,
 
     #[serde(rename = "reviewed_version")]
     pub reviewed_version: i32,
@@ -64,7 +91,12 @@ impl ConfigurationApplicationReceipt {
         applied_by_user_id: String,
         draft_id: String,
         no_change: bool,
+        reviewed_base_agent_revision_id: Option<String>,
+        reviewed_base_agent_version: Option<i32>,
+        reviewed_creation_metadata: Option<models::CreationMetadata>,
         reviewed_digest: String,
+        reviewed_mode: ReviewedMode,
+        reviewed_target_agent_id: Option<String>,
         reviewed_version: i32,
     ) -> ConfigurationApplicationReceipt {
         ConfigurationApplicationReceipt {
@@ -75,10 +107,33 @@ impl ConfigurationApplicationReceipt {
             applied_by_user_id,
             draft_id,
             no_change,
+            reviewed_base_agent_revision_id,
+            reviewed_base_agent_version,
+            reviewed_creation_metadata: if let Some(x) = reviewed_creation_metadata {
+                Some(Box::new(x))
+            } else {
+                None
+            },
             reviewed_digest,
+            reviewed_mode,
+            reviewed_target_agent_id,
             reviewed_version,
             verification_acknowledgement: None,
             verification_run_ids: None,
         }
+    }
+}
+///
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum ReviewedMode {
+    #[serde(rename = "create")]
+    Create,
+    #[serde(rename = "update")]
+    Update,
+}
+
+impl Default for ReviewedMode {
+    fn default() -> ReviewedMode {
+        Self::Create
     }
 }

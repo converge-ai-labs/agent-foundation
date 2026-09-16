@@ -132,9 +132,10 @@ async def authorize_session(
     record = await session.scalar(query.with_for_update() if lock else query)
     if record is None or actor.principal.principal_type is not PrincipalType.user:
         raise AuthorizationError("configuration_not_found", concealed=True)
-    await authorize_target(
-        session, actor=actor, target_agent_id=record.configuration_target_agent_id, write=write, action=action
-    )
+    draft = await session.get(ConfigurationDraftRecord, record.configuration_draft_id)
+    if draft is None or draft.session_id != record.id or draft.workspace_id != record.workspace_id:
+        raise AuthorizationError("configuration_not_found", concealed=True)
+    await authorize_target(session, actor=actor, target_agent_id=draft.target_agent_id, write=write, action=action)
     return record
 
 
@@ -164,14 +165,10 @@ async def authorize_execution(
         or conversation.configuration_owner_user_id != principal.principal_id
         or thread.session_id != conversation.id
         or thread.organization_id != organization_id
-        or draft.thread_id != thread.id
+        or conversation.configuration_draft_id != draft.id
         or draft.session_id != conversation.id
         or draft.workspace_id != workspace_id
         or draft.organization_id != organization_id
-        or draft.owner_user_id != principal.principal_id
-        or draft.mode != context.mode
-        or draft.target_agent_id != context.target_agent_id
-        or draft.source_agent_revision_id != context.source_agent_revision_id
         or agent.workspace_id != workspace_id
         or agent.organization_id != organization_id
         or agent.system_purpose != "configuration_assistant"
@@ -180,7 +177,7 @@ async def authorize_execution(
         or agent.archived_at is not None
     ):
         raise AuthorizationError("configuration_not_found", concealed=True)
-    if context.target_agent_id is None:
+    if draft.target_agent_id is None:
         await authorize_persisted_workspace_principal_action(
             session,
             principal=principal,
@@ -190,7 +187,7 @@ async def authorize_execution(
             snapshot=snapshot,
         )
     else:
-        target = await session.get(AgentRecord, context.target_agent_id)
+        target = await session.get(AgentRecord, draft.target_agent_id)
         if target is None or target.workspace_id != workspace_id or target.system_purpose is not None:
             raise AuthorizationError("configuration_not_found", concealed=True)
         await authorize_persisted_agent_principal_actions(
@@ -211,32 +208,14 @@ async def authorize_invocation(
     agent_id: str,
     context: ConfigurationRunContext,
 ) -> AuthorizedWorkspace:
-    """Authorize preparation, including a successor staged for atomic acceptance."""
+    """Authorize the stable draft binding of a protected assistant invocation."""
     conversation = await authorize_session(session, actor=actor, session_id=context.session_id)
-    thread = await session.get(ThreadRecord, context.thread_id)
-    agent = await session.get(AgentRecord, agent_id)
-    if (
-        thread is None
-        or thread.session_id != conversation.id
-        or agent is None
-        or agent.workspace_id != actor.workspace_id
-        or agent.system_purpose != "configuration_assistant"
-    ):
-        raise AuthorizationError("configuration_not_found", concealed=True)
-    draft = await session.get(ConfigurationDraftRecord, context.draft_id)
-    if draft is not None:
-        await authorize_execution(
-            session,
-            principal=actor.principal,
-            organization_id=conversation.organization_id,
-            workspace_id=conversation.workspace_id,
-            agent_id=agent_id,
-            context=context,
-        )
-    elif (
-        thread.configuration_active_draft_id is not None
-        or context.initial_draft_version != 1
-        or context.target_agent_id != conversation.configuration_target_agent_id
-    ):
-        raise AuthorizationError("configuration_not_found", concealed=True)
+    await authorize_execution(
+        session,
+        principal=actor.principal,
+        organization_id=conversation.organization_id,
+        workspace_id=conversation.workspace_id,
+        agent_id=agent_id,
+        context=context,
+    )
     return AuthorizedWorkspace(conversation.organization_id, conversation.workspace_id, actor)

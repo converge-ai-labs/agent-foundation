@@ -22,6 +22,15 @@ pub enum GetConfigurationDraftsDraftIdError {
     UnknownValue(serde_json::Value),
 }
 
+/// struct for typed errors of method [`get_configuration_drafts_draft_id_applications`]
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum GetConfigurationDraftsDraftIdApplicationsError {
+    Status400(models::ErrorResponse),
+    DefaultResponse(models::ErrorResponse),
+    UnknownValue(serde_json::Value),
+}
+
 /// struct for typed errors of method [`get_configuration_sessions_session_id`]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -187,6 +196,86 @@ pub async fn get_configuration_drafts_draft_id(
     } else {
         let content = resp.text().await?;
         let entity: Option<GetConfigurationDraftsDraftIdError> =
+            serde_json::from_str(&content).ok();
+        Err(Error::ResponseError(Box::new(ResponseContent {
+            status,
+            headers,
+            content,
+            entity,
+        })))
+    }
+}
+
+pub async fn get_configuration_drafts_draft_id_applications(
+    configuration: &configuration::Configuration,
+    draft_id: &str,
+    limit: Option<i32>,
+    cursor: Option<&str>,
+) -> Result<
+    Response<models::ConfigurationApplicationCollection>,
+    Error<GetConfigurationDraftsDraftIdApplicationsError>,
+> {
+    // add a prefix to parameters to efficiently prevent name collisions
+    let p_path_draft_id = draft_id;
+    let p_query_limit = limit;
+    let p_query_cursor = cursor;
+
+    let uri_str = format!(
+        "{}/api/v1/configuration-drafts/{draft_id}/applications",
+        configuration.base_path,
+        draft_id = crate::generated::apis::urlencode(p_path_draft_id)
+    );
+    let mut req_builder = configuration.client.request(reqwest::Method::GET, &uri_str);
+
+    if let Some(ref param_value) = p_query_limit {
+        req_builder = req_builder.query(&[("limit", &param_value.to_string())]);
+    }
+    if let Some(ref param_value) = p_query_cursor {
+        req_builder = req_builder.query(&[("cursor", &param_value.to_string())]);
+    }
+    if let Some(ref user_agent) = configuration.user_agent {
+        req_builder = req_builder.header(reqwest::header::USER_AGENT, user_agent.clone());
+    }
+    if let Some(ref token) = configuration.bearer_access_token {
+        req_builder = req_builder.bearer_auth(token.to_owned());
+    };
+
+    let req = req_builder.build()?;
+    let resp = configuration.client.execute(req).await?;
+
+    let status = resp.status();
+    let headers = resp.headers().clone();
+    let content_type = resp
+        .headers()
+        .get("content-type")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("application/octet-stream");
+    let content_type = super::ContentType::from(content_type);
+
+    if !status.is_client_error() && !status.is_server_error() {
+        let content = resp.text().await?;
+        match content_type {
+            ContentType::Json => serde_json::from_str(&content)
+                .map(|data| Response {
+                    data,
+                    status,
+                    headers,
+                })
+                .map_err(Error::from),
+            ContentType::Text => {
+                return Err(Error::from(serde_json::Error::custom(
+                    "Received `text/plain` content type response that cannot be converted to `models::ConfigurationApplicationCollection`",
+                )));
+            }
+            ContentType::Unsupported(unknown_type) => {
+                return Err(Error::from(serde_json::Error::custom(format!(
+                    "Received `{unknown_type}` content type response that cannot be converted to `models::ConfigurationApplicationCollection`"
+                ))));
+            }
+        }
+    } else {
+        let content = resp.text().await?;
+        let entity: Option<GetConfigurationDraftsDraftIdApplicationsError> =
             serde_json::from_str(&content).ok();
         Err(Error::ResponseError(Box::new(ResponseContent {
             status,

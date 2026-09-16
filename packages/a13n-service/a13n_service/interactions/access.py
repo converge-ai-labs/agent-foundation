@@ -28,6 +28,7 @@ async def configuration_visibility(
     action: WorkspaceAction,
 ):
     """A SQL predicate for configuration Sessions, applied before pagination."""
+    from a13n_service.agent_configuration.models import ConfigurationDraftRecord
     from a13n_service.agents.models import AgentRecord
 
     if actor.principal.principal_type is not PrincipalType.user:
@@ -41,7 +42,7 @@ async def configuration_visibility(
     target = (
         select(AgentRecord.id)
         .where(
-            AgentRecord.id == SessionRecord.configuration_target_agent_id,
+            AgentRecord.id == ConfigurationDraftRecord.target_agent_id,
             AgentRecord.organization_id == organization_id,
             AgentRecord.workspace_id == workspace_id,
             AgentRecord.system_purpose.is_(None),
@@ -50,10 +51,19 @@ async def configuration_visibility(
         .exists()
     )
     creation = {WorkspaceAction.agent_create, action}.issubset(permissions.workspace_actions)
-    return and_(
-        SessionRecord.configuration_owner_user_id == actor.principal.principal_id,
-        or_(target, and_(SessionRecord.configuration_target_agent_id.is_(None), true() if creation else false())),
+    draft_scope = (
+        select(ConfigurationDraftRecord.id)
+        .where(
+            ConfigurationDraftRecord.id == SessionRecord.configuration_draft_id,
+            ConfigurationDraftRecord.session_id == SessionRecord.id,
+            ConfigurationDraftRecord.workspace_id == workspace_id,
+            ConfigurationDraftRecord.organization_id == organization_id,
+            or_(target, and_(ConfigurationDraftRecord.target_agent_id.is_(None), true() if creation else false())),
+        )
+        .correlate(SessionRecord)
+        .exists()
     )
+    return and_(SessionRecord.configuration_owner_user_id == actor.principal.principal_id, draft_scope)
 
 
 _READ_ACTIONS = frozenset(

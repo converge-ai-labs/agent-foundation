@@ -5,7 +5,7 @@ from a13n_service.agent_configuration.conversations import ConfigurationConversa
 from a13n_service.agent_configuration.definition import load_definition
 from a13n_service.agent_configuration.drafts import ConfigurationDrafts
 from a13n_service.agent_configuration.inputs import ConfigurationInputs
-from a13n_service.agent_configuration.knowledge import KnowledgeBundles
+from a13n_service.agent_configuration.knowledge import KnowledgeFiles
 from a13n_service.agent_configuration.readiness import ConfigurationReadiness
 from a13n_service.agent_configuration.review import ConfigurationReviews
 from a13n_service.agent_configuration.service import ConfigurationService
@@ -51,9 +51,9 @@ def build_configuration_service(
             states,
             CommandInput(sessions, assets, EndpointPolicy()),
             readiness,
-            SystemConfigurationAgent(sessions, resolver, definition),
+            SystemConfigurationAgent(sessions, definition),
             definition,
-            KnowledgeBundles(),
+            KnowledgeFiles(),
             execution_max_attempts=settings.gateway.run_execution_max_attempts,
             max_handoffs=settings.gateway.run_max_handoffs,
             queue_name=settings.gateway.run_queue_name,

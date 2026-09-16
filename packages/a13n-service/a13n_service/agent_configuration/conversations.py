@@ -20,8 +20,7 @@ from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .authorization import authorize_session, authorize_target
-from .context import ConfigurationApplicationReceipt
-from .domain import ConfigurationDraft
+from .domain import ConfigurationDraft, new_draft_id
 from .models import ConfigurationDraftRecord
 from .persistence import create_draft, failure, not_found
 from .requests import CreateConfigurationThreadRequest, CreateSessionRequest
@@ -32,7 +31,7 @@ class ConfigurationSessionView(StrictModel):
     organization_id: str
     workspace_id: str
     owner_user_id: str
-    target_agent_id: str | None
+    configuration_draft_id: str
     root_thread_id: str
     created_at: datetime
     updated_at: datetime
@@ -40,9 +39,7 @@ class ConfigurationSessionView(StrictModel):
 
 class ConfigurationThreadView(StrictModel):
     thread: Thread
-    active_draft_id: str | None
-    latest_draft: ConfigurationDraft
-    previous_application_receipt: ConfigurationApplicationReceipt | None
+    draft: ConfigurationDraft
 
 
 class ConfigurationSessionCollection(StrictModel):
@@ -90,7 +87,7 @@ class ConfigurationConversations:
                 organization_id=workspace.organization_id,
                 workspace_id=workspace.id,
                 configuration_owner_user_id=actor.principal.principal_id,
-                configuration_target_agent_id=request.target_agent_id,
+                configuration_draft_id=new_draft_id(),
                 labels={},
                 created_at=now,
                 updated_at=now,
@@ -111,7 +108,9 @@ class ConfigurationConversations:
             )
             session.add(thread)
             await session.flush()
-            await create_draft(session, conversation=conversation, thread=thread, source=request.source, now=now)
+            await create_draft(
+                session, conversation=conversation, target_id=request.target_agent_id, source=request.source, now=now
+            )
             result = session_view(conversation, root_thread_id=thread.id)
             session.add(
                 evidence_record(
@@ -186,7 +185,9 @@ class ConfigurationConversations:
             if source is None or source.session_id != session_id or source.configuration_context is None:
                 raise not_found()
             if source.status != "completed":
-                raise failure("run_not_forkable", "A new editing approach requires a completed configuration Run.")
+                raise failure(
+                    "run_not_forkable", "Forking a configuration Thread requires a completed configuration Run."
+                )
             now = self._clock()
             thread = ThreadRecord(
                 id=new_thread_id(),
@@ -203,8 +204,6 @@ class ConfigurationConversations:
                 updated_at=now,
             )
             session.add(thread)
-            await session.flush()
-            await create_draft(session, conversation=conversation, thread=thread, source=request.source, now=now)
             await session.flush()
             result = await thread_view(session, thread)
             session.add(
@@ -243,22 +242,23 @@ class ConfigurationConversations:
             required = {WorkspaceAction.agent_read, WorkspaceAction.session_read}
             target_ids = [key for key, _ in permissions.agent_actions if required.issubset(permissions.for_agent(key))]
             target_access = (
-                SessionRecord.configuration_target_agent_id.is_not(None)
+                ConfigurationDraftRecord.target_agent_id.is_not(None)
                 if required.issubset(permissions.workspace_actions)
-                else SessionRecord.configuration_target_agent_id.in_(target_ids)
+                else ConfigurationDraftRecord.target_agent_id.in_(target_ids)
             )
             create_access = {WorkspaceAction.agent_create, WorkspaceAction.session_read}.issubset(
                 permissions.workspace_actions
             )
             query = (
                 select(SessionRecord, ThreadRecord.id)
+                .join(ConfigurationDraftRecord, ConfigurationDraftRecord.id == SessionRecord.configuration_draft_id)
                 .join(ThreadRecord, and_(ThreadRecord.session_id == SessionRecord.id, ThreadRecord.role == "root"))
                 .where(
                     SessionRecord.workspace_id == workspace.id,
                     SessionRecord.configuration_owner_user_id == actor.principal.principal_id,
                     or_(
                         target_access,
-                        and_(SessionRecord.configuration_target_agent_id.is_(None), literal(create_access)),
+                        and_(ConfigurationDraftRecord.target_agent_id.is_(None), literal(create_access)),
                     ),
                 )
             )
@@ -327,13 +327,13 @@ def cursor_boundary(cursor: str | None, *, scope: dict[str, object], prefix: str
 
 
 def session_view(record: SessionRecord, *, root_thread_id: str) -> ConfigurationSessionView:
-    assert record.configuration_owner_user_id is not None
+    assert record.configuration_owner_user_id is not None and record.configuration_draft_id is not None
     return ConfigurationSessionView(
         id=record.id,
         organization_id=record.organization_id,
         workspace_id=record.workspace_id,
         owner_user_id=record.configuration_owner_user_id,
-        target_agent_id=record.configuration_target_agent_id,
+        configuration_draft_id=record.configuration_draft_id,
         root_thread_id=root_thread_id,
         created_at=assume_utc(record.created_at),
         updated_at=assume_utc(record.updated_at),
@@ -341,20 +341,10 @@ def session_view(record: SessionRecord, *, root_thread_id: str) -> Configuration
 
 
 async def thread_view(session: AsyncSession, record: ThreadRecord) -> ConfigurationThreadView:
-    draft = await session.get(ConfigurationDraftRecord, record.configuration_latest_draft_id)
+    conversation = await session.get(SessionRecord, record.session_id)
+    if conversation is None or conversation.configuration_draft_id is None:
+        raise not_found()
+    draft = await session.get(ConfigurationDraftRecord, conversation.configuration_draft_id)
     if draft is None:
         raise not_found()
-    predecessor = (
-        None
-        if draft.predecessor_draft_id is None
-        else await session.get(ConfigurationDraftRecord, draft.predecessor_draft_id)
-    )
-    receipt = draft.application_receipt or (None if predecessor is None else predecessor.application_receipt)
-    return ConfigurationThreadView(
-        thread=record.to_resource(),
-        active_draft_id=record.configuration_active_draft_id,
-        latest_draft=draft.to_resource(),
-        previous_application_receipt=None
-        if receipt is None
-        else ConfigurationApplicationReceipt.model_validate(receipt),
-    )
+    return ConfigurationThreadView(thread=record.to_resource(), draft=draft.to_resource())

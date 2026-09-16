@@ -57,6 +57,8 @@ export function AgentDetail() {
           signal,
         }),
       );
+      if (!resource.value.current_revision_id)
+        throw new Error(t("Agent configuration is unavailable."));
       const revision = data(
         await client.http.GET("/api/v1/agent-revisions/{agent_revision_id}", {
           params: {

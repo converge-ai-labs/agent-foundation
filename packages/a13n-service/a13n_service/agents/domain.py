@@ -400,7 +400,7 @@ class Agent(StrictModel):
     description: str | None
     labels: Labels = Field(default_factory=dict)
     version: int = Field(ge=1)
-    current_revision_id: ObjectId
+    current_revision_id: ObjectId | None
     enabled: bool
     archived_at: datetime | None
     duplicated_from_agent_id: ObjectId | None
@@ -409,6 +409,15 @@ class Agent(StrictModel):
     updated_by: ActorRef
     created_at: datetime
     updated_at: datetime
+
+    @model_validator(mode="after")
+    def revision_source_is_coherent(self) -> Agent:
+        if self.system_purpose == "configuration_assistant":
+            if self.source is not AgentSource.builtin or self.current_revision_id is not None or self.version != 1:
+                raise ValueError("The configuration assistant has one stable identity without Revisions")
+        elif self.current_revision_id is None:
+            raise ValueError("Ordinary Agents require a current Revision")
+        return self
 
 
 class AgentRevision(StrictModel):

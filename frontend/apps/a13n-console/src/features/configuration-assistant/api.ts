@@ -59,3 +59,20 @@ export function useAssistantReadiness(target?: string | null) {
         .then(data),
   });
 }
+
+export function useConfigurationApplications(draftId: string, cursor?: string) {
+  const client = useClient(),
+    { workspace } = useWorkspace();
+  return useQuery({
+    queryKey: ["configuration-applications", workspace.id, draftId, cursor],
+    refetchInterval: 3000,
+    queryFn: ({ signal }) =>
+      client.http
+        .GET("/api/v1/configuration-drafts/{draft_id}/applications", {
+          params: { path: { draft_id: draftId }, query: { limit: 10, cursor } },
+          headers: workspaceHeaders(workspace.id),
+          signal,
+        })
+        .then(data),
+  });
+}

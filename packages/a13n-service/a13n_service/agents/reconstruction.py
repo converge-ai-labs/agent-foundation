@@ -79,7 +79,7 @@ class AgentDefinitionReconstructionContext:
     """Frozen node facts available to trusted definition-Capability composition."""
 
     agent_id: str
-    agent_revision_id: str
+    agent_revision_id: str | None
     content_digest: str
     is_root: bool
     config: EffectiveAgentConfig
@@ -126,7 +126,7 @@ class AgentReconstructor:
         self,
         *,
         agent_id: str,
-        agent_revision_id: str,
+        agent_revision_id: str | None,
         effective_config: EffectiveAgentConfig,
         subagent_capability: SubagentCapability,
         prepared_plugins: PreparedAgentPlugins,
@@ -153,7 +153,7 @@ class AgentReconstructor:
         self,
         *,
         agent_id: str,
-        agent_revision_id: str,
+        agent_revision_id: str | None,
         effective_config: EffectiveAgentConfig,
         subagent_capability: SubagentCapability,
         prepared_plugins: PreparedAgentPlugins,
@@ -168,7 +168,7 @@ class AgentReconstructor:
             effective_config.subagent_mode == "async"
         ):
             raise AgentDefinitionReconstructionError("subagent_mode_mismatch")
-        pending: list[tuple[str, EffectiveAgentConfig, PreparedAgentPlugins, tuple[str, ...]]] = [
+        pending: list[tuple[str | None, EffectiveAgentConfig, PreparedAgentPlugins, tuple[str | None, ...]]] = [
             (agent_revision_id, effective_config, prepared_plugins, ())
         ]
         count = 0

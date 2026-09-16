@@ -8,7 +8,7 @@ from typing import Literal
 import yaml
 from pydantic import Field, JsonValue, ValidationError
 
-from .context import BuiltinSkillBundleRef, StrictModel
+from .context import StrictModel
 from .persistence import failure
 
 ASSETS = Path(__file__).parent / "assets"
@@ -36,11 +36,9 @@ class ModelPreference(StrictModel):
 
 class AssistantDefinition(StrictModel):
     schema_version: Literal["1"]
-    generation: int = Field(ge=1)
     name: Literal["Agent Configuration Assistant"]
     instructions: str = Field(min_length=1, max_length=32 * 1024)
     tools: tuple[str, ...] = Field(min_length=1, max_length=32)
-    knowledge_bundle: BuiltinSkillBundleRef
     preferences: tuple[ModelPreference, ...] = Field(min_length=1, max_length=16)
     request_limit: int = Field(ge=1, le=100)
     total_tokens_limit: int = Field(ge=1, le=1_000_000)

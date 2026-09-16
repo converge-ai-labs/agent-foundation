@@ -15,21 +15,10 @@ use serde::{Deserialize, Serialize};
 pub struct CreateConfigurationThreadRequest {
     #[serde(rename = "fork_from_run_id")]
     pub fork_from_run_id: String,
-
-    #[serde(
-        rename = "source",
-        default,
-        with = "::serde_with::rust::double_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub source: Option<Option<Box<models::SourceSelection>>>,
 }
 
 impl CreateConfigurationThreadRequest {
     pub fn new(fork_from_run_id: String) -> CreateConfigurationThreadRequest {
-        CreateConfigurationThreadRequest {
-            fork_from_run_id,
-            source: None,
-        }
+        CreateConfigurationThreadRequest { fork_from_run_id }
     }
 }

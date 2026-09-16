@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from a13n_logging import get_logger
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.domain import new_agent_id, new_agent_revision_id
@@ -17,18 +17,21 @@ from a13n_service.agents.persistence import (
     touch_agent,
 )
 from a13n_service.agents.resolution import AgentResolver, resolution_error
+from a13n_service.collection_cursors import encode_time_cursor
+from a13n_service.durable_operations.idempotency import IdempotencyIdentity
 from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.durable_operations.requests import evidence_record, load_replay, request_identity
 from a13n_service.iam import AuthenticatedActor
 from a13n_service.ids import new_object_id
-from a13n_service.interactions.models import ThreadRecord
 from a13n_service.resource_keys import insert_with_key
-from a13n_service.storage import transaction
+from a13n_service.storage import short_session, transaction
 from a13n_service.temporal import Clock, next_updated_at, utc_now
 
-from .context import ConfigurationApplicationReceipt
+from .context import StrictModel
+from .conversations import cursor_boundary
+from .domain import ConfigurationApplicationReceipt
 from .drafts import audit_draft
-from .models import ConfigurationDraftRecord
+from .models import ConfigurationApplicationRecord, ConfigurationDraftRecord
 from .persistence import failure, load_owned_draft, require_open
 from .requests import ApplyDraftRequest
 from .validation import dependency_digest
@@ -36,11 +39,49 @@ from .validation import dependency_digest
 logger = get_logger(__name__)
 
 
+class ConfigurationApplicationCollection(StrictModel):
+    items: tuple[ConfigurationApplicationReceipt, ...]
+    next_cursor: str | None
+
+
 class ConfigurationApplication:
     def __init__(
         self, sessions: async_sessionmaker[AsyncSession], resolver: AgentResolver, *, clock: Clock = utc_now
     ) -> None:
         self._sessions, self._resolver, self._clock = sessions, resolver, clock
+
+    async def list_applications(
+        self, *, actor: AuthenticatedActor, draft_id: str, limit: int, cursor: str | None
+    ) -> ConfigurationApplicationCollection:
+        scope: dict[str, object] = {"draft_id": draft_id, "owner": actor.principal.principal_id}
+        after = cursor_boundary(cursor, scope=scope, prefix="capply_")
+        async with short_session(self._sessions) as session:
+            await load_owned_draft(session, actor=actor, draft_id=draft_id, write=False)
+            query = select(ConfigurationApplicationRecord).where(ConfigurationApplicationRecord.draft_id == draft_id)
+            if after is not None:
+                query = query.where(
+                    or_(
+                        ConfigurationApplicationRecord.created_at < after[0],
+                        and_(
+                            ConfigurationApplicationRecord.created_at == after[0],
+                            ConfigurationApplicationRecord.id < after[1],
+                        ),
+                    )
+                )
+            rows = tuple(
+                await session.scalars(
+                    query.order_by(
+                        ConfigurationApplicationRecord.created_at.desc(), ConfigurationApplicationRecord.id.desc()
+                    ).limit(limit + 1)
+                )
+            )
+            page = rows[:limit]
+            return ConfigurationApplicationCollection(
+                items=tuple(row.to_resource() for row in page),
+                next_cursor=encode_time_cursor(page[-1].created_at, page[-1].id, scope=scope)
+                if len(rows) > limit
+                else None,
+            )
 
     async def apply(
         self,
@@ -53,20 +94,12 @@ class ConfigurationApplication:
     ) -> ConfigurationApplicationReceipt:
         identity = request_identity(idempotency_key, request)
         async with transaction(self._sessions, sqlite_immediate=True) as session:
-            _, _, record = await load_owned_draft(session, actor=actor, draft_id=draft_id, write=True)
-            retained = retained_receipt(record, key_digest=identity.key_digest, request_digest=identity.request_digest)
+            _, record = await load_owned_draft(session, actor=actor, draft_id=draft_id, write=True, lock=True)
+            retained = await application_replay(
+                session, actor=actor, record=record, request=request, identity=identity, now=self._clock()
+            )
             if retained is not None:
                 return retained
-            replay = await load_replay(
-                session,
-                actor=actor,
-                operation="configuration.draft.apply",
-                scope_id=draft_id,
-                identity=identity,
-                now=self._clock(),
-            )
-            if replay is not None:
-                return replay.restore(ConfigurationApplicationReceipt)
             require_review(record, request=request, if_match=if_match)
             candidate = record.to_resource()
         assert candidate.config is not None
@@ -83,47 +116,17 @@ class ConfigurationApplication:
         except Exception as error:
             raise resolution_error(error) from error
         async with transaction(self._sessions, sqlite_immediate=True) as session:
-            conversation, _, record = await load_owned_draft(
+            conversation, record = await load_owned_draft(
                 session, actor=actor, draft_id=draft_id, write=True, lock=True
             )
-            retained = retained_receipt(record, key_digest=identity.key_digest, request_digest=identity.request_digest)
+            retained = await application_replay(
+                session, actor=actor, record=record, request=request, identity=identity, now=self._clock()
+            )
             if retained is not None:
                 return retained
-            replay = await load_replay(
-                session,
-                actor=actor,
-                operation="configuration.draft.apply",
-                scope_id=draft_id,
-                identity=identity,
-                now=self._clock(),
-            )
-            if replay is not None:
-                return replay.restore(ConfigurationApplicationReceipt)
             require_review(record, request=request, if_match=if_match)
-            # The Session lock serializes every draft operation, including competing
-            # create-mode Threads. Lock children before touching the business head.
-            threads = tuple(
-                await session.scalars(
-                    select(ThreadRecord)
-                    .where(ThreadRecord.session_id == conversation.id)
-                    .order_by(ThreadRecord.id)
-                    .with_for_update()
-                )
-            )
-            siblings = tuple(
-                await session.scalars(
-                    select(ConfigurationDraftRecord)
-                    .where(ConfigurationDraftRecord.session_id == conversation.id)
-                    .order_by(ConfigurationDraftRecord.id)
-                    .with_for_update()
-                )
-            )
-            now = self._clock()
+            now = next_updated_at(record.updated_at, self._clock())
             if record.mode == "create":
-                if conversation.configuration_target_agent_id is not None:
-                    raise failure(
-                        "configuration_target_resolved", "This configuration Session already created its target."
-                    )
                 assert candidate.creation_metadata is not None
                 target = AgentRecord(
                     id=agent_id,
@@ -164,6 +167,7 @@ class ConfigurationApplication:
             no_change = False
             if record.mode == "create":
                 await insert_with_key(session, target, prefix="agent")
+            assert target.current_revision_id is not None
             revision = new_revision(
                 target,
                 revision_id=target.current_revision_id if record.mode == "create" else new_agent_revision_id(),
@@ -194,6 +198,11 @@ class ConfigurationApplication:
                 draft_id=record.id,
                 reviewed_version=record.version,
                 reviewed_digest=record.content_digest,
+                reviewed_mode=candidate.mode,
+                reviewed_target_agent_id=candidate.target_agent_id,
+                reviewed_base_agent_revision_id=candidate.base_agent_revision_id,
+                reviewed_base_agent_version=candidate.base_agent_version,
+                reviewed_creation_metadata=candidate.creation_metadata,
                 agent_id=target.id,
                 agent_revision_id=revision.id,
                 agent_version=revision.version,
@@ -203,24 +212,27 @@ class ConfigurationApplication:
                 verification_acknowledgement=request.verification_acknowledgement,
                 verification_run_ids=request.verification_run_ids,
             )
-            record.status = "applied"
-            record.application_receipt = receipt.model_dump(mode="json")
-            record.applied_agent_revision_id = revision.id
-            record.application_key_hash, record.application_request_digest = (
-                identity.key_digest,
-                identity.request_digest,
+            application = ConfigurationApplicationRecord(
+                id=new_object_id("capply"),
+                draft_id=record.id,
+                organization_id=record.organization_id,
+                workspace_id=record.workspace_id,
+                reviewed_version=record.version,
+                agent_revision_id=revision.id,
+                key_hash=identity.key_digest,
+                request_digest=identity.request_digest,
+                receipt=receipt.model_dump(mode="json"),
+                created_at=now,
             )
+            session.add(application)
+            record.mode = "update"
+            record.target_agent_id = target.id
+            record.base_agent_revision_id = revision.id
+            record.base_agent_version = target.version
+            record.version += 1
+            record.latest_validation = None
+            record.evidence_refs = []
             record.updated_at = next_updated_at(record.updated_at, now)
-            if record.mode == "create":
-                conversation.configuration_target_agent_id = target.id
-                for sibling in siblings:
-                    if sibling.id != record.id and sibling.mode == "create" and sibling.status == "open":
-                        sibling.status, sibling.terminal_reason = "discarded", "target_resolved"
-                        sibling.updated_at = next_updated_at(sibling.updated_at, now)
-            closed_ids = {item.id for item in siblings if item.status != "open"}
-            for thread in threads:
-                if thread.configuration_active_draft_id in closed_ids:
-                    thread.configuration_active_draft_id = None
             conversation.updated_at = next_updated_at(conversation.updated_at, now)
             session.add(
                 evidence_record(
@@ -241,9 +253,9 @@ class ConfigurationApplication:
                 OutboxRecord(
                     id=new_object_id("out"),
                     source_kind="configuration_application",
-                    source_id=record.id,
+                    source_id=application.id,
                     destination_kind="native.notification",
-                    destination_ref=record.id,
+                    destination_ref=application.id,
                     status="pending",
                     available_at=now,
                     claim_generation=0,
@@ -279,14 +291,74 @@ class ConfigurationApplication:
         return receipt
 
 
-def retained_receipt(
-    record: ConfigurationDraftRecord, *, key_digest: str, request_digest: str
+async def application_replay(
+    session: AsyncSession,
+    *,
+    actor: AuthenticatedActor,
+    record: ConfigurationDraftRecord,
+    request: ApplyDraftRequest,
+    identity: IdempotencyIdentity,
+    now,
 ) -> ConfigurationApplicationReceipt | None:
-    if record.status != "applied":
-        return None
-    if record.application_key_hash != key_digest or record.application_request_digest != request_digest:
-        raise failure("configuration_already_applied", "The draft was already applied; read its retained receipt.")
-    return ConfigurationApplicationReceipt.model_validate(record.application_receipt)
+    replay = await load_replay(
+        session, actor=actor, operation="configuration.draft.apply", scope_id=record.id, identity=identity, now=now
+    )
+    retained = await retained_receipt(
+        session,
+        draft_id=record.id,
+        reviewed_version=request.expected_version,
+        key_digest=identity.key_digest,
+        request_digest=identity.request_digest,
+    )
+    if replay is not None:
+        return replay.restore(ConfigurationApplicationReceipt)
+    if retained is not None:
+        # Bind a semantic replay's key through the shared command retention window.
+        session.add(
+            evidence_record(
+                actor=actor,
+                organization_id=record.organization_id,
+                workspace_id=record.workspace_id,
+                operation="configuration.draft.apply",
+                scope_id=record.id,
+                identity=identity,
+                result_kind="configuration_application",
+                result_ref=record.id,
+                now=now,
+                response=retained,
+            )
+        )
+    return retained
+
+
+async def retained_receipt(
+    session: AsyncSession, *, draft_id: str, reviewed_version: int, key_digest: str, request_digest: str
+) -> ConfigurationApplicationReceipt | None:
+    records = tuple(
+        await session.scalars(
+            select(ConfigurationApplicationRecord).where(
+                ConfigurationApplicationRecord.draft_id == draft_id,
+                or_(
+                    ConfigurationApplicationRecord.reviewed_version == reviewed_version,
+                    ConfigurationApplicationRecord.key_hash == key_digest,
+                ),
+            )
+        )
+    )
+    receipt = None
+    for record in records:
+        if record.key_hash == key_digest and record.request_digest != request_digest:
+            raise failure(
+                "idempotency_conflict", "The Idempotency-Key was already used with different request content."
+            )
+        if record.reviewed_version == reviewed_version:
+            if record.request_digest != request_digest:
+                raise failure(
+                    "configuration_application_conflict",
+                    "This draft version already has a different application request.",
+                )
+            receipt = record.to_resource()
+    return receipt
 
 
 def require_review(record: ConfigurationDraftRecord, *, request: ApplyDraftRequest, if_match: str) -> None:

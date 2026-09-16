@@ -21,7 +21,8 @@ import {
 } from "../../shared/feedback";
 import { JsonView } from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
-import { useConfigurationDraft } from "./api";
+import { Pagination, useCursor } from "../../shared/collection";
+import { useConfigurationApplications, useConfigurationDraft } from "./api";
 import styles from "./configuration.module.css";
 
 type Review = Schema["ConfigurationDraftReview"];
@@ -98,13 +99,24 @@ function Receipt({
   );
 }
 
-export function DraftReview({
-  draftId,
-  previousReceipt,
-}: {
-  draftId: string;
-  previousReceipt?: Schema["ConfigurationApplicationReceipt"] | null;
-}) {
+function ApplicationHistory({ draftId }: { draftId: string }) {
+  const { t } = useTranslation(),
+    page = useCursor();
+  const history = useConfigurationApplications(draftId, page.cursor);
+  return (
+    <DisclosureSection title={t("Application history")}>
+      {history.isPending && <Loading />}
+      <ErrorNotice error={history.error} retry={() => void history.refetch()} />
+      {history.data?.items.map((receipt) => (
+        <Receipt key={receipt.reviewed_version} receipt={receipt} />
+      ))}
+      {history.data?.items.length === 0 && <p>{t("No applications yet")}</p>}
+      <Pagination page={page} next={history.data?.next_cursor} />
+    </DisclosureSection>
+  );
+}
+
+export function DraftReview({ draftId }: { draftId: string }) {
   const query = useConfigurationDraft(draftId),
     { t } = useTranslation();
   if (query.isPending)
@@ -158,14 +170,10 @@ export function DraftReview({
         </p>
       )}
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
-      {draft.application_receipt && (
-        <Receipt receipt={draft.application_receipt} />
+      {draft.latest_application_receipt && (
+        <Receipt receipt={draft.latest_application_receipt} />
       )}
-      {previousReceipt && previousReceipt.draft_id !== draft.id && (
-        <DisclosureSection title={t("Previous application receipt")}>
-          <Receipt receipt={previousReceipt} />
-        </DisclosureSection>
-      )}
+      <ApplicationHistory draftId={draft.id} />
       {draft.creation_metadata && <h3>{draft.creation_metadata.name}</h3>}
       {draft.config ? (
         <>
@@ -286,7 +294,15 @@ function DraftActions({
       setReviewed(undefined);
       setReason("");
       await refresh();
-      await cache.invalidateQueries({ queryKey: ["agents", workspace.id] });
+      await Promise.all([
+        cache.invalidateQueries({ queryKey: ["agents", workspace.id] }),
+        cache.invalidateQueries({
+          queryKey: ["configuration-thread", workspace.id],
+        }),
+        cache.invalidateQueries({
+          queryKey: ["configuration-applications", workspace.id, draft.id],
+        }),
+      ]);
     },
   });
   const save = useMutation({

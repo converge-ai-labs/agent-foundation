@@ -14,4 +14,4 @@ Read the host-bound draft first with `get_configuration_draft`. Its version and 
 5. Propose bounded verification. `start_run` can execute only references admitted by the host; an unsupported candidate is unverified, never a simulated pass.
 6. Ask the user to review and apply through the application UI. You have no apply or rebase tool. Never claim conversational agreement changed the Agent.
 
-Read [editing and evidence](workflow.md) for conflicts, terminal drafts and tests. These documents are knowledge, not executable scripts. Only the fixed bundle is available; do not request shell, credential, network or file mutation access.
+Read [editing and evidence](workflow.md) for conflicts, terminal drafts and tests. These documents are knowledge, not executable scripts. Only the deployed read-only Skill directory is available; do not request shell, credential, network or file mutation access.

@@ -8,14 +8,12 @@ from a13n_service.agent_configuration.definition import load_definition
 from a13n_service.agent_configuration.readiness import ConfigurationReadiness
 from a13n_service.agent_configuration.system_agent import SystemConfigurationAgent
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
-from a13n_service.agents.resolution import AgentResolver
 from a13n_service.database import DatabaseMigrator
 from a13n_service.durable_operations.models import OutboxRecord
 from a13n_service.etags import resource_etag
 from a13n_service.iam.models import OrganizationRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
 from a13n_service.models.models import ModelProviderRecord, ModelRecord
 from a13n_service.models.providers import built_in_provider_registry
-from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.storage import short_session, transaction
 from a13n_service.storage.config import PostgreSQLConfig
 from a13n_service.storage.relational import create_session_factory, create_sql_engine
@@ -69,13 +67,11 @@ async def test_concurrent_provisioning_and_apply_have_one_committed_result(postg
     draft = await new_draft(conversations)
     definition = load_definition()
     ready = await ConfigurationReadiness(sessions, built_in_provider_registry(), definition).read(actor=actor())
-    system = SystemConfigurationAgent(
-        sessions, AgentResolver(sessions, AcceptedModelSelector(sessions, built_in_provider_registry())), definition
-    )
-    initialized = await asyncio.gather(
-        *[system.ensure(actor=actor(), session_id=draft.session_id, model=ready.selected_model) for _ in range(5)]
-    )
-    assert len({item.agent.id for item in initialized}) == len({item.revision.id for item in initialized}) == 1
+    system = SystemConfigurationAgent(sessions, definition)
+    initialized = await asyncio.gather(*[system.ensure(actor=actor(), session_id=draft.session_id) for _ in range(5)])
+    assert ready.ready
+    assert len({item.id for item in initialized}) == 1
+    assert all(item.current_revision_id is None for item in initialized)
     saved = await save(drafts, draft)
     receipts = await asyncio.gather(
         *[
@@ -94,11 +90,32 @@ async def test_concurrent_provisioning_and_apply_have_one_committed_result(postg
         agents = tuple(await session.scalars(select(AgentRecord)))
         revisions = tuple(await session.scalars(select(AgentRevisionRecord)))
         publications = tuple(await session.scalars(select(OutboxRecord)))
-    assert len(agents) == len(revisions) == 2
+    assert len(agents) == 2 and len(revisions) == 1
     assert len(publications) == 1
     assert sum(agent.system_purpose is not None for agent in agents) == 1
     migrator = DatabaseMigrator(PostgreSQLConfig(url=pg_url))
     with pytest.raises(RuntimeError, match="protected configuration assistant data"):
         await anyio.to_thread.run_sync(lambda: migrator.downgrade("838688629ca8"))
     retained = await drafts.get(actor=actor(), draft_id=saved.id)
-    assert retained.application_receipt == receipts[0]
+    assert retained.status == "open" and retained.version == saved.version + 1
+    assert (await applications.list_applications(actor=actor(), draft_id=draft.id, limit=10, cursor=None)).items == (
+        receipts[0],
+    )
+
+
+async def test_shared_draft_concurrent_edits_require_current_version(postgres_configuration):
+    from a13n_service.application_errors import ApplicationError
+
+    conversations, drafts, _ = services(postgres_configuration)
+    draft = await new_draft(conversations)
+    outcomes = await asyncio.gather(
+        save(drafts, draft, text="First editor", key="first-editor"),
+        save(drafts, draft, text="Second editor", key="second-editor"),
+        return_exceptions=True,
+    )
+    winners = [item for item in outcomes if not isinstance(item, Exception)]
+    rejected = [item for item in outcomes if isinstance(item, Exception)]
+    assert len(winners) == len(rejected) == 1
+    assert isinstance(rejected[0], ApplicationError)
+    assert await drafts.get(actor=actor(), draft_id=draft.id) == winners[0]
+    assert winners[0].version == draft.version + 1

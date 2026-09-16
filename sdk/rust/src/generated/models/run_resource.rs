@@ -16,8 +16,8 @@ pub struct RunResource {
     #[serde(rename = "agent_id")]
     pub agent_id: String,
 
-    #[serde(rename = "agent_revision_id")]
-    pub agent_revision_id: String,
+    #[serde(rename = "agent_revision_id", deserialize_with = "Option::deserialize")]
+    pub agent_revision_id: Option<String>,
 
     #[serde(rename = "completed_at", deserialize_with = "Option::deserialize")]
     pub completed_at: Option<chrono::DateTime<chrono::FixedOffset>>,
@@ -121,7 +121,7 @@ pub struct RunResource {
 impl RunResource {
     pub fn new(
         agent_id: String,
-        agent_revision_id: String,
+        agent_revision_id: Option<String>,
         completed_at: Option<chrono::DateTime<chrono::FixedOffset>>,
         created_at: chrono::DateTime<chrono::FixedOffset>,
         effective_agent_config_digest: String,

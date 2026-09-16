@@ -14,12 +14,12 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ThreadResource {
     #[serde(
-        rename = "configuration_latest_draft_id",
+        rename = "configuration_draft_id",
         default,
         with = "::serde_with::rust::double_option",
         skip_serializing_if = "Option::is_none"
     )]
-    pub configuration_latest_draft_id: Option<Option<String>>,
+    pub configuration_draft_id: Option<Option<String>>,
 
     #[serde(rename = "created_at")]
     pub created_at: chrono::DateTime<chrono::FixedOffset>,
@@ -85,7 +85,7 @@ impl ThreadResource {
         version: i32,
     ) -> ThreadResource {
         ThreadResource {
-            configuration_latest_draft_id: None,
+            configuration_draft_id: None,
             created_at,
             current_run_id,
             default_environment_id,

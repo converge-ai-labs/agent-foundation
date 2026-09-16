@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pydantic import JsonValue
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.agents.domain import AgentConfig
@@ -11,7 +12,8 @@ from a13n_service.iam import AuthenticatedActor
 from a13n_service.storage import short_session
 
 from .context import StrictModel
-from .domain import ConfigurationDraft
+from .domain import ConfigurationApplicationReceipt, ConfigurationDraft
+from .models import ConfigurationApplicationRecord
 from .persistence import load_owned_draft, not_found
 
 
@@ -31,6 +33,7 @@ class ConfigurationDifference(StrictModel):
 
 
 class ConfigurationDraftReview(ConfigurationDraft):
+    latest_application_receipt: ConfigurationApplicationReceipt | None
     source: ConfigurationRevisionView | None
     base: ConfigurationRevisionView | None
     current_target: ConfigurationRevisionView | None
@@ -47,14 +50,21 @@ class ConfigurationReviews:
 
     async def get(self, *, actor: AuthenticatedActor, draft_id: str) -> ConfigurationDraftReview:
         async with short_session(self._sessions) as session:
-            _, _, record = await load_owned_draft(session, actor=actor, draft_id=draft_id, write=False)
+            _, record = await load_owned_draft(session, actor=actor, draft_id=draft_id, write=False)
             draft = record.to_resource()
             source = await revision_view(session, draft.source_agent_revision_id)
             base = await revision_view(session, draft.base_agent_revision_id)
             target = None if draft.target_agent_id is None else await session.get(AgentRecord, draft.target_agent_id)
             current = None if target is None else await revision_view(session, target.current_revision_id)
+            application = await session.scalar(
+                select(ConfigurationApplicationRecord)
+                .where(ConfigurationApplicationRecord.draft_id == draft_id)
+                .order_by(ConfigurationApplicationRecord.reviewed_version.desc())
+                .limit(1)
+            )
             return ConfigurationDraftReview(
                 **draft.model_dump(),
+                latest_application_receipt=None if application is None else application.to_resource(),
                 source=source,
                 base=base,
                 current_target=current,

@@ -120,6 +120,8 @@ pub mod complete_password_reset_request;
 pub use self::complete_password_reset_request::CompletePasswordResetRequest;
 pub mod complete_pending_resolution;
 pub use self::complete_pending_resolution::CompletePendingResolution;
+pub mod configuration_application_collection;
+pub use self::configuration_application_collection::ConfigurationApplicationCollection;
 pub mod configuration_application_receipt;
 pub use self::configuration_application_receipt::ConfigurationApplicationReceipt;
 pub mod configuration_difference;

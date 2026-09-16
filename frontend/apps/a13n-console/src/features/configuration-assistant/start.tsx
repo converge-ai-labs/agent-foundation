@@ -134,19 +134,17 @@ export function ConfigurationStart() {
             error={sessions.error}
             retry={() => void sessions.refetch()}
           />
-          {sessions.data?.items
-            .filter((session) => !target || session.target_agent_id === target)
-            .map((session) => (
-              <Link
-                key={session.id}
-                to={`${basePath}/configuration-threads/${session.root_thread_id}`}
-              >
-                <span>
-                  {t(session.target_agent_id ? "Update agent" : "Create agent")}
-                </span>
-                <Timestamp value={session.updated_at} relative />
-              </Link>
-            ))}
+          {sessions.data?.items.map((session) => (
+            <Link
+              key={session.id}
+              to={`${basePath}/configuration-threads/${session.root_thread_id}`}
+            >
+              <span>
+                {t("Configuration draft")} · {session.configuration_draft_id}
+              </span>
+              <Timestamp value={session.updated_at} relative />
+            </Link>
+          ))}
           <Pagination page={page} next={sessions.data?.next_cursor} />
         </section>
       </div>

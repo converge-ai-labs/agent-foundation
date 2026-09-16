@@ -13,14 +13,6 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ConfigurationDraftReview {
-    #[serde(
-        rename = "application_receipt",
-        default,
-        with = "::serde_with::rust::double_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub application_receipt: Option<Option<Box<models::ConfigurationApplicationReceipt>>>,
-
     #[serde(rename = "base", deserialize_with = "Option::deserialize")]
     pub base: Option<Box<models::ConfigurationRevisionView>>,
 
@@ -74,6 +66,12 @@ pub struct ConfigurationDraftReview {
     pub id: String,
 
     #[serde(
+        rename = "latest_application_receipt",
+        deserialize_with = "Option::deserialize"
+    )]
+    pub latest_application_receipt: Option<Box<models::ConfigurationApplicationReceipt>>,
+
+    #[serde(
         rename = "latest_validation",
         default,
         with = "::serde_with::rust::double_option",
@@ -86,17 +84,6 @@ pub struct ConfigurationDraftReview {
 
     #[serde(rename = "organization_id")]
     pub organization_id: String,
-
-    #[serde(rename = "owner_user_id")]
-    pub owner_user_id: String,
-
-    #[serde(
-        rename = "predecessor_draft_id",
-        default,
-        with = "::serde_with::rust::double_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub predecessor_draft_id: Option<Option<String>>,
 
     #[serde(rename = "session_id")]
     pub session_id: String,
@@ -141,9 +128,6 @@ pub struct ConfigurationDraftReview {
     )]
     pub terminal_reason: Option<Option<String>>,
 
-    #[serde(rename = "thread_id")]
-    pub thread_id: String,
-
     #[serde(rename = "updated_at")]
     pub updated_at: chrono::DateTime<chrono::FixedOffset>,
 
@@ -166,9 +150,9 @@ impl ConfigurationDraftReview {
         current_target: Option<models::ConfigurationRevisionView>,
         current_target_to_candidate: Vec<models::ConfigurationDifference>,
         id: String,
+        latest_application_receipt: Option<models::ConfigurationApplicationReceipt>,
         mode: Mode,
         organization_id: String,
-        owner_user_id: String,
         session_id: String,
         source: Option<models::ConfigurationRevisionView>,
         source_agent_revision_id: Option<String>,
@@ -177,13 +161,11 @@ impl ConfigurationDraftReview {
         status: Status,
         target_agent_id: Option<String>,
         target_conflict: bool,
-        thread_id: String,
         updated_at: chrono::DateTime<chrono::FixedOffset>,
         version: i32,
         workspace_id: String,
     ) -> ConfigurationDraftReview {
         ConfigurationDraftReview {
-            application_receipt: None,
             base: if let Some(x) = base {
                 Some(Box::new(x))
             } else {
@@ -209,11 +191,14 @@ impl ConfigurationDraftReview {
             current_target_to_candidate,
             evidence_refs: None,
             id,
+            latest_application_receipt: if let Some(x) = latest_application_receipt {
+                Some(Box::new(x))
+            } else {
+                None
+            },
             latest_validation: None,
             mode,
             organization_id,
-            owner_user_id,
-            predecessor_draft_id: None,
             session_id,
             source: if let Some(x) = source {
                 Some(Box::new(x))
@@ -228,7 +213,6 @@ impl ConfigurationDraftReview {
             target_agent_id,
             target_conflict,
             terminal_reason: None,
-            thread_id,
             updated_at,
             version,
             workspace_id,
@@ -270,8 +254,6 @@ impl Default for SourceSelector {
 pub enum Status {
     #[serde(rename = "open")]
     Open,
-    #[serde(rename = "applied")]
-    Applied,
     #[serde(rename = "discarded")]
     Discarded,
     #[serde(rename = "expired")]

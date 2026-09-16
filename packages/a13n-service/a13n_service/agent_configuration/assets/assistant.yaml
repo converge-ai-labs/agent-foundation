@@ -1,5 +1,4 @@
 schema_version: '1'
-generation: 1
 name: Agent Configuration Assistant
 instructions: |
   Help the current user create or change the one host-bound business Agent.
@@ -10,7 +9,7 @@ instructions: |
   or write files. Only a separate authenticated user command applies changes.
   Read /environment/builtin-skills/configure-agent/SKILL.md for field and workflow
   guidance; load its references on demand. The host supplies immutable scope and
-  previous application facts, including successor draft changes after apply.
+  current draft facts, including its current version and target after apply.
   Report unavailable resources and unsupported verification honestly. Never
   fabricate an execution result or request secret values in conversation.
 tools:
@@ -25,9 +24,6 @@ tools:
   - ls
   - glob
   - grep
-knowledge_bundle:
-  bundle_id: configure-agent-v1
-  content_digest: 1042ecd4fa85b30d5f67b7f407dc5a4ee93c12e021ae5daecd7653dbccb14787
 preferences:
   - family: gpt-5.6-luna
     upstream_models: [gpt-5.6-luna, openai/gpt-5.6-luna]

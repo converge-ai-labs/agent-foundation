@@ -496,10 +496,17 @@
             "$ref": "#/components/schemas/ActorRef"
           },
           "current_revision_id": {
-            "maxLength": 72,
-            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
-            "title": "Current Revision Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 72,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Revision Id"
           },
           "default_environment_template_id": {
             "anyOf": [
@@ -2954,6 +2961,32 @@
         "title": "CompletePendingResolution",
         "type": "object"
       },
+      "ConfigurationApplicationCollection": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigurationApplicationReceipt"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": ["items", "next_cursor"],
+        "title": "ConfigurationApplicationCollection",
+        "type": "object"
+      },
       "ConfigurationApplicationReceipt": {
         "additionalProperties": false,
         "properties": {
@@ -2995,10 +3028,63 @@
             "title": "No Change",
             "type": "boolean"
           },
+          "reviewed_base_agent_revision_id": {
+            "anyOf": [
+              {
+                "maxLength": 72,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed Base Agent Revision Id"
+          },
+          "reviewed_base_agent_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed Base Agent Version"
+          },
+          "reviewed_creation_metadata": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreationMetadata"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "reviewed_digest": {
             "pattern": "^[0-9a-f]{64}$",
             "title": "Reviewed Digest",
             "type": "string"
+          },
+          "reviewed_mode": {
+            "enum": ["create", "update"],
+            "title": "Reviewed Mode",
+            "type": "string"
+          },
+          "reviewed_target_agent_id": {
+            "anyOf": [
+              {
+                "maxLength": 72,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewed Target Agent Id"
           },
           "reviewed_version": {
             "minimum": 1.0,
@@ -3031,6 +3117,11 @@
           "draft_id",
           "reviewed_version",
           "reviewed_digest",
+          "reviewed_mode",
+          "reviewed_target_agent_id",
+          "reviewed_base_agent_revision_id",
+          "reviewed_base_agent_version",
+          "reviewed_creation_metadata",
           "agent_id",
           "agent_revision_id",
           "agent_version",
@@ -3079,16 +3170,6 @@
       "ConfigurationDraft": {
         "additionalProperties": false,
         "properties": {
-          "application_receipt": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ConfigurationApplicationReceipt"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "base_agent_revision_id": {
             "anyOf": [
               {
@@ -3182,25 +3263,6 @@
             "title": "Organization Id",
             "type": "string"
           },
-          "owner_user_id": {
-            "maxLength": 72,
-            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
-            "title": "Owner User Id",
-            "type": "string"
-          },
-          "predecessor_draft_id": {
-            "anyOf": [
-              {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Predecessor Draft Id"
-          },
           "session_id": {
             "maxLength": 72,
             "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
@@ -3238,7 +3300,7 @@
             "type": "string"
           },
           "status": {
-            "enum": ["open", "applied", "discarded", "expired"],
+            "enum": ["open", "discarded", "expired"],
             "title": "Status",
             "type": "string"
           },
@@ -3266,10 +3328,6 @@
             ],
             "title": "Terminal Reason"
           },
-          "thread_id": {
-            "title": "Thread Id",
-            "type": "string"
-          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -3291,9 +3349,7 @@
           "id",
           "organization_id",
           "workspace_id",
-          "owner_user_id",
           "session_id",
-          "thread_id",
           "mode",
           "target_agent_id",
           "source_selector",
@@ -3312,16 +3368,6 @@
       "ConfigurationDraftReview": {
         "additionalProperties": false,
         "properties": {
-          "application_receipt": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ConfigurationApplicationReceipt"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
           "base": {
             "anyOf": [
               {
@@ -3435,6 +3481,16 @@
             "title": "Id",
             "type": "string"
           },
+          "latest_application_receipt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConfigurationApplicationReceipt"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "latest_validation": {
             "anyOf": [
               {
@@ -3455,25 +3511,6 @@
             "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
             "title": "Organization Id",
             "type": "string"
-          },
-          "owner_user_id": {
-            "maxLength": 72,
-            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
-            "title": "Owner User Id",
-            "type": "string"
-          },
-          "predecessor_draft_id": {
-            "anyOf": [
-              {
-                "maxLength": 72,
-                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Predecessor Draft Id"
           },
           "session_id": {
             "maxLength": 72,
@@ -3529,7 +3566,7 @@
             "type": "array"
           },
           "status": {
-            "enum": ["open", "applied", "discarded", "expired"],
+            "enum": ["open", "discarded", "expired"],
             "title": "Status",
             "type": "string"
           },
@@ -3561,10 +3598,6 @@
             ],
             "title": "Terminal Reason"
           },
-          "thread_id": {
-            "title": "Thread Id",
-            "type": "string"
-          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -3586,9 +3619,7 @@
           "id",
           "organization_id",
           "workspace_id",
-          "owner_user_id",
           "session_id",
-          "thread_id",
           "mode",
           "target_agent_id",
           "source_selector",
@@ -3600,6 +3631,7 @@
           "status",
           "created_at",
           "updated_at",
+          "latest_application_receipt",
           "source",
           "base",
           "current_target",
@@ -3622,16 +3654,6 @@
           },
           "input": {
             "$ref": "#/components/schemas/AgentInput"
-          },
-          "source": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SourceSelection"
-              },
-              {
-                "type": "null"
-              }
-            ]
           }
         },
         "required": ["expected_thread_version", "input"],
@@ -3690,6 +3712,10 @@
       "ConfigurationSessionView": {
         "additionalProperties": false,
         "properties": {
+          "configuration_draft_id": {
+            "title": "Configuration Draft Id",
+            "type": "string"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -3711,17 +3737,6 @@
             "title": "Root Thread Id",
             "type": "string"
           },
-          "target_agent_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Target Agent Id"
-          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -3737,7 +3752,7 @@
           "organization_id",
           "workspace_id",
           "owner_user_id",
-          "target_agent_id",
+          "configuration_draft_id",
           "root_thread_id",
           "created_at",
           "updated_at"
@@ -3774,40 +3789,14 @@
       "ConfigurationThreadView": {
         "additionalProperties": false,
         "properties": {
-          "active_draft_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Active Draft Id"
-          },
-          "latest_draft": {
+          "draft": {
             "$ref": "#/components/schemas/ConfigurationDraft"
-          },
-          "previous_application_receipt": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ConfigurationApplicationReceipt"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "thread": {
             "$ref": "#/components/schemas/Thread"
           }
         },
-        "required": [
-          "thread",
-          "active_draft_id",
-          "latest_draft",
-          "previous_application_receipt"
-        ],
+        "required": ["thread", "draft"],
         "title": "ConfigurationThreadView",
         "type": "object"
       },
@@ -5054,16 +5043,6 @@
             "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
             "title": "Fork From Run Id",
             "type": "string"
-          },
-          "source": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/SourceSelection"
-              },
-              {
-                "type": "null"
-              }
-            ]
           }
         },
         "required": ["fork_from_run_id"],
@@ -12723,8 +12702,15 @@
             "type": "string"
           },
           "agent_revision_id": {
-            "title": "Agent Revision Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Agent Revision Id"
           },
           "completed_at": {
             "anyOf": [
@@ -15205,7 +15191,7 @@
       "ThreadResource": {
         "additionalProperties": false,
         "properties": {
-          "configuration_latest_draft_id": {
+          "configuration_draft_id": {
             "anyOf": [
               {
                 "type": "string"
@@ -15214,7 +15200,7 @@
                 "type": "null"
               }
             ],
-            "title": "Configuration Latest Draft Id"
+            "title": "Configuration Draft Id"
           },
           "created_at": {
             "format": "date-time",
@@ -20347,6 +20333,119 @@
           }
         ],
         "summary": "Update Draft",
+        "tags": ["agent-configuration"]
+      }
+    },
+    "/api/v1/configuration-drafts/{draft_id}/applications": {
+      "get": {
+        "operationId": "get_configuration_drafts_draft_id_applications",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "title": "Draft Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationApplicationCollection"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "List Applications",
         "tags": ["agent-configuration"]
       }
     },

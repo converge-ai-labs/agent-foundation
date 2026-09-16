@@ -13,6 +13,9 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ConfigurationSessionView {
+    #[serde(rename = "configuration_draft_id")]
+    pub configuration_draft_id: String,
+
     #[serde(rename = "created_at")]
     pub created_at: chrono::DateTime<chrono::FixedOffset>,
 
@@ -28,9 +31,6 @@ pub struct ConfigurationSessionView {
     #[serde(rename = "root_thread_id")]
     pub root_thread_id: String,
 
-    #[serde(rename = "target_agent_id", deserialize_with = "Option::deserialize")]
-    pub target_agent_id: Option<String>,
-
     #[serde(rename = "updated_at")]
     pub updated_at: chrono::DateTime<chrono::FixedOffset>,
 
@@ -40,22 +40,22 @@ pub struct ConfigurationSessionView {
 
 impl ConfigurationSessionView {
     pub fn new(
+        configuration_draft_id: String,
         created_at: chrono::DateTime<chrono::FixedOffset>,
         id: String,
         organization_id: String,
         owner_user_id: String,
         root_thread_id: String,
-        target_agent_id: Option<String>,
         updated_at: chrono::DateTime<chrono::FixedOffset>,
         workspace_id: String,
     ) -> ConfigurationSessionView {
         ConfigurationSessionView {
+            configuration_draft_id,
             created_at,
             id,
             organization_id,
             owner_user_id,
             root_thread_id,
-            target_agent_id,
             updated_at,
             workspace_id,
         }

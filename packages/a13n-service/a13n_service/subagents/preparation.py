@@ -225,6 +225,8 @@ def prepare_child_resume(
     )
     child_agent_id = source_run.agent_id
     child_agent_revision_id = source_run.agent_revision_id
+    if child_agent_revision_id is None:
+        raise ValueError("Subagent continuation requires an exact AgentRevision")
     child_effective_config = source_state.effective_agent_config
     accepted_input = AcceptedAgentInput(
         schema_version="1",

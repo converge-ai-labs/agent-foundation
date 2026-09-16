@@ -24,14 +24,14 @@ If another edit advances the target, application fails without overwriting it. R
 
 ## Continue or compare approaches
 
-After application, the next ordinary message starts a successor draft from the target's current Revision. The previous receipt stays available. Old Runs and pending feedback retain their original draft binding and cannot edit its successor.
+Each Session owns one long-lived draft. Application keeps it open, advances its version once, and moves its base to the resulting Agent Revision. The first create application binds that same draft to the new Agent; later applications update it. The original source remains unchanged. Application history retains each reviewed version and its receipt, including after further edits.
 
-Use **Fork configuration** after a completed Run to explore another approach in the same Session. Each Thread has its own draft. Competing create-mode drafts can produce only one business Agent; applying one closes the other unresolved drafts. While a Run is active or waiting for an answer, finish or stop that work before submitting a new configuration message.
+Use **Fork conversation** after a completed Run to continue the discussion in another Thread. Every Thread in the Session edits the same draft, with version checks preventing stale writes. Start a new conversation for an independent candidate. While a Run is active or waiting for an answer, finish or stop that work before submitting a new configuration message.
 
 The system assistant is intentionally absent from Agent management and ordinary invocation selectors. Its owner's Runs, results, usage and configuration history remain available through the conversation.
 
 ## Deployment
 
-Deploy compatible Control and Worker builds together. Accepted Runs retain their exact assistant Revision, definition and knowledge-bundle digest. Workers reject missing or modified bundles instead of substituting a newer version. The Service image protects the bundle and application directories from its non-root runtime user; only runtime data directories are writable.
+Deploy compatible Control and Worker builds together. The assistant has a real, hidden Agent identity and no Agent Revisions. Each new ordinary input freezes the deployed assistant definition and selected Model into the Run's effective configuration. Recovery, retry and answers to pending questions retain the accepted configuration. Read-only built-in Skill files come from the current deployment; they are not version-locked or retained as historical bundles. The Service image protects the Skill and application directories from its non-root runtime user; only runtime data directories are writable.
 
-The schema migration adds protected Session scope, draft associations and retained application receipts. Downgrade refuses to remove these protections while configuration data exists. Preserve the database and required bundles when rolling back a deployment with recoverable configuration work.
+The schema migration adds protected Session scope, draft associations and retained application receipts. Downgrade refuses to remove these protections while configuration data exists. Preserve the database when rolling back a deployment with recoverable configuration work.

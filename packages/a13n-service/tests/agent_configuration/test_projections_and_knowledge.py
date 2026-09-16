@@ -4,8 +4,8 @@ import json
 import shutil
 
 import pytest
-from a13n_service.agent_configuration.definition import ASSETS, load_definition
-from a13n_service.agent_configuration.knowledge import KnowledgeBundles
+from a13n_service.agent_configuration.definition import ASSETS
+from a13n_service.agent_configuration.knowledge import KnowledgeFiles
 from a13n_service.agent_configuration.projections import PROTECTED, contains_protected_input, model_safe
 from a13n_service.agents.domain import AgentConfig
 from a13n_service.application_errors import ApplicationError
@@ -38,27 +38,23 @@ def test_model_input_cannot_replace_protected_values(value):
     assert not contains_protected_input({"secret_key": "service-key", "instructions": "Be concise."})
 
 
-def test_bundle_schema_matches_authoring_contract_and_tampering_fails(tmp_path):
-    reference = load_definition().knowledge_bundle
-    root = KnowledgeBundles().verify(reference)
+def test_deployed_skill_schema_matches_contract_and_content_can_change(tmp_path):
+    root = KnowledgeFiles().validate()
     schema = json.loads((root / "configure-agent/agent-config.schema.json").read_text())
     assert schema == AgentConfig.model_json_schema(by_alias=True)
-    shutil.copytree(ASSETS / "bundles", tmp_path / "bundles")
-    retained = tmp_path / "bundles" / reference.bundle_id
-    (retained / "configure-agent/SKILL.md").write_text("Changed knowledge")
-    with pytest.raises(ApplicationError, match="exact accepted knowledge bundle"):
-        KnowledgeBundles(tmp_path / "bundles").verify(reference)
+    shutil.copytree(ASSETS / "skills", tmp_path / "skills")
+    (tmp_path / "skills/configure-agent/SKILL.md").write_text("Updated deployment knowledge")
+    assert KnowledgeFiles(tmp_path / "skills").validate() == tmp_path / "skills"
 
 
-def test_bundle_rejects_unlisted_files_and_symlinks(tmp_path):
-    reference = load_definition().knowledge_bundle
-    shutil.copytree(ASSETS / "bundles", tmp_path / "bundles")
-    retained = tmp_path / "bundles" / reference.bundle_id
-    extra = retained / "extra.md"
-    extra.write_text("Unreviewed content")
-    with pytest.raises(ApplicationError):
-        KnowledgeBundles(tmp_path / "bundles").verify(reference)
-    extra.unlink()
+def test_skill_rejects_missing_entry_and_symlinks(tmp_path):
+    root = tmp_path / "skills"
+    shutil.copytree(ASSETS / "skills", root)
+    extra = root / "extra.md"
     extra.symlink_to(ASSETS / "assistant.yaml")
     with pytest.raises(ApplicationError):
-        KnowledgeBundles(tmp_path / "bundles").verify(reference)
+        KnowledgeFiles(root).validate()
+    extra.unlink()
+    (root / "configure-agent/SKILL.md").unlink()
+    with pytest.raises(ApplicationError):
+        KnowledgeFiles(root).validate()

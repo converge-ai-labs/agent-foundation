@@ -103,12 +103,14 @@ class NotificationService:
         return tuple(
             NotificationFact(
                 seq=0,
-                resource_type="thread",
-                resource_id=row.thread_id,
+                resource_type="thread" if subscription.definition.scope == "thread" else "session",
+                resource_id=subscription.definition.resource_id
+                if subscription.definition.scope == "thread"
+                else row.id,
                 resource_version=None,
                 workspace_id=row.workspace_id,
-                session_id=row.session_id,
-                thread_id=row.thread_id,
+                session_id=row.id,
+                thread_id=subscription.definition.resource_id if subscription.definition.scope == "thread" else None,
                 run_id=None,
                 occurred_at=cursor[0],
                 event_type="configuration.applied",
@@ -125,9 +127,9 @@ class NotificationService:
             return
         async with short_session(self._sessions) as database:
             intent = await database.get(OutboxRecord, fact.application_cursor[1])
-            draft_id = None if intent is None else intent.source_id
-        if draft_id is not None:
-            await acknowledge_application_hint(self._sessions, draft_id=draft_id)
+            application_id = None if intent is None else intent.source_id
+        if application_id is not None:
+            await acknowledge_application_hint(self._sessions, application_id=application_id)
 
     async def authorize(
         self,

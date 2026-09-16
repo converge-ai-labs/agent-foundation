@@ -6,9 +6,11 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from attrs import define as _attrs_define
 
+from ..models.configuration_application_receipt_reviewed_mode import ConfigurationApplicationReceiptReviewedMode
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
+    from ..models.creation_metadata import CreationMetadata
     from ..models.verification_acknowledgement import VerificationAcknowledgement
 
 
@@ -26,7 +28,12 @@ class ConfigurationApplicationReceipt:
         applied_by_user_id (str):
         draft_id (str):
         no_change (bool):
+        reviewed_base_agent_revision_id (None | str):
+        reviewed_base_agent_version (int | None):
+        reviewed_creation_metadata (CreationMetadata | None):
         reviewed_digest (str):
+        reviewed_mode (ConfigurationApplicationReceiptReviewedMode):
+        reviewed_target_agent_id (None | str):
         reviewed_version (int):
         verification_acknowledgement (None | Unset | VerificationAcknowledgement):
         verification_run_ids (list[str] | Unset):
@@ -39,12 +46,18 @@ class ConfigurationApplicationReceipt:
     applied_by_user_id: str
     draft_id: str
     no_change: bool
+    reviewed_base_agent_revision_id: str | None
+    reviewed_base_agent_version: int | None
+    reviewed_creation_metadata: CreationMetadata | None
     reviewed_digest: str
+    reviewed_mode: ConfigurationApplicationReceiptReviewedMode
+    reviewed_target_agent_id: str | None
     reviewed_version: int
     verification_acknowledgement: Unset | VerificationAcknowledgement | None = UNSET
     verification_run_ids: list[str] | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
+        from ..models.creation_metadata import CreationMetadata
         from ..models.verification_acknowledgement import VerificationAcknowledgement
 
         agent_id = self.agent_id
@@ -61,7 +74,24 @@ class ConfigurationApplicationReceipt:
 
         no_change = self.no_change
 
+        reviewed_base_agent_revision_id: str | None
+        reviewed_base_agent_revision_id = self.reviewed_base_agent_revision_id
+
+        reviewed_base_agent_version: int | None
+        reviewed_base_agent_version = self.reviewed_base_agent_version
+
+        reviewed_creation_metadata: dict[str, Any] | None
+        if isinstance(self.reviewed_creation_metadata, CreationMetadata):
+            reviewed_creation_metadata = self.reviewed_creation_metadata.to_dict()
+        else:
+            reviewed_creation_metadata = self.reviewed_creation_metadata
+
         reviewed_digest = self.reviewed_digest
+
+        reviewed_mode = self.reviewed_mode.value
+
+        reviewed_target_agent_id: str | None
+        reviewed_target_agent_id = self.reviewed_target_agent_id
 
         reviewed_version = self.reviewed_version
 
@@ -88,7 +118,12 @@ class ConfigurationApplicationReceipt:
                 "applied_by_user_id": applied_by_user_id,
                 "draft_id": draft_id,
                 "no_change": no_change,
+                "reviewed_base_agent_revision_id": reviewed_base_agent_revision_id,
+                "reviewed_base_agent_version": reviewed_base_agent_version,
+                "reviewed_creation_metadata": reviewed_creation_metadata,
                 "reviewed_digest": reviewed_digest,
+                "reviewed_mode": reviewed_mode,
+                "reviewed_target_agent_id": reviewed_target_agent_id,
                 "reviewed_version": reviewed_version,
             }
         )
@@ -101,6 +136,7 @@ class ConfigurationApplicationReceipt:
 
     @classmethod
     def from_dict(cls: type[T], src_dict: Mapping[str, Any]) -> T:
+        from ..models.creation_metadata import CreationMetadata
         from ..models.verification_acknowledgement import VerificationAcknowledgement
 
         d = dict(src_dict)
@@ -118,7 +154,47 @@ class ConfigurationApplicationReceipt:
 
         no_change = d.pop("no_change")
 
+        def _parse_reviewed_base_agent_revision_id(data: object) -> str | None:
+            if data is None:
+                return data
+            return cast(str | None, data)
+
+        reviewed_base_agent_revision_id = _parse_reviewed_base_agent_revision_id(
+            d.pop("reviewed_base_agent_revision_id")
+        )
+
+        def _parse_reviewed_base_agent_version(data: object) -> int | None:
+            if data is None:
+                return data
+            return cast(int | None, data)
+
+        reviewed_base_agent_version = _parse_reviewed_base_agent_version(d.pop("reviewed_base_agent_version"))
+
+        def _parse_reviewed_creation_metadata(data: object) -> CreationMetadata | None:
+            if data is None:
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                reviewed_creation_metadata_type_0 = CreationMetadata.from_dict(data)
+
+                return reviewed_creation_metadata_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(CreationMetadata | None, data)
+
+        reviewed_creation_metadata = _parse_reviewed_creation_metadata(d.pop("reviewed_creation_metadata"))
+
         reviewed_digest = d.pop("reviewed_digest")
+
+        reviewed_mode = ConfigurationApplicationReceiptReviewedMode(d.pop("reviewed_mode"))
+
+        def _parse_reviewed_target_agent_id(data: object) -> str | None:
+            if data is None:
+                return data
+            return cast(str | None, data)
+
+        reviewed_target_agent_id = _parse_reviewed_target_agent_id(d.pop("reviewed_target_agent_id"))
 
         reviewed_version = d.pop("reviewed_version")
 
@@ -149,7 +225,12 @@ class ConfigurationApplicationReceipt:
             applied_by_user_id=applied_by_user_id,
             draft_id=draft_id,
             no_change=no_change,
+            reviewed_base_agent_revision_id=reviewed_base_agent_revision_id,
+            reviewed_base_agent_version=reviewed_base_agent_version,
+            reviewed_creation_metadata=reviewed_creation_metadata,
             reviewed_digest=reviewed_digest,
+            reviewed_mode=reviewed_mode,
+            reviewed_target_agent_id=reviewed_target_agent_id,
             reviewed_version=reviewed_version,
             verification_acknowledgement=verification_acknowledgement,
             verification_run_ids=verification_run_ids,

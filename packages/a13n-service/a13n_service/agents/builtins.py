@@ -146,6 +146,7 @@ class BuiltinAgents:
                 revision.created_by_type = "system"
                 revision.created_by_id = registration.system_actor_id
                 expected_content_digest = revision.content_digest
+                assert record.current_revision_id is not None
                 current_revision = (
                     None
                     if created

@@ -14,14 +14,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ConfigurationDraft {
     #[serde(
-        rename = "application_receipt",
-        default,
-        with = "::serde_with::rust::double_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub application_receipt: Option<Option<Box<models::ConfigurationApplicationReceipt>>>,
-
-    #[serde(
         rename = "base_agent_revision_id",
         deserialize_with = "Option::deserialize"
     )]
@@ -72,17 +64,6 @@ pub struct ConfigurationDraft {
     #[serde(rename = "organization_id")]
     pub organization_id: String,
 
-    #[serde(rename = "owner_user_id")]
-    pub owner_user_id: String,
-
-    #[serde(
-        rename = "predecessor_draft_id",
-        default,
-        with = "::serde_with::rust::double_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    pub predecessor_draft_id: Option<Option<String>>,
-
     #[serde(rename = "session_id")]
     pub session_id: String,
 
@@ -117,9 +98,6 @@ pub struct ConfigurationDraft {
     )]
     pub terminal_reason: Option<Option<String>>,
 
-    #[serde(rename = "thread_id")]
-    pub thread_id: String,
-
     #[serde(rename = "updated_at")]
     pub updated_at: chrono::DateTime<chrono::FixedOffset>,
 
@@ -139,19 +117,16 @@ impl ConfigurationDraft {
         id: String,
         mode: Mode,
         organization_id: String,
-        owner_user_id: String,
         session_id: String,
         source_agent_revision_id: Option<String>,
         source_selector: SourceSelector,
         status: Status,
         target_agent_id: Option<String>,
-        thread_id: String,
         updated_at: chrono::DateTime<chrono::FixedOffset>,
         version: i32,
         workspace_id: String,
     ) -> ConfigurationDraft {
         ConfigurationDraft {
-            application_receipt: None,
             base_agent_revision_id,
             base_agent_version: None,
             config: if let Some(x) = config {
@@ -167,8 +142,6 @@ impl ConfigurationDraft {
             latest_validation: None,
             mode,
             organization_id,
-            owner_user_id,
-            predecessor_draft_id: None,
             session_id,
             source_agent_revision_id,
             source_agent_revision_version: None,
@@ -176,7 +149,6 @@ impl ConfigurationDraft {
             status,
             target_agent_id,
             terminal_reason: None,
-            thread_id,
             updated_at,
             version,
             workspace_id,
@@ -218,8 +190,6 @@ impl Default for SourceSelector {
 pub enum Status {
     #[serde(rename = "open")]
     Open,
-    #[serde(rename = "applied")]
-    Applied,
     #[serde(rename = "discarded")]
     Discarded,
     #[serde(rename = "expired")]

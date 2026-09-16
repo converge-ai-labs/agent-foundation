@@ -12,7 +12,7 @@ from .domain import JsonObject, Run
 class InheritedRunFields(TypedDict):
     authority_principal: PrincipalRef
     agent_id: str
-    agent_revision_id: str
+    agent_revision_id: str | None
     effective_agent_config_digest: str
     model_execution_observation: ModelExecutionObservation
     connection_selections: tuple[JsonObject, ...]

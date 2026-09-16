@@ -539,6 +539,24 @@ func (e CompletePendingResolutionAction) Valid() bool {
 	}
 }
 
+// Defines values for ConfigurationApplicationReceiptReviewedMode.
+const (
+	ConfigurationApplicationReceiptReviewedModeCreate ConfigurationApplicationReceiptReviewedMode = "create"
+	ConfigurationApplicationReceiptReviewedModeUpdate ConfigurationApplicationReceiptReviewedMode = "update"
+)
+
+// Valid indicates whether the value is a known member of the ConfigurationApplicationReceiptReviewedMode enum.
+func (e ConfigurationApplicationReceiptReviewedMode) Valid() bool {
+	switch e {
+	case ConfigurationApplicationReceiptReviewedModeCreate:
+		return true
+	case ConfigurationApplicationReceiptReviewedModeUpdate:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ConfigurationDraftMode.
 const (
 	ConfigurationDraftModeCreate ConfigurationDraftMode = "create"
@@ -580,7 +598,6 @@ func (e ConfigurationDraftSourceSelector) Valid() bool {
 
 // Defines values for ConfigurationDraftStatus.
 const (
-	ConfigurationDraftStatusApplied   ConfigurationDraftStatus = "applied"
 	ConfigurationDraftStatusDiscarded ConfigurationDraftStatus = "discarded"
 	ConfigurationDraftStatusExpired   ConfigurationDraftStatus = "expired"
 	ConfigurationDraftStatusOpen      ConfigurationDraftStatus = "open"
@@ -589,8 +606,6 @@ const (
 // Valid indicates whether the value is a known member of the ConfigurationDraftStatus enum.
 func (e ConfigurationDraftStatus) Valid() bool {
 	switch e {
-	case ConfigurationDraftStatusApplied:
-		return true
 	case ConfigurationDraftStatusDiscarded:
 		return true
 	case ConfigurationDraftStatusExpired:
@@ -643,7 +658,6 @@ func (e ConfigurationDraftReviewSourceSelector) Valid() bool {
 
 // Defines values for ConfigurationDraftReviewStatus.
 const (
-	ConfigurationDraftReviewStatusApplied   ConfigurationDraftReviewStatus = "applied"
 	ConfigurationDraftReviewStatusDiscarded ConfigurationDraftReviewStatus = "discarded"
 	ConfigurationDraftReviewStatusExpired   ConfigurationDraftReviewStatus = "expired"
 	ConfigurationDraftReviewStatusOpen      ConfigurationDraftReviewStatus = "open"
@@ -652,8 +666,6 @@ const (
 // Valid indicates whether the value is a known member of the ConfigurationDraftReviewStatus enum.
 func (e ConfigurationDraftReviewStatus) Valid() bool {
 	switch e {
-	case ConfigurationDraftReviewStatusApplied:
-		return true
 	case ConfigurationDraftReviewStatusDiscarded:
 		return true
 	case ConfigurationDraftReviewStatusExpired:
@@ -3337,7 +3349,7 @@ type Agent struct {
 	ArchivedAt                   nullable.Nullable[time.Time]          `json:"archived_at"`
 	CreatedAt                    time.Time                             `json:"created_at"`
 	CreatedBy                    ActorRef                              `json:"created_by"`
-	CurrentRevisionId            string                                `json:"current_revision_id"`
+	CurrentRevisionId            nullable.Nullable[string]             `json:"current_revision_id"`
 	DefaultEnvironmentTemplateId nullable.Nullable[string]             `json:"default_environment_template_id,omitempty"`
 	Description                  nullable.Nullable[string]             `json:"description"`
 	DuplicatedFromAgentId        nullable.Nullable[string]             `json:"duplicated_from_agent_id"`
@@ -3852,6 +3864,12 @@ type CompletePendingResolution struct {
 // CompletePendingResolutionAction defines model for CompletePendingResolution.Action.
 type CompletePendingResolutionAction string
 
+// ConfigurationApplicationCollection defines model for ConfigurationApplicationCollection.
+type ConfigurationApplicationCollection struct {
+	Items      []ConfigurationApplicationReceipt `json:"items"`
+	NextCursor nullable.Nullable[string]         `json:"next_cursor"`
+}
+
 // ConfigurationApplicationReceipt defines model for ConfigurationApplicationReceipt.
 type ConfigurationApplicationReceipt struct {
 	AgentId                     string                                         `json:"agent_id"`
@@ -3861,11 +3879,19 @@ type ConfigurationApplicationReceipt struct {
 	AppliedByUserId             string                                         `json:"applied_by_user_id"`
 	DraftId                     string                                         `json:"draft_id"`
 	NoChange                    bool                                           `json:"no_change"`
+	ReviewedBaseAgentRevisionId nullable.Nullable[string]                      `json:"reviewed_base_agent_revision_id"`
+	ReviewedBaseAgentVersion    nullable.Nullable[int]                         `json:"reviewed_base_agent_version"`
+	ReviewedCreationMetadata    nullable.Nullable[CreationMetadata]            `json:"reviewed_creation_metadata"`
 	ReviewedDigest              string                                         `json:"reviewed_digest"`
+	ReviewedMode                ConfigurationApplicationReceiptReviewedMode    `json:"reviewed_mode"`
+	ReviewedTargetAgentId       nullable.Nullable[string]                      `json:"reviewed_target_agent_id"`
 	ReviewedVersion             int                                            `json:"reviewed_version"`
 	VerificationAcknowledgement nullable.Nullable[VerificationAcknowledgement] `json:"verification_acknowledgement,omitempty"`
 	VerificationRunIds          *[]string                                      `json:"verification_run_ids,omitempty"`
 }
+
+// ConfigurationApplicationReceiptReviewedMode defines model for ConfigurationApplicationReceipt.ReviewedMode.
+type ConfigurationApplicationReceiptReviewedMode string
 
 // ConfigurationDifference defines model for ConfigurationDifference.
 type ConfigurationDifference struct {
@@ -3878,31 +3904,27 @@ type ConfigurationDifference struct {
 
 // ConfigurationDraft defines model for ConfigurationDraft.
 type ConfigurationDraft struct {
-	ApplicationReceipt         nullable.Nullable[ConfigurationApplicationReceipt] `json:"application_receipt,omitempty"`
-	BaseAgentRevisionId        nullable.Nullable[string]                          `json:"base_agent_revision_id"`
-	BaseAgentVersion           nullable.Nullable[int]                             `json:"base_agent_version,omitempty"`
-	Config                     nullable.Nullable[AgentConfigOutput]               `json:"config"`
-	ContentDigest              string                                             `json:"content_digest"`
-	CreatedAt                  time.Time                                          `json:"created_at"`
-	CreationMetadata           nullable.Nullable[CreationMetadata]                `json:"creation_metadata,omitempty"`
-	EvidenceRefs               *[]string                                          `json:"evidence_refs,omitempty"`
-	Id                         string                                             `json:"id"`
-	LatestValidation           nullable.Nullable[ConfigurationValidation]         `json:"latest_validation,omitempty"`
-	Mode                       ConfigurationDraftMode                             `json:"mode"`
-	OrganizationId             string                                             `json:"organization_id"`
-	OwnerUserId                string                                             `json:"owner_user_id"`
-	PredecessorDraftId         nullable.Nullable[string]                          `json:"predecessor_draft_id,omitempty"`
-	SessionId                  string                                             `json:"session_id"`
-	SourceAgentRevisionId      nullable.Nullable[string]                          `json:"source_agent_revision_id"`
-	SourceAgentRevisionVersion nullable.Nullable[int]                             `json:"source_agent_revision_version,omitempty"`
-	SourceSelector             ConfigurationDraftSourceSelector                   `json:"source_selector"`
-	Status                     ConfigurationDraftStatus                           `json:"status"`
-	TargetAgentId              nullable.Nullable[string]                          `json:"target_agent_id"`
-	TerminalReason             nullable.Nullable[string]                          `json:"terminal_reason,omitempty"`
-	ThreadId                   string                                             `json:"thread_id"`
-	UpdatedAt                  time.Time                                          `json:"updated_at"`
-	Version                    int                                                `json:"version"`
-	WorkspaceId                string                                             `json:"workspace_id"`
+	BaseAgentRevisionId        nullable.Nullable[string]                  `json:"base_agent_revision_id"`
+	BaseAgentVersion           nullable.Nullable[int]                     `json:"base_agent_version,omitempty"`
+	Config                     nullable.Nullable[AgentConfigOutput]       `json:"config"`
+	ContentDigest              string                                     `json:"content_digest"`
+	CreatedAt                  time.Time                                  `json:"created_at"`
+	CreationMetadata           nullable.Nullable[CreationMetadata]        `json:"creation_metadata,omitempty"`
+	EvidenceRefs               *[]string                                  `json:"evidence_refs,omitempty"`
+	Id                         string                                     `json:"id"`
+	LatestValidation           nullable.Nullable[ConfigurationValidation] `json:"latest_validation,omitempty"`
+	Mode                       ConfigurationDraftMode                     `json:"mode"`
+	OrganizationId             string                                     `json:"organization_id"`
+	SessionId                  string                                     `json:"session_id"`
+	SourceAgentRevisionId      nullable.Nullable[string]                  `json:"source_agent_revision_id"`
+	SourceAgentRevisionVersion nullable.Nullable[int]                     `json:"source_agent_revision_version,omitempty"`
+	SourceSelector             ConfigurationDraftSourceSelector           `json:"source_selector"`
+	Status                     ConfigurationDraftStatus                   `json:"status"`
+	TargetAgentId              nullable.Nullable[string]                  `json:"target_agent_id"`
+	TerminalReason             nullable.Nullable[string]                  `json:"terminal_reason,omitempty"`
+	UpdatedAt                  time.Time                                  `json:"updated_at"`
+	Version                    int                                        `json:"version"`
+	WorkspaceId                string                                     `json:"workspace_id"`
 }
 
 // ConfigurationDraftMode defines model for ConfigurationDraft.Mode.
@@ -3916,7 +3938,6 @@ type ConfigurationDraftStatus string
 
 // ConfigurationDraftReview defines model for ConfigurationDraftReview.
 type ConfigurationDraftReview struct {
-	ApplicationReceipt         nullable.Nullable[ConfigurationApplicationReceipt] `json:"application_receipt,omitempty"`
 	Base                       nullable.Nullable[ConfigurationRevisionView]       `json:"base"`
 	BaseAgentRevisionId        nullable.Nullable[string]                          `json:"base_agent_revision_id"`
 	BaseAgentVersion           nullable.Nullable[int]                             `json:"base_agent_version,omitempty"`
@@ -3930,11 +3951,10 @@ type ConfigurationDraftReview struct {
 	CurrentTargetToCandidate   []ConfigurationDifference                          `json:"current_target_to_candidate"`
 	EvidenceRefs               *[]string                                          `json:"evidence_refs,omitempty"`
 	Id                         string                                             `json:"id"`
+	LatestApplicationReceipt   nullable.Nullable[ConfigurationApplicationReceipt] `json:"latest_application_receipt"`
 	LatestValidation           nullable.Nullable[ConfigurationValidation]         `json:"latest_validation,omitempty"`
 	Mode                       ConfigurationDraftReviewMode                       `json:"mode"`
 	OrganizationId             string                                             `json:"organization_id"`
-	OwnerUserId                string                                             `json:"owner_user_id"`
-	PredecessorDraftId         nullable.Nullable[string]                          `json:"predecessor_draft_id,omitempty"`
 	SessionId                  string                                             `json:"session_id"`
 	Source                     nullable.Nullable[ConfigurationRevisionView]       `json:"source"`
 	SourceAgentRevisionId      nullable.Nullable[string]                          `json:"source_agent_revision_id"`
@@ -3945,7 +3965,6 @@ type ConfigurationDraftReview struct {
 	TargetAgentId              nullable.Nullable[string]                          `json:"target_agent_id"`
 	TargetConflict             bool                                               `json:"target_conflict"`
 	TerminalReason             nullable.Nullable[string]                          `json:"terminal_reason,omitempty"`
-	ThreadId                   string                                             `json:"thread_id"`
 	UpdatedAt                  time.Time                                          `json:"updated_at"`
 	Version                    int                                                `json:"version"`
 	WorkspaceId                string                                             `json:"workspace_id"`
@@ -3965,8 +3984,7 @@ type ConfigurationInputRequest struct {
 	ExpectedThreadVersion int `json:"expected_thread_version"`
 
 	// Input Submitted or retained versioned ordinary Agent input.
-	Input  AgentInput                         `json:"input"`
-	Source nullable.Nullable[SourceSelection] `json:"source,omitempty"`
+	Input AgentInput `json:"input"`
 }
 
 // ConfigurationRevisionView defines model for ConfigurationRevisionView.
@@ -3985,14 +4003,14 @@ type ConfigurationSessionCollection struct {
 
 // ConfigurationSessionView defines model for ConfigurationSessionView.
 type ConfigurationSessionView struct {
-	CreatedAt      time.Time                 `json:"created_at"`
-	Id             string                    `json:"id"`
-	OrganizationId string                    `json:"organization_id"`
-	OwnerUserId    string                    `json:"owner_user_id"`
-	RootThreadId   string                    `json:"root_thread_id"`
-	TargetAgentId  nullable.Nullable[string] `json:"target_agent_id"`
-	UpdatedAt      time.Time                 `json:"updated_at"`
-	WorkspaceId    string                    `json:"workspace_id"`
+	ConfigurationDraftId string    `json:"configuration_draft_id"`
+	CreatedAt            time.Time `json:"created_at"`
+	Id                   string    `json:"id"`
+	OrganizationId       string    `json:"organization_id"`
+	OwnerUserId          string    `json:"owner_user_id"`
+	RootThreadId         string    `json:"root_thread_id"`
+	UpdatedAt            time.Time `json:"updated_at"`
+	WorkspaceId          string    `json:"workspace_id"`
 }
 
 // ConfigurationThreadCollection defines model for ConfigurationThreadCollection.
@@ -4003,10 +4021,8 @@ type ConfigurationThreadCollection struct {
 
 // ConfigurationThreadView defines model for ConfigurationThreadView.
 type ConfigurationThreadView struct {
-	ActiveDraftId              nullable.Nullable[string]                          `json:"active_draft_id"`
-	LatestDraft                ConfigurationDraft                                 `json:"latest_draft"`
-	PreviousApplicationReceipt nullable.Nullable[ConfigurationApplicationReceipt] `json:"previous_application_receipt"`
-	Thread                     Thread                                             `json:"thread"`
+	Draft  ConfigurationDraft `json:"draft"`
+	Thread Thread             `json:"thread"`
 }
 
 // ConfigurationValidation defines model for ConfigurationValidation.
@@ -4289,8 +4305,7 @@ type CreateAuthorizationRequestMethod string
 
 // CreateConfigurationThreadRequest defines model for CreateConfigurationThreadRequest.
 type CreateConfigurationThreadRequest struct {
-	ForkFromRunId string                             `json:"fork_from_run_id"`
-	Source        nullable.Nullable[SourceSelection] `json:"source,omitempty"`
+	ForkFromRunId string `json:"fork_from_run_id"`
 }
 
 // CreateConnectionRequest defines model for CreateConnectionRequest.
@@ -6080,7 +6095,7 @@ type RunOutputAssetSourceKind string
 // RunResource defines model for RunResource.
 type RunResource struct {
 	AgentId                    string                       `json:"agent_id"`
-	AgentRevisionId            string                       `json:"agent_revision_id"`
+	AgentRevisionId            nullable.Nullable[string]    `json:"agent_revision_id"`
 	CompletedAt                nullable.Nullable[time.Time] `json:"completed_at"`
 	ConfigurationDraftId       nullable.Nullable[string]    `json:"configuration_draft_id,omitempty"`
 	CreatedAt                  time.Time                    `json:"created_at"`
@@ -6574,21 +6589,21 @@ type ThreadQueueMutationReceipt struct {
 
 // ThreadResource defines model for ThreadResource.
 type ThreadResource struct {
-	ConfigurationLatestDraftId nullable.Nullable[string] `json:"configuration_latest_draft_id,omitempty"`
-	CreatedAt                  time.Time                 `json:"created_at"`
-	CurrentRunId               nullable.Nullable[string] `json:"current_run_id"`
-	DefaultEnvironmentId       nullable.Nullable[string] `json:"default_environment_id"`
-	HeadRunId                  nullable.Nullable[string] `json:"head_run_id"`
-	Id                         string                    `json:"id"`
-	Labels                     map[string]interface{}    `json:"labels"`
-	OriginKind                 string                    `json:"origin_kind"`
-	OriginRunId                nullable.Nullable[string] `json:"origin_run_id"`
-	OriginThreadId             nullable.Nullable[string] `json:"origin_thread_id"`
-	QueueVersion               int                       `json:"queue_version"`
-	Role                       string                    `json:"role"`
-	SessionId                  string                    `json:"session_id"`
-	UpdatedAt                  time.Time                 `json:"updated_at"`
-	Version                    int                       `json:"version"`
+	ConfigurationDraftId nullable.Nullable[string] `json:"configuration_draft_id,omitempty"`
+	CreatedAt            time.Time                 `json:"created_at"`
+	CurrentRunId         nullable.Nullable[string] `json:"current_run_id"`
+	DefaultEnvironmentId nullable.Nullable[string] `json:"default_environment_id"`
+	HeadRunId            nullable.Nullable[string] `json:"head_run_id"`
+	Id                   string                    `json:"id"`
+	Labels               map[string]interface{}    `json:"labels"`
+	OriginKind           string                    `json:"origin_kind"`
+	OriginRunId          nullable.Nullable[string] `json:"origin_run_id"`
+	OriginThreadId       nullable.Nullable[string] `json:"origin_thread_id"`
+	QueueVersion         int                       `json:"queue_version"`
+	Role                 string                    `json:"role"`
+	SessionId            string                    `json:"session_id"`
+	UpdatedAt            time.Time                 `json:"updated_at"`
+	Version              int                       `json:"version"`
 }
 
 // ThreadRole defines model for ThreadRole.
@@ -7319,6 +7334,12 @@ type PostApplicationAccountsAccountIdActionParamsAction string
 type PatchConfigurationDraftsDraftIdParams struct {
 	IdempotencyKey string `json:"Idempotency-Key"`
 	IfMatch        string `json:"If-Match"`
+}
+
+// GetConfigurationDraftsDraftIdApplicationsParams defines parameters for GetConfigurationDraftsDraftIdApplications.
+type GetConfigurationDraftsDraftIdApplicationsParams struct {
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
 // PostConfigurationDraftsDraftIdApplyParams defines parameters for PostConfigurationDraftsDraftIdApply.
@@ -13795,6 +13816,11 @@ type ClientInterface interface {
 	// Corresponds with PATCH /api/v1/configuration-drafts/{draft_id} (the `PatchConfigurationDraftsDraftId` operationId).
 	PatchConfigurationDraftsDraftId(ctx context.Context, draftId string, params *PatchConfigurationDraftsDraftIdParams, body PatchConfigurationDraftsDraftIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetConfigurationDraftsDraftIdApplications List Applications
+	//
+	// Corresponds with GET /api/v1/configuration-drafts/{draft_id}/applications (the `GetConfigurationDraftsDraftIdApplications` operationId).
+	GetConfigurationDraftsDraftIdApplications(ctx context.Context, draftId string, params *GetConfigurationDraftsDraftIdApplicationsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// PostConfigurationDraftsDraftIdApplyWithBody Apply Draft
 	//
 	// Takes any type of body and a specified content type.
@@ -16727,6 +16753,21 @@ func (c *Client) PatchConfigurationDraftsDraftIdWithBody(ctx context.Context, dr
 // Corresponds with PATCH /api/v1/configuration-drafts/{draft_id} (the `PatchConfigurationDraftsDraftId` operationId).
 func (c *Client) PatchConfigurationDraftsDraftId(ctx context.Context, draftId string, params *PatchConfigurationDraftsDraftIdParams, body PatchConfigurationDraftsDraftIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPatchConfigurationDraftsDraftIdRequest(c.Server, draftId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetConfigurationDraftsDraftIdApplications List Applications
+//
+// Corresponds with GET /api/v1/configuration-drafts/{draft_id}/applications (the `GetConfigurationDraftsDraftIdApplications` operationId).
+func (c *Client) GetConfigurationDraftsDraftIdApplications(ctx context.Context, draftId string, params *GetConfigurationDraftsDraftIdApplicationsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetConfigurationDraftsDraftIdApplicationsRequest(c.Server, draftId, params)
 	if err != nil {
 		return nil, err
 	}
@@ -24071,6 +24112,79 @@ func NewPatchConfigurationDraftsDraftIdRequestWithBody(server string, draftId st
 
 		req.Header.Set("If-Match", headerParam1)
 
+	}
+
+	return req, nil
+}
+
+// NewGetConfigurationDraftsDraftIdApplicationsRequest constructs an http.Request for the GetConfigurationDraftsDraftIdApplications method
+func NewGetConfigurationDraftsDraftIdApplicationsRequest(server string, draftId string, params *GetConfigurationDraftsDraftIdApplicationsParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "draft_id", draftId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/configuration-drafts/%s/applications", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
 	}
 
 	return req, nil
@@ -39910,6 +40024,13 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with PATCH /api/v1/configuration-drafts/{draft_id} (the `PatchConfigurationDraftsDraftId` operationId).
 	PatchConfigurationDraftsDraftIdWithResponse(ctx context.Context, draftId string, params *PatchConfigurationDraftsDraftIdParams, body PatchConfigurationDraftsDraftIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchConfigurationDraftsDraftIdResponse, error)
 
+	// GetConfigurationDraftsDraftIdApplicationsWithResponse List Applications
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/configuration-drafts/{draft_id}/applications (the `GetConfigurationDraftsDraftIdApplications` operationId).
+	GetConfigurationDraftsDraftIdApplicationsWithResponse(ctx context.Context, draftId string, params *GetConfigurationDraftsDraftIdApplicationsParams, reqEditors ...RequestEditorFn) (*GetConfigurationDraftsDraftIdApplicationsResponse, error)
+
 	// PostConfigurationDraftsDraftIdApplyWithBodyWithResponse Apply Draft
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
@@ -44484,6 +44605,83 @@ func (r PatchConfigurationDraftsDraftIdResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r PatchConfigurationDraftsDraftIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetConfigurationDraftsDraftIdApplicationsResponse200Headers the declared response headers of an HTTP 200 response for GetConfigurationDraftsDraftIdApplications
+type GetConfigurationDraftsDraftIdApplicationsResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetConfigurationDraftsDraftIdApplicationsResponse400Headers the declared response headers of an HTTP 400 response for GetConfigurationDraftsDraftIdApplications
+type GetConfigurationDraftsDraftIdApplicationsResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetConfigurationDraftsDraftIdApplicationsResponseDefaultHeaders the declared response headers of an HTTP default response for GetConfigurationDraftsDraftIdApplications
+type GetConfigurationDraftsDraftIdApplicationsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetConfigurationDraftsDraftIdApplicationsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ConfigurationApplicationCollection
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetConfigurationDraftsDraftIdApplicationsResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetConfigurationDraftsDraftIdApplicationsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetConfigurationDraftsDraftIdApplicationsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetConfigurationDraftsDraftIdApplicationsResponse) GetJSON200() *ConfigurationApplicationCollection {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetConfigurationDraftsDraftIdApplicationsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetConfigurationDraftsDraftIdApplicationsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetConfigurationDraftsDraftIdApplicationsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetConfigurationDraftsDraftIdApplicationsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetConfigurationDraftsDraftIdApplicationsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetConfigurationDraftsDraftIdApplicationsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -65698,6 +65896,19 @@ func (c *ClientWithResponses) PatchConfigurationDraftsDraftIdWithResponse(ctx co
 	return ParsePatchConfigurationDraftsDraftIdResponse(rsp)
 }
 
+// GetConfigurationDraftsDraftIdApplicationsWithResponse List Applications
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/configuration-drafts/{draft_id}/applications (the `GetConfigurationDraftsDraftIdApplications` operationId).
+func (c *ClientWithResponses) GetConfigurationDraftsDraftIdApplicationsWithResponse(ctx context.Context, draftId string, params *GetConfigurationDraftsDraftIdApplicationsParams, reqEditors ...RequestEditorFn) (*GetConfigurationDraftsDraftIdApplicationsResponse, error) {
+	rsp, err := c.GetConfigurationDraftsDraftIdApplications(ctx, draftId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetConfigurationDraftsDraftIdApplicationsResponse(rsp)
+}
+
 // PostConfigurationDraftsDraftIdApplyWithBodyWithResponse Apply Draft
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
@@ -72645,6 +72856,86 @@ func ParsePatchConfigurationDraftsDraftIdResponse(rsp *http.Response) (*PatchCon
 		response.Headers400 = &headers
 	case true:
 		var headers PatchConfigurationDraftsDraftIdResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetConfigurationDraftsDraftIdApplicationsResponse parses an HTTP response from a GetConfigurationDraftsDraftIdApplicationsWithResponse call
+func ParseGetConfigurationDraftsDraftIdApplicationsResponse(rsp *http.Response) (*GetConfigurationDraftsDraftIdApplicationsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetConfigurationDraftsDraftIdApplicationsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ConfigurationApplicationCollection
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetConfigurationDraftsDraftIdApplicationsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetConfigurationDraftsDraftIdApplicationsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetConfigurationDraftsDraftIdApplicationsResponseDefaultHeaders
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
