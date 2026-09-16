@@ -2,12 +2,17 @@
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from mcp.types import Tool
 from pydantic import BaseModel, JsonValue
 
+from a13n_service.interactions.attempts import AttemptContext
+
 from .domain import JsonObject
+
+if TYPE_CHECKING:
+    from .native_context import NativeToolContext
 
 
 class NativeActionObserver(Protocol):
@@ -51,3 +56,16 @@ def credential(credentials: JsonObject, name: str) -> str:
     if not isinstance(value, str) or not value:
         raise ValueError("nativecredentials_unavailable")
     return value
+
+
+class NativeObservationFactory(Protocol):
+    def __call__(
+        self,
+        *,
+        action: str,
+        attempt: "AttemptContext",
+        context: "NativeToolContext",
+        workspace_id: str,
+        account_version: int,
+        credential_generation: int,
+    ) -> NativeActionObserver | None: ...

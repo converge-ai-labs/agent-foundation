@@ -62,12 +62,14 @@
 .platforms {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  margin: 24px 0;
+  gap: 12px;
+  max-width: 400px;
+  margin: 16px 0;
 }
 .platforms button {
-  min-height: 100px;
-  font-size: 18px;
+  min-height: 44px;
+  justify-content: space-between;
+  font-size: 14px;
 }
 .instructions {
   padding-left: 22px;
@@ -104,12 +106,56 @@
   list-style: none;
   padding: 0;
 }
-.existing li {
+.existing li + li {
+  border-top: 1px solid var(--a13n-border);
+}
+.existing li a {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--a13n-border);
+  padding: 14px 12px;
+  border-radius: 6px;
+  text-decoration: none;
+}
+.existing li a:hover {
+  background: var(--a13n-surface);
+}
+.existing li a:focus-visible {
+  outline: 2px solid var(--a13n-text);
+  outline-offset: 2px;
+}
+.existing strong,
+.existing small {
+  display: block;
+  overflow-wrap: anywhere;
+}
+.existing strong {
+  font-size: 14px;
+  font-weight: 500;
+}
+.existing small {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--a13n-secondary);
+}
+.existing svg {
+  flex-shrink: 0;
+  color: var(--a13n-secondary);
+}
+.accountModes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  width: 100%;
+  max-width: 480px;
+}
+.accountModes button {
+  min-height: 40px;
+  white-space: normal;
+}
+.modeContent {
+  max-width: 600px;
+  padding-top: 16px;
 }
 .account {
   font-weight: 600;

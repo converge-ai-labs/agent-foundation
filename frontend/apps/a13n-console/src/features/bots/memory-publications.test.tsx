@@ -1,3 +1,4 @@
+import type { BotAccount } from "./account";
 import { ApiError } from "../../service-client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import {
@@ -24,8 +25,9 @@ vi.mock("react-i18next", () => ({
 }));
 const account = {
   id: "acct_test",
+  memoryVersion: 1,
   memory: { provider_id: "mp_test" },
-} as Schema["Account"];
+} as BotAccount;
 const copy = {
   id: "mdoc_copy",
   title: "Approved release",

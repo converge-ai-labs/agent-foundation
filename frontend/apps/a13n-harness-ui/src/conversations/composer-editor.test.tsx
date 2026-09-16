@@ -81,39 +81,51 @@ it("does not submit Enter while an IME is composing", () => {
   expect(submit).not.toHaveBeenCalled();
   fireEvent.compositionEnd(textbox);
 });
-it("renders relative collaborator positions without sending them as CRDT roots", async () => {
-  const draft = new ThreadDraft();
-  draft.doc.getText("text").insert(0, "Shared");
-  render(
-    <ComposerEditor
-      draft={draft}
-      profile={{ display_name: "Alice", color: "#2563eb" }}
-      presence={() => {}}
-      submit={() => {}}
-    />,
-  );
-  act(() => {
-    draft.participants = {
-      "participant-two": {
-        name: "Bob",
-        color: "#112233",
-        anchor: encode(
-          Y.encodeRelativePosition(
-            Y.createRelativePositionFromTypeIndex(draft.doc.getText("text"), 0),
+it.each(["", "Shared"])(
+  "renders relative collaborator positions in %j without placeholder text or extra CRDT roots",
+  async (text) => {
+    const draft = new ThreadDraft();
+    draft.doc.getText("text").insert(0, text);
+    render(
+      <ComposerEditor
+        draft={draft}
+        profile={{ display_name: "Alice", color: "#2563eb" }}
+        presence={() => {}}
+        submit={() => {}}
+      />,
+    );
+    const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
+    expect(textbox.textContent).toBe(text);
+    act(() => {
+      draft.participants = {
+        "participant-two": {
+          name: "Bob",
+          color: "#112233",
+          anchor: encode(
+            Y.encodeRelativePosition(
+              Y.createRelativePositionFromTypeIndex(
+                draft.doc.getText("text"),
+                0,
+              ),
+            ),
           ),
-        ),
-        head: encode(
-          Y.encodeRelativePosition(
-            Y.createRelativePositionFromTypeIndex(draft.doc.getText("text"), 3),
+          head: encode(
+            Y.encodeRelativePosition(
+              Y.createRelativePositionFromTypeIndex(
+                draft.doc.getText("text"),
+                Math.min(3, text.length),
+              ),
+            ),
           ),
-        ),
-      },
-    };
-    draft.notify();
-  });
-  await screen.findByText("Bob");
-  expect([...draft.doc.share.keys()].sort()).toEqual(["attachments", "text"]);
-});
+        },
+      };
+      draft.notify();
+    });
+    await screen.findByText("Bob");
+    expect(textbox.querySelector(".cm-placeholder")).toBeNull();
+    expect([...draft.doc.share.keys()].sort()).toEqual(["attachments", "text"]);
+  },
+);
 
 function inlineEditor() {
   const draft = new ThreadDraft();
@@ -453,4 +465,77 @@ it("changes draft-lifetime guidance without remounting the editor on Thread crea
   expect(editor.getAttribute("aria-description")).toContain(
     "Shared with this conversation",
   );
+});
+
+it("completes dollar skills without sending, and retains the editor across catalog context changes", async () => {
+  const { startCompletion } = await import("@codemirror/autocomplete");
+  const draft = new ThreadDraft();
+  const editor = { current: null as EditorView | null };
+  const submit = vi.fn();
+  const loadSkills = vi.fn(async () => ({
+    catalog_id: "a".repeat(64),
+    context_kind: "draft" as const,
+    items: [
+      {
+        item_id: "b".repeat(64),
+        name: "review",
+        description: "Review carefully",
+        source_id: "project",
+        logical_path: ".agents/skills/review",
+      },
+    ],
+  }));
+  const props = {
+    draft,
+    editor,
+    submit,
+    loadSkills,
+    profile: { display_name: "Alice", color: "#2563eb" },
+    presence: vi.fn(),
+  };
+  const view = render(<ComposerEditor {...props} skillContext="first" />);
+  const original = editor.current;
+  act(() => {
+    editor.current!.dispatch({
+      changes: { from: 0, insert: "Use $rev" },
+      selection: { anchor: 8 },
+    });
+    editor.current!.focus();
+    startCompletion(editor.current!);
+  });
+  await screen.findByRole("option", { name: /\$review/ });
+  expect(screen.getByText("Review carefully")).toBeTruthy();
+  // CodeMirror suppresses accidental acceptance immediately after opening.
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  });
+  const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
+  fireEvent.keyDown(textbox, { key: "Enter" });
+  expect(submit).not.toHaveBeenCalled();
+  expect(draft.doc.getText("text").toString()).toBe("Use $review ");
+  fireEvent.keyDown(textbox, { key: "Enter" });
+  expect(submit).toHaveBeenCalledOnce();
+  view.rerender(<ComposerEditor {...props} skillContext="second" />);
+  expect(editor.current).toBe(original);
+  expect(draft.doc.getText("text").toString()).toBe("Use $review ");
+  act(() => {
+    draft.replacement = {
+      draft_id: "replacement",
+      participant_id: "participant-one",
+      participants: {},
+      update_base64: encode(Y.encodeStateAsUpdate(new Y.Doc())),
+    };
+    draft.joinReplacement(false);
+  });
+  view.rerender(<ComposerEditor {...props} skillContext="second" />);
+  expect(editor.current).not.toBe(original);
+  act(() => {
+    editor.current!.dispatch({
+      changes: { from: 0, insert: "$rev" },
+      selection: { anchor: 4 },
+    });
+    editor.current!.focus();
+    startCompletion(editor.current!);
+  });
+  await screen.findByRole("option", { name: /\$review/ });
 });

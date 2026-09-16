@@ -1,7 +1,5 @@
-import { memo, useEffect, useMemo, useState } from "react";
-import { Button } from "a13n-ui";
-import { ArrowClockwise, X } from "@phosphor-icons/react";
-import type { ThreadDraft } from "./draft";
+import { memo, useMemo, useState } from "react";
+import { ArrowClockwise } from "@phosphor-icons/react";
 import { ToolActivity } from "./tool-call";
 import {
   activityKind,
@@ -10,6 +8,7 @@ import {
   type ToolView,
 } from "./tool-presentation";
 import { MessageText } from "./message-text";
+import { ContextActivity } from "./context-activity";
 export { MessageText } from "./message-text";
 import type { Schema } from "../transport/client";
 import type { DisplayBlock, FocusDisplay } from "./stream";
@@ -78,7 +77,13 @@ function savedRows(
       const id = `saved:${identity}:${index}`;
       const context = part.metadata?.["a13n.context"];
       if (context === "handoff" || context === "compaction") {
-        rows.push({ id, kind: "context", context, text: part.text ?? "" });
+        const operation = part.metadata?.operation_id;
+        rows.push({
+          id: typeof operation === "string" ? `context:${operation}` : id,
+          kind: "context",
+          context,
+          text: part.text ?? "",
+        });
       } else if (systemNotice(part.metadata)) {
         rows.push({
           id,
@@ -275,13 +280,11 @@ function Rows({
           )}
         </section>
       ) : row.kind === "context" ? (
-        <details className={styles.contextActivity} data-kind={row.context}>
-          <summary>
-            {row.context === "handoff" ? "Summary" : "Compact Summary"}
-          </summary>
-          {row.status && <small>{row.status}</small>}
-          <MessageText text={row.text} />
-        </details>
+        <ContextActivity
+          context={row.context}
+          text={row.text}
+          status={row.status}
+        />
       ) : (
         <details className={styles.activity}>
           <summary>{row.name}</summary>
@@ -376,13 +379,7 @@ export function RecoveryNotice({
 }: {
   recovery: FocusDisplay["recovery"];
 }) {
-  const [dismissed, setDismissed] = useState<string>();
-  useEffect(() => {
-    if (recovery?.state !== "resumed") return;
-    const timer = setTimeout(() => setDismissed(recovery.id), 3000);
-    return () => clearTimeout(timer);
-  }, [recovery?.id, recovery?.state]);
-  if (!recovery || dismissed === recovery.id) return null;
+  if (!recovery) return null;
   return (
     <div
       role="status"
@@ -392,8 +389,11 @@ export function RecoveryNotice({
       <ArrowClockwise aria-hidden="true" />
       <span>
         {recovery.state === "retrying"
-          ? "Reconnecting and continuing…"
-          : "Connection restored · continuing"}
+          ? "Reconnecting to model…"
+          : recovery.state === "resumed"
+            ? "Model connection restored"
+            : "Model reconnection ended"}
+        {` · ${recovery.retries} ${recovery.retries === 1 ? "retry" : "retries"}`}
       </span>
     </div>
   );
@@ -405,35 +405,6 @@ function GapNotice() {
       Some live content is unavailable. Saved history and execution details
       remain authoritative.
     </p>
-  );
-}
-
-export function SteerNotice({ draft }: { draft: ThreadDraft }) {
-  const submission = draft.submission;
-  const [dismissed, setDismissed] = useState<typeof submission>();
-  useEffect(() => {
-    if (submission.kind !== "accepted" || submission.action !== "steer") return;
-    const timer = setTimeout(() => setDismissed(submission), 5000);
-    return () => clearTimeout(timer);
-  }, [submission]);
-  if (
-    submission.kind !== "accepted" ||
-    submission.action !== "steer" ||
-    dismissed === submission
-  )
-    return null;
-  return (
-    <div role="status" className={styles.steerNotice}>
-      <span>{submission.message}</span>
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label="Dismiss steer notification"
-        onClick={() => setDismissed(submission)}
-      >
-        <X />
-      </Button>
-    </div>
   );
 }
 

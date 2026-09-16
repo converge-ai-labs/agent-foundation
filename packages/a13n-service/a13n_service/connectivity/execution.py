@@ -49,6 +49,7 @@ from .mcp.management import require_connection as require_mcp_connection
 from .mcp.refresh import OAuthCredentialRefresh
 from .mcp.transport import RemoteTransport
 from .native import native_capability
+from .native_actions import NativeObservationFactory
 from .native_context import NativeToolContext, parse_native_contexts
 from .selection_domain import ConnectionRunSelection
 from .selection_resolution import ConnectivitySelectionResolver, FrozenRunConnectivity
@@ -83,6 +84,7 @@ class ExternalToolRuntime:
         endpoints: EndpointPolicy,
         http_client: httpx2.AsyncClient,
         oauth_refresh: OAuthCredentialRefresh,
+        observations: NativeObservationFactory | None = None,
     ) -> None:
         self._sessions = sessions
         self._protector = protector
@@ -91,6 +93,7 @@ class ExternalToolRuntime:
         self._endpoints = endpoints
         self._http = http_client
         self._oauth_refresh = oauth_refresh
+        self._observations = observations
         self._selections = ConnectivitySelectionResolver(sessions)
 
     async def _scope(
@@ -256,6 +259,7 @@ class ExternalToolRuntime:
                     self._endpoints,
                     self._http,
                     attempt=attempt,
+                    observations=self._observations,
                 )
                 if capability is not None:
                     capabilities.append(capability)

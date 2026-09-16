@@ -27,6 +27,7 @@ from a13n_service.interactions.domain import RunLineageKind, RunStatus
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord, SessionRecord, ThreadRecord
 from a13n_service.labels import Labels, label_predicates
 from a13n_service.lifecycle import LifecycleEntityType
+from a13n_service.lifecycle.projections import public_output_reference
 from a13n_service.lifecycle.reconciliation import load_owning_run
 from a13n_service.run_stream import RetainedReplayUnavailable, RunReplayIntegrityError, RunReplayStore
 from a13n_service.storage import ObjectStoreError, short_session
@@ -540,7 +541,17 @@ class NativeInteractionQueries:
             else None
         )
         return ItemCollection(
-            items=tuple(ItemResource.model_validate(item.model_dump()) for item in page),
+            items=tuple(
+                ItemResource.model_validate(
+                    {
+                        **item.model_dump(),
+                        "content": public_output_reference(item.content)
+                        if item.kind == "run_output" and isinstance(item.content, dict)
+                        else item.content,
+                    }
+                )
+                for item in page
+            ),
             next_cursor=next_cursor,
         )
 

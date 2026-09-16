@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from a13n_harness import DeferredToolResume
+from a13n_harness.toolsets.interaction import ASK_USER_QUESTION_TOOL_NAME, validate_user_question_result
 from pydantic import TypeAdapter, ValidationError
 from pydantic_ai import ToolApproved, ToolDenied
 from pydantic_ai.exceptions import ToolFailed
@@ -53,6 +54,18 @@ def map_waiting_feedback(
         raise WaitingFeedbackMappingError("feedback approval category does not match native requests")
     if set(calls) != {request.tool_call_id for request in requests.calls}:
         raise WaitingFeedbackMappingError("feedback call category does not match native requests")
+    for request in requests.calls:
+        if request.tool_name == ASK_USER_QUESTION_TOOL_NAME:
+            value = calls[request.tool_call_id]
+            # Older Console clients and retained feedback Runs may contain plain text.
+            if isinstance(value, str):
+                value = {"response": value}
+            try:
+                calls[request.tool_call_id] = validate_user_question_result(request.args_as_dict(), value)
+            except ValueError as error:
+                raise WaitingFeedbackMappingError(
+                    "Answer must cover the requested questions or provide a non-empty general response."
+                ) from error
     return DeferredToolResume(
         requests=requests,
         results=DeferredToolResults(approvals=approvals, calls=calls),

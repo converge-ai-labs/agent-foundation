@@ -99,7 +99,18 @@ async def test_suspended_result_preserves_native_requests_and_classifies_pending
         calls=[
             ToolCallPart(
                 tool_name="ask_user_question",
-                args={"questions": []},
+                args={
+                    "questions": [
+                        {
+                            "question": "Proceed?",
+                            "header": "Confirm",
+                            "options": [
+                                {"label": "Yes", "description": "Continue"},
+                                {"label": "No", "description": "Stop"},
+                            ],
+                        }
+                    ]
+                },
                 tool_call_id="question-1",
             ),
             ToolCallPart(
@@ -143,6 +154,10 @@ async def test_suspended_result_preserves_native_requests_and_classifies_pending
         PendingCallKind.client_tool,
         PendingCallKind.approval,
     ]
+    question = projection.candidate.pending.calls[0].presentation
+    assert question["questions"][0]["question"] == "Proceed?"
+    assert question["questions"][0]["options"][1]["label"] == "No"
+    assert projection.candidate.pending.calls[1].presentation is None
     assert projection.candidate.pending.calls[-1].presentation == {
         "target": "path: /workspace/report.md",
         "reason": "Tool reviewer requires approval.",
@@ -219,7 +234,17 @@ async def test_suspension_without_client_calls_omits_surface_and_digest(
     )
     call = ToolCallPart(
         tool_name="dangerous_action" if kind == "approval" else "ask_user_question",
-        args={},
+        args={}
+        if kind == "approval"
+        else {
+            "questions": [
+                {
+                    "question": "Proceed?",
+                    "header": "Confirm",
+                    "options": [{"label": "Yes", "description": "Continue"}, {"label": "No", "description": "Stop"}],
+                }
+            ]
+        },
         tool_call_id="pending-1",
     )
     deferred = DeferredToolRequests(approvals=[call]) if kind == "approval" else DeferredToolRequests(calls=[call])

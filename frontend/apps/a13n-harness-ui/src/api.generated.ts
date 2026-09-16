@@ -570,6 +570,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/threads/skills-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Skills */
+        post: operations["preview_skills_api_threads_skills_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Thread Skills */
+        get: operations["thread_skills_api_threads__thread_id__skills_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/{thread_id}/configuration": {
         parameters: {
             query?: never;
@@ -979,6 +1013,23 @@ export interface paths {
         get: operations["transcript_api_threads__thread_id__transcript_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/touch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Touch Thread */
+        post: operations["touch_thread_api_threads__thread_id__touch_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1888,6 +1939,10 @@ export interface components {
             continuation_id: string;
             /** Requests */
             requests: components["schemas"]["DecisionRequestView"][];
+            /** Expires At */
+            expires_at?: string | null;
+            /** Server Time */
+            server_time?: string | null;
         };
         DecisionRequestView: components["schemas"]["StructuredQuestionRequestView"] | components["schemas"]["ApprovalRequestView"] | components["schemas"]["ExternalRequestView"];
         /** DeferredRequestView */
@@ -3329,6 +3384,35 @@ export interface components {
         } & {
             [key: string]: components["schemas"]["JsonValue"];
         };
+        /** SkillCatalogItemView */
+        SkillCatalogItemView: {
+            /** Item Id */
+            item_id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Source Id */
+            source_id: string;
+            /** Logical Path */
+            logical_path: string;
+        };
+        /** SkillCatalogView */
+        SkillCatalogView: {
+            /** Catalog Id */
+            catalog_id: string;
+            /**
+             * Context Kind
+             * @enum {string}
+             */
+            context_kind: "draft" | "idle" | "active";
+            /** Thread Id */
+            thread_id?: string | null;
+            /** Receipt Id */
+            receipt_id?: string | null;
+            /** Items */
+            items: components["schemas"]["SkillCatalogItemView"][];
+        };
         /**
          * StoreKind
          * @enum {string}
@@ -3516,6 +3600,11 @@ export interface components {
             project_id?: string | null;
             /** Rows */
             rows: components["schemas"]["ThreadActivityView"][];
+            /**
+             * Active Rows
+             * @default []
+             */
+            active_rows?: components["schemas"]["ThreadActivityView"][];
             /** Total */
             total: number;
             /** Next Cursor */
@@ -3722,6 +3811,8 @@ export interface components {
             excerpt?: components["schemas"]["ConversationExcerpt"];
             /** Activity At */
             activity_at?: string | null;
+            /** Touched At */
+            touched_at?: string | null;
             /** Archived */
             archived: boolean;
             configuration: components["schemas"]["ThreadConfigurationView"];
@@ -4409,6 +4500,15 @@ export interface components {
             /** Attachment Id */
             attachment_id: string;
         };
+        /** SkillReference */
+        SkillReference: {
+            /** Catalog Id */
+            catalog_id: string;
+            /** Item Id */
+            item_id: string;
+            /** Name */
+            name: string;
+        };
         /** SubmitRequest */
         SubmitRequest: {
             /**
@@ -4423,6 +4523,11 @@ export interface components {
             attachment_ids?: string[];
             /** Parts */
             parts?: (string | components["schemas"]["InputAttachmentReference"])[] | null;
+            /**
+             * Skill References
+             * @default []
+             */
+            skill_references?: components["schemas"]["SkillReference"][];
             /** Source Id */
             source_id?: string | null;
             /** Model Id */
@@ -4442,6 +4547,11 @@ export interface components {
             attachment_ids?: string[];
             /** Parts */
             parts?: (string | components["schemas"]["InputAttachmentReference"])[] | null;
+            /**
+             * Skill References
+             * @default []
+             */
+            skill_references?: components["schemas"]["SkillReference"][];
             /** Source Id */
             source_id?: string | null;
         };
@@ -5663,6 +5773,61 @@ export interface operations {
             };
         };
     };
+    preview_skills_api_threads_skills_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewThreadDefaults"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillCatalogView"];
+                };
+            };
+        };
+    };
+    thread_skills_api_threads__thread_id__skills_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillCatalogView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     inspect_configuration_api_threads__thread_id__configuration_get: {
         parameters: {
             query?: never;
@@ -6315,6 +6480,7 @@ export interface operations {
                 query?: string | null;
                 include_archived?: boolean;
                 archived_only?: boolean;
+                include_active?: boolean;
                 cursor?: string | null;
                 limit?: number;
             };
@@ -6555,7 +6721,7 @@ export interface operations {
                 query?: string | null;
                 project_id?: string | null;
                 include_archived?: boolean;
-                sort?: "updated" | "activity";
+                sort?: "updated" | "activity" | "touched";
                 cursor?: string | null;
                 limit?: number;
             };
@@ -6662,6 +6828,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TranscriptPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    touch_thread_api_threads__thread_id__touch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThreadSummary"];
                 };
             };
             /** @description Validation Error */

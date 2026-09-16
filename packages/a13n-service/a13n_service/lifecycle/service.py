@@ -17,6 +17,7 @@ from a13n_service.storage import short_session
 from .cursors import LifecycleCursorError, decode_lifecycle_cursor, encode_lifecycle_cursor
 from .domain import LifecycleEntityType, ResourceLifecycleEventPage, WorkspaceEventPage
 from .persistence import LifecycleReplayGap, read_resource_events
+from .projections import public_lifecycle_event
 from .reconciliation import load_owning_run, read_workspace_events
 
 
@@ -85,7 +86,7 @@ class LifecycleEventService:
                     },
                 ) from error
         return WorkspaceEventPage(
-            items=page.items,
+            items=tuple(public_lifecycle_event(event) for event in page.items),
             next_cursor=(
                 None if page.next_seq is None else encode_lifecycle_cursor(sequence=page.next_seq, scope=scope)
             ),
@@ -180,7 +181,7 @@ class LifecycleEventService:
         return ResourceLifecycleEventPage(
             resource_type="run" if resource_type is LifecycleEntityType.run else "run_attempt",
             resource_id=resource_id,
-            items=page.items,
+            items=tuple(public_lifecycle_event(event) for event in page.items),
             next_resource_seq=page.next_resource_seq,
             retained_resource_seq_floor=page.retained_resource_seq_floor,
             high_watermark_resource_seq=page.high_watermark_resource_seq,

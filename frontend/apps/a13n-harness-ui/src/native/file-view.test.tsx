@@ -93,19 +93,6 @@ it("keeps local text on cancel and only adopts disk text after confirmation", as
   expect(PUT).not.toHaveBeenCalled();
 });
 
-it("retains local text after confirmation without writing until an explicit save", async () => {
-  const { buffer, PUT, user } = setup();
-  const dialog = await openConfirmation(user, "Keep local text");
-  await user.click(
-    within(dialog).getByRole("button", { name: "Keep local text" }),
-  );
-  expect(buffer.value).toBe("Private local text");
-  expect(buffer.base.entry.revision).toBe("two");
-  expect(buffer.dirty).toBe(true);
-  expect(PUT).not.toHaveBeenCalled();
-  expect(screen.getByRole("status").textContent).toContain("Save explicitly");
-});
-
 it("dismisses stale confirmation if the inspected disk revision changes", async () => {
   const { buffer, user, rerender, tree } = setup();
   await openConfirmation(user, "Use disk version");

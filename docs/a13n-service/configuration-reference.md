@@ -126,6 +126,12 @@ The complete machine-readable validation schema, including named enum/union defi
 | ------------------------ | ------------------------------------- | -------------- | ------------------------------------------- |
 | `memory.timeout_seconds` | `A13N_SERVICE_MEMORY_TIMEOUT_SECONDS` | number         | maximum=300; exclusiveMinimum=0; default=30 |
 
+## `configuration_assistant`
+
+| Setting                                      | Environment variable                                      | Type / choices  | Constraints and default |
+| -------------------------------------------- | --------------------------------------------------------- | --------------- | ----------------------- |
+| `configuration_assistant.total_tokens_limit` | `A13N_SERVICE_CONFIGURATION_ASSISTANT_TOTAL_TOKENS_LIMIT` | integer or null | default=null            |
+
 ## `webhooks`
 
 | Setting                             | Environment variable                            | Type / choices  | Constraints and default                        |

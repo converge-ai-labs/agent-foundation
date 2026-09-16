@@ -6,7 +6,7 @@ import {
   type QueryClient,
 } from "@tanstack/react-query";
 import { useTransport } from "../transport/context";
-import { result } from "../transport/client";
+import { result, type Schema } from "../transport/client";
 
 const pendingRefreshes = new WeakSet<Query>();
 
@@ -48,11 +48,13 @@ export function useThreads(
     enabled = true,
     limit = 30,
     archivedOnly = false,
+    includeActive = false,
   }: {
     scope?: "all" | "projectless" | "unavailable";
     enabled?: boolean;
     limit?: number;
     archivedOnly?: boolean;
+    includeActive?: boolean;
   } = {},
 ) {
   const { client } = useTransport();
@@ -65,11 +67,12 @@ export function useThreads(
       scope,
       limit,
       archivedOnly,
+      includeActive,
     ],
     enabled,
     initialPageParam: undefined as string | undefined,
-    queryFn: ({ pageParam, signal }) =>
-      result(
+    queryFn: async ({ pageParam, signal }) => ({
+      ...(await result(
         client.GET("/api/threads/activity", {
           params: {
             query: {
@@ -78,13 +81,17 @@ export function useThreads(
               project_scope: scope,
               include_archived: archived,
               archived_only: archivedOnly,
+              include_active: includeActive,
               cursor: pageParam,
               limit,
             },
           },
           signal,
         }),
-      ),
+      )),
+      // Pagination observes only its new page, not the rows already loaded.
+      observedAt: Date.now(),
+    }),
     getNextPageParam: (last) => last.next_cursor ?? undefined,
   });
   // Archive toggles replace a query, not the visible list. Retain only the same
@@ -100,6 +107,7 @@ export function useThreads(
     scope,
     limit,
     archivedOnly,
+    includeActive,
   ]);
   useEffect(() => {
     if (list.isSuccess)
@@ -142,6 +150,35 @@ export function useOperation(threadId: string, receipt?: string | null) {
       ),
   });
 }
+// The focused prefix already carries the first detail and exact operation.
+// Bootstrap only an empty cache: later HTTP observations remain authoritative,
+// and a replay must not roll an existing page back to its snapshot cutover.
+export function seedThreadSnapshot(
+  client: QueryClient,
+  threadId: string,
+  snapshot: Schema<"ThreadFocusSnapshot">,
+) {
+  if (snapshot.thread.thread.thread_id !== threadId) return;
+  const key = ["thread", threadId, "detail"];
+  if (client.getQueryData(key)) return;
+  // Cancel before publishing so a slower initial GET cannot overwrite the prefix.
+  void client.cancelQueries({ queryKey: key, exact: true });
+  client.setQueryData(key, snapshot.thread);
+  const operation = snapshot.root_operation;
+  if (operation) {
+    const operationKey = [
+      "thread",
+      threadId,
+      "operation",
+      operation.receipt.receipt_id,
+    ];
+    if (!client.getQueryData(operationKey)) {
+      void client.cancelQueries({ queryKey: operationKey, exact: true });
+      client.setQueryData(operationKey, operation);
+    }
+  }
+}
+
 export function useThread(threadId: string) {
   const { client } = useTransport();
   return useQuery({

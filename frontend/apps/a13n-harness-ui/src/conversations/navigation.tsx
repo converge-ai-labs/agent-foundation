@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { useMatch, useNavigate } from "react-router";
 import {
   Button,
@@ -53,7 +53,8 @@ export function ConversationNavigation({
   const navigate = useNavigate();
   const match = useMatch("/threads/:threadId");
   const selectedId = match?.params.threadId ?? "";
-  const selected = useThread(selectedId).data?.thread;
+  const selectedDetail = useThread(selectedId);
+  const selected = selectedDetail.data?.thread;
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState("");
   const [filterOpen, setFilterOpen] = useState(false);
@@ -197,6 +198,7 @@ export function ConversationNavigation({
               }
               presence={presence}
               selected={activeGroup === group.id ? selected : undefined}
+              selectedUpdatedAt={selectedDetail.dataUpdatedAt}
               create={() =>
                 navigate(newConversationPath(group.projectId ?? null))
               }
@@ -241,6 +243,7 @@ function ProjectGroup({
   hidden,
   presence,
   selected,
+  selectedUpdatedAt,
   create,
   rename,
   order,
@@ -252,6 +255,7 @@ function ProjectGroup({
   hidden: boolean;
   presence: Presence;
   selected?: Schema<"ThreadSummary">;
+  selectedUpdatedAt: number;
   create: () => void;
   rename: () => void;
   order: ReturnType<typeof useProjectOrder>;
@@ -261,21 +265,46 @@ function ProjectGroup({
     scope: group.scope,
     enabled: enabled && expanded,
     limit: 5,
+    includeActive: true,
   });
-  const rows = [
-    ...new Map(
-      (list.data?.pages.flatMap((page) => page.rows) ?? []).map((row) => [
-        row.thread.thread_id,
-        row,
-      ]),
-    ).values(),
-  ];
-  const pinned =
+  // The selected detail can arrive before a slower sidebar refresh. Use that
+  // observation for this row, without replacing other Projects or page cursors.
+  type Row = Pick<Schema<"ThreadActivityView">, "thread"> &
+    Partial<Schema<"ThreadActivityView">>;
+  const observed = new Map<string, Row>(
+    [
+      ...(list.data?.pages.flatMap((page) => page.rows) ?? []),
+      ...(list.data?.pages[0]?.active_rows ?? []),
+    ].map((row) => [row.thread.thread_id, row]),
+  );
+  const selectedPage = selected
+    ? list.data?.pages.find((page, index) =>
+        (index === 0
+          ? [...page.rows, ...(page.active_rows ?? [])]
+          : page.rows
+        ).some((row) => row.thread.thread_id === selected.thread_id),
+      )
+    : undefined;
+  if (
     selected &&
-    !selected.archived &&
-    !rows.some((row) => row.thread.thread_id === selected.thread_id)
-      ? selected
-      : undefined;
+    (!observed.has(selected.thread_id) ||
+      selectedUpdatedAt > (selectedPage?.observedAt ?? 0))
+  ) {
+    observed.set(selected.thread_id, {
+      ...observed.get(selected.thread_id),
+      thread: selected,
+    });
+  }
+  const activeRows: Row[] = [];
+  const recentRows: Row[] = [];
+  for (const row of observed.values()) {
+    if (row.thread.archived) continue;
+    (row.thread.root_activity.state === "inactive"
+      ? recentRows
+      : activeRows
+    ).push(row);
+  }
+  const rows = [...activeRows, ...recentRows];
   return (
     <section
       hidden={hidden}
@@ -376,18 +405,20 @@ function ProjectGroup({
         </div>
       </div>
       <div hidden={!expanded} className={styles.groupThreads}>
-        {pinned && (
-          <div className={styles.pinnedThread}>
-            <small className={styles.emptyGroup}>
-              Selected conversation · outside this page
-            </small>
-            <ThreadRow row={{ thread: pinned }} presence={presence} />
-          </div>
-        )}
-        {rows.map((row) => (
-          <ThreadRow key={row.thread.thread_id} row={row} presence={presence} />
+        {rows.map((row, index) => (
+          <Fragment key={row.thread.thread_id}>
+            {activeRows.length > 0 && index === 0 && (
+              <small className={styles.emptyGroup}>
+                Running · {activeRows.length}
+              </small>
+            )}
+            {activeRows.length > 0 && index === activeRows.length && (
+              <small className={styles.emptyGroup}>Recent</small>
+            )}
+            <ThreadRow row={row} presence={presence} />
+          </Fragment>
         ))}
-        {expanded && !list.data && list.isPending && (
+        {expanded && !rows.length && !list.data && list.isPending && (
           <div
             role="status"
             aria-label="Loading conversations"
@@ -397,9 +428,12 @@ function ProjectGroup({
             <span>Loading conversations…</span>
           </div>
         )}
-        {list.isSuccess && !list.isPreviousData && !rows.length && (
-          <small className={styles.emptyGroup}>No conversations yet</small>
-        )}
+        {list.isSuccess &&
+          !list.isPreviousData &&
+          !rows.length &&
+          !activeRows.length && (
+            <small className={styles.emptyGroup}>No conversations yet</small>
+          )}
         <ErrorNotice error={list.error} retry={() => void list.refetch()} />
         {list.hasNextPage && (
           <Button
@@ -408,8 +442,9 @@ function ProjectGroup({
             loading={list.isFetchingNextPage}
             onClick={() => void list.fetchNextPage()}
             aria-label={`Show more conversations in ${group.name}`}
+            className={styles.moreConversations}
           >
-            Show more
+            More
           </Button>
         )}
       </div>

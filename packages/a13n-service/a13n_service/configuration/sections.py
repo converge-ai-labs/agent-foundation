@@ -49,6 +49,10 @@ class MemorySettings(Section):
     timeout_seconds: float = Field(default=30, gt=0, le=300)
 
 
+class ConfigurationAssistantSettings(Section):
+    total_tokens_limit: int | None = Field(default=None, ge=1)
+
+
 class ObservabilityQuerySettings(Section):
     logfire_base_url: str | None = Field(default=None, min_length=1, max_length=2048)
     logfire_read_token: SecretStr | None = Field(default=None, min_length=1, max_length=4096, repr=False)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from a13n_service.interactions.control_domain import (
     CompletePendingResolution,
     RejectPendingResolution,
@@ -12,7 +13,7 @@ from a13n_service.interactions.domain import (
     RunPendingSummary,
     RunWaitReason,
 )
-from a13n_service.interactions.feedback import map_waiting_feedback
+from a13n_service.interactions.feedback import WaitingFeedbackMappingError, map_waiting_feedback
 from a13n_service.interactions.state import (
     DeferredContinuationState,
     HostContinuationState,
@@ -135,3 +136,29 @@ def _waiting_parent() -> tuple[RunCheckpoint, RunPendingSummary]:
         ),
     )
     return RunCheckpoint.model_validate(payload), pending
+
+
+@pytest.mark.parametrize("value", ["Retail support", {"response": "Retail support"}])
+def test_user_question_accepts_general_response_and_legacy_text(value):
+    parent, pending = _waiting_parent()
+    feedback = normalize_feedback(
+        waiting_run_id=RUN_ID,
+        sealed_state_digest_sha256="a" * 64,
+        pending=pending,
+        submitted=(RespondPendingResolution(call_id="question-1", response=value),),
+    )
+    result = map_waiting_feedback(feedback, parent).results.calls["question-1"]
+    assert result == {"answers": {}, "response": "Retail support"}
+
+
+@pytest.mark.parametrize("value", [" ", {}, {"answers": {"Unknown?": "Yes"}}, {"answers": {"Proceed?": ["Yes", "No"]}}])
+def test_user_question_rejects_invalid_response_against_frozen_request(value):
+    parent, pending = _waiting_parent()
+    feedback = normalize_feedback(
+        waiting_run_id=RUN_ID,
+        sealed_state_digest_sha256="a" * 64,
+        pending=pending,
+        submitted=(RespondPendingResolution(call_id="question-1", response=value),),
+    )
+    with pytest.raises(WaitingFeedbackMappingError, match="Answer must cover"):
+        map_waiting_feedback(feedback, parent)

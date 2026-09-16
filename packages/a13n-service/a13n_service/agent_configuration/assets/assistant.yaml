@@ -36,4 +36,4 @@ preferences:
     upstream_models: [gemini-3.8-flash, google/gemini-3.8-flash]
     model_apis: [google.generate_content, openrouter.chat_completions]
 request_limit: 40
-total_tokens_limit: 200000
+total_tokens_limit: 2000000

@@ -29,6 +29,7 @@ from pydantic_ai.models.function import FunctionModel
 from sqlalchemy import select
 
 from tests.lifecycle_support import test_lifecycle_writer
+from tests.memory.selection_support import ordinary_memory
 from tests.skills.test_runtime import DEPLOY_REVISION_ID, DEPLOY_SKILL_ID, _add_skill, _package
 
 from . import test_attempt_execution as acceptance
@@ -91,6 +92,7 @@ async def test_workers_complete_shared_environment_skill_preparation_on_first_at
         states,
         RunPayloadStore(interaction_object_store),
         InlineHookValidator(EndpointPolicy()),
+        bindings=ordinary_memory(interaction_sessions),
         clock=lambda: NOW,
         lifecycle=test_lifecycle_writer(),
     ).accept_new_thread(

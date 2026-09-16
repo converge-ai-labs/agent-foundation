@@ -1,15 +1,15 @@
 """Continuing sharing uses durable join boundaries and explicit future enrollment."""
 
 import pytest
+from a13n_service.bots.connectivity.domain import BotCheck
+from a13n_service.bots.connectivity.models import BotCheckRecord
+from a13n_service.bots.memory.domain import ConfigureScope, CreateDocument, ReplaceSharingPolicy, SharingPolicyInput
+from a13n_service.bots.memory.models import ScopeRecord
+from a13n_service.bots.memory.mutations import create
+from a13n_service.bots.memory.sharing import list_policies, save_policy
 from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.accounts.targets import TargetConfig
-from a13n_service.connectivity.bots.domain import BotCheck
-from a13n_service.connectivity.bots.models import BotCheckRecord
-from a13n_service.connectivity.bots.observations import ConversationInfo, InstallationInfo
-from a13n_service.memory.bots.domain import ConfigureScope, CreateDocument, ReplaceSharingPolicy, SharingPolicyInput
-from a13n_service.memory.bots.models import ScopeRecord
-from a13n_service.memory.bots.mutations import create
-from a13n_service.memory.bots.sharing import list_policies, save_policy
+from a13n_service.connectivity.inspection import ConversationInfo, InstallationInfo
 from a13n_service.storage import transaction
 from a13n_service.temporal import utc_now
 from sqlalchemy import select, update

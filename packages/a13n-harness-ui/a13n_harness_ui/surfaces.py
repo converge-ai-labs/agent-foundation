@@ -120,6 +120,7 @@ class ThreadSummary(SurfaceModel):
     title: str | None = Field(default=None, max_length=512)
     excerpt: ConversationExcerpt = Field(default_factory=ConversationExcerpt)
     activity_at: datetime | None = None
+    touched_at: datetime | None = None
     archived: bool
     configuration: ThreadConfigurationView
     continuation_state: Literal["initial", "selected"]
@@ -201,7 +202,7 @@ class TranscriptPart(SurfaceModel):
         "media",
         "other",
     ]
-    text: str | None = Field(default=None, max_length=64 * 1024)
+    text: str | None = None
     tool_name: str | None = Field(default=None, max_length=128)
     tool_call_id: str | None = Field(default=None, max_length=256)
     outcome: Literal["success", "failed", "denied", "interrupted"] | None = None
@@ -209,6 +210,13 @@ class TranscriptPart(SurfaceModel):
     applied_edit: AppliedEditView | None = None
     value: JsonValue | None = None
     value_omitted: bool = False
+
+    @model_validator(mode="after")
+    def _bounded_ordinary_text(self) -> Self:
+        context = (self.metadata.model_extra or {}).get("a13n.context")
+        if self.text is not None and len(self.text) > 64 * 1024 and context not in ("handoff", "compaction"):
+            raise ValueError("Ordinary transcript text must not exceed 65536 characters")
+        return self
 
 
 class TranscriptEntry(SurfaceModel):
@@ -582,6 +590,7 @@ class ThreadActivityView(SurfaceModel):
 class ThreadActivityPage(SurfaceModel):
     project_id: str | None = Field(default=None, min_length=1, max_length=128)
     rows: tuple[ThreadActivityView, ...]
+    active_rows: tuple[ThreadActivityView, ...] = ()
     total: int = Field(ge=0)
     next_cursor: str | None = Field(default=None, min_length=1, max_length=4096)
 
@@ -749,6 +758,8 @@ type DecisionRequestView = Annotated[
 class DecisionBatchView(SurfaceModel):
     continuation_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     requests: tuple[DecisionRequestView, ...] = Field(min_length=1, max_length=256)
+    expires_at: datetime | None = None
+    server_time: datetime | None = None
 
 
 class QuestionResponse(SurfaceModel):

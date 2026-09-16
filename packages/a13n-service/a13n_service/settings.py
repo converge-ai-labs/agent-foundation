@@ -24,6 +24,7 @@ from a13n_service.storage.config import (
 
 from .configuration.sections import (
     AssetsSettings,
+    ConfigurationAssistantSettings,
     ConnectivitySettings,
     ControlSettings,
     DatabaseSettings,
@@ -71,6 +72,7 @@ class Settings(Section):
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     models: ModelsSettings = Field(default_factory=ModelsSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
+    configuration_assistant: ConfigurationAssistantSettings = Field(default_factory=ConfigurationAssistantSettings)
     webhooks: WebhooksSettings = Field(default_factory=WebhooksSettings)
     lifecycle: LifecycleSettings = Field(default_factory=LifecycleSettings)
     control: ControlSettings = Field(default_factory=ControlSettings)

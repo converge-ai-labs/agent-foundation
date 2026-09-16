@@ -6,8 +6,10 @@ import asyncio
 import re
 from collections.abc import Awaitable
 from dataclasses import asdict
+from time import monotonic
 from typing import Annotated, Literal, cast
 
+from a13n_logging import get_logger
 from pydantic import Field, JsonValue
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability
@@ -31,6 +33,8 @@ from a13n_harness.toolsets._results import tool_failure
 from .memory import MemoryCapability
 
 _ID = "a13n.memory"
+_LOGGER = get_logger(__name__)
+_OPERATION_TIMEOUT_SECONDS = 30.0
 _REFERENCE = re.compile(r"(?:memory://)?([A-Za-z0-9_-]{1,128})(?:\.md)?\Z")
 
 
@@ -71,13 +75,28 @@ class DocumentMemoryRunCapability(MemoryCapability):
         if not self.read or request.kind is not ModelContextRequestKind.INPUT:
             return projection
         # Rebuild from the authorized directory on projection; never reload every body or trust a stale index.
+        started = monotonic()
+        stage = "load_index"
         try:
-            async with asyncio.timeout(5):
+            async with asyncio.timeout(_OPERATION_TIMEOUT_SECONDS):
                 index = await self.store.index()
+            stage = "render_index"
             content = index.render_context()
         except asyncio.CancelledError:
             raise
-        except Exception:
+        except Exception as error:
+            # Provider exceptions may contain credentials or memory content; retain only safe diagnostics.
+            _LOGGER.warning(
+                "memory_index_projection_failed",
+                extra={
+                    "run_id": self.context.run_id,
+                    "thread_id": self.context.thread_id,
+                    "stage": stage,
+                    "error_type": type(error).__name__,
+                    "duration_seconds": monotonic() - started,
+                    "timeout_seconds": _OPERATION_TIMEOUT_SECONDS,
+                },
+            )
             content = "MEMORY.md is unavailable. Do not treat this as an empty memory store."
         return ModelContextProjection(
             blocks=(
@@ -137,7 +156,7 @@ class _DocumentTools:
     @staticmethod
     async def _result(operation: Awaitable[dict[str, JsonValue]], *, write: bool = False) -> dict[str, JsonValue]:
         try:
-            async with asyncio.timeout(30):
+            async with asyncio.timeout(_OPERATION_TIMEOUT_SECONDS):
                 return await operation
         except asyncio.CancelledError:
             raise

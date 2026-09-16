@@ -20,7 +20,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 from a13n_service.credentials import ResourceCredential
 from a13n_service.database import Base
 from a13n_service.iam.domain import PrincipalRef, PrincipalType
-from a13n_service.memory.bots.domain import MemorySettings
 from a13n_service.names import CASEFOLDED_NAME_MAX_LENGTH
 from a13n_service.temporal import assume_utc
 
@@ -76,7 +75,6 @@ class AccountRecord(ResourceCredential[str], Base):
         Index("ix_application_accounts_provider_status", "provider_key", "status", "id"),
     )
 
-    memory_json: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True))
     reception_scope: Mapped[str] = mapped_column(
         String(32), nullable=False, default="all_accessible", server_default="all_accessible"
     )
@@ -106,7 +104,6 @@ class AccountRecord(ResourceCredential[str], Base):
 
     def to_resource(self) -> Account:
         return Account(
-            memory=MemorySettings.model_validate(self.memory_json) if self.memory_json is not None else None,
             reception_scope=ReceptionScope(self.reception_scope),
             receive_enabled=self.receive_enabled,
             default_agent_id=self.default_agent_id,

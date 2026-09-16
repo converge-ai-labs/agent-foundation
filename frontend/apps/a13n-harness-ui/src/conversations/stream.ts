@@ -1,5 +1,6 @@
 import { ApiError, type Schema, type Transport } from "../transport/client";
 import type { ThreadRefresh } from "./refresh";
+import { ProcessObservations } from "./process-observations";
 import { consumeSse } from "../transport/events";
 import {
   sourceText,
@@ -75,7 +76,10 @@ class RootRunChanged extends Error {}
 
 // Rendering only: history/receipt queries remain the continuation/control owners.
 export class FocusDisplay {
-  constructor(private readonly fragmentLimit = 64 * 1024 * 1024) {}
+  constructor(
+    private readonly fragmentLimit = 64 * 1024 * 1024,
+    readonly processes = new ProcessObservations(),
+  ) {}
   // Previous visible suffix only; never consulted for cursors, controls or activity.
   retainedPresentation?: FocusDisplay;
   presentationFor(continuation: string | null | undefined) {
@@ -103,7 +107,11 @@ export class FocusDisplay {
   replayCount = 0;
   sequence = 0;
   gap = false;
-  recovery?: { id: string; state: "retrying" | "resumed" };
+  recovery?: {
+    id: string;
+    state: "retrying" | "resumed" | "ended";
+    retries: number;
+  };
   terminalFailure?: string;
   contextUsage?: { tokens: number; ordinal: number };
   readonly checkpoints = new Map<string, number>();
@@ -147,6 +155,7 @@ export class FocusDisplay {
     this.baseContinuation = undefined;
     this.blocks.clear();
     this.children.clear();
+    this.processes.clear();
     this.tasks = undefined;
     this.fragments.clear();
     this.fragmentBytes = 0;
@@ -254,7 +263,8 @@ export class FocusDisplay {
     if (child && child.display.runId !== event.run_id) {
       // One execution can start another Run after a deferred checkpoint. The
       // root-lineage stream is ordered; never concatenate two Run suffixes.
-      child.display = new FocusDisplay(128 * 1024);
+      this.processes.end(child.display.runId);
+      child.display = new FocusDisplay(128 * 1024, this.processes);
       child.display.runId = event.run_id;
       child.display.gap = true;
     }
@@ -266,7 +276,7 @@ export class FocusDisplay {
       child = {
         parentId: event.parent_thread_id,
         threadId: event.thread_id,
-        display: new FocusDisplay(128 * 1024),
+        display: new FocusDisplay(128 * 1024, this.processes),
       };
       child.display.runId = event.run_id;
       this.children.set(event.execution_id, child);
@@ -364,8 +374,14 @@ export class FocusDisplay {
     if (omitted) this.gap = true;
     if (!payload) return;
     if (object(payload.metadata) && payload.metadata.display === false) return;
-    if (type === "RUN_FINISHED" || type === "RUN_ERROR")
-      this.recovery = undefined;
+    if (this.recovery && (type === "RUN_FINISHED" || type === "RUN_ERROR"))
+      this.recovery = {
+        ...this.recovery,
+        state:
+          this.recovery.state === "resumed" || type === "RUN_FINISHED"
+            ? "resumed"
+            : "ended",
+      };
     else if (
       this.recovery?.state === "retrying" &&
       (((type === "TEXT_MESSAGE_CONTENT" ||
@@ -440,6 +456,13 @@ export class FocusDisplay {
         result: string(payload.content),
         done: true,
       });
+      if (this.runId)
+        this.processes.result(
+          this.runId,
+          block.name,
+          block.text,
+          payload.content,
+        );
     } else if (type === "RUN_FINISHED" || type === "RUN_ERROR") {
       this.stopTools();
       const failed = type === "RUN_ERROR" && payload.code !== "run_cancelled";
@@ -447,16 +470,19 @@ export class FocusDisplay {
         ? string(payload.message) || "The operation could not finish."
         : undefined;
       const status = `${this.runId}:execution`;
+      if (type === "RUN_FINISHED") {
+        // Ordinary completion belongs to controls, not a temporary transcript row.
+        this.blocks.delete(status);
+        return;
+      }
       this.blocks.set(status, {
         id: status,
         kind: "activity",
         diagnostic: failed,
         name:
-          type === "RUN_FINISHED"
-            ? "Execution completed"
-            : payload.code === "run_cancelled"
-              ? "Execution cancelled"
-              : "Execution failed",
+          payload.code === "run_cancelled"
+            ? "Execution cancelled"
+            : "Execution failed",
         text:
           string(payload.message) ||
           "Execution finished. Inspect the operation receipt for continuation and Environment outcomes.",
@@ -472,6 +498,7 @@ export class FocusDisplay {
     }
   }
   private stopTools() {
+    this.processes.end(this.runId);
     for (const [key, block] of this.blocks) {
       if (block.kind === "tool")
         this.blocks.set(key, { ...block, stopped: true });
@@ -483,12 +510,28 @@ export class FocusDisplay {
     const source = object(value.event) ? value.event : {};
     const payload = object(source.payload) ? source.payload : {};
     if (
+      name === "a13n.shell.status" &&
+      this.runId &&
+      typeof source.process_id === "string" &&
+      typeof source.phase === "string"
+    ) {
+      this.processes.status(
+        this.runId,
+        source.process_id,
+        source.phase,
+        source.exit_code,
+      );
+      return;
+    }
+    if (
       name === "a13n.harness.recovery" &&
       payload.type === "model_retry_scheduled"
     ) {
       this.recovery = {
         id: `${this.runId}:retry:${payload.attempt}`,
         state: "retrying",
+        // Attempt 1 is the original model request, not a reconnection.
+        retries: typeof payload.attempt === "number" ? payload.attempt - 1 : 1,
       };
       return;
     }
@@ -609,6 +652,13 @@ export class FocusDisplay {
       ) {
         const key = `${this.runId}:${part.tool_call_id}`;
         const block = this.blocks.get(key);
+        if (this.runId && part.part_kind === "tool-return")
+          this.processes.result(
+            this.runId,
+            string(part.tool_name),
+            block?.text,
+            part.content,
+          );
         this.blocks.set(key, {
           id: key,
           kind: "tool",
@@ -731,7 +781,7 @@ export class FocusDisplay {
         name === "a13n.context.handoff_summary"
           ? source
           : payload;
-      const key = `${this.runId}:context:${string(operation.operation_id)}`;
+      const key = `context:${string(operation.operation_id)}`;
       const previous = this.blocks.get(key);
       const summary =
         name === "a13n.context.compaction_summary" ||
@@ -747,8 +797,15 @@ export class FocusDisplay {
         context,
         name: context === "compaction" ? "Compact Summary" : "Summary",
         text: summary
-          ? previous?.text || ""
+          ? previous?.text || "Summary ready"
           : [
+              string(payload.type).endsWith("_failed")
+                ? "Failed"
+                : string(payload.type).endsWith("_completed")
+                  ? "Completed"
+                  : string(payload.type).endsWith("_prepared")
+                    ? "Prepared"
+                    : "In progress",
               string(payload.error_code),
               string(payload.failed_phase),
               string(payload.reason),
@@ -817,12 +874,15 @@ export function watchThread(
   changed: () => void,
   connection: (value: string) => void,
   invalidate: (reason: ThreadRefresh) => void,
+  snapshotReceived?: (snapshot: Schema<"ThreadFocusSnapshot">) => void,
 ) {
   const abort = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   let failures = 0;
+  let snapshotRetryAvailable = true;
   async function connect() {
     let runChanged = false;
+    let retrySnapshot = false;
     let replacement: FocusDisplay | undefined;
     connection("Connecting");
     try {
@@ -839,9 +899,16 @@ export function watchThread(
         try {
           frame = focusFrame(value);
           if (frame.kind === "reset") {
+            // A checkpoint may move while the first prefix is being captured.
+            // Retry that race once immediately; persistent resets still back off.
+            retrySnapshot =
+              frame.reason === "live_snapshot_changed" &&
+              snapshotRetryAvailable;
+            snapshotRetryAvailable = false;
             // Retain the last complete presentation while acquiring a new prefix.
             // It is not a replay cursor or proof that execution is still active.
             display.cursor = undefined;
+            display.processes.end();
             replacement = undefined;
             connection("Loading current output");
             return;
@@ -850,6 +917,7 @@ export function watchThread(
             // A partial replacement cannot be resumed from the old presentation.
             display.cursor = undefined;
             replacement = new FocusDisplay();
+            snapshotReceived?.(frame.snapshot);
           }
           const target = replacement ?? display;
           target.accept(frame);
@@ -877,6 +945,7 @@ export function watchThread(
         const reason = focusRefresh(frame);
         if (reason) invalidate(reason);
         failures = 0;
+        snapshotRetryAvailable = true;
         connection(display.ready ? "Live" : "Loading current output");
         changed();
       });
@@ -886,16 +955,20 @@ export function watchThread(
       if (error instanceof SyntaxError) display.cursor = undefined;
       if (!display.ready) display.reset();
     }
+    display.processes.end();
     if (!abort.signal.aborted) {
-      connection("Reconnecting");
+      changed();
+      const retryImmediately = runChanged || retrySnapshot;
+      connection(retryImmediately ? "Loading current output" : "Reconnecting");
       timer = setTimeout(
         () => void connect(),
-        runChanged ? 0 : Math.min(1000 * 2 ** failures++, 15000),
+        retryImmediately ? 0 : Math.min(1000 * 2 ** failures++, 15000),
       );
     }
   }
   void connect();
   return () => {
+    display.processes.end();
     abort.abort();
     clearTimeout(timer);
   };

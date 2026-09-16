@@ -118,6 +118,7 @@ class RunCommands:
         )
         replay = await evidence.replay()
         if replay is not None:
+            await self._acceptance.validate_retained(replay.run_id)
             return replay
 
         prepared_input = await self._inputs.prepare(
@@ -248,6 +249,7 @@ class RunCommands:
         )
         replay = await evidence.replay()
         if replay is not None:
+            await self._acceptance.validate_retained(replay.run_id)
             return replay
 
         try:
@@ -385,6 +387,7 @@ class RunCommands:
         )
         replay = await evidence.replay()
         if replay is not None:
+            await self._acceptance.validate_retained(replay.run_id)
             return replay
 
         try:
@@ -512,6 +515,7 @@ class RunCommands:
         )
         replay = await evidence.replay()
         if replay is not None:
+            await self._acceptance.validate_retained(replay.run_id)
             return replay
 
         source = await self._load_fork_source(actor=actor, run_id=run_id)

@@ -44,6 +44,7 @@ from pydantic_ai.models.test import TestModel
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.lifecycle_support import test_lifecycle_writer
+from tests.memory.selection_support import ordinary_memory
 
 from .conftest import NOW
 from .test_attempt_execution import _authority, _worker
@@ -267,6 +268,7 @@ async def _operator(
         sessions,
         states,
         RunPayloadStore(objects),
+        bindings=ordinary_memory(sessions),
         clock=lambda: NOW + timedelta(seconds=2),
         lifecycle=test_lifecycle_writer(),
     )

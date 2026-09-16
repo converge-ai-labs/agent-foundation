@@ -1,3 +1,4 @@
+import { FileTextIcon } from "@phosphor-icons/react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
@@ -24,45 +25,10 @@ import { useIdempotency } from "../../shared/idempotency";
 import { Pagination, useCursor } from "../../shared/collection";
 import { useConfigurationApplications, useConfigurationDraft } from "./api";
 import styles from "./configuration.module.css";
+import { Differences } from "./differences";
+import { useAgent } from "../agents/queries";
 
 type Review = Schema["ConfigurationDraftReview"];
-
-function Differences({
-  title,
-  changes,
-}: {
-  title: string;
-  changes: Schema["ConfigurationDifference"][];
-}) {
-  const { t } = useTranslation();
-  return (
-    <DisclosureSection title={title} defaultOpen>
-      {changes.length ? (
-        changes.map((change) => (
-          <div className={styles.difference} key={change.path.join(".")}>
-            <strong>
-              {change.path.join(".") || t("Complete configuration")}
-            </strong>
-            <span>{t("Before")}</span>
-            <pre>
-              {change.before_present
-                ? JSON.stringify(change.before, null, 2)
-                : t("Absent")}
-            </pre>
-            <span>{t("After")}</span>
-            <pre>
-              {change.after_present
-                ? JSON.stringify(change.after, null, 2)
-                : t("Absent")}
-            </pre>
-          </div>
-        ))
-      ) : (
-        <p>{t("No changes")}</p>
-      )}
-    </DisclosureSection>
-  );
-}
 
 function Receipt({
   receipt,
@@ -71,30 +37,76 @@ function Receipt({
 }) {
   const { t } = useTranslation(),
     { basePath } = useWorkspace();
+  const agent = useAgent(receipt.agent_id);
   return (
-    <section className={styles.notice}>
-      <strong>
-        {t(
-          receipt.no_change
-            ? "Applied without a configuration change"
-            : "Draft applied",
+    <section
+      className={styles.summaryCard}
+      aria-label={t("Application receipt")}
+    >
+      <h3>{t("Application receipt")}</h3>
+      <dl className={styles.summaryFields}>
+        <div>
+          <dt>{t("Application status")}</dt>
+          <dd>
+            {t(
+              receipt.no_change
+                ? "Applied without a configuration change"
+                : "Draft applied",
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>{t("Agent version")}</dt>
+          <dd>
+            {agent.data?.key ? (
+              <Link
+                to={`${basePath}/agents/${encodeURIComponent(agent.data.key)}`}
+              >
+                {t("Open agent")} · v{receipt.agent_version}
+              </Link>
+            ) : (
+              <span>v{receipt.agent_version}</span>
+            )}
+          </dd>
+        </div>
+        <div>
+          <dt>{t("Applied at")}</dt>
+          <dd>
+            <Timestamp value={receipt.applied_at} />
+          </dd>
+        </div>
+        <div>
+          <dt>{t("Reviewed draft")}</dt>
+          <dd>v{receipt.reviewed_version}</dd>
+        </div>
+        {receipt.verification_acknowledgement && (
+          <>
+            <div>
+              <dt>{t("Execution verification")}</dt>
+              <dd>{t("Execution not verified")}</dd>
+            </div>
+            <div>
+              <dt>{t("Reason for applying without verification")}</dt>
+              <dd>{receipt.verification_acknowledgement.reason}</dd>
+            </div>
+          </>
         )}
-      </strong>
-      <Link to={`${basePath}/agents/${receipt.agent_id}`}>
-        {t("Open agent")} · v{receipt.agent_version}
-      </Link>
-      <code>{receipt.agent_revision_id}</code>
-      <Timestamp value={receipt.applied_at} />
-      <p>
-        {t("Reviewed draft")}: v{receipt.reviewed_version}
-      </p>
-      <code>{receipt.reviewed_digest}</code>
-      {receipt.verification_acknowledgement && (
-        <p>
-          {t("Execution not verified")}:{" "}
-          {receipt.verification_acknowledgement.reason}
-        </p>
-      )}
+      </dl>
+      <ErrorNotice error={agent.error} retry={() => void agent.refetch()} />
+      <DisclosureSection title={t("Technical details")}>
+        <dl className={styles.summaryFields}>
+          <div>
+            <dt>{t("Agent revision ID")}</dt>
+            <dd className={styles.technicalValue}>
+              {receipt.agent_revision_id}
+            </dd>
+          </div>
+          <div>
+            <dt>{t("Reviewed content digest (SHA-256)")}</dt>
+            <dd className={styles.technicalValue}>{receipt.reviewed_digest}</dd>
+          </div>
+        </dl>
+      </DisclosureSection>
     </section>
   );
 }
@@ -148,20 +160,22 @@ export function DraftReview({ draftId }: { draftId: string }) {
           "Saving a draft does not change your agent. Apply only after reviewing the candidate and its differences.",
         )}
       </p>
-      <dl>
-        <dt>{t("Draft")}</dt>
-        <dd>
-          <code>{draft.id}</code>
-        </dd>
-        <dt>{t("Source revision")}</dt>
-        <dd>{draft.source ? `v${draft.source.version}` : t("Empty")}</dd>
-        <dt>{t("Base version")}</dt>
-        <dd>{draft.base_agent_version ?? "—"}</dd>
-        <dt>{t("Current target")}</dt>
-        <dd>
-          {draft.current_target ? `v${draft.current_target.version}` : "—"}
-        </dd>
-      </dl>
+      <DisclosureSection title={t("Draft details")}>
+        <dl>
+          <dt>{t("Draft")}</dt>
+          <dd>
+            <code>{draft.id}</code>
+          </dd>
+          <dt>{t("Source revision")}</dt>
+          <dd>{draft.source ? `v${draft.source.version}` : t("Empty")}</dd>
+          <dt>{t("Base version")}</dt>
+          <dd>{draft.base_agent_version ?? "—"}</dd>
+          <dt>{t("Current target")}</dt>
+          <dd>
+            {draft.current_target ? `v${draft.current_target.version}` : "—"}
+          </dd>
+        </dl>
+      </DisclosureSection>
       {draft.target_conflict && (
         <p role="alert" className={styles.notice}>
           {t(
@@ -210,22 +224,52 @@ export function DraftReview({ draftId }: { draftId: string }) {
           </DisclosureSection>
         </>
       ) : (
-        <p className={styles.notice}>
-          {t("The assistant has not saved a complete configuration yet.")}
-        </p>
-      )}
-      {draft.latest_validation && (
-        <section className={styles.notice}>
-          <strong>{t("Configuration validated")}</strong>
-          <Timestamp value={draft.latest_validation.checked_at} />
+        <div className={styles.draftEmpty}>
+          <FileTextIcon size={28} aria-hidden="true" />
+          <h3>{t("Your draft will take shape here")}</h3>
           <p>
             {t(
-              "Validation checks configuration and dependencies. It does not prove execution succeeded.",
+              "Describe your agent in the conversation. Review its configuration here before applying it.",
             )}
           </p>
-          {draft.latest_validation.warnings?.map((warning) => (
-            <p key={warning}>{warning}</p>
-          ))}
+        </div>
+      )}
+      {draft.latest_validation && (
+        <section
+          className={styles.summaryCard}
+          aria-label={t("Configuration validation")}
+        >
+          <h3>{t("Configuration validation")}</h3>
+          <dl className={styles.summaryFields}>
+            <div>
+              <dt>{t("Validation status")}</dt>
+              <dd>{t("Configuration validated")}</dd>
+            </div>
+            <div>
+              <dt>{t("Checked at")}</dt>
+              <dd>
+                <Timestamp value={draft.latest_validation.checked_at} />
+              </dd>
+            </div>
+            <div>
+              <dt>{t("Validation scope")}</dt>
+              <dd>
+                {t(
+                  "Validation checks configuration and dependencies. It does not prove execution succeeded.",
+                )}
+              </dd>
+            </div>
+          </dl>
+          {!!draft.latest_validation.warnings?.length && (
+            <div>
+              <h4>{t("Warnings")}</h4>
+              <ul>
+                {draft.latest_validation.warnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+            </div>
+          )}
         </section>
       )}
       {draft.status === "open" && (

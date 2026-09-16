@@ -20,13 +20,22 @@ def build_input_commands(
     assets: AssetCatalog,
     inline_hooks: InlineHookValidator,
 ) -> InteractionCommands:
+    if shared.memory_behaviors is None:
+        raise RuntimeError("Execution memory behavior composition is required")
     states = RunStateStore(shared.storage.objects)
     payloads = RunPayloadStore(shared.storage.objects)
     signals = RedisThreadControlSignals(shared.storage.redis)
     return InteractionCommands(
         shared.storage.sessions,
         invocations,
-        RunAcceptanceService(shared.storage.sessions, states, payloads, inline_hooks, lifecycle=shared.lifecycle),
+        RunAcceptanceService(
+            shared.storage.sessions,
+            states,
+            payloads,
+            inline_hooks,
+            lifecycle=shared.lifecycle,
+            bindings=shared.memory_behaviors,
+        ),
         states,
         assets,
         EndpointPolicy(),

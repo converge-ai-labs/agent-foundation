@@ -9,10 +9,11 @@ from dataclasses import dataclass
 import httpx2
 from a13n_harness.memory_plugins import MemoryBackendCatalog
 
+from a13n_service.bots.connectivity.setup_tests import SetupObservations
+from a13n_service.bots.memory.lifecycle import invalidate_conversation
 from a13n_service.connectivity.accounts.service import AccountService
 from a13n_service.connectivity.accounts.target_service import AccountTargetService
 from a13n_service.connectivity.adapters import IngressAdapter
-from a13n_service.connectivity.bots.service import BotService
 from a13n_service.connectivity.composition import AdapterRegistry
 from a13n_service.connectivity.connections.authorization import AuthorizationService
 from a13n_service.connectivity.connections.checks import ConnectionChecks
@@ -172,27 +173,18 @@ async def _build_control_runtime(
         storage.sessions,
         ingress_adapters,
         secret_protector,
-        memory_catalog=memory_catalog,
         batch_max_events=settings.connectivity.batch_max_events,
         batch_max_wait_seconds=settings.connectivity.batch_max_wait_seconds,
     )
     runtime = ConnectivityControlRuntime(
         public_origin=public_origin,
-        bots=BotService(
-            storage.sessions,
-            mcp_http_client,
-            endpoint_policy,
-            secret_protector,
-            public_origin=public_origin,
-            accounts=accounts,
-            timeout_seconds=settings.connectivity.total_timeout_seconds,
-        ),
         accounts=accounts,
         targets=AccountTargetService(
             storage.sessions,
             ingress_adapters,
             batch_max_events=settings.connectivity.batch_max_events,
             batch_max_wait_seconds=settings.connectivity.batch_max_wait_seconds,
+            target_deleted=invalidate_conversation,
         ),
         connector_providers=connector.service,
         connector_connections=connector.connections,
@@ -309,6 +301,7 @@ def _build_data_runtime(
         account_pending_max_bytes=settings.connectivity.account_pending_max_bytes,
         batch_max_bytes=settings.connectivity.batch_max_bytes,
         dedup_horizon_seconds=settings.connectivity.dedup_horizon_seconds,
+        observations=SetupObservations(),
     )
     if input_acceptor is None:
         raise RuntimeError("Canonical Connectivity input commands were not constructed")
@@ -321,6 +314,7 @@ def _build_data_runtime(
         backoff_steps=settings.connectivity.admission_backoff_steps,
         max_backoff_seconds=settings.connectivity.admission_max_backoff_seconds,
         input_max_bytes=settings.connectivity.batch_max_bytes,
+        observations=SetupObservations(),
     )
     retention = IngressRetentionReconciler(
         storage.sessions,

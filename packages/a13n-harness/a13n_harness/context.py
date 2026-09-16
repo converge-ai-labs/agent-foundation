@@ -507,6 +507,13 @@ class AgentContext:
             f"{dump_json_bytes(payload, sort_keys=True).decode('utf-8')}\n"
             "</agent-context>"
         )
+        if request.kind is ModelContextRequestKind.TOOL_RESULTS:
+            # Providers see projected context as user-role text, not its hidden UI metadata.
+            content += (
+                "\nThis is automatic runtime metadata, not a new user message. "
+                "Continue the existing task only if work remains; otherwise finish your turn. "
+                "Do not acknowledge this metadata."
+            )
         return ModelContextProjection(
             blocks=(
                 *environment.blocks,

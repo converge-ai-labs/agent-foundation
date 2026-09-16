@@ -669,23 +669,40 @@ async def test_recovery_prompt_factory_receives_the_failure_and_repaired_history
     )
 
 
-async def test_recovery_backoff_is_full_jitter_and_capped(monkeypatch: pytest.MonkeyPatch) -> None:
-    ceilings: list[float] = []
+@pytest.mark.parametrize("fraction", [0.0, 0.5, 1.0])
+@pytest.mark.parametrize(
+    ("initial", "maximum", "ceilings"),
+    [(1, 30, [1, 2, 4, 8]), (2, 5, [2, 4, 5, 5]), (10, 3, [3, 3, 3, 3])],
+)
+def test_recovery_backoff_is_equal_jitter_and_capped(
+    monkeypatch: pytest.MonkeyPatch,
+    fraction: float,
+    initial: float,
+    maximum: float,
+    ceilings: list[float],
+) -> None:
+    bounds: list[tuple[float, float]] = []
 
-    def use_ceiling(minimum: float, maximum: float) -> float:
-        assert minimum == 0
-        ceilings.append(maximum)
-        return maximum
+    def sample(minimum: float, maximum: float) -> float:
+        bounds.append((minimum, maximum))
+        return minimum + fraction * (maximum - minimum)
 
-    monkeypatch.setattr("a13n_harness.recovery.random.uniform", use_ceiling)
+    monkeypatch.setattr("a13n_harness.recovery.random.uniform", sample)
     policy = ModelRecoveryPolicy(
         enabled=True,
-        backoff_initial_seconds=2,
-        backoff_max_seconds=5,
+        backoff_initial_seconds=initial,
+        backoff_max_seconds=maximum,
     )
 
-    assert [policy.delay(index) for index in (1, 2, 3)] == [2, 4, 5]
-    assert ceilings == [2, 4, 5]
+    assert [policy.delay(index) for index in (1, 2, 3, 4)] == [ceiling / 2 * (1 + fraction) for ceiling in ceilings]
+    assert bounds == [(ceiling / 2, ceiling) for ceiling in ceilings]
+
+
+@pytest.mark.parametrize(("initial", "maximum"), [(0, 30), (1, 0), (0, 0)])
+def test_recovery_backoff_can_be_explicitly_disabled(initial: float, maximum: float) -> None:
+    policy = ModelRecoveryPolicy(backoff_initial_seconds=initial, backoff_max_seconds=maximum)
+
+    assert [policy.delay(index) for index in (1, 2, 3, 4)] == [0, 0, 0, 0]
 
 
 async def test_recovery_attempt_budget_is_total_and_monotonic() -> None:

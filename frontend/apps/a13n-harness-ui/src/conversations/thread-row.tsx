@@ -1,3 +1,4 @@
+import { useContext } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Menu, MenuTrigger, MenuPopup, MenuItem } from "a13n-ui";
@@ -17,7 +18,9 @@ import { result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { ErrorNotice } from "../shell/ui";
 import { refreshThreadLists } from "./queries";
-import { newConversationPath } from "./new-conversation";
+import { ComposerDrafts } from "./composer";
+import { conversationTitle } from "./local-input";
+import { NewConversationDrafts, newConversationPath } from "./new-conversation";
 import {
   ParticipantAvatars,
   threadParticipants,
@@ -65,6 +68,12 @@ export function ThreadRow({
   const location = useLocation();
   const transport = useTransport();
   const queries = useQueryClient();
+  const newDrafts = useContext(NewConversationDrafts);
+  const composers = useContext(ComposerDrafts);
+  const title = conversationTitle(
+    row.thread,
+    composers.get(row.thread.thread_id)?.localInputs,
+  );
   const archive = useMutation({
     mutationFn: () =>
       result(
@@ -77,6 +86,7 @@ export function ThreadRow({
         }),
       ),
     onSuccess: () => {
+      if (!row.thread.archived) newDrafts.detachArchived(row.thread.thread_id);
       if (
         !row.thread.archived &&
         location.pathname ===
@@ -102,28 +112,14 @@ export function ThreadRow({
         >
           <ThreadStateIcon row={row} />
           <span>
-            <strong
-              title={
-                row.thread.title ||
-                row.thread.excerpt?.first_input ||
-                "Untitled conversation"
-              }
-            >
-              {row.thread.title ||
-                row.thread.excerpt?.first_input ||
-                "Untitled conversation"}
-            </strong>
+            <strong title={title}>{title}</strong>
             {threadState(row) && <small>{threadState(row)}</small>}
           </span>
         </NavLink>
         <ParticipantAvatars
           participants={threadParticipants(presence, row.thread.thread_id)}
           ownId={presence?.participant_id}
-          threadTitle={
-            row.thread.title ||
-            row.thread.excerpt?.first_input ||
-            "Untitled conversation"
-          }
+          threadTitle={title}
         />
         {showRestore && row.thread.archived && (
           <Button
@@ -132,7 +128,7 @@ export function ThreadRow({
             loading={archive.isPending}
             disabled={row.thread.root_activity.state !== "inactive"}
             onClick={() => archive.mutate()}
-            aria-label={`Restore ${row.thread.title || "Untitled conversation"}`}
+            aria-label={`Restore ${title}`}
           >
             <ArrowCounterClockwise />
             Restore
@@ -142,7 +138,7 @@ export function ThreadRow({
           <MenuTrigger
             render={<Button variant="ghost" size="icon-sm" />}
             className={styles.threadActions}
-            aria-label={`Actions for ${row.thread.title || "Untitled conversation"}`}
+            aria-label={`Actions for ${title}`}
           >
             <DotsThree />
           </MenuTrigger>

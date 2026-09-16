@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from a13n_harness.memory_plugins import MemoryBackendCatalog
 from pydantic import SecretStr
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
@@ -57,12 +56,10 @@ class AccountService:
         adapters: AdapterResolver[AccountAdapter],
         protector: SecretProtector,
         *,
-        memory_catalog: MemoryBackendCatalog | None = None,
         batch_max_events: int = 100,
         batch_max_wait_seconds: float = 300,
         clock: Clock = utc_now,
     ) -> None:
-        self._memory_catalog = memory_catalog
         self._sessions = sessions
         self._adapters = adapters
         self._protector = protector
@@ -96,8 +93,6 @@ class AccountService:
         try:
             async with transaction(self._sessions) as session:
                 workspace = await authorize(session, actor, workspace_id, WorkspaceAction.application_account_manage)
-                if request.memory is not None:
-                    await authorize(session, actor, workspace_id, WorkspaceAction.bot_memory_share)
                 adapter = require_adapter(self._adapters, request.provider_key, request.provider_config_version)
                 config = _validate_config(adapter, request.provider_config, request.provider_config_version)
                 credentials = _validate_credentials(adapter, request.credentials, request.provider_config_version)
@@ -115,7 +110,7 @@ class AccountService:
                 if replay is not None:
                     return replay.restore(Account)
                 reception = _parse_reception(request.model_dump(include=set(Reception.model_fields)))
-                await validate_reception(session, actor, workspace_id, reception, memory_catalog=self._memory_catalog)
+                await validate_reception(session, actor, workspace_id, reception)
                 validate_batching(
                     reception.input_batching,
                     max_events=self._batch_max_events,
@@ -127,7 +122,6 @@ class AccountService:
                     else None
                 )
                 record = AccountRecord(
-                    memory_json=reception.memory.model_dump(mode="json") if reception.memory else None,
                     reception_scope=reception.reception_scope.value,
                     receive_enabled=reception.receive_enabled,
                     default_agent_id=reception.default_agent_id,
@@ -194,12 +188,9 @@ class AccountService:
         workspace_id: str,
         limit: int,
         cursor: str | None,
-        bots_only: bool = False,
     ) -> AccountCollection:
         require_limit(limit)
         scope = {"workspace_id": workspace_id, "actor": actor.principal.model_dump(mode="json")}
-        if bots_only:
-            scope["bots_only"] = True
         try:
             position = decode_cursor(cursor, scope=scope, id_prefix="acct") if cursor is not None else None
         except CursorError as error:
@@ -213,8 +204,6 @@ class AccountService:
                 AccountRecord.workspace_id == workspace_id,
                 AccountRecord.deleted_at.is_(None),
             )
-            if bots_only:
-                query = query.where(AccountRecord.provider_key.in_(("slack", "lark")))
             if position is not None:
                 query = query.where(
                     or_(
@@ -265,8 +254,6 @@ class AccountService:
         record = await require_account(session, account_id, lock=True)
         await authorize(session, actor, record.workspace_id, WorkspaceAction.application_account_manage)
         require_version(record.version, request.expected_version)
-        if "memory" in request.model_fields_set:
-            await authorize(session, actor, record.workspace_id, WorkspaceAction.bot_memory_share)
         adapter = require_adapter(self._adapters, record.provider_key, record.provider_config_version)
         config = record.provider_config_json
         if request.provider_config is not None:
@@ -289,13 +276,12 @@ class AccountService:
                 **request.model_dump(include=set(Reception.model_fields), exclude_unset=True),
             }
         )
-        await validate_reception(session, actor, record.workspace_id, reception, memory_catalog=self._memory_catalog)
+        await validate_reception(session, actor, record.workspace_id, reception)
         validate_batching(
             reception.input_batching,
             max_events=self._batch_max_events,
             max_interval_ms=self._batch_max_interval_ms,
         )
-        record.memory_json = reception.memory.model_dump(mode="json") if reception.memory else None
         record.reception_scope = reception.reception_scope.value
         record.receive_enabled = reception.receive_enabled
         record.default_agent_id = reception.default_agent_id

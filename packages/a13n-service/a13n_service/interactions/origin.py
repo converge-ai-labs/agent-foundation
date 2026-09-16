@@ -2,8 +2,6 @@
 
 from dataclasses import dataclass
 
-from a13n_service.memory.bots.binding import BotMemoryBinding
-
 from .domain import JsonObject
 
 
@@ -11,4 +9,3 @@ from .domain import JsonObject
 class SubmissionOrigin:
     trigger_type: str = "user_input"
     native_tool_contexts: tuple[JsonObject, ...] = ()
-    bot_memory: BotMemoryBinding | None = None

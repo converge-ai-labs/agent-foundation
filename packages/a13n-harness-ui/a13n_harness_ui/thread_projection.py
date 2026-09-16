@@ -9,7 +9,6 @@ from collections.abc import Awaitable, Callable, Mapping
 from datetime import datetime
 from typing import Literal
 
-from a13n_harness import HarnessState
 from a13n_harness.model_context import user_prompt_content
 from a13n_stream_protocol.messages import ContentMetadata, project_input_content
 from pydantic import BaseModel, JsonValue, TypeAdapter, ValidationError
@@ -75,9 +74,10 @@ class _ThreadCursor(SurfaceModel):
     project_ids: tuple[str, ...] | None = None
     project_ids_digest: str | None = None
     projectless: bool = False
-    sort: Literal["updated", "activity"] = "updated"
+    sort: Literal["updated", "activity", "touched"] = "updated"
     include_archived: bool
     archived_only: bool = False
+    active_only: bool | None = None
     updated_at: datetime
     thread_id: str
 
@@ -127,7 +127,9 @@ class ThreadProjectionService:
         archived_only: bool = False,
         project_ids: tuple[str, ...] | None = None,
         projectless: bool = False,
-        sort: Literal["updated", "activity"] = "updated",
+        sort: Literal["updated", "activity", "touched"] = "updated",
+        active_only: bool | None = None,
+        active_thread_ids: tuple[str, ...] = (),
         cursor: str | None = None,
         limit: int = 20,
     ) -> ThreadPage:
@@ -156,6 +158,7 @@ class ThreadProjectionService:
                 )
                 or decoded.projectless != projectless
                 or decoded.sort != sort
+                or decoded.active_only != active_only
             ):
                 raise ThreadError("Thread cursor belongs to another query.", code="thread_cursor_mismatch")
             before = (decoded.updated_at, decoded.thread_id)
@@ -167,6 +170,8 @@ class ThreadProjectionService:
             project_ids=project_ids,
             projectless=projectless,
             sort=sort,
+            thread_ids=active_thread_ids if active_only is True else None,
+            exclude_thread_ids=active_thread_ids if active_only is False else (),
             before=before,
             limit=limit + 1,
         )
@@ -184,7 +189,12 @@ class ThreadProjectionService:
                     project_id=project_id,
                     include_archived=include_archived,
                     archived_only=archived_only,
-                    updated_at=last.updated_at if sort == "updated" else (last.activity_at or last.created_at),
+                    active_only=active_only,
+                    updated_at={
+                        "updated": last.updated_at,
+                        "activity": last.activity_at or last.created_at,
+                        "touched": last.touched_at or last.created_at,
+                    }[sort],
                     # A filter can cover many unavailable Projects; keep its cursor bounded.
                     project_ids_digest=project_ids_digest,
                     projectless=projectless,
@@ -228,13 +238,12 @@ class ThreadProjectionService:
         if not 1 <= limit <= 100:
             raise ThreadError("Transcript page is outside supported bounds.", code="thread_history_page_invalid")
         thread = await self._required_thread(thread_id)
-        state, continuation_id = await self._state(thread)
+        history, continuation_id = await self._history(thread)
         if expected_continuation_id is not None and continuation_id != expected_continuation_id:
             raise ThreadError(
                 "The selected Thread continuation changed before transcript projection.",
                 code="thread_history_continuation_changed",
             )
-        history = state.message_history
         upper_bound = len(history)
         if cursor is not None:
             decoded = _decode_cursor(cursor, _TranscriptCursor, code="thread_history_cursor_invalid")
@@ -249,7 +258,7 @@ class ThreadProjectionService:
                 "Transcript cursor is outside the selected history.", code="thread_history_cursor_invalid"
             )
         position = max(0, upper_bound - limit)
-        # Display only conversation parts; the saved model history remains exact.
+        # Display history survives context replacement; execution still loads only HarnessState.
         selected = history[position:upper_bound]
         entries = tuple(
             _message_entry(index, item, thread=thread) for index, item in enumerate(selected, start=position)
@@ -278,13 +287,12 @@ class ThreadProjectionService:
         position: int,
     ) -> TranscriptEntry:
         thread = await self._required_thread(thread_id)
-        state, continuation_id = await self._state(thread)
+        history, continuation_id = await self._history(thread)
         if continuation_id != expected_continuation_id:
             raise ThreadError(
                 "The selected Thread continuation changed before transcript projection.",
                 code="thread_history_continuation_changed",
             )
-        history = state.message_history
         if position < 0 or position >= len(history):
             raise ThreadError("Transcript position is invalid.", code="thread_history_position_invalid")
         return _message_entry(position, history[position], thread=thread)
@@ -334,6 +342,7 @@ class ThreadProjectionService:
             title=thread.title,
             excerpt=thread.excerpt,
             activity_at=thread.activity_at,
+            touched_at=thread.touched_at,
             archived=thread.archived,
             configuration=_configuration(thread.configuration),
             continuation_state="initial" if thread.continuation is None else "selected",
@@ -373,21 +382,27 @@ class ThreadProjectionService:
             thinking=thinking if isinstance(thinking, (str, bool)) else None,
         )
 
-    async def _state(self, thread: Thread) -> tuple[HarnessState, str]:
+    async def _history(self, thread: Thread) -> tuple[tuple[ModelMessage, ...], str]:
         if thread.continuation is None:
             stored = await self._store.objects.read_model(thread.initial_state, StoredThreadInitialState)
             state = stored.harness_state
+            history = state.message_history
             continuation_id = f"initial:{thread.initial_state.logical_digest}"
         else:
             stored_continuation = await self._store.objects.read_model(thread.continuation, StoredContinuation)
             state = stored_continuation.harness_state
+            history = (
+                display.messages
+                if (display := stored_continuation.display_history) is not None
+                else state.message_history
+            )
             continuation_id = thread.continuation.logical_digest
         if state.thread_id != thread.thread_id:
             raise ThreadError(
                 "The selected Thread state belongs to another Thread.",
                 code="thread_continuation_incompatible",
             )
-        return state, continuation_id
+        return history, continuation_id
 
 
 def _configuration(value: ThreadConfiguration) -> ThreadConfigurationView:
@@ -475,7 +490,17 @@ def _message_entry(position: int, message: ModelMessage, *, thread: Thread | Non
                 parts=tuple(
                     _response_part(part).model_copy(
                         update={
-                            "metadata": ContentMetadata.from_native({"a13n.context": "compaction"}),
+                            **({"text": part.content, "text_truncated": False} if isinstance(part, TextPart) else {}),
+                            "metadata": ContentMetadata.from_native(
+                                {
+                                    "a13n.context": "compaction",
+                                    **(
+                                        {"operation_id": message.metadata["operation_id"]}
+                                        if message.metadata and "operation_id" in message.metadata
+                                        else {}
+                                    ),
+                                }
+                            ),
                         }
                     )
                     for part in message.parts
@@ -515,7 +540,9 @@ def _request_parts(part: object) -> tuple[TranscriptPart, ...]:
         return tuple(
             TranscriptPart(
                 kind="media" if metadata.media else "user",
-                text=_bounded_text(content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)),
+                text=content
+                if isinstance(content, str) and (metadata.model_extra or {}).get("a13n.context") == "handoff"
+                else _bounded_text(content if isinstance(content, str) else json.dumps(content, ensure_ascii=False)),
                 metadata=metadata,
             )
             for item in user_prompt_content(part)

@@ -204,7 +204,7 @@ tools:
 
 Display defaults take effect at startup; `/theme` and `/mode` change live presentation. They do not change model reasoning, permissions, or saved model context.
 
-The question timeout controls a displayed terminal question, not a model request or shell approval. Set `enable_codeact: false` to remove built-in CodeAct runners and their state tools from newly resolved Runs. Global disabled switches also take precedence over explicit Agent Capability selections.
+The interaction timeout controls terminal questions, approvals, and external results, or a complete [WebUI decision batch](webui.md#questions-and-approval-timeouts); it does not limit model execution. Expiry never grants approval. Set `enable_codeact: false` to remove built-in CodeAct runners and their state tools from newly resolved Runs. Global disabled switches also take precedence over explicit Agent Capability selections.
 
 See [root fields](configuration.md#display-settings) for allowed ranges.
 

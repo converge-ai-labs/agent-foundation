@@ -17,7 +17,7 @@ from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.settings import Settings
 from a13n_service.storage import short_session
 from anyio import create_task_group, fail_after, sleep
-from pydantic_ai.messages import ToolReturnPart
+from pydantic_ai.messages import RetryPromptPart, ToolReturnPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
 from ..agents.conftest import actor, agent_config
@@ -28,7 +28,10 @@ from .test_inputs import inputs_service
 pytestmark = pytest.mark.anyio
 
 
-async def test_real_worker_edits_draft_and_post_apply_input_keeps_shared_draft(agent_sessions, tmp_path, monkeypatch):
+@pytest.mark.parametrize("fields", [None, ["config", "validation"]])
+async def test_real_worker_edits_draft_and_post_apply_input_keeps_shared_draft(
+    agent_sessions, tmp_path, monkeypatch, fields
+):
     conversations, drafts, application = services(agent_sessions)
     draft = await new_draft(conversations)
     inputs, objects = await inputs_service(agent_sessions, tmp_path)
@@ -66,13 +69,36 @@ async def test_real_worker_edits_draft_and_post_apply_input_keeps_shared_draft(a
             results = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
             knowledge = next(part.content for part in results if part.tool_name == "view")
             assert "configure-agent" in str(knowledge)
-            yield {0: DeltaToolCall(name="get_configuration_draft", json_args="{}", tool_call_id="read-draft")}
-        elif len(requests) == 3:
+            yield {
+                0: DeltaToolCall(
+                    name="get_configuration_draft",
+                    json_args=json.dumps({} if fields is None else {"fields": fields}),
+                    tool_call_id="read-draft",
+                )
+            }
+        elif len(requests) == 3 or (fields is not None and len(requests) == 4):
             results = [part for message in messages for part in message.parts if isinstance(part, ToolReturnPart)]
             result = next(part.content for part in results if part.tool_name == "get_configuration_draft")
             if isinstance(result, str):
                 result = json.loads(result)
             assert result["draft_id"] == draft.id and result["status"] == "open"
+            if fields is not None:
+                assert set(result) == {"draft_id", "version", "content_digest", "status", "config", "validation"}
+            else:
+                assert "base" in result and "source" in result
+            candidate = agent_config().model_dump(mode="json")
+            if fields is not None and len(requests) == 3:
+                candidate["unknown_field"] = "invalid-input-must-not-be-echoed"
+            if fields is not None and len(requests) == 4:
+                retry = next(
+                    part
+                    for message in messages
+                    for part in message.parts
+                    if isinstance(part, RetryPromptPart) and part.tool_name == "update_configuration_draft"
+                )
+                feedback = json.loads(retry.content)
+                assert feedback["issues"] == [{"path": ["unknown_field"], "reason": "extra_forbidden"}]
+                assert "invalid-input-must-not-be-echoed" not in retry.content
             yield {
                 0: DeltaToolCall(
                     name="update_configuration_draft",
@@ -81,14 +107,12 @@ async def test_real_worker_edits_draft_and_post_apply_input_keeps_shared_draft(a
                             "update": {
                                 "expected_version": result["version"],
                                 "content_digest": result["content_digest"],
-                                "operations": [
-                                    {"op": "set", "path": [], "value": agent_config().model_dump(mode="json")}
-                                ],
+                                "operations": [{"op": "set", "path": [], "value": candidate}],
                                 "creation_metadata": {"name": "Support"},
                             }
                         }
                     ),
-                    tool_call_id="save-draft",
+                    tool_call_id=f"save-draft-{len(requests)}",
                 )
             }
         else:

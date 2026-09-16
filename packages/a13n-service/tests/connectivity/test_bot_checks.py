@@ -2,10 +2,10 @@
 
 import httpx2
 import pytest
+from a13n_service.bots.connectivity.domain import BotCheckRequest
+from a13n_service.bots.connectivity.service import BotService
 from a13n_service.connectivity.accounts.domain import CreateAccountRequest, ReplaceAccountCredentialsRequest
 from a13n_service.connectivity.accounts.service import AccountService
-from a13n_service.connectivity.bots.domain import BotCheckRequest
-from a13n_service.connectivity.bots.service import BotService
 from a13n_service.connectivity.composition import AdapterDefinition, AdapterRegistry
 from a13n_service.connectivity.errors import NativeError
 from a13n_service.connectivity.providers.slack.adapter import SlackIngressAdapter

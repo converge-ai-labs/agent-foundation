@@ -11,7 +11,7 @@ import {
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as Y from "yjs";
 import { Composer, ComposerDrafts, useDraft, submitDraft } from "./composer";
-import { SteerNotice } from "./transcript";
+import { ConversationTranscript } from "./transcript";
 import { ThreadDraft, encode, values } from "./draft";
 import { TransportContext } from "../transport/context";
 import type { Schema, Transport } from "../transport/client";
@@ -20,7 +20,12 @@ function MessageStream() {
   const draft = useDraft("thread-one");
   return (
     <section aria-label="Message stream">
-      <SteerNotice draft={draft} />
+      <ConversationTranscript
+        entries={[]}
+        blocks={[]}
+        localInputs={draft.localInputs}
+        threadId="thread-one"
+      />
     </section>
   );
 }
@@ -232,21 +237,10 @@ it.each(["accepted", "rejected", "unknown"] as const)(
     await waitFor(() => expect(draft.submission.kind).toBe(outcome));
     expect(draft.localInputs.at(-1)?.state).toBe(outcome);
     if (outcome === "accepted") {
-      const status = screen.getByRole("status");
+      expect(screen.queryByRole("status")).toBeNull();
       expect(
-        screen.getByRole("region", { name: "Message stream" }).contains(status),
-      ).toBe(true);
-      expect(
-        screen.getByRole("region", { name: "Next message" }).contains(status),
-      ).toBe(false);
-      expect(status.textContent).toContain("Steer sent.");
-      expect(screen.getByRole("status").textContent).toContain(
-        "application is not yet confirmed",
-      );
-      fireEvent.click(
-        screen.getByRole("button", { name: "Dismiss steer notification" }),
-      );
-      expect(screen.queryByText(/Steer sent\./)).toBeNull();
+        screen.getByRole("region", { name: "Message stream" }).textContent,
+      ).toContain("before");
     }
     expect(values(draft.doc)).toEqual({
       prompt: outcome === "accepted" ? "NEXT " : "NEXT before after",
@@ -273,7 +267,6 @@ it("keeps accepted receipts and healthy sync quiet while preserving errors and a
   draft.submission = {
     kind: "accepted",
     receipt: "receipt-hidden",
-    message: "Input accepted. Execution may still be preparing.",
   };
   const query = new QueryClient({
     defaultOptions: { queries: { retry: false } },
@@ -296,12 +289,7 @@ it("keeps accepted receipts and healthy sync quiet while preserving errors and a
       </TransportContext>
     </QueryClientProvider>,
   );
-  expect(screen.queryByText(/Input accepted/)).toBeNull();
-  expect(screen.queryByText(/receipt-hidden/)).toBeNull();
-  expect(screen.queryByText("Synchronized")).toBeNull();
-  expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Attach files" })).toBeTruthy();
-  expect(screen.queryByRole("button", { name: "Composer help" })).toBeNull();
+  expect(screen.queryByRole("status")).toBeNull();
   expect(
     screen
       .getByRole("textbox", { name: "Shared prompt" })
@@ -470,4 +458,97 @@ it("uses distinct source identities for consecutive steering of one receipt and 
   expect(values(draft.doc).prompt).toBe("");
   expect(JSON.stringify(draft.doc.toJSON())).not.toContain(ids[0]);
   draft.doc.destroy();
+});
+
+it.each(["send", "steer"] as const)(
+  "submits captured skill references for %s and preserves later edits",
+  async (action) => {
+    const draft = new ThreadDraft();
+    draft.doc.getText("text").insert(0, "Use $review $review $unknown");
+    draft.status = "Connected";
+    draft.receive({
+      draft_id: "draft-one",
+      participant_id: "participant-one",
+      participants: {},
+      update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+    });
+    const POST = vi.fn().mockResolvedValue({
+      data: {
+        receipt_id: "receipt",
+        thread_id: "thread-one",
+        accepted: true,
+      },
+    });
+    const catalog: Schema<"SkillCatalogView"> = {
+      catalog_id: "a".repeat(64),
+      context_kind: "idle",
+      items: [
+        {
+          item_id: "b".repeat(64),
+          name: "review",
+          description: "Review",
+          source_id: "project",
+          logical_path: ".agents/skills/review",
+        },
+      ],
+    };
+    await submitDraft(
+      draft,
+      { client: { POST } } as unknown as Transport,
+      "thread-one",
+      action,
+      "receipt",
+      undefined,
+      undefined,
+      undefined,
+      async () => {
+        draft.doc
+          .getText("text")
+          .insert(draft.doc.getText("text").length, " later");
+        return catalog;
+      },
+    );
+    expect(POST.mock.calls[0][1].body.skill_references).toEqual([
+      {
+        catalog_id: catalog.catalog_id,
+        item_id: catalog.items[0].item_id,
+        name: "review",
+      },
+    ]);
+    expect(POST.mock.calls[0][1].body.parts).toEqual([
+      "Use $review $review $unknown",
+    ]);
+    expect(values(draft.doc).prompt).toBe(" later");
+  },
+);
+
+it("does not submit after navigation cancels a pending skill catalog read", async () => {
+  const draft = new ThreadDraft();
+  draft.doc.getText("text").insert(0, "$review");
+  draft.status = "Connected";
+  draft.receive({
+    draft_id: "draft-one",
+    participant_id: "participant-one",
+    participants: {},
+    update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+  });
+  const POST = vi.fn();
+  const abort = new AbortController();
+  await submitDraft(
+    draft,
+    { client: { POST } } as unknown as Transport,
+    "thread-one",
+    "send",
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    async () => {
+      abort.abort();
+      return { catalog_id: "a".repeat(64), context_kind: "idle", items: [] };
+    },
+    abort.signal,
+  );
+  expect(POST).not.toHaveBeenCalled();
+  expect(values(draft.doc).prompt).toBe("$review");
 });

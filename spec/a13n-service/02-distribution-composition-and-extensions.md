@@ -157,3 +157,11 @@ Explicit composition requires each distribution to enumerate its application sur
 10. Every final distribution schema has at most one migration head.
 11. Runtime input, organization state, license response, and Provider entry-point selection never select or replace the artifact's distribution.
 12. Selecting an installed Harness plugin affects Agent reconstruction and never implicitly contributes Service distribution contents.
+
+## Bot Application Contribution
+
+Bot onboarding, installation observations, conversation memory, sharing, and reply evidence belong to the Bot application. Shared Run, Worker, subagent, Memory, and Connectivity implementations do not import Bot types, including type-only imports or compatibility re-exports. Final OSS composition explicitly supplies its routers, models, memory behavior, ingress acceptance contribution, target-deletion contribution and native-action observation factory. Provider inspection clients use shared typed installation/conversation facts. The ordinary Account owns identity and credentials, while Bot configuration has its own versioned owner.
+
+Ingress contributions commit bindings and setup observations inside canonical acceptance transactions. Native observers retain required dispatch intent before external I/O and retain confirmed/rejected/unknown evidence afterward, even after Attempt authority is lost. Observation failure never authorizes blind resend. Deletion contributions invalidate the conversation in the same target-deletion transaction. Common transports neither identify Bot use cases nor import the application to perform these steps.
+
+Bot-free verification assembles only shared metadata in a cold process with Bot imports blocked and uses its own generated single-head baseline. It runs ordinary acceptance, recovery, waiting continuation, Retry and both child modes. It never edits a global metadata registry to remove already-imported models. Its migration identity is incompatible with a Bot-bearing OSS database; switching composition is not an implicit schema downgrade. The production OSS history retains all supported historical revisions.

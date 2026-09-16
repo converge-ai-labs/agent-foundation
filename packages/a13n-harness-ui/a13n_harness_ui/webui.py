@@ -107,6 +107,8 @@ from a13n_harness_ui.surfaces import (
     RootOperationView,
     RootRunReceipt,
     RunModelOverrides,
+    SkillCatalogView,
+    SkillReference,
     SurfaceModel,
     TaskPage,
     ThreadActivityPage,
@@ -170,6 +172,7 @@ class PromptRequest(SurfaceModel):
     prompt: str = Field(default="", max_length=256 * 1024)
     attachment_ids: tuple[str, ...] = Field(default=(), max_length=8)
     parts: tuple[str | InputAttachmentReference, ...] | None = Field(default=None, max_length=1024)
+    skill_references: tuple[SkillReference, ...] = Field(default=(), max_length=512)
     # Presentation correlation only; never an admission idempotency key.
     source_id: str | None = Field(default=None, pattern=r"^input[-_][0-9a-f]{32}$")
 
@@ -446,7 +449,7 @@ def create_webui(
             "host_git_permission_denied",
         }:
             status = 403
-        elif code in {"host_files_partial_failure", "thread_run_active", "thread_exists"}:
+        elif code in {"host_files_partial_failure", "thread_run_active", "thread_exists", "thread_interaction_expired"}:
             status = 409
         elif code == "host_files_io_error":
             status = 500
@@ -954,6 +957,14 @@ def create_webui(
     async def explain_creation(request: Request) -> ThreadConfigurationResolution:
         return await app().explain_thread_configuration(defaults=await _document(request, NewThreadDefaults))
 
+    @server.post("/api/threads/skills-preview", response_model=SkillCatalogView, openapi_extra=_body(NewThreadDefaults))
+    async def preview_skills(request: Request) -> SkillCatalogView:
+        return await app().skill_catalog(defaults=await _document(request, NewThreadDefaults))
+
+    @server.get("/api/threads/{thread_id}/skills", response_model=SkillCatalogView)
+    async def thread_skills(thread_id: str) -> SkillCatalogView:
+        return await app().skill_catalog(thread_id=thread_id)
+
     @server.get("/api/threads/{thread_id}/configuration", response_model=ThreadConfigurationInspection)
     async def inspect_configuration(thread_id: str) -> ThreadConfigurationInspection:
         return await app().inspect_thread_configuration(thread_id)
@@ -1092,6 +1103,7 @@ def create_webui(
         query: Annotated[str | None, Query(max_length=512)] = None,
         include_archived: bool = False,
         archived_only: bool = False,
+        include_active: bool = False,
         cursor: Annotated[str | None, Query(max_length=2048)] = None,
         limit: Annotated[int, Query(ge=1, le=100)] = 20,
     ) -> ThreadActivityPage:
@@ -1101,6 +1113,7 @@ def create_webui(
             query=query,
             include_archived=include_archived,
             archived_only=archived_only,
+            include_active=include_active,
             cursor=cursor,
             limit=limit,
         )
@@ -1166,7 +1179,7 @@ def create_webui(
         query: Annotated[str | None, Query(max_length=500)] = None,
         project_id: str | None = None,
         include_archived: bool = False,
-        sort: Literal["updated", "activity"] = "updated",
+        sort: Literal["updated", "activity", "touched"] = "updated",
         cursor: str | None = None,
         limit: Annotated[int, Query(ge=1, le=100)] = 20,
     ) -> ThreadPage:
@@ -1193,6 +1206,10 @@ def create_webui(
         return await app().get_thread_transcript(
             thread_id=thread_id, expected_continuation_id=expected_continuation_id, cursor=cursor, limit=limit
         )
+
+    @server.post("/api/threads/{thread_id}/touch", response_model=ThreadSummary)
+    async def touch_thread(thread_id: str) -> ThreadSummary:
+        return await app().touch_thread(thread_id)
 
     @server.patch(
         "/api/threads/{thread_id}/metadata", response_model=ThreadSummary, openapi_extra=_body(ThreadMetadataMutation)
@@ -1264,6 +1281,7 @@ def create_webui(
                 prompt=document.input(),
                 attachment_ids=document.attachment_ids,
                 model_overrides=RunModelOverrides(model_id=document.model_id) if document.model_id else None,
+                skill_references=document.skill_references,
             )
         except ValueError as exc:
             raise HarnessUiError(str(exc), code="input_invalid") from exc
@@ -1287,7 +1305,10 @@ def create_webui(
         document = await _document(request, RootSteerRequest)
         try:
             return await app().steer_root_operation(
-                receipt_id=receipt_id, message=document.input(), attachment_ids=document.attachment_ids
+                receipt_id=receipt_id,
+                message=document.input(),
+                attachment_ids=document.attachment_ids,
+                skill_references=document.skill_references,
             )
         except ValueError as exc:
             raise HarnessUiError(str(exc), code="input_invalid") from exc
@@ -1411,6 +1432,7 @@ def create_webui(
         segments = path.split("/")
         recognized = path in {
             "",
+            "new",
             "setup",
             "settings",
             "projects",
@@ -1418,7 +1440,7 @@ def create_webui(
             "settings/source",
             "settings/accounts",
             "settings/catalog",
-        } or (len(segments) == 2 and segments[0] in {"threads", "projects"} and bool(segments[1]))
+        } or (len(segments) == 2 and segments[0] in {"threads", "projects", "new"} and bool(segments[1]))
         if not recognized:
             return _error("not_found", "Route not found.", 404)
         index = static_root / "index.html"

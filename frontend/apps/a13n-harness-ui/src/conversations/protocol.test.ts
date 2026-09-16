@@ -1,6 +1,4 @@
-import { spawn } from "node:child_process";
-import { createInterface } from "node:readline";
-import { once } from "node:events";
+import { startApp } from "../../tests/app-fixture";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { createTransport, result, type Transport } from "../transport/client";
@@ -8,44 +6,11 @@ import { ThreadDraft, values } from "./draft";
 import { submitDraft } from "./composer";
 import { FocusDisplay, watchThread } from "./stream";
 
-let server: ReturnType<typeof spawn>;
+let app: Awaited<ReturnType<typeof startApp>>;
 let transport: Transport;
-let stderr = "";
 beforeAll(async () => {
-  server = spawn(
-    "uv",
-    [
-      "run",
-      "--locked",
-      "--package",
-      "a13n-harness-ui",
-      "--no-default-groups",
-      "python",
-      "tests/protocol_server.py",
-    ],
-    { stdio: ["pipe", "pipe", "pipe"] },
-  );
-  server.stderr!.on("data", (chunk) => {
-    stderr += chunk;
-  });
-  const lines = createInterface({ input: server.stdout! });
-  const origin = await new Promise<string>((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error(`Protocol listener timed out: ${stderr}`)),
-      30000,
-    );
-    server.once("exit", (code) => {
-      clearTimeout(timer);
-      reject(new Error(`Protocol listener exited (${code}): ${stderr}`));
-    });
-    lines.on("line", (line) => {
-      if (line.startsWith("{")) {
-        clearTimeout(timer);
-        resolve(JSON.parse(line).origin);
-      }
-    });
-  });
-  vi.stubGlobal("window", { location: { origin } });
+  app = await startApp();
+  vi.stubGlobal("window", { location: { origin: app.origin } });
   transport = createTransport("test-only-key", () => {
     throw new Error("Unexpected authentication failure");
   });
@@ -55,13 +20,7 @@ beforeAll(async () => {
 }, 40000);
 afterAll(async () => {
   transport?.close();
-  if (server?.exitCode === null) {
-    const exited = once(server, "exit");
-    server.stdin!.end("stop\n");
-    const kill = setTimeout(() => server.kill("SIGKILL"), 15000);
-    await exited;
-    clearTimeout(kill);
-  }
+  await app?.close();
   vi.unstubAllGlobals();
 }, 20000);
 async function until(predicate: () => boolean) {
@@ -381,4 +340,163 @@ it("selects a model for one HTTP admission without changing sticky configuration
     },
     { timeout: 10000 },
   );
+});
+
+it("projects skills before creation and validates references on submit and active steering", async () => {
+  const preview = await result(
+    transport.client.POST("/api/threads/skills-preview", { body: {} }),
+  );
+  expect(preview.context_kind).toBe("draft");
+  const skill = preview.items.find(
+    (item) => item.name === "harness-ui-configuration",
+  )!;
+  expect(skill).toBeTruthy();
+  const created = await result(
+    transport.client.POST("/api/threads", { body: {} }),
+  );
+  const path = { thread_id: created.thread_id };
+  const idle = await result(
+    transport.client.GET("/api/threads/{thread_id}/skills", {
+      params: { path },
+    }),
+  );
+  expect(idle.context_kind).toBe("idle");
+  const ref = {
+    catalog_id: preview.catalog_id,
+    item_id: skill.item_id,
+    name: skill.name,
+  };
+  await expect(
+    transport.client.POST("/api/threads/{thread_id}/submit", {
+      params: { path },
+      body: {
+        prompt: "$missing",
+        skill_references: [{ ...ref, name: "missing" }],
+      },
+    }),
+  ).rejects.toThrow("Skill is unavailable");
+  await expect(
+    transport.client.POST("/api/threads/{thread_id}/submit", {
+      params: { path },
+      body: {
+        prompt: `$${skill.name}`,
+        skill_references: [
+          { ...ref, catalog_id: idle.catalog_id, item_id: "0".repeat(64) },
+        ],
+      },
+    }),
+  ).rejects.toThrow("Skill is unavailable");
+  const accepted = await result(
+    transport.client.POST("/api/threads/{thread_id}/submit", {
+      params: { path },
+      body: {
+        prompt: `Use $${skill.name} and wait for skill inspection`,
+        skill_references: [ref],
+      },
+    }),
+  );
+  const active = await result(
+    transport.client.GET("/api/threads/{thread_id}/skills", {
+      params: { path },
+    }),
+  );
+  expect(active.context_kind).toBe("active");
+  expect(active.receipt_id).toBe(accepted.receipt_id);
+  await vi.waitFor(
+    async () => {
+      const operation = await result(
+        transport.client.GET("/api/operations/{receipt_id}", {
+          params: { path: { receipt_id: accepted.receipt_id } },
+        }),
+      );
+      expect(operation.available_actions).toContain("steer");
+    },
+    { timeout: 10000 },
+  );
+  await expect(
+    transport.client.POST("/api/operations/{receipt_id}/steer", {
+      params: { path: { receipt_id: accepted.receipt_id } },
+      body: {
+        prompt: "$missing",
+        skill_references: [{ ...ref, name: "missing" }],
+      },
+    }),
+  ).rejects.toThrow("Skill is unavailable");
+  const steered = await result(
+    transport.client.POST("/api/operations/{receipt_id}/steer", {
+      params: { path: { receipt_id: accepted.receipt_id } },
+      body: { prompt: `Check $${skill.name}`, skill_references: [ref] },
+    }),
+  );
+  expect(steered.accepted).toBe(true);
+  await result(
+    transport.client.POST("/api/operations/{receipt_id}/cancel", {
+      params: { path: { receipt_id: accepted.receipt_id } },
+    }),
+  );
+});
+
+it("the App resumes an unanswered question after all viewers disconnect, with one shared deadline", async () => {
+  const created = await result(
+    transport.client.POST("/api/threads", {
+      body: { title: "Timed clarification" },
+    }),
+  );
+  const thread = created.thread_id;
+  const receipt = await result(
+    transport.client.POST("/api/threads/{thread_id}/submit", {
+      params: { path: { thread_id: thread } },
+      body: { parts: ["ask a timed question"] },
+    }),
+  );
+  await vi.waitFor(
+    async () => {
+      const operation = await result(
+        transport.client.GET("/api/operations/{receipt_id}", {
+          params: { path: { receipt_id: receipt.receipt_id } },
+        }),
+      );
+      expect(operation.status).toBe("suspended");
+    },
+    { timeout: 10000 },
+  );
+  const viewer = createTransport("test-only-key", () => {});
+  const one = await result(
+    viewer.client.GET("/api/threads/{thread_id}/decisions", {
+      params: { path: { thread_id: thread } },
+    }),
+  );
+  const two = await result(
+    transport.client.GET("/api/threads/{thread_id}/decisions", {
+      params: { path: { thread_id: thread } },
+    }),
+  );
+  expect(one?.expires_at).toBeTruthy();
+  expect(one?.expires_at).toBe(two?.expires_at);
+  expect(one?.requests[0].kind).toBe("question");
+  viewer.close();
+  // No response POST, focus subscription or open decision form keeps this alive.
+  await vi.waitFor(
+    async () => {
+      const history = await result(
+        transport.client.GET("/api/threads/{thread_id}/transcript", {
+          params: { path: { thread_id: thread } },
+        }),
+      );
+      const text = history.entries
+        .flatMap((entry) => entry.parts.map((part) => part.text ?? ""))
+        .join("\n");
+      expect(text).toContain("Continued:");
+      expect(text).toContain("timed out");
+      expect(text).toContain("No answer or approval was provided");
+    },
+    { timeout: 10000 },
+  );
+  expect(
+    await result(
+      transport.client.GET("/api/threads/{thread_id}/decisions", {
+        params: { path: { thread_id: thread } },
+      }),
+    ),
+  ).toBeNull();
 });

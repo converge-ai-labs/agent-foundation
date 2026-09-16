@@ -30,6 +30,19 @@ Use **Fork conversation** after a completed Run to continue the discussion in an
 
 The system assistant is intentionally absent from Agent management and ordinary invocation selectors. Its owner's Runs, results, usage and configuration history remain available through the conversation.
 
+## Assistant token budget
+
+Each new ordinary configuration message defaults to a cumulative budget of **2,000,000 input plus output tokens** and at most 40 Model requests. Repeated history sent to the Model counts again on each request. This is an execution budget, not the Model's context-window size.
+
+Operators can override the default in their Service TOML configuration:
+
+```toml
+[configuration_assistant]
+total_tokens_limit = 2000000
+```
+
+Alternatively, set `A13N_SERVICE_CONFIGURATION_ASSISTANT_TOTAL_TOKENS_LIMIT=2000000`. The environment variable takes precedence over TOML. Values must be positive integers; omission uses the bundled default. Restart the accepting Control or all-in-one process after changing the setting. It applies to subsequently accepted ordinary messages; existing Runs, retries and responses to pending questions retain their accepted limits.
+
 ## Deployment
 
 Deploy compatible Control and Worker builds together. The assistant has a real, hidden Agent identity and no Agent Revisions. Each new ordinary input freezes the deployed assistant definition and selected Model into the Run's effective configuration. Recovery, retry and answers to pending questions retain the accepted configuration. Read-only built-in Skill files come from the current deployment; they are not version-locked or retained as historical bundles. The Service image protects the Skill and application directories from its non-root runtime user; only runtime data directories are writable.

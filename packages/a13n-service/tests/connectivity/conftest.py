@@ -416,6 +416,8 @@ def ingress_event_service(
     credential_protector: SecretProtector,
     connectivity_objects: LocalObjectStore,
 ) -> IngressEventService:
+    from a13n_service.bots.connectivity.setup_tests import SetupObservations
+
     return IngressEventService(
         connectivity_sessions,
         adapter_registry(),
@@ -427,18 +429,22 @@ def ingress_event_service(
         account_pending_max_bytes=1024 * 1024,
         batch_max_bytes=1024 * 1024,
         dedup_horizon_seconds=3600,
+        observations=SetupObservations(),
         clock=lambda: NOW,
     )
 
 
 @pytest.fixture
 def target_service(connectivity_sessions: async_sessionmaker[AsyncSession]) -> AccountTargetService:
+    from a13n_service.bots.memory.lifecycle import invalidate_conversation
+
     return AccountTargetService(
         connectivity_sessions,
         adapter_registry(),
         batch_max_events=100,
         batch_max_wait_seconds=300,
         clock=lambda: NOW,
+        target_deleted=invalidate_conversation,
     )
 
 

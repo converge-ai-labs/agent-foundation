@@ -242,7 +242,11 @@ class OutputComments:
         location = target.location
         if isinstance(location, RootOutputLocation):
             continuation = await self._store.objects.read_model(source, StoredContinuation)
-            history = continuation.harness_state.message_history
+            history = (
+                display.messages
+                if (display := continuation.display_history) is not None
+                else continuation.harness_state.message_history
+            )
             if continuation.harness_state.thread_id == target.producing_thread_id and location.message < len(history):
                 message = history[location.message]
                 if isinstance(message, ModelResponse) and location.part < len(message.parts):

@@ -16,6 +16,7 @@ import { commandHeaders, data, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 import { JsonView, TextAreaField } from "../../shared/form";
 import styles from "../conversations/conversations.module.css";
+import { QuestionResponse, readQuestions } from "./questions";
 
 export function ConfigurationFeedback({
   run,
@@ -71,7 +72,9 @@ export function ConfigurationFeedback({
         try {
           value =
             answer.action === "respond" && !answer.structured
-              ? answer.value
+              ? pending.tool_name === "ask_user_question"
+                ? { response: answer.value }
+                : answer.value
               : JSON.parse(answer.value);
         } catch {
           throw new Error(t("Tool results and responses must be valid JSON."));
@@ -137,6 +140,19 @@ export function ConfigurationFeedback({
         >
           {actions.map((action) => {
             const answer = answers[action.call_id] ?? { action: "", value: "" };
+            const questions =
+              action.kind === "user_input" &&
+              action.tool_name === "ask_user_question"
+                ? readQuestions(action.presentation)
+                : null;
+            if (questions)
+              return (
+                <QuestionResponse
+                  key={action.call_id}
+                  questions={questions}
+                  onChange={(value) => change(action.call_id, value)}
+                />
+              );
             const details =
               action.kind === "approval"
                 ? approvalDetails(action.presentation)

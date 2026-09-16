@@ -1,3 +1,4 @@
+import { botAccount } from "./account";
 import { Tabs, TabsList, TabsPanel, TabsTab } from "a13n-ui";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -37,11 +38,12 @@ export function BotGroupDetail() {
     queryKey: ["application-accounts", workspace.id, accountId],
     queryFn: ({ signal }) =>
       client.http
-        .GET("/api/v1/application-accounts/{account_id}", {
+        .GET("/api/v1/application-accounts/{account_id}/bot/summary", {
           params: { path: { account_id: accountId } },
           signal,
         })
-        .then(data),
+        .then(data)
+        .then(botAccount),
   });
   const target = useQuery({
     queryKey: ["account-targets", workspace.id, accountId, targetId],

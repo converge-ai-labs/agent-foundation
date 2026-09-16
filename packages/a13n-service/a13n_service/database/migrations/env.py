@@ -7,7 +7,7 @@ from a13n_service.database.default_comparison import compare_server_default
 from a13n_service.database.metadata import service_metadata
 
 config = context.config
-target_metadata = service_metadata()
+target_metadata = config.attributes.get("metadata_factory", service_metadata)()
 
 
 def run_migrations_online() -> None:

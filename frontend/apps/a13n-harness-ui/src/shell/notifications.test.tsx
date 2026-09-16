@@ -247,15 +247,6 @@ it.each([
     expect(!!screen.queryByText(event.notice!.brief)).toBe(banner);
   },
 );
-it("keeps an explicit test notification available in the foreground", () => {
-  permission = "granted";
-  vi.mocked(document.hasFocus).mockReturnValue(true);
-  mount();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Send test notification" }),
-  );
-  expect(native).toHaveBeenCalledOnce();
-});
 it.each(["failed", "suspended"] as const)(
   "keeps %s banners in the focused conversation without a desktop alert",
   async (status) => {
@@ -335,12 +326,14 @@ it("continues in-app delivery when native notification construction fails", asyn
   expect(screen.getByRole("alert").textContent).toContain("could not display");
 });
 
-it("reports asynchronous delivery errors and never treats a test request as confirmed macOS delivery", async () => {
+it("allows foreground test notifications without claiming delivery and reports asynchronous failures", async () => {
   permission = "granted";
+  vi.mocked(document.hasFocus).mockReturnValue(true);
   mount();
   fireEvent.click(
     screen.getByRole("button", { name: "Send test notification" }),
   );
+  expect(native).toHaveBeenCalledOnce();
   expect(screen.getByText(/does not confirm/)).toBeTruthy();
   const notification = native.mock.results[0].value;
   act(() => notification.onshow());

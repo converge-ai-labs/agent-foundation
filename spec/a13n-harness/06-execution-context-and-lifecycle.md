@@ -121,7 +121,9 @@ The stream is lazy: entering it performs preparation but no model or tool work. 
 
 - the total attempt budget;
 - a fixed continuation input or sync/async prompt factory;
-- full-jitter exponential backoff bounded by configured initial and maximum delays.
+- equal-jitter exponential backoff bounded by configured initial and maximum delays.
+
+For retry index `n` starting at one, the delay is sampled uniformly between half of `min(initial * 2 ** (n - 1), maximum)` and that capped ceiling. Positive backoff settings therefore retain a minimum wait rather than permitting an immediate retry. The default initial and maximum values are 1 and 30 seconds; the four retries in the default attempt budget wait 0.5–1, 1–2, 2–4, and 4–8 seconds. Setting either delay value to zero explicitly disables waiting.
 
 On a recoverable model interruption, the Harness:
 

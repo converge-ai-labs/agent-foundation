@@ -301,7 +301,7 @@ export function Workbench({
                 }
               />
               <Route
-                path="/new/:draftId"
+                path="/new/:draftId?"
                 element={
                   <NewConversationPage
                     profile={profile}

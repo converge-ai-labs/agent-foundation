@@ -273,6 +273,24 @@ Repository database commands use `SERVICE_CONFIG` (default `dev/service/local.to
 
 Do not create revision files by hand and do not use runtime `metadata.create_all()` as schema bootstrap. Application request paths use async SQLAlchemy; migrations use a separate synchronous `NullPool` connection because they run before traffic or in a dedicated deployment job.
 
+### Verify the Bot Application Boundary
+
+Bot belongs to the OSS application composition. Shared Run, Memory and Connectivity code receives typed lifecycle/preparation collaborators and never imports `a13n_service.bots`. Bot settings and retained bindings are application-owned; see [Memory selection](../../spec/a13n-service/42-memory.md#execution-memory-selection).
+
+The fixed cold-process verification composition blocks Bot imports and owns a separate generated fresh schema. After changing shared models, generate its incremental revision with `make db-migrate-core-verification msg="describe the shared schema change"`. Never point that graph at an OSS deployment; its revision identity is intentionally incompatible. Ordinary OSS revisions still use `make db-migrate`.
+
+Run the cold-process execution suite explicitly:
+
+```bash
+uv run --locked python packages/a13n-service/tests/database/core_composition.py \
+  packages/a13n-service/tests/interactions/test_attempt_execution.py \
+  packages/a13n-service/tests/interactions/test_worker_execution.py \
+  packages/a13n-service/tests/interactions/test_worker_subagents.py \
+  packages/a13n-service/tests/gateway/test_commands.py
+```
+
+The ordinary database suite also verifies a cold-process core schema against declared metadata and rejects an OSS database in the core composition. Parsed import checks include relative and type-only imports. These checks complement real PostgreSQL binding, migration, and native Bot protocol-peer tests; import-only success does not prove runtime isolation.
+
 ## Redis Usage
 
 The injected async redis-py client exposes strings, hashes, lists, sets, sorted sets, Streams, pipelines, transactions, and Pub/Sub without local/network branches.

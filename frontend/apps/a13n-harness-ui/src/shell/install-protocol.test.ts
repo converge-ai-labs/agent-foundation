@@ -1,5 +1,4 @@
-import { spawn } from "node:child_process";
-import { once } from "node:events";
+import { startApp } from "../../tests/app-fixture";
 import {
   cp,
   copyFile,
@@ -11,13 +10,11 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { createInterface } from "node:readline";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
-let server: ReturnType<typeof spawn>;
+let app: Awaited<ReturnType<typeof startApp>>;
 let root: string;
 let origin: string;
-let stderr = "";
 beforeAll(async () => {
   root = await mkdtemp(join(tmpdir(), "a13n-install-assets-"));
   await cp(resolve("public"), root, { recursive: true });
@@ -27,50 +24,11 @@ beforeAll(async () => {
     join(root, "assets", "fixture-123.js"),
     "// immutable fixture",
   );
-  server = spawn(
-    "uv",
-    [
-      "run",
-      "--locked",
-      "--package",
-      "a13n-harness-ui",
-      "--no-default-groups",
-      "python",
-      "tests/protocol_server.py",
-      "--static-root",
-      root,
-    ],
-    { stdio: ["pipe", "pipe", "pipe"] },
-  );
-  server.stderr!.on("data", (chunk) => {
-    stderr += chunk;
-  });
-  const lines = createInterface({ input: server.stdout! });
-  origin = await new Promise<string>((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error(`Listener timed out: ${stderr}`)),
-      30000,
-    );
-    server.once("exit", (code) => {
-      clearTimeout(timer);
-      reject(new Error(`Listener exited (${code}): ${stderr}`));
-    });
-    lines.on("line", (line) => {
-      if (line.startsWith("{")) {
-        clearTimeout(timer);
-        resolve(JSON.parse(line).origin);
-      }
-    });
-  });
+  app = await startApp("--static-root", root);
+  origin = app.origin;
 }, 40000);
 afterAll(async () => {
-  if (server?.exitCode === null) {
-    const exited = once(server, "exit");
-    server.stdin!.end("stop\n");
-    const kill = setTimeout(() => server.kill("SIGKILL"), 15000);
-    await exited;
-    clearTimeout(kill);
-  }
+  await app?.close();
   if (root) await rm(root, { recursive: true, force: true });
 }, 20000);
 
@@ -109,7 +67,14 @@ it("serves public install metadata and correctly sized PNGs without changing API
 });
 
 it("keeps root metadata links valid on deep links and keeps hashed assets immutable", async () => {
-  for (const path of ["/", "/settings", "/threads/thread-fixture"]) {
+  for (const path of [
+    "/",
+    "/new",
+    "/new?project=project-one",
+    "/new/thread_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "/settings",
+    "/threads/thread-fixture",
+  ]) {
     const response = await fetch(`${origin}${path}`);
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-cache");

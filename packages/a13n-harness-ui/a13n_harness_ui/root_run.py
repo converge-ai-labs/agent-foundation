@@ -4,16 +4,18 @@ from __future__ import annotations
 
 import json
 from collections import Counter, OrderedDict
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from functools import partial
+from time import monotonic
 from typing import Any, Literal
 from uuid import uuid4
 
 from a13n_harness import HarnessRunStream, SafeFailure
 from a13n_harness.input import RunInputValue
+from a13n_logging import get_logger
 from anyio import CancelScope, Event, Lock, create_task_group, get_cancelled_exc_class, move_on_after, to_thread
 from anyio.abc import TaskGroup
 from pydantic import JsonValue, TypeAdapter, ValidationError
@@ -21,6 +23,7 @@ from pydantic_ai.usage import RunUsage
 
 from a13n_harness_ui.diagnostics import exception_feedback
 from a13n_harness_ui.errors import HarnessUiError, RunCoordinationError
+from a13n_harness_ui.interaction_timeout import timeout_response
 from a13n_harness_ui.live import HarnessUiSummaryHub, RootOperationNotice
 from a13n_harness_ui.notifications import root_operation_notice
 from a13n_harness_ui.observation import UiObservation, finish_operation, record_input, record_output
@@ -75,6 +78,14 @@ class _RootOperation:
     cancel_requested: bool = False
 
 
+@dataclass(slots=True)
+class _InteractionWait:
+    response: ThreadDeferredResponse
+    expires_at: datetime
+    deadline: float
+    cancelled: Event
+
+
 class RootRunCoordinator:
     """Own App-lifetime root tasks and correlate every control to one receipt."""
 
@@ -85,11 +96,14 @@ class RootRunCoordinator:
         summary_hub: HarnessUiSummaryHub | None = None,
         terminal_retention: int = 256,
         observation: UiObservation | None = None,
+        touch_thread: Callable[[str], Awaitable[None]] | None = None,
+        interaction_timeouts: bool = False,
     ) -> None:
         if terminal_retention < 1:
             raise ValueError("terminal_retention must be positive")
         self._observation = observation or UiObservation()
         self._executor = executor
+        self._touch_thread = touch_thread
         self._summary_hub = summary_hub
         self._lock = Lock()
         self._operations: dict[str, _RootOperation] = {}
@@ -100,6 +114,8 @@ class RootRunCoordinator:
         self._task_group_context: Any | None = None
         self._task_group: TaskGroup | None = None
         self._accepting = False
+        self._interaction_timeouts = interaction_timeouts
+        self._interaction_waits: dict[str, _InteractionWait] = {}
 
     async def start(self) -> None:
         async with self._lock:
@@ -114,6 +130,26 @@ class RootRunCoordinator:
     async def stop_admission(self) -> None:
         async with self._lock:
             self._accepting = False
+            self._cancel_interactions()
+
+    def _cancel_interactions(self) -> None:
+        for pending in self._interaction_waits.values():
+            pending.cancelled.set()
+        self._interaction_waits.clear()
+
+    async def interaction_expiry(self, thread_id: str, continuation_id: str) -> datetime | None:
+        """Return only the current process's deadline for this exact continuation."""
+        async with self._lock:
+            pending = self._interaction_waits.get(thread_id)
+            if pending is None or pending.response.expected_continuation_id != continuation_id:
+                return None
+            return pending.expires_at
+
+    async def active_thread_ids(self) -> tuple[str, ...]:
+        """Snapshot all preparing, running and cancelling roots in this App."""
+
+        async with self._lock:
+            return tuple(self._active_by_thread)
 
     async def active_count(self) -> int:
         """Return the number of process-local active root operations."""
@@ -134,6 +170,7 @@ class RootRunCoordinator:
         with CancelScope(shield=True):
             async with self._lock:
                 self._accepting = False
+                self._cancel_interactions()
                 active = tuple(
                     self._operations[receipt_id]
                     for receipt_id in self._active_by_thread.values()
@@ -171,6 +208,9 @@ class RootRunCoordinator:
                     code="thread_run_active",
                 )
             yield
+            pending = self._interaction_waits.pop(thread_id, None)
+            if pending is not None:
+                pending.cancelled.set()
 
     async def submit_prompt(
         self,
@@ -179,6 +219,7 @@ class RootRunCoordinator:
         prompt: RunInputValue,
         mutation: ThreadConfigurationMutation | None = None,
         model_overrides: RunModelOverrides | None = None,
+        touch: bool = False,
     ) -> RootRunReceipt:
         prompt = detach_input(prompt)
         return await self._submit(
@@ -187,6 +228,7 @@ class RootRunCoordinator:
             response=None,
             mutation=mutation,
             model_overrides=model_overrides,
+            touch=touch,
         )
 
     async def submit_response(
@@ -196,6 +238,7 @@ class RootRunCoordinator:
         response: ThreadDeferredResponse,
         mutation: ThreadConfigurationMutation | None = None,
         model_overrides: RunModelOverrides | None = None,
+        touch: bool = False,
     ) -> RootRunReceipt:
         return await self._submit(
             thread_id=thread_id,
@@ -203,6 +246,7 @@ class RootRunCoordinator:
             response=response.model_copy(deep=True),
             mutation=mutation,
             model_overrides=model_overrides,
+            touch=touch,
         )
 
     async def _submit(
@@ -213,6 +257,8 @@ class RootRunCoordinator:
         response: ThreadDeferredResponse | None,
         mutation: ThreadConfigurationMutation | None,
         model_overrides: RunModelOverrides | None,
+        touch: bool,
+        timeout: _InteractionWait | None = None,
     ) -> RootRunReceipt:
         now = datetime.now(UTC)
         receipt = RootRunReceipt(
@@ -233,16 +279,42 @@ class RootRunCoordinator:
                     "This Thread already has an active root operation.",
                     code="thread_run_active",
                 )
-            self._operations[receipt.receipt_id] = operation
-            self._active_by_thread[thread_id] = receipt.receipt_id
-            self._task_group.start_soon(
-                self._run_operation,
-                operation,
-                prompt,
-                response,
-                mutation,
-                None if model_overrides is None else model_overrides.model_copy(deep=True),
+            pending = self._interaction_waits.get(thread_id)
+            if timeout is not None and pending is not timeout:
+                raise RunCoordinationError("The interaction is no longer pending.", code="thread_deferred_not_pending")
+            matching = (
+                pending is not None
+                and response is not None
+                and pending.response.expected_continuation_id == response.expected_continuation_id
             )
+            if pending is not None and matching and timeout is None and monotonic() >= pending.deadline:
+                raise RunCoordinationError("The interaction deadline has elapsed.", code="thread_interaction_expired")
+            with CancelScope(shield=True):
+                if touch and self._touch_thread is not None:
+                    try:
+                        await self._touch_thread(thread_id)
+                    except HarnessUiError:
+                        raise
+                    except Exception as exc:
+                        # Preserve typed admission failures for callers that have
+                        # already created a durable Thread and must return its ID.
+                        raise RunCoordinationError(
+                            "Could not update Thread navigation recency; work was not admitted.",
+                            code="thread_touch_failed",
+                        ) from exc
+                if matching and pending is not None:
+                    self._interaction_waits.pop(thread_id)
+                    pending.cancelled.set()
+                self._operations[receipt.receipt_id] = operation
+                self._active_by_thread[thread_id] = receipt.receipt_id
+                self._task_group.start_soon(
+                    self._run_operation,
+                    operation,
+                    prompt,
+                    response,
+                    mutation,
+                    None if model_overrides is None else model_overrides.model_copy(deep=True),
+                )
         await self._publish_change(operation)
         return receipt.model_copy(deep=True)
 
@@ -320,7 +392,7 @@ class RootRunCoordinator:
                 await done.wait()
         return await self.get(receipt_id)
 
-    async def steer(self, *, receipt_id: str, message: RunInputValue) -> RootControlResult:
+    async def steer(self, *, receipt_id: str, message: RunInputValue, touch: bool = False) -> RootControlResult:
         message = detach_input(message)
         async with self._lock:
             operation = self._operations.get(receipt_id)
@@ -337,6 +409,17 @@ class RootRunCoordinator:
             enqueue_id = await stream.steer(prepared)
         except Exception:
             return RootControlResult(receipt_id=receipt_id, accepted=False)
+        if touch and self._touch_thread is not None:
+            # Input is already enqueued: a recency failure must not report rejection
+            # and invite the caller to submit the same steering twice.
+            with CancelScope(shield=True):
+                try:
+                    await self._touch_thread(operation.receipt.thread_id)
+                except Exception:
+                    get_logger(__name__).warning(
+                        "Could not update Thread recency after accepted steering", exc_info=True
+                    )
+            await self._publish_change(operation)
         return RootControlResult(receipt_id=receipt_id, accepted=True, enqueue_id=enqueue_id)
 
     async def cancel(self, receipt_id: str) -> RootControlResult:
@@ -466,6 +549,18 @@ class RootRunCoordinator:
                 while len(self._terminal_receipts) > self._terminal_retention:
                     expired_receipt, _ = self._terminal_receipts.popitem(last=False)
                     self._operations.pop(expired_receipt, None)
+                if outcome is not None and outcome.continuation.status == "selected":
+                    pending = self._interaction_waits.get(thread_id)
+                    reference = outcome.continuation.reference
+                    if (
+                        pending is not None
+                        and reference is not None
+                        and (pending.response.expected_continuation_id != reference.logical_digest)
+                    ):
+                        self._interaction_waits.pop(thread_id)
+                        pending.cancelled.set()
+                if operation.status is RootOperationStatus.suspended and outcome is not None:
+                    self._start_interaction(operation, outcome)
                 operation.done.set()
             # Notify only after the Host has settled execution and continuation selection.
             # Projection and delivery are best effort, never part of execution success.
@@ -480,6 +575,62 @@ class RootRunCoordinator:
             except Exception:
                 notice = None
             await self._publish_change(operation, notice=notice)
+
+    def _start_interaction(self, operation: _RootOperation, outcome: RootRunOutcome) -> None:
+        """Arm once, under the admission lock, after successful continuation selection."""
+        if not self._interaction_timeouts or not self._accepting or self._task_group is None:
+            return
+        reference, requests = outcome.continuation.reference, outcome.result.deferred
+        if reference is None or requests is None or not (requests.calls or requests.approvals):
+            return
+        thread_id = operation.receipt.thread_id
+        previous = self._interaction_waits.pop(thread_id, None)
+        if previous is not None:
+            previous.cancelled.set()
+        try:
+            response = timeout_response(reference.logical_digest, requests)
+        except ValueError:
+            get_logger(__name__).warning("Interaction timeout unavailable: thread_id=%s", thread_id)
+            return
+        seconds = outcome.interaction_timeout_seconds
+        pending = _InteractionWait(
+            response=response,
+            expires_at=datetime.now(UTC) + timedelta(seconds=seconds),
+            deadline=monotonic() + seconds,
+            cancelled=Event(),
+        )
+        self._interaction_waits[thread_id] = pending
+        self._task_group.start_soon(self._expire_interaction, thread_id, pending)
+
+    async def _expire_interaction(self, thread_id: str, pending: _InteractionWait) -> None:
+        with move_on_after(max(0, pending.deadline - monotonic())):
+            await pending.cancelled.wait()
+        while not pending.cancelled.is_set():
+            # An unrelated admission can still be preparing (and may fail). Wait
+            # for it without retrying an admitted timeout response or holding a lock.
+            async with self._lock:
+                if not self._accepting or self._interaction_waits.get(thread_id) is not pending:
+                    return
+                active_id = self._active_by_thread.get(thread_id)
+                active = self._operations.get(active_id) if active_id is not None else None
+            if active is not None:
+                await active.done.wait()
+                continue
+            try:
+                await self._submit(
+                    thread_id=thread_id,
+                    prompt=None,
+                    response=pending.response,
+                    mutation=None,
+                    model_overrides=None,
+                    touch=False,
+                    timeout=pending,
+                )
+            except RunCoordinationError as exc:
+                if exc.code == "thread_run_active":
+                    continue
+                return
+            return
 
     async def composition_reference(self, receipt_id: str) -> ObjectRef | None:
         async with self._lock:

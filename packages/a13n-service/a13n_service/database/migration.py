@@ -9,7 +9,7 @@ from pathlib import Path
 from alembic import command
 from alembic.config import Config
 from alembic.script import ScriptDirectory
-from sqlalchemy import Connection, Engine, create_engine, text
+from sqlalchemy import Connection, Engine, MetaData, create_engine, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.pool import NullPool
 
@@ -17,6 +17,7 @@ from a13n_service.storage.config import PostgreSQLConfig
 from a13n_service.storage.relational import database_url
 
 from .config import MigrationConfig
+from .metadata import service_metadata
 
 MIGRATIONS_PATH = Path(__file__).resolve().parent / "migrations"
 _MIGRATION_LOCK_NAME = "a13n-service:relational-schema"
@@ -35,10 +36,12 @@ class DatabaseMigrator:
         migration: MigrationConfig | None = None,
         *,
         script_location: Path = MIGRATIONS_PATH,
+        metadata: Callable[[], MetaData] = service_metadata,
     ) -> None:
         self._database = database
         self._migration = migration or MigrationConfig()
         self._script_location = script_location.resolve()
+        self._metadata = metadata
 
     def verify_history(self) -> None:
         heads = ScriptDirectory.from_config(self._alembic_config()).get_heads()
@@ -84,6 +87,7 @@ class DatabaseMigrator:
 
     def _alembic_config(self) -> Config:
         config = Config()
+        config.attributes["metadata_factory"] = self._metadata
         config.set_main_option("script_location", str(self._script_location))
         config.set_main_option("file_template", "%%(year)d%%(month).2d%%(day).2d_%%(rev)s_%%(slug)s")
         config.set_main_option("timezone", "UTC")

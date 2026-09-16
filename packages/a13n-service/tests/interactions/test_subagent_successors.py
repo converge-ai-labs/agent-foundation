@@ -26,6 +26,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.lifecycle_support import test_lifecycle_writer
+from tests.memory.selection_support import ordinary_memory
 
 from .conftest import NOW, ORGANIZATION_ID, effective_agent_config
 from .test_attempt_execution import _completed_state, _waiting_state
@@ -72,6 +73,7 @@ async def test_completed_parent_result_accepts_exact_checkpoint_zero_successor(
         interaction_sessions,
         states,
         RunReplayStore(interaction_object_store),
+        bindings=ordinary_memory(interaction_sessions),
         run_id_factory=lambda _organization, _entry, _parent: "run_bbbbbbbbbbbbbbbb",
         clock=lambda: NOW + timedelta(seconds=6),
         lifecycle=test_lifecycle_writer(),
@@ -168,6 +170,7 @@ async def test_object_backed_result_item_is_revalidated_for_automatic_successor(
         interaction_sessions,
         states,
         replays,
+        bindings=ordinary_memory(interaction_sessions),
         run_id_factory=lambda _organization, _entry, _parent: "run_2424242424242424",
         clock=lambda: NOW + timedelta(seconds=7),
         lifecycle=test_lifecycle_writer(),
@@ -228,6 +231,7 @@ async def test_oldest_result_accepts_successor_and_later_result_binds_in_fifo_or
         interaction_sessions,
         states,
         RunReplayStore(interaction_object_store),
+        bindings=ordinary_memory(interaction_sessions),
         run_id_factory=lambda _organization, _entry, _parent: "run_1414141414141414",
         clock=lambda: NOW + timedelta(seconds=7),
         lifecycle=test_lifecycle_writer(),
@@ -285,6 +289,7 @@ async def test_automatic_successor_rejects_payload_forged_after_publication(
             interaction_sessions,
             states,
             RunReplayStore(interaction_object_store),
+            bindings=ordinary_memory(interaction_sessions),
             run_id_factory=lambda _organization, _entry, _parent: "run_1818181818181818",
             clock=lambda: NOW + timedelta(seconds=6),
             lifecycle=test_lifecycle_writer(),
@@ -321,6 +326,7 @@ async def test_concurrent_postgresql_successor_reconciliation_accepts_one_run(
         sessions,
         states,
         RunReplayStore(interaction_object_store),
+        bindings=ordinary_memory(sessions),
         run_id_factory=lambda _organization, _entry, _parent: "run_ffffffffffffffff",
         clock=lambda: NOW + timedelta(seconds=6),
         lifecycle=test_lifecycle_writer(),
@@ -377,6 +383,7 @@ async def _accept_another_child(
         sessions,
         states,
         RunPayloadStore(objects),
+        bindings=ordinary_memory(sessions),
         clock=lambda: NOW + timedelta(seconds=2),
         lifecycle=test_lifecycle_writer(),
     ).accept(prepared, authority)
@@ -439,6 +446,7 @@ async def test_periodic_recovery_expires_bound_result_and_releases_capacity(
         interaction_sessions,
         states,
         replays,
+        bindings=ordinary_memory(interaction_sessions),
         clock=lambda: NOW + timedelta(seconds=7),
         lifecycle=test_lifecycle_writer(),
     )

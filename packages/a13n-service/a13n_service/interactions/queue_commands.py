@@ -372,7 +372,10 @@ class QueuedRunCommands:
                 raise command_not_found() from error
             except IdempotencyConflict as error:
                 raise idempotency_conflict() from error
-            return QueuedSubmissionConsumptionReceipt.model_validate(evidence.receipt_json)
+            receipt = QueuedSubmissionConsumptionReceipt.model_validate(evidence.receipt_json)
+        if receipt.run is not None:
+            await self._acceptance.validate_retained(receipt.run.run_id)
+        return receipt
 
     async def _load_queued_consumption_source(
         self,

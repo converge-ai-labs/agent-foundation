@@ -39,6 +39,7 @@ class InteractionCommands:
         priority: int = 0,
         clock: Clock = utc_now,
     ) -> None:
+        self.acceptance = acceptance
         inputs = CommandInput(sessions, assets, endpoint_policy)
         policy = NewRunPolicy(
             priority=priority,
@@ -49,5 +50,5 @@ class InteractionCommands:
         )
         self.runs = RunCommands(sessions, invocations, acceptance, states, inputs, policy, clock=clock)
         self.continuations = ContinuationCommands(sessions, acceptance, states, payloads, inputs, clock=clock)
-        self.active = ActiveRunCommands(sessions, states, outcomes, inbox, inputs, clock=clock)
+        self.active = ActiveRunCommands(sessions, states, outcomes, inbox, inputs, acceptance=acceptance, clock=clock)
         self.queued = QueuedRunCommands(sessions, invocations, acceptance, states, inputs, policy, clock=clock)

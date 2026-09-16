@@ -4,8 +4,8 @@ from dataclasses import replace
 from datetime import timedelta
 
 import pytest
+from a13n_service.bots.connectivity.history import list_bot_threads
 from a13n_service.connectivity.accounts.models import AccountRecord
-from a13n_service.connectivity.bots.history import list_bot_threads
 from a13n_service.connectivity.errors import NativeError
 from a13n_service.connectivity.ingress.admission_models import AgentThreadBindingRecord
 from a13n_service.iam import AuthorizationError, WorkspaceAction

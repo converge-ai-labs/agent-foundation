@@ -93,6 +93,8 @@ class ConfigurationReadiness:
                 return AssistantReadiness(
                     ready=False, reason_code="provider_setup_required", setup_actions=actions, setup_url=setup_url
                 )
+            setup_url = f"/workspace/{quote(workspace.key, safe='')}/models"
+            actions = ("configure_model",) if can_manage else ("contact_administrator",)
             records = tuple(
                 await session.scalars(
                     select(ModelRecord).where(

@@ -17,11 +17,10 @@ from a13n_service.interactions.attempts import AttemptContext
 from a13n_service.secrets import SecretProtector
 from a13n_service.storage import short_session
 
-from .bots.replies import BotReplyObserver
 from .connectors.management import decode_credentials
 from .domain import JsonObject
 from .naming import source_key
-from .native_actions import NativeAction
+from .native_actions import NativeAction, NativeObservationFactory
 from .native_context import AccountRunContext, InboundRunContext, NativeToolContext, authorized_account
 from .providers.registry import require_native_provider
 from .toolsets import local_capability
@@ -40,6 +39,7 @@ async def native_capability(
     http: httpx2.AsyncClient,
     *,
     attempt: AttemptContext | None = None,
+    observations: NativeObservationFactory | None = None,
 ) -> MCP[AgentContext] | None:
     if not context.allowed_actions:
         return None
@@ -84,20 +84,22 @@ async def native_capability(
         if selected is None:
             raise ValueError("native_action_unavailable")
         await guard()
-        if attempt is not None and isinstance(context, InboundRunContext) and name in {"slack.reply", "lark.reply"}:
-            if selected.call_observed is None:
-                raise ValueError("native_reply_observation_unavailable")
-            result = await selected.call_observed(
-                arguments,
-                BotReplyObserver(
-                    sessions,
-                    attempt=attempt,
-                    context=context,
-                    workspace_id=scope.workspace_id,
-                    account_version=current_version,
-                    credential_generation=current_generation,
-                ),
+        observer = (
+            observations(
+                action=name,
+                attempt=attempt,
+                context=context,
+                workspace_id=scope.workspace_id,
+                account_version=current_version,
+                credential_generation=current_generation,
             )
+            if observations is not None and attempt is not None
+            else None
+        )
+        if observer is not None:
+            if selected.call_observed is None:
+                raise ValueError("native_observation_unavailable")
+            result = await selected.call_observed(arguments, observer)
         else:
             result = await selected.call(arguments)
         # Native providers own this outcome envelope; arbitrary MCP results do not.

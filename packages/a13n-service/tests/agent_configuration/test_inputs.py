@@ -23,6 +23,8 @@ from a13n_service.run_stream import RunReplayStore
 from a13n_service.storage import short_session, transaction
 from a13n_service.storage.object_store import LocalObjectStore
 
+from tests.memory.selection_support import ordinary_memory
+
 from ..agents.conftest import MODEL_ID, NOW, PROVIDER_ID, WORKSPACE_ID, actor
 from ..lifecycle_support import test_lifecycle_writer as lifecycle_writer
 from .test_drafts import new_draft, services
@@ -48,6 +50,7 @@ async def inputs_service(sessions, tmp_path, *, definition=None):
             states,
             RunPayloadStore(objects),
             InlineHookValidator(EndpointPolicy()),
+            bindings=ordinary_memory(sessions),
             lifecycle=lifecycle_writer(),
             clock=lambda: NOW,
         ),
@@ -62,10 +65,14 @@ async def inputs_service(sessions, tmp_path, *, definition=None):
     return inputs, objects
 
 
-async def test_assistant_admission_has_real_identity_exact_scope_and_replay(agent_sessions, tmp_path):
+@pytest.mark.parametrize("token_limit", [None, 3_000_000])
+async def test_assistant_admission_has_real_identity_exact_scope_and_replay(agent_sessions, tmp_path, token_limit):
     conversations, _, _ = services(agent_sessions)
     draft = await new_draft(conversations)
-    inputs, objects = await inputs_service(agent_sessions, tmp_path)
+    inputs, objects = await inputs_service(
+        agent_sessions, tmp_path, definition=load_definition(total_tokens_limit=token_limit)
+    )
+    expected_limit = token_limit or 2_000_000
     request = ConfigurationInputRequest.model_validate(
         {
             "expected_thread_version": 1,
@@ -105,6 +112,10 @@ async def test_assistant_admission_has_real_identity_exact_scope_and_replay(agen
             unprotected.configuration_draft_id = None
             await session.flush()
     state = (await RunStateStore(objects).read_run(run)).envelope
+    assert state.usage_limits.total_tokens_limit == expected_limit
+    assert state.usage_limits.request_limit == 40
+    assert run.execution_budget.max_usage.input_tokens == expected_limit
+    assert run.execution_budget.max_usage.output_tokens == expected_limit
     validate_configuration_definition(run=run, config=state.effective_agent_config)
     queries = NativeInteractionQueries(agent_sessions, RunReplayStore(objects))
     visible = await queries.get_run(actor=actor(), run_id=run.id)
@@ -175,7 +186,11 @@ async def test_continuation_retains_accepted_definition_after_deployment_and_app
         if_match=resource_etag(saved.id, saved.updated_at),
     )
     await inputs_service(
-        agent_sessions, tmp_path, definition=load_definition().model_copy(update={"instructions": "Changed deployment"})
+        agent_sessions,
+        tmp_path,
+        definition=load_definition(total_tokens_limit=3_000_000).model_copy(
+            update={"instructions": "Changed deployment"}
+        ),
     )
     thread = (await conversations.get_thread(actor=actor(), thread_id=thread_id)).thread
     if continuation == "retry":
@@ -223,6 +238,9 @@ async def test_continuation_retains_accepted_definition_after_deployment_and_app
     assert (await drafts.get(actor=actor(), draft_id=draft.id)).version == 3
     source_state = (await RunStateStore(objects).read_run(source)).envelope
     retry_state = (await RunStateStore(objects).read_run(retry)).envelope
+    assert retry_state.usage_limits == source_state.usage_limits
+    assert retry_state.usage_limits.total_tokens_limit == 2_000_000
+    assert retry.execution_budget == source.execution_budget
     assert retry_state.effective_agent_config == source_state.effective_agent_config
     assert retry_state.effective_agent_config.instructions == load_definition().instructions
 
@@ -291,3 +309,91 @@ async def test_create_scope_snapshot_cannot_authorize_newly_bound_target(agent_s
             snapshot, workspace_actions=frozenset({WorkspaceAction.agent_read, WorkspaceAction.agent_revision_create})
         )
     )
+
+
+async def test_session_history_distinguishes_empty_drafts_and_summarizes_first_input(agent_sessions, tmp_path):
+    from a13n_service.agent_configuration.requests import CreateSessionRequest
+
+    conversations, _, _ = services(agent_sessions)
+    empty = await conversations.create_session(
+        actor=actor(), request=CreateSessionRequest(), idempotency_key="empty-history"
+    )
+    draft = await new_draft(conversations)
+    active = await conversations.get_session(actor=actor(), session_id=draft.session_id)
+    assert active.title is None and not active.has_runs
+    inputs, _ = await inputs_service(agent_sessions, tmp_path)
+    prompt = "Build a support agent.\n" + "Details " * 30
+    await inputs.submit(
+        actor=actor(),
+        thread_id=active.root_thread_id,
+        idempotency_key="history-input",
+        request=ConfigurationInputRequest.model_validate(
+            {
+                "expected_thread_version": 1,
+                "input": {"schema_version": "2", "content": [{"type": "text", "text": prompt}]},
+            }
+        ),
+    )
+    history = await conversations.list_sessions(actor=actor(), limit=10, cursor=None)
+    entries = {item.id: item for item in history.items}
+    assert len(entries) == 2
+    assert entries[empty.id].title is None and not entries[empty.id].has_runs
+    assert entries[active.id].title == " ".join(prompt[:160].split())
+    assert entries[active.id].has_runs
+    assert await conversations.get_session(actor=actor(), session_id=active.id) == entries[active.id]
+
+
+@pytest.mark.parametrize("fork", [False, True])
+@pytest.mark.parametrize("previous_limit,current_limit", [(200_000, 2_000_000), (2_000_000, 200_000)])
+async def test_new_configuration_message_uses_current_budget_with_retained_history(
+    agent_sessions, tmp_path, fork, previous_limit, current_limit
+):
+    from a13n_service.agent_configuration.requests import CreateConfigurationThreadRequest
+
+    from ..gateway.test_commands import _complete_run
+
+    conversations, _, _ = services(agent_sessions)
+    draft = await new_draft(conversations)
+    thread_id = (await conversations.get_session(actor=actor(), session_id=draft.session_id)).root_thread_id
+    inputs, objects = await inputs_service(
+        agent_sessions, tmp_path, definition=load_definition(total_tokens_limit=previous_limit)
+    )
+    request = ConfigurationInputRequest.model_validate(
+        {
+            "expected_thread_version": 1,
+            "input": {"schema_version": "2", "content": [{"type": "text", "text": "Build an agent"}]},
+        }
+    )
+    original = await inputs.submit(actor=actor(), thread_id=thread_id, request=request, idempotency_key="old-budget")
+    await _complete_run(agent_sessions, objects, run_id=original.run_id)
+    if fork:
+        branch = await conversations.create_thread(
+            actor=actor(),
+            session_id=draft.session_id,
+            request=CreateConfigurationThreadRequest(fork_from_run_id=original.run_id),
+            idempotency_key="budget-fork",
+        )
+        thread_id = branch.thread.id
+    thread = (await conversations.get_thread(actor=actor(), thread_id=thread_id)).thread
+    inputs, _ = await inputs_service(
+        agent_sessions, tmp_path, definition=load_definition(total_tokens_limit=current_limit)
+    )
+    receipt = await inputs.submit(
+        actor=actor(),
+        thread_id=thread_id,
+        request=request.model_copy(update={"expected_thread_version": thread.version}),
+        idempotency_key="new-budget",
+    )
+    async with short_session(agent_sessions) as session:
+        source = (await session.get(RunRecord, original.run_id)).to_resource()
+        run = (await session.get(RunRecord, receipt.run_id)).to_resource()
+    states = RunStateStore(objects)
+    parent = (await states.read_run(source)).envelope
+    state = (await states.read_run(run)).envelope
+    assert parent.usage_limits.total_tokens_limit == previous_limit
+    assert state.usage_limits.total_tokens_limit == current_limit
+    assert state.usage_limits.request_limit == 40
+    assert run.execution_budget.max_usage.input_tokens == current_limit
+    assert run.execution_budget.max_usage.output_tokens == current_limit
+    assert state.harness.message_history == parent.harness.message_history
+    assert run.parent_run_id == source.id

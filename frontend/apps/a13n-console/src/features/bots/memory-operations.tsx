@@ -1,3 +1,4 @@
+import type { MemoryDialogControl } from "./memory-actions";
 import { Button, ModalFrame } from "a13n-ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -12,9 +13,11 @@ import styles from "./bots.module.css";
 export function MemoryOperations({
   account,
   scopeId,
+  dialog,
 }: {
   account: Schema["Account"];
   scopeId: string;
+  dialog?: MemoryDialogControl;
 }) {
   const [open, setOpen] = useState(false),
     { t } = useTranslation();
@@ -22,16 +25,21 @@ export function MemoryOperations({
     <ModalFrame
       open={open}
       onOpenChange={setOpen}
+      {...dialog}
       title={t("Pending operations")}
       size="lg"
       closeLabel={t("Close")}
       trigger={
-        <Button type="button" size="sm" variant="outline">
-          {t("Pending operations")}
-        </Button>
+        dialog ? undefined : (
+          <Button type="button" size="sm" variant="outline">
+            {t("Pending operations")}
+          </Button>
+        )
       }
     >
-      {open && <Operations account={account} scopeId={scopeId} />}
+      {(dialog?.open ?? open) && (
+        <Operations account={account} scopeId={scopeId} />
+      )}
     </ModalFrame>
   );
 }

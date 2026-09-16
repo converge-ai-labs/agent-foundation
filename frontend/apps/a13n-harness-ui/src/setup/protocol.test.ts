@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, expect, it } from "vitest";
-import { startSetupApp } from "../../tests/app-fixture";
+import { startApp } from "../../tests/app-fixture";
 import type { Schema } from "../transport/client";
 
-let app: Awaited<ReturnType<typeof startSetupApp>>;
+let app: Awaited<ReturnType<typeof startApp>>;
 beforeAll(async () => {
-  app = await startSetupApp();
+  app = await startApp("--setup");
 }, 40000);
 afterAll(async () => {
   await app?.close();

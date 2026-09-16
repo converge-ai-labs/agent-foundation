@@ -57,6 +57,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.lifecycle_support import test_lifecycle_writer
+from tests.memory.selection_support import ordinary_memory
 
 from .conftest import (
     AGENT_ID,
@@ -753,6 +754,7 @@ async def _accept_root(
         InlineHookValidator(EndpointPolicy()),
         clock=lambda: NOW,
         lifecycle=test_lifecycle_writer(),
+        bindings=ordinary_memory(sessions),
     ).accept_new_thread(
         session=Session(
             id=SESSION_ID,

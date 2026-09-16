@@ -26,6 +26,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.lifecycle_support import test_lifecycle_writer
+from tests.memory.selection_support import ordinary_memory
 
 from .conftest import NOW, ORGANIZATION_ID, USER_ID, WORKSPACE_ID
 from .test_acceptance import _accepted_run, _inline_hooks
@@ -60,6 +61,7 @@ async def test_unbound_result_rebinds_to_a_current_active_run_and_signals_it(
         interaction_sessions,
         states,
         RunReplayStore(interaction_object_store),
+        bindings=ordinary_memory(interaction_sessions),
         signals=signals,
         clock=lambda: NOW + timedelta(seconds=6),
         lifecycle=test_lifecycle_writer(),
@@ -114,6 +116,7 @@ async def test_queued_submission_keeps_precedence_over_unbound_result(
         interaction_sessions,
         states,
         RunReplayStore(interaction_object_store),
+        bindings=ordinary_memory(interaction_sessions),
         clock=lambda: NOW + timedelta(seconds=6),
         lifecycle=test_lifecycle_writer(),
     ).reconcile_thread(organization_id=ORGANIZATION_ID, thread_id=parent.thread_id)
@@ -160,6 +163,7 @@ async def test_waiting_parent_retains_result_without_creating_successor(
         interaction_sessions,
         states,
         RunReplayStore(interaction_object_store),
+        bindings=ordinary_memory(interaction_sessions),
         lifecycle=test_lifecycle_writer(),
     )
     assert await reconciler.reconcile_once() == 0
@@ -216,6 +220,7 @@ async def test_failed_current_uses_preserved_completed_head_as_result_parent(
         states,
         RunPayloadStore(interaction_object_store),
         _inline_hooks(),
+        bindings=ordinary_memory(interaction_sessions),
         clock=lambda: NOW + timedelta(seconds=6),
         lifecycle=test_lifecycle_writer(),
     ).advance_thread(
@@ -243,6 +248,7 @@ async def test_failed_current_uses_preserved_completed_head_as_result_parent(
         interaction_sessions,
         states,
         RunReplayStore(interaction_object_store),
+        bindings=ordinary_memory(interaction_sessions),
         run_id_factory=lambda _organization, _entry, _parent: "run_1616161616161616",
         clock=lambda: NOW + timedelta(seconds=8),
         lifecycle=test_lifecycle_writer(),
@@ -293,6 +299,7 @@ async def test_automatic_successor_reauthorizes_origin_principal_before_commit(
             interaction_sessions,
             states,
             RunReplayStore(interaction_object_store),
+            bindings=ordinary_memory(interaction_sessions),
             run_id_factory=lambda _organization, _entry, _parent: "run_eeeeeeeeeeeeeeee",
             clock=lambda: NOW + timedelta(seconds=6),
             lifecycle=test_lifecycle_writer(),
@@ -358,6 +365,7 @@ async def test_automatic_successor_reauthorizes_child_result_before_commit(
             interaction_sessions,
             states,
             RunReplayStore(interaction_object_store),
+            bindings=ordinary_memory(interaction_sessions),
             run_id_factory=lambda _organization, _entry, _parent: "run_ffffffffffffffff",
             clock=lambda: NOW + timedelta(seconds=6),
             lifecycle=test_lifecycle_writer(),

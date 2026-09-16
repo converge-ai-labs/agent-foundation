@@ -1,5 +1,6 @@
 .strip {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 2px;
   flex-shrink: 0;
@@ -111,6 +112,9 @@
 .tasks dd {
   margin: 0;
   overflow-wrap: anywhere;
+}
+.processSummary code {
+  font-size: 12px;
 }
 .tasks summary:focus-visible,
 .notes summary:focus-visible {

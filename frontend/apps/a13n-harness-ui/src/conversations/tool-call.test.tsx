@@ -277,3 +277,199 @@ it("shows the whole recorded written file rather than a diff or a requested frag
   expect(region.querySelector(".hljs-keyword")).not.toBeNull();
   expect(screen.queryByText("Applied edit")).toBeNull();
 });
+
+const questionTool = {
+  id: "question",
+  name: "ask_user_question",
+  input: {
+    questions: [
+      {
+        header: "Scope",
+        question: "Which scope?",
+        options: [
+          { label: "WebUI", description: "Only the browser surface" },
+          { label: "All", description: "Every surface" },
+        ],
+      },
+      {
+        header: "Checks",
+        question: "Which checks?",
+        multiSelect: true,
+        options: [
+          { label: "Tests", description: "Run tests" },
+          { label: "Browser", description: "Check rendering" },
+        ],
+      },
+    ],
+  },
+  result: {
+    answers: { "Which scope?": "WebUI", "Which checks?": ["Tests", "Browser"] },
+  },
+};
+
+it("shows question context and selected option descriptions by default, keeping all options in the disclosure", () => {
+  render(
+    <ToolCall
+      tool={{
+        ...questionTool,
+        result: {
+          answers: {
+            "Which checks?": ["Tests", "Browser"],
+            "Which scope?": "WebUI",
+          },
+        },
+      }}
+    />,
+  );
+  expect(
+    Array.from(document.querySelectorAll("dt"), (item) => item.textContent),
+  ).toEqual(["ScopeWhich scope?", "ChecksWhich checks?"]);
+  const receipt = screen.getByRole("region", { name: "Your answers" });
+  for (const text of [
+    "Scope",
+    "Which scope?",
+    "WebUI",
+    "Only the browser surface",
+    "Checks",
+    "Which checks?",
+    "Tests",
+    "Run tests",
+    "Browser",
+    "Check rendering",
+  ])
+    expect(within(receipt).getByText(text)).toBeTruthy();
+  expect(screen.queryByText("Every surface")).toBeNull();
+  const toggle = screen.getByRole("button", { name: "Questions & details" });
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(toggle);
+  expect(screen.getAllByText("Which scope?")).toHaveLength(2);
+  expect(screen.getAllByText("Only the browser surface")).toHaveLength(2);
+  expect(screen.getByText("Every surface")).toBeTruthy();
+  fireEvent.click(toggle);
+  expect(screen.getByText("Which scope?")).toBeTruthy();
+  expect(screen.getByText("Only the browser surface")).toBeTruthy();
+  expect(screen.getByText("WebUI")).toBeTruthy();
+});
+
+it("preserves free-text and general responses in live and saved question receipts", () => {
+  const result = {
+    answers: { "Which scope?": "A custom scope\nwith a second line" },
+    response: "Please keep the rest unchanged.",
+  };
+  const { unmount } = render(
+    <LiveOutput
+      gap={false}
+      blocks={[
+        {
+          id: "question",
+          kind: "tool",
+          name: questionTool.name,
+          text: JSON.stringify(questionTool.input),
+          result: JSON.stringify(result),
+          done: true,
+        },
+      ]}
+    />,
+  );
+  expect(screen.getByText(/A custom scope/).textContent).toBe(
+    result.answers["Which scope?"],
+  );
+  expect(screen.getByText("Please keep the rest unchanged.")).toBeTruthy();
+  expect(screen.getByText("Which scope?")).toBeTruthy();
+  expect(screen.queryByText("Only the browser surface")).toBeNull();
+  unmount();
+  const entries = [
+    {
+      position: 0,
+      parts: [
+        {
+          kind: "tool_call",
+          tool_call_id: "q",
+          tool_name: questionTool.name,
+          value: questionTool.input,
+        },
+      ],
+    },
+    {
+      position: 1,
+      parts: [
+        {
+          kind: "tool_result",
+          tool_call_id: "q",
+          value: result,
+          outcome: "success",
+        },
+      ],
+    },
+  ] as Schema<"TranscriptEntry">[];
+  render(
+    <>
+      {entries.map((entry) => (
+        <SavedEntry
+          key={entry.position}
+          entry={entry}
+          toolGroups={savedToolGroups(entries)}
+        />
+      ))}
+    </>,
+  );
+  expect(screen.getAllByRole("region", { name: "Your answers" })).toHaveLength(
+    1,
+  );
+  expect(screen.getByText("Scope")).toBeTruthy();
+  expect(screen.getByText("Which scope?")).toBeTruthy();
+  expect(screen.queryByText("Only the browser surface")).toBeNull();
+  expect(screen.getByText(/A custom scope/).textContent).toBe(
+    result.answers["Which scope?"],
+  );
+});
+
+it("keeps questions and answers readable without original headers or matching options", () => {
+  render(
+    <ToolCall
+      tool={{
+        ...questionTool,
+        input: {
+          questions: [
+            {
+              question: "Which scope?",
+              options: [{ label: "WebUI" }, null],
+            },
+          ],
+        },
+        result: {
+          answers: {
+            "Which scope?": "WebUI",
+            "Another question?": "Custom answer",
+          },
+        },
+      }}
+    />,
+  );
+  expect(screen.getAllByText("Which scope?")).toHaveLength(1);
+  expect(screen.getByText("WebUI")).toBeTruthy();
+  expect(screen.getAllByText("Another question?")).toHaveLength(1);
+  expect(screen.getByText("Custom answer")).toBeTruthy();
+});
+
+it("keeps missing, omitted, malformed and unsuccessful question results in the ordinary tool view", () => {
+  for (const changes of [
+    { result: undefined },
+    { result: { answers: {} } },
+    { result: { answers: { "Which scope?": [42] } } },
+    { resultOmitted: true },
+    { outcome: "failed" as const },
+    { outcome: "denied" as const },
+    { outcome: "interrupted" as const },
+    { retry: true },
+  ]) {
+    const { unmount } = render(
+      <ToolCall tool={{ ...questionTool, ...changes }} />,
+    );
+    expect(screen.queryByRole("region", { name: "Your answers" })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /ask_user_question/ }),
+    ).toBeTruthy();
+    unmount();
+  }
+});

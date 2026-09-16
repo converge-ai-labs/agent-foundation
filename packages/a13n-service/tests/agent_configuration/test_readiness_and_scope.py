@@ -71,6 +71,21 @@ async def test_readiness_never_initializes_resources_and_exact_system_definition
         assert await session.scalar(select(func.count()).select_from(AgentRevisionRecord)) == 0
 
 
+async def test_readiness_routes_missing_models_to_models_after_provider_setup(agent_sessions):
+    readiness = ConfigurationReadiness(agent_sessions, built_in_provider_registry(), load_definition())
+    missing_provider = await readiness.read(actor=actor())
+    assert "/settings?" in missing_provider.setup_url
+    async with transaction(agent_sessions) as session:
+        provider = await session.get(ModelProviderRecord, PROVIDER_ID)
+        provider.credential_configured = True
+        model = await session.get(ModelRecord, MODEL_ID)
+        model.enabled = False
+    missing_model = await readiness.read(actor=actor())
+    assert missing_model.reason_code == "model_setup_required"
+    assert missing_model.setup_url.endswith("/models")
+    assert missing_model.setup_actions == ("configure_model",)
+
+
 async def test_empty_configuration_conversation_is_visible_only_to_owner_even_for_admin(agent_sessions, tmp_path):
     from a13n_service.storage.object_store.local import LocalObjectStore
 

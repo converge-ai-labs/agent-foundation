@@ -14,7 +14,6 @@ from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.accounts.queries import require_account
 from a13n_service.connectivity.adapters import IngressAdapter, JsonObject
-from a13n_service.connectivity.bots.setup_tests import record_test_admission, record_test_ignored, test_marker
 from a13n_service.connectivity.composition import AdapterRegistry
 from a13n_service.connectivity.errors import NativeError
 from a13n_service.connectivity.management import canonical_json
@@ -27,6 +26,7 @@ from a13n_service.temporal import Clock, assume_utc, utc_now
 
 from .admission_domain import BatchConfiguration
 from .admission_models import AgentThreadBindingRecord, IngressAdmissionRecord, IngressBatchRecord
+from .contributions import IngressObservations
 from .provider import (
     AdmissionReceipt,
     DurableAdmissionReceipt,
@@ -65,6 +65,7 @@ class IngressEventService:
         batch_max_bytes: int,
         dedup_horizon_seconds: int,
         clock: Clock = utc_now,
+        observations: IngressObservations | None = None,
     ) -> None:
         self._sessions = sessions
         self._adapters = adapters
@@ -77,6 +78,7 @@ class IngressEventService:
         self._batch_max_bytes = batch_max_bytes
         self._dedup_horizon_seconds = dedup_horizon_seconds
         self._clock = clock
+        self._observations = observations
 
     async def receive(self, *, account_id: str, request: ProviderRequest) -> ProviderHttpResponse:
         snapshot, adapter, credentials = await self._load_runtime(account_id)
@@ -166,9 +168,9 @@ class IngressEventService:
                 return await _receipt(session, duplicate, duplicate=True)
             routing = await resolve_routing(session, adapter=adapter, account=account, event=event)
             if isinstance(routing, IrrelevantRouting):
-                if test_marker(event.text) is not None:
+                if self._observations is not None:
                     kind, identifier = adapter.event_target(event)
-                    await record_test_ignored(
+                    await self._observations.ignored(
                         session,
                         account=account,
                         event=event,
@@ -220,16 +222,17 @@ class IngressEventService:
             )
             session.add(record)
             await session.flush()
-            await record_test_admission(
-                session,
-                account=account,
-                configuration=routing.configuration,
-                event=event,
-                admission_id=record.id,
-                batch_id=batch.id,
-                binding_id=binding.id,
-                now=now,
-            )
+            if self._observations is not None:
+                await self._observations.admitted(
+                    session,
+                    account=account,
+                    configuration=routing.configuration,
+                    event=event,
+                    admission_id=record.id,
+                    batch_id=batch.id,
+                    binding_id=binding.id,
+                    now=now,
+                )
             return DurableAdmissionReceipt(admission_id=record.id, status="pending", duplicate=False)
 
     async def _require_capacity(self, session: AsyncSession, account: AccountRecord, size: int) -> None:

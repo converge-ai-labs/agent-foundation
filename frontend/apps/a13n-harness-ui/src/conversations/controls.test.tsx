@@ -2,6 +2,7 @@
 import { afterEach, expect, it, vi } from "vitest";
 import userEvent from "@testing-library/user-event";
 import {
+  act,
   cleanup,
   fireEvent,
   render,
@@ -350,4 +351,90 @@ it("validates an approval override as a JSON object before allowing the complete
       override_arguments: { command: "review" },
     },
   ]);
+});
+
+it("shows the server deadline despite clock skew and refetches at expiry without submitting drafts", () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "performance"] });
+  const POST = vi.fn();
+  const reconcile = vi.fn();
+  const timedBatch = {
+    ...batch,
+    server_time: "2020-01-01T00:00:00Z",
+    expires_at: "2020-01-01T00:00:02Z",
+  };
+  const view = render(
+    <DecisionForm threadId="one" batch={timedBatch} reconcile={reconcile} />,
+    { wrapper: harness({ POST }) },
+  );
+  try {
+    expect(screen.getByText(/Submit within 2s/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("radio", { name: "Left Choose left" }));
+    act(() => vi.advanceTimersByTime(1000));
+    expect(screen.getByText(/Submit within 1s/)).toBeTruthy();
+    // A second participant/refetch sees the same deadline, not another full window.
+    view.rerender(
+      <DecisionForm
+        threadId="one"
+        batch={{ ...timedBatch, server_time: "2020-01-01T00:00:01Z" }}
+        reconcile={reconcile}
+      />,
+    );
+    act(() => vi.advanceTimersByTime(1000));
+    expect(screen.getByText(/Waiting for the server to confirm/)).toBeTruthy();
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Submit responses",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect(reconcile).toHaveBeenCalledOnce();
+    expect(POST).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(1000));
+    expect(reconcile).toHaveBeenCalledOnce();
+  } finally {
+    view.unmount();
+    vi.useRealTimers();
+  }
+});
+
+it("unmounting a timed form never sends a response and a restored untimed batch stays answerable", () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval", "performance"] });
+  const POST = vi.fn();
+  const reconcile = vi.fn();
+  const wrapper = harness({ POST });
+  const view = render(
+    <DecisionForm
+      threadId="one"
+      batch={{
+        ...batch,
+        server_time: "2020-01-01T00:00:00Z",
+        expires_at: "2020-01-01T00:00:01Z",
+      }}
+      reconcile={reconcile}
+    />,
+    { wrapper },
+  );
+  view.unmount();
+  try {
+    act(() => vi.advanceTimersByTime(2000));
+    expect(POST).not.toHaveBeenCalled();
+    expect(reconcile).not.toHaveBeenCalled();
+    const restored = render(
+      <DecisionForm threadId="one" batch={batch} reconcile={reconcile} />,
+      { wrapper },
+    );
+    expect(screen.queryByText(/Submit within/)).toBeNull();
+    fireEvent.click(screen.getByRole("radio", { name: "Left Choose left" }));
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Submit responses",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false);
+    restored.unmount();
+  } finally {
+    vi.useRealTimers();
+  }
 });

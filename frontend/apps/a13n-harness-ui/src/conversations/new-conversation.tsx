@@ -1,5 +1,18 @@
-import { createContext, useContext, useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  Link,
+  useLocation,
+  useNavigate,
+  useParams,
+  useSearchParams,
+} from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Robot, Folder, Monitor, ShieldWarning } from "@phosphor-icons/react";
 import { SearchPicker } from "a13n-ui";
@@ -17,24 +30,18 @@ import {
 } from "../transport/client";
 import { ErrorNotice } from "../shell/ui";
 import type { Profile } from "../shell/presence";
-import { Composer, useDraft } from "./composer";
+import { Composer, ComposerDrafts, useDraft } from "./composer";
+import { NewDraftStore, type NewDraft } from "./new-draft";
+import { attachmentSelections, isReadyAttachment } from "./inline-attachments";
 import { ModelPicker } from "./model-picker";
 import { refreshThreadLists } from "./queries";
 import { ConversationTranscript } from "./transcript";
 import styles from "./new-conversation.module.css";
 
-export type NewDraft = {
-  threadId: string;
-  defaults: Schema<"NewThreadDefaults">;
-  created: boolean;
-  attempted: boolean;
-  pending?: Promise<void>;
-};
-export const NewConversationDrafts = createContext(new Map<string, NewDraft>());
+export const NewConversationDrafts = createContext(new NewDraftStore());
 
 export function newConversationPath(projectId: string | null = null) {
-  const id = `thread_${crypto.randomUUID().replaceAll("-", "")}`;
-  return `/new/${id}${projectId ? `?project=${encodeURIComponent(projectId)}` : ""}`;
+  return `/new?project=${encodeURIComponent(projectId ?? "")}`;
 }
 
 // Creation and admission remain separate. Resolve a lost creation acknowledgement
@@ -69,6 +76,7 @@ export async function ensureConversation(
       }
     }
     draft.attempted = true;
+    draft.save();
     try {
       const created = await result(
         transport.client.POST("/api/threads", {
@@ -96,6 +104,7 @@ export async function ensureConversation(
     await draft.pending;
   } finally {
     draft.pending = undefined;
+    draft.save();
   }
 }
 
@@ -105,42 +114,27 @@ export function NewConversationPage(props: {
 }) {
   const { draftId } = useParams();
   const drafts = useContext(NewConversationDrafts);
-  const [homeId] = useState(() => {
-    let home = drafts.get("@home");
-    if (!home) {
-      home = {
-        threadId: `thread_${crypto.randomUUID().replaceAll("-", "")}`,
-        defaults: { project_id: null },
-        created: false,
-        attempted: false,
-      };
-      drafts.set("@home", home);
-      drafts.set(home.threadId, home);
-    }
-    return home.threadId;
-  });
-  const [search] = useSearchParams();
-  return (
-    <NewConversation
-      key={draftId ?? homeId}
-      threadId={draftId ?? homeId}
-      projectId={search.get("project")}
-      {...props}
-    />
+  const composers = useContext(ComposerDrafts);
+  const { key } = useLocation();
+  // A new navigation can leave a retired composer behind after a successful
+  // Send whose saved-page read failed; ordinary rerenders must not replace it.
+  const draft = useMemo(
+    () => drafts.get(composers, draftId),
+    [drafts, composers, draftId, key],
   );
+  return <NewConversation key={draft.threadId} draft={draft} {...props} />;
 }
 
 function NewConversation({
-  threadId,
-  projectId,
+  draft,
   profile,
   unauthorized,
 }: {
-  threadId: string;
-  projectId: string | null;
+  draft: NewDraft;
   profile: Profile;
   unauthorized: () => void;
 }) {
+  const { threadId } = draft;
   const active = useRef(true);
   useEffect(() => {
     active.current = true;
@@ -155,19 +149,6 @@ function NewConversation({
   const setup = useSetup();
   const navigate = useNavigate();
   const drafts = useContext(NewConversationDrafts);
-  const [draft] = useState(() => {
-    let retained = drafts.get(threadId);
-    if (!retained) {
-      retained = {
-        threadId,
-        defaults: { project_id: projectId },
-        created: false,
-        attempted: false,
-      };
-      drafts.set(threadId, retained);
-    }
-    return retained;
-  });
   const [defaults, setDefaults] = useState(draft.defaults);
   const [preparing, setPreparing] = useState(false);
   const composerDraft = useDraft(threadId);
@@ -185,26 +166,48 @@ function NewConversation({
     mutationFn: () => ensureConversation(transport, threadId, draft),
     onSettled: (_data, error) => {
       if (draft.created) void refreshThreadLists(queries);
-      if (draft.created && error && active.current)
-        void openConversation().catch(() => {});
+      if (draft.created && error && active.current) openConversation();
     },
   });
   const [search, setSearch] = useSearchParams();
+  const requestedProject = search.get("project");
   useEffect(() => {
-    if (search.get("project") === (defaults.project_id ?? null)) return;
-    setSearch(
-      (current) => {
-        if (defaults.project_id) current.set("project", defaults.project_id);
-        else current.delete("project");
-        return current;
-      },
-      { replace: true },
-    );
-  }, [defaults.project_id, search, setSearch]);
+    // Home resumes the slot; a Project's plus explicitly changes only Project.
+    if (requestedProject === null || preparing || draft.attempted) {
+      if (requestedProject !== (draft.defaults.project_id ?? ""))
+        setSearch(
+          (current) => {
+            const next = new URLSearchParams(current);
+            next.set("project", draft.defaults.project_id ?? "");
+            return next;
+          },
+          { replace: true },
+        );
+      return;
+    }
+    if ((draft.defaults.project_id ?? null) === (requestedProject || null))
+      return;
+    draft.defaults = {
+      ...draft.defaults,
+      project_id: requestedProject || null,
+    };
+    setDefaults(draft.defaults);
+    draft.save();
+  }, [requestedProject, preparing, draft, setSearch]);
   const change = (patch: Schema<"NewThreadDefaults">) => {
     if (preparing || draft.attempted) return;
     draft.defaults = { ...defaults, ...patch };
     setDefaults(draft.defaults);
+    draft.save();
+    if ("project_id" in patch)
+      setSearch(
+        (current) => {
+          const next = new URLSearchParams(current);
+          next.set("project", patch.project_id ?? "");
+          return next;
+        },
+        { replace: true },
+      );
   };
   const project = projects.data?.find(
     (item) => item.project_id === defaults.project_id,
@@ -223,37 +226,11 @@ function NewConversation({
         ? "Sandbox"
         : "Custom environment";
   const choicesDisabled = preparing || draft.attempted;
-  const openConversation = async () => {
-    // Keep the current composer visible until the saved route has its first frame.
-    // Never retry admission here: this is only an exact-identity observation.
-    const detail = await queries.fetchQuery({
-      queryKey: ["thread", threadId, "detail"],
-      queryFn: () =>
-        result(
-          transport.client.GET("/api/threads/{thread_id}", {
-            params: { path: { thread_id: threadId } },
-          }),
-        ),
-      staleTime: 0,
-    });
-    await queries.prefetchInfiniteQuery({
-      queryKey: ["thread", threadId, "history", detail.continuation_id],
-      initialPageParam: undefined as string | undefined,
-      queryFn: () =>
-        result(
-          transport.client.GET("/api/threads/{thread_id}/transcript", {
-            params: {
-              path: { thread_id: threadId },
-              query: {
-                expected_continuation_id: detail.continuation_id ?? undefined,
-                limit: 30,
-              },
-            },
-          }),
-        ),
-    });
+  const openConversation = () => {
+    // Admission and page observation are independent. Open the retained identity
+    // immediately so detail and focused output can load together; the saved page
+    // keeps local input visible while history catches up.
     if (!active.current) return;
-    if (drafts.get("@home") === draft) drafts.delete("@home");
     navigate(`/threads/${encodeURIComponent(threadId)}?compose=1`, {
       replace: true,
     });
@@ -366,6 +343,7 @@ function NewConversation({
             void refreshThreadLists(queries);
           }}
           local={!draft.created}
+          skillDefaults={defaults}
           prepareThread={() => create.mutateAsync()}
           onPreparing={setPreparing}
           onSubmitted={openConversation}
@@ -437,6 +415,18 @@ function NewConversation({
             </div>
           }
         />
+        {drafts.error && <p role="alert">{drafts.error}</p>}
+        {attachmentSelections(composerDraft.doc).some(
+          ({ key, id }) =>
+            !isReadyAttachment(id) && !composerDraft.uploads.has(key),
+        ) && (
+          <p role="alert">
+            Some attachments are unavailable. Local files are not saved across
+            reloads, and uploaded files belong to their original conversation.
+            Remove unavailable attachments and attach the files again before
+            sending.
+          </p>
+        )}
         <ErrorNotice
           error={preview.error || selectors.error || projects.error}
         />

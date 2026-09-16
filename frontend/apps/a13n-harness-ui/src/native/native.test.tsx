@@ -233,6 +233,12 @@ it("dirty file text survives refresh, conflict and navigation until explicit res
     within(confirmation).getByRole("button", { name: "Keep local text" }),
   );
   await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  const retained = f.buffers.get(props.path)!;
+  expect(retained.value).toBe("local changes");
+  expect(retained.base.entry.revision).toBe("second");
+  expect(retained.dirty).toBe(true);
+  expect(f.put).not.toHaveBeenCalled();
+  expect(screen.getByRole("status").textContent).toContain("Save explicitly");
   f.put.mockResolvedValue({ data: { ...file.entry, revision: "third" } });
   fireEvent.click(screen.getByText("Save file"));
   await screen.findByText("File saved.");

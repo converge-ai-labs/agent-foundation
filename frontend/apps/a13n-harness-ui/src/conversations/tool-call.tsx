@@ -19,6 +19,7 @@ import {
 import { structuredPatch } from "diff";
 import {
   describeTool,
+  questionReceipt,
   activityKind,
   activitySummary,
   hostLookupPath,
@@ -508,6 +509,75 @@ export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
   const info = describeTool(tool);
   const [expanded, setExpanded] = useState(false);
   const Icon = toolIcons[info.kind];
+  const receipt = questionReceipt(tool);
+  if (receipt)
+    return (
+      <section
+        className={styles.questionReceipt}
+        data-tool-id={tool.id}
+        aria-label="Your answers"
+      >
+        <dl className={styles.answers}>
+          {receipt.items.map((item, index) => (
+            <div key={index}>
+              <dt>
+                <span className={styles.questionHeader}>{item.title}</span>
+                {item.question && item.question !== item.title && (
+                  <p className={styles.questionText}>{item.question}</p>
+                )}
+              </dt>
+              <dd>
+                {item.values.map((value, i) => (
+                  <div key={i}>
+                    <p className={styles.answerLabel}>{value.label}</p>
+                    {value.description && (
+                      <p className={styles.answerDescription}>
+                        {value.description}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </dd>
+            </div>
+          ))}
+        </dl>
+        <DisclosureSection
+          title="Questions & details"
+          open={expanded}
+          onOpenChange={setExpanded}
+        >
+          {expanded && (
+            <div className={styles.details}>
+              {receipt.questions.map((question, index) => (
+                <section key={index} className={styles.originalQuestion}>
+                  {typeof question.header === "string" && (
+                    <h4>{question.header}</h4>
+                  )}
+                  {typeof question.question === "string" && (
+                    <p>{question.question}</p>
+                  )}
+                  {Array.isArray(question.options) && (
+                    <ul>
+                      {question.options.filter(record).map((option, i) => (
+                        <li key={i}>
+                          {typeof option.label === "string" && (
+                            <strong>{option.label}</strong>
+                          )}
+                          {typeof option.description === "string" && (
+                            <span>{option.description}</span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </section>
+              ))}
+              <ToolDetails tool={tool} />
+            </div>
+          )}
+        </DisclosureSection>
+      </section>
+    );
   return (
     <section className={styles.tool} data-tool-id={tool.id}>
       <DisclosureSection

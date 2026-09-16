@@ -334,6 +334,8 @@ The same acceptance transaction binds every still-pending Thread-inbox delivery 
 
 On first execution, Service passes the complete normalized resolutions as `DeferredToolResume` and the accepted `AgentInput` as ordinary input to the same first model request. The first checkpoint that marks the composite Run input `applied` proves both values crossed the Harness input boundary together and that the isolated request reached the complete first-request hook boundary. A crash before that checkpoint replays both; recovery from an applied checkpoint supplies neither again.
 
+For `ask_user_question`, the pending presentation includes the validated question text, headers, options and multi-select flags. Feedback is validated against the sealed native request before a successor Run is accepted. Structured responses use the Harness question-answer envelope; plain text from older clients or retained Runs is normalized to a general `response` before native resume. Invalid answers are rejected as invalid feedback without advancing the Thread.
+
 ### Harness Mapping
 
 The Worker maps the accepted batch by owning boundary:
@@ -418,3 +420,7 @@ Related persistence integration is:
 10. An ordinary existing-Thread Run submission never bypasses a queued submission. It can append to an existing queue unless the current Run is `failed` or `cancelled`; with an empty queue it queues while the current Run is `accepted`, `running`, or `waiting`, uses the exact completed head when eligible, or accepts a root-like Run with no parent after a failed or cancelled current Run with `head_run_id=null`. A failed or cancelled current Run rejects any submission that cannot accept immediately. An explicitly declared waiting Continue advances the waiting head without consuming or reordering that separate queue.
 11. Waiting Feedback and waiting Continue bind pending waiting-source deliveries to their one direct successor; the first model request processes deferred results and optional Continue input before the Service-owned awaited delivery hook can make any such delivery visible.
 12. Start, ordinary Continue, Continue From, and Fork use the authenticated caller as the new Run's authority Principal; Feedback and waiting Continue inherit the waiting Run's Principal; Retry inherits the terminal source Run's Principal. A command actor never becomes an execution Principal merely by causing one of the inheriting operations to commit.
+
+## Retained Memory Behavior
+
+Every accepted execution participates in the [Memory selection contract](42-memory.md#execution-memory-selection). Initial acceptance, queued consumption and ordinary new input finalize selection atomically with their receipts. Source-preserving Retry, waiting feedback/Continue and forks inherit the source selection and binding. Steer keeps the selected Run unchanged. Replay validates retained records; missing records fail rather than selecting current defaults.

@@ -10,7 +10,7 @@ from typing import Protocol
 import rfc8785
 from a13n_harness import HarnessRunResult, HarnessState, SafeFailure
 from a13n_harness.tools import APPROVAL_PRESENTATION_KEY, ApprovalPresentation
-from a13n_harness.toolsets.interaction import ASK_USER_QUESTION_TOOL_NAME
+from a13n_harness.toolsets.interaction import ASK_USER_QUESTION_TOOL_NAME, AskUserQuestionRequest
 from pydantic import JsonValue, TypeAdapter, ValidationError
 from pydantic_ai.tools import DeferredToolRequests
 from pydantic_core import PydanticSerializationError, to_jsonable_python
@@ -188,6 +188,13 @@ class StoredHarnessOutcomeAdapter:
                         else PendingCallKind.client_tool
                     ),
                     tool_name=request.tool_name,
+                    presentation=(
+                        AskUserQuestionRequest.model_validate(request.args_as_dict()).model_dump(
+                            mode="json", by_alias=True
+                        )
+                        if request.tool_name == ASK_USER_QUESTION_TOOL_NAME
+                        else None
+                    ),
                 )
                 for request in requests.calls
             ),

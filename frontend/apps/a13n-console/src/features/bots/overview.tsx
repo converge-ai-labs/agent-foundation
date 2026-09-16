@@ -1,3 +1,4 @@
+import { botAccount } from "./account";
 import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useWorkspace } from "../../layout/workspace";
@@ -16,7 +17,7 @@ import styles from "./bots.module.css";
 export function BotOverview({ summary }: { summary: Schema["BotSummary"] }) {
   const { t } = useTranslation(),
     { basePath, can } = useWorkspace(),
-    account = summary.account;
+    account = botAccount(summary);
   const admin = can("application_account.manage"),
     policy = messagingPolicy(account.provider_policy);
   const settings = `${basePath}/bots/${account.id}/settings`,

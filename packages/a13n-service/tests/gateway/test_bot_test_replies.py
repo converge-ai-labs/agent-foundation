@@ -4,11 +4,11 @@ from datetime import timedelta
 
 import httpx2
 import pytest
+from a13n_service.bots.connectivity.models import BotTestRecord
+from a13n_service.bots.connectivity.replies import BotReplyObserver
+from a13n_service.bots.connectivity.setup_tests import get_bot_test
 from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.accounts.target_models import AccountTargetRecord
-from a13n_service.connectivity.bots.models import BotTestRecord
-from a13n_service.connectivity.bots.replies import BotReplyObserver
-from a13n_service.connectivity.bots.setup_tests import get_bot_test
 from a13n_service.connectivity.providers.registry import require_native_provider
 from a13n_service.interactions.models import RunRecord
 from a13n_service.storage import transaction

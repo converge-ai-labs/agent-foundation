@@ -90,6 +90,8 @@ Slack and Lark send actions accept the selected destination ID and provider-spec
 
 Account management uses `/api/v1/workspaces/{workspace}/application-accounts` for create/list and `/api/v1/application-accounts/{account_id}` for get/update/delete. Credential replacement uses `PUT .../credentials`; administrative commands use `POST .../enable` and `POST .../disable`. Creation and commands follow shared idempotency rules; mutations require exact version preconditions. Responses contain safe metadata only.
 
+`POST /api/v1/workspaces/{workspace}/bots/feishu/installation` performs read-only installation discovery before Account creation. It accepts `app_id` and write-only `app_secret`, requires current Workspace Account-management authority before and after bounded provider I/O, and contacts only the official Feishu origin. It returns the verified application, enterprise, and Bot identifiers and names using `InstallationInfo`. Inactive applications, rejected credentials, missing permissions, malformed responses, and timeouts fail without creating an Account or persisting credentials. This observation does not enable reception or replace subsequent installation and pilot checks. The Console uses the derived identifiers in the canonical idempotent Account creation request; uncertain creation retries retain the same resolved identity and request rather than discovering a different installation.
+
 Exact object management uses the Account `/targets` child collection. Workspace Builders can manage targets within their current Agent and capability authority. Account management and credentials require Workspace Admin. Possession of an Account or target ID grants no authority.
 
 ### Bot Pilot Activation
@@ -156,3 +158,7 @@ Checks run outside database transactions with a bounded total deadline. Before s
 4. Account disablement blocks dispatch; reception closure alone does not revoke accepted replies.
 5. Account use, action allowlists, and target authority are separately validated.
 6. Recovery never replaces a missing or disabled account with another account.
+
+## Application-owned Memory Settings
+
+Bot Memory settings use the [Bot-owned versioned settings API](../42-memory.md#bot-memory-configuration). They are not Account fields or generic Account mutation inputs. Bot summary carries the separate `memory_settings` projection. Bot-only listing uses the Bot collection, not a `bots_only` parameter on common Account listing. Setup-test staleness and reply correlation include the independent memory-settings version.

@@ -40,6 +40,9 @@ function page(
   project: string | null = "project-one",
 ) {
   return {
+    active_rows: activeThreads
+      .filter((item) => item.configuration.project_id === project)
+      .map((item) => ({ thread: item, project_name: project ?? "No project" })),
     rows: ids.map((id) => ({
       thread: thread(id, project),
       project_name: project ?? "No project",
@@ -55,6 +58,7 @@ function json(body: unknown, status = 200) {
   });
 }
 let activity: URL[];
+let activeThreads: ReturnType<typeof thread>[];
 let writes: Request[];
 let failMore: boolean;
 let failSave: boolean;
@@ -66,6 +70,7 @@ let queryClient: QueryClient;
 beforeEach(() => {
   localStorage.clear();
   activity = [];
+  activeThreads = [];
   writes = [];
   failMore = false;
   failSave = false;
@@ -114,6 +119,11 @@ beforeEach(() => {
         return json({ sources: [] });
       if (url.pathname === "/api/selectors")
         return json({ agents: [], environments: [] });
+      const activeThread = activeThreads.find(
+        (item) =>
+          url.pathname === `/api/threads/${encodeURIComponent(item.thread_id)}`,
+      );
+      if (activeThread) return json({ thread: activeThread });
       if (url.pathname === "/api/threads/selected-old")
         return json({ thread: thread("selected-old") });
       if (url.pathname === "/api/threads/activity") {
@@ -238,8 +248,8 @@ it("locates a deep-linked selected row without fetching preceding pages and pres
       .getAttribute("aria-current"),
   ).toBe("page");
   expect(
-    screen.getByText("Selected conversation · outside this page"),
-  ).toBeTruthy();
+    screen.queryByText("Selected conversation · outside this page"),
+  ).toBeNull();
   expect(activity).toHaveLength(1);
   fireEvent.click(screen.getByRole("button", { name: "One" }));
   await act(() =>
@@ -362,8 +372,8 @@ it("opens a local blank conversation in the selected project without a creation 
     await screen.findByRole("button", { name: "New conversation in Two" }),
   );
   expect(screen.queryByRole("dialog")).toBeNull();
-  expect(screen.getByLabelText("Current route").textContent).toMatch(
-    /^\/new\/thread_[a-f0-9]{32}\?project=project-two$/,
+  expect(screen.getByLabelText("Current route").textContent).toBe(
+    "/new?project=project-two",
   );
   expect(writes).toHaveLength(0);
 });
@@ -715,4 +725,88 @@ it("opens project rename directly from the secondary menu without expanding or n
   ).toBe("false");
   expect(activity).toHaveLength(0);
   expect(writes).toHaveLength(0);
+});
+
+it("shows every active conversation before five recent rows and reconciles completion without duplicates", async () => {
+  activeThreads = Array.from({ length: 6 }, (_, index) => ({
+    ...thread(`Active ${index}`),
+    root_activity: { state: index === 0 ? "preparing" : "running" },
+  }));
+  mount("/threads/Active%200");
+  const project = await screen.findByRole("region", { name: "One" });
+  await within(project).findByText("Running · 6");
+  const runningLinks = () =>
+    within(project)
+      .getAllByRole("link")
+      .filter((link) => /Running|Preparing/.test(link.textContent ?? ""));
+  const selectedRow = within(project).getByRole("link", { name: /Active 0/ });
+  expect(runningLinks().map((link) => link.textContent)).toEqual(
+    activeThreads.map((item) => expect.stringContaining(item.title)),
+  );
+  expect(within(project).getAllByRole("link")).toHaveLength(11);
+  expect(within(project).queryByText(/outside this page/)).toBeNull();
+  expect(
+    activity
+      .find((url) => url.searchParams.get("project_id") === "project-one")
+      ?.searchParams.get("include_active"),
+  ).toBe("true");
+
+  // More applies only to inactive history; repeated active_rows must not duplicate.
+  fireEvent.click(within(project).getByRole("button", { name: /Show more/ }));
+  await within(project).findByRole("link", { name: /Older one/ });
+  expect(runningLinks()).toHaveLength(6);
+  expect(within(project).getAllByRole("link")).toHaveLength(13);
+
+  // Live presentation changes do not trigger a frontend re-sort or touch request.
+  activeThreads[1] = { ...activeThreads[1], title: "Active 1 progress" };
+  await act(async () => {
+    await queryClient.invalidateQueries({ queryKey: ["threads"] });
+  });
+  await waitFor(() =>
+    expect(runningLinks().map((link) => link.textContent)).toEqual(
+      activeThreads.map((item) => expect.stringContaining(item.title)),
+    ),
+  );
+  activeThreads = activeThreads.slice(1);
+  recentTitle = "Active 0";
+  await act(async () => {
+    await queryClient.invalidateQueries({ queryKey: ["threads"] });
+  });
+  await waitFor(() => expect(runningLinks()).toHaveLength(5));
+  expect(
+    within(project).getAllByRole("link", { name: /Active 0/ }),
+  ).toHaveLength(1);
+  expect(within(project).queryByText(/outside this page/)).toBeNull();
+  expect(within(project).getByRole("link", { name: /Active 0/ })).toBe(
+    selectedRow,
+  );
+  expect(writes).toEqual([]);
+});
+
+it("keeps the selected lifecycle observation across pagination but accepts a refreshed first page", async () => {
+  activeThreads = [
+    { ...thread("Selected"), root_activity: { state: "running" } },
+  ];
+  mount("/threads/Selected");
+  const project = await screen.findByRole("region", { name: "One" });
+  await within(project).findByText("Running · 1");
+  const row = within(project).getByRole("link", { name: /Selected/ });
+
+  await act(async () => {
+    queryClient.setQueryData(["thread", "Selected", "detail"], {
+      thread: thread("Selected"),
+    });
+  });
+  await waitFor(() => expect(within(row).queryByText("Running")).toBeNull());
+  const more = within(project).getByRole("button", { name: /Show more/ });
+  expect(more.textContent).toBe("More");
+  fireEvent.click(more);
+  await within(project).findByRole("link", { name: /Older one/ });
+  expect(within(row).queryByText("Running")).toBeNull();
+  expect(within(project).getByRole("link", { name: /Selected/ })).toBe(row);
+
+  // A real first-page refresh is a newer observation, unlike an appended page.
+  await act(() => queryClient.invalidateQueries({ queryKey: ["threads"] }));
+  await within(row).findByText("Running");
+  expect(within(project).getByRole("link", { name: /Selected/ })).toBe(row);
 });
