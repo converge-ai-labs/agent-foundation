@@ -1,4 +1,4 @@
-import type { Client } from "@converge.ai/a13n";
+import type { Client } from "../../service-client";
 import { data, type Schema } from "../../shared/api";
 export type ConnectorScope = { kind: "workspace" | "organization"; id: string };
 export function connectorApi(client: Client, scope: ConnectorScope) {

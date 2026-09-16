@@ -23,9 +23,6 @@ importers:
 
   apps/a13n-console:
     dependencies:
-      '@converge.ai/a13n':
-        specifier: link:../../../sdk/typescript
-        version: link:../../../sdk/typescript
       '@daypicker/react':
         specifier: ^10.0.1
         version: 10.0.1(@types/react@19.2.18)(react@19.2.8)
@@ -53,6 +50,9 @@ importers:
       i18next:
         specifier: ^25.0.0
         version: 25.10.10(typescript@5.9.3)
+      openapi-fetch:
+        specifier: 0.17.0
+        version: 0.17.0
       react:
         specifier: ^19.2.8
         version: 19.2.8
@@ -93,6 +93,9 @@ importers:
       jsdom:
         specifier: ^29.1.1
         version: 29.1.1
+      openapi-typescript:
+        specifier: 7.13.0
+        version: 7.13.0(typescript@5.9.3)
       typescript:
         specifier: ^5.9.3
         version: 5.9.3

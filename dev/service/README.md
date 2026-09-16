@@ -10,7 +10,7 @@ make dev
 
 The command assigns this checkout a stable local identity and loopback ports, prepares changed dependencies and build outputs, starts its PostgreSQL and Redis stores, reuses the machine-shared Langfuse stack, applies migrations once, then runs Service, the scripted model, and Console. Press Ctrl+C to drain and stop the application process groups; press it again to force-stop only those groups if shutdown stalls. Infrastructure and data remain available for the next start.
 
-Use `make service-dev` when Console is not needed. Use `make setup` to prepare dependencies, infrastructure, and schema without starting an application listener. Successful preparation is fingerprinted in `var/dev/preparation.json`; unchanged Python, frontend, and TypeScript SDK inputs with their required outputs skip the corresponding work. Phase timings are printed on every setup.
+Use `make service-dev` when Console is not needed. Use `make setup` to prepare dependencies, infrastructure, and schema without starting an application listener. Successful preparation is fingerprinted in `var/dev/preparation.json`; unchanged Python and frontend dependency inputs with their required outputs skip the corresponding work. Console compiles its own internal Service client; preparation neither installs nor builds an external SDK. Phase timings are printed on every setup.
 
 Do not assume ports. Discover the current checkout without changing it:
 

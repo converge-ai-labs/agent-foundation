@@ -43,7 +43,7 @@ def on_files(files: Files, config: MkDocsConfig) -> Files:
         "assets/a13n/SpaceGrotesk-Bold.woff2": UI / "brand/SpaceGrotesk-Bold.woff2",
         "assets/a13n/SpaceGrotesk-OFL.txt": UI / "brand/SpaceGrotesk-OFL.txt",
         "assets/a13n/phosphor-LICENSE": THEME / "phosphor-LICENSE",
-        "assets/reference/service-openapi.json": ROOT / "sdk/typescript/openapi.json",
+        "assets/reference/service-openapi.json": ROOT / "proto/a13n-service/openapi.json",
         "assets/reference/harness-ui-openapi.json": ROOT / "frontend/apps/a13n-harness-ui/src/openapi.json",
         "assets/reference/service-settings.json": THEME / "service-settings.schema.json",
     }

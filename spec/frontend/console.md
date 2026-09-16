@@ -2,9 +2,9 @@
 
 ## Product Boundary
 
-`a13n-console` is the browser application for a13n Service. It consumes the public Native API through the TypeScript SDK and uses the shared [design system](design-system.md). Service remains API-only; production ingress serves Console assets and proxies `/api` on the same origin. Development uses a Vite proxy rather than permissive Service CORS.
+`a13n-console` is the browser application for a13n Service. It consumes the public Native API through its own internal client and uses the shared [design system](design-system.md). Service remains API-only; production ingress serves Console assets and proxies `/api` on the same origin. Development uses a Vite proxy rather than permissive Service CORS.
 
-Console owns navigation, forms, resource cache, localized presentation, and interaction rendering. Service owns authentication, permissions, resource versions, execution, durable state and object storage. Closing a page, stream, or SDK client never interrupts a Run.
+Console owns navigation, forms, resource cache, localized presentation, and interaction rendering. Service owns authentication, permissions, resource versions, execution, durable state and object storage. Closing a page, stream, or client never interrupts a Run. Console's client and generated HTTP types are private application inputs derived from the Service-owned contract under `proto/a13n-service/`. Console has no build, runtime, or release dependency on any external Service SDK.
 
 ## Navigation and Scope
 

@@ -6,7 +6,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import { PageActions } from "../../shared/page-actions";
 
-import { ApiError } from "@converge.ai/a13n";
+import { ApiError } from "../../service-client";
 import { PlusIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";

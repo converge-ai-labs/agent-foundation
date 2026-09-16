@@ -19,27 +19,18 @@ CHECK_TARGETS := \
 	examples-check \
 	frontend-check \
 	rust-check \
-	sdk-python-check \
-	sdk-go-check \
-	sdk-rust-check \
-	sdk-typescript-check \
-	a13n-service-cli-check
+	service-contract-check
 
 .PHONY: install
 install: ## Install locked dependencies and Git hooks
 	@command -v uv >/dev/null || { echo "uv is required: https://docs.astral.sh/uv/"; exit 1; }
-	@command -v npm >/dev/null || { echo "Node.js and npm are required: https://nodejs.org/"; exit 1; }
+	@command -v node >/dev/null || { echo "Node.js is required: https://nodejs.org/"; exit 1; }
 	@command -v pnpm >/dev/null || { echo "pnpm is required: https://pnpm.io/installation"; exit 1; }
-	@command -v go >/dev/null || { echo "Go is required: https://go.dev/"; exit 1; }
 	@command -v cargo >/dev/null || { echo "Rust is required: https://rustup.rs/"; exit 1; }
 	@echo "Synchronizing the Python workspace"
 	@uv sync --locked --all-packages
-	@echo "Synchronizing the standalone Python SDK"
-	@uv sync --project sdk/python --locked
 	@echo "Installing frontend workspace dependencies"
 	@pnpm --dir frontend install --frozen-lockfile
-	@echo "Installing TypeScript SDK dependencies"
-	@npm --prefix sdk/typescript ci
 	@echo "Installing pre-commit hooks"
 	@uv run --locked pre-commit install --install-hooks
 
@@ -222,7 +213,7 @@ live-test-zhipu: sync ## Run GLM journeys against the official BigModel endpoint
 live-test-models: sync ## Run isolated Model Management HTTP, IAM, protocol and recovery journeys
 	@uv run --locked python -m pytest dev/live_tests/model --live-management -n 0 -v --tb=short --log-disable=httpx2 $(LIVE_TEST_ARGS)
 
-live-test-model-console: sync frontend-sync sdk-typescript-build ## Run optional Chromium Model Management journeys
+live-test-model-console: sync frontend-sync ## Run optional Chromium Model Management journeys
 	@uv run --locked --with playwright==1.58.0 python -m pytest dev/live_tests/model/test_console.py --live-management --live-model-console -n 0 -v --tb=short --log-disable=httpx2 $(LIVE_TEST_ARGS)
 
 live-test-check: sync ## Validate live-test support without contacting services
@@ -274,7 +265,7 @@ a13n-harness-ui-db-migrate: sync ## Generate a Harness UI SQLite migration again
 	@uv run --locked python -m a13n_harness_ui.storage.migrations.generate "$(msg)"
 
 .PHONY: format
-format: sync frontend-sync sdk-python-sync sdk-typescript-sync ## Format repository and standalone SDK sources
+format: sync frontend-sync ## Format repository sources
 	@run_formatters() { \
 		formatter_status=0; \
 		for hook in end-of-file-fixer trailing-whitespace mdformat ruff-format; do \
@@ -284,12 +275,8 @@ format: sync frontend-sync sdk-python-sync sdk-typescript-sync ## Format reposit
 		return "$$formatter_status"; \
 	}; \
 	run_formatters || run_formatters
-	@files="$$(find sdk/go -type f -name '*.go')"; gofmt -w $$files
 	@cargo fmt --all
-	@(cd sdk/rust && cargo fmt)
-	@(cd sdk/rust/a13n-service-cli && cargo fmt)
 	@pnpm --dir frontend run format
-	@npm --prefix sdk/typescript run format
 
 .PHONY: deps-check
 deps-check: sync ## Check Python package dependency declarations
@@ -444,129 +431,26 @@ rust-check: rust-format-check rust-lint ## Run Rust workspace formatting and lin
 .PHONY: rust-check-all
 rust-check-all: rust-check rust-test rust-build rust-package ## Run the complete Rust workspace gate
 
-.PHONY: sdk-python-isolation-check
-sdk-python-isolation-check: ## Verify the Python SDK is excluded from the root workspace
-	@python3 -c 'import tomllib; from pathlib import Path; data = tomllib.loads(Path("pyproject.toml").read_text()); workspace = data["tool"]["uv"]["workspace"]; members = {path.resolve() for pattern in workspace["members"] for path in Path().glob(pattern)}; excluded = {path.resolve() for pattern in workspace.get("exclude", []) for path in Path().glob(pattern)}; assert Path("sdk/python").resolve() not in members - excluded, "sdk/python must remain outside the root uv workspace"'
+.PHONY: service-contract-generate
+service-contract-generate: sync frontend-sync ## Export the Service contract and regenerate Console types
+	@uv run --locked python scripts/export-a13n-service-openapi.py
+	@pnpm --dir frontend --filter a13n-console run generate
 
-.PHONY: sdk-python-sync
-sdk-python-sync: ## Synchronize the standalone Python SDK
-	@uv sync --quiet --project sdk/python --locked
-
-.PHONY: sdk-python-format-check
-sdk-python-format-check: sdk-python-sync ## Check Python SDK lint and formatting
-	@(cd sdk/python && uv run --locked ruff check --no-fix .)
-	@(cd sdk/python && uv run --locked ruff format --check .)
-
-.PHONY: sdk-python-typecheck
-sdk-python-typecheck: sdk-python-sync ## Type-check the Python SDK
-	@(cd sdk/python && uv run --locked pyright)
-
-.PHONY: sdk-python-test
-sdk-python-test: sdk-python-sync ## Run Python SDK tests
-	@(cd sdk/python && uv run --locked python -m pytest)
-
-.PHONY: sdk-python-build
-sdk-python-build: sdk-python-sync ## Build the Python SDK distributions
-	@(cd sdk/python && rm -rf dist && uv build --no-build-isolation)
-
-.PHONY: sdk-python-check
-sdk-python-check: sdk-python-isolation-check sdk-python-format-check sdk-python-typecheck ## Run Python SDK lint and type checks
-
-.PHONY: sdk-python-check-all
-sdk-python-check-all: sdk-python-check sdk-python-test sdk-python-build ## Run the complete Python SDK gate
-
-.PHONY: sdk-go-format-check
-sdk-go-format-check: ## Check Go SDK formatting
-	@files="$$(find sdk/go -type f -name '*.go')"; \
-		unformatted="$$(gofmt -l $$files)"; \
-		test -z "$$unformatted" || { echo "$$unformatted"; gofmt -d $$files; exit 1; }
-
-.PHONY: sdk-go-vet
-sdk-go-vet: ## Run Go SDK static analysis
-	@(cd sdk/go && go vet ./...)
-
-.PHONY: sdk-go-test
-sdk-go-test: ## Run Go SDK tests
-	@(cd sdk/go && go test ./...)
-
-.PHONY: sdk-go-build
-sdk-go-build: ## Build the Go SDK
-	@(cd sdk/go && go build ./...)
-
-.PHONY: sdk-go-check
-sdk-go-check: sdk-go-format-check sdk-go-vet ## Run Go SDK formatting and static analysis
-
-.PHONY: sdk-go-check-all
-sdk-go-check-all: sdk-go-check sdk-go-test sdk-go-build ## Run the complete Go SDK gate
-
-.PHONY: sdk-rust-isolation-check
-sdk-rust-isolation-check: ## Verify the Rust SDK is excluded from the root workspace
-	@cargo metadata --locked --no-deps --format-version 1 | python3 -c 'import json, sys; from pathlib import Path; sdk = Path("sdk/rust/Cargo.toml").resolve(); manifests = {Path(item["manifest_path"]).resolve() for item in json.load(sys.stdin)["packages"]}; assert sdk not in manifests, "sdk/rust must remain outside the root Cargo workspace"'
-
-.PHONY: sdk-rust-format-check
-sdk-rust-format-check: ## Check Rust SDK formatting
-	@(cd sdk/rust && cargo fmt -- --check)
-
-.PHONY: sdk-rust-lint
-sdk-rust-lint: ## Run Rust SDK Clippy with warnings denied
-	@(cd sdk/rust && cargo clippy --all-targets --all-features --locked -- -D warnings)
-
-.PHONY: sdk-rust-test
-sdk-rust-test: ## Run Rust SDK tests
-	@(cd sdk/rust && cargo test --all-features --locked)
-
-.PHONY: sdk-rust-build
-sdk-rust-build: ## Build the Rust SDK
-	@(cd sdk/rust && cargo build --all-features --locked)
-
-.PHONY: sdk-rust-package
-sdk-rust-package: ## Verify the Rust SDK crates.io package
-	@(cd sdk/rust && cargo package --locked --allow-dirty)
-
-.PHONY: sdk-rust-check
-sdk-rust-check: sdk-rust-isolation-check sdk-rust-format-check sdk-rust-lint ## Run Rust SDK formatting and lint checks
-
-.PHONY: sdk-rust-check-all
-sdk-rust-check-all: sdk-rust-check sdk-rust-test sdk-rust-build sdk-rust-package ## Run the complete Rust SDK gate
-
-.PHONY: a13n-service-cli-isolation-check
-a13n-service-cli-isolation-check: ## Verify the a13n Service CLI remains an independent Cargo project
-	@cargo metadata --locked --no-deps --format-version 1 | python3 -c 'import json, sys; from pathlib import Path; cli = Path("sdk/rust/a13n-service-cli/Cargo.toml").resolve(); manifests = {Path(item["manifest_path"]).resolve() for item in json.load(sys.stdin)["packages"]}; assert cli not in manifests, "a13n Service CLI must remain outside the root Cargo workspace"'
-	@cargo metadata --locked --no-deps --manifest-path sdk/rust/a13n-service-cli/Cargo.toml --format-version 1 | python3 -c 'import json, sys; from pathlib import Path; cli = Path("sdk/rust/a13n-service-cli/Cargo.toml").resolve(); data = json.load(sys.stdin); packages = data["packages"]; manifests = {Path(item["manifest_path"]).resolve() for item in packages}; member_ids = set(data["workspace_members"]); package_ids = {item["id"] for item in packages}; assert Path(data["workspace_root"]).resolve() == cli.parent, "a13n Service CLI must own its Cargo workspace"; assert manifests == {cli} and member_ids == package_ids, "a13n Service CLI workspace must contain only the CLI package"'
-	@cargo package --locked --allow-dirty --manifest-path sdk/rust/Cargo.toml --list | python3 -c 'import sys; paths = sys.stdin.read().splitlines(); assert not any(path == "a13n-service-cli" or path.startswith("a13n-service-cli/") for path in paths), "Rust SDK source package must exclude the a13n Service CLI"'
-
-.PHONY: a13n-service-cli-format-check
-a13n-service-cli-format-check: ## Check a13n Service CLI formatting
-	@(cd sdk/rust/a13n-service-cli && cargo fmt -- --check)
-
-.PHONY: a13n-service-cli-lint
-a13n-service-cli-lint: ## Run a13n Service CLI Clippy with warnings denied
-	@(cd sdk/rust/a13n-service-cli && cargo clippy --all-targets --all-features --locked -- -D warnings)
-
-.PHONY: a13n-service-cli-test
-a13n-service-cli-test: ## Run a13n Service CLI tests
-	@(cd sdk/rust/a13n-service-cli && cargo test --all-features --locked)
-
-.PHONY: a13n-service-cli-build
-a13n-service-cli-build: ## Build the a13n Service CLI
-	@(cd sdk/rust/a13n-service-cli && cargo build --all-features --locked)
-
-.PHONY: a13n-service-cli-check
-a13n-service-cli-check: a13n-service-cli-isolation-check a13n-service-cli-format-check a13n-service-cli-lint ## Run a13n Service CLI formatting and lint checks
-
-.PHONY: a13n-service-cli-check-all
-a13n-service-cli-check-all: a13n-service-cli-check a13n-service-cli-test a13n-service-cli-build ## Run the complete a13n Service CLI gate
+.PHONY: service-contract-check
+service-contract-check: sync frontend-sync ## Check Service contract and Console type drift without changing files
+	@uv run --locked python scripts/export-a13n-service-openapi.py --check
+	@pnpm --dir frontend --filter a13n-console run generate:check
 
 .PHONY: frontend-sync
 frontend-sync: ## Install locked frontend workspace dependencies
 	@pnpm --dir frontend install --frozen-lockfile
 
 .PHONY: frontend-check
-frontend-check: frontend-sync sdk-typescript-build ## Check frontend formatting, types, and API contract
+frontend-check: frontend-sync ## Check frontend formatting, types, and API contract
 	@pnpm --dir frontend run check
 
 .PHONY: frontend-test
-frontend-test: frontend-sync sdk-typescript-build ## Run frontend unit and interaction tests
+frontend-test: frontend-sync ## Run frontend unit and interaction tests
 	@pnpm --dir frontend run test
 
 .PHONY: frontend-build
@@ -580,7 +464,7 @@ a13n-ui-build: frontend-sync ## Build the shared UI showcase
 	@pnpm --dir frontend --filter a13n-ui run build
 
 .PHONY: a13n-console-build
-a13n-console-build: frontend-sync sdk-typescript-build ## Build Console production assets
+a13n-console-build: frontend-sync ## Build Console production assets
 	@pnpm --dir frontend --filter a13n-console run build
 
 .PHONY: a13n-harness-ui-webui-build
@@ -591,51 +475,8 @@ a13n-harness-ui-webui-build: frontend-sync ## Build Harness UI WebUI production 
 a13n-harness-ui-assets: a13n-harness-ui-skills a13n-harness-ui-webui-build ## Prepare generated Harness UI WebUI files for Python packaging
 	@uv run --locked python scripts/prepare-a13n-harness-ui-assets.py
 
-sdk/typescript/node_modules/.package-lock.json: sdk/typescript/package.json sdk/typescript/package-lock.json
-	@npm --prefix sdk/typescript ci
-
-.PHONY: sdk-typescript-sync
-sdk-typescript-sync: sdk/typescript/node_modules/.package-lock.json ## Install locked TypeScript SDK dependencies
-
-.PHONY: sdk-generate
-sdk-generate: sync sdk-typescript-sync ## Regenerate all SDKs from the live Service OpenAPI contract
-	@uv run --locked python sdk/codegen/generate.py
-
-.PHONY: sdk-generated-check
-sdk-generated-check: sync sdk-typescript-sync ## Verify shared OpenAPI and all generated SDK files without changing them
-	@uv run --locked python sdk/codegen/generate.py --check
-
-.PHONY: sdk-typescript-generate
-sdk-typescript-generate: sdk-generate ## Regenerate shared SDK contracts (compatibility alias)
-
-.PHONY: sdk-typescript-contract-check
-sdk-typescript-contract-check: sync sdk-typescript-sync ## Check Native TypeScript contract drift
-	@uv run python scripts/export-a13n-service-openapi.py --check
-	@node sdk/typescript/generate.mjs --check
-
-.PHONY: sdk-typescript-build
-sdk-typescript-build: sdk-typescript-sync ## Build the TypeScript SDK
-	@npm --prefix sdk/typescript run build
-
-.PHONY: sdk-typescript-check
-sdk-typescript-check: sdk-typescript-sync ## Run TypeScript SDK formatting and type checks
-	@npm --prefix sdk/typescript run check
-
-.PHONY: sdk-typescript-check-all
-sdk-typescript-check-all: sdk-typescript-sync ## Run the complete TypeScript SDK gate
-	@npm --prefix sdk/typescript run check:all
-
-.PHONY: sdk-build
-sdk-build: sdk-python-build sdk-go-build sdk-rust-build sdk-typescript-build ## Build all standalone SDKs
-
-.PHONY: sdk-check
-sdk-check: sdk-python-check sdk-go-check sdk-rust-check sdk-typescript-check ## Run all standalone SDK lint and type checks
-
-.PHONY: sdk-check-all
-sdk-check-all: sdk-generated-check sdk-python-check-all sdk-go-check-all sdk-rust-check-all sdk-typescript-check-all ## Run all complete standalone SDK gates
-
 .PHONY: build
-build: frontend-build python-build rust-build sdk-build a13n-service-cli-build ## Build all workspace, application, SDK, and CLI artifacts
+build: frontend-build python-build rust-build ## Build all workspace and application artifacts
 
 .PHONY: db-migrate
 db-migrate: sync ## Generate a migration (usage: make db-migrate msg="description")
@@ -662,7 +503,7 @@ db-history: sync ## Show a13n-service migration history
 	@uv run --locked a13n-service --config "$(SERVICE_CONFIG)" db history
 
 .PHONY: release-check
-release-check: ## Validate a component version (component=a13n-harness|a13n-harness-ui|a13n-logging|a13n-service|a13n-envd|a13n-service-cli|a13n-<language> version=X.Y.Z or X.Y.Z-rc.N)
+release-check: ## Validate a component version (component=a13n-harness|a13n-harness-ui|a13n-logging|a13n-service|a13n-envd version=X.Y.Z or X.Y.Z-rc.N)
 	@test -n "$(component)" || { echo "component is required"; exit 2; }
 	@test -n "$(version)" || { echo "version is required"; exit 2; }
 	@uv run --locked python scripts/check-release-version.py "$(component)" "$(version)"
@@ -722,13 +563,12 @@ check: ## Format, then run fast checks in parallel (override with CHECK_JOBS=N)
 	@printf '\n==> Formatting and checks completed\n'
 
 .PHONY: check-all
-check-all: dev-state-check eip-check examples-check-all frontend-check-all python-check-all rust-check-all sdk-check-all a13n-service-cli-check-all ## Run the complete repository gate
+check-all: dev-state-check eip-check examples-check-all frontend-check-all python-check-all rust-check-all service-contract-check ## Run the complete repository gate
 
 .PHONY: clean
 clean: ## Remove generated local artifacts
-	@rm -rf .pytest_cache .ruff_cache dist examples/plugins/dist site target sdk/python/dist sdk/rust/target sdk/rust/a13n-service-cli/target packages/a13n-harness-ui/a13n_harness_ui/static
+	@rm -rf .pytest_cache .ruff_cache dist examples/plugins/dist site target packages/a13n-harness-ui/a13n_harness_ui/static
 	@pnpm --dir frontend run clean
-	@npm --prefix sdk/typescript run clean
 
 .PHONY: help
 help: ## Show available commands

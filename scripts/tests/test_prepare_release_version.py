@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import re
 import shutil
 import subprocess
@@ -25,14 +24,6 @@ RELEASE_FILES = (
     Path("Cargo.toml"),
     Path("Cargo.lock"),
     Path("crates/a13n-envd/Cargo.toml"),
-    Path("sdk/python/pyproject.toml"),
-    Path("sdk/python/uv.lock"),
-    Path("sdk/rust/Cargo.toml"),
-    Path("sdk/rust/Cargo.lock"),
-    Path("sdk/rust/a13n-service-cli/Cargo.toml"),
-    Path("sdk/rust/a13n-service-cli/Cargo.lock"),
-    Path("sdk/typescript/package.json"),
-    Path("sdk/typescript/package-lock.json"),
 )
 
 
@@ -118,29 +109,6 @@ def run_script(
                 Path("uv.lock"),
             },
         ),
-        (
-            "a13n-python",
-            {Path("sdk/python/pyproject.toml"), Path("sdk/python/uv.lock")},
-        ),
-        ("a13n-go", set()),
-        (
-            "a13n-rust",
-            {Path("sdk/rust/Cargo.toml"), Path("sdk/rust/Cargo.lock")},
-        ),
-        (
-            "a13n-service-cli",
-            {
-                Path("sdk/rust/a13n-service-cli/Cargo.toml"),
-                Path("sdk/rust/a13n-service-cli/Cargo.lock"),
-            },
-        ),
-        (
-            "a13n-typescript",
-            {
-                Path("sdk/typescript/package.json"),
-                Path("sdk/typescript/package-lock.json"),
-            },
-        ),
     ],
 )
 def test_prepares_only_component_files_and_is_idempotent(
@@ -178,11 +146,6 @@ def test_prepares_ecosystem_specific_rc_versions(tmp_path: Path) -> None:
         "a13n-logging",
         "a13n-service",
         "a13n-envd",
-        "a13n-python",
-        "a13n-go",
-        "a13n-rust",
-        "a13n-service-cli",
-        "a13n-typescript",
     ):
         result = run_script(PREPARER, tmp_path, component, "9.8.7-rc.2")
         assert result.returncode == 0, result.stderr
@@ -204,10 +167,6 @@ def test_prepares_ecosystem_specific_rc_versions(tmp_path: Path) -> None:
     assert 'version = "9.8.7rc2"' in (tmp_path / "pyproject.toml").read_text()
     assert 'version = "9.8.7-rc.2"' in (tmp_path / "Cargo.toml").read_text()
     assert 'version = "9.8.7rc2"' in (tmp_path / "packages/a13n-envd-client/pyproject.toml").read_text()
-    assert 'version = "9.8.7rc2"' in (tmp_path / "sdk/python/pyproject.toml").read_text()
-    assert 'version = "9.8.7-rc.2"' in (tmp_path / "sdk/rust/Cargo.toml").read_text()
-    assert 'version = "9.8.7-rc.2"' in (tmp_path / "sdk/rust/a13n-service-cli/Cargo.toml").read_text()
-    assert json.loads((tmp_path / "sdk/typescript/package.json").read_text())["version"] == "9.8.7-rc.2"
 
 
 @pytest.mark.parametrize("logging_version", ["2.3.4", "2.3.4-rc.1"])
@@ -229,22 +188,6 @@ def test_logging_and_service_release_independently(tmp_path: Path, logging_versi
     assert mismatch.returncode != 0
     assert "packages/a13n-logging/pyproject.toml: 3.0.0" in mismatch.stderr
     assert "uv.lock package a13n-logging: 3.0.0" in mismatch.stderr
-
-
-def test_a13n_service_cli_and_rust_sdk_release_independently(tmp_path: Path) -> None:
-    copy_release_files(tmp_path)
-
-    cli_result = run_script(PREPARER, tmp_path, "a13n-service-cli", "9.8.7")
-
-    assert cli_result.returncode == 0, cli_result.stderr
-    sdk_check = run_script(CHECKER, tmp_path, "a13n-rust", "0.0.0")
-    assert sdk_check.returncode == 0, sdk_check.stderr
-
-    sdk_result = run_script(PREPARER, tmp_path, "a13n-rust", "7.8.9")
-
-    assert sdk_result.returncode == 0, sdk_result.stderr
-    cli_check = run_script(CHECKER, tmp_path, "a13n-service-cli", "9.8.7")
-    assert cli_check.returncode == 0, cli_check.stderr
 
 
 def test_harness_release_does_not_version_harness_ui_or_service(tmp_path: Path) -> None:
@@ -415,16 +358,17 @@ def test_rejects_invalid_version_without_writing(tmp_path: Path) -> None:
 
 def test_validates_all_targets_before_writing(tmp_path: Path) -> None:
     copy_release_files(tmp_path)
-    lock_path = tmp_path / "sdk/typescript/package-lock.json"
-    lock = json.loads(lock_path.read_text(encoding="utf-8"))
-    del lock["packages"][""]["version"]
-    lock_path.write_text(f"{json.dumps(lock, indent=2)}\n", encoding="utf-8")
+    lock_path = tmp_path / "uv.lock"
+    lock_path.write_text(
+        lock_path.read_text().replace('name = "a13n-service"', 'name = "missing-service"'),
+        encoding="utf-8",
+    )
     before = snapshot(tmp_path)
 
-    result = run_script(PREPARER, tmp_path, "a13n-typescript", "9.8.7")
+    result = run_script(PREPARER, tmp_path, "a13n-service", "9.8.7")
 
     assert result.returncode != 0
-    assert 'packages[""] version' in result.stderr
+    assert "package a13n-service" in result.stderr
     assert snapshot(tmp_path) == before
 
 
@@ -445,22 +389,6 @@ def test_requires_a13n_envd_workspace_version_inheritance(tmp_path: Path) -> Non
     assert result.returncode != 0
     assert "package.version.workspace = true" in result.stderr
     assert snapshot(tmp_path) == before
-
-
-def test_checker_validates_nested_npm_lock_version(tmp_path: Path) -> None:
-    copy_release_files(tmp_path)
-    prepare_result = run_script(PREPARER, tmp_path, "a13n-typescript", "9.8.7")
-    assert prepare_result.returncode == 0, prepare_result.stderr
-
-    lock_path = tmp_path / "sdk/typescript/package-lock.json"
-    lock = json.loads(lock_path.read_text(encoding="utf-8"))
-    lock["packages"][""]["version"] = "9.8.6"
-    lock_path.write_text(f"{json.dumps(lock, indent=2)}\n", encoding="utf-8")
-
-    result = run_script(CHECKER, tmp_path, "a13n-typescript", "9.8.7")
-
-    assert result.returncode != 0
-    assert 'sdk/typescript/package-lock.json packages[""]: 9.8.6' in result.stderr
 
 
 def test_mismatched_ui_ranges_are_blocked_without_writes(tmp_path: Path) -> None:

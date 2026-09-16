@@ -1,6 +1,5 @@
 [workspace]
 members = ["crates/*"]
-exclude = ["sdk/rust"]
 resolver = "2"
 
 [workspace.package]

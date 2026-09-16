@@ -6,7 +6,7 @@ import {
   QueryClientProvider,
   focusManager,
 } from "@tanstack/react-query";
-import { ApiError } from "@converge.ai/a13n";
+import { ApiError } from "../../service-client";
 import { useState } from "react";
 import { MemoryProviderEditor } from "./editor";
 import { MemoryProviders } from "./providers";

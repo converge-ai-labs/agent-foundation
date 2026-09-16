@@ -1,4 +1,4 @@
-import type { Client } from "@converge.ai/a13n";
+import type { Client } from "../../service-client";
 import { data, representation, type Schema } from "../../shared/api";
 export type WebProviderScope = {
   kind: "workspace" | "organization";

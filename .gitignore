@@ -1,3 +1,6 @@
+# Independent Service SDK repositories (not submodules)
+/sdk/
+
 # Local reference and discussion material
 discussion/
 local-reference/

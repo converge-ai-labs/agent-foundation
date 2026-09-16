@@ -8,7 +8,7 @@ import {
 
 import { SearchPicker } from "a13n-ui";
 
-import { ApiError } from "@converge.ai/a13n";
+import { ApiError } from "../../service-client";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link } from "react-router";
 import { EditorSection } from "./section";

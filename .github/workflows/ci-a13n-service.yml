@@ -12,6 +12,14 @@ on:
       - "packages/a13n-logging/**"
       - "pyproject.toml"
       - "scripts/dev.sh"
+      - "Makefile"
+      - "proto/a13n-service/**"
+      - "scripts/export-a13n-service-openapi.py"
+      - "scripts/tests/test_service_contract.py"
+      - "packages/a13n-harness/**"
+      - "packages/a13n-stream-protocol/**"
+      - "packages/a13n-environment/**"
+      - "packages/a13n-envd-client/**"
       - "uv.lock"
   push:
     branches: [main]
@@ -24,6 +32,14 @@ on:
       - "packages/a13n-logging/**"
       - "pyproject.toml"
       - "scripts/dev.sh"
+      - "Makefile"
+      - "proto/a13n-service/**"
+      - "scripts/export-a13n-service-openapi.py"
+      - "scripts/tests/test_service_contract.py"
+      - "packages/a13n-harness/**"
+      - "packages/a13n-stream-protocol/**"
+      - "packages/a13n-environment/**"
+      - "packages/a13n-envd-client/**"
       - "uv.lock"
   workflow_dispatch:
 
@@ -77,6 +93,14 @@ jobs:
           uv run --locked pyright
           packages/a13n-logging/a13n_logging
           packages/a13n-service/a13n_service
+
+      - name: Check Service contract export
+        if: matrix.name == 'checks'
+        run: uv run --locked python scripts/export-a13n-service-openapi.py --check
+
+      - name: Test Service contract export
+        if: matrix.name == 'checks'
+        run: uv run --locked python -m pytest scripts/tests/test_service_contract.py
 
       - name: Test logging
         if: matrix.name == 'checks'

@@ -7,7 +7,7 @@ import {
   QueryClientProvider,
   focusManager,
 } from "@tanstack/react-query";
-import { ApiError } from "@converge.ai/a13n";
+import { ApiError } from "../../service-client";
 import { WebProviderEditor, WebProviderTest } from "./editor";
 import { AgentSearchSelection } from "./selection";
 

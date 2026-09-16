@@ -1,4 +1,4 @@
-import type { Notification } from "@converge.ai/a13n";
+import type { Notification } from "../../service-client";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useClient } from "../../auth/context";

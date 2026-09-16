@@ -1,6 +1,6 @@
 # Package catalog
 
-Choose a package by the boundary you need, not by a shared name. The repository contains seven Python workspace packages, one Rust workspace crate, five standalone Service client projects, four private frontend manifests, and three independent example projects. Workspace roots, lockfiles, generated protocol artifacts, and vendored references are not additional products.
+Choose a package by the boundary you need, not by a shared name. The repository contains seven Python workspace packages, one Rust workspace crate, four private frontend manifests, and three independent example projects. Workspace roots, lockfiles, generated protocol artifacts, and vendored references are not additional products.
 
 This catalog follows the source on `main`. It describes implemented scope, not registry availability or a promise that all languages have the same API coverage.
 
@@ -28,19 +28,11 @@ Harness, Environment, and Stream Protocol share one exact release version. Harne
 
 The daemon does not execute an Agent. The low-level Python client does not install or launch the executable; the Local Envd Provider and its Host runtime own launch integration. Native executable acquisition in Harness UI is an application-owned convenience, not a requirement for every SDK consumer.
 
-## Standalone Service SDKs and CLI
+## Independent Service SDKs and CLI
 
-These projects are outside the root language workspaces. They call Service; they are not alternate implementations of the embedded Harness SDK.
+Service client packages live in four independent repositories, not in this source tree or its language workspaces. The Rust SDK repository also owns the remote `a13n-service-cli`. These clients call Service; they are not alternate implementations of the embedded Harness SDK.
 
-| Package / import                                                                | Source                      | Implemented scope and documentation                                                                                                                                                             |
-| ------------------------------------------------------------------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Python distribution and import `a13n`                                           | `sdk/python`                | Search client; [Python README](https://github.com/converge-ai-labs/agent-foundation/blob/main/sdk/python/README.md)                                                                             |
-| Go module `github.com/converge-ai-labs/agent-foundation/sdk/go`, package `a13n` | `sdk/go`                    | Search client; [Go README](https://github.com/converge-ai-labs/agent-foundation/blob/main/sdk/go/README.md)                                                                                     |
-| Rust crate and library `a13n`                                                   | `sdk/rust`                  | Search client; [Rust README](https://github.com/converge-ai-labs/agent-foundation/blob/main/sdk/rust/README.md)                                                                                 |
-| TypeScript package and import `@converge.ai/a13n`                               | `sdk/typescript`            | Native API client, binary uploads/downloads, Run SSE, and lifecycle notifications; [TypeScript README](https://github.com/converge-ai-labs/agent-foundation/blob/main/sdk/typescript/README.md) |
-| Cargo package and executable `a13n-service-cli`                                 | `sdk/rust/a13n-service-cli` | Help/version scaffold only; no network commands yet; [CLI README](https://github.com/converge-ai-labs/agent-foundation/blob/main/sdk/rust/a13n-service-cli/README.md)                           |
-
-The [Service SDK guide](a13n-service/sdks.md) compares constructors, errors, retry and streaming behavior. Use the [HTTP contracts](a13n-service/http-contracts.md) and [Native API reference](a13n-service/api-reference.md) where a language has no typed operation. Do not substitute an invented CLI command or assume TypeScript coverage exists in every SDK.
+The [Service SDKs](a13n-service/sdks.md) page links to each repository. Those repositories own package installation, API coverage, examples, compatibility, and releases. This site retains the [HTTP contracts](a13n-service/http-contracts.md) and [Native API reference](a13n-service/api-reference.md).
 
 ## Private frontend workspace
 

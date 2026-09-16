@@ -199,4 +199,4 @@ A control-capable process reconciles sealed child results, configured cancellati
 
 ## Next steps
 
-[Manage resources](resources.md), [select external tools](external-tools.md), [use a language SDK](sdks.md), or inspect the [complete Native API](api-reference.md). The companion `a13n-service-cli` currently has help/version only; it cannot execute this workflow.
+[Manage resources](resources.md), [select external tools](external-tools.md), [use a language SDK](sdks.md), or inspect the [complete Native API](api-reference.md).

@@ -1,4 +1,4 @@
-import { ApiError } from "@converge.ai/a13n";
+import { ApiError } from "../../service-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, FormField, Input, ModalFrame, ReadOnlyField } from "a13n-ui";
 import { useState, type ReactNode } from "react";

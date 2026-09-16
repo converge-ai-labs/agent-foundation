@@ -35,11 +35,6 @@ from release_notes import (  # noqa: E402
         ("a13n-logging", "release/a13n-logging-v1.2.3"),
         ("a13n-service", "release/a13n-service-v1.2.3"),
         ("a13n-envd", "release/a13n-envd-v1.2.3"),
-        ("a13n-service-cli", "release/a13n-service-cli-v1.2.3"),
-        ("a13n-python", "release/a13n/python/1.2.3"),
-        ("a13n-go", "release/a13n/go/1.2.3"),
-        ("a13n-rust", "release/a13n/rust/1.2.3"),
-        ("a13n-typescript", "release/a13n/typescript/1.2.3"),
     ],
 )
 def test_builds_canonical_channel_tag(component: str, expected: str) -> None:
@@ -55,7 +50,7 @@ def test_finds_highest_lower_stable_version_in_same_channel() -> None:
         "release/a13n-service-v2.0.0",
         "release/a13n-service-vnot-a-version",
         "release/a13n-envd-v1.99.0",
-        "release/a13n/python/1.99.0",
+        "release/a13n-logging-v1.99.0",
     ]
 
     assert previous_release_tag("a13n-service", "2.0.0", tags) == "release/a13n-service-v1.10.0"
@@ -72,16 +67,6 @@ def test_rc_release_uses_previous_rc_in_the_same_channel() -> None:
 
     assert previous_release_tag("a13n-service", "2.0.0-rc.2", tags) == "release/a13n-service-v2.0.0-rc.1"
     assert previous_release_tag("a13n-service", "2.0.0-rc.1", tags) == "release/a13n-service-v1.10.0"
-
-
-def test_a13n_service_and_service_cli_release_notes_are_independent() -> None:
-    tags = [
-        "release/a13n-service-v1.2.3",
-        "release/a13n-service-cli-v9.8.7",
-    ]
-
-    assert previous_release_tag("a13n-service", "1.2.4", tags) == "release/a13n-service-v1.2.3"
-    assert previous_release_tag("a13n-service-cli", "9.8.8", tags) == "release/a13n-service-cli-v9.8.7"
 
 
 def test_logging_release_notes_do_not_follow_service_tags() -> None:
@@ -124,7 +109,7 @@ def test_first_channel_release_has_no_previous_tag() -> None:
     tags = [
         "release/a13n-service-v1.0.0",
         "release/a13n-envd-v0.0.0",
-        "release/a13n/python/0.0.0",
+        "release/a13n-logging-v0.0.0",
     ]
 
     assert previous_release_tag("a13n-service", "0.0.0", tags) is None
@@ -132,10 +117,10 @@ def test_first_channel_release_has_no_previous_tag() -> None:
 
 def test_builds_release_command_with_notes_on_stdin() -> None:
     command = build_release_command(
-        component="a13n-python",
+        component="a13n-logging",
         version="1.2.3",
         repository="converge-ai-labs/agent-foundation",
-        title="a13n SDK for Python 1.2.3",
+        title="a13n Logging 1.2.3",
         assets=["dist/package.whl", "dist/package.tar.gz"],
     )
 
@@ -143,39 +128,26 @@ def test_builds_release_command_with_notes_on_stdin() -> None:
         "gh",
         "release",
         "create",
-        "release/a13n/python/1.2.3",
+        "release/a13n-logging-v1.2.3",
         "dist/package.whl",
         "dist/package.tar.gz",
         "--repo",
         "converge-ai-labs/agent-foundation",
         "--verify-tag",
         "--title",
-        "a13n SDK for Python 1.2.3",
+        "a13n Logging 1.2.3",
         "--notes-file",
         "-",
     ]
 
 
-@pytest.mark.parametrize("version", ["1.2.3", "1.2.3-rc.1"])
-def test_a13n_service_cli_never_updates_latest_release(version: str) -> None:
-    command = build_release_command(
-        component="a13n-service-cli",
-        version=version,
-        repository="converge-ai-labs/agent-foundation",
-        title=f"a13n Service CLI {version}",
-        assets=["dist/a13n-service-cli.zip"],
-    )
-
-    assert "--latest=false" in command
-
-
 def test_marks_rc_github_release_as_prerelease() -> None:
     command = build_release_command(
-        component="a13n-typescript",
+        component="a13n-service",
         version="1.2.3-rc.4",
         repository="converge-ai-labs/agent-foundation",
-        title="a13n SDK for TypeScript 1.2.3-rc.4",
-        assets=["dist/package.tgz"],
+        title="a13n Service 1.2.3-rc.4",
+        assets=["dist/package.tar.gz"],
     )
 
     assert "--prerelease" in command
@@ -184,10 +156,10 @@ def test_marks_rc_github_release_as_prerelease() -> None:
 
 def test_builds_initial_release_command_without_cross_channel_notes() -> None:
     command = build_release_command(
-        component="a13n-service-cli",
+        component="a13n-envd",
         version="0.0.0",
         repository="converge-ai-labs/agent-foundation",
-        title="a13n Service CLI 0.0.0",
+        title="a13n Envd 0.0.0",
         assets=[],
     )
 
@@ -195,10 +167,8 @@ def test_builds_initial_release_command_without_cross_channel_notes() -> None:
     assert "--notes-start-tag" not in command
     assert command[-2:] == ["--notes-file", "-"]
     assert (
-        render_release_notes(
-            component="a13n-service-cli", version="0.0.0", repository="owner/repo", previous_tag=None
-        ).strip()
-        == INITIAL_NOTES["a13n-service-cli"]
+        render_release_notes(component="a13n-envd", version="0.0.0", repository="owner/repo", previous_tag=None).strip()
+        == INITIAL_NOTES["a13n-envd"]
     )
 
 
@@ -222,7 +192,7 @@ def test_uses_only_manual_notes_for_first_channel_release() -> None:
     manual_notes = "## Highlights\n\n- First release."
 
     notes = render_release_notes(
-        component="a13n-go",
+        component="a13n-service",
         version="0.0.0",
         repository="converge-ai-labs/agent-foundation",
         previous_tag=None,
@@ -244,11 +214,11 @@ def test_reads_optional_versioned_release_notes(tmp_path: Path) -> None:
 
 
 def test_treats_empty_versioned_release_notes_as_absent(tmp_path: Path) -> None:
-    path = tmp_path / release_notes_path("a13n-rust", "1.2.3")
+    path = tmp_path / release_notes_path("a13n-envd", "1.2.3")
     path.parent.mkdir(parents=True)
     path.write_text("\n", encoding="utf-8")
 
-    assert read_manual_release_notes(tmp_path, "a13n-rust", "1.2.3") is None
+    assert read_manual_release_notes(tmp_path, "a13n-envd", "1.2.3") is None
 
 
 def test_cli_scopes_generated_notes_to_previous_channel_tag(tmp_path: Path) -> None:
@@ -263,17 +233,17 @@ def test_cli_scopes_generated_notes_to_previous_channel_tag(tmp_path: Path) -> N
     subprocess.run(["git", "add", "README.md"], cwd=tmp_path, check=True)
     subprocess.run(["git", "commit", "--quiet", "-m", "test release"], cwd=tmp_path, check=True)
     for tag in (
-        "release/a13n/python/0.0.0",
-        "release/a13n/python/0.0.1",
-        "release/a13n/rust/9.9.9",
+        "release/a13n-logging-v0.0.0",
+        "release/a13n-logging-v0.0.1",
+        "release/a13n-envd-v9.9.9",
     ):
         subprocess.run(["git", "tag", tag], cwd=tmp_path, check=True)
 
     asset = tmp_path / "package.whl"
     asset.write_bytes(b"wheel")
-    manual_notes_path = tmp_path / release_notes_path("a13n-python", "0.0.1")
+    manual_notes_path = tmp_path / release_notes_path("a13n-logging", "0.0.1")
     manual_notes_path.parent.mkdir(parents=True)
-    manual_notes_path.write_text("Curated Python SDK release notes.\n", encoding="utf-8")
+    manual_notes_path.write_text("Curated Logging release notes.\n", encoding="utf-8")
     fake_bin = tmp_path / "bin"
     fake_bin.mkdir()
     arguments_file = tmp_path / "gh-arguments"
@@ -287,7 +257,7 @@ def test_cli_scopes_generated_notes_to_previous_channel_tag(tmp_path: Path) -> N
         {
             "GH_ARGUMENTS_FILE": str(arguments_file),
             "GH_NOTES_FILE": str(tmp_path / "gh-notes"),
-            "GITHUB_REF_NAME": "release/a13n/python/0.0.1",
+            "GITHUB_REF_NAME": "release/a13n-logging-v0.0.1",
             "GITHUB_REPOSITORY": "converge-ai-labs/agent-foundation",
             "PATH": f"{fake_bin}{os.pathsep}{environment['PATH']}",
         }
@@ -297,9 +267,9 @@ def test_cli_scopes_generated_notes_to_previous_channel_tag(tmp_path: Path) -> N
         [
             sys.executable,
             str(CREATE_RELEASE),
-            "a13n-python",
+            "a13n-logging",
             "0.0.1",
-            "a13n SDK for Python 0.0.1",
+            "a13n Logging 0.0.1",
             str(asset),
         ],
         cwd=tmp_path,
@@ -311,18 +281,18 @@ def test_cli_scopes_generated_notes_to_previous_channel_tag(tmp_path: Path) -> N
 
     assert result.returncode == 0, result.stderr
     assert "Prepending curated notes from" in result.stdout
-    assert "release/a13n/python/0.0.0...release/a13n/python/0.0.1" in result.stdout
+    assert "release/a13n-logging-v0.0.0...release/a13n-logging-v0.0.1" in result.stdout
     arguments = arguments_file.read_text(encoding="utf-8").splitlines()
     assert arguments[-2:] == ["--notes-file", "-"]
     assert "--generate-notes" not in arguments
     notes = (tmp_path / "gh-notes").read_text(encoding="utf-8")
-    assert notes.startswith("Curated Python SDK release notes.\n")
-    assert "release%2Fa13n%2Fpython%2F0.0.0...release%2Fa13n%2Fpython%2F0.0.1" in notes
-    assert "release/a13n/rust/9.9.9" not in notes
+    assert notes.startswith("Curated Logging release notes.\n")
+    assert "release%2Fa13n-logging-v0.0.0...release%2Fa13n-logging-v0.0.1" in notes
+    assert "release/a13n-envd-v9.9.9" not in notes
 
     arguments_file.unlink()
     preview = subprocess.run(
-        [sys.executable, str(CREATE_RELEASE), "a13n-python", "0.0.1", "Python SDK", "--dry-run"],
+        [sys.executable, str(CREATE_RELEASE), "a13n-logging", "0.0.1", "Logging", "--dry-run"],
         cwd=tmp_path,
         env=environment,
         check=False,
@@ -420,17 +390,14 @@ def _commit(root: Path, path: str, subject: str) -> str:
         ("a13n-harness-ui", "frontend/packages/a13n-ui/button.tsx"),
         ("a13n-logging", "packages/a13n-logging/api.py"),
         ("a13n-service", "packages/a13n-service/api.py"),
+        ("a13n-service", "proto/a13n-service/openapi.json"),
+        ("a13n-envd", "proto/a13n-envd/eip/v1/eip.proto"),
         ("a13n-service", "frontend/apps/a13n-console/app.tsx"),
         ("a13n-service", "deploy/containers/a13n-service/Dockerfile"),
         ("a13n-envd", "crates/a13n-envd/src/lib.rs"),
         ("a13n-envd", "packages/a13n-envd-client/api.py"),
         ("a13n-envd", "scripts/install-a13n-envd.ps1"),
         ("a13n-envd", "deploy/containers/sandbox/Dockerfile"),
-        ("a13n-service-cli", "sdk/rust/a13n-service-cli/src/main.rs"),
-        ("a13n-python", "sdk/python/api.py"),
-        ("a13n-go", "sdk/go/api.go"),
-        ("a13n-rust", "sdk/rust/src/lib.rs"),
-        ("a13n-typescript", "sdk/typescript/index.ts"),
     ],
 )
 def test_collects_actual_component_paths_not_title_scopes(git_repository, component, path):
@@ -449,13 +416,6 @@ def test_all_release_channels_have_scopes():
 
     assert set(COMPONENT_PATHS) == set(COMPONENTS)
     assert all(component_paths(component) for component in COMPONENTS)
-
-
-def test_rust_sdk_excludes_independent_service_cli(git_repository):
-    root = git_repository
-    base = _git(root, "rev-parse", "HEAD")
-    _commit(root, "sdk/rust/a13n-service-cli/src/main.rs", "fix: only the CLI")
-    assert collect_release_changes(root, "a13n-rust", base, "HEAD") == []
 
 
 def test_merge_pr_is_one_entry_without_branch_commit_duplicates(git_repository):
@@ -627,3 +587,11 @@ def test_release_cli_reads_labels_before_rendering_and_dry_run_never_publishes(g
     if not dry_run:
         assert calls[1].startswith("release create release/a13n-logging-v0.1.1 ")
         assert calls[1].endswith("--notes-file -")
+
+
+def test_service_exports_do_not_enter_envd_release_notes(git_repository):
+    root = git_repository
+    base = _git(root, "rev-parse", "HEAD")
+    change = _commit(root, "proto/a13n-service/openapi.json", "fix: update the Service contract")
+    assert collect_release_changes(root, "a13n-envd", base, "HEAD") == []
+    assert [item.commit for item in collect_release_changes(root, "a13n-service", base, "HEAD")] == [change]

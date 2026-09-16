@@ -10,7 +10,7 @@ import {
 import { ProviderEnabled } from "../../shared/provider-enabled";
 import { ProviderKeyLink } from "../../shared/provider-key-link";
 import { ResourceEditorButton } from "../../shared/resource-editor-button";
-import { ApiError } from "@converge.ai/a13n";
+import { ApiError } from "../../service-client";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, FormField, Input, ReadOnlyField, ModalFrame } from "a13n-ui";
 import { useState } from "react";
