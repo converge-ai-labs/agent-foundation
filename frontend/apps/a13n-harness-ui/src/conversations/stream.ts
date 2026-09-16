@@ -1,5 +1,6 @@
 import { ApiError, type Schema, type Transport } from "../transport/client";
 import type { ThreadRefresh } from "./refresh";
+import { ProcessObservations } from "./process-observations";
 import { consumeSse } from "../transport/events";
 import {
   sourceText,
@@ -75,7 +76,10 @@ class RootRunChanged extends Error {}
 
 // Rendering only: history/receipt queries remain the continuation/control owners.
 export class FocusDisplay {
-  constructor(private readonly fragmentLimit = 64 * 1024 * 1024) {}
+  constructor(
+    private readonly fragmentLimit = 64 * 1024 * 1024,
+    readonly processes = new ProcessObservations(),
+  ) {}
   // Previous visible suffix only; never consulted for cursors, controls or activity.
   retainedPresentation?: FocusDisplay;
   presentationFor(continuation: string | null | undefined) {
@@ -147,6 +151,7 @@ export class FocusDisplay {
     this.baseContinuation = undefined;
     this.blocks.clear();
     this.children.clear();
+    this.processes.clear();
     this.tasks = undefined;
     this.fragments.clear();
     this.fragmentBytes = 0;
@@ -254,7 +259,8 @@ export class FocusDisplay {
     if (child && child.display.runId !== event.run_id) {
       // One execution can start another Run after a deferred checkpoint. The
       // root-lineage stream is ordered; never concatenate two Run suffixes.
-      child.display = new FocusDisplay(128 * 1024);
+      this.processes.end(child.display.runId);
+      child.display = new FocusDisplay(128 * 1024, this.processes);
       child.display.runId = event.run_id;
       child.display.gap = true;
     }
@@ -266,7 +272,7 @@ export class FocusDisplay {
       child = {
         parentId: event.parent_thread_id,
         threadId: event.thread_id,
-        display: new FocusDisplay(128 * 1024),
+        display: new FocusDisplay(128 * 1024, this.processes),
       };
       child.display.runId = event.run_id;
       this.children.set(event.execution_id, child);
@@ -440,6 +446,13 @@ export class FocusDisplay {
         result: string(payload.content),
         done: true,
       });
+      if (this.runId)
+        this.processes.result(
+          this.runId,
+          block.name,
+          block.text,
+          payload.content,
+        );
     } else if (type === "RUN_FINISHED" || type === "RUN_ERROR") {
       this.stopTools();
       const failed = type === "RUN_ERROR" && payload.code !== "run_cancelled";
@@ -472,6 +485,7 @@ export class FocusDisplay {
     }
   }
   private stopTools() {
+    this.processes.end(this.runId);
     for (const [key, block] of this.blocks) {
       if (block.kind === "tool")
         this.blocks.set(key, { ...block, stopped: true });
@@ -482,6 +496,20 @@ export class FocusDisplay {
     const value = object(event.value) ? event.value : {};
     const source = object(value.event) ? value.event : {};
     const payload = object(source.payload) ? source.payload : {};
+    if (
+      name === "a13n.shell.status" &&
+      this.runId &&
+      typeof source.process_id === "string" &&
+      typeof source.phase === "string"
+    ) {
+      this.processes.status(
+        this.runId,
+        source.process_id,
+        source.phase,
+        source.exit_code,
+      );
+      return;
+    }
     if (
       name === "a13n.harness.recovery" &&
       payload.type === "model_retry_scheduled"
@@ -609,6 +637,13 @@ export class FocusDisplay {
       ) {
         const key = `${this.runId}:${part.tool_call_id}`;
         const block = this.blocks.get(key);
+        if (this.runId && part.part_kind === "tool-return")
+          this.processes.result(
+            this.runId,
+            string(part.tool_name),
+            block?.text,
+            part.content,
+          );
         this.blocks.set(key, {
           id: key,
           kind: "tool",
@@ -842,6 +877,7 @@ export function watchThread(
             // Retain the last complete presentation while acquiring a new prefix.
             // It is not a replay cursor or proof that execution is still active.
             display.cursor = undefined;
+            display.processes.end();
             replacement = undefined;
             connection("Loading current output");
             return;
@@ -886,7 +922,9 @@ export function watchThread(
       if (error instanceof SyntaxError) display.cursor = undefined;
       if (!display.ready) display.reset();
     }
+    display.processes.end();
     if (!abort.signal.aborted) {
+      changed();
       connection("Reconnecting");
       timer = setTimeout(
         () => void connect(),
@@ -896,6 +934,7 @@ export function watchThread(
   }
   void connect();
   return () => {
+    display.processes.end();
     abort.abort();
     clearTimeout(timer);
   };

@@ -16,6 +16,7 @@ from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from a13n_harness_ui.webui import create_webui
+from pydantic_ai.messages import ModelRequest, UserPromptPart
 from pydantic_ai.models.function import FunctionModel
 
 
@@ -74,7 +75,7 @@ async def main() -> None:
             else {
                 "models/fixture.yaml": 'schema_version: "1"\nkind: model\nid: model-fixture\nname: Fixture\nroute: openai:gpt-5\nauthentication: {kind: api_key, env: FIXTURE_MODEL_KEY}\n',
                 "models/alternate.yaml": 'schema_version: "1"\nkind: model\nid: model-alternate\nname: Alternate\nroute: openai:gpt-5\nauthentication: {kind: api_key, env: FIXTURE_MODEL_KEY}\n',
-                "agents/fixture.yaml": 'schema_version: "1"\nkind: agent\nid: agent-fixture\nname: Fixture\nmodel: model-fixture\n',
+                "agents/fixture.yaml": 'schema_version: "1"\nkind: agent\nid: agent-fixture\nname: Fixture\nmodel: model-fixture\ncapabilities:\n  - capability: skills\n',
             }
         )
         for name, content in sources.items():
@@ -102,6 +103,15 @@ async def main() -> None:
                 yield "```\n\nAll checks are ready for human review."
                 return
             yield "Protocol "
+            if any(
+                "wait for skill inspection" in str(part.content)
+                for message in messages
+                if isinstance(message, ModelRequest)
+                for part in message.parts
+                if isinstance(part, UserPromptPart)
+            ):
+                # The protocol test cancels this Run after inspecting active steering.
+                await asyncio.Event().wait()
             await asyncio.sleep(6 if "--slow" in sys.argv else 0.4)
             yield "response"
 

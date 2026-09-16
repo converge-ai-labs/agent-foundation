@@ -570,6 +570,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/threads/skills-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview Skills */
+        post: operations["preview_skills_api_threads_skills_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/threads/{thread_id}/skills": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Thread Skills */
+        get: operations["thread_skills_api_threads__thread_id__skills_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/threads/{thread_id}/configuration": {
         parameters: {
             query?: never;
@@ -3329,6 +3363,35 @@ export interface components {
         } & {
             [key: string]: components["schemas"]["JsonValue"];
         };
+        /** SkillCatalogItemView */
+        SkillCatalogItemView: {
+            /** Item Id */
+            item_id: string;
+            /** Name */
+            name: string;
+            /** Description */
+            description: string;
+            /** Source Id */
+            source_id: string;
+            /** Logical Path */
+            logical_path: string;
+        };
+        /** SkillCatalogView */
+        SkillCatalogView: {
+            /** Catalog Id */
+            catalog_id: string;
+            /**
+             * Context Kind
+             * @enum {string}
+             */
+            context_kind: "draft" | "idle" | "active";
+            /** Thread Id */
+            thread_id?: string | null;
+            /** Receipt Id */
+            receipt_id?: string | null;
+            /** Items */
+            items: components["schemas"]["SkillCatalogItemView"][];
+        };
         /**
          * StoreKind
          * @enum {string}
@@ -4409,6 +4472,15 @@ export interface components {
             /** Attachment Id */
             attachment_id: string;
         };
+        /** SkillReference */
+        SkillReference: {
+            /** Catalog Id */
+            catalog_id: string;
+            /** Item Id */
+            item_id: string;
+            /** Name */
+            name: string;
+        };
         /** SubmitRequest */
         SubmitRequest: {
             /**
@@ -4423,6 +4495,11 @@ export interface components {
             attachment_ids?: string[];
             /** Parts */
             parts?: (string | components["schemas"]["InputAttachmentReference"])[] | null;
+            /**
+             * Skill References
+             * @default []
+             */
+            skill_references?: components["schemas"]["SkillReference"][];
             /** Source Id */
             source_id?: string | null;
             /** Model Id */
@@ -4442,6 +4519,11 @@ export interface components {
             attachment_ids?: string[];
             /** Parts */
             parts?: (string | components["schemas"]["InputAttachmentReference"])[] | null;
+            /**
+             * Skill References
+             * @default []
+             */
+            skill_references?: components["schemas"]["SkillReference"][];
             /** Source Id */
             source_id?: string | null;
         };
@@ -5659,6 +5741,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThreadConfigurationResolution"];
+                };
+            };
+        };
+    };
+    preview_skills_api_threads_skills_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewThreadDefaults"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillCatalogView"];
+                };
+            };
+        };
+    };
+    thread_skills_api_threads__thread_id__skills_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                thread_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillCatalogView"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

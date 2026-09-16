@@ -15,7 +15,7 @@ capabilities:
 
 An empty list keeps automatic sources enabled; omitting the Capability disables Skill discovery for that Agent Run. Preserve other Capability entries when editing.
 
-Type `$` in the composer to discover Skill names. For example, ask the Agent to use `$harness-ui-configuration` to inspect its configuration. The terminal sends ordinary prompt text: a dollar-prefixed name alone is not a validated exact catalog binding. It requests normal Skill selection rather than granting extra authority. There is no `/skill-name` command.
+Type `$` in the CLI or WebUI composer to discover Skill names. For example, ask the Agent to use `$harness-ui-configuration` to inspect its configuration. Recognized names remain visible prompt text and carry references that the App validates before Send or steering. Older references resolve by name against the current catalog; steering uses the active Run's pinned catalog. Unknown dollar-prefixed text stays ordinary text. A reference requests that Skill without capturing its contents or granting extra authority. There is no `/skill-name` command.
 
 ## Automatic sources and precedence
 

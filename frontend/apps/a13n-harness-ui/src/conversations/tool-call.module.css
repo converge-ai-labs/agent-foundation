@@ -257,3 +257,59 @@
   margin: 0;
   overflow-wrap: anywhere;
 }
+
+.questionReceipt {
+  min-width: 0;
+  margin: 0.5rem 0;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--muted) 16%, transparent);
+}
+.answers {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0.875rem 1rem;
+  overflow-wrap: anywhere;
+}
+.answers dt {
+  font-size: 0.75rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+.answers dd {
+  margin: 0.2rem 0 0;
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+.answers p,
+.originalQuestion p {
+  margin: 0;
+  white-space: pre-wrap;
+}
+.questionReceipt [data-slot="disclosure-surface"] {
+  background: transparent;
+}
+.questionReceipt [data-slot="disclosure-surface"] > button {
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+.originalQuestion {
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+.originalQuestion ul {
+  display: grid;
+  gap: 0.5rem;
+  padding-left: 1.25rem;
+  margin-bottom: 0;
+}
+.originalQuestion li strong {
+  font-weight: 500;
+}
+.originalQuestion li span {
+  display: block;
+  color: var(--muted-foreground);
+  white-space: pre-wrap;
+}

@@ -540,6 +540,7 @@ function Conversation({
           continuation={detail.data.continuation_id}
           display={display}
           live={showLive}
+          connected={connection === "Live"}
           reconcile={reconcile}
         />
         {!thread.archived && (

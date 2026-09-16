@@ -315,3 +315,63 @@ it("keeps completed output directly inspectable and tools collapsed without raw 
       .getAttribute("aria-expanded"),
   ).toBe("false");
 });
+
+it("inspects observed processes in place, updates status and discloses missing observations", async () => {
+  const GET = vi.fn(async (path: string) => ({
+    data: path.endsWith("/children")
+      ? { executions: [], total: 0 }
+      : { tasks: [] },
+  }));
+  const display = new FocusDisplay();
+  const view = render(
+    <WorkInspector
+      threadId="root"
+      display={display}
+      live
+      reconcile={vi.fn()}
+    />,
+    harness(GET),
+  );
+  const user = userEvent.setup();
+  await user.click(screen.getByRole("button", { name: "Inspect processes" }));
+  expect(screen.getByText("No background processes observed.")).toBeTruthy();
+  display.processes.result(
+    "run-one",
+    "shell_exec",
+    { command: "pnpm dev" },
+    { process_id: "process-one", status: { phase: "running" } },
+  );
+  view.rerender(
+    <WorkInspector
+      threadId="root"
+      display={display}
+      live
+      reconcile={vi.fn()}
+    />,
+  );
+  expect(screen.getByText("pnpm dev")).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Inspect processes" }).textContent,
+  ).toContain("1");
+  fireEvent.click(screen.getByText("pnpm dev"));
+  expect(screen.getByText("process-one")).toBeTruthy();
+  expect(screen.getByText("run-one")).toBeTruthy();
+  display.processes.status("run-one", "process-one", "exited", 3);
+  view.rerender(
+    <WorkInspector
+      threadId="root"
+      display={display}
+      live
+      connected={false}
+      reconcile={vi.fn()}
+    />,
+  );
+  expect(screen.getByText("Failed (exit 3)")).toBeTruthy();
+  expect(screen.getByText(/Status may be stale/)).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: "Inspect processes" }).textContent,
+  ).not.toContain("1");
+  expect(GET.mock.calls.some(([path]) => path.includes("process"))).toBe(false);
+  await user.keyboard("{Escape}");
+  await waitFor(() => expect(screen.queryByText("pnpm dev")).toBeNull());
+});

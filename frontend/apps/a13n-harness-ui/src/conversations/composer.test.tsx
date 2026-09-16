@@ -471,3 +471,96 @@ it("uses distinct source identities for consecutive steering of one receipt and 
   expect(JSON.stringify(draft.doc.toJSON())).not.toContain(ids[0]);
   draft.doc.destroy();
 });
+
+it.each(["send", "steer"] as const)(
+  "submits captured skill references for %s and preserves later edits",
+  async (action) => {
+    const draft = new ThreadDraft();
+    draft.doc.getText("text").insert(0, "Use $review $review $unknown");
+    draft.status = "Connected";
+    draft.receive({
+      draft_id: "draft-one",
+      participant_id: "participant-one",
+      participants: {},
+      update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+    });
+    const POST = vi.fn().mockResolvedValue({
+      data: {
+        receipt_id: "receipt",
+        thread_id: "thread-one",
+        accepted: true,
+      },
+    });
+    const catalog: Schema<"SkillCatalogView"> = {
+      catalog_id: "a".repeat(64),
+      context_kind: "idle",
+      items: [
+        {
+          item_id: "b".repeat(64),
+          name: "review",
+          description: "Review",
+          source_id: "project",
+          logical_path: ".agents/skills/review",
+        },
+      ],
+    };
+    await submitDraft(
+      draft,
+      { client: { POST } } as unknown as Transport,
+      "thread-one",
+      action,
+      "receipt",
+      undefined,
+      undefined,
+      undefined,
+      async () => {
+        draft.doc
+          .getText("text")
+          .insert(draft.doc.getText("text").length, " later");
+        return catalog;
+      },
+    );
+    expect(POST.mock.calls[0][1].body.skill_references).toEqual([
+      {
+        catalog_id: catalog.catalog_id,
+        item_id: catalog.items[0].item_id,
+        name: "review",
+      },
+    ]);
+    expect(POST.mock.calls[0][1].body.parts).toEqual([
+      "Use $review $review $unknown",
+    ]);
+    expect(values(draft.doc).prompt).toBe(" later");
+  },
+);
+
+it("does not submit after navigation cancels a pending skill catalog read", async () => {
+  const draft = new ThreadDraft();
+  draft.doc.getText("text").insert(0, "$review");
+  draft.status = "Connected";
+  draft.receive({
+    draft_id: "draft-one",
+    participant_id: "participant-one",
+    participants: {},
+    update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+  });
+  const POST = vi.fn();
+  const abort = new AbortController();
+  await submitDraft(
+    draft,
+    { client: { POST } } as unknown as Transport,
+    "thread-one",
+    "send",
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    async () => {
+      abort.abort();
+      return { catalog_id: "a".repeat(64), context_kind: "idle", items: [] };
+    },
+    abort.signal,
+  );
+  expect(POST).not.toHaveBeenCalled();
+  expect(values(draft.doc).prompt).toBe("$review");
+});

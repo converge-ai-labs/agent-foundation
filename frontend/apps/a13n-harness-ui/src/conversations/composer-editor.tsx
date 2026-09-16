@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useRef } from "react";
 import { EditorView, keymap, placeholder } from "@codemirror/view";
-import { Compartment } from "@codemirror/state";
+import { Compartment, Prec } from "@codemirror/state";
+import {
+  autocompletion,
+  completionKeymap,
+  acceptCompletion,
+  closeCompletion,
+  completionStatus,
+} from "@codemirror/autocomplete";
+import { skillCompletion, type LoadSkills } from "./skill-references";
 import { defaultKeymap, insertNewline } from "@codemirror/commands";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import { Awareness } from "y-protocols/awareness";
@@ -23,6 +31,8 @@ export function ComposerEditor({
   editor,
   autoFocus = false,
   local = false,
+  loadSkills,
+  skillContext,
 }: {
   draft: ThreadDraft;
   profile: Profile;
@@ -32,9 +42,14 @@ export function ComposerEditor({
   editor?: { current: EditorView | null };
   autoFocus?: boolean;
   local?: boolean;
+  loadSkills?: LoadSkills;
+  skillContext?: string;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const attributes = useRef(new Compartment());
+  const skills = useRef(new Compartment());
+  const load = useRef(loadSkills);
+  load.current = loadSkills;
   const currentView = useRef<EditorView | null>(null);
   const description = local
     ? "Private to this tab until you send. Files upload on Send. Reloading discards this draft. Enter to send; Shift+Enter for a new line."
@@ -142,11 +157,14 @@ export function ComposerEditor({
           ? [composerAttachments(draft, () => attachmentContext.current!)]
           : []),
         attributes.current.of(initialAttributes.current),
+        skills.current.of([]),
         placeholder("What would you like to work on?"),
         keymap.of([
           ...["Enter", "Mod-Enter"].map((key) => ({
             key,
             run: (editor: EditorView) => {
+              if (key === "Enter" && completionStatus(editor.state) !== null)
+                return true;
               if (!editor.compositionStarted) send.current();
               return true;
             },
@@ -249,6 +267,72 @@ export function ComposerEditor({
   useEffect(() => {
     editor?.current?.dispatch({ effects: refreshAttachments.of(null) });
   }, [attachments, editor]);
+  useEffect(() => {
+    const view = currentView.current;
+    if (!view) return;
+    closeCompletion(view);
+    view.dispatch({
+      effects: skills.current.reconfigure(
+        loadSkills
+          ? [
+              autocompletion({
+                override: [skillCompletion(() => load.current!())],
+                defaultKeymap: false,
+                icons: false,
+                aboveCursor: true,
+              }),
+              Prec.highest(
+                keymap.of([
+                  ...completionKeymap,
+                  { key: "Tab", run: acceptCompletion },
+                ]),
+              ),
+              EditorView.theme({
+                ".cm-tooltip-autocomplete": {
+                  backgroundColor: "var(--a13n-surface)",
+                  color: "var(--a13n-text)",
+                  border: "1px solid var(--a13n-border)",
+                  borderRadius: "8px",
+                  maxWidth: "min(560px, calc(100vw - 32px))",
+                  overflow: "hidden",
+                },
+                ".cm-tooltip.cm-tooltip-autocomplete > ul": {
+                  fontFamily: "var(--a13n-font)",
+                  fontSize: "13px",
+                  maxHeight: "240px",
+                },
+                ".cm-tooltip.cm-tooltip-autocomplete > ul > li": {
+                  padding: "6px 10px",
+                  lineHeight: "1.5",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                },
+                ".cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]":
+                  {
+                    backgroundColor: "var(--a13n-canvas)",
+                    color: "var(--a13n-text)",
+                  },
+                ".cm-tooltip-autocomplete .cm-completionLabel": {
+                  display: "block",
+                  fontWeight: "500",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                },
+                ".cm-tooltip-autocomplete .cm-completionDetail": {
+                  display: "block",
+                  margin: "2px 0 0",
+                  fontSize: "12px",
+                  color: "var(--a13n-secondary)",
+                  fontStyle: "normal",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                },
+              }),
+            ]
+          : [],
+      ),
+    });
+  }, [draft, doc, editor, skillContext, !!loadSkills]);
   useEffect(() => {
     report.current({ name: profile.display_name, color: profile.color });
   }, [profile]);

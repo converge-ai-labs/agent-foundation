@@ -107,6 +107,8 @@ from a13n_harness_ui.surfaces import (
     RootOperationView,
     RootRunReceipt,
     RunModelOverrides,
+    SkillCatalogView,
+    SkillReference,
     SurfaceModel,
     TaskPage,
     ThreadActivityPage,
@@ -170,6 +172,7 @@ class PromptRequest(SurfaceModel):
     prompt: str = Field(default="", max_length=256 * 1024)
     attachment_ids: tuple[str, ...] = Field(default=(), max_length=8)
     parts: tuple[str | InputAttachmentReference, ...] | None = Field(default=None, max_length=1024)
+    skill_references: tuple[SkillReference, ...] = Field(default=(), max_length=512)
     # Presentation correlation only; never an admission idempotency key.
     source_id: str | None = Field(default=None, pattern=r"^input[-_][0-9a-f]{32}$")
 
@@ -954,6 +957,14 @@ def create_webui(
     async def explain_creation(request: Request) -> ThreadConfigurationResolution:
         return await app().explain_thread_configuration(defaults=await _document(request, NewThreadDefaults))
 
+    @server.post("/api/threads/skills-preview", response_model=SkillCatalogView, openapi_extra=_body(NewThreadDefaults))
+    async def preview_skills(request: Request) -> SkillCatalogView:
+        return await app().skill_catalog(defaults=await _document(request, NewThreadDefaults))
+
+    @server.get("/api/threads/{thread_id}/skills", response_model=SkillCatalogView)
+    async def thread_skills(thread_id: str) -> SkillCatalogView:
+        return await app().skill_catalog(thread_id=thread_id)
+
     @server.get("/api/threads/{thread_id}/configuration", response_model=ThreadConfigurationInspection)
     async def inspect_configuration(thread_id: str) -> ThreadConfigurationInspection:
         return await app().inspect_thread_configuration(thread_id)
@@ -1264,6 +1275,7 @@ def create_webui(
                 prompt=document.input(),
                 attachment_ids=document.attachment_ids,
                 model_overrides=RunModelOverrides(model_id=document.model_id) if document.model_id else None,
+                skill_references=document.skill_references,
             )
         except ValueError as exc:
             raise HarnessUiError(str(exc), code="input_invalid") from exc
@@ -1287,7 +1299,10 @@ def create_webui(
         document = await _document(request, RootSteerRequest)
         try:
             return await app().steer_root_operation(
-                receipt_id=receipt_id, message=document.input(), attachment_ids=document.attachment_ids
+                receipt_id=receipt_id,
+                message=document.input(),
+                attachment_ids=document.attachment_ids,
+                skill_references=document.skill_references,
             )
         except ValueError as exc:
             raise HarnessUiError(str(exc), code="input_invalid") from exc

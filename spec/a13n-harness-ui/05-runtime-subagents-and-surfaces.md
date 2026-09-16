@@ -401,6 +401,8 @@ These detached projections allowlist identity, model/capability/source selection
 
 The implementation catalog is distinct from configured resource selectors. Account inspection exposes only the existing credential-free account projection; logout removes the selected compatible account entry and is not cancellation of a pending login. Thread usage, last reported context footprint, and notes retain their existing owners and explicit omission/continuation semantics.
 
+The HTTP adapter exposes the existing [interactive Skill catalog and reference contract](02b-environment-skill-sources.md#interactive-skill-references) through `POST /api/threads/skills-preview` with `NewThreadDefaults` and `GET /api/threads/{thread_id}/skills`. Preview creates no Thread. Submit and root steer accept an optional bounded `skill_references` list and pass it to the App for validation; the adapter neither reads Skill bytes nor changes catalog ownership.
+
 The adapter exposes two authenticated SSE forms:
 
 1. one App-wide summary stream carries the summary hub's epoch, sequence, and invalidation hints, with an optional bounded terminal root-operation notice;

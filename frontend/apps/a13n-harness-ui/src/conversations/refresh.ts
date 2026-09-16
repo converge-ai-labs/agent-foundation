@@ -45,6 +45,7 @@ export function refreshThread(
     lifecycle: [
       "detail",
       "configuration",
+      "skills",
       "operation",
       "usage",
       "context-usage",

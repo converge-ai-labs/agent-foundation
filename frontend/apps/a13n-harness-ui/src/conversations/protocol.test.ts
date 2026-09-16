@@ -382,3 +382,97 @@ it("selects a model for one HTTP admission without changing sticky configuration
     { timeout: 10000 },
   );
 });
+
+it("projects skills before creation and validates references on submit and active steering", async () => {
+  const preview = await result(
+    transport.client.POST("/api/threads/skills-preview", { body: {} }),
+  );
+  expect(preview.context_kind).toBe("draft");
+  const skill = preview.items.find(
+    (item) => item.name === "harness-ui-configuration",
+  )!;
+  expect(skill).toBeTruthy();
+  const created = await result(
+    transport.client.POST("/api/threads", { body: {} }),
+  );
+  const path = { thread_id: created.thread_id };
+  const idle = await result(
+    transport.client.GET("/api/threads/{thread_id}/skills", {
+      params: { path },
+    }),
+  );
+  expect(idle.context_kind).toBe("idle");
+  const ref = {
+    catalog_id: preview.catalog_id,
+    item_id: skill.item_id,
+    name: skill.name,
+  };
+  await expect(
+    transport.client.POST("/api/threads/{thread_id}/submit", {
+      params: { path },
+      body: {
+        prompt: "$missing",
+        skill_references: [{ ...ref, name: "missing" }],
+      },
+    }),
+  ).rejects.toThrow("Skill is unavailable");
+  await expect(
+    transport.client.POST("/api/threads/{thread_id}/submit", {
+      params: { path },
+      body: {
+        prompt: `$${skill.name}`,
+        skill_references: [
+          { ...ref, catalog_id: idle.catalog_id, item_id: "0".repeat(64) },
+        ],
+      },
+    }),
+  ).rejects.toThrow("Skill is unavailable");
+  const accepted = await result(
+    transport.client.POST("/api/threads/{thread_id}/submit", {
+      params: { path },
+      body: {
+        prompt: `Use $${skill.name} and wait for skill inspection`,
+        skill_references: [ref],
+      },
+    }),
+  );
+  const active = await result(
+    transport.client.GET("/api/threads/{thread_id}/skills", {
+      params: { path },
+    }),
+  );
+  expect(active.context_kind).toBe("active");
+  expect(active.receipt_id).toBe(accepted.receipt_id);
+  await vi.waitFor(
+    async () => {
+      const operation = await result(
+        transport.client.GET("/api/operations/{receipt_id}", {
+          params: { path: { receipt_id: accepted.receipt_id } },
+        }),
+      );
+      expect(operation.available_actions).toContain("steer");
+    },
+    { timeout: 10000 },
+  );
+  await expect(
+    transport.client.POST("/api/operations/{receipt_id}/steer", {
+      params: { path: { receipt_id: accepted.receipt_id } },
+      body: {
+        prompt: "$missing",
+        skill_references: [{ ...ref, name: "missing" }],
+      },
+    }),
+  ).rejects.toThrow("Skill is unavailable");
+  const steered = await result(
+    transport.client.POST("/api/operations/{receipt_id}/steer", {
+      params: { path: { receipt_id: accepted.receipt_id } },
+      body: { prompt: `Check $${skill.name}`, skill_references: [ref] },
+    }),
+  );
+  expect(steered.accepted).toBe(true);
+  await result(
+    transport.client.POST("/api/operations/{receipt_id}/cancel", {
+      params: { path: { receipt_id: accepted.receipt_id } },
+    }),
+  );
+});

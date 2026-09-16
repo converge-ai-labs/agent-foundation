@@ -366,6 +366,7 @@ function NewConversation({
             void refreshThreadLists(queries);
           }}
           local={!draft.created}
+          skillDefaults={defaults}
           prepareThread={() => create.mutateAsync()}
           onPreparing={setPreparing}
           onSubmitted={openConversation}

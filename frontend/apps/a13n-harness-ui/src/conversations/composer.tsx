@@ -36,6 +36,7 @@ import type { Profile } from "../shell/presence";
 import { ConfirmAction } from "../shell/confirm-action";
 import { ThreadDraft, values, type DraftCapture } from "./draft";
 import { ComposerEditor } from "./composer-editor";
+import { skillReferences, type LoadSkills } from "./skill-references";
 import styles from "./conversation.module.css";
 import { commentReference, CommentReferenceContent } from "./comment-reference";
 import { previewInput, type LocalInput } from "./local-input";
@@ -135,6 +136,8 @@ export async function submitDraft(
   modelId?: string,
   localInput?: LocalInput,
   attachments = new Map<string, Schema<"ThreadAttachment">>(),
+  loadSkills?: LoadSkills,
+  signal?: AbortSignal,
 ) {
   if (
     draft.submission.kind === "pending" ||
@@ -143,8 +146,12 @@ export async function submitDraft(
     return;
   const input = localInput ?? beginInput(draft, action, attachments);
   let captured: DraftCapture;
+  let references: Schema<"SkillReference">[] = [];
   try {
     captured = draft.capture();
+    if (loadSkills && /(?:^|\s)\$\S+/.test(captured.input.prompt))
+      references = skillReferences(captured.parts, await loadSkills());
+    signal?.throwIfAborted();
   } catch (error) {
     input.state = "rejected";
     draft.submission = {
@@ -167,6 +174,7 @@ export async function submitDraft(
           body: {
             parts: captured.parts,
             source_id: input.id,
+            ...(references.length ? { skill_references: references } : {}),
             ...(modelId ? { model_id: modelId } : {}),
           },
         }),
@@ -183,7 +191,11 @@ export async function submitDraft(
       const accepted = await result(
         transport.client.POST("/api/operations/{receipt_id}/steer", {
           params: { path: { receipt_id: receipt } },
-          body: { parts: captured.parts, source_id: input.id },
+          body: {
+            parts: captured.parts,
+            source_id: input.id,
+            ...(references.length ? { skill_references: references } : {}),
+          },
         }),
       );
       if (accepted.receipt_id !== receipt)
@@ -237,6 +249,7 @@ export function Composer({
   referenceAdded = 0,
   autoFocus = false,
   local = false,
+  skillDefaults,
   prepareThread,
   onPreparing,
   onSubmitted,
@@ -259,6 +272,7 @@ export function Composer({
   referenceAdded?: number;
   autoFocus?: boolean;
   local?: boolean;
+  skillDefaults?: Schema<"NewThreadDefaults">;
   prepareThread?: () => Promise<void>;
   onPreparing?: (preparing: boolean) => void;
   onSubmitted?: () => void | Promise<void>;
@@ -292,6 +306,30 @@ export function Composer({
   const previewRequest = useRef<AbortController | null>(null);
   useEffect(() => () => previewRequest.current?.abort(), [transport, threadId]);
   const [error, setError] = useState("");
+  const skillContext = JSON.stringify([
+    local,
+    skillDefaults,
+    activity.receipt_id,
+  ]);
+  const loadSkills: LoadSkills = () =>
+    queries.fetchQuery({
+      queryKey: ["thread", threadId, "skills", skillContext],
+      queryFn: ({ signal }) =>
+        local
+          ? result(
+              transport.client.POST("/api/threads/skills-preview", {
+                body: skillDefaults ?? {},
+                signal,
+              }),
+            )
+          : result(
+              transport.client.GET("/api/threads/{thread_id}/skills", {
+                params: { path: { thread_id: threadId } },
+                signal,
+              }),
+            ),
+      staleTime: 10000,
+    });
   const [syncDelayed, setSyncDelayed] = useState(false);
   const synchronized = draft.synchronized;
   useEffect(() => {
@@ -454,6 +492,8 @@ export function Composer({
         modelId,
         localInput,
         attachmentMetadata(),
+        loadSkills,
+        controller.signal,
       );
       reconcile();
       if (!controller.signal.aborted) await onSubmitted?.();
@@ -655,6 +695,19 @@ export function Composer({
           <ComposerEditor
             autoFocus={autoFocus}
             local={local}
+            skillContext={skillContext}
+            loadSkills={async () => {
+              try {
+                return await loadSkills();
+              } catch (failure) {
+                setError(
+                  failure instanceof Error
+                    ? `Could not load skills: ${failure.message}`
+                    : "Could not load skills. Type $ again to retry.",
+                );
+                throw failure;
+              }
+            }}
             draft={draft}
             profile={profile}
             presence={(value) => connection.current?.presence(value)}
