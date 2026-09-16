@@ -6,6 +6,16 @@ import { TransportContext } from "../transport/context";
 import { SavedEntry, LiveOutput, MessageText } from "./transcript";
 
 afterEach(cleanup);
+it("shows live prose without a persistence disclaimer and preserves gap warnings", () => {
+  const blocks = [{ id: "reply", kind: "assistant" as const, text: "Done." }];
+  const view = render(<LiveOutput blocks={blocks} gap={false} />);
+  expect(screen.getByText("Done.")).toBeTruthy();
+  expect(screen.queryByText(/not yet established/)).toBeNull();
+  view.rerender(<LiveOutput blocks={blocks} gap />);
+  expect(screen.getByRole("status").textContent).toContain(
+    "Some live content is unavailable",
+  );
+});
 const metadata = {
   harness_ui: {
     attachment: {
@@ -115,7 +125,8 @@ it("keeps saved raw output identity intact and does not load remote Markdown ima
         .getAttribute("data-saved-target")!,
     ),
   ).toEqual(target);
-  expect(screen.getByText("**Exact** source")).toBeTruthy();
+  expect(screen.getByText("Exact").tagName).toBe("STRONG");
+  expect(screen.queryByRole("button", { name: /comment/i })).toBeNull();
   view.rerender(
     <MessageText
       text={
@@ -172,3 +183,77 @@ it.each(["background_process", "async_subagent"])(
     expect(screen.getByText(text).closest("details")).toBeNull();
   },
 );
+
+it("opens saved and streaming reasoning by default and renders safe Markdown", () => {
+  const view = render(
+    <SavedEntry
+      entry={
+        {
+          position: 1,
+          message_kind: "response",
+          parts: [{ kind: "thinking", text: "**Plan**\n\n- Read the code" }],
+        } as Schema<"TranscriptEntry">
+      }
+    />,
+  );
+  expect(screen.getByText("Reasoning").closest("details")?.open).toBe(true);
+  expect(screen.getByText("Plan").tagName).toBe("STRONG");
+  expect(screen.getByText("Read the code").tagName).toBe("LI");
+  view.rerender(
+    <LiveOutput
+      gap={false}
+      blocks={[
+        { id: "thought", kind: "thinking", text: "**Streaming** reasoning" },
+      ]}
+    />,
+  );
+  expect(screen.getByText("Reasoning").closest("details")?.open).toBe(true);
+  expect(screen.getByText("Streaming").tagName).toBe("STRONG");
+});
+
+it("omits model-only tool attachments without hiding genuine user media", () => {
+  const text = JSON.stringify({
+    kind: "binary",
+    media_type: "image/png",
+    size_bytes: 12,
+    payload_omitted: true,
+  });
+  const part = {
+    kind: "media",
+    text,
+    metadata: { media: true, display: false },
+  };
+  const view = render(
+    <SavedEntry
+      entry={
+        {
+          position: 0,
+          message_kind: "request",
+          parts: [part],
+        } as Schema<"TranscriptEntry">
+      }
+    />,
+  );
+  expect(view.container.textContent).toBe("");
+  view.rerender(
+    <LiveOutput
+      gap={false}
+      blocks={[{ ...part, kind: "media", id: "tool-image" }]}
+    />,
+  );
+  expect(view.container.textContent).toBe("");
+  view.rerender(
+    <SavedEntry
+      entry={
+        {
+          position: 0,
+          message_kind: "request",
+          parts: [{ ...part, metadata: { media: true, display: true } }],
+        } as Schema<"TranscriptEntry">
+      }
+    />,
+  );
+  expect(screen.getByText("User")).toBeTruthy();
+  expect(view.container.textContent).toContain("image/png");
+  expect(view.container.textContent).not.toContain("payload_omitted");
+});

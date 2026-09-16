@@ -1,4 +1,4 @@
-"""Incremental checkout-local dependency installation and SDK preparation."""
+"""Incremental checkout-local Python and frontend dependency installation."""
 
 from __future__ import annotations
 
@@ -63,7 +63,7 @@ def _phase_inputs(root: Path, patterns: tuple[str, ...]) -> tuple[Path, ...]:
     return tuple(path for pattern in patterns for path in sorted(root.glob(pattern)) if path.is_file())
 
 
-def _phases(root: Path, *, console: bool) -> tuple[tuple[Phase, ...], Phase | None]:
+def _phases(root: Path, *, console: bool) -> tuple[Phase, ...]:
     python = Phase(
         "python-install",
         _phase_inputs(root, ("pyproject.toml", "uv.lock", "uv.toml", ".python-version", "packages/*/pyproject.toml")),
@@ -75,7 +75,7 @@ def _phases(root: Path, *, console: bool) -> tuple[tuple[Phase, ...], Phase | No
         ("uv", "sync", "--quiet", "--locked", "--all-packages"),
     )
     if not console:
-        return (python,), None
+        return (python,)
     frontend = Phase(
         "frontend-install",
         _phase_inputs(
@@ -97,41 +97,7 @@ def _phases(root: Path, *, console: bool) -> tuple[tuple[Phase, ...], Phase | No
         ),
         ("pnpm", "--dir", "frontend", "install", "--frozen-lockfile"),
     )
-    sdk_install = Phase(
-        "typescript-sdk-install",
-        _phase_inputs(
-            root, ("sdk/typescript/package.json", "sdk/typescript/package-lock.json", "sdk/typescript/.npmrc")
-        ),
-        (
-            "sdk/typescript/node_modules/.package-lock.json",
-            "sdk/typescript/node_modules/.bin/tsc",
-            "sdk/typescript/node_modules/typescript/package.json",
-        ),
-        ("npm", "--prefix", "sdk/typescript", "ci"),
-    )
-    sources = _phase_inputs(
-        root,
-        (
-            "sdk/typescript/package.json",
-            "sdk/typescript/package-lock.json",
-            "sdk/typescript/tsconfig.json",
-            "sdk/typescript/tsconfig.build.json",
-            "sdk/typescript/src/**/*.ts",
-        ),
-    )
-    generated = tuple(
-        f"sdk/typescript/dist/{source.relative_to(root / 'sdk/typescript/src').with_suffix(suffix)}"
-        for source in sources
-        if source.is_relative_to(root / "sdk/typescript/src")
-        for suffix in (".js", ".js.map", ".d.ts", ".d.ts.map")
-    )
-    sdk_build = Phase(
-        "typescript-sdk-build",
-        sources,
-        generated,
-        ("npm", "--prefix", "sdk/typescript", "run", "build"),
-    )
-    return (python, frontend, sdk_install), sdk_build
+    return (python, frontend)
 
 
 def prepare(root: Path, *, console: bool) -> None:
@@ -142,11 +108,9 @@ def prepare(root: Path, *, console: bool) -> None:
             stamps = value if isinstance(value, dict) and all(type(item) is str for item in value.values()) else {}
         except (OSError, json.JSONDecodeError):
             stamps = {}
-        parallel, sdk_build = _phases(root, console=console)
-        with ThreadPoolExecutor(max_workers=len(parallel)) as pool:
-            results = list(pool.map(lambda phase: _run_phase(root, phase, stamps), parallel))
-        if sdk_build is not None:
-            results.append(_run_phase(root, sdk_build, stamps))
+        phases = _phases(root, console=console)
+        with ThreadPoolExecutor(max_workers=len(phases)) as pool:
+            results = list(pool.map(lambda phase: _run_phase(root, phase, stamps), phases))
         for name, fingerprint, elapsed, skipped in results:
             stamps[name] = fingerprint
             status = "skipped" if skipped else "completed"

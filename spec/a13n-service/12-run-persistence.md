@@ -105,6 +105,8 @@ class RunPendingSummary:
     calls: tuple[PendingCallSummary, ...]
     resolution_policy: Literal["all"]
 
+For Harness approvals, `presentation` may contain only a bounded, bearer-redacted target preview, review reason, and risk level. This display-only projection is not authorization evidence and does not expose full tool arguments or private approval metadata. Unknown presentation remains opaque to the Host.
+
 
 class RunUsage:
     schema_version: Literal["1"]

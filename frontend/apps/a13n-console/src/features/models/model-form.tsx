@@ -1,8 +1,3 @@
-import { ManageProvidersLink } from "../providers/manage-link";
-import { ResourceReference } from "../../shared/resource-reference";
-import { ConnectionTest } from "./connection-test";
-import { ProviderIcon } from "../../shared/provider-icon";
-import { suggestedKey } from "./model-options";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Button,
@@ -10,32 +5,42 @@ import {
   DisclosureSection,
   FormField,
   Input,
-  ReadOnlyField,
-  SearchPicker,
   Switch,
-  Tabs,
-  TabsList,
-  TabsTab,
 } from "a13n-ui";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
-import { allPages, data, type Schema } from "../../shared/api";
-import { ErrorNotice, InlineLoading, Loading } from "../../shared/feedback";
-import { FormActions } from "../../shared/form";
-import styles from "../../shared/shared.module.css";
+import { allPages, type Schema } from "../../shared/api";
+import { ErrorNotice } from "../../shared/feedback";
+import { FormActions, TextAreaField } from "../../shared/form";
 import { jsonObject, validateSettings } from "../../shared/validation";
+import { ProviderIcon } from "../../shared/provider-icon";
+import { ManageProvidersLink } from "../providers/manage-link";
+import styles from "../../shared/shared.module.css";
 import { modelApi, type ModelScope } from "./api";
-import { ModelIcon } from "./model-icon";
-import { ModelParameters } from "./model-parameters";
+import { ConnectionTest } from "./connection-test";
+import { ModelInformation } from "./model-information";
+import { CatalogPicker, catalogRefKey } from "./catalog-picker";
 import { ProviderSetup } from "./provider-setup";
+import { useModelProviderDefinitions } from "./provider-definitions";
+import { suggestedKey } from "./model-options";
 import modelStyles from "./models.module.css";
+
+type Draft = {
+  name: string;
+  key: string;
+  description: string;
+  upstream_model: string;
+  catalog_ref: Schema["CatalogRef"] | null;
+  model_api: string;
+  declarations: Schema["ModelDeclarations-Input"];
+  enabled: boolean;
+};
 
 export function ModelForm({
   scope,
   resource,
   providerId,
-  candidate,
   close,
   reload,
   onSaved,
@@ -43,191 +48,122 @@ export function ModelForm({
   scope: ModelScope;
   resource?: { value: Schema["Model"]; etag?: string };
   providerId?: string;
-  candidate?: Schema["ModelCandidate"];
   close: () => void;
   reload: () => Promise<void>;
   onSaved?: (model: Schema["Model"]) => void;
 }) {
-  const [original] = useState(resource),
+  const { t } = useTranslation(),
     client = useClient(),
-    { t } = useTranslation(),
-    cache = useQueryClient(),
-    api = modelApi(client, scope);
+    cache = useQueryClient();
+  const api = modelApi(client, scope);
+  const [original] = useState(resource);
   const [provider, setProvider] = useState(
-      original?.value.provider_id ?? providerId ?? "",
-    ),
-    [choosingProvider, setChoosingProvider] = useState(
-      !original && !providerId,
-    ),
-    [upstream, setUpstream] = useState(
-      original?.value.upstream_model ?? candidate?.upstream_model ?? "",
-    ),
-    [name, setName] = useState(
-      original?.value.name ??
-        candidate?.display_name ??
-        candidate?.upstream_model ??
-        "",
-    ),
-    [key, setKey] = useState(
-      original?.value.key ?? suggestedKey(candidate?.upstream_model ?? ""),
-    ),
-    [nameEdited, setNameEdited] = useState(!!original),
-    [keyEdited, setKeyEdited] = useState(!!original),
-    [apiEdited, setApiEdited] = useState(!!original),
-    [modelApiKey, setModelApiKey] = useState(
-      original?.value.model_api ?? candidate?.suggested_model_api ?? "",
-    ),
-    [settingsText, setSettingsText] = useState(
-      JSON.stringify(
-        original?.value.settings ?? candidate?.suggested_settings ?? {},
-        null,
-        2,
-      ),
-    ),
-    [description, setDescription] = useState(original?.value.description ?? ""),
-    [enabled, setEnabled] = useState(original?.value.enabled ?? true),
-    [parameterError, setParameterError] = useState<string>(),
-    [manual, setManual] = useState(!!original || !!candidate),
-    [settledUpstream, setSettledUpstream] = useState(upstream);
-  const [toolsSupport, setToolsSupport] = useState<string>(
-    original?.value.declarations?.supports_tools == null
-      ? "unknown"
-      : String(original.value.declarations?.supports_tools),
+    original?.value.provider_id ?? providerId ?? "",
+  );
+  const [choosingProvider, setChoosingProvider] = useState(!provider);
+  const [draft, setDraft] = useState<Draft>(() => ({
+    name: original?.value.name ?? "",
+    key: original?.value.key ?? "",
+    description: original?.value.description ?? "",
+    upstream_model: original?.value.upstream_model ?? "",
+    catalog_ref: original?.value.catalog_ref ?? null,
+    model_api: original?.value.model_api ?? "",
+    declarations: original?.value.declarations ?? {},
+    enabled: original?.value.enabled ?? true,
+  }));
+  const [initial] = useState(draft);
+  const [settingsJson, setSettingsJson] = useState(() =>
+    JSON.stringify(original?.value.settings ?? {}, null, 2),
+  );
+  const [initialSettingsJson] = useState(settingsJson);
+  const [settingsExpanded, setSettingsExpanded] = useState(
+    Object.keys(original?.value.settings ?? {}).length > 0,
   );
   const providers = useQuery({
     queryKey: ["model-provider-choices", scope.kind, scope.id],
     queryFn: ({ signal }) =>
       allPages((cursor) => api.providers(signal, cursor)),
   });
-  const definitions = useQuery({
-    queryKey: ["model-provider-types"],
-    queryFn: ({ signal }) =>
-      client.http.GET("/api/v1/model-provider-types", { signal }).then(data),
+  const definitions = useModelProviderDefinitions();
+  const catalog = useQuery({
+    queryKey: ["model-catalog", scope.kind, scope.id],
+    queryFn: ({ signal }) => api.catalog(signal),
   });
   const selectedProvider = providers.data?.find((item) => item.id === provider);
   const definition = definitions.data?.items.find(
     (item) => item.type === selectedProvider?.type,
   );
-  const callingApi = modelApiKey || definition?.default_model_api || "";
-  const discovery = useQuery({
-    queryKey: ["model-discovery", scope.kind, scope.id, provider],
-    queryFn: () => api.discover(provider),
-    enabled:
-      !!provider &&
-      !choosingProvider &&
-      !manual &&
-      !!definition?.supports_model_discovery,
-    retry: false,
-  });
-  useEffect(() => {
-    const timer = setTimeout(() => setSettledUpstream(upstream.trim()), 400);
-    return () => clearTimeout(timer);
-  }, [upstream]);
-  const suggestions = useQuery({
-    queryKey: [
-      "model-catalog-suggestions",
-      scope.kind,
-      scope.id,
-      provider,
-      settledUpstream,
-      callingApi,
-    ],
-    queryFn: () =>
-      api.suggestions({
-        provider_id: provider,
-        upstream_model: settledUpstream,
-        model_api: callingApi || undefined,
-      }),
-    enabled:
-      !original &&
-      !!provider &&
-      !!settledUpstream &&
-      !!callingApi &&
-      settledUpstream === upstream.trim(),
-    retry: false,
-  });
-  const currentSuggestions =
-    settledUpstream === upstream.trim() ? suggestions.data?.items : undefined;
-  const suggestion =
-    currentSuggestions?.length === 1 ? currentSuggestions[0] : undefined;
-  const callingApiLabel =
-    definition?.model_api_labels[callingApi] ?? callingApi;
-  function chooseUpstream(
-    value: string,
-    suggestion?: Schema["ModelCandidate"],
-  ) {
-    setUpstream(value);
-    if (!nameEdited) setName((suggestion?.display_name ?? value).slice(0, 128));
-    if (!keyEdited) setKey(suggestedKey(value));
-    if (suggestion) {
-      if (!apiEdited) setModelApiKey(suggestion.suggested_model_api);
-      if (settingsText.trim() === "{}")
-        setSettingsText(JSON.stringify(suggestion.suggested_settings, null, 2));
-    }
+  const callingApi = draft.model_api || definition?.default_model_api || "";
+  const customEndpoint = Object.entries(
+    selectedProvider?.configuration ?? {},
+  ).some(([key, value]) => key.endsWith("base_url") && !!value);
+  const channels = definition?.catalog_providers ?? [];
+  const [pendingVariant, setPendingVariant] = useState(false);
+  const catalogValue = draft.catalog_ref
+    ? catalogRefKey(draft.catalog_ref)
+    : "custom";
+  const selectedEntry = catalog.data?.items?.find(
+    (item) => catalogRefKey(item.ref) === catalogValue,
+  );
+  const dirty =
+    JSON.stringify(draft) !== JSON.stringify(initial) ||
+    settingsJson !== initialSettingsJson;
+  function change<K extends keyof Draft>(key: K, value: Draft[K]) {
+    setDraft((current) => ({ ...current, [key]: value }));
   }
-  function chooseProvider(value: string) {
-    if (value !== provider) {
-      setProvider(value);
-      setModelApiKey("");
-      setApiEdited(false);
-      setUpstream("");
-      setSettledUpstream("");
-      setSettingsText("{}");
-      if (!nameEdited) setName("");
-      if (!keyEdited) setKey("");
-      setManual(false);
+  function applyCatalog(item: Schema["CatalogModel"]) {
+    const official = catalog.data?.items?.find(
+      (entry) =>
+        entry.identity === item.identity &&
+        `${entry.ref.provider}/${entry.ref.model}` === item.identity,
+    );
+    setDraft((current) => ({
+      ...current,
+      catalog_ref: item.ref,
+      upstream_model: channels.includes(item.ref.provider)
+        ? item.ref.model
+        : "",
+      model_api: channels.includes(item.ref.provider)
+        ? callingApi
+        : "openai.chat_completions",
+      name: current.name || item.name,
+      key: current.key || suggestedKey(item.ref.model),
+      declarations: {
+        ...item.declarations,
+        pricing:
+          item.declarations.pricing ?? official?.declarations.pricing ?? null,
+      },
+    }));
+  }
+  function chooseCatalog(item: Schema["CatalogModel"] | null) {
+    if (!item) {
+      change("catalog_ref", null);
+      return;
     }
-    setChoosingProvider(false);
+    applyCatalog(item);
   }
   const save = useMutation({
     mutationFn: async () => {
-      let settings: ReturnType<typeof jsonObject>;
-      try {
-        settings = jsonObject(settingsText);
-        if (definition)
-          validateSettings(definition.settings_schemas[callingApi], settings);
-        setParameterError(undefined);
-      } catch (error) {
-        setParameterError(
-          error instanceof Error ? error.message : t("Invalid JSON"),
-        );
-        throw error;
-      }
+      if (!definition || !callingApi)
+        throw new Error(t("Choose a provider and API."));
+      const settings = jsonObject(settingsJson);
+      validateSettings(definition.settings_schemas[callingApi], settings);
       const body = {
-        name,
-        upstream_model: upstream.trim(),
+        name: draft.name,
+        description: draft.description || null,
+        upstream_model: draft.upstream_model.trim(),
+        catalog_ref: draft.catalog_ref,
         model_api: callingApi,
         settings,
-        description: description || null,
-        enabled,
-        ...(original
-          ? {
-              base_model: original.value.base_model,
-              declarations: {
-                ...original.value.declarations,
-                supports_tools:
-                  toolsSupport === "unknown" ? null : toolsSupport === "true",
-              },
-            }
-          : suggestion
-            ? {
-                base_model: suggestion.base_model,
-                declarations: {
-                  ...suggestion.declarations,
-                  ...(toolsSupport !== "unknown"
-                    ? { supports_tools: toolsSupport === "true" }
-                    : {}),
-                },
-              }
-            : {
-                declarations: {
-                  supports_tools:
-                    toolsSupport === "unknown" ? null : toolsSupport === "true",
-                },
-              }),
+        declarations: draft.declarations,
+        enabled: draft.enabled,
       };
       if (!original)
-        return api.createModel({ ...body, key, provider_id: provider });
+        return api.createModel({
+          ...body,
+          key: draft.key,
+          provider_id: provider,
+        });
       if (!original.etag)
         throw new Error(
           t("Version information is unavailable. Reload this page."),
@@ -240,27 +176,28 @@ export function ModelForm({
       close();
     },
   });
-  const dirty =
-    !!original &&
-    (toolsSupport !==
-      (original.value.declarations?.supports_tools == null
-        ? "unknown"
-        : String(original.value.declarations?.supports_tools)) ||
-      upstream.trim() !== original.value.upstream_model ||
-      callingApi !== original.value.model_api ||
-      name !== original.value.name ||
-      description !== (original.value.description ?? "") ||
-      enabled !== original.value.enabled ||
-      settingsText !== JSON.stringify(original.value.settings, null, 2));
+  function chooseProvider(id: string, preferredApi = "") {
+    setProvider(id);
+    setPendingVariant(false);
+    setSettingsJson("{}");
+    setDraft((current) => ({
+      ...current,
+      catalog_ref: null,
+      upstream_model: "",
+      model_api: preferredApi,
+      declarations: {},
+    }));
+    setChoosingProvider(false);
+  }
   if (choosingProvider)
     return (
       <ProviderSetup
-        onCancel={close}
         scope={scope}
         providers={providers.data}
         definitions={definitions.data?.items}
         value={provider}
         error={providers.error ?? definitions.error}
+        onCancel={close}
         onSelect={chooseProvider}
         onCreated={(item, preferredApi) => {
           cache.setQueryData<Schema["ModelProvider"][]>(
@@ -270,203 +207,95 @@ export function ModelForm({
               item,
             ],
           );
-          chooseProvider(item.id);
-          if (preferredApi) {
-            setModelApiKey(preferredApi);
-            setApiEdited(true);
-          }
+          chooseProvider(item.id, preferredApi);
         }}
       />
     );
-  const identityFields = (
-    <section
-      className={
-        original ? modelStyles.editIdentity : modelStyles.identityFields
-      }
+  return (
+    <form
+      className={modelStyles.modelForm}
+      onSubmit={(event) => {
+        event.preventDefault();
+        save.mutate();
+      }}
     >
-      <div className={original ? styles.stack : styles.twoColumns}>
-        <FormField
-          label={t("Name")}
-          labelAction={
-            original && (
-              <ResourceReference
-                id={original.value.id}
-                resourceKey={original.value.key}
-              />
-            )
-          }
-        >
-          <Input
-            required
-            maxLength={128}
-            value={name}
-            onChange={(event) => {
-              setName(event.target.value);
-              setNameEdited(true);
-            }}
-          />
-        </FormField>
-        {!original && (
-          <FormField
-            label={t("Model key")}
-            description={t("Used by agents. Cannot be changed later.")}
-          >
-            <Input
-              required
-              maxLength={128}
-              value={key}
-              onChange={(event) => {
-                setKey(event.target.value);
-                setKeyEdited(true);
-              }}
-            />
-          </FormField>
-        )}
-      </div>
-      <FormField label={t("Description")}>
-        <Input
-          value={description}
-          placeholder={t("Optional")}
-          onChange={(event) => setDescription(event.target.value)}
-        />
-      </FormField>
-    </section>
-  );
-  const connectionFields = (
-    <section className={modelStyles.connectionFields}>
-      <div
-        className={`${modelStyles.connectionSummary} ${modelStyles.providerSummary}`}
-      >
-        {selectedProvider && (
-          <ProviderIcon
-            key={selectedProvider.type}
-            type={selectedProvider.type}
-          />
-        )}
-        <div>
-          <strong>
-            {selectedProvider?.name ?? <InlineLoading width="8rem" />}
-          </strong>
-          {typeof selectedProvider?.configuration.base_url === "string" && (
-            <span>{selectedProvider.configuration.base_url}</span>
+      <section className={modelStyles.connectionFields}>
+        <div className={modelStyles.connectionSummary}>
+          {selectedProvider && <ProviderIcon type={selectedProvider.type} />}
+          <div>
+            <strong>{selectedProvider?.name ?? t("Loading…")}</strong>
+            <span>
+              {String(
+                selectedProvider?.configuration.base_url ??
+                  selectedProvider?.type ??
+                  "",
+              )}
+            </span>
+          </div>
+          {!original && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setChoosingProvider(true)}
+            >
+              {t("Change")}
+            </Button>
           )}
         </div>
-        {!original && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => setChoosingProvider(true)}
-          >
-            {t("Change")}
-          </Button>
+        {typeof selectedProvider?.configuration.session_affinity_header ===
+          "string" && (
+          <p className={styles.muted}>
+            {t("Session affinity header")}:{" "}
+            {selectedProvider.configuration.session_affinity_header}
+          </p>
         )}
-      </div>
-      {selectedProvider && (
-        <ReadOnlyField
-          label={t("Session affinity header")}
-          description={t(
-            "Inherited from the provider connection. A stable UUID derived from the current Thread ID is supplied automatically; edit the provider to change the header.",
-          )}
-        >
-          <span>
-            {String(
-              selectedProvider.configuration.session_affinity_header ??
-                t("Disabled"),
-            )}
-          </span>
+        {original && selectedProvider && (
           <ManageProvidersLink
             category="models"
             scope={selectedProvider.workspace_id ? "workspace" : "organization"}
           />
-        </ReadOnlyField>
-      )}
-      {!original && definition?.supports_model_discovery && (
-        <Tabs
-          value={manual ? "manual" : "catalog"}
-          onValueChange={(value) => setManual(value === "manual")}
-        >
-          <TabsList aria-label={t("Model source")}>
-            <TabsTab value="catalog">{t("From catalog")}</TabsTab>
-            <TabsTab value="manual">{t("Enter model ID")}</TabsTab>
-          </TabsList>
-        </Tabs>
-      )}
-      <div className={styles.twoColumns}>
-        {!original && !manual && definition?.supports_model_discovery ? (
-          <div className={styles.stack}>
-            {discovery.isPending ? (
-              <Loading variant="list" rows={3} />
-            ) : discovery.data?.items.length ? (
-              <FormField label={t("Model")}>
-                <SearchPicker
-                  label={t("Model")}
-                  placeholder={t("Choose a model…")}
-                  emptyMessage={t(
-                    "No models found. You can still add a model manually.",
-                  )}
-                  value={upstream}
-                  onValueChange={(value) =>
-                    chooseUpstream(
-                      value,
-                      discovery.data?.items.find(
-                        (item) => item.upstream_model === value,
-                      ),
-                    )
-                  }
-                  groups={[
-                    {
-                      label: t("Models"),
-                      options: discovery.data.items.map((item) => ({
-                        value: item.upstream_model,
-                        label: item.display_name ?? item.upstream_model,
-                        description:
-                          item.display_name &&
-                          item.display_name !== item.upstream_model
-                            ? item.upstream_model
-                            : undefined,
-                      })),
-                    },
-                  ]}
-                />
-              </FormField>
-            ) : (
-              <p className={styles.muted}>
-                {t("Catalog unavailable. Enter a model ID to continue.")}
-              </p>
+        )}
+        <FormField label={t("Model")}>
+          <CatalogPicker
+            key={provider}
+            entries={catalog.data?.items ?? []}
+            channels={channels}
+            allowCompatible={selectedProvider?.type === "openai"}
+            value={draft.catalog_ref}
+            onSelect={chooseCatalog}
+            onPendingChange={setPendingVariant}
+          />
+        </FormField>
+        {(catalog.error || catalog.data?.status === "unavailable") && (
+          <p className={styles.muted}>
+            {t("Catalog unavailable. Enter a model ID to continue.")}
+          </p>
+        )}
+        {catalog.data?.status === "stale" && (
+          <p className={styles.muted}>
+            {t("Showing the last available model catalog.")}
+          </p>
+        )}
+        <div className={styles.twoColumns}>
+          <FormField
+            label={t("Upstream model")}
+            description={t(
+              selectedEntry && !channels.includes(selectedEntry.ref.provider)
+                ? "Requires an OpenAI-compatible endpoint serving this model. Enter its upstream model ID."
+                : "Sent to the provider. Change this for gateway aliases or deployment IDs.",
             )}
-            {(discovery.error ||
-              (!discovery.data?.items.length && !discovery.isPending)) && (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className={modelStyles.catalogFallback}
-                onClick={() => setManual(true)}
-              >
-                {t("Enter model ID")}
-              </Button>
-            )}
-          </div>
-        ) : (
-          <FormField label={t("Upstream model")}>
+          >
             <Input
               required
-              value={upstream}
-              placeholder="e.g. gpt-4.1"
               maxLength={256}
-              onChange={(event) => chooseUpstream(event.target.value)}
+              value={draft.upstream_model}
+              onChange={(event) => change("upstream_model", event.target.value)}
             />
           </FormField>
-        )}
-        {(definition?.supported_model_apis.length ?? 0) > 1 && (
           <ChoiceField
             label={t("API")}
             value={callingApi}
-            onValueChange={(value) => {
-              setModelApiKey(value);
-              setApiEdited(true);
-            }}
+            onValueChange={(value) => change("model_api", value)}
             options={
               definition?.supported_model_apis.map((value) => ({
                 value,
@@ -474,95 +303,98 @@ export function ModelForm({
               })) ?? []
             }
           />
+        </div>
+        {original && (
+          <ConnectionTest
+            compact
+            action={() => api.testModel(original.value.id)}
+            dirty={dirty || save.isPending}
+            description="May consume quota or incur cost."
+          />
         )}
-      </div>
-      {original && (
-        <ConnectionTest
-          compact
-          action={() => api.testModel(original.value.id)}
-          dirty={dirty || save.isPending}
-          description="May consume quota or incur cost."
-        />
-      )}
-    </section>
-  );
-  return (
-    <form
-      className={`${modelStyles.modelForm} ${original ? modelStyles.editForm : ""}`}
-      onSubmit={(event) => {
-        event.preventDefault();
-        save.mutate();
-      }}
-    >
-      {original && (
-        <>
-          <div className={modelStyles.modelIdentity}>
-            <div className={modelStyles.modelMark}>
-              <ModelIcon
-                upstream={upstream}
-                provider={selectedProvider?.type}
-              />
-            </div>
-            <div className={modelStyles.modelHeading}>
-              <h3>{original.value.name}</h3>
-              <span>{original.value.key}</span>
-            </div>
-            <div className={modelStyles.modelStatus}>
-              <Switch
-                id="model-enabled"
-                aria-labelledby="model-enabled-label"
-                checked={enabled}
-                onCheckedChange={setEnabled}
-              />
-              <label id="model-enabled-label" htmlFor="model-enabled">
-                {t(enabled ? "Enabled" : "Disabled")}
-              </label>
-            </div>
-          </div>
-          {identityFields}
-        </>
-      )}
-      {original ? (
-        <DisclosureSection title={t("Connection")} summary={callingApiLabel}>
-          {connectionFields}
-        </DisclosureSection>
-      ) : (
-        connectionFields
-      )}
-      {!original && identityFields}
-
-      <ChoiceField
-        label={t("Tool calling support")}
-        value={toolsSupport}
-        onValueChange={setToolsSupport}
-        options={[
-          { value: "unknown", label: t("Use catalog declaration") },
-          { value: "true", label: t("Supported") },
-          { value: "false", label: t("Unsupported") },
-        ]}
-      />
-      <section className={modelStyles.defaultsFields}>
-        <ModelParameters
-          text={settingsText}
-          onChange={(next) => {
-            setSettingsText(next);
-            setParameterError(undefined);
-          }}
-          error={parameterError}
-          schema={definition?.settings_schemas[callingApi]}
-        />
       </section>
+      <section className={modelStyles.identityFields}>
+        <div className={styles.twoColumns}>
+          <FormField label={t("Name")}>
+            <Input
+              required
+              maxLength={128}
+              value={draft.name}
+              onChange={(event) => change("name", event.target.value)}
+            />
+          </FormField>
+          <FormField label={t("Model key")} readOnly={!!original}>
+            <Input
+              required
+              maxLength={128}
+              value={draft.key}
+              onChange={(event) => change("key", event.target.value)}
+            />
+          </FormField>
+        </div>
+        <FormField label={t("Description")}>
+          <Input
+            maxLength={2048}
+            value={draft.description}
+            placeholder={t("Optional")}
+            onChange={(event) => change("description", event.target.value)}
+          />
+        </FormField>
+      </section>
+      <ModelInformation
+        value={draft.declarations}
+        onChange={(value) => change("declarations", value)}
+      />
+      <DisclosureSection
+        title={t("Request settings")}
+        summary={settingsJson.trim() !== "{}" ? t("Configured") : undefined}
+        open={settingsExpanded}
+        onOpenChange={setSettingsExpanded}
+      >
+        <TextAreaField
+          label={t("Settings JSON")}
+          hint={t(
+            "Model request defaults. Agent and Run settings can override them.",
+          )}
+          value={settingsJson}
+          onChange={setSettingsJson}
+          code
+          rows={6}
+        />
+      </DisclosureSection>
+      {selectedEntry?.pricing_warning && (
+        <p className={styles.muted}>{t(selectedEntry.pricing_warning)}</p>
+      )}
+      {selectedEntry &&
+        draft.declarations.pricing &&
+        (customEndpoint || !channels.includes(selectedEntry.ref.provider)) && (
+          <p className={styles.muted}>
+            {t(
+              "Catalog prices are references from the model provider. Your gateway may charge differently.",
+            )}
+          </p>
+        )}
+      <div className={modelStyles.modelStatus}>
+        <Switch
+          id="model-enabled"
+          checked={draft.enabled}
+          onCheckedChange={(value) => change("enabled", value)}
+        />
+        <label htmlFor="model-enabled">{t("Enabled")}</label>
+      </div>
       <ErrorNotice
-        error={parameterError ? undefined : save.error}
+        error={save.error ?? definitions.error ?? providers.error}
         retry={original ? () => void reload() : undefined}
       />
       <FormActions
         onCancel={close}
         pending={save.isPending}
         disabled={
-          !upstream.trim() ||
-          !name.trim() ||
-          !key.trim() ||
+          pendingVariant ||
+          !draft.upstream_model.trim() ||
+          !draft.name.trim() ||
+          !draft.key.trim() ||
+          !callingApi ||
           (!!original && !dirty)
         }
         label={t(original ? "Save changes" : "Add model")}

@@ -1094,6 +1094,12 @@
     "ModelsSettings": {
       "additionalProperties": false,
       "properties": {
+        "catalog_released_since": {
+          "default": "2026-04-23",
+          "format": "date",
+          "title": "Catalog Released Since",
+          "type": "string"
+        },
         "private_endpoint_domains": {
           "default": [],
           "items": {

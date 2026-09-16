@@ -48,7 +48,7 @@ async def build_model_bundle(
         catalog_http_client = await stack.enter_async_context(
             httpx2.AsyncClient(follow_redirects=False, trust_env=False, timeout=10.0)
         )
-        catalog = ModelsDevCatalog(catalog_http_client)
+        catalog = ModelsDevCatalog(catalog_http_client, released_since=settings.models.catalog_released_since)
     return _ModelBundle(
         models=ModelService(
             shared.storage.sessions,

@@ -1,5 +1,11 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ModelForm } from "./model-form";
@@ -37,7 +43,7 @@ const settingsSchema = {
       description: "A very long parameter explanation.",
     },
     max_tokens: { type: "integer" },
-    openai_reasoning_effort: { type: "string", enum: ["low", "high"] },
+    thinking: { type: "string", enum: ["low", "high"] },
   },
 };
 const definition = {
@@ -45,7 +51,7 @@ const definition = {
   display_name: "OpenAI",
   default_model_api: "openai.chat_completions",
   supported_model_apis: ["openai.chat_completions", "openai.responses"],
-  supports_model_discovery: true,
+  catalog_providers: ["openai"],
   model_api_labels: {
     "openai.chat_completions": "OpenAI Chat Completions",
     "openai.responses": "OpenAI Responses",
@@ -85,52 +91,59 @@ function mount(
     </QueryClientProvider>,
   );
 }
+
+const entry = {
+  identity: "openai/gpt-5.5",
+  ref: { provider: "openai", model: "gpt-5.5" },
+  name: "GPT-5.5",
+  provider_name: "OpenAI",
+  release_date: "2026-04-23",
+  declarations: {
+    capabilities: ["image_understanding"],
+    context_window_tokens: 100000,
+    pricing: { tiers: [{ above: null, rates: { input: "5", output: "30" } }] },
+  },
+};
+const secondEntry = {
+  ...entry,
+  identity: "openai/gpt-5.6",
+  ref: { provider: "openai", model: "gpt-5.6" },
+  name: "GPT-5.6",
+  declarations: {
+    capabilities: [],
+    context_window_tokens: 200000,
+    pricing: { tiers: [{ above: null, rates: { input: "4", output: "24" } }] },
+  },
+};
+const compatibleEntry = {
+  identity: "minimax/MiniMax-M3",
+  ref: { provider: "minimax", model: "MiniMax-M3" },
+  name: "MiniMax-M3",
+  provider_name: "MiniMax",
+  release_date: "2026-06-01",
+  declarations: {
+    pricing: { tiers: [{ above: null, rates: { input: "0.5", output: "2" } }] },
+  },
+};
 beforeEach(() => {
   state.GET.mockImplementation(async (path: string) => ({
-    data: {
-      items: path.endsWith("model-provider-types") ? [definition] : [provider],
-      next_cursor: null,
-    },
+    data: path.endsWith("model-catalog")
+      ? {
+          items: [entry, secondEntry, compatibleEntry],
+          status: "ready",
+          released_since: "2026-04-23",
+        }
+      : {
+          items: path.endsWith("model-provider-types")
+            ? [definition]
+            : [provider],
+          next_cursor: null,
+        },
   }));
   state.POST.mockImplementation(
-    async (path: string, args: { body?: unknown }) => {
-      if (path.endsWith("discover-models"))
-        return {
-          data: {
-            items: [
-              {
-                upstream_model: "vendor/model-v1",
-                display_name: "Model V1",
-                suggested_model_api: "openai.chat_completions",
-                suggested_settings: {},
-              },
-            ],
-          },
-        };
-      if (path.endsWith("model-catalog/suggestions"))
-        return {
-          data: {
-            source: "name_tokens",
-            items: [
-              {
-                base_model: "openai:gpt-5",
-                model_api: "openai.chat_completions",
-                model_api_label: "Chat Completions",
-                declarations: {
-                  thinking_efforts: [],
-                  capabilities: [],
-                  context_window_tokens: null,
-                  max_output_tokens: null,
-                  structured_output: false,
-                  pricing: { input: 0, output: null },
-                },
-              },
-            ],
-          },
-        };
-      if (path.endsWith("model-providers")) return { data: provider };
-      return { data: { id: "mdl_test", ...(args.body as object) } };
-    },
+    async (_path: string, args: { body?: unknown }) => ({
+      data: { id: "mdl_test", ...(args.body as object) },
+    }),
   );
   vi.stubGlobal(
     "ResizeObserver",
@@ -147,358 +160,198 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.resetAllMocks();
 });
-it.each([
-  { type: "openai", path: "responses", mode: "bearer" },
-  {
-    type: "openai",
-    path: "chat/completions",
-    mode: "none",
-  },
-  {
-    type: "openai",
-    path: "responses",
-    mode: "api_key_header",
-  },
-])(
-  "connects $type with $mode using /$path and saves a Responses model",
-  async ({ type, path, mode }) => {
-    const selectedDefinition = definition;
-    state.GET.mockImplementation(async (path: string) => ({
-      data: {
-        items: path.endsWith("model-provider-types")
-          ? [selectedDefinition]
-          : [{ ...provider, type }],
-        next_cursor: null,
-      },
-    }));
-    const previous = state.POST.getMockImplementation()!;
-    state.POST.mockImplementation(async (path: string, args: unknown) => {
-      if (path.endsWith("model-providers"))
-        return { data: { ...provider, type } };
-      return previous(path, args);
-    });
-    const user = userEvent.setup();
-    mount();
-    await user.click(
-      await screen.findByRole("button", { name: "Connect provider" }),
-    );
-    await user.type(
-      await screen.findByRole("textbox", { name: "Name" }),
-      "My endpoint",
-    );
-    await user.click(screen.getByRole("button", { name: /Advanced settings/ }));
-    await user.click(screen.getByRole("textbox", { name: "Base URL" }));
-    await user.paste(`https://example.com/v1/${path}`);
-    await user.click(
-      screen.getByRole("button", { name: "Use base URL without the API path" }),
-    );
-    await user.type(screen.getByLabelText("API key"), "test-key");
-    if (mode !== "bearer") {
-      await user.click(
-        screen.getByRole("combobox", { name: "Authentication" }),
-      );
-      await user.click(
-        await screen.findByRole("option", {
-          name: mode === "none" ? "None" : "Custom header",
-        }),
-      );
-      if (mode === "none")
-        expect(screen.queryByLabelText("API key")).toBeNull();
-      else
-        await user.type(
-          screen.getByRole("textbox", { name: "Header name" }),
-          "x-model-key",
-        );
-    }
-    await user.click(screen.getByRole("button", { name: "Connect provider" }));
-    await screen.findByRole("tab", { name: "Enter model ID" });
-    expect(state.POST).toHaveBeenCalledWith(
-      "/api/v1/workspaces/{workspace}/model-providers",
-      expect.objectContaining({
-        body: expect.objectContaining({
-          type,
-          configuration: {
-            base_url: "https://example.com/v1",
-            ...(mode !== "bearer" ? { auth_mode: mode } : {}),
-            ...(mode === "api_key_header"
-              ? { api_key_header_name: "x-model-key" }
-              : {}),
-          },
-          credential: mode === "none" ? null : "test-key",
-        }),
-      }),
-    );
-    expect(screen.queryByLabelText("API key")).toBeNull();
-    await user.click(screen.getByRole("tab", { name: "Enter model ID" }));
-    await user.type(
-      await screen.findByRole("textbox", { name: "Upstream model" }),
-      "custom-model",
-    );
-    expect(
-      (screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value,
-    ).toBe("custom-model");
-    expect(
-      (screen.getByRole("textbox", { name: "Model key" }) as HTMLInputElement)
-        .value,
-    ).toBe("custom-model");
-    await user.click(screen.getByRole("button", { name: "Add model" }));
-    await waitFor(() => expect(state.close).toHaveBeenCalled());
+
+it("creates a manual model with JSON-only request settings", async () => {
+  mount("mp_test");
+  const user = userEvent.setup();
+  await user.type(
+    await screen.findByLabelText("Upstream model"),
+    "company-smart",
+  );
+  await user.type(screen.getByLabelText("Name"), "Smart");
+  await user.type(screen.getByLabelText("Model key"), "smart");
+  expect(screen.queryByLabelText("Thinking effort")).toBeNull();
+  expect(screen.queryByLabelText("Max output tokens")).toBeNull();
+  await user.click(screen.getByRole("button", { name: "Request settings" }));
+  fireEvent.change(screen.getByLabelText("Settings JSON"), {
+    target: { value: '{"thinking":"high","max_tokens":4096}' },
+  });
+  await user.click(screen.getByRole("button", { name: "Add model" }));
+  await waitFor(() =>
     expect(state.POST).toHaveBeenCalledWith(
       "/api/v1/workspaces/{workspace}/models",
       expect.objectContaining({
         body: expect.objectContaining({
-          provider_id: "mp_test",
-          enabled: true,
-          upstream_model: "custom-model",
-          model_api:
-            path === "responses"
-              ? "openai.responses"
-              : "openai.chat_completions",
-          settings: {},
+          upstream_model: "company-smart",
+          catalog_ref: null,
+          settings: { thinking: "high", max_tokens: 4096 },
         }),
-      }),
-    );
-    expect(state.POST.mock.calls.some(([path]) => path.endsWith("/test"))).toBe(
-      false,
-    );
-  },
-);
-it("prefills a catalog model and preserves JSON overrides when switching APIs", async () => {
-  const user = userEvent.setup();
-  mount("mp_test");
-  await user.click(await screen.findByRole("combobox", { name: "Model" }));
-  await user.click(await screen.findByRole("option", { name: /Model V1/ }));
-  await waitFor(() =>
-    expect(state.POST).toHaveBeenCalledWith(
-      "/api/v1/workspaces/{workspace}/model-catalog/suggestions",
-      expect.objectContaining({
-        body: {
-          provider_id: "mp_test",
-          upstream_model: "vendor/model-v1",
-          model_api: "openai.chat_completions",
-        },
       }),
     ),
   );
   expect(
-    (screen.getByRole("textbox", { name: "Model key" }) as HTMLInputElement)
-      .value,
-  ).toBe("vendor/model-v1");
-  await user.click(screen.getByRole("button", { name: /Parameters/ }));
-  await screen.findByRole("spinbutton", { name: "Temperature" });
-  expect(screen.queryByText("A very long parameter explanation.")).toBeNull();
-  await user.click(screen.getByRole("tab", { name: "JSON" }));
-  const json = await screen.findByRole("textbox", { name: "Settings JSON" });
-  await user.clear(json);
-  await user.paste('{"temperature":0.4}');
-  await user.click(screen.getByRole("combobox", { name: "API" }));
-  await user.click(
-    await screen.findByRole("option", { name: "OpenAI Responses" }),
-  );
-  expect(
-    (
-      screen.getByRole("textbox", {
-        name: "Settings JSON",
-      }) as HTMLTextAreaElement
-    ).value,
-  ).toBe('{"temperature":0.4}');
-  await user.click(screen.getByRole("button", { name: "Add model" }));
-  await waitFor(() => expect(state.close).toHaveBeenCalled());
-  expect(state.POST).toHaveBeenCalledWith(
-    "/api/v1/workspaces/{workspace}/models",
-    expect.objectContaining({
-      body: expect.objectContaining({
-        model_api: "openai.responses",
-        settings: { temperature: 0.4 },
-        base_model: "openai:gpt-5",
-        declarations: expect.objectContaining({
-          thinking_efforts: [],
-          capabilities: [],
-          context_window_tokens: null,
-          structured_output: false,
-          pricing: expect.objectContaining({ input: 0 }),
-        }),
-      }),
-    }),
-  );
-});
-it("keeps manual entry available when the catalog fails", async () => {
-  const previous = state.POST.getMockImplementation()!;
-  state.POST.mockImplementation((path: string, args: unknown) =>
-    path.endsWith("discover-models")
-      ? Promise.reject(new Error("Catalog failed"))
-      : previous(path, args),
-  );
-  const user = userEvent.setup();
-  mount("mp_test");
-  await screen.findByText("Catalog unavailable. Enter a model ID to continue.");
-  await user.click(screen.getByRole("button", { name: "Enter model ID" }));
-  await user.type(
-    await screen.findByRole("textbox", { name: "Upstream model" }),
-    "manual-model",
-  );
-  await user.click(screen.getByRole("button", { name: "Add model" }));
-  await waitFor(() => expect(state.close).toHaveBeenCalled());
+    state.POST.mock.calls.some(([path]) => String(path).includes("discover")),
+  ).toBe(false);
 });
 
-it("reopens parameters when invalid JSON is submitted from a collapsed section", async () => {
-  const user = userEvent.setup();
+it("rejects request settings that do not match the selected API", async () => {
   mount("mp_test");
-  await user.click(await screen.findByRole("tab", { name: "Enter model ID" }));
+  const user = userEvent.setup();
   await user.type(
-    await screen.findByRole("textbox", { name: "Upstream model" }),
-    "manual-model",
+    await screen.findByLabelText("Upstream model"),
+    "company-smart",
   );
-  await user.click(screen.getByRole("button", { name: /Parameters/ }));
-  await user.click(screen.getByRole("tab", { name: "JSON" }));
-  const editor = await screen.findByRole("textbox", { name: "Settings JSON" });
-  await user.clear(editor);
-  await user.paste("{invalid");
-  await user.click(screen.getByRole("button", { name: /Parameters/ }));
+  await user.type(screen.getByLabelText("Name"), "Smart");
+  await user.type(screen.getByLabelText("Model key"), "smart");
+  await user.click(screen.getByRole("button", { name: "Request settings" }));
+  fireEvent.change(screen.getByLabelText("Settings JSON"), {
+    target: { value: '{"max_tokens":"many"}' },
+  });
+  await user.click(screen.getByRole("button", { name: "Add model" }));
+  expect(state.POST).not.toHaveBeenCalled();
+  expect(
+    await screen.findByText("settings/max_tokens must be integer"),
+  ).toBeTruthy();
+});
+
+it("keeps the catalog identity when the gateway upstream ID is edited", async () => {
+  mount("mp_test");
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("combobox", { name: "Model" }));
+  await user.click(await screen.findByRole("option", { name: /GPT-5.5/ }));
+  await user.clear(screen.getByLabelText("Upstream model"));
+  await user.type(screen.getByLabelText("Upstream model"), "company-smart");
   await user.click(screen.getByRole("button", { name: "Add model" }));
   await waitFor(() =>
-    expect(
-      screen
-        .getByRole("button", { name: /Parameters/ })
-        .getAttribute("aria-expanded"),
-    ).toBe("true"),
+    expect(state.POST).toHaveBeenCalledWith(
+      "/api/v1/workspaces/{workspace}/models",
+      expect.objectContaining({
+        body: expect.objectContaining({
+          upstream_model: "company-smart",
+          catalog_ref: entry.ref,
+          declarations: expect.objectContaining({
+            pricing: entry.declarations.pricing,
+            context_window_tokens: 100000,
+          }),
+        }),
+      }),
+    ),
   );
-  expect(state.POST.mock.calls.some(([path]) => path.endsWith("/models"))).toBe(
-    false,
-  );
-  expect(state.close).not.toHaveBeenCalled();
-});
-it("opens endpoint setup directly when there are no providers and allows cancellation", async () => {
-  state.GET.mockImplementation(async (path: string) => ({
-    data: {
-      items: path.endsWith("model-provider-types") ? [definition] : [],
-      next_cursor: null,
-    },
-  }));
-  const user = userEvent.setup();
-  mount();
-  await user.click(
-    await screen.findByRole("button", { name: /Advanced settings/ }),
-  );
-  await user.type(
-    await screen.findByRole("textbox", { name: "Base URL" }),
-    "https://models.example.com/v1",
-  );
-  expect(
-    (screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value,
-  ).toBe("models.example.com");
-  await user.click(screen.getByRole("button", { name: "Cancel" }));
-  expect(state.close).toHaveBeenCalled();
-  expect(state.POST).not.toHaveBeenCalled();
 });
 
-it("keeps identity fields and actions available before model selection and preserves drafts across source tabs", async () => {
-  const user = userEvent.setup();
+it("applies a newly selected model immediately, including its catalog values", async () => {
   mount("mp_test");
-  await screen.findByRole("tab", { name: "Enter model ID" });
-  const name = screen.getByRole("textbox", { name: "Name" });
-  const key = screen.getByRole("textbox", { name: "Model key" });
-  expect(
-    (screen.getByRole("button", { name: "Add model" }) as HTMLButtonElement)
-      .disabled,
-  ).toBe(true);
-  await user.type(name, "Team model");
-  await user.type(key, "team-model");
-  await user.click(screen.getByRole("tab", { name: "Enter model ID" }));
-  await user.type(
-    screen.getByRole("textbox", { name: "Upstream model" }),
-    "custom-model",
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("combobox", { name: "Model" }));
+  await user.click(await screen.findByRole("option", { name: /GPT-5.5/ }));
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog", { name: "Model" })).toBeNull(),
   );
-  await user.click(screen.getByRole("tab", { name: "From catalog" }));
-  expect(screen.getByRole("textbox", { name: "Name" })).toBe(name);
-  expect((name as HTMLInputElement).value).toBe("Team model");
-  expect((key as HTMLInputElement).value).toBe("team-model");
-  await user.click(screen.getByRole("button", { name: "Cancel" }));
-  expect(state.close).toHaveBeenCalled();
-  expect(state.POST.mock.calls.some(([path]) => path.endsWith("/models"))).toBe(
-    false,
+  await user.click(screen.getByRole("combobox", { name: "Model" }));
+  await user.click(await screen.findByRole("option", { name: /GPT-5.6/ }));
+  expect(screen.queryByText("Apply catalog values")).toBeNull();
+  expect(
+    (screen.getByLabelText("Upstream model") as HTMLInputElement).value,
+  ).toBe("gpt-5.6");
+  expect(
+    (screen.getByLabelText("Context window") as HTMLInputElement).value,
+  ).toBe("200000");
+  await user.click(screen.getByRole("button", { name: "Add model" }));
+  await waitFor(() =>
+    expect(state.POST).toHaveBeenCalledWith(
+      "/api/v1/workspaces/{workspace}/models",
+      expect.objectContaining({
+        body: expect.objectContaining({
+          catalog_ref: secondEntry.ref,
+          upstream_model: "gpt-5.6",
+          declarations: expect.objectContaining({
+            pricing: secondEntry.declarations.pricing,
+          }),
+        }),
+      }),
+    ),
   );
 });
 
-it("holds status edits until save and restores the unchanged state when reverted", async () => {
+it("uses the official model price for an OpenAI-compatible connection", async () => {
+  mount("mp_test");
   const user = userEvent.setup();
-  const principal = {
-    principal_id: "usr_test",
-    principal_type: "user" as const,
-  };
-  const model = {
-    id: "mdl_test",
-    key: "team-model",
-    name: "Team model",
-    provider_id: "mp_test",
-    upstream_model: "custom-model",
-    model_api: "openai.chat_completions",
-    base_model: null,
-    declarations: {
-      thinking_efforts: [],
-      capabilities: [],
-      context_window_tokens: null,
-      max_output_tokens: null,
-      structured_output: false,
-      pricing: { input: 0, output: null, cache_read: null, cache_write: null },
-    },
-    settings: {},
-    enabled: true,
-    description: null,
-    organization_id: "org_test",
-    workspace_id: "ws_test",
-    created_at: "2026-09-12T00:00:00Z",
-    updated_at: "2026-09-12T00:00:00Z",
-    created_by: principal,
-    updated_by: principal,
-  };
-  state.PATCH.mockResolvedValue({ data: { ...model, enabled: false } });
-  mount(undefined, { value: model, etag: '"v1"' });
-  const save = await screen.findByRole("button", { name: "Save changes" });
-  await user.click(screen.getByRole("button", { name: /^Connection/ }));
-  const upstream = await screen.findByRole("textbox", {
-    name: "Upstream model",
-  });
-  await user.clear(upstream);
-  await user.type(upstream, "edited-model");
-  await user.click(screen.getByRole("button", { name: /^Connection/ }));
-  await user.click(screen.getByRole("button", { name: /^Connection/ }));
+  await user.click(await screen.findByRole("combobox", { name: "Model" }));
+  await user.keyboard("{ArrowDown}");
+  await user.click(
+    screen.getByRole("button", { name: "Other models (compatible)…" }),
+  );
+  await user.click(await screen.findByRole("option", { name: "MiniMax-M3" }));
   expect(
-    (
-      screen.getByRole("textbox", {
-        name: "Upstream model",
-      }) as HTMLInputElement
-    ).value,
-  ).toBe("edited-model");
-  await user.clear(screen.getByRole("textbox", { name: "Upstream model" }));
+    (screen.getByLabelText("Upstream model") as HTMLInputElement).value,
+  ).toBe("");
+  expect(
+    screen.getByRole("button", { name: /Pricing/ }).textContent,
+  ).not.toContain("Unknown");
   await user.type(
-    screen.getByRole("textbox", { name: "Upstream model" }),
-    "custom-model",
+    screen.getByLabelText("Upstream model"),
+    "gateway-minimax-m3",
   );
-  await user.click(screen.getByRole("button", { name: /^Connection/ }));
-  expect((save as HTMLButtonElement).disabled).toBe(true);
-  await user.click(
-    screen.getByRole("switch", { name: /^(Enabled|Disabled)$/ }),
+  await user.click(screen.getByRole("button", { name: "Add model" }));
+  await waitFor(() =>
+    expect(state.POST).toHaveBeenCalledWith(
+      "/api/v1/workspaces/{workspace}/models",
+      expect.objectContaining({
+        body: expect.objectContaining({
+          upstream_model: "gateway-minimax-m3",
+          catalog_ref: compatibleEntry.ref,
+          declarations: expect.objectContaining({
+            pricing: compatibleEntry.declarations.pricing,
+          }),
+        }),
+      }),
+    ),
   );
-  expect((save as HTMLButtonElement).disabled).toBe(false);
-  expect(state.PATCH).not.toHaveBeenCalled();
-  await user.click(
-    screen.getByRole("switch", { name: /^(Enabled|Disabled)$/ }),
+});
+
+it("falls back to the official price when the selected channel has none", async () => {
+  const routedEntry = {
+    ...compatibleEntry,
+    ref: { provider: "openrouter", model: "minimax/MiniMax-M3" },
+    provider_name: "OpenRouter",
+    declarations: { pricing: null },
+  };
+  state.GET.mockImplementation(async (path: string) => ({
+    data: path.endsWith("model-catalog")
+      ? {
+          items: [compatibleEntry, routedEntry],
+          status: "ready",
+          released_since: "2026-04-23",
+        }
+      : {
+          items: path.endsWith("model-provider-types")
+            ? [
+                {
+                  ...definition,
+                  type: "openrouter",
+                  catalog_providers: ["openrouter"],
+                },
+              ]
+            : [{ ...provider, type: "openrouter" }],
+          next_cursor: null,
+        },
+  }));
+  mount("mp_test");
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("combobox", { name: "Model" }));
+  await user.click(await screen.findByRole("option", { name: "MiniMax-M3" }));
+  await user.click(screen.getByRole("button", { name: "Add model" }));
+  await waitFor(() =>
+    expect(state.POST).toHaveBeenCalledWith(
+      "/api/v1/workspaces/{workspace}/models",
+      expect.objectContaining({
+        body: expect.objectContaining({
+          catalog_ref: routedEntry.ref,
+          declarations: expect.objectContaining({
+            pricing: compatibleEntry.declarations.pricing,
+          }),
+        }),
+      }),
+    ),
   );
-  expect((save as HTMLButtonElement).disabled).toBe(true);
-  await user.click(
-    screen.getByRole("switch", { name: /^(Enabled|Disabled)$/ }),
-  );
-  await user.click(save);
-  await waitFor(() => expect(state.close).toHaveBeenCalled());
-  expect(state.PATCH).toHaveBeenCalledWith(
-    "/api/v1/workspaces/{workspace}/models/{model_id}",
-    expect.objectContaining({
-      body: expect.objectContaining({ enabled: false, name: "Team model" }),
-    }),
-  );
-  expect(state.PATCH.mock.calls[0][1].body).toMatchObject({
-    base_model: null,
-    declarations: model.declarations,
-  });
 });

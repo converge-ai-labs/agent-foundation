@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import unicodedata
-from datetime import datetime
+from datetime import date, datetime
 from typing import Annotated, Literal
 
 from a13n_harness import ModelCapability
+from a13n_harness.token_pricing import TokenPricing
 from pydantic import (
     AfterValidator,
     BaseModel,
@@ -15,10 +16,8 @@ from pydantic import (
     JsonValue,
     SecretStr,
     StringConstraints,
-    field_validator,
     model_validator,
 )
-from pydantic_ai.settings import ThinkingEffort
 
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.ids import ObjectId, new_object_id
@@ -28,7 +27,6 @@ from .headers import HeaderUpdates
 
 BoundedDescription = Annotated[str, StringConstraints(max_length=2048)]
 UpstreamModel = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=256)]
-BaseModelName = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=256)]
 ProviderType = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{1,63}$")]
 ModelApi = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$", max_length=96)]
 
@@ -55,45 +53,13 @@ def new_model_id() -> str:
     return new_object_id("mdl")
 
 
-class ModelProfile(BaseModel):
-    """Read-only Provider capability information returned by discovery."""
+class CatalogRef(BaseModel):
+    """A models.dev provider-qualified identity, independent of the outbound ID."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    input_modalities: tuple[Literal["text", "image", "audio", "video"], ...] | None = Field(
-        default=None, exclude_if=lambda value: value is None
-    )
-    supports_tools: bool | None = Field(default=None, exclude_if=lambda value: value is None)
-    supports_json_schema_output: bool | None = Field(default=None, exclude_if=lambda value: value is None)
-    supports_json_object_output: bool | None = Field(default=None, exclude_if=lambda value: value is None)
-    supports_image_output: bool | None = Field(default=None, exclude_if=lambda value: value is None)
-    supports_audio_input: bool | None = Field(default=None, exclude_if=lambda value: value is None)
-    supports_thinking: bool | None = Field(default=None, exclude_if=lambda value: value is None)
-    thinking_always_enabled: bool | None = Field(default=None, exclude_if=lambda value: value is None)
-
-    @model_validator(mode="after")
-    def normalize_modalities(self) -> ModelProfile:
-        if self.input_modalities is not None:
-            object.__setattr__(self, "input_modalities", tuple(dict.fromkeys(self.input_modalities)))
-        return self
-
-
-class ModelLimits(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    context_window_tokens: int | None = Field(default=None, gt=0)
-    max_output_tokens: int | None = Field(default=None, gt=0)
-
-
-class ModelPricing(BaseModel):
-    """Editable USD prices per million tokens."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    input: float | None = Field(default=None, ge=0, allow_inf_nan=False)
-    output: float | None = Field(default=None, ge=0, allow_inf_nan=False)
-    cache_read: float | None = Field(default=None, ge=0, allow_inf_nan=False)
-    cache_write: float | None = Field(default=None, ge=0, allow_inf_nan=False)
+    provider: Annotated[str, StringConstraints(pattern=r"^[a-z0-9][a-z0-9_-]{0,127}$")]
+    model: UpstreamModel
 
 
 class ModelDeclarations(BaseModel):
@@ -102,19 +68,10 @@ class ModelDeclarations(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     supports_tools: bool | None = None
-    thinking_efforts: tuple[ThinkingEffort, ...] = ()
     capabilities: frozenset[ModelCapability] = Field(default_factory=frozenset)
     context_window_tokens: int | None = Field(default=None, gt=0)
-    max_output_tokens: int | None = Field(default=None, gt=0)
     structured_output: bool | None = None
-    pricing: ModelPricing | None = None
-
-    @field_validator("thinking_efforts")
-    @classmethod
-    def validate_unique_efforts(cls, value: tuple[ThinkingEffort, ...]) -> tuple[ThinkingEffort, ...]:
-        if len(value) != len(set(value)):
-            raise ValueError("thinking efforts must be unique")
-        return value
+    pricing: TokenPricing | None = None
 
 
 class CreateModelProviderRequest(BaseModel):
@@ -180,8 +137,8 @@ class CreateModelRequest(BaseModel):
     name: DisplayName
     description: BoundedDescription | None = None
     upstream_model: UpstreamModel
-    base_model: BaseModelName | None = None
-    model_api: ModelApi | None = None
+    catalog_ref: CatalogRef | None = None
+    model_api: ModelApi
     settings: dict[str, JsonValue] = Field(default_factory=dict)
     declarations: ModelDeclarations = Field(default_factory=ModelDeclarations)
     enabled: bool = True
@@ -193,7 +150,7 @@ class UpdateModelRequest(BaseModel):
     name: DisplayName | None = None
     description: BoundedDescription | None = None
     upstream_model: UpstreamModel | None = None
-    base_model: BaseModelName | None = None
+    catalog_ref: CatalogRef | None = None
     model_api: ModelApi | None = None
     settings: dict[str, JsonValue] | None = None
     declarations: ModelDeclarations | None = None
@@ -203,7 +160,7 @@ class UpdateModelRequest(BaseModel):
     def validate_change(self) -> UpdateModelRequest:
         if not self.model_fields_set:
             raise ValueError("at least one field must be supplied")
-        for field in self.model_fields_set - {"description", "base_model"}:
+        for field in self.model_fields_set - {"description", "catalog_ref"}:
             if getattr(self, field) is None:
                 raise ValueError(f"{field} cannot be null")
         return self
@@ -221,7 +178,7 @@ class Model(BaseModel):
     description: str | None
     upstream_model: str
     model_api: ModelApi
-    base_model: str | None = None
+    catalog_ref: CatalogRef | None = None
     settings: dict[str, JsonValue] = Field(default_factory=dict)
     declarations: ModelDeclarations = Field(default_factory=ModelDeclarations)
     enabled: bool
@@ -273,8 +230,8 @@ class ModelExecutionSnapshot(BaseModel):
     model_key: str
     upstream_model: str
     model_api: str
-    base_model: str | None = None
-    pricing: ModelPricing | None = None
+    catalog_ref: CatalogRef | None = None
+    pricing: TokenPricing | None = None
 
     @classmethod
     def freeze(cls, model: Model) -> ModelExecutionSnapshot:
@@ -282,7 +239,7 @@ class ModelExecutionSnapshot(BaseModel):
             model_id=model.id,
             model_key=model.key,
             upstream_model=model.upstream_model,
-            base_model=model.base_model,
+            catalog_ref=model.catalog_ref,
             model_api=model.model_api,
             pricing=model.declarations.pricing,
         )
@@ -296,59 +253,21 @@ class ModelExecutionSnapshot(BaseModel):
         )
 
 
-class ModelCandidate(BaseModel):
+class CatalogModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    upstream_model: UpstreamModel
-    display_name: DisplayName | None = None
-    suggested_model_api: str
-    suggested_settings: dict[str, JsonValue] = Field(default_factory=dict)
-    profile: ModelProfile = Field(default_factory=ModelProfile)
-    native_profile: ModelProfile = Field(default_factory=ModelProfile)
-    limits: ModelLimits = Field(default_factory=ModelLimits)
-    parameter_support: dict[str, Literal["supported", "unsupported", "unknown"]] = Field(default_factory=dict)
-
-
-class ModelDiscovery(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    items: tuple[ModelCandidate, ...]
-
-
-class ModelCatalogSuggestionRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    provider_id: ObjectId
-    upstream_model: UpstreamModel
-    base_model: BaseModelName | None = None
-    model_api: ModelApi | None = None
-
-
-class BaseModelCandidate(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    base_model: BaseModelName
-    inferred_model_api: ModelApi | None
-    model_api_label: str | None
-
-
-class BaseModelCandidateCollection(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    items: tuple[BaseModelCandidate, ...]
-
-
-class ModelCatalogSuggestion(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    base_model: BaseModelName
-    model_api: ModelApi | None
-    model_api_label: str | None
+    ref: CatalogRef
+    identity: str
+    name: str
+    provider_name: str
+    release_date: date
     declarations: ModelDeclarations
+    pricing_warning: str | None = None
 
 
-class ModelCatalogMatch(BaseModel):
+class ModelCatalogCollection(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    source: Literal["none", "explicit", "exact", "normalized", "name_tokens", "ambiguous"]
-    items: tuple[ModelCatalogSuggestion, ...] = ()
+    items: tuple[CatalogModel, ...] = ()
+    status: Literal["ready", "stale", "unavailable"]
+    released_since: date

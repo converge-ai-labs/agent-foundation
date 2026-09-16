@@ -1,0 +1,114 @@
+{
+  "$defs": {
+    "JsonValue": {}
+  },
+  "additionalProperties": false,
+  "properties": {
+    "event_id": {
+      "pattern": "^rse_[a-z0-9]{16,64}$",
+      "title": "Event Id",
+      "type": "string"
+    },
+    "event_type": {
+      "maxLength": 128,
+      "pattern": "^[a-z0-9_]+(?:\\.[a-z0-9_]+)+$",
+      "title": "Event Type",
+      "type": "string"
+    },
+    "harness_run_id": {
+      "anyOf": [
+        {
+          "maxLength": 72,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Harness Run Id"
+    },
+    "item_id": {
+      "anyOf": [
+        {
+          "pattern": "^itm_[a-z0-9]{16,64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Item Id"
+    },
+    "lifecycle_event_id": {
+      "anyOf": [
+        {
+          "maxLength": 72,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Lifecycle Event Id"
+    },
+    "occurred_at": {
+      "format": "date-time",
+      "title": "Occurred At",
+      "type": "string"
+    },
+    "payload": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Payload",
+      "type": "object"
+    },
+    "run_attempt_id": {
+      "anyOf": [
+        {
+          "maxLength": 72,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Run Attempt Id"
+    },
+    "run_id": {
+      "maxLength": 72,
+      "minLength": 1,
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "1",
+      "default": "1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "thread_id": {
+      "maxLength": 72,
+      "minLength": 1,
+      "title": "Thread Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "event_id",
+    "event_type",
+    "run_id",
+    "thread_id",
+    "occurred_at",
+    "payload"
+  ],
+  "title": "RunStreamEvent",
+  "type": "object"
+}

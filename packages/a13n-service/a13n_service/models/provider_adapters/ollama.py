@@ -9,9 +9,7 @@ from pydantic import Field, StringConstraints, model_validator
 from pydantic_ai.providers.ollama import OllamaProvider
 
 from .base import (
-    JsonModelDiscoveryAdapter,
-    ModelListRequest,
-    ModelListSchema,
+    ConnectionProbeRequest,
     ProviderIntegration,
     join_url,
     require_endpoint,
@@ -47,9 +45,9 @@ def _build_provider(
     )
 
 
-def _request(provider: RuntimeProvider) -> ModelListRequest:
+def _request(provider: RuntimeProvider) -> ConnectionProbeRequest:
     endpoint = require_endpoint(provider).removesuffix("/v1")
-    return ModelListRequest(url=join_url(endpoint, "api/tags"), headers={})
+    return ConnectionProbeRequest(url=join_url(endpoint, "api/tags"), headers={})
 
 
 def _endpoint(configuration: Mapping[str, object]) -> str:
@@ -66,9 +64,5 @@ INTEGRATION = ProviderIntegration(
     credential_required=False,
     endpoint=_endpoint,
     endpoint_configuration_field="base_url",
-    model_discovery=JsonModelDiscoveryAdapter(
-        request_builder=_request,
-        schema=ModelListSchema(collection_field="models", identifier_field="name"),
-    ),
-    model_profile=OllamaProvider.model_profile,
+    connection_probe=_request,
 )

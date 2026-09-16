@@ -17,7 +17,7 @@ import {
   EmptyTitle,
 } from "a13n-ui";
 
-import { ApiError } from "@converge.ai/a13n";
+import { ApiError } from "../service-client";
 import {
   WarningCircleIcon,
   ArrowLeftIcon,

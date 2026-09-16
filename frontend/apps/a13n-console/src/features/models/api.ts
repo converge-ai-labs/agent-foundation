@@ -1,4 +1,4 @@
-import type { Client } from "@converge.ai/a13n";
+import type { Client } from "../../service-client";
 import { data, representation, type Schema } from "../../shared/api";
 export type ModelScope = { kind: "workspace" | "organization"; id: string };
 /** Scope selects the owning endpoint once; inherited resources retain their Organization owner. */
@@ -145,39 +145,18 @@ export function modelApi(client: Client, scope: ModelScope) {
               { params: { path: { workspace: workspace_id, provider_id } } },
             )
             .then(data),
-    discover: (provider_id: string) =>
+    catalog: (signal: AbortSignal) =>
       org
         ? client.http
-            .POST(
-              "/api/v1/organizations/{organization}/model-providers/{provider_id}/discover-models",
-              {
-                params: {
-                  path: { organization: organization_id, provider_id },
-                },
-              },
-            )
+            .GET("/api/v1/organizations/{organization}/model-catalog", {
+              params: { path: { organization: organization_id } },
+              signal,
+            })
             .then(data)
         : client.http
-            .POST(
-              "/api/v1/workspaces/{workspace}/model-providers/{provider_id}/discover-models",
-              { params: { path: { workspace: workspace_id, provider_id } } },
-            )
-            .then(data),
-    suggestions: (body: Schema["ModelCatalogSuggestionRequest"]) =>
-      org
-        ? client.http
-            .POST(
-              "/api/v1/organizations/{organization}/model-catalog/suggestions",
-              {
-                params: { path: { organization: organization_id } },
-                body,
-              },
-            )
-            .then(data)
-        : client.http
-            .POST("/api/v1/workspaces/{workspace}/model-catalog/suggestions", {
+            .GET("/api/v1/workspaces/{workspace}/model-catalog", {
               params: { path: { workspace: workspace_id } },
-              body,
+              signal,
             })
             .then(data),
     model: (model_id: string, signal: AbortSignal) =>

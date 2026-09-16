@@ -12,12 +12,12 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TransportContext } from "../transport/context";
 import { ApiError, type Schema, type Transport } from "../transport/client";
+import { ChildSavedOutputs } from "./child-output";
 import {
   CommentDrafts,
   Discussion,
   SavedOutput,
   CommentListButton,
-  ChildSavedOutputs,
   type CommentDraft,
 } from "./comments";
 import { MessageText } from "./message-text";
@@ -471,79 +471,86 @@ it("activates a saved text highlight from the keyboard without creating or sendi
   expect(POST).not.toHaveBeenCalled();
 });
 
-it("keeps recorded child text collapsed without removing its independent comment target", async () => {
-  const recorded: Schema<"SavedOutputTarget"> = {
+it("reads the latest child result inline and joins exact-source windows without an event log", async () => {
+  const target: Schema<"SavedOutputTarget"> = {
     producing_thread_id: "child-one",
     source_id: "b".repeat(64),
-    location: { kind: "child_text", execution_id: "exec-one", activity: 0 },
-  };
-  const final: Schema<"SavedOutputTarget"> = {
-    ...recorded,
     location: { kind: "child_text", execution_id: "exec-one", activity: null },
   };
-  const GET = vi.fn(async () => ({
+  const first = {
+    target,
+    text: "First paragraph.\n\n",
+    offset: 0,
+    total_characters: 38,
+    next_offset: 18,
+  };
+  const GET = vi.fn(async () => ({ data: { outputs: [first] } }));
+  const POST = vi.fn(async () => ({
     data: {
-      outputs: [
-        { target: recorded, text: "Recorded working text" },
-        { target: final, text: "Final answer" },
-      ],
-      next_cursor: null,
+      target,
+      text: "Final paragraph.",
+      offset: 18,
+      total_characters: 34,
+      next_offset: null,
     },
   }));
   const queries = new QueryClient();
-  const { container } = render(
+  render(
     <QueryClientProvider client={queries}>
-      <TransportContext value={{ client: { GET } } as unknown as Transport}>
-        <ChildSavedOutputs threadId="root" executionId="exec-one" />
+      <TransportContext
+        value={{ client: { GET, POST } } as unknown as Transport}
+      >
+        <ChildSavedOutputs
+          threadId="parent"
+          rootThreadId="root"
+          executionId="exec-one"
+          fallback={<p>Waiting for saved output</p>}
+        />
       </TransportContext>
     </QueryClientProvider>,
   );
-  const outer = container.querySelector("details")!;
-  outer.open = true;
-  fireEvent(outer, new Event("toggle"));
-  const summary = await screen.findByText("Recorded text · activity 1");
-  const details = summary.closest("details")!;
-  expect(details.open).toBe(false);
-  expect(
-    screen.getByText("Final answer", { selector: "span" }).closest("details"),
-  ).toBe(outer);
-  details.open = true;
-  fireEvent(details, new Event("toggle"));
-  expect(
-    screen
-      .getByText("Recorded working text", { selector: "span" })
-      .closest("details"),
-  ).toBe(details);
+  await screen.findByText("First paragraph.");
+  expect(screen.queryByText("Saved child output and comments")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Load more result" }));
+  await screen.findByText("Final paragraph.");
+  expect(POST.mock.calls[0]).toEqual([
+    "/api/threads/{thread_id}/saved-output",
+    expect.objectContaining({
+      params: { path: { thread_id: "root" }, query: { offset: 18 } },
+      body: target,
+    }),
+  ]);
+  expect(screen.queryByRole("button", { name: "Load more result" })).toBeNull();
 });
 
-it("shows a quiet pre-checkpoint child state and refreshes the saved output after reconciliation", async () => {
+it("keeps observed output until a saved child result becomes available", async () => {
   const GET = vi
     .fn()
     .mockRejectedValueOnce(
       new ApiError("No checkpoint", 400, "comment_source_unavailable"),
     )
-    .mockResolvedValue({ data: { outputs: [], next_cursor: null } });
+    .mockResolvedValue({ data: { outputs: [] } });
   const queries = new QueryClient();
-  const { container } = render(
+  render(
     <QueryClientProvider client={queries}>
       <TransportContext value={{ client: { GET } } as unknown as Transport}>
-        <ChildSavedOutputs threadId="root" executionId="exec-one" />
+        <ChildSavedOutputs
+          threadId="root"
+          rootThreadId="root"
+          executionId="exec-one"
+          fallback={<p>Observed answer</p>}
+        />
       </TransportContext>
     </QueryClientProvider>,
   );
-  const outer = container.querySelector("details")!;
-  outer.open = true;
-  fireEvent(outer, new Event("toggle"));
-  await screen.findByText("No retained saved text is available yet.");
+  await waitFor(() => expect(GET).toHaveBeenCalledTimes(1));
+  expect(screen.getByText("Observed answer")).toBeTruthy();
   expect(screen.queryByRole("alert")).toBeNull();
-  expect(GET).toHaveBeenCalledTimes(1);
   await queries.invalidateQueries({
     queryKey: ["child-saved-output", "root", "exec-one"],
   });
   await waitFor(() => expect(GET).toHaveBeenCalledTimes(2));
-  expect(
-    screen.getByText("No retained saved text is available yet."),
-  ).toBeTruthy();
+  expect(screen.getByText("Observed answer")).toBeTruthy();
 });
 
 const savedComment = (): Schema<"OutputComment"> => ({

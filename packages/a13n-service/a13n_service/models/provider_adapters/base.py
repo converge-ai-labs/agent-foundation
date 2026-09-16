@@ -4,109 +4,33 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any
 
 import httpx2
 from a13n_harness.errors import ModelResolutionError
-from pydantic_ai.profiles import ModelProfile as NativeModelProfile
 from pydantic_ai.providers import Provider
 
-from ..candidates import default_candidate
-from ..domain import ModelCandidate
 from ..headers import validate_header_names
 from .types import CredentialFormat, ProviderConfiguration, RuntimeProvider, ValidatedProviderConfiguration
 
 
 class ProviderOperationError(ValueError):
-    """An expected failure of provider discovery or connection testing."""
+    """An expected failure of provider connection testing."""
 
 
 class ProviderOperationUnsupported(ProviderOperationError):
     """The integration has no safe native operation for this command."""
 
 
-@dataclass(frozen=True, slots=True)
-class DiscoveredModelIdentity:
-    upstream_model: str
-    display_name: str | None
-    metadata: Mapping[str, Any]
-
-
 NativeProviderBuilder = Callable[[RuntimeProvider, httpx2.AsyncClient, str], Provider[Any]]
 EndpointResolver = Callable[[Mapping[str, object]], str | None]
 CredentialValidator = Callable[[Mapping[str, object], bool], None]
-ModelProfileResolver = Callable[[str], NativeModelProfile | None]
 
 
 @dataclass(frozen=True, slots=True)
-class ModelListRequest:
+class ConnectionProbeRequest:
     url: str
     headers: Mapping[str, str]
-
-
-class ModelDiscoveryAdapter(Protocol):
-    def request(self, provider: RuntimeProvider) -> ModelListRequest: ...
-
-    def parse(self, payload: Any) -> list[DiscoveredModelIdentity]: ...
-
-    def next_page(self, payload: Mapping[str, Any]) -> dict[str, str]: ...
-
-    def candidate(
-        self, model_api: str, upstream_model: str, display_name: str | None, metadata: Mapping[str, Any]
-    ) -> ModelCandidate: ...
-
-
-@dataclass(frozen=True, slots=True)
-class ModelListSchema:
-    collection_field: str
-    identifier_field: str
-    display_name_fields: tuple[str, ...] = ()
-    identifier_prefix: str = ""
-
-
-@dataclass(frozen=True, slots=True)
-class JsonModelDiscoveryAdapter:
-    """Project one Provider's bounded JSON model-list operation."""
-
-    request_builder: Callable[[RuntimeProvider], ModelListRequest]
-    schema: ModelListSchema
-
-    def request(self, provider: RuntimeProvider) -> ModelListRequest:
-        return self.request_builder(provider)
-
-    def parse(self, payload: Any) -> list[DiscoveredModelIdentity]:
-        if not isinstance(payload, Mapping):
-            raise ProviderOperationError("the Provider model-list response is invalid")
-        values = payload.get(self.schema.collection_field)
-        if not isinstance(values, Sequence) or isinstance(values, (str, bytes)):
-            raise ProviderOperationError("the Provider model-list response is invalid")
-
-        parsed: list[DiscoveredModelIdentity] = []
-        for value in values:
-            if not isinstance(value, Mapping):
-                continue
-            raw_id = value.get(self.schema.identifier_field)
-            if not isinstance(raw_id, str):
-                continue
-            model_id = raw_id.removeprefix(self.schema.identifier_prefix).strip()
-            if not 1 <= len(model_id) <= 256:
-                continue
-            parsed.append(
-                DiscoveredModelIdentity(
-                    model_id, _display_name(value, self.schema.display_name_fields, model_id), dict(value)
-                )
-            )
-        return parsed
-
-    def next_page(self, payload: Mapping[str, Any]) -> dict[str, str]:
-        if any(payload.get(key) for key in ("has_more", "nextPageToken", "next", "next_cursor", "nextLink")):
-            raise ProviderOperationError("the Provider returned an unsupported continuation format")
-        return {}
-
-    def candidate(
-        self, model_api: str, upstream_model: str, display_name: str | None, metadata: Mapping[str, Any]
-    ) -> ModelCandidate:
-        return default_candidate(model_api, upstream_model, display_name)
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,8 +47,7 @@ class ProviderIntegration:
     endpoint: str | EndpointResolver | None = None
     endpoint_configuration_field: str | None = None
     credential_validator: CredentialValidator | None = None
-    model_discovery: ModelDiscoveryAdapter | None = None
-    model_profile: ModelProfileResolver | None = None
+    connection_probe: Callable[[RuntimeProvider], ConnectionProbeRequest] | None = None
     reserved_headers: tuple[str, ...] = ("authorization",)
     additional_endpoint_fields: tuple[str, ...] = ()
 
@@ -163,8 +86,8 @@ class ProviderIntegration:
         return ValidatedProviderConfiguration(configuration=normalized, endpoint=endpoint)
 
 
-def bearer_models_request(provider: RuntimeProvider) -> ModelListRequest:
-    return ModelListRequest(
+def bearer_models_request(provider: RuntimeProvider) -> ConnectionProbeRequest:
+    return ConnectionProbeRequest(
         url=join_url(require_endpoint(provider), "models"),
         headers={"authorization": f"Bearer {require_credential(provider)}"},
     )
@@ -188,13 +111,3 @@ def require_credential(provider: RuntimeProvider) -> str:
             details={"provider_type": provider.type},
         )
     return provider.credential
-
-
-def _display_name(value: Mapping[object, object], fields: tuple[str, ...], model_id: str) -> str | None:
-    for field in fields:
-        raw_display_name = value.get(field)
-        if isinstance(raw_display_name, str):
-            display_name = raw_display_name.strip()
-            if display_name != model_id and 1 <= len(display_name) <= 128:
-                return display_name
-    return None

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { ReplayGapError } from "@converge.ai/a13n";
+import { ReplayGapError } from "../../service-client";
 import { revalidateSession, useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { applyExecution, type Execution } from "./execution";

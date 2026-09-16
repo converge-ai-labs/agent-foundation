@@ -2,7 +2,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
-import { createClient, type Client } from "@converge.ai/a13n";
+import { createClient, type Client } from "../../service-client";
 import { AssetAttachment } from "./attachment";
 import { downloadBlob } from "../../shared/download";
 

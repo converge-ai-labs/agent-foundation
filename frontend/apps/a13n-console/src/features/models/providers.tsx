@@ -11,7 +11,7 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useAccess } from "../../layout/workspace";
-import { data, type Schema } from "../../shared/api";
+import type { Schema } from "../../shared/api";
 import { Pagination, ResourceTable, useCursor } from "../../shared/collection";
 import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
 import { PageActions } from "../../shared/page-actions";
@@ -20,6 +20,7 @@ import { modelApi, type ModelScope } from "./api";
 import { requiresProviderCredential } from "./provider-credentials";
 import { ProviderForm } from "./provider-form";
 import { ProviderIcon } from "../../shared/provider-icon";
+import { useModelProviderDefinitions } from "./provider-definitions";
 
 export function Providers({ scope }: { scope: ModelScope }) {
   const client = useClient(),
@@ -33,11 +34,7 @@ export function Providers({ scope }: { scope: ModelScope }) {
     queryKey: ["model-providers", scope.kind, scope.id, page.cursor],
     queryFn: ({ signal }) => api.providers(signal, page.cursor),
   });
-  const definitions = useQuery({
-    queryKey: ["model-provider-types"],
-    queryFn: ({ signal }) =>
-      client.http.GET("/api/v1/model-provider-types", { signal }).then(data),
-  });
+  const definitions = useModelProviderDefinitions();
   const manage =
     scope.kind === "organization" ? organizationAdmin : can("models.manage");
   return (
@@ -151,11 +148,7 @@ export function ProviderEditor({
   });
 
   const api = modelApi(client, scope);
-  const definitions = useQuery({
-    queryKey: ["model-provider-types"],
-    queryFn: ({ signal }) =>
-      client.http.GET("/api/v1/model-provider-types", { signal }).then(data),
-  });
+  const definitions = useModelProviderDefinitions();
   const resource = useQuery({
     queryKey: ["model-provider", scope.kind, scope.id, providerId],
     enabled: open && !!providerId,

@@ -1,271 +1,171 @@
-"""Cached models.dev declaration enrichment for resolved base models."""
+"""Public models.dev directory; never consulted by model execution."""
 
 from __future__ import annotations
 
 import json
-import math
-from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass
-from dataclasses import field as dataclass_field
+from collections.abc import Callable, Mapping
+from datetime import date
 from time import monotonic
-from typing import Any, Protocol, cast, get_args
+from typing import Any, Protocol
 
 import httpx2
 from a13n_harness import ModelCapability
+from a13n_harness.token_pricing import TokenPriceTier, TokenPricing, TokenRates
 from a13n_logging import get_logger
 from anyio import Lock, fail_after
-from pydantic_ai.settings import ThinkingEffort
 
-from .base_models import BaseModelReference
-from .domain import ModelDeclarations, ModelPricing
+from .catalog_identity import catalog_identity, model_identities
+from .domain import CatalogModel, CatalogRef, ModelCatalogCollection, ModelDeclarations
+from .profiles import PROVIDER_CATALOGS
 
 logger = get_logger(__name__)
-
 _CATALOG_URL = "https://models.dev/catalog.json"
 _MAX_RESPONSE_BYTES = 8 * 1024 * 1024
-_MAX_CANONICAL_MODELS = 20_000
-_MAX_PROVIDER_MODELS = 50_000
-_REFRESH_SECONDS = 60 * 60
-_RETRY_SECONDS = 60
-_REFRESH_TIMEOUT_SECONDS = 30
-_THINKING_EFFORTS = cast(tuple[ThinkingEffort, ...], get_args(ThinkingEffort))
-_DEFAULT_PROVIDER_IDS = {
-    "alibaba_model_studio": "alibaba",
-    "anthropic": "anthropic",
-    "aws_bedrock": "amazon-bedrock",
-    "deepseek": "deepseek",
-    "google_gemini": "google",
-    "google_vertex": "google-vertex",
-    "moonshot": "moonshotai-cn",
-    "openai": "openai",
-    "openrouter": "openrouter",
-    "zhipu": "zhipuai",
+DEFAULT_RELEASED_SINCE = date(2026, 4, 23)
+
+# Directory channels, not executable provider types.
+CATALOG_PROVIDERS = frozenset(channel for channels in PROVIDER_CATALOGS.values() for channel in channels) | {
+    "volcengine"
 }
 
 
 class ModelCatalog(Protocol):
-    async def declarations(
-        self,
-        provider_type: str,
-        provider_configuration: Mapping[str, object],
-        reference: BaseModelReference,
-    ) -> ModelDeclarations: ...
-
-
-@dataclass(frozen=True, slots=True)
-class _CatalogEntry:
-    model_id: str
-    declarations: ModelDeclarations
-
-
-@dataclass(frozen=True, slots=True)
-class _CatalogSnapshot:
-    canonical: Mapping[str, _CatalogEntry] = dataclass_field(default_factory=dict)
-    provider_models: Mapping[tuple[str, str], _CatalogEntry] = dataclass_field(default_factory=dict)
+    async def models(self) -> ModelCatalogCollection: ...
 
 
 class ModelsDevCatalog:
-    """One lifespan-owned, last-good models.dev snapshot with single-flight refresh."""
+    """Lifespan-owned last-good directory with bounded single-flight refresh."""
 
     def __init__(
         self,
         http_client: httpx2.AsyncClient,
         *,
+        released_since: date = DEFAULT_RELEASED_SINCE,
         clock: Callable[[], float] = monotonic,
-        refresh_seconds: float = _REFRESH_SECONDS,
-        refresh_timeout_seconds: float = _REFRESH_TIMEOUT_SECONDS,
+        refresh_seconds: float = 3600,
+        refresh_timeout_seconds: float = 30,
     ) -> None:
         self._http_client = http_client
+        self._released_since = released_since
         self._clock = clock
         self._refresh_seconds = refresh_seconds
         self._refresh_timeout_seconds = refresh_timeout_seconds
-        self._snapshot = _CatalogSnapshot()
+        self._snapshot = ModelCatalogCollection(status="unavailable", released_since=released_since)
         self._refresh_after = 0.0
         self._lock = Lock()
 
-    async def declarations(
-        self,
-        provider_type: str,
-        provider_configuration: Mapping[str, object],
-        reference: BaseModelReference,
-    ) -> ModelDeclarations:
-        snapshot = await self._current_snapshot()
-        provider = _actual_provider_id(provider_type, provider_configuration)
-        candidate_ids = tuple(
-            dict.fromkeys(value for value in (reference.catalog_model_id, reference.model_name) if value is not None)
-        )
-        if provider is not None:
-            for model_id in candidate_ids:
-                if (entry := snapshot.provider_models.get((provider, model_id))) is not None:
-                    return entry.declarations
-        if reference.catalog_model_id is not None:
-            if (entry := snapshot.canonical.get(reference.catalog_model_id)) is not None:
-                return entry.declarations
-        return ModelDeclarations()
-
-    async def _current_snapshot(self) -> _CatalogSnapshot:
-        now = self._clock()
-        if now < self._refresh_after:
+    async def models(self) -> ModelCatalogCollection:
+        if self._clock() < self._refresh_after:
             return self._snapshot
         async with self._lock:
-            now = self._clock()
-            if now < self._refresh_after:
+            if self._clock() < self._refresh_after:
                 return self._snapshot
             try:
                 with fail_after(self._refresh_timeout_seconds):
-                    snapshot = await self._download()
-            except (TimeoutError, httpx2.HTTPError, UnicodeDecodeError, json.JSONDecodeError, ValueError, TypeError):
-                logger.warning(
-                    "model_catalog_refresh_failed", extra={"event": "model_catalog_refresh_failed"}, exc_info=True
-                )
-                self._refresh_after = self._clock() + _RETRY_SECONDS
+                    async with self._http_client.stream("GET", _CATALOG_URL) as response:
+                        response.raise_for_status()
+                        body = bytearray()
+                        async for chunk in response.aiter_bytes():
+                            if len(body) + len(chunk) > _MAX_RESPONSE_BYTES:
+                                raise ValueError("model catalog exceeds its response limit")
+                            body.extend(chunk)
+                    snapshot = parse_catalog(json.loads(body), released_since=self._released_since)
+            except (TimeoutError, httpx2.HTTPError, ValueError, TypeError):
+                logger.warning("model_catalog_refresh_failed", exc_info=True)
+                status = "unavailable" if self._snapshot.status == "unavailable" else "stale"
+                self._snapshot = self._snapshot.model_copy(update={"status": status})
+                self._refresh_after = self._clock() + 60
             else:
                 self._snapshot = snapshot
                 self._refresh_after = self._clock() + self._refresh_seconds
-                logger.info(
-                    "model_catalog_refreshed",
-                    extra={"event": "model_catalog_refreshed", "canonical_models": len(snapshot.canonical)},
-                )
             return self._snapshot
 
-    async def _download(self) -> _CatalogSnapshot:
-        async with self._http_client.stream("GET", _CATALOG_URL) as response:
-            response.raise_for_status()
-            body = bytearray()
-            async for chunk in response.aiter_bytes():
-                if len(body) + len(chunk) > _MAX_RESPONSE_BYTES:
-                    raise ValueError("the models.dev catalog exceeds the response limit")
-                body.extend(chunk)
-        payload = json.loads(body)
-        return parse_catalog(payload)
 
-
-def parse_catalog(payload: Any) -> _CatalogSnapshot:
-    if not isinstance(payload, Mapping):
-        raise ValueError("the models.dev catalog must be an object")
-    raw_models = payload.get("models")
-    raw_providers = payload.get("providers")
-    if not isinstance(raw_models, Mapping) or not isinstance(raw_providers, Mapping):
-        raise ValueError("the models.dev catalog is missing models or providers")
-    if len(raw_models) > _MAX_CANONICAL_MODELS or len(raw_providers) > 1_000:
-        raise ValueError("the models.dev catalog exceeds its item limit")
-
-    canonical = {
-        entry.model_id: entry
-        for key, value in raw_models.items()
-        if (entry := _entry(key, value, provider_facts=False)) is not None
-    }
-    provider_models: dict[tuple[str, str], _CatalogEntry] = {}
-    for provider_id, provider in raw_providers.items():
-        if not isinstance(provider_id, str) or not isinstance(provider, Mapping):
+def parse_catalog(payload: Any, *, released_since: date = DEFAULT_RELEASED_SINCE) -> ModelCatalogCollection:
+    if not isinstance(payload, dict) or not isinstance(payload.get("providers"), dict):
+        raise ValueError("model catalog must contain providers")
+    providers = payload["providers"]
+    if len(providers) > 1000:
+        raise ValueError("model catalog exceeds its provider limit")
+    items: list[CatalogModel] = []
+    identities = model_identities(payload.get("models"))
+    count = 0
+    for provider_id, provider in providers.items():
+        if provider_id not in CATALOG_PROVIDERS or not isinstance(provider, dict):
             continue
-        models = provider.get("models")
-        if not isinstance(models, Mapping):
+        models = provider.get("models", {})
+        if not isinstance(models, dict):
             continue
-        for key, value in models.items():
-            if len(provider_models) >= _MAX_PROVIDER_MODELS:
-                raise ValueError("the models.dev catalog exceeds its provider-model limit")
-            entry = _entry(key, value, provider_facts=True)
-            if entry is not None:
-                provider_models[(provider_id, entry.model_id)] = entry
-    return _CatalogSnapshot(canonical=canonical, provider_models=provider_models)
-
-
-def merge_declarations(suggested: ModelDeclarations, explicit: ModelDeclarations) -> ModelDeclarations:
-    """Overlay only explicitly supplied declaration fields, including pricing leaves."""
-    values = suggested.model_dump()
-    for field in explicit.model_fields_set - {"pricing"}:
-        values[field] = getattr(explicit, field)
-    if "pricing" in explicit.model_fields_set:
-        if explicit.pricing is None:
-            values["pricing"] = None
-        else:
-            pricing = (suggested.pricing or ModelPricing()).model_dump()
-            for field in explicit.pricing.model_fields_set:
-                pricing[field] = getattr(explicit.pricing, field)
-            values["pricing"] = ModelPricing.model_validate(pricing)
-    return ModelDeclarations.model_validate(values)
-
-
-def _entry(key: Any, value: Any, *, provider_facts: bool) -> _CatalogEntry | None:
-    if not isinstance(key, str) or not 1 <= len(key) <= 512 or not isinstance(value, Mapping):
-        return None
-    model_id = value.get("id", key)
-    if not isinstance(model_id, str) or not 1 <= len(model_id) <= 512:
-        return None
-    return _CatalogEntry(
-        model_id=model_id,
-        declarations=_declarations(value, provider_facts=provider_facts),
+        count += len(models)
+        if count > 50_000:
+            raise ValueError("model catalog exceeds its model limit")
+        for model_id, value in models.items():
+            if not isinstance(value, dict):
+                continue
+            try:
+                released = date.fromisoformat(value.get("release_date", ""))
+                modalities = value.get("modalities", {})
+                if released < released_since or "text" not in modalities.get("output", []):
+                    continue
+                pricing, warning = catalog_pricing(value.get("cost"))
+                capabilities = frozenset(
+                    capability
+                    for modality, capability in {
+                        "image": ModelCapability.IMAGE_UNDERSTANDING,
+                        "audio": ModelCapability.AUDIO_UNDERSTANDING,
+                        "video": ModelCapability.VIDEO_UNDERSTANDING,
+                    }.items()
+                    if modality in modalities.get("input", [])
+                )
+                upstream = value.get("id", model_id)
+                identity, name = catalog_identity(provider_id, upstream, value.get("name", model_id), identities)
+                items.append(
+                    CatalogModel(
+                        ref=CatalogRef(provider=provider_id, model=upstream),
+                        identity=identity,
+                        name=name,
+                        provider_name=provider.get("name", provider_id),
+                        release_date=released,
+                        declarations=ModelDeclarations(
+                            supports_tools=value.get("tool_call"),
+                            capabilities=capabilities,
+                            context_window_tokens=value.get("limit", {}).get("context"),
+                            structured_output=value.get("structured_output"),
+                            pricing=pricing,
+                        ),
+                        pricing_warning=warning,
+                    )
+                )
+            except (ValueError, TypeError, AttributeError):
+                continue
+    return ModelCatalogCollection(
+        items=tuple(sorted(items, key=lambda item: (item.ref.provider, item.ref.model))),
+        status="ready",
+        released_since=released_since,
     )
 
 
-def _declarations(value: Mapping[str, Any], *, provider_facts: bool) -> ModelDeclarations:
-    modalities = value.get("modalities")
-    inputs = modalities.get("input") if isinstance(modalities, Mapping) else None
-    input_values = set(inputs) if isinstance(inputs, Sequence) and not isinstance(inputs, (str, bytes)) else set()
-    capability_by_modality = {
-        "image": ModelCapability.IMAGE_UNDERSTANDING,
-        "audio": ModelCapability.AUDIO_UNDERSTANDING,
-        "video": ModelCapability.VIDEO_UNDERSTANDING,
-    }
-    capabilities = frozenset(
-        capability for modality, capability in capability_by_modality.items() if modality in input_values
-    )
-    limits = value.get("limit")
-    context_window_tokens = _positive_int(limits.get("context")) if isinstance(limits, Mapping) else None
-    max_output_tokens = _positive_int(limits.get("output")) if isinstance(limits, Mapping) else None
-    structured_output = value.get("structured_output")
-    if not isinstance(structured_output, bool):
-        structured_output = None
-    return ModelDeclarations(
-        supports_tools=value.get("tool_call") if isinstance(value.get("tool_call"), bool) else None,
-        thinking_efforts=_efforts(value) if provider_facts else (),
-        capabilities=capabilities,
-        context_window_tokens=context_window_tokens,
-        max_output_tokens=max_output_tokens,
-        structured_output=structured_output,
-        pricing=_pricing(value.get("cost")) if provider_facts else None,
-    )
-
-
-def _efforts(value: Mapping[str, Any]) -> tuple[ThinkingEffort, ...]:
-    options = value.get("reasoning_options")
-    if not isinstance(options, Sequence) or isinstance(options, (str, bytes)):
-        return ()
-    selected: set[str] = set()
-    for option in options:
-        if not isinstance(option, Mapping) or option.get("type") != "effort":
-            continue
-        values = option.get("values")
-        if isinstance(values, Sequence) and not isinstance(values, (str, bytes)):
-            selected.update(item for item in values if isinstance(item, str))
-    return tuple(effort for effort in _THINKING_EFFORTS if effort in selected)
-
-
-def _pricing(value: Any) -> ModelPricing | None:
+def catalog_pricing(value: Any) -> tuple[TokenPricing | None, str | None]:
+    """Translate explicit context tiers; never silently flatten unknown conditions."""
+    if value is None:
+        return None, None
     if not isinstance(value, Mapping):
-        return None
-    prices = {field: _nonnegative_number(value.get(field)) for field in ModelPricing.model_fields}
-    return ModelPricing.model_validate(prices) if any(price is not None for price in prices.values()) else None
-
-
-def _positive_int(value: Any) -> int | None:
-    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
-
-
-def _nonnegative_number(value: Any) -> float | None:
-    if not isinstance(value, (int, float)) or isinstance(value, bool):
-        return None
-    result = float(value)
-    return result if result >= 0 and math.isfinite(result) else None
-
-
-def _actual_provider_id(provider_type: str, configuration: Mapping[str, object]) -> str | None:
-    if any(key.endswith("base_url") and value for key, value in configuration.items()):
-        return None
-    if provider_type == "alibaba_model_studio":
-        return "alibaba-cn" if configuration.get("domain_type") == "mainland_china" else "alibaba"
-    return _DEFAULT_PROVIDER_IDS.get(provider_type)
-
-
-__all__ = ["ModelCatalog", "ModelsDevCatalog", "merge_declarations"]
+        return None, "Unsupported catalog pricing"
+    try:
+        base = {key: value.get(key) for key in TokenRates.model_fields}
+        tiers = [TokenPriceTier(rates=TokenRates.model_validate(base))]
+        raw_tiers = value.get("tiers", [])
+        if not isinstance(raw_tiers, list):
+            raise ValueError("invalid tiers")
+        if not raw_tiers and any(key.startswith("context_over_") for key in value):
+            raise ValueError("legacy threshold has no explicit token count")
+        for raw in raw_tiers:
+            condition = raw["tier"]
+            if condition.get("type") != "context" or set(condition) != {"type", "size"}:
+                raise ValueError("unsupported tier condition")
+            # Materialize models.dev's base-price overrides. Saved tiers never inherit.
+            rates = {key: raw.get(key, base[key]) for key in TokenRates.model_fields}
+            tiers.append(TokenPriceTier(above=condition["size"], rates=TokenRates.model_validate(rates)))
+        return TokenPricing(tiers=tuple(tiers)), None
+    except (ValueError, TypeError, KeyError, AttributeError):
+        return None, "Unsupported catalog pricing; configure prices manually"

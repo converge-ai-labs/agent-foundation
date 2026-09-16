@@ -1,4 +1,4 @@
-import { useId, useState } from "react";
+import { useState } from "react";
 import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { Button, ChoiceField } from "a13n-ui";
 import { ApiError, result, type Schema } from "../transport/client";
@@ -6,11 +6,10 @@ import { useTransport } from "../transport/context";
 import { ErrorNotice, TextField } from "../shell/ui";
 import { ConversationConfiguration } from "./configuration";
 import { MessageText } from "./message-text";
-import { ChildSavedOutputs } from "./comments";
-import { useThreads } from "./queries";
+import { ChildSavedOutputs } from "./child-output";
+import { useOperation, useThreads } from "./queries";
 import type { FocusDisplay } from "./stream";
-import { LiveOutput } from "./transcript";
-import { ToolActivity } from "./tool-call";
+import { LiveOutput, RecoveryNotice } from "./transcript";
 import { sourceText } from "./tool-presentation";
 import { useChildControlState } from "./child-controls";
 import styles from "./conversation.module.css";
@@ -30,7 +29,9 @@ export function ConversationDetails({
   const [tab, setTab] = useState("execution");
   // Activity owns the latest process-local terminal receipt. Focus snapshots only
   // carry an active operation, so an inactive snapshot cannot substitute for it.
-  const activity = useThreads(threadId, undefined, true);
+  const activity = useThreads(threadId, undefined, true, {
+    enabled: tab === "execution" && !receipt,
+  });
   const row = activity.data?.pages
     .flatMap((page) => page.rows)
     .find((item) => item.thread.thread_id === threadId);
@@ -53,7 +54,8 @@ export function ConversationDetails({
             retry={() => void activity.refetch()}
           />
           <Operation
-            receipt={row?.latest_operation?.receipt.receipt_id ?? receipt}
+            threadId={threadId}
+            receipt={receipt ?? row?.latest_operation?.receipt.receipt_id}
           />
           {!row && activity.hasNextPage && (
             <Button
@@ -76,23 +78,14 @@ export function ConversationDetails({
     </div>
   );
 }
-function Operation({ receipt }: { receipt?: string | null }) {
-  const { client } = useTransport();
-  const operation = useQuery({
-    queryKey: ["operation", receipt],
-    enabled: !!receipt,
-    queryFn: ({ signal }) =>
-      result(
-        client.GET("/api/operations/{receipt_id}", {
-          params: { path: { receipt_id: receipt! } },
-          signal,
-        }),
-      ),
-    refetchInterval: (query) =>
-      ["preparing", "running"].includes(query.state.data?.status ?? "")
-        ? 2000
-        : false,
-  });
+function Operation({
+  threadId,
+  receipt,
+}: {
+  threadId: string;
+  receipt?: string | null;
+}) {
+  const operation = useOperation(threadId, receipt);
   if (!receipt)
     return (
       <p>
@@ -262,22 +255,6 @@ export function Child({
     thread_id: child.parent_thread_id,
     execution_id: child.execution_id,
   };
-  const review = useQuery({
-    queryKey: [
-      "thread",
-      child.root_thread_id,
-      "child-review",
-      child.execution_id,
-    ],
-    enabled: open,
-    queryFn: ({ signal }) =>
-      result(
-        client.GET("/api/threads/{thread_id}/children/{execution_id}/review", {
-          params: { path },
-          signal,
-        }),
-      ),
-  });
   const control = useMutation({
     mutationFn: (action: "cancel" | "steer") =>
       action === "cancel"
@@ -347,65 +324,9 @@ export function Child({
               </dd>
             </div>
           </dl>
-          {live && (
-            <div className={styles.childLive}>
-              <LiveOutput
-                blocks={[...live.blocks.values()]}
-                gap={live.gap}
-                label="Observed child output since focus · not saved history"
-              />
-            </div>
-          )}
+          <ChildPresentation child={child} live={live} />
           {child.failure && <p role="alert">{child.failure.message}</p>}
-          <details className={styles.activity} open={!live}>
-            <summary>Latest activity snapshot</summary>
-            <DetailText
-              text={child.activity.output_preview ?? ""}
-              label="activity snapshot"
-            />
-            {child.activity.output_truncated && (
-              <p>
-                Activity preview truncated. Inspect retained child output below.
-              </p>
-            )}
-            {[
-              ...(child.activity.recent_tool_calls ?? []),
-              ...(child.activity.active_tool_calls ?? []),
-            ].map((tool) => (
-              <ToolActivity
-                key={tool.tool_call_id}
-                tools={[
-                  {
-                    id: tool.tool_call_id,
-                    name: tool.tool_name,
-                    input: sourceText(tool.arguments),
-                    result:
-                      tool.result === null || tool.result === undefined
-                        ? undefined
-                        : sourceText(tool.result),
-                    inputComplete: tool.status !== "running",
-                    outcome:
-                      tool.status === "running" ? undefined : tool.status,
-                    stopped: child.persisted_status !== "running",
-                    failure:
-                      tool.status === "failed" ? "Tool failed" : undefined,
-                  },
-                ]}
-              />
-            ))}
-            {!!child.activity.dropped_tool_calls && (
-              <p>
-                {child.activity.dropped_tool_calls} earlier tool calls outside
-                this snapshot.
-              </p>
-            )}
-          </details>
-          <ChildSavedOutputs
-            threadId={child.parent_thread_id}
-            executionId={child.execution_id}
-          />
-          <ErrorNotice error={review.error || controlState.error} />
-          {review.data && <ReviewDetails review={review.data} />}
+          <ErrorNotice error={controlState.error} />
           {child.available_actions?.includes("steer") && (
             <div className={styles.form}>
               <TextField
@@ -442,7 +363,6 @@ export function Child({
                 variant="outline"
                 onClick={() => {
                   reconcile();
-                  void review.refetch();
                 }}
               >
                 Refresh child state
@@ -474,76 +394,67 @@ export function Child({
     </details>
   );
 }
-function DetailText({
-  text,
-  label,
-  code = false,
+function ChildPresentation({
+  child,
+  live,
 }: {
-  text: string;
-  label: string;
-  code?: boolean;
+  child: Schema<"ChildExecutionView">;
+  live?: FocusDisplay;
 }) {
-  const [expanded, setExpanded] = useState(false);
-  const id = useId();
-  const preview = text.slice(0, 800).split("\n").slice(0, 8).join("\n");
-  const long = preview.length < text.length;
-  const visible = long && !expanded ? `${preview}…` : text;
-  return (
-    <div className={styles.detailText}>
-      <div
-        id={id}
-        className={styles.detailTextBody}
-        data-expanded={expanded}
-        role="region"
-        aria-label={label}
-        tabIndex={0}
-      >
-        {code ? (
-          <pre className={styles.code}>{visible}</pre>
-        ) : (
-          <MessageText text={visible} />
-        )}
-      </div>
-      {long && (
-        <Button
-          variant="ghost"
-          size="sm"
-          aria-expanded={expanded}
-          aria-controls={id}
-          onClick={() => setExpanded((value) => !value)}
-        >
-          {expanded ? `Show less ${label}` : `Show full ${label}`}
-        </Button>
+  const observed = live && [...live.blocks.values()];
+  // Snapshot tool IDs are synthetic; do not guess a join with observed tool IDs.
+  const tools = observed?.some((block) => block.kind === "tool")
+    ? observed.filter((block) => block.kind === "tool")
+    : [
+        ...(child.activity.recent_tool_calls ?? []),
+        ...(child.activity.active_tool_calls ?? []),
+      ].map((tool) => ({
+        id: tool.tool_call_id,
+        kind: "tool" as const,
+        name: tool.tool_name,
+        text: sourceText(tool.arguments),
+        result: tool.result == null ? undefined : sourceText(tool.result),
+        done: tool.status !== "running",
+        outcome: tool.status === "running" ? undefined : tool.status,
+        stopped: child.persisted_status !== "running",
+      }));
+  const content =
+    observed?.filter(
+      (block) => block.kind === "assistant" || block.kind === "thinking",
+    ) ?? [];
+  const current = content.length ? (
+    <LiveOutput
+      blocks={content}
+      gap={live?.gap ?? false}
+      label="Current observed output"
+    />
+  ) : child.activity.output_preview ? (
+    <section>
+      <small>Activity preview · not a saved result</small>
+      <MessageText text={child.activity.output_preview} />
+      {child.activity.output_truncated && (
+        <p>Some activity is outside this preview.</p>
       )}
-    </div>
+    </section>
+  ) : (
+    <p>No output available yet.</p>
   );
-}
-function ReviewDetails({ review }: { review: Schema<"ReviewView"> }) {
-  const [open, setOpen] = useState(false);
+  const running = child.persisted_status === "running";
   return (
-    <details onToggle={(event) => setOpen(event.currentTarget.open)}>
-      <summary>{review.title}</summary>
-      {open && (
-        <>
-          {review.summary && (
-            <DetailText text={review.summary} label="review summary" />
-          )}
-          {review.unavailable_reason && <p>{review.unavailable_reason}</p>}
-          {review.content ? (
-            <DetailText text={review.content} label="review content" />
-          ) : review.value != null ? (
-            <DetailText
-              text={JSON.stringify(review.value, null, 2)}
-              label="review data"
-              code
-            />
-          ) : null}
-          {(review.truncated || review.omitted) && (
-            <p>Some content was omitted by the server.</p>
-          )}
-        </>
+    <div className={styles.childLive}>
+      <LiveOutput blocks={tools} gap={false} />
+      {!!child.activity.dropped_tool_calls && (
+        <small>Earlier tools are outside this activity window.</small>
       )}
-    </details>
+      <ChildSavedOutputs
+        threadId={child.parent_thread_id}
+        rootThreadId={child.root_thread_id}
+        executionId={child.execution_id}
+        fallback={running ? null : current}
+      />
+      {running && current}
+      <RecoveryNotice recovery={live?.recovery} />
+    </div>
   );
 }
 function ContextDetails({

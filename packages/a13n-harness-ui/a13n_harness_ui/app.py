@@ -85,6 +85,7 @@ from a13n_harness_ui.errors import (
     HarnessUiError,
     LivePresentationError,
     StoreConflictError,
+    ThreadError,
 )
 from a13n_harness_ui.extensions import (
     CatalogReference,
@@ -746,6 +747,8 @@ class HarnessUiApp:
         project_scope: Literal["all", "projectless", "unavailable"] = "all",
         query: str | None = None,
         include_archived: bool = False,
+        archived_only: bool = False,
+        include_active: bool = False,
         cursor: str | None = None,
         limit: int = 20,
     ) -> ThreadActivityPage:
@@ -755,6 +758,8 @@ class HarnessUiApp:
                 project_scope=project_scope,
                 query=query,
                 include_archived=include_archived,
+                archived_only=archived_only,
+                include_active=include_active,
                 cursor=cursor,
                 limit=limit,
             )
@@ -1052,7 +1057,7 @@ class HarnessUiApp:
         project_id: str | None = None,
         include_archived: bool = False,
         project_ids: tuple[str, ...] | None = None,
-        sort: Literal["updated", "activity"] = "updated",
+        sort: Literal["updated", "activity", "touched"] = "updated",
         cursor: str | None = None,
         limit: int = 20,
     ) -> ThreadPage:
@@ -1211,6 +1216,19 @@ class HarnessUiApp:
                 patch=stored,
             ),
         )
+
+    async def touch_thread(self, thread_id: str) -> ThreadSummary:
+        """Move a root Thread to recent navigation without changing its conversation."""
+
+        async with self._operation():
+            thread = await self._threads.get(thread_id)
+            if thread.parent_thread_id is not None:
+                raise ThreadError(
+                    "Child Threads are managed through their parent execution.", code="child_thread_scoped"
+                )
+            await self._store.threads.touch(thread_id)
+            await self._summary_hub.publish(kind="thread", thread_id=thread_id)
+            return await self._projections.get_thread(thread_id)
 
     async def update_thread_metadata(
         self,
@@ -1587,6 +1605,7 @@ class HarnessUiApp:
                 prompt=prompt,
                 mutation=mutation,
                 model_overrides=model_overrides,
+                touch=True,
             )
             self._terminal_projections.pin_active_skill_catalog(
                 receipt_id=receipt.receipt_id,
@@ -1609,6 +1628,7 @@ class HarnessUiApp:
                 response=response,
                 mutation=mutation,
                 model_overrides=model_overrides,
+                touch=True,
             )
 
     async def respond_decisions(
@@ -1706,7 +1726,7 @@ class HarnessUiApp:
                 if attachment_ids or isinstance(message, ComposerInput)
                 else message
             )
-            return await self._root_runs.steer(receipt_id=receipt_id, message=prepared)
+            return await self._root_runs.steer(receipt_id=receipt_id, message=prepared, touch=True)
 
     async def cancel_root_operation(self, receipt_id: str) -> RootControlResult:
         async with self._operation():
@@ -2340,7 +2360,9 @@ async def open_harness_ui_app(
                 cleanup_timeout_seconds=cleanup_timeout,
                 thread_files=thread_files,
             )
-            root_runs = RootRunCoordinator(root_executor, summary_hub=summary_hub, observation=observation)
+            root_runs = RootRunCoordinator(
+                root_executor, summary_hub=summary_hub, observation=observation, touch_thread=store.threads.touch
+            )
             projections = ThreadProjectionService(
                 store=store,
                 configurations=configurations,

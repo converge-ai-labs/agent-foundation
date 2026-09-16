@@ -15,22 +15,17 @@ from a13n_harness_ui.surfaces import RootOperationStatus, RootOperationView
 
 
 def reply_brief(text: str) -> str:
-    """Preview the first prose block, omitting fences, headings and common markup."""
+    """Preview prose across paragraphs, omitting fences, headings and common markup."""
     # This is a display excerpt, not a Markdown renderer or a semantic summary.
     text = text[:8192]
     text = re.sub(r"(?ms)^\s*(`{3,}|~{3,})[^\n]*\n.*?(?:^\s*\1[^\n]*$|\Z)", "", text)
-    blocks = re.split(r"\n\s*\n", text)
-    for block in blocks:
-        lines = [line for line in block.splitlines() if not re.match(r"^\s*(#{1,6}\s|[-*_]{3,}\s*$)", line)]
-        value = " ".join(lines)
-        value = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", value)
-        value = re.sub(r"<[^>]+>", "", value)
-        value = re.sub(r"(^|\s)(?:[-*+] |\d+\. |> )", r"\1", value)
-        value = value.replace("**", "").replace("__", "").replace("`", "")
-        value = excerpt_text(unescape(value), 320)
-        if value:
-            return value
-    return ""
+    lines = [line for line in text.splitlines() if not re.match(r"^\s*(#{1,6}\s|[-*_]{3,}\s*$)", line)]
+    value = " ".join(lines)
+    value = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", value)
+    value = re.sub(r"<[^>]+>", "", value)
+    value = re.sub(r"(^|\s)(?:[-*+] |\d+\. |> )", r"\1", value)
+    value = value.replace("**", "").replace("__", "").replace("`", "")
+    return excerpt_text(unescape(value), 320)
 
 
 def root_operation_notice(

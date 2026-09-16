@@ -18,7 +18,7 @@ import {
   ReplayGapError,
   type Client,
   type RunEvent,
-} from "@converge.ai/a13n";
+} from "../../service-client";
 import {
   conversationKeys,
   conversationQueries,

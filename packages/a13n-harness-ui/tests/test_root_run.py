@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any, cast
 
 import pytest
+from a13n_harness_ui.errors import RunCoordinationError
 from a13n_harness_ui.root_run import RootRunCoordinator
 from a13n_harness_ui.surfaces import (
     ExternalToolResult,
@@ -167,3 +168,55 @@ def test_root_response_rejects_oversized_nested_payload() -> None:
             expected_continuation_id="1" * 64,
             responses=(ExternalToolResult(request_id="request-1", result="x" * (1024 * 1024)),),
         )
+
+
+async def test_navigation_touch_is_explicit_and_never_disguises_accepted_steering(monkeypatch):
+    from unittest.mock import AsyncMock
+
+    touched = []
+    fail_touch = False
+
+    async def touch(thread_id):
+        if fail_touch:
+            raise RuntimeError("recency unavailable")
+        touched.append(thread_id)
+
+    executor = _RunningExecutor()
+    steer = AsyncMock(return_value="enqueue-test")
+    monkeypatch.setattr(executor.stream, "steer", steer, raising=False)
+    coordinator = RootRunCoordinator(cast(Any, executor), touch_thread=touch)
+    await coordinator.start()
+    try:
+        fail_touch = True
+        with pytest.raises(RunCoordinationError, match="work was not admitted") as failure:
+            await coordinator.submit_prompt(thread_id="thread-1", prompt="rejected", touch=True)
+        assert failure.value.code == "thread_touch_failed"
+        assert await coordinator.active_thread_ids() == ()
+        fail_touch = False
+        receipt = await coordinator.submit_prompt(thread_id="thread-1", prompt="human", touch=True)
+        await executor.started.wait()
+        assert touched == ["thread-1"]
+        assert await coordinator.active_thread_ids() == ("thread-1",)
+        with pytest.raises(RunCoordinationError, match="already has an active"):
+            await coordinator.submit_prompt(thread_id="thread-1", prompt="duplicate", touch=True)
+        assert touched == ["thread-1"]
+        # Agent messages keep default touch=False even when accepted.
+        assert (await coordinator.steer(receipt_id=receipt.receipt_id, message="background")).accepted
+        assert touched == ["thread-1"]
+        assert (await coordinator.steer(receipt_id=receipt.receipt_id, message="human steer", touch=True)).accepted
+        assert touched == ["thread-1", "thread-1"]
+        fail_touch = True
+        result = await coordinator.steer(receipt_id=receipt.receipt_id, message="already enqueued", touch=True)
+        assert result.accepted and result.enqueue_id == "enqueue-test"
+        assert steer.await_count == 3
+        await coordinator.cancel(receipt.receipt_id)
+        await coordinator.wait(receipt.receipt_id)
+        assert not (await coordinator.steer(receipt_id=receipt.receipt_id, message="stale", touch=True)).accepted
+        assert await coordinator.active_thread_ids() == ()
+        fail_touch = False
+        receipt = await coordinator.submit_prompt(thread_id="thread-2", prompt="background")
+        assert touched == ["thread-1", "thread-1"]
+        await coordinator.cancel(receipt.receipt_id)
+        await coordinator.wait(receipt.receipt_id)
+    finally:
+        await coordinator.close(timeout_seconds=1)

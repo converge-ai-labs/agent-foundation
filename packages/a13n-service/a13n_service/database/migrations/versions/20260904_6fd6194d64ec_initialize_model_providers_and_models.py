@@ -93,7 +93,7 @@ def upgrade() -> None:
         sa.Column("name", sa.String(length=128), nullable=False),
         sa.Column("description", sa.String(length=2048), nullable=True),
         sa.Column("upstream_model", sa.String(length=256), nullable=False),
-        sa.Column("base_model", sa.String(length=256), nullable=True),
+        sa.Column("catalog_ref", sa.JSON(), nullable=True),
         sa.Column("model_api", sa.String(length=96), nullable=False),
         sa.Column("settings", sa.JSON(), nullable=False),
         sa.Column("declarations", sa.JSON(), nullable=False),

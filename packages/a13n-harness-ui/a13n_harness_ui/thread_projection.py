@@ -11,7 +11,7 @@ from typing import Literal
 
 from a13n_harness import HarnessState
 from a13n_harness.model_context import user_prompt_content
-from a13n_stream_protocol.messages import project_input_content
+from a13n_stream_protocol.messages import ContentMetadata, project_input_content
 from pydantic import BaseModel, JsonValue, TypeAdapter, ValidationError
 from pydantic_ai.messages import (
     ModelMessage,
@@ -75,8 +75,10 @@ class _ThreadCursor(SurfaceModel):
     project_ids: tuple[str, ...] | None = None
     project_ids_digest: str | None = None
     projectless: bool = False
-    sort: Literal["updated", "activity"] = "updated"
+    sort: Literal["updated", "activity", "touched"] = "updated"
     include_archived: bool
+    archived_only: bool = False
+    active_only: bool | None = None
     updated_at: datetime
     thread_id: str
 
@@ -123,9 +125,12 @@ class ThreadProjectionService:
         query: str | None = None,
         project_id: str | None = None,
         include_archived: bool = False,
+        archived_only: bool = False,
         project_ids: tuple[str, ...] | None = None,
         projectless: bool = False,
-        sort: Literal["updated", "activity"] = "updated",
+        sort: Literal["updated", "activity", "touched"] = "updated",
+        active_only: bool | None = None,
+        active_thread_ids: tuple[str, ...] = (),
         cursor: str | None = None,
         limit: int = 20,
     ) -> ThreadPage:
@@ -146,6 +151,7 @@ class ThreadProjectionService:
                 decoded.query != normalized_query
                 or decoded.project_id != project_id
                 or decoded.include_archived is not include_archived
+                or decoded.archived_only is not archived_only
                 or (
                     decoded.project_ids_digest != project_ids_digest
                     if decoded.project_ids_digest is not None
@@ -153,6 +159,7 @@ class ThreadProjectionService:
                 )
                 or decoded.projectless != projectless
                 or decoded.sort != sort
+                or decoded.active_only != active_only
             ):
                 raise ThreadError("Thread cursor belongs to another query.", code="thread_cursor_mismatch")
             before = (decoded.updated_at, decoded.thread_id)
@@ -160,9 +167,12 @@ class ThreadProjectionService:
             query=normalized_query,
             project_id=project_id,
             include_archived=include_archived,
+            archived_only=archived_only,
             project_ids=project_ids,
             projectless=projectless,
             sort=sort,
+            thread_ids=active_thread_ids if active_only is True else None,
+            exclude_thread_ids=active_thread_ids if active_only is False else (),
             before=before,
             limit=limit + 1,
         )
@@ -179,7 +189,13 @@ class ThreadProjectionService:
                     query=normalized_query,
                     project_id=project_id,
                     include_archived=include_archived,
-                    updated_at=last.updated_at if sort == "updated" else (last.activity_at or last.created_at),
+                    archived_only=archived_only,
+                    active_only=active_only,
+                    updated_at={
+                        "updated": last.updated_at,
+                        "activity": last.activity_at or last.created_at,
+                        "touched": last.touched_at or last.created_at,
+                    }[sort],
                     # A filter can cover many unavailable Projects; keep its cursor bounded.
                     project_ids_digest=project_ids_digest,
                     projectless=projectless,
@@ -329,6 +345,7 @@ class ThreadProjectionService:
             title=thread.title,
             excerpt=thread.excerpt,
             activity_at=thread.activity_at,
+            touched_at=thread.touched_at,
             archived=thread.archived,
             configuration=_configuration(thread.configuration),
             continuation_state="initial" if thread.continuation is None else "selected",
@@ -431,13 +448,51 @@ def _decode_cursor[CursorT: BaseModel](
 
 def _message_entry(position: int, message: ModelMessage, *, thread: Thread | None = None) -> TranscriptEntry:
     if isinstance(message, ModelRequest):
+        parts = tuple(part for source in message.parts for part in _request_parts(source))
+        if (message.metadata or {}).get("a13n.context") == "handoff":
+            # The owned handoff request contains the summary first, followed by
+            # internal restoration instructions. Retained user requests are separate.
+            summary_seen = False
+            projected: list[TranscriptPart] = []
+            for part in parts:
+                if part.kind == "user" and not summary_seen:
+                    projected.append(
+                        part.model_copy(
+                            update={
+                                "metadata": ContentMetadata.from_native(
+                                    {
+                                        **part.metadata.model_dump(),
+                                        "a13n.context": "handoff",
+                                    }
+                                )
+                            }
+                        )
+                    )
+                    summary_seen = True
+                else:
+                    projected.append(part.model_copy(update={"metadata": ContentMetadata(display=False)}))
+            parts = tuple(projected)
         return TranscriptEntry(
             position=position,
             message_kind="request",
             timestamp=message.timestamp,
-            parts=tuple(part for source in message.parts for part in _request_parts(source)),
+            parts=parts,
         )
     if isinstance(message, ModelResponse):
+        if (message.metadata or {}).get("keep") == "compact":
+            return TranscriptEntry(
+                position=position,
+                message_kind="response",
+                timestamp=message.timestamp,
+                parts=tuple(
+                    _response_part(part).model_copy(
+                        update={
+                            "metadata": ContentMetadata.from_native({"a13n.context": "compaction"}),
+                        }
+                    )
+                    for part in message.parts
+                ),
+            )
         return TranscriptEntry(
             position=position,
             message_kind="response",

@@ -31,7 +31,6 @@ class ModelPreference(StrictModel):
     upstream_models: tuple[str, ...] = Field(min_length=1, max_length=16)
     model_apis: tuple[str, ...] = Field(min_length=1, max_length=8)
     settings: dict[str, JsonValue] = Field(default_factory=dict)
-    required_thinking_effort: Literal["high"] | None = None
 
 
 class AssistantDefinition(StrictModel):

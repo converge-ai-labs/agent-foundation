@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict
 from a13n_service.application_errors import ErrorCategory
 
 from .model_apis import BUILT_IN_MODEL_APIS
+from .profiles import PROVIDER_CATALOGS
 from .provider_adapters.base import ProviderIntegration
 from .provider_adapters.registry import BUILT_IN_PROVIDER_INTEGRATIONS
 from .provider_adapters.types import CredentialFormat, ValidatedProviderConfiguration
@@ -25,10 +26,10 @@ class ModelProviderDefinition(BaseModel):
     configuration_schema: dict[str, object]
     credential_schema: dict[str, object]
     supported_model_apis: tuple[str, ...]
+    catalog_providers: tuple[str, ...] = ()
     default_model_api: str
     model_api_labels: dict[str, str]
     settings_schemas: dict[str, dict[str, object]]
-    supports_model_discovery: bool
 
 
 class ModelProviderDefinitionCollection(BaseModel):
@@ -117,6 +118,9 @@ def _definition(integration: ProviderIntegration) -> ModelProviderDefinition:
         }
     return ModelProviderDefinition(
         type=integration.type,
+        catalog_providers={"google_vertex": ("google-vertex",), "azure_openai": ("azure",)}.get(
+            integration.type, PROVIDER_CATALOGS.get(integration.type, ())
+        ),
         display_name=integration.display_name,
         configuration_schema=integration.configuration_model.model_json_schema(),
         credential_schema=credential_schema,
@@ -126,5 +130,4 @@ def _definition(integration: ProviderIntegration) -> ModelProviderDefinition:
             model_api: BUILT_IN_MODEL_APIS[model_api].display_name for model_api in integration.supported_model_apis
         },
         settings_schemas={model_api: settings_schema(model_api) for model_api in integration.supported_model_apis},
-        supports_model_discovery=integration.model_discovery is not None,
     )

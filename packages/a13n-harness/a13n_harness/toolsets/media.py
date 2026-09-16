@@ -114,10 +114,14 @@ class MediaToolset:
                 return _media_error("direct_media_url_disabled")
             content: BinaryContent | VideoUrl
             if resource.data is not None:
-                content = BinaryContent(data=resource.data, media_type=resource.media_type)
+                content = BinaryContent(
+                    data=resource.data, media_type=resource.media_type, vendor_metadata={"display": False}
+                )
             else:
                 assert resource.direct_url is not None
-                content = VideoUrl(url=resource.direct_url, media_type=resource.media_type)
+                content = VideoUrl(
+                    url=resource.direct_url, media_type=resource.media_type, vendor_metadata={"display": False}
+                )
             message = f"The {resource.kind} is attached in the user message.\n\nCanonical source: {resource.source_url}"
             return ToolReturn(return_value=message, content=[content])
         except TimeoutError:

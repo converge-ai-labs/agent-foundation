@@ -1,4 +1,4 @@
-import { ReplayGapError } from "@converge.ai/a13n";
+import { ReplayGapError } from "../../service-client";
 import { isCancelledError, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, useState } from "react";
 import { revalidateSession, useClient } from "../../auth/context";

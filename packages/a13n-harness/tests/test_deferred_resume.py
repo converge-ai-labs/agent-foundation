@@ -14,6 +14,7 @@ from a13n_harness import (
 )
 from a13n_harness.capabilities import CompactionCapability, CompactionPolicy
 from a13n_harness.tools import (
+    APPROVAL_PRESENTATION_KEY,
     HarnessTool,
     HarnessToolMetadata,
     InvocationPolicyCapability,
@@ -182,6 +183,10 @@ async def test_policy_requested_approval_is_satisfied_on_native_resume() -> None
     requests = first.deferred
     assert requests is not None
     call_id = requests.approvals[0].tool_call_id
+    assert requests.metadata[call_id][APPROVAL_PRESENTATION_KEY] == {
+        "target": "",
+        "reason": "Tool policy requires approval.",
+    }
 
     second = await executable.run(
         bindings=RunBindings.embedded(

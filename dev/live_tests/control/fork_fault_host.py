@@ -1,6 +1,5 @@
 """Fork and replacement-Attempt boundaries outside relational transactions."""
 
-from contextvars import ContextVar
 from functools import wraps
 
 
@@ -8,8 +7,7 @@ def install(faults):
     from a13n_service.interactions.acceptance import RunAcceptanceService
     from a13n_service.interactions.attempts import AttemptExecutionService
     from a13n_service.interactions.objects import RunStateStore
-    from a13n_service.interactions.queue_handoff import CompletionQueueHandoffService
-    from a13n_service.interactions.terminal_committer import DatabaseAttemptCommitter, _VerifiedQueueOutcome
+    from a13n_service.interactions.queue_commands import QueuedRunCommands
 
     from .control_fault_host import acceptance_facts
 
@@ -42,30 +40,19 @@ def install(faults):
 
     AttemptExecutionService.yield_attempt = yield_attempt
 
-    # Keep the pause outside both the preparation and commit budgets. Capture
-    # the actual prepared successor in this verification call's own context.
-    prepared_handoff = ContextVar("live_fork_handoff", default=None)
-    original_prepare = CompletionQueueHandoffService.prepare_consumption
+    # Queue preparation follows source completion and precedes acceptance SQL.
+    # Production drain deadlines still apply to pauses at this boundary.
+    original_prepare = QueuedRunCommands.prepare_queued_run
 
     @wraps(original_prepare)
     async def prepare(self, **kwargs):
         result = await original_prepare(self, **kwargs)
-        prepared_handoff.set({"run_id": kwargs["authority"].run_id, "successor_run_id": kwargs["successor_run"].id})
+        current = kwargs["current"]
+        await faults.reach(
+            "fork.handoff_prepared",
+            run_id=current.id if current is not None else None,
+            successor_run_id=result.run.id,
+        )
         return result
 
-    CompletionQueueHandoffService.prepare_consumption = prepare
-    original_verify = DatabaseAttemptCommitter.verify_state_outcome
-
-    @wraps(original_verify)
-    async def verify(self, authority, state):
-        token = prepared_handoff.set(None)
-        try:
-            result = await original_verify(self, authority, state)
-            facts = prepared_handoff.get()
-            if isinstance(result, _VerifiedQueueOutcome) and facts is not None:
-                await faults.reach("fork.handoff_prepared", **facts)
-            return result
-        finally:
-            prepared_handoff.reset(token)
-
-    DatabaseAttemptCommitter.verify_state_outcome = verify
+    QueuedRunCommands.prepare_queued_run = prepare

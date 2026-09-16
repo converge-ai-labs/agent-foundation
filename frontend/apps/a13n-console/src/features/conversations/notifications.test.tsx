@@ -7,7 +7,7 @@ import {
   createClient,
   type Client,
   type Notification,
-} from "@converge.ai/a13n";
+} from "../../service-client";
 import { conversationKeys, invalidateConversation } from "./api";
 import { useConversationNotifications } from "./notifications";
 

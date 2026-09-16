@@ -548,15 +548,14 @@ def _convert_tool_result(
     part = event.part
     if not isinstance(part, ToolReturnPart) or part.outcome != "success":
         return []
-    content: object = part.content
-    if isinstance(event, FunctionToolResultEvent) and event.content is not None:
-        content = event.content
+    # Supplemental tool content is model-only input (and may contain binary
+    # media). It must not replace the readable return value in presentation.
     return [
         ToolCallResultEvent(
             timestamp=_timestamp_ms(item),
             message_id=f"{part.tool_call_id}:result",
             tool_call_id=part.tool_call_id,
-            content=_tool_result_text(content),
+            content=_tool_result_text(part.content),
             role="tool",
         )
     ]

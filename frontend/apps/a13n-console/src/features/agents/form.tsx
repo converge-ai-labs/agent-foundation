@@ -1,5 +1,6 @@
 import {
   Button,
+  ChoiceField,
   DisclosureSection,
   FormField,
   ReadOnlyField,
@@ -8,36 +9,33 @@ import {
 
 import { SearchPicker } from "a13n-ui";
 
-import { ApiError } from "@converge.ai/a13n";
+import { ApiError } from "../../service-client";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link } from "react-router";
 import { EditorSection } from "./section";
 
-import {
-  ArrowLeftIcon,
-  CheckIcon,
-  CircleIcon,
-  StackIcon,
-} from "@phosphor-icons/react";
+import { ArrowLeftIcon, CheckIcon, CircleIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { ErrorNotice, ErrorToast } from "../../shared/feedback";
 import { TextAreaField } from "../../shared/form";
 import { ResourceReference } from "../../shared/resource-reference";
-import { jsonObject } from "../../shared/validation";
+import { jsonObject, validateSettings } from "../../shared/validation";
 import styles from "./agents.module.css";
-import { AgentSearchSelection } from "../web/selection";
 import { AgentMemorySelection } from "../memory/selection";
 import { useMemoryProviders } from "../memory/availability";
 import { AgentAvatar } from "./avatar";
 import { AgentCapabilities } from "./capabilities";
+import { AgentToolsets } from "./toolsets";
 import { useAgentChoices } from "./choices";
-import {
-  advancedConfig,
-  buildConfig,
-  searchSelection,
-  type AgentConfig,
-  withSearchSelection,
-} from "./configuration";
+import { ModelIcon } from "../models/model-icon";
+import { useModelProviderDefinitions } from "../models/provider-definitions";
+import { advancedConfig, buildConfig, type AgentConfig } from "./configuration";
+
+function thinkingSelection(value: unknown): string {
+  if (value === false) return "false";
+  if (typeof value === "string") return value;
+  return "true";
+}
 
 export function AgentForm({
   initial: providedInitial,
@@ -90,23 +88,60 @@ export function AgentForm({
   const [initial] = useState(providedInitial),
     [originalVersion] = useState(version);
   const { t } = useTranslation();
+  const initialSettings = initial.model.settings ?? {};
+  const {
+    thinking: initialThinking,
+    max_tokens: initialMaxTokens,
+    ...initialExtraSettings
+  } = initialSettings;
   const [name, setName] = useState(initialName),
     [description, setDescription] = useState(initialDescription),
     [instructions, setInstructions] = useState(initial.instructions ?? ""),
     [model, setModel] = useState(initial.model.model_key),
+    [thinking, setThinking] = useState(thinkingSelection(initialThinking)),
+    [maxTokens, setMaxTokens] = useState(
+      typeof initialMaxTokens === "number" ? String(initialMaxTokens) : "",
+    ),
     [settings, setSettings] = useState(
-      JSON.stringify(initial.model.settings ?? {}, null, 2),
+      JSON.stringify(initialExtraSettings, null, 2),
     ),
     [advanced, setAdvanced] = useState(advancedConfig(initial)),
     [expanded, setExpanded] = useState(false),
     [modelExpanded, setModelExpanded] = useState(false),
-    [validation, setValidation] = useState<Error>();
-  const [search, setSearch] = useState(searchSelection(initial));
+    [validation, setValidation] = useState<Error>(),
+    [modelValidation, setModelValidation] = useState<Error>();
+  const [toolsets, setToolsets] = useState(initial.toolsets ?? {});
   const [memory, setMemory] = useState(initial.memory);
   const { visible: memoryVisible } = useMemoryProviders();
   const [skills, setSkills] = useState(initial.skills ?? []),
     [connections, setConnections] = useState(initial.connection_tools ?? []);
   const choices = useAgentChoices();
+  const definitions = useModelProviderDefinitions();
+  const selectedModel = choices.data?.models.find((item) => item.key === model);
+  const settingsSchema = definitions.data?.items.find(
+    (definition) =>
+      selectedModel?.model_api &&
+      definition.settings_schemas[selectedModel.model_api],
+  )?.settings_schemas[selectedModel?.model_api ?? ""];
+  const thinkingSchema = settingsSchema?.properties as
+    Record<string, unknown> | undefined;
+  const thinkingVariants =
+    (thinkingSchema?.thinking as { anyOf?: { enum?: unknown[] }[] } | undefined)
+      ?.anyOf ?? [];
+  const thinkingEfforts = thinkingVariants
+    .flatMap((variant) => variant.enum ?? [])
+    .filter((value): value is string => typeof value === "string");
+  const thinkingOptions = [
+    { value: "true", label: t("On (default effort)") },
+    { value: "false", label: t("Off") },
+    ...thinkingEfforts.map((value) => ({
+      value,
+      label: t(value.charAt(0).toUpperCase() + value.slice(1)),
+    })),
+    ...(thinking && !["true", "false", ...thinkingEfforts].includes(thinking)
+      ? [{ value: thinking, label: thinking }]
+      : []),
+  ];
   useEffect(() => {
     if (error instanceof ApiError && [400, 422].includes(error.status)) {
       setExpanded(true);
@@ -116,17 +151,40 @@ export function AgentForm({
   function save(event: FormEvent) {
     if (event.target !== event.currentTarget) return;
     event.preventDefault();
+    let modelSettings: ReturnType<typeof jsonObject>;
+    try {
+      const extraSettings = jsonObject(settings);
+      if ("thinking" in extraSettings || "max_tokens" in extraSettings)
+        throw new Error(
+          t("Edit thinking and max output tokens using their fields above."),
+        );
+      modelSettings = {
+        ...extraSettings,
+        thinking:
+          thinking === "true" ? true : thinking === "false" ? false : thinking,
+        ...(maxTokens ? { max_tokens: Number(maxTokens) } : {}),
+      };
+      if (settingsSchema) validateSettings(settingsSchema, modelSettings);
+      setModelValidation(undefined);
+    } catch (error) {
+      setModelValidation(
+        error instanceof Error ? error : new Error(t("Invalid configuration")),
+      );
+      setModelExpanded(true);
+      return;
+    }
     try {
       const config = buildConfig(
         initial,
         {
           instructions,
           memory,
-          toolsets: withSearchSelection(initial.toolsets, search),
+          toolsets,
+          reviewer: initial.reviewer,
           model: {
             ...initial.model,
             model_key: model,
-            settings: jsonObject(settings),
+            settings: modelSettings,
           },
           skills,
           connection_tools: connections,
@@ -142,16 +200,18 @@ export function AgentForm({
         error instanceof Error ? error : new Error(t("Invalid configuration")),
       );
       setExpanded(true);
-      setModelExpanded(true);
     }
   }
   const dirty =
     creating ||
     JSON.stringify(memory) !== JSON.stringify(initial.memory) ||
-    JSON.stringify(search) !== JSON.stringify(searchSelection(initial)) ||
+    JSON.stringify(toolsets) !== JSON.stringify(initial.toolsets ?? {}) ||
     instructions !== (initial.instructions ?? "") ||
     model !== initial.model.model_key ||
-    settings !== JSON.stringify(initial.model.settings ?? {}, null, 2) ||
+    thinking !== thinkingSelection(initialThinking) ||
+    maxTokens !==
+      (typeof initialMaxTokens === "number" ? String(initialMaxTokens) : "") ||
+    settings !== JSON.stringify(initialExtraSettings, null, 2) ||
     advanced !== advancedConfig(initial) ||
     JSON.stringify(skills) !== JSON.stringify(initial.skills ?? []) ||
     JSON.stringify(connections) !==
@@ -267,8 +327,18 @@ export function AgentForm({
                 )}
                 {readonly ? (
                   <ReadOnlyField label={t("Model")}>
-                    {choices.data?.models.find((item) => item.key === model)
-                      ?.name ?? model}
+                    {selectedModel ? (
+                      <span className="inline-flex items-center gap-2">
+                        <ModelIcon
+                          upstream={selectedModel.upstream_model}
+                          catalogRef={selectedModel.catalog_ref}
+                          size={20}
+                        />
+                        {selectedModel.name}
+                      </span>
+                    ) : (
+                      model
+                    )}
                   </ReadOnlyField>
                 ) : (
                   <SearchPicker
@@ -285,7 +355,13 @@ export function AgentForm({
                           choices.data?.models.map((item) => ({
                             value: item.key,
                             label: item.name,
-                            icon: <StackIcon size={14} />,
+                            icon: (
+                              <ModelIcon
+                                upstream={item.upstream_model}
+                                catalogRef={item.catalog_ref}
+                                size={20}
+                              />
+                            ),
                             description: [
                               ...new Set([item.key, item.upstream_model]),
                             ]
@@ -298,25 +374,52 @@ export function AgentForm({
                   />
                 )}
               </div>
-              <DisclosureSection
-                title={t("Model settings")}
-                summary={t(settings.trim() === "{}" ? "Default" : "Custom")}
-                open={modelExpanded}
-                onOpenChange={setModelExpanded}
-              >
-                <TextAreaField
-                  readOnly={readonly}
-                  label={t("Model settings")}
-                  hideLabel
-                  hint={t(
-                    "Settings override the selected model's defaults. Use a JSON object.",
-                  )}
-                  code
-                  value={settings}
-                  onChange={setSettings}
-                  rows={4}
-                />
-              </DisclosureSection>
+              <div className={styles.modelSettings}>
+                <div className={styles.modelSettingsFields}>
+                  <ChoiceField
+                    label={t("Thinking effort")}
+                    readOnly={readonly}
+                    value={thinking}
+                    onValueChange={setThinking}
+                    options={thinkingOptions}
+                  />
+                  <FormField label={t("Max output tokens")} readOnly={readonly}>
+                    <Input
+                      type="number"
+                      min={1}
+                      step={1}
+                      placeholder={t("Model default")}
+                      value={maxTokens}
+                      onChange={(event) => setMaxTokens(event.target.value)}
+                    />
+                  </FormField>
+                </div>
+                <DisclosureSection
+                  title={t("Additional model settings")}
+                  summary={
+                    Object.keys(initialExtraSettings).length ||
+                    settings.trim() !== "{}"
+                      ? t("JSON")
+                      : undefined
+                  }
+                  open={modelExpanded}
+                  onOpenChange={setModelExpanded}
+                >
+                  <TextAreaField
+                    readOnly={readonly}
+                    label={t("Additional model settings")}
+                    hideLabel
+                    hint={t(
+                      "Optional JSON settings override the selected model's defaults.",
+                    )}
+                    code
+                    value={settings}
+                    onChange={setSettings}
+                    rows={5}
+                  />
+                  <ErrorNotice error={modelValidation} />
+                </DisclosureSection>
+              </div>
             </EditorSection>
           </fieldset>
           {environment}
@@ -349,18 +452,12 @@ export function AgentForm({
               connections={connections}
               setConnections={setConnections}
             />
-            <EditorSection
-              title={t("Web search")}
-              description={t(
-                "Search the web and read pages with a connected account.",
-              )}
-            >
-              <AgentSearchSelection
-                readOnly={readonly}
-                value={search}
-                onChange={setSearch}
-              />
-            </EditorSection>
+            <AgentToolsets
+              value={toolsets}
+              onChange={setToolsets}
+              reviewer={initial.reviewer}
+              readOnly={readonly}
+            />
             {(memoryVisible || memory || initial.memory) && (
               <EditorSection
                 title={t("Memory")}

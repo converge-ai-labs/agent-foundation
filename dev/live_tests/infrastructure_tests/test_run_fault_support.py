@@ -255,3 +255,111 @@ async def test_peer_preserves_partial_http_disconnect_instead_of_graceful_eof(tm
         with anyio.fail_after(10):
             await serving
         listener.close()
+
+
+@pytest.mark.parametrize("rollback", [False, True])
+async def test_queue_faults_wrap_current_acceptance_and_preserve_transaction_hook(monkeypatch, tmp_path, rollback):
+    from a13n_service.interactions.acceptance import RunAcceptanceService
+
+    from ..run_recovery.run_fault_host import _install_queue_faults
+
+    events = []
+
+    async def publish(self, run, state):
+        events.append("published")
+
+    async def accept(self, *, run, state, transaction_hook, **kwargs):
+        await self._publish_initial(run, state)
+        events.append("transaction")
+        try:
+            await transaction_hook(None, "receipt")
+        except ObjectStoreUnavailable:
+            events.append("rolled_back")
+            raise
+        events.append("committed")
+        return "receipt"
+
+    async def existing_hook(database, receipt):
+        assert receipt == "receipt"
+        events.append("existing_hook")
+
+    monkeypatch.setattr(RunAcceptanceService, "_publish_initial", publish)
+    monkeypatch.setattr(RunAcceptanceService, "consume_queued", accept)
+    faults = Faults(tmp_path, "worker")
+    if rollback:
+        arm(tmp_path, "rollback", point="queue.rollback", role="worker", action="unavailable")
+    _install_queue_faults(faults)
+    service = object.__new__(RunAcceptanceService)
+    kwargs = {
+        "run": SimpleNamespace(id="successor"),
+        "state": None,
+        "expected_current_run_id": "source",
+        "transaction_hook": existing_hook,
+    }
+    if rollback:
+        with pytest.raises(ObjectStoreUnavailable):
+            await service.consume_queued(**kwargs)
+        assert events == ["published", "transaction", "existing_hook", "rolled_back"]
+    else:
+        assert await service.consume_queued(**kwargs) == "receipt"
+        assert events == ["published", "transaction", "existing_hook", "committed"]
+    # A subsequent non-queue publication must not inherit a queue fault context.
+    await service._publish_initial(SimpleNamespace(id="unrelated"), None)
+    assert events[-1] == "published"
+
+
+async def test_control_fault_installers_target_current_owners(monkeypatch, tmp_path):
+    from a13n_service.interactions.acceptance import RunAcceptanceService
+    from a13n_service.interactions.attempts import AttemptExecutionService
+    from a13n_service.interactions.objects import RunStateStore
+    from a13n_service.interactions.queue import QueuedSubmissionStore
+    from a13n_service.interactions.queue_commands import QueuedRunCommands
+    from a13n_service.interactions.queue_drain import QueueDrain
+
+    from ..control import fork_fault_host, queue_fault_host
+
+    for owner, names in (
+        (RunAcceptanceService, ("_publish_initial",)),
+        (AttemptExecutionService, ("yield_attempt",)),
+        (RunStateStore, ("claim_writer",)),
+        (QueuedSubmissionStore, ("enqueue",)),
+        (QueuedRunCommands, ("consume_queued", "prepare_queued_run")),
+        (QueueDrain, ("scan",)),
+    ):
+        for name in names:
+            monkeypatch.setattr(owner, name, vars(owner)[name])
+    faults = Faults(tmp_path, "control")
+    fork_fault_host.install(faults)
+    queue_fault_host.install(faults, {})
+    assert QueueDrain.scan.__wrapped__ is not None
+    assert QueuedRunCommands.prepare_queued_run.__wrapped__ is not None
+
+
+async def test_state_faults_do_not_intercept_replay_objects(monkeypatch, tmp_path):
+    from a13n_service.interactions.acceptance import RunAcceptanceService
+    from a13n_service.interactions.attempts import AttemptExecutionService
+    from a13n_service.interactions.objects import RUN_STATE_CONTENT_TYPE, RunStateStore
+    from a13n_service.interactions.terminal_committer import DatabaseAttemptCommitter
+    from a13n_service.storage.object_store.s3 import S3ObjectStore
+
+    from ..run_recovery.run_fault_host import install
+
+    for owner, names in (
+        (RunAcceptanceService, ("accept_new_thread", "_publish_initial")),
+        (AttemptExecutionService, ("fail",)),
+        (RunStateStore, ("read", "replace")),
+        (DatabaseAttemptCommitter, ("verify_state_outcome",)),
+    ):
+        for name in names:
+            monkeypatch.setattr(owner, name, vars(owner)[name])
+    calls = []
+
+    async def put(self, key, source, **kwargs):
+        calls.append(key)
+        return "stored"
+
+    monkeypatch.setattr(S3ObjectStore, "put", put)
+    install({"workspace_root": str(tmp_path), "run_faults": {"queue_faults": False}}, "worker")
+    key = "organizations/org/runs/run/replay/version-1.json"
+    result = await S3ObjectStore.put(None, key, b"{}", content_type=RUN_STATE_CONTENT_TYPE, metadata={"run-id": "run"})
+    assert result == "stored" and calls == [key]

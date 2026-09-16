@@ -1,0 +1,144 @@
+{
+  "$defs": {
+    "HeartbeatAckFrame": {
+      "additionalProperties": false,
+      "properties": {
+        "nonce": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Nonce",
+          "type": "string"
+        },
+        "type": {
+          "const": "heartbeat_ack",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "nonce"
+      ],
+      "title": "HeartbeatAckFrame",
+      "type": "object"
+    },
+    "NotificationSubscription": {
+      "additionalProperties": false,
+      "properties": {
+        "resource_id": {
+          "maxLength": 72,
+          "minLength": 1,
+          "title": "Resource Id",
+          "type": "string"
+        },
+        "scope": {
+          "enum": [
+            "thread",
+            "workspace"
+          ],
+          "title": "Scope",
+          "type": "string"
+        },
+        "subscription_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Subscription Id",
+          "type": "string"
+        },
+        "topics": {
+          "items": {
+            "enum": [
+              "thread.updated",
+              "run.updated",
+              "pending_action.updated",
+              "session.updated"
+            ],
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Topics",
+          "type": "array"
+        }
+      },
+      "required": [
+        "subscription_id",
+        "scope",
+        "resource_id",
+        "topics"
+      ],
+      "title": "NotificationSubscription",
+      "type": "object"
+    },
+    "SubscribeFrame": {
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Request Id",
+          "type": "string"
+        },
+        "subscriptions": {
+          "items": {
+            "$ref": "#/$defs/NotificationSubscription"
+          },
+          "title": "Subscriptions",
+          "type": "array"
+        },
+        "type": {
+          "const": "subscribe",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "request_id",
+        "subscriptions"
+      ],
+      "title": "SubscribeFrame",
+      "type": "object"
+    },
+    "UnsubscribeFrame": {
+      "additionalProperties": false,
+      "properties": {
+        "request_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Request Id",
+          "type": "string"
+        },
+        "subscription_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Subscription Ids",
+          "type": "array"
+        },
+        "type": {
+          "const": "unsubscribe",
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "request_id",
+        "subscription_ids"
+      ],
+      "title": "UnsubscribeFrame",
+      "type": "object"
+    }
+  },
+  "anyOf": [
+    {
+      "$ref": "#/$defs/SubscribeFrame"
+    },
+    {
+      "$ref": "#/$defs/UnsubscribeFrame"
+    },
+    {
+      "$ref": "#/$defs/HeartbeatAckFrame"
+    }
+  ]
+}

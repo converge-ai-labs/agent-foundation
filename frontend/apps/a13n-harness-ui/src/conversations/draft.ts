@@ -1,5 +1,6 @@
 import * as Y from "yjs";
 import type { Schema, Transport } from "../transport/client";
+import type { LocalInput } from "./local-input";
 import {
   attachmentSelections,
   attachmentToken,
@@ -68,7 +69,12 @@ export type Submission =
       message: string;
       receipt?: string;
     }
-  | { kind: "accepted"; message: string; receipt: string }
+  | {
+      kind: "accepted";
+      action?: "send" | "steer";
+      message: string;
+      receipt: string;
+    }
   | { kind: "rejected"; message: string };
 
 export class ThreadDraft {
@@ -86,6 +92,8 @@ export class ThreadDraft {
   status = "Disconnected";
   error = "";
   submission: Submission = { kind: "idle" };
+  // Private presentation only. This is neither shared input nor an execution queue.
+  localInputs: LocalInput[] = [];
   // A private, in-tab Send choice, not shared input or sticky Thread configuration.
   modelId: string | undefined;
   replacement: Schema<"DraftFrame"> | undefined;

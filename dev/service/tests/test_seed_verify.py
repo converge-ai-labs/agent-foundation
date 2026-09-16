@@ -59,6 +59,11 @@ def test_verify_batches_runs_and_reads_every_transcript_page():
                 return []
             if path.endswith(("/agents", "/skills", "/assets")):
                 return [{"id": str(index)} for index in range(51)]
+            if path.endswith("/web-providers"):
+                return [
+                    {"id": kind, "type": kind, "enabled": True, "credential_configured": True}
+                    for kind in ("brave", "exa")
+                ]
             if path.endswith("/sessions"):
                 return [{"id": "session"}]
             if path == "/api/v1/sessions/session/threads":
@@ -88,6 +93,7 @@ def test_verify_batches_runs_and_reads_every_transcript_page():
                 "scenarios": {
                     "conversations": {name: name for name in outcomes},
                     "identity": {"api_key_expired": "key"},
+                    "resources": {"web_provider_brave": "brave", "web_provider_exa": "exa"},
                 },
             },
         )

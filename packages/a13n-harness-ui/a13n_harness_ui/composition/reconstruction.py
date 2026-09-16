@@ -30,10 +30,12 @@ from a13n_harness.model_context import (
 )
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog, HarnessPluginFactoryContext
 from a13n_harness.pricing import PricingCatalog
+from a13n_harness.recovery import DEFAULT_RECOVERY_PROMPT
 from a13n_harness.tools import HARNESS_TOOL_METADATA_KEY
 from a13n_harness.tools.metadata import normalize_harness_tool_metadata
 from pydantic_ai import RunContext
 from pydantic_ai.capabilities import AbstractCapability, CapabilityOrdering
+from pydantic_ai.messages import TextContent
 from pydantic_ai.toolsets import AbstractToolset, ToolsetTool, WrapperToolset
 
 from a13n_harness_ui.environment_paths import EnvironmentPathLayout
@@ -370,7 +372,15 @@ class AgentReconstructor:
             plugins=plugins,
             tool_proxy=tool_proxy,
             subagents=children,
-            model_recovery=ModelRecoveryPolicy(enabled=True),
+            model_recovery=ModelRecoveryPolicy(
+                enabled=True,
+                continuation_prompt=(
+                    TextContent(
+                        DEFAULT_RECOVERY_PROMPT,
+                        metadata={"display": False, "source_id": "a13n-harness-ui.model-recovery"},
+                    ),
+                ),
+            ),
         )
 
 

@@ -1,24 +1,14 @@
-"""Provider-native connection checks and complete, bounded catalog enumeration."""
+"""Bounded connection probes, without model discovery or enumeration."""
 
 from __future__ import annotations
 
-import json
-from collections.abc import AsyncGenerator
-from contextlib import aclosing
 from typing import Protocol
 
 import httpx2
 
-from .candidates import candidate_from_catalog
-from .domain import ModelCandidate, ModelDiscovery
-from .provider_adapters.base import DiscoveredModelIdentity, ProviderOperationError, ProviderOperationUnsupported
+from .provider_adapters.base import ProviderOperationError, ProviderOperationUnsupported
 from .provider_adapters.types import RuntimeProvider
 from .providers import ProviderRegistry
-
-_MAX_DISCOVERY_RESPONSE_BYTES = 4 * 1024 * 1024
-_MAX_DISCOVERY_PAGES = 100
-_MAX_DISCOVERY_MODELS = 10_000
-_MAX_DISCOVERY_OUTPUT_BYTES = 32 * 1024 * 1024
 
 
 class ProviderStateResolver(Protocol):
@@ -36,75 +26,22 @@ class NativeProviderOperations:
         self._http_client = http_client
 
     async def test(self, *, provider_id: str, organization_id: str, workspace_id: str | None) -> None:
-        provider = await self._resolve(provider_id, organization_id, workspace_id)
-        async with aclosing(self._pages(provider)) as pages:
-            await anext(pages)
-
-    async def discover(self, *, provider_id: str, organization_id: str, workspace_id: str | None) -> ModelDiscovery:
-        provider = await self._resolve(provider_id, organization_id, workspace_id)
-        indexed: dict[str, ModelCandidate] = {}
-        sizes: dict[str, int] = {}
-        output_bytes = len(ModelDiscovery(items=()).model_dump_json().encode())
-        if output_bytes > _MAX_DISCOVERY_OUTPUT_BYTES:
-            raise ProviderOperationError("the Provider catalog exceeds the output byte limit")
-        async with aclosing(self._pages(provider)) as pages:
-            async for identities in pages:
-                for item in identities:
-                    candidate = candidate_from_catalog(
-                        self._registry,
-                        provider.type,
-                        item.upstream_model,
-                        display_name=item.display_name,
-                        metadata=item.metadata,
-                    )
-                    size = len(candidate.model_dump_json().encode())
-                    previous = sizes.get(item.upstream_model)
-                    output_bytes += size - previous if previous is not None else size + bool(indexed)
-                    if output_bytes > _MAX_DISCOVERY_OUTPUT_BYTES:
-                        raise ProviderOperationError("the Provider catalog exceeds the output byte limit")
-                    indexed[item.upstream_model] = candidate
-                    sizes[item.upstream_model] = size
-        return ModelDiscovery(items=tuple(indexed[key] for key in sorted(indexed)))
-
-    async def _resolve(self, provider_id: str, organization_id: str, workspace_id: str | None) -> RuntimeProvider:
-        return await self._provider_resolver.resolve_provider(
+        provider = await self._provider_resolver.resolve_provider(
             provider_id=provider_id, organization_id=organization_id, workspace_id=workspace_id
         )
-
-    async def _pages(self, provider: RuntimeProvider) -> AsyncGenerator[list[DiscoveredModelIdentity]]:
-        discovery = self._registry.integration(provider.type).model_discovery
-        if discovery is None:
-            raise ProviderOperationUnsupported("Provider model discovery is unsupported")
-        request = discovery.request(provider)
-        params: dict[str, str] = {}
-        seen_tokens: set[str] = set()
-        seen_models: set[str] = set()
-        for _ in range(_MAX_DISCOVERY_PAGES):
-            try:
-                async with self._http_client.stream(
-                    "GET", request.url, headers={**provider.extra_headers, **request.headers}, params=params, timeout=10
-                ) as response:
-                    response.raise_for_status()
-                    body = bytearray()
-                    async for chunk in response.aiter_bytes():
-                        if len(body) + len(chunk) > _MAX_DISCOVERY_RESPONSE_BYTES:
-                            raise ProviderOperationError("the Provider model-list response is too large")
-                        body.extend(chunk)
-                payload = json.loads(body)
-                if not isinstance(payload, dict):
-                    raise ProviderOperationError("the Provider model-list response is invalid")
-            except (httpx2.HTTPError, json.JSONDecodeError, UnicodeDecodeError) as error:
-                raise ProviderOperationError("the Provider model-list request failed") from error
-            identities = discovery.parse(payload)
-            seen_models.update(item.upstream_model for item in identities)
-            if len(seen_models) > _MAX_DISCOVERY_MODELS:
-                raise ProviderOperationError("the Provider catalog exceeds the bounded model count")
-            yield identities
-            params = discovery.next_page(payload)
-            if not params:
-                return
-            token = json.dumps(params, sort_keys=True)
-            if token in seen_tokens:
-                raise ProviderOperationError("the Provider repeated its continuation token")
-            seen_tokens.add(token)
-        raise ProviderOperationError("the Provider catalog exceeds the bounded enumeration budget")
+        probe = self._registry.integration(provider.type).connection_probe
+        if probe is None:
+            raise ProviderOperationUnsupported("Test a saved Model to verify this connection")
+        request = probe(provider)
+        try:
+            async with self._http_client.stream(
+                "GET", request.url, headers={**provider.extra_headers, **request.headers}, timeout=10
+            ) as response:
+                response.raise_for_status()
+                size = 0
+                async for chunk in response.aiter_bytes():
+                    size += len(chunk)
+                    if size > 4 * 1024 * 1024:
+                        raise ProviderOperationError("Provider probe response exceeds its size limit")
+        except httpx2.HTTPError as error:
+            raise ProviderOperationError("Provider connection probe failed") from error

@@ -319,6 +319,13 @@ async def test_sidekick_agent_inheritance_and_model_override_use_normal_run_comp
         assert f"Your current Thread: {source.thread_id}" in instructions[0]
         assert "Your captured Project: project-main" in instructions[0]
         assert "Answer its questions through that same tool" in instructions[0]
+        assert "Use subagents for parallel research, exploration, and other bounded tasks" in instructions[0]
+        assert "keep that work in the current Thread rather than creating a Sidekick as a fallback" in instructions[0]
+        assert (
+            "Create a separate Thread only for coordination work that needs human attention, decisions, or follow-up "
+            "in its own conversation" in instructions[0]
+        )
+        assert "For useful independent work, prefer create_thread" not in instructions[0]
         assert f"agent_id={expected_agent!r}" in instructions[0]
         if "model" in sidekick:
             assert f"model_id={sidekick['model']!r}" in instructions[0]

@@ -10,7 +10,7 @@ on:
       - "Makefile"
       - ".pre-commit-config.yaml"
       - "frontend/**"
-      - "sdk/typescript/**"
+      - "proto/a13n-service/**"
       - "packages/*/pyproject.toml"
       - "packages/a13n-envd-client/**"
       - "packages/a13n-logging/**"
@@ -43,7 +43,7 @@ on:
       - "Makefile"
       - ".pre-commit-config.yaml"
       - "frontend/**"
-      - "sdk/typescript/**"
+      - "proto/a13n-service/**"
       - "packages/*/pyproject.toml"
       - "packages/a13n-envd-client/**"
       - "packages/a13n-logging/**"
@@ -139,7 +139,7 @@ jobs:
               - 'frontend/*'
               - 'frontend/apps/a13n-console/**'
               - 'frontend/packages/**'
-              - 'sdk/typescript/**'
+              - 'proto/a13n-service/**'
               - 'scripts/tests/test_harness_ui_ci_workflow.py'
             distribution:
               - '.github/workflows/ci-a13n-harness-ui*.yml'
@@ -261,9 +261,9 @@ jobs:
 
       - name: Install and check frontend workspace
         run: |
-          make sdk-typescript-build
           pnpm --dir frontend install --frozen-lockfile
           pnpm --dir frontend run format:check
+          pnpm --dir frontend --filter a13n-console run generate:check
           pnpm --dir frontend --filter '!a13n-harness-ui-webui' -r run check
           pnpm --dir frontend --filter '!a13n-harness-ui-webui' -r run test
           pnpm --dir frontend --filter '!a13n-harness-ui-webui' -r run build

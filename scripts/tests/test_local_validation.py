@@ -147,12 +147,48 @@ def test_logging_and_service_build_targets_publish_only_their_own_package(compon
         ("packages/a13n-harness/tests/test_agent.py", False),
         ("packages/a13n-service/src/a13n_service/app.py", True),
         ("packages/a13n-service/pyproject.toml", True),
-        ("sdk/codegen/generate.py", True),
+        ("scripts/export-a13n-service-openapi.py", True),
         ("uv.lock", True),
     ],
 )
-def test_sdk_hook_skips_package_tests_but_keeps_contract_inputs(path: str, regenerates: bool) -> None:
+def test_service_contract_hook_skips_package_tests_but_keeps_contract_inputs(path: str, regenerates: bool) -> None:
     config = yaml.safe_load((REPOSITORY_ROOT / ".pre-commit-config.yaml").read_text())
-    hook = next(hook for repo in config["repos"] for hook in repo["hooks"] if hook["id"] == "sdk-generate")
+    hook = next(hook for repo in config["repos"] for hook in repo["hooks"] if hook["id"] == "service-contract-generate")
     selected = bool(re.search(hook["files"], path)) and not re.search(hook.get("exclude", "^$"), path)
     assert bool(selected) is regenerates
+
+
+@pytest.mark.parametrize("target", ["install", "format", "check", "check-all", "build", "clean"])
+def test_root_targets_do_not_require_sdk_checkouts(tmp_path: Path, target: str) -> None:
+    shutil.copy2(REPOSITORY_ROOT / "Makefile", tmp_path / "Makefile")
+    result = subprocess.run(["make", "--dry-run", target], cwd=tmp_path, capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "sdk/" not in result.stdout
+    assert "sdk-" not in result.stdout
+    assert "a13n-service-cli" not in result.stdout
+    assert not (tmp_path / "sdk").exists()
+
+
+def test_service_ci_owns_export_drift_and_tests() -> None:
+    workflow = yaml.safe_load((REPOSITORY_ROOT / ".github/workflows/ci-a13n-service.yml").read_text())
+    for event in ("pull_request", "push"):
+        patterns = workflow[True][event]["paths"]
+        for path in (
+            "proto/a13n-service/openapi.json",
+            "proto/a13n-service/run-stream-event.schema.json",
+            "scripts/export-a13n-service-openapi.py",
+            "scripts/tests/test_service_contract.py",
+            "packages/a13n-service/a13n_service/gateway/router.py",
+            "packages/a13n-harness/a13n_harness/types.py",
+            "packages/a13n-stream-protocol/a13n_stream_protocol/events.py",
+            "uv.lock",
+        ):
+            assert any(Path(path).full_match(pattern) for pattern in patterns), (event, path)
+    steps = workflow["jobs"]["validation"]["steps"]
+    for command in (
+        "uv run --locked python scripts/export-a13n-service-openapi.py --check",
+        "uv run --locked python -m pytest scripts/tests/test_service_contract.py",
+    ):
+        step = next(step for step in steps if step.get("run") == command)
+        assert step["if"] == "matrix.name == 'checks'"
+    assert workflow["jobs"]["python"]["needs"] == "validation"

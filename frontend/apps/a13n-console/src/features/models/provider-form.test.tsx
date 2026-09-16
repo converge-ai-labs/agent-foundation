@@ -52,7 +52,7 @@ function mount() {
             settings_schemas: {
               "openai.chat_completions": { type: "object" },
             },
-            supports_model_discovery: true,
+            catalog_providers: ["openai"],
             credential_schema: { type: "string" },
             configuration_schema: {
               type: "object",

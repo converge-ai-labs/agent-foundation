@@ -18,7 +18,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 import { DateTimeField } from "../../shared/date-time-field";
 
-import { ApiError } from "@converge.ai/a13n";
+import { ApiError } from "../../service-client";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";

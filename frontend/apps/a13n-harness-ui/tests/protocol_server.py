@@ -16,6 +16,7 @@ from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from a13n_harness_ui.webui import create_webui
+from pydantic_ai.messages import ModelRequest, UserPromptPart
 from pydantic_ai.models.function import FunctionModel
 
 
@@ -74,7 +75,7 @@ async def main() -> None:
             else {
                 "models/fixture.yaml": 'schema_version: "1"\nkind: model\nid: model-fixture\nname: Fixture\nroute: openai:gpt-5\nauthentication: {kind: api_key, env: FIXTURE_MODEL_KEY}\n',
                 "models/alternate.yaml": 'schema_version: "1"\nkind: model\nid: model-alternate\nname: Alternate\nroute: openai:gpt-5\nauthentication: {kind: api_key, env: FIXTURE_MODEL_KEY}\n',
-                "agents/fixture.yaml": 'schema_version: "1"\nkind: agent\nid: agent-fixture\nname: Fixture\nmodel: model-fixture\n',
+                "agents/fixture.yaml": 'schema_version: "1"\nkind: agent\nid: agent-fixture\nname: Fixture\nmodel: model-fixture\ncapabilities:\n  - capability: skills\n',
             }
         )
         for name, content in sources.items():
@@ -82,8 +83,35 @@ async def main() -> None:
             path.parent.mkdir(exist_ok=True)
             path.write_text(content, encoding="utf-8")
 
+        attempts = 0
+
         async def model(messages, info):
+            nonlocal attempts
+            attempts += 1
+            if "--retry" in sys.argv and attempts == 1:
+                import httpx2
+
+                yield "Preparing the review.\n\n"
+                await asyncio.sleep(1)
+                raise httpx2.ReadError("Isolated fixture interruption")
+            if "--rich-output" in sys.argv:
+                yield "## Review result\n\nThe conversation stays readable while work continues.\n\n"
+                await asyncio.sleep(2)
+                yield '| Surface | Status | Notes |\n| :--- | :---: | ---: |\n| Markdown | Ready | 12 |\n| Mermaid | Ready | 3 |\n\n```python\ndef greet(name: str) -> str:\n    # Preserve the original source\n    return f"Hello, {name}"\n```\n\n'
+                yield "```mermaid\nflowchart LR\n    A[Local input] --> B[Live output]\n    B --> C[Saved history]\n"
+                await asyncio.sleep(1)
+                yield "```\n\nAll checks are ready for human review."
+                return
             yield "Protocol "
+            if any(
+                "wait for skill inspection" in str(part.content)
+                for message in messages
+                if isinstance(message, ModelRequest)
+                for part in message.parts
+                if isinstance(part, UserPromptPart)
+            ):
+                # The protocol test cancels this Run after inspecting active steering.
+                await asyncio.Event().wait()
             await asyncio.sleep(6 if "--slow" in sys.argv else 0.4)
             yield "response"
 
@@ -101,6 +129,11 @@ async def main() -> None:
                 instrumentation=None,
             ),
             api_key="test-only-key",
+            static_root=(
+                Path(sys.argv[sys.argv.index("--static-root") + 1])
+                if "--static-root" in sys.argv
+                else Path(__file__).resolve().parents[1] / "dist"
+            ),
         )
         sock = socket.socket()
         sock.bind(("127.0.0.1", 0))

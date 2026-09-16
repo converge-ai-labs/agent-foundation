@@ -67,10 +67,10 @@ it("requires an explicit decision for every approval before sending the complete
     name: "Submit responses",
   }) as HTMLButtonElement;
   expect(submit.disabled).toBe(true);
-  await user.click(screen.getAllByRole("button", { name: "Approve" })[0]!);
+  await user.click(screen.getAllByRole("button", { name: "Approve once" })[0]!);
   expect(submit.disabled).toBe(true);
   expect(post).not.toHaveBeenCalled();
-  await user.click(screen.getAllByRole("button", { name: "Reject" })[1]!);
+  await user.click(screen.getAllByRole("button", { name: /^Deny$/ })[1]!);
   expect(submit.disabled).toBe(false);
   await user.click(submit);
   await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
@@ -89,6 +89,83 @@ it("requires an explicit decision for every approval before sending the complete
       { action: "reject", call_id: "second" },
     ],
   });
+});
+
+it("submits a bounded denial reason with the existing feedback request", async () => {
+  const user = userEvent.setup();
+  post.mockResolvedValue({
+    data: { session_id: "session", thread_id: "thread", run_id: "next" },
+    response: new Response(),
+  });
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <ConfigurationFeedback
+        run={
+          {
+            id: "run",
+            sealed_state_digest_sha256: "digest",
+          } as Schema["RunResource"]
+        }
+        thread={{ version: 7 } as Schema["ThreadResource"]}
+        actions={[
+          {
+            call_id: "first",
+            kind: "approval",
+            tool_name: "First action",
+            provider_type: null,
+            presentation: {
+              target: "path: /workspace/report",
+              risk: "high",
+              reason: "Tool reviewer requires approval.",
+            },
+          },
+        ]}
+        accepted={accepted}
+      />
+    </QueryClientProvider>,
+  );
+  expect(screen.getByText("path: /workspace/report")).toBeTruthy();
+  await user.click(screen.getByRole("button", { name: "Deny with reason" }));
+  const reason = screen.getByRole("textbox", {
+    name: "Denial reason (optional)",
+  });
+  await user.type(reason, "Sensitive destination");
+  await user.click(screen.getByRole("button", { name: "Submit responses" }));
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+  expect(post.mock.calls[0]![1].body.resolutions).toEqual([
+    { action: "reject", call_id: "first", reason: "Sensitive destination" },
+  ]);
+});
+
+it("falls back to JSON for malformed approval presentation", () => {
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <ConfigurationFeedback
+        run={
+          {
+            id: "run",
+            sealed_state_digest_sha256: "digest",
+          } as Schema["RunResource"]
+        }
+        thread={{ version: 7 } as Schema["ThreadResource"]}
+        actions={[
+          {
+            call_id: "first",
+            kind: "approval",
+            tool_name: "First action",
+            provider_type: null,
+            presentation: {
+              target: "path: /workspace",
+              reason: { unexpected: true },
+            },
+          },
+        ]}
+        accepted={accepted}
+      />
+    </QueryClientProvider>,
+  );
+  expect(screen.getByText("Request details")).toBeTruthy();
+  expect(screen.queryByText("Review reason")).toBeNull();
 });
 
 function renderQuestions(
@@ -193,4 +270,62 @@ it("allows free text instead of an option and does not submit an empty answer", 
   expect(post.mock.calls[0]![1].body.resolutions[0].response).toEqual({
     answers: { "Which business?": "Travel support" },
   });
+});
+
+it("submits questions and approval decisions together without dropping either", async () => {
+  const user = userEvent.setup();
+  post.mockResolvedValue({
+    data: { run_id: "next" },
+    response: new Response(),
+  });
+  render(
+    <QueryClientProvider client={new QueryClient()}>
+      <ConfigurationFeedback
+        accepted={accepted}
+        run={
+          {
+            id: "run",
+            sealed_state_digest_sha256: "digest",
+          } as Schema["RunResource"]
+        }
+        thread={{ version: 7 } as Schema["ThreadResource"]}
+        actions={[
+          {
+            call_id: "question",
+            kind: "user_input",
+            tool_name: "ask_user_question",
+            provider_type: null,
+            presentation: { questions: [questionPresentation.questions[0]!] },
+          },
+          {
+            call_id: "approval",
+            kind: "approval",
+            tool_name: "Search",
+            provider_type: null,
+            presentation: {
+              risk: "low",
+              reason: "Tool policy requires approval.",
+            },
+          },
+        ]}
+      />
+    </QueryClientProvider>,
+  );
+  const submit = screen.getByRole("button", {
+    name: "Submit responses",
+  }) as HTMLButtonElement;
+  await user.click(screen.getByRole("radio", { name: /Retail/ }));
+  expect(submit.disabled).toBe(true);
+  await user.click(screen.getByRole("button", { name: "Approve once" }));
+  expect(submit.disabled).toBe(false);
+  await user.click(submit);
+  await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+  expect(post.mock.calls[0]![1].body.resolutions).toEqual([
+    {
+      action: "respond",
+      call_id: "question",
+      response: { answers: { "Which business?": "Retail" } },
+    },
+    { action: "approve", call_id: "approval" },
+  ]);
 });

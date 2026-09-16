@@ -21,11 +21,16 @@ import { ThreadRunChoices } from "./thread-run-choices";
 import { Decisions } from "./decisions";
 import { ConversationDetails } from "./details";
 import { WorkInspector } from "./work-inspector";
-import { Discussion } from "./comments";
+import { RootFailureNotice } from "./failure-notice";
+import { refreshThread } from "./refresh";
 import { refreshThreadLists, useHistory, useThread } from "./queries";
 import { FocusDisplay, showFocusedOutput, watchThread } from "./stream";
-import { LiveOutput, SavedEntry } from "./transcript";
-import { savedToolGroups } from "./tool-presentation";
+import {
+  ConversationTranscript,
+  RecoveryNotice,
+  SteerNotice,
+} from "./transcript";
+import { inputSource } from "./local-input";
 import styles from "./conversation.module.css";
 
 export function ConversationPage(props: {
@@ -113,10 +118,61 @@ function Conversation({
     if (rename) setTitle(detail.data?.thread.title ?? "");
   }, [rename, detail.data?.thread.title]);
   const [message, setMessage] = useState("");
-  const [referenceAdded, setReferenceAdded] = useState(0);
   const reader = useRef<HTMLDivElement>(null);
   const restoreScroll = useRef(readPreference(`scroll.${threadId}`, ""));
   const follow = useRef(true);
+  const scrollFrame = useRef<number | null>(null);
+  const stopScrolling = useCallback(() => {
+    if (scrollFrame.current !== null) cancelAnimationFrame(scrollFrame.current);
+    scrollFrame.current = null;
+  }, []);
+  const scrollToLatest = useCallback(
+    (instant = false) => {
+      const element = reader.current;
+      if (!element) return;
+      if (
+        instant ||
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ) {
+        stopScrolling();
+        element.scrollTop = element.scrollHeight;
+        return;
+      }
+      if (scrollFrame.current !== null) return;
+      let previous = performance.now();
+      const step = (now: number) => {
+        if (!follow.current) {
+          scrollFrame.current = null;
+          return;
+        }
+        const target = Math.max(0, element.scrollHeight - element.clientHeight);
+        const distance = target - element.scrollTop;
+        if (Math.abs(distance) < 1) {
+          element.scrollTop = target;
+          scrollFrame.current = null;
+          return;
+        }
+        // Some browsers quantize scrollTop to whole pixels. Keep progressing
+        // near the target instead of scheduling frames forever below one pixel.
+        element.scrollTop +=
+          Math.sign(distance) *
+          Math.max(
+            1,
+            Math.abs(distance) *
+              (1 - Math.exp(-Math.min(now - previous, 64) / 65)),
+          );
+        previous = now;
+        scrollFrame.current = requestAnimationFrame(step);
+      };
+      scrollFrame.current = requestAnimationFrame(step);
+    },
+    [stopScrolling],
+  );
+  useEffect(() => stopScrolling, [stopScrolling]);
+  const interruptScroll = () => {
+    stopScrolling();
+    follow.current = false;
+  };
   const olderAnchor = useRef<{ height: number; top: number } | null>(null);
   const [newOutput, setNewOutput] = useState(false);
   const reconcile = useCallback(() => {
@@ -126,7 +182,6 @@ function Conversation({
   }, [queries, threadId]);
   useEffect(() => {
     let paint: ReturnType<typeof setTimeout> | undefined;
-    let refresh: ReturnType<typeof setTimeout> | undefined;
     const close = watchThread(
       transport,
       threadId,
@@ -139,20 +194,13 @@ function Conversation({
           }, 50);
       },
       setConnection,
-      () => {
-        if (!refresh)
-          refresh = setTimeout(() => {
-            refresh = undefined;
-            reconcile();
-          }, 150);
-      },
+      (reason) => refreshThread(queries, threadId, reason),
     );
     return () => {
       close();
       clearTimeout(paint);
-      clearTimeout(refresh);
     };
-  }, [transport, threadId, display, reconcile]);
+  }, [transport, threadId, display, queries]);
   const entries = useMemo(
     () =>
       history.data?.pages
@@ -161,7 +209,26 @@ function Conversation({
         .flatMap((page) => page.entries) ?? [],
     [history.data],
   );
-  const toolGroups = useMemo(() => savedToolGroups(entries), [entries]);
+  useEffect(() => {
+    const saved = new Set(
+      entries.flatMap((entry) => entry.parts.map(inputSource)),
+    );
+    const retained = draft.localInputs.filter((input) => !saved.has(input.id));
+    if (retained.length !== draft.localInputs.length) {
+      draft.localInputs = retained;
+      draft.notify();
+    }
+  }, [entries, draft]);
+  const latestLocalInput = draft.localInputs.at(-1)?.id;
+  const previousLocalInput = useRef(latestLocalInput);
+  useLayoutEffect(() => {
+    if (latestLocalInput && latestLocalInput !== previousLocalInput.current) {
+      follow.current = true;
+      setNewOutput(false);
+      scrollToLatest(true);
+    }
+    previousLocalInput.current = latestLocalInput;
+  }, [latestLocalInput, scrollToLatest]);
   const continuation = history.data?.pages[0]?.continuation_id;
   const operation = detail.data?.thread.root_activity;
   const [lastReceipt, setLastReceipt] = useState<string | null>(null);
@@ -182,14 +249,15 @@ function Conversation({
       : undefined);
   // Advance only after the replacement history query arrives. SSE completion alone
   // is not evidence that continuation was saved.
+  const presentation = display.presentationFor(continuation);
   const showLive = showFocusedOutput(
-    display,
+    presentation,
     continuation,
     operation?.run_id,
     history.isPreviousHistory,
   );
-  const liveBlocks = display.blocksAfter(continuation);
-  const visibleContent = `${continuation}:${entries.length}:${
+  const liveBlocks = presentation.blocksAfter(continuation);
+  const visibleContent = `${continuation}:${entries.length}:${draft.localInputs.map((input) => input.id).join(",")}:${
     showLive
       ? liveBlocks
           .filter((block) => !block.diagnostic)
@@ -223,7 +291,7 @@ function Conversation({
         element.scrollHeight -
         olderAnchor.current.height;
       olderAnchor.current = null;
-    } else if (follow.current) element.scrollTop = element.scrollHeight;
+    } else if (follow.current) scrollToLatest(!lastContent.current || restored);
     else if (
       !restored &&
       !olderAnchor.current &&
@@ -231,7 +299,23 @@ function Conversation({
     )
       setNewOutput(true);
     lastContent.current = visibleContent;
-  }, [revision, visibleContent, history.data, history.isFetchingNextPage]);
+  }, [
+    revision,
+    visibleContent,
+    history.data,
+    history.isFetchingNextPage,
+    scrollToLatest,
+  ]);
+  useEffect(() => {
+    const element = reader.current;
+    const content = element?.firstElementChild;
+    if (!content || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (follow.current && !olderAnchor.current) scrollToLatest();
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [!!detail.data, scrollToLatest]);
   useEffect(() => {
     const element = reader.current;
     // Also retry the top-edge observation after an in-flight refetch settles.
@@ -312,13 +396,7 @@ function Conversation({
       </div>
     );
   return (
-    <Discussion
-      threadId={threadId}
-      profile={profile}
-      listOpen={dialog === "comments"}
-      closeList={closeDialog}
-      onReferenceAdded={() => setReferenceAdded((value) => value + 1)}
-    >
+    <>
       <div className={styles.page}>
         {connection !== "Live" && connection !== "Connecting" && (
           <div className={styles.activityBar}>
@@ -350,11 +428,23 @@ function Conversation({
         <div
           ref={reader}
           className={styles.reading}
+          onWheel={(event) => {
+            if (event.deltaY < 0) interruptScroll();
+          }}
+          onTouchStart={interruptScroll}
+          onPointerDown={interruptScroll}
+          onKeyDown={(event) => {
+            if (["ArrowUp", "PageUp", "Home"].includes(event.key))
+              interruptScroll();
+          }}
           onScroll={() => {
             const element = reader.current!;
-            follow.current =
-              element.scrollHeight - element.scrollTop - element.clientHeight <
-              64;
+            if (scrollFrame.current === null)
+              follow.current =
+                element.scrollHeight -
+                  element.scrollTop -
+                  element.clientHeight <
+                64;
             if (follow.current) setNewOutput(false);
             if (
               element.scrollTop < 160 &&
@@ -391,34 +481,21 @@ function Conversation({
                 Retry earlier messages
               </Button>
             )}
-            {entries.map((entry, index) => (
-              <div
-                key={`${continuation}:${entry.position}`}
-                data-presence-anchor={`entry:${continuation}:${entry.position}`}
-              >
-                <SavedEntry
-                  entry={entry}
-                  continuation={
-                    index > 0 &&
-                    !entries[index - 1].parts.some(
-                      (part) => part.kind === "user" || part.kind === "media",
-                    ) &&
-                    !entry.parts.some(
-                      (part) => part.kind === "user" || part.kind === "media",
-                    )
-                  }
-                  toolGroups={toolGroups}
-                  threadId={threadId}
-                />
-              </div>
-            ))}
-            {showLive && (
-              <LiveOutput
-                blocks={liveBlocks}
-                gap={display.gap}
-                threadId={threadId}
-              />
-            )}
+            <ConversationTranscript
+              entries={entries}
+              blocks={showLive ? liveBlocks : []}
+              localInputs={draft.localInputs}
+              continuation={continuation}
+              gap={showLive && display.gap}
+              threadId={threadId}
+            />
+            <RootFailureNotice
+              threadId={threadId}
+              receipt={receipt}
+              display={display}
+            />
+            <RecoveryNotice recovery={display.recovery} />
+            <SteerNotice draft={draft} />
             {!!detail.data.deferred_requests?.length && (
               <Decisions
                 threadId={threadId}
@@ -451,7 +528,7 @@ function Conversation({
             onClick={() => {
               follow.current = true;
               setNewOutput(false);
-              reader.current?.scrollTo({ top: reader.current.scrollHeight });
+              scrollToLatest();
             }}
           >
             <ArrowDown />
@@ -463,6 +540,7 @@ function Conversation({
           continuation={detail.data.continuation_id}
           display={display}
           live={showLive}
+          connected={connection === "Live"}
           reconcile={reconcile}
         />
         {!thread.archived && (
@@ -482,7 +560,6 @@ function Conversation({
         )}
         {!thread.archived && (
           <Composer
-            referenceAdded={referenceAdded}
             autoFocus={search.get("compose") === "1"}
             threadId={threadId}
             activity={thread.root_activity}
@@ -606,6 +683,6 @@ function Conversation({
             )}
         </ModalFrame>
       </div>
-    </Discussion>
+    </>
   );
 }

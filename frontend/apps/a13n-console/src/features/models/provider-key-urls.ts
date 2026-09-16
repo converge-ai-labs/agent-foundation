@@ -9,6 +9,9 @@ export const providerKeyUrls: Record<string, { href: string; label?: string }> =
     openrouter: { href: "https://openrouter.ai/settings/keys" },
     deepseek: { href: "https://platform.deepseek.com/api_keys" },
     moonshot: { href: "https://platform.kimi.ai/console/api-keys" },
+    minimax: {
+      href: "https://platform.minimax.io/docs/guides/quickstart-preparation",
+    },
     zhipu: { href: "https://docs.bigmodel.cn/cn/guide/develop/apikey" },
     alibaba_model_studio: {
       href: "https://www.alibabacloud.com/help/en/model-studio/get-api-key",

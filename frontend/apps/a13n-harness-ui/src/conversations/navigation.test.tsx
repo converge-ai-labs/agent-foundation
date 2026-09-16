@@ -40,6 +40,9 @@ function page(
   project: string | null = "project-one",
 ) {
   return {
+    active_rows: activeThreads
+      .filter((item) => item.configuration.project_id === project)
+      .map((item) => ({ thread: item, project_name: project ?? "No project" })),
     rows: ids.map((id) => ({
       thread: thread(id, project),
       project_name: project ?? "No project",
@@ -55,6 +58,7 @@ function json(body: unknown, status = 200) {
   });
 }
 let activity: URL[];
+let activeThreads: ReturnType<typeof thread>[];
 let writes: Request[];
 let failMore: boolean;
 let failSave: boolean;
@@ -66,6 +70,7 @@ let queryClient: QueryClient;
 beforeEach(() => {
   localStorage.clear();
   activity = [];
+  activeThreads = [];
   writes = [];
   failMore = false;
   failSave = false;
@@ -114,6 +119,11 @@ beforeEach(() => {
         return json({ sources: [] });
       if (url.pathname === "/api/selectors")
         return json({ agents: [], environments: [] });
+      const activeThread = activeThreads.find(
+        (item) =>
+          url.pathname === `/api/threads/${encodeURIComponent(item.thread_id)}`,
+      );
+      if (activeThread) return json({ thread: activeThread });
       if (url.pathname === "/api/threads/selected-old")
         return json({ thread: thread("selected-old") });
       if (url.pathname === "/api/threads/activity") {
@@ -277,14 +287,15 @@ it("keeps failed pagination local, retries it, and queries projectless and unava
   expect(activity.at(-1)?.searchParams.get("project_scope")).toBe(
     "unavailable",
   );
-  fireEvent.click(screen.getByRole("checkbox", { name: "Include archived" }));
-  await waitFor(() =>
-    expect(
-      activity.filter(
-        (url) => url.searchParams.get("include_archived") === "true",
-      ),
-    ).toHaveLength(4),
-  );
+  expect(
+    activity.every(
+      (url) => url.searchParams.get("include_archived") === "false",
+    ),
+  ).toBe(true);
+  expect(
+    screen.queryByRole("checkbox", { name: "Include archived" }),
+  ).toBeNull();
+  expect(screen.queryByRole("button", { name: "New conversation" })).toBeNull();
 });
 
 it("reorders whole project groups with keyboard, cancels preview, and persists only in this browser", async () => {
@@ -361,8 +372,8 @@ it("opens a local blank conversation in the selected project without a creation 
     await screen.findByRole("button", { name: "New conversation in Two" }),
   );
   expect(screen.queryByRole("dialog")).toBeNull();
-  expect(screen.getByLabelText("Current route").textContent).toMatch(
-    /^\/new\/thread_[a-f0-9]{32}\?project=project-two$/,
+  expect(screen.getByLabelText("Current route").textContent).toBe(
+    "/new?project=project-two",
   );
   expect(writes).toHaveLength(0);
 });
@@ -471,7 +482,10 @@ it("preserves project scope filtering and cached independent pages through scope
   await screen.findByText("Older two");
   await user.click(screen.getByRole("button", { name: "Two" }));
   await screen.findByText("Other project");
-  await user.click(screen.getByRole("combobox", { name: "Project scope" }));
+  await user.click(screen.getByRole("button", { name: "Filter by project" }));
+  await user.click(
+    await screen.findByRole("combobox", { name: "Project scope" }),
+  );
   await user.click(await screen.findByRole("option", { name: "Two" }));
   expect(screen.queryByRole("button", { name: "One" })).toBeNull();
   expect(screen.getByRole("link", { name: "Other project" })).toBeTruthy();
@@ -487,7 +501,10 @@ it("preserves project scope filtering and cached independent pages through scope
     { target: { value: "" } },
   );
   const calls = activity.length;
-  await user.click(screen.getByRole("combobox", { name: "Project scope" }));
+  await user.click(screen.getByRole("button", { name: "Filter by project" }));
+  await user.click(
+    await screen.findByRole("combobox", { name: "Project scope" }),
+  );
   await user.click(await screen.findByRole("option", { name: "All Projects" }));
   expect(screen.getByRole("link", { name: "Older two" })).toBeTruthy();
   expect(activity).toHaveLength(calls);
@@ -568,7 +585,7 @@ it("does not claim empty search results when the list fails", async () => {
   expect(screen.queryByText("No conversations yet")).toBeNull();
 });
 
-it("keeps rows and DOM identity across an archive toggle and failed refresh without reusing old cursors", async () => {
+it("keeps rows, title and DOM identity across a failed background refresh", async () => {
   mount();
   fireEvent.click(await screen.findByRole("button", { name: "One" }));
   const original = await screen.findByRole("link", { name: "Recent 1" });
@@ -583,25 +600,25 @@ it("keeps rows and DOM identity across an archive toggle and failed refresh with
   });
   vi.mocked(fetch).mockImplementation(async (input, init) => {
     const request = input as Request;
-    if (request.url.includes("include_archived=true")) {
+    if (request.url.includes("/api/threads/activity")) {
       await pause;
       return json({ error: { message: "Archive filter unavailable" } }, 503);
     }
     return originalFetch(input, init);
   });
-  fireEvent.click(screen.getByRole("checkbox", { name: "Include archived" }));
+  act(() => {
+    void queryClient.invalidateQueries({ queryKey: ["threads"] });
+  });
   expect(screen.getByRole("link", { name: "Recent 1" })).toBe(original);
   expect(screen.queryByLabelText("Loading conversations")).toBeNull();
-  expect(
-    screen.queryByRole("button", { name: "Show more conversations in One" }),
-  ).toBeNull();
+  expect(screen.getByTitle("One").textContent).toBe("One");
   expect(scroller.scrollTop).toBe(40);
   await act(async () => release());
   await screen.findByText("Archive filter unavailable");
   expect(screen.getByRole("link", { name: "Recent 1" })).toBe(original);
 });
 
-it("hides archived rows immediately when filtering them out while retaining non-archived rows", async () => {
+it("never mixes archived rows into ordinary navigation", async () => {
   const originalFetch = vi.mocked(fetch).getMockImplementation()!;
   let pause: Promise<void> | null = null;
   let release!: () => void;
@@ -620,16 +637,16 @@ it("hides archived rows immediately when filtering them out while retaining non-
     return originalFetch(input, init);
   });
   mount();
-  fireEvent.click(
-    await screen.findByRole("checkbox", { name: "Include archived" }),
-  );
-  fireEvent.click(screen.getByRole("button", { name: "One" }));
-  await screen.findByRole("link", { name: /^Archived/ });
+  fireEvent.click(await screen.findByRole("button", { name: "One" }));
+  await screen.findByRole("link", { name: "Active" });
+  expect(screen.queryByRole("link", { name: /^Archived/ })).toBeNull();
   const active = screen.getByRole("link", { name: "Active" });
   pause = new Promise<void>((resolve) => {
     release = resolve;
   });
-  fireEvent.click(screen.getByRole("checkbox", { name: "Include archived" }));
+  act(() => {
+    void queryClient.invalidateQueries({ queryKey: ["threads"] });
+  });
   expect(screen.queryByRole("link", { name: /^Archived/ })).toBeNull();
   expect(screen.getByRole("link", { name: "Active" })).toBe(active);
   await act(async () => release());
@@ -659,10 +676,12 @@ it("targets execution refreshes without invalidating settings or native queries"
     queryClient.getQueryState(["thread", "thread-other", "detail"])
       ?.isInvalidated,
   ).toBe(false);
-  expect(
-    queryClient.getQueryState(["thread", "thread-changed", "detail"])
-      ?.isInvalidated,
-  ).toBe(true);
+  await waitFor(() =>
+    expect(
+      queryClient.getQueryState(["thread", "thread-changed", "detail"])
+        ?.isInvalidated,
+    ).toBe(true),
+  );
 });
 
 it("puts the current server directory first by default and on reset, while respecting explicit browser order", async () => {
@@ -706,4 +725,60 @@ it("opens project rename directly from the secondary menu without expanding or n
   ).toBe("false");
   expect(activity).toHaveLength(0);
   expect(writes).toHaveLength(0);
+});
+
+it("shows every active conversation before five recent rows and reconciles completion without duplicates", async () => {
+  activeThreads = Array.from({ length: 6 }, (_, index) => ({
+    ...thread(`Active ${index}`),
+    root_activity: { state: index === 0 ? "preparing" : "running" },
+  }));
+  mount("/threads/Active%200");
+  const project = await screen.findByRole("region", { name: "One" });
+  const running = await within(project).findByRole("group", {
+    name: "Running conversations",
+  });
+  expect(
+    within(running)
+      .getAllByRole("link")
+      .map((link) => link.textContent),
+  ).toEqual(activeThreads.map((item) => expect.stringContaining(item.title)));
+  expect(within(project).getAllByRole("link")).toHaveLength(11);
+  expect(within(project).queryByText(/outside this page/)).toBeNull();
+  expect(
+    activity
+      .find((url) => url.searchParams.get("project_id") === "project-one")
+      ?.searchParams.get("include_active"),
+  ).toBe("true");
+
+  // More applies only to inactive history; repeated active_rows must not duplicate.
+  fireEvent.click(within(project).getByRole("button", { name: /Show more/ }));
+  await within(project).findByRole("link", { name: /Older one/ });
+  expect(within(running).getAllByRole("link")).toHaveLength(6);
+  expect(within(project).getAllByRole("link")).toHaveLength(13);
+
+  // Live presentation changes do not trigger a frontend re-sort or touch request.
+  activeThreads[1] = { ...activeThreads[1], title: "Active 1 progress" };
+  await act(async () => {
+    await queryClient.invalidateQueries({ queryKey: ["threads"] });
+  });
+  await waitFor(() =>
+    expect(
+      within(running)
+        .getAllByRole("link")
+        .map((link) => link.textContent),
+    ).toEqual(activeThreads.map((item) => expect.stringContaining(item.title))),
+  );
+  activeThreads = activeThreads.slice(1);
+  recentTitle = "Active 0";
+  await act(async () => {
+    await queryClient.invalidateQueries({ queryKey: ["threads"] });
+  });
+  await waitFor(() =>
+    expect(within(running).getAllByRole("link")).toHaveLength(5),
+  );
+  expect(
+    within(project).getAllByRole("link", { name: /Active 0/ }),
+  ).toHaveLength(1);
+  expect(within(project).queryByText(/outside this page/)).toBeNull();
+  expect(writes).toEqual([]);
 });

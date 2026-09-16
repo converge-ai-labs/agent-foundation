@@ -1,4 +1,4 @@
-import { ApiError } from "@converge.ai/a13n";
+import { ApiError } from "../../service-client";
 import type { QueryClient } from "@tanstack/react-query";
 
 export function refreshMemory(cache: QueryClient, accountId: string) {

@@ -33,7 +33,15 @@ export function ConfigurationFeedback({
     client = useClient(),
     { workspace, can } = useWorkspace();
   const [answers, setAnswers] = useState<
-      Record<string, { action: string; value: string; structured?: boolean }>
+      Record<
+        string,
+        {
+          action: string;
+          value: string;
+          structured?: boolean;
+          reasonMode?: boolean;
+        }
+      >
     >({}),
     [key, setKey] = useState(crypto.randomUUID());
   const mutation = useMutation({
@@ -47,7 +55,17 @@ export function ConfigurationFeedback({
           throw new Error(t("Choose a response for every pending action."));
         if (answer.action === "omit") continue;
         if (answer.action === "approve" || answer.action === "reject") {
-          resolutions.push({ action: answer.action, call_id: pending.call_id });
+          resolutions.push(
+            answer.action === "reject"
+              ? {
+                  action: "reject",
+                  call_id: pending.call_id,
+                  ...(answer.value.trim()
+                    ? { reason: answer.value.trim() }
+                    : {}),
+                }
+              : { action: "approve", call_id: pending.call_id },
+          );
           continue;
         }
         let value: Schema["JsonValue"];
@@ -92,7 +110,12 @@ export function ConfigurationFeedback({
   });
   function change(
     id: string,
-    answer: { action: string; value: string; structured?: boolean },
+    answer: {
+      action: string;
+      value: string;
+      structured?: boolean;
+      reasonMode?: boolean;
+    },
   ) {
     setAnswers((previous) => ({ ...previous, [id]: answer }));
     setKey(crypto.randomUUID());
@@ -130,32 +153,90 @@ export function ConfigurationFeedback({
                   onChange={(value) => change(action.call_id, value)}
                 />
               );
+            const details =
+              action.kind === "approval"
+                ? approvalDetails(action.presentation)
+                : null;
             return (
               <div key={action.call_id} className={styles.pendingAction}>
                 <strong>{action.tool_name ?? action.call_id}</strong>
                 <small>{t(action.kind)}</small>
-                {action.presentation != null && (
+                {details && (
+                  <div className={styles.approvalDetails}>
+                    {details.target && (
+                      <p>
+                        <span>{t("Target")}</span> {details.target}
+                      </p>
+                    )}
+                    {details.risk && (
+                      <p>
+                        <span>{t("Risk")}</span> {t(details.risk)}
+                      </p>
+                    )}
+                    {details.reason && (
+                      <p>
+                        <span>{t("Review reason")}</span> {t(details.reason)}
+                      </p>
+                    )}
+                  </div>
+                )}
+                {action.presentation != null && !details && (
                   <DisclosureSection title={<>{t("Request details")}</>}>
                     <JsonView value={action.presentation} />
                   </DisclosureSection>
                 )}
                 {action.kind === "approval" ? (
                   <div className={styles.approvalChoices}>
-                    {["approve", "reject"].map((choice) => (
-                      <Button
-                        key={choice}
-                        type="button"
-                        variant={
-                          answer.action === choice ? "default" : "outline"
-                        }
-                        aria-pressed={answer.action === choice}
-                        onClick={() =>
-                          change(action.call_id, { ...answer, action: choice })
-                        }
-                      >
-                        {t(choice === "approve" ? "Approve" : "Reject")}
-                      </Button>
-                    ))}
+                    {["approve", "reject", "reject_with_reason"].map(
+                      (choice) => (
+                        <Button
+                          key={choice}
+                          type="button"
+                          variant={
+                            answer.action ===
+                              (choice === "reject_with_reason"
+                                ? "reject"
+                                : choice) &&
+                            (choice === "reject_with_reason"
+                              ? !!answer.reasonMode
+                              : !answer.reasonMode)
+                              ? "default"
+                              : "outline"
+                          }
+                          aria-pressed={
+                            answer.action ===
+                              (choice === "reject_with_reason"
+                                ? "reject"
+                                : choice) &&
+                            (choice === "reject_with_reason"
+                              ? !!answer.reasonMode
+                              : !answer.reasonMode)
+                          }
+                          onClick={() =>
+                            change(action.call_id, {
+                              ...answer,
+                              action:
+                                choice === "reject_with_reason"
+                                  ? "reject"
+                                  : choice,
+                              reasonMode: choice === "reject_with_reason",
+                              value:
+                                choice === "reject_with_reason"
+                                  ? answer.value
+                                  : "",
+                            })
+                          }
+                        >
+                          {t(
+                            choice === "approve"
+                              ? "Approve once"
+                              : choice === "reject"
+                                ? "Deny"
+                                : "Deny with reason",
+                          )}
+                        </Button>
+                      ),
+                    )}
                   </div>
                 ) : (
                   <ChoiceField
@@ -166,32 +247,40 @@ export function ConfigurationFeedback({
                     }
                     label={t("Response")}
                     hideLabel
-                    options={
-                      action.kind === "approval"
-                        ? [
-                            { value: "approve", label: t("Approve") },
-                            { value: "reject", label: t("Reject") },
-                          ]
-                        : [
-                            {
-                              value:
-                                action.kind === "client_tool"
-                                  ? "complete"
-                                  : "respond",
-                              label: t(
-                                action.kind === "client_tool"
-                                  ? "Return tool result"
-                                  : "Respond",
-                              ),
-                            },
-                            {
-                              value: "omit",
-                              label: t("Continue without a response"),
-                            },
-                          ]
-                    }
+                    options={[
+                      {
+                        value:
+                          action.kind === "client_tool"
+                            ? "complete"
+                            : "respond",
+                        label: t(
+                          action.kind === "client_tool"
+                            ? "Return tool result"
+                            : "Respond",
+                        ),
+                      },
+                      {
+                        value: "omit",
+                        label: t("Continue without a response"),
+                      },
+                    ]}
                   />
                 )}
+                {action.kind === "approval" &&
+                  answer.action === "reject" &&
+                  answer.reasonMode && (
+                    <TextAreaField
+                      label={t("Denial reason (optional)")}
+                      value={answer.value}
+                      onChange={(value) =>
+                        change(action.call_id, {
+                          ...answer,
+                          value: value.slice(0, 2000),
+                        })
+                      }
+                      rows={3}
+                    />
+                  )}
                 {["complete", "respond"].includes(answer.action) && (
                   <>
                     {answer.action === "respond" && (
@@ -240,4 +329,36 @@ export function ConfigurationFeedback({
       </form>
     </section>
   );
+}
+
+function approvalDetails(
+  value: Schema["JsonValue"] | null,
+): { target?: string; reason?: string; risk?: string } | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const details = value as Record<string, unknown>;
+  const { target, reason, risk } = details;
+  if (
+    Object.keys(details).length === 0 ||
+    !Object.keys(details).every((key) =>
+      ["target", "reason", "risk"].includes(key),
+    ) ||
+    (target !== undefined && typeof target !== "string") ||
+    (reason !== undefined &&
+      (typeof reason !== "string" ||
+        ![
+          "Tool permission configuration requires approval.",
+          "Tool policy requires approval.",
+          "Tool reviewer requires approval.",
+          "Tool review could not complete.",
+        ].includes(reason))) ||
+    (risk !== undefined &&
+      (typeof risk !== "string" ||
+        !["low", "medium", "high", "extra_high"].includes(risk)))
+  )
+    return null;
+  return {
+    target: target as string | undefined,
+    reason: reason as string | undefined,
+    risk: risk as string | undefined,
+  };
 }

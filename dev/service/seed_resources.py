@@ -10,6 +10,7 @@ from a13n_service.settings import Settings
 from .seed_assets import asset_examples
 from .seed_client import Client
 from .seed_environments import local_provider, local_workspace
+from .seed_model_providers import seed_model_providers, seed_provider_models
 
 FIXTURES = Path(__file__).with_name("fixtures")
 AGENT_NAMES = (
@@ -53,6 +54,8 @@ def agent_config(name: str, **values) -> dict:
 
 async def resources(client: Client, base: str, model_url: str, settings: Settings):
     scenarios = {}
+    demo_providers = await seed_model_providers(client, base)
+    await seed_provider_models(client, base, demo_providers)
     provider = await client.request(
         "POST",
         base + "/model-providers",
@@ -106,6 +109,18 @@ async def resources(client: Client, base: str, model_url: str, settings: Setting
         },
     )
     scenarios["model_disabled"] = disabled["id"]
+    for provider_type in ("brave", "exa"):
+        web_provider = await client.request(
+            "POST",
+            base + "/web-providers",
+            expected=201,
+            json={
+                "type": provider_type,
+                "name": f"Local {provider_type.title()} (fictional credential)",
+                "credential": {"api_key": "public-local-web-token"},
+            },
+        )
+        scenarios[f"web_provider_{provider_type}"] = web_provider["id"]
     provider = await local_provider(client, base)
     root = settings.filesystem.root / "workspace"
     workspace = await local_workspace(client, base, provider["id"], root, "Local review workspace")

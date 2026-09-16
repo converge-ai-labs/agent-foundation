@@ -237,7 +237,6 @@ def project(kind: ResourceKind, row) -> ConfigurationResource:
                         {
                             *declarations.capabilities,
                             *({"tools"} if declarations.supports_tools else set()),
-                            *(f"thinking:{effort}" for effort in declarations.thinking_efforts),
                         }
                     )
                 ),

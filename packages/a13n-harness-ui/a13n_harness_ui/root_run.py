@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections import Counter, OrderedDict
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -14,6 +14,7 @@ from uuid import uuid4
 
 from a13n_harness import HarnessRunStream, SafeFailure
 from a13n_harness.input import RunInputValue
+from a13n_logging import get_logger
 from anyio import CancelScope, Event, Lock, create_task_group, get_cancelled_exc_class, move_on_after, to_thread
 from anyio.abc import TaskGroup
 from pydantic import JsonValue, TypeAdapter, ValidationError
@@ -85,11 +86,13 @@ class RootRunCoordinator:
         summary_hub: HarnessUiSummaryHub | None = None,
         terminal_retention: int = 256,
         observation: UiObservation | None = None,
+        touch_thread: Callable[[str], Awaitable[None]] | None = None,
     ) -> None:
         if terminal_retention < 1:
             raise ValueError("terminal_retention must be positive")
         self._observation = observation or UiObservation()
         self._executor = executor
+        self._touch_thread = touch_thread
         self._summary_hub = summary_hub
         self._lock = Lock()
         self._operations: dict[str, _RootOperation] = {}
@@ -114,6 +117,12 @@ class RootRunCoordinator:
     async def stop_admission(self) -> None:
         async with self._lock:
             self._accepting = False
+
+    async def active_thread_ids(self) -> tuple[str, ...]:
+        """Snapshot all preparing, running and cancelling roots in this App."""
+
+        async with self._lock:
+            return tuple(self._active_by_thread)
 
     async def active_count(self) -> int:
         """Return the number of process-local active root operations."""
@@ -179,6 +188,7 @@ class RootRunCoordinator:
         prompt: RunInputValue,
         mutation: ThreadConfigurationMutation | None = None,
         model_overrides: RunModelOverrides | None = None,
+        touch: bool = False,
     ) -> RootRunReceipt:
         prompt = detach_input(prompt)
         return await self._submit(
@@ -187,6 +197,7 @@ class RootRunCoordinator:
             response=None,
             mutation=mutation,
             model_overrides=model_overrides,
+            touch=touch,
         )
 
     async def submit_response(
@@ -196,6 +207,7 @@ class RootRunCoordinator:
         response: ThreadDeferredResponse,
         mutation: ThreadConfigurationMutation | None = None,
         model_overrides: RunModelOverrides | None = None,
+        touch: bool = False,
     ) -> RootRunReceipt:
         return await self._submit(
             thread_id=thread_id,
@@ -203,6 +215,7 @@ class RootRunCoordinator:
             response=response.model_copy(deep=True),
             mutation=mutation,
             model_overrides=model_overrides,
+            touch=touch,
         )
 
     async def _submit(
@@ -213,6 +226,7 @@ class RootRunCoordinator:
         response: ThreadDeferredResponse | None,
         mutation: ThreadConfigurationMutation | None,
         model_overrides: RunModelOverrides | None,
+        touch: bool,
     ) -> RootRunReceipt:
         now = datetime.now(UTC)
         receipt = RootRunReceipt(
@@ -233,16 +247,29 @@ class RootRunCoordinator:
                     "This Thread already has an active root operation.",
                     code="thread_run_active",
                 )
-            self._operations[receipt.receipt_id] = operation
-            self._active_by_thread[thread_id] = receipt.receipt_id
-            self._task_group.start_soon(
-                self._run_operation,
-                operation,
-                prompt,
-                response,
-                mutation,
-                None if model_overrides is None else model_overrides.model_copy(deep=True),
-            )
+            with CancelScope(shield=True):
+                if touch and self._touch_thread is not None:
+                    try:
+                        await self._touch_thread(thread_id)
+                    except HarnessUiError:
+                        raise
+                    except Exception as exc:
+                        # Preserve typed admission failures for callers that have
+                        # already created a durable Thread and must return its ID.
+                        raise RunCoordinationError(
+                            "Could not update Thread navigation recency; work was not admitted.",
+                            code="thread_touch_failed",
+                        ) from exc
+                self._operations[receipt.receipt_id] = operation
+                self._active_by_thread[thread_id] = receipt.receipt_id
+                self._task_group.start_soon(
+                    self._run_operation,
+                    operation,
+                    prompt,
+                    response,
+                    mutation,
+                    None if model_overrides is None else model_overrides.model_copy(deep=True),
+                )
         await self._publish_change(operation)
         return receipt.model_copy(deep=True)
 
@@ -320,7 +347,7 @@ class RootRunCoordinator:
                 await done.wait()
         return await self.get(receipt_id)
 
-    async def steer(self, *, receipt_id: str, message: RunInputValue) -> RootControlResult:
+    async def steer(self, *, receipt_id: str, message: RunInputValue, touch: bool = False) -> RootControlResult:
         message = detach_input(message)
         async with self._lock:
             operation = self._operations.get(receipt_id)
@@ -337,6 +364,17 @@ class RootRunCoordinator:
             enqueue_id = await stream.steer(prepared)
         except Exception:
             return RootControlResult(receipt_id=receipt_id, accepted=False)
+        if touch and self._touch_thread is not None:
+            # Input is already enqueued: a recency failure must not report rejection
+            # and invite the caller to submit the same steering twice.
+            with CancelScope(shield=True):
+                try:
+                    await self._touch_thread(operation.receipt.thread_id)
+                except Exception:
+                    get_logger(__name__).warning(
+                        "Could not update Thread recency after accepted steering", exc_info=True
+                    )
+            await self._publish_change(operation)
         return RootControlResult(receipt_id=receipt_id, accepted=True, enqueue_id=enqueue_id)
 
     async def cancel(self, receipt_id: str) -> RootControlResult:

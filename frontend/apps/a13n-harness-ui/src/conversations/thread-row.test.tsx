@@ -11,13 +11,19 @@ import { MemoryRouter, useLocation } from "react-router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
 import { ThreadRow } from "./thread-row";
+import { NewConversationDrafts } from "./new-conversation";
+import { NewDraftStore } from "./new-draft";
+import { values } from "./draft";
 import { TransportContext } from "../transport/context";
 import { createTransport, type Schema } from "../transport/client";
 let requests: Request[];
 let fail: boolean;
 let queries: QueryClient;
+let newDrafts: NewDraftStore;
 beforeEach(() => {
   requests = [];
+  localStorage.clear();
+  newDrafts = new NewDraftStore();
   fail = false;
   queries = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -52,6 +58,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   queries.clear();
+  newDrafts.dispose();
   vi.unstubAllGlobals();
 });
 function Location() {
@@ -75,14 +82,16 @@ function mount({ archived = false, running = false, selected = true } = {}) {
         <MemoryRouter
           initialEntries={[selected ? "/threads/thread-one" : "/settings"]}
         >
-          <ThreadRow row={row} presence={null} />
+          <NewConversationDrafts value={newDrafts}>
+            <ThreadRow row={row} presence={null} />
+          </NewConversationDrafts>
           <Location />
         </MemoryRouter>
       </TransportContext>
     </QueryClientProvider>,
   );
 }
-it("archives directly from the menu with its observed version and opens a blank local page", async () => {
+it("archives directly from the menu with its observed version and opens the New draft", async () => {
   mount();
   await userEvent.click(
     screen.getByRole("button", { name: "Actions for Example" }),
@@ -98,9 +107,7 @@ it("archives directly from the menu with its observed version and opens a blank 
   });
   expect(screen.queryByRole("dialog")).toBeNull();
   await waitFor(() =>
-    expect(screen.getByLabelText("Location").textContent).toMatch(
-      /^\/new\/thread_[a-f0-9]{32}$/,
-    ),
+    expect(screen.getByLabelText("Location").textContent).toBe("/new"),
   );
 });
 it("does not change the current page when archiving another conversation", async () => {
@@ -157,3 +164,47 @@ it("does not archive an active operation or silently retry a metadata conflict",
     "/threads/thread-one",
   );
 });
+
+it("does not expose the disabled comments entry in conversation actions", async () => {
+  mount();
+  await userEvent.click(
+    screen.getByRole("button", { name: "Actions for Example" }),
+  );
+  expect(
+    await screen.findByRole("menuitem", { name: "Share conversation" }),
+  ).toBeTruthy();
+  expect(screen.queryByRole("menuitem", { name: "Comments" })).toBeNull();
+});
+
+it.each([false, true])(
+  "detaches the singleton only after successful archive (failure=%s)",
+  async (failure) => {
+    fail = failure;
+    const draft = newDrafts.get(new Map());
+    draft.threadId = "thread-one";
+    draft.created = true;
+    draft.attempted = true;
+    draft.composer.doc.getText("text").insert(0, "Retained after rejection");
+    mount();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Actions for Example" }),
+    );
+    await userEvent.click(
+      await screen.findByRole("menuitem", { name: "Archive conversation" }),
+    );
+    if (failure) {
+      await screen.findByText(
+        "Conversation changed. Try again after refreshing.",
+      );
+      expect(newDrafts.current).toBe(draft);
+    } else {
+      await waitFor(() =>
+        expect(newDrafts.current!.threadId).not.toBe("thread-one"),
+      );
+      expect(values(newDrafts.current!.composer.doc).prompt).toBe(
+        "Retained after rejection",
+      );
+      expect(newDrafts.current!.attempted).toBe(false);
+    }
+  },
+);
