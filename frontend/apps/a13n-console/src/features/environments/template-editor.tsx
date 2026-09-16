@@ -47,7 +47,7 @@ export function TemplateEditor({
       finalFocus,
     });
   const query = useQuery({
-    queryKey: ["environment-templates", scope.kind, scope.id, templateId],
+    queryKey: ["environment-template", scope.kind, scope.id, templateId],
     enabled: open && !!templateId,
     queryFn: ({ signal }) =>
       client.http

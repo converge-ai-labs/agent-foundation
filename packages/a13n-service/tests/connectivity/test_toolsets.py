@@ -2,7 +2,8 @@ import json
 
 import pytest
 from a13n_harness import AgentSpec, HarnessBuilder, RunBindings
-from a13n_service.connectivity.toolsets import local_capability, portable_tool_name, selected_tools, source_key
+from a13n_service.connectivity.naming import portable_tool_name
+from a13n_service.connectivity.toolsets import local_capability, selected_tools
 from mcp.types import Tool
 from pydantic_ai import Agent
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
@@ -12,7 +13,7 @@ pytestmark = pytest.mark.anyio
 
 
 @pytest.mark.parametrize("defer_loading", [False, True])
-@pytest.mark.parametrize("native_name", ["read.documents", "r" * 128])
+@pytest.mark.parametrize("native_name", ["notion-list-private-pages", "read.documents", "r" * 128])
 async def test_local_capabilities_isolate_equal_tool_names_and_enforce_scope(defer_loading, native_name):
     calls = []
     tools = [
@@ -28,14 +29,16 @@ async def test_local_capabilities_isolate_equal_tool_names_and_enforce_scope(def
         return call
 
     first = await local_capability(
-        key=source_key("connector", "one"),
+        key="conn_one",
+        model_alias="first",
         tools=tools,
         allowed=(native_name,),
         handler=handler("one"),
         defer_loading=defer_loading,
     )
     second = await local_capability(
-        key=source_key("connector", "two"),
+        key="conn_two",
+        model_alias="second",
         tools=tools,
         allowed=(native_name,),
         handler=handler("two"),
@@ -70,6 +73,10 @@ async def test_local_capabilities_isolate_equal_tool_names_and_enforce_scope(def
     assert sorted(calls) == [("one", native_name, {}), ("two", native_name, {})]
 
 
+def test_short_native_tool_name_needs_no_hash():
+    assert portable_tool_name("notion-list-private-pages") == "notion-list-private-pages"
+
+
 async def test_missing_explicit_tool_fails_preparation_and_empty_scope_has_no_capability():
     async def call(name, arguments):
         raise AssertionError("empty selections never execute")
@@ -77,7 +84,7 @@ async def test_missing_explicit_tool_fails_preparation_and_empty_scope_has_no_ca
     tools = [Tool(name="read", inputSchema={"type": "object"})]
     with pytest.raises(ValueError, match="selected_tool_unavailable"):
         selected_tools(tools, ("missing",))
-    assert await local_capability(key="empty", tools=tools, allowed=(), handler=call) is None
+    assert await local_capability(key="empty", model_alias="empty", tools=tools, allowed=(), handler=call) is None
 
 
 @pytest.mark.parametrize(
@@ -104,7 +111,11 @@ async def test_oversized_result_fails_without_repeating_effect():
         return {"large": "x" * (1024 * 1024)}
 
     capability = await local_capability(
-        key="source", tools=[Tool(name="write", inputSchema={"type": "object"})], allowed=None, handler=call
+        key="source",
+        model_alias="source",
+        tools=[Tool(name="write", inputSchema={"type": "object"})],
+        allowed=None,
+        handler=call,
     )
     with pytest.raises(Exception, match="tool_result_too_large"):
         await Agent(TestModel(), capabilities=[capability]).run("write")

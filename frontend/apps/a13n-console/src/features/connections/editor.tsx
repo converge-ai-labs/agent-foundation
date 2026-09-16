@@ -13,7 +13,7 @@ import {
 } from "a13n-ui";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -199,6 +199,7 @@ function ConnectionSettings({
     { workspace } = useWorkspace(),
     { t } = useTranslation(),
     key = useIdempotency(),
+    formId = useId(),
     basis = initial,
     [name, setName] = useState(initial.name);
   function done() {
@@ -231,30 +232,21 @@ function ConnectionSettings({
   return (
     <div className={styles.stack}>
       <form
+        id={formId}
         className={styles.form}
         onSubmit={(event) => {
           event.preventDefault();
           save.mutate();
         }}
       >
-        <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-3">
-          <FormField label={t("Name")}>
-            <Input
-              required={true}
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              maxLength={128}
-            />
-          </FormField>
-          <Button
-            type="submit"
-            className="h-10 min-w-24 sm:h-10"
-            loading={save.isPending}
-            disabled={name === basis.name}
-          >
-            {t("Save")}
-          </Button>
-        </div>
+        <FormField label={t("Name")}>
+          <Input
+            required={true}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            maxLength={128}
+          />
+        </FormField>
         <ErrorNotice error={save.error} retry={() => void reload()} />
       </form>
       {Object.keys(basis.safe_metadata ?? {}).length > 0 && (
@@ -286,9 +278,6 @@ function ConnectionSettings({
         <ErrorNotice error={check.error} />
       </section>
       <section className="flex flex-wrap items-center gap-3 rounded-lg bg-muted/40 p-3">
-        <h3 className="mr-auto text-sm font-medium">
-          {t("Connection actions")}
-        </h3>
         {basis.status === "disabled" && (
           <p className="order-last w-full text-sm text-muted-foreground">
             {t(
@@ -296,7 +285,7 @@ function ConnectionSettings({
             )}
           </p>
         )}
-        <div className={styles.actions}>
+        <div className={`${styles.actions} ml-auto`}>
           <Confirm
             subject={basis.name}
             retry={() =>
@@ -394,6 +383,15 @@ function ConnectionSettings({
               }}
             />
           ))}
+          <Button
+            type="submit"
+            form={formId}
+            className="min-w-24"
+            loading={save.isPending}
+            disabled={name === basis.name}
+          >
+            {t("Save")}
+          </Button>
         </div>
       </section>
     </div>

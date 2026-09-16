@@ -7,6 +7,8 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstra
 
 from a13n_service.ids import ObjectId
 
+from .naming import CONNECTION_ALIAS_LIMIT
+
 ToolKey = Annotated[str, StringConstraints(min_length=1, max_length=128)]
 
 
@@ -36,6 +38,7 @@ class ConnectionToolSelection(BaseModel):
 
 class ConnectionRunSelection(ConnectionToolSelection):
     kind: Literal["connector", "mcp"]
+    model_alias: str = Field(min_length=6, max_length=CONNECTION_ALIAS_LIMIT, pattern=r"^conn_[a-z][a-z0-9_]*$")
     authorization_generation: int = Field(ge=1)
     connector_provider_id: ObjectId | None = None
 

@@ -9,6 +9,7 @@ import { commandHeaders, data, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 import { FormActions } from "../../shared/form";
 import { useIdempotency } from "../../shared/idempotency";
+import { ProviderKeyLink } from "../../shared/provider-key-link";
 import styles from "../../shared/shared.module.css";
 import { MCPOAuthSetup } from "./oauth-setup";
 import {
@@ -153,13 +154,7 @@ export function CreateMCP({
         <p className={styles.muted}>{t(preset.requirements)}</p>
       )}
       {preset?.documentation_url && (
-        <a
-          href={preset.documentation_url}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          {t("Setup guide")}
-        </a>
+        <ProviderKeyLink href={preset.documentation_url} label="Setup guide" />
       )}
       <MCPOAuthSetup
         connection={oauthConnection}
@@ -194,25 +189,41 @@ export function CreateMCP({
           placeholder="https://example.com/mcp"
         />
       </FormField>
-      <ChoiceField
-        placeholder={t("Select authentication")}
-        label={t("Authentication")}
-        value={mode}
-        disabled={started}
-        readOnly={preset !== undefined}
-        onValueChange={(value) => {
-          if (
-            value === "none" ||
-            value === "oauth" ||
-            value === "bearer" ||
-            value === "static_headers"
-          )
-            setMode(value);
-        }}
-        options={(["oauth", "bearer", "static_headers", "none"] as const).map(
-          (value) => ({ value, label: t(`auth.${value}`) }),
-        )}
-      />
+      {preset ? (
+        <FormField
+          label={t("Authentication")}
+          className="w-full min-w-0 [&_[data-slot=field-label]]:opacity-100 [&_[data-slot=input-control]]:opacity-100 [&_input]:text-foreground [&_input]:[-webkit-text-fill-color:var(--foreground)]"
+          labelAction={
+            preset.documentation_url && (
+              <ProviderKeyLink
+                href={preset.documentation_url}
+                label="Setup guide"
+              />
+            )
+          }
+        >
+          <Input value={t(`auth.${mode}`)} disabled />
+        </FormField>
+      ) : (
+        <ChoiceField
+          placeholder={t("Select authentication")}
+          label={t("Authentication")}
+          value={mode}
+          disabled={started}
+          onValueChange={(value) => {
+            if (
+              value === "none" ||
+              value === "oauth" ||
+              value === "bearer" ||
+              value === "static_headers"
+            )
+              setMode(value);
+          }}
+          options={(["oauth", "bearer", "static_headers", "none"] as const).map(
+            (value) => ({ value, label: t(`auth.${value}`) }),
+          )}
+        />
+      )}
       {!created.current?.credential_configured &&
         (mode === "static_headers" ? (
           <HeaderFields
@@ -233,15 +244,6 @@ export function CreateMCP({
         ))}
       {preset?.requirements && (
         <p className={styles.muted}>{t(preset.requirements)}</p>
-      )}
-      {preset?.documentation_url && (
-        <a
-          href={preset.documentation_url}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          {t("Setup guide")}
-        </a>
       )}
       <ErrorNotice error={connect.error} />
       <FormActions

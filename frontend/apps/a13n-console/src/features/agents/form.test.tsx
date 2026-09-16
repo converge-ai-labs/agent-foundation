@@ -320,9 +320,11 @@ it("edits capabilities inline and preserves pinned versions, hidden configuratio
   await screen.findByRole("checkbox", { name: "profile.read" });
   await user.click(screen.getByRole("checkbox", { name: "write" }));
   await user.click(screen.getAllByRole("checkbox", { name: "read" })[1]);
-  await user.click(
-    screen.getAllByRole("checkbox", { name: "Load tools on demand" })[1],
-  );
+  expect(
+    screen
+      .getAllByRole("checkbox", { name: "Load tools on demand" })[1]
+      .getAttribute("aria-checked"),
+  ).toBe("true");
   await user.click(screen.getByRole("button", { name: "Save changes" }));
   expect(screen.queryByRole("alert")?.textContent).toBeUndefined();
   expect(submit).toHaveBeenCalledWith(
@@ -334,6 +336,7 @@ it("edits capabilities inline and preserves pinned versions, hidden configuratio
         {
           connection_id: "mcp_0123456789abcdef",
           tools: null,
+          defer_loading: true,
         },
         {
           connection_id: "conn_0123456789abcdef",
@@ -474,20 +477,44 @@ it("retains saved tool selections when discovery fails", async () => {
   });
 });
 
-it("refreshes a Connection catalog from its header", async () => {
+it("shows discovery progress without a refresh action", async () => {
+  let finishDiscovery!: (result: {
+    data: { items: { name: string; description: string }[] };
+  }) => void;
+  catalog.POST.mockImplementationOnce(
+    () => new Promise((resolve) => (finishDiscovery = resolve)),
+  );
   const user = userEvent.setup();
   editor(false, [{ connection_id: "mcp_0123456789abcdef", tools: null }]);
+  await waitFor(() => expect(catalog.POST).toHaveBeenCalledOnce());
+  expect(screen.getByRole("status", { name: "Loading…" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /Refresh tools/ })).toBeNull();
   await user.click(screen.getByRole("button", { name: "Web tools" }));
+  const demand = screen.getByText("Load tools on demand");
+  const permission = screen.getByText("Default tool permission");
+  expect(
+    demand.compareDocumentPosition(permission) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  finishDiscovery({
+    data: {
+      items: [
+        { name: "search", description: "Search" },
+        { name: "read", description: "Read" },
+      ],
+    },
+  });
   await screen.findByRole("checkbox", { name: "search" });
-  catalog.POST.mockClear();
-  await user.click(
-    screen.getByRole("button", { name: "Refresh tools for Web tools" }),
-  );
-  await waitFor(() => expect(catalog.POST).toHaveBeenCalledTimes(1));
+  expect(
+    permission.compareDocumentPosition(screen.getByText("Search")) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(await screen.findByText("2 of 2 on")).toBeTruthy();
 });
 
 it("only offers ready Connections and omits their status from selected names", async () => {
   const user = userEvent.setup();
+  catalog.POST.mockClear();
   editor();
   await user.click(screen.getByRole("button", { name: "Add Connections" }));
   expect(
@@ -496,8 +523,29 @@ it("only offers ready Connections and omits their status from selected names", a
       .matches(":disabled"),
   ).toBe(true);
   await user.click(screen.getByRole("button", { name: "Web tools" }));
+  await waitFor(() => expect(catalog.POST).toHaveBeenCalledOnce());
+  expect(await screen.findByText("2 of 2 on")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Web tools" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: /Web tools.*ready/ })).toBeNull();
+});
+
+it("keeps an existing on-demand preference while showing tools without search", async () => {
+  const user = userEvent.setup();
+  editor(false, [
+    {
+      connection_id: "mcp_0123456789abcdef",
+      tools: null,
+      defer_loading: false,
+    },
+  ]);
+  await user.click(screen.getByRole("button", { name: "Web tools" }));
+  await screen.findByRole("checkbox", { name: "search" });
+  expect(
+    screen
+      .getByRole("checkbox", { name: "Load tools on demand" })
+      .getAttribute("aria-checked"),
+  ).toBe("false");
+  expect(screen.queryByRole("searchbox", { name: "Search tools" })).toBeNull();
 });
 
 it.each([
