@@ -5,9 +5,6 @@ from __future__ import annotations
 from collections.abc import Awaitable
 from typing import Protocol
 
-import httpx2
-from a13n_harness.errors import ModelResolutionError
-from anyio import fail_after
 from sqlalchemy import and_, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -27,7 +24,6 @@ from .cursors import CursorError, decode_model_cursor, encode_model_cursor
 from .domain import (
     CreateModelProviderRequest,
     ModelConnectionTestResult,
-    ModelDiscovery,
     ModelProvider,
     ModelProviderCollection,
     UpdateModelProviderRequest,
@@ -35,17 +31,12 @@ from .domain import (
 )
 from .headers import apply_header_updates
 from .models import ModelProviderRecord
-from .provider_adapters.base import ProviderOperationError
 from .providers import ModelProviderDefinitionCollection, ProviderRegistry, ValidatedProviderConfiguration
 from .service_common import ModelError, audit_record, authorize_models, escape_like, require_etag
 
 
 class ProviderOperations(Protocol):
     def test(self, *, provider_id: str, organization_id: str, workspace_id: str | None) -> Awaitable[None]: ...
-
-    def discover(
-        self, *, provider_id: str, organization_id: str, workspace_id: str | None
-    ) -> Awaitable[ModelDiscovery]: ...
 
 
 class ModelProviderService:
@@ -368,65 +359,6 @@ class ModelProviderService:
                     category=ErrorCategory.conflict,
                 ) from error
             return record.to_resource()
-
-    async def discover_models(
-        self, *, actor: AuthenticatedActor, workspace_id: str | None, provider_id: str
-    ) -> ModelDiscovery:
-        provider = await self._prepare_command(actor=actor, workspace_id=workspace_id, provider_id=provider_id)
-        if not provider.enabled:
-            raise ModelError(
-                "model_provider_disabled", "The Model Provider is disabled.", category=ErrorCategory.conflict
-            )
-        if not self._registry.definition(provider.type).supports_model_discovery:
-            raise ModelError(
-                "model_discovery_unsupported",
-                "The Model Provider type does not support model discovery.",
-                category=ErrorCategory.conflict,
-            )
-        if self._operations is None:
-            raise ModelError(
-                "provider_discovery_unavailable",
-                "Provider model discovery is unavailable.",
-                category=ErrorCategory.unavailable,
-            )
-        failure: ModelError | None = None
-        result: ModelDiscovery | None = None
-        try:
-            with fail_after(self._command_timeout_seconds):
-                result = await self._operations.discover(
-                    provider_id=provider.id,
-                    organization_id=provider.organization_id,
-                    workspace_id=provider.workspace_id,
-                )
-        except ModelError as error:
-            failure = error
-        except TimeoutError:
-            failure = ModelError(
-                "provider_discovery_timeout", "Provider model discovery timed out.", category=ErrorCategory.timeout
-            )
-        except (ModelResolutionError, ProviderOperationError, httpx2.HTTPError):
-            failure = ModelError(
-                "provider_discovery_failed",
-                "Provider model discovery failed.",
-                category=ErrorCategory.dependency_failure,
-            )
-        async with transaction(self._sessions) as session:
-            session.add(
-                audit_record(
-                    actor=actor,
-                    organization_id=provider.organization_id,
-                    workspace_id=provider.workspace_id,
-                    resource_type="model_provider",
-                    resource_id=provider.id,
-                    action="model_provider.discover_models",
-                    now=self._clock(),
-                    outcome="failure" if failure is not None else "success",
-                )
-            )
-        if failure is not None:
-            raise failure
-        assert result is not None
-        return result
 
     async def test(
         self, *, actor: AuthenticatedActor, workspace_id: str | None, provider_id: str

@@ -1,7 +1,7 @@
 import {
   CubeIcon,
   DatabaseIcon,
-  MagnifyingGlassIcon,
+  GlobeIcon,
   MonitorIcon,
   PlugIcon,
 } from "@phosphor-icons/react";
@@ -14,10 +14,11 @@ export const providerCategories = [
     description: "Connect model services and manage their credentials.",
   },
   {
-    value: "search",
-    label: "Search",
-    icon: MagnifyingGlassIcon,
-    description: "Connect search services for your agents' web tools.",
+    value: "web",
+    label: "Web",
+    icon: GlobeIcon,
+    description:
+      "Connect search and scrape services for your agents' web tools.",
   },
   {
     value: "memory",

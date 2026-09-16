@@ -1,7 +1,5 @@
 import pytest
-from a13n_service.models.candidates import candidate_from_catalog
 from a13n_service.models.model_apis import BUILT_IN_MODEL_APIS
-from a13n_service.models.providers import built_in_provider_registry
 from a13n_service.models.service_common import ModelError
 from a13n_service.models.settings import effective_settings, settings_schema, validate_settings
 from jsonschema import Draft202012Validator
@@ -75,81 +73,6 @@ def test_top_level_merge_replaces_routing_and_retains_other_defaults() -> None:
     )
     assert result == {"max_tokens": 300, "openrouter_provider": {"only": ["b"]}}
     assert validate_settings("openrouter.chat_completions", {"extra_body": {"new_parameter": {"value": 1}}})
-
-
-def test_catalog_candidates_are_advisory() -> None:
-    registry = built_in_provider_registry()
-    unknown = candidate_from_catalog(registry, "openai", "unreleased/deployment")
-    assert unknown.suggested_model_api == "openai.responses"
-    assert unknown.profile.input_modalities is None
-    assert unknown.native_profile.supports_json_schema_output is True
-    assert unknown.suggested_settings == {}
-    assert unknown.parameter_support == {}
-    known = candidate_from_catalog(
-        registry,
-        "openrouter",
-        "team/model",
-        metadata={
-            "supported_parameters": ["temperature", "tools", "reasoning"],
-            "architecture": {"input_modalities": ["text", "image"]},
-            "context_length": 128000,
-            "top_provider": {"max_completion_tokens": 16000},
-            "default_parameters": {"temperature": 0.7, "max_tokens": "bad", "model": "other"},
-        },
-    )
-    assert known.suggested_settings == {"temperature": 0.7}
-    assert known.profile.supports_tools is True
-    assert known.profile.supports_thinking is True
-    assert known.limits.context_window_tokens == 128000
-    assert known.parameter_support["/openrouter_provider"] == "supported"
-    assert known.parameter_support["/seed"] == "unsupported"
-    assert known.parameter_support.get("/extra_body", "unknown") == "unknown"
-
-
-def test_malformed_optional_catalog_metadata_keeps_trusted_candidate() -> None:
-    result = candidate_from_catalog(
-        built_in_provider_registry(),
-        "openrouter",
-        "team/model",
-        metadata={
-            "supported_parameters": ["tools"],
-            "architecture": "unknown",
-            "top_provider": [],
-            "context_length": True,
-        },
-    )
-    assert result.profile.supports_tools is True
-    assert result.profile.input_modalities is None
-    assert result.limits.context_window_tokens is None
-    assert result.limits.max_output_tokens is None
-
-
-def test_openrouter_catalog_facts_override_gateway_wide_profile_defaults() -> None:
-    result = candidate_from_catalog(
-        built_in_provider_registry(),
-        "openrouter",
-        "unknown/model",
-        metadata={"supported_parameters": ["tools"]},
-    )
-    assert result.profile.supports_tools is True
-    assert result.profile.supports_thinking is False
-    assert result.native_profile.supports_thinking is True
-
-    unknown = candidate_from_catalog(
-        built_in_provider_registry(),
-        "openrouter",
-        "unknown/model",
-        metadata={},
-    )
-    assert unknown.profile.supports_thinking is None
-    assert unknown.native_profile.supports_thinking is True
-
-
-def test_native_provider_profile_is_projected_without_catalog_metadata() -> None:
-    result = candidate_from_catalog(built_in_provider_registry(), "openai", "gpt-5")
-    assert result.profile.supports_thinking is None
-    assert result.native_profile.supports_thinking is True
-    assert result.native_profile.thinking_always_enabled is True
 
 
 def test_explicit_reasoning_choice_replaces_conflicting_inherited_settings() -> None:

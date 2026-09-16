@@ -35,6 +35,44 @@ test("advanced fields cannot overwrite hidden or common fields", () => {
       '{"instructions": "hidden override"}',
     ),
   ).toThrow(/dedicated field/);
+  expect(() =>
+    buildConfig(original, { model: original.model }, '{"reviewer": null}'),
+  ).toThrow(/dedicated field/);
+});
+
+test("keeps reviewer and disabled tool configuration through dedicated fields", () => {
+  const original = {
+    ...initialConfig("Support"),
+    model: { model_key: "support" },
+    reviewer: {
+      model: "mdl_0123456789abcdef",
+      risk_threshold: "high" as const,
+    },
+    toolsets: {
+      web: {
+        enabled: false,
+        tools: {
+          search: {
+            enabled: false,
+            permission: "ask" as const,
+            config: { max_results: 7 },
+          },
+        },
+      },
+    },
+  };
+  expect(JSON.parse(advancedConfig(original))).not.toHaveProperty("reviewer");
+  const next = buildConfig(
+    original,
+    {
+      model: original.model,
+      reviewer: original.reviewer,
+      toolsets: original.toolsets,
+    },
+    advancedConfig(original),
+  );
+  expect(next.reviewer).toEqual(original.reviewer);
+  expect(next.toolsets).toEqual(original.toolsets);
 });
 
 test("schema validation reports the invalid advanced field", () => {

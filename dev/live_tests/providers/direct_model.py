@@ -31,7 +31,7 @@ async def continue_run(journey, parent, prompt):
     return child
 
 
-async def check_provider_discovery_and_model_test(configured, *, require_catalog_entry=True):
+async def check_provider_connection_and_model_test(configured):
     journey, model, settings = configured
     provider_path = journey.base + "/model-providers/" + model["provider_id"]
     before = await journey.live.request("GET", provider_path)
@@ -39,11 +39,6 @@ async def check_provider_discovery_and_model_test(configured, *, require_catalog
     assert before["credential_configured"] and "credential" not in before
     probe = await journey.post(provider_path + "/test", {}, expected=200)
     assert probe["success"], probe["code"]
-    catalog = await journey.post(provider_path + "/discover-models", {}, expected=200)
-    ids = [item["upstream_model"] for item in catalog["items"]]
-    assert ids and len(ids) == len(set(ids))
-    if require_catalog_entry:
-        assert model["upstream_model"] in ids
     definitions = await journey.live.collection("/api/v1/model-provider-types")
     definition = next(item for item in definitions if item["type"] == before["type"])
     assert definition["settings_schemas"][model["model_api"]]

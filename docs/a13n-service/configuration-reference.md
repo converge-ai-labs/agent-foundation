@@ -114,6 +114,7 @@ The complete machine-readable validation schema, including named enum/union defi
 
 | Setting                                  | Environment variable                                 | Type / choices  | Constraints and default                     |
 | ---------------------------------------- | ---------------------------------------------------- | --------------- | ------------------------------------------- |
+| `models.catalog_released_since`          | `A13N_SERVICE_MODEL_CATALOG_RELEASED_SINCE`          | string          | format="date"; default="2026-04-23"         |
 | `models.private_endpoint_domains`        | `A13N_SERVICE_MODEL_PRIVATE_ENDPOINT_DOMAINS`        | array of string | default=[]                                  |
 | `models.private_endpoint_cidrs`          | `A13N_SERVICE_MODEL_PRIVATE_ENDPOINT_CIDRS`          | array of string | default=[]                                  |
 | `models.resolve_dns_on_save`             | `A13N_SERVICE_MODEL_RESOLVE_DNS_ON_SAVE`             | boolean         | default=true                                |

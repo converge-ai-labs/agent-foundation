@@ -114,8 +114,8 @@ class LiveProviderModel(WrapperModel):
                 model = await self._fresh()
                 try:
                     async with model:
-                        self._validate_thinking(model_settings, model.profile)
-                        return await model.request(messages, model_settings, model_request_parameters)
+                        settings = self._settings_for_model(model_settings, model.profile)
+                        return await model.request(messages, settings, model_request_parameters)
                 except ModelHTTPError as error:
                     await _wait_to_retry(error, attempt)
         raise AssertionError("request attempts exhausted without a result or error")
@@ -139,9 +139,9 @@ class LiveProviderModel(WrapperModel):
                     with fail_after(max(0, deadline - current_time())):
                         model = await self._fresh()
                         await stack.enter_async_context(model)
-                        self._validate_thinking(model_settings, model.profile)
+                        settings = self._settings_for_model(model_settings, model.profile)
                         stream = await stack.enter_async_context(
-                            model.request_stream(messages, model_settings, model_request_parameters, run_context)
+                            model.request_stream(messages, settings, model_request_parameters, run_context)
                         )
                     handed_off = True
                     yield stream
@@ -162,10 +162,10 @@ class LiveProviderModel(WrapperModel):
         # only after validation, using the live Provider configuration.
         validate_settings(self._snapshot.model_api, cast(JsonObject, value))
 
-    def _validate_thinking(self, settings: ModelSettings | None, profile: ModelProfile) -> None:
+    def _settings_for_model(self, settings: ModelSettings | None, profile: ModelProfile) -> ModelSettings | None:
         thinking = (settings or {}).get("thinking")
         if thinking is None:
-            return
+            return settings
         always_enabled = profile.get("thinking_always_enabled", False)
         if thinking is False and always_enabled:
             raise ModelResolutionError(
@@ -174,11 +174,18 @@ class LiveProviderModel(WrapperModel):
                 details={"model_id": self._snapshot.model_id},
             )
         if not (profile.get("supports_thinking", False) or always_enabled):
+            if thinking is True:
+                # Default-on is best effort: an unknown or non-reasoning model
+                # receives no explicit thinking parameter.
+                forwarded = settings.copy() if settings is not None else ModelSettings()
+                forwarded.pop("thinking", None)
+                return forwarded
             raise ModelResolutionError(
                 "The selected Model does not support unified thinking settings.",
                 code="model_thinking_unsupported",
                 details={"model_id": self._snapshot.model_id},
             )
+        return settings
 
 
 def _request_timeout(settings: ModelSettings | None) -> float:

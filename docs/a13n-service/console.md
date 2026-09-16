@@ -13,7 +13,7 @@ Use the account menu to select English or Simplified Chinese. Workspace navigati
 ## Configure before running
 
 1. Choose the intended Organization and Workspace.
-2. Add an accessible Model Provider, supply its credentials, and create an enabled Model. Provider discovery and tests can make remote requests.
+2. Add an accessible Model Provider, supply its credentials, and create an enabled Model. The public model catalog and connection tests can make remote requests; Model creation does not discover models from the Provider.
 3. Create an Agent with instructions, Model selection, and the required input/protocol settings. Save the definition before starting a conversation.
 4. Add optional tools, Skills, and an Environment only when the Agent needs them.
 5. Start a Session, select the Agent, and submit input. Watch Run status as well as output.

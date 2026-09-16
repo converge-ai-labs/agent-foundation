@@ -15,19 +15,15 @@ from a13n_service.iam.resource_scope import visible_workspace
 from a13n_service.storage import is_unique_conflict, transaction
 from a13n_service.temporal import Clock, utc_now
 
-from .base_models import BaseModelDirectory, BaseModelResolution
-from .catalog import ModelCatalog, merge_declarations
+from .catalog import DEFAULT_RELEASED_SINCE, ModelCatalog
 from .connection_test import test_connection
 from .cursors import CursorError, decode_model_cursor, encode_model_cursor
 from .domain import (
-    BaseModelCandidateCollection,
     CreateModelRequest,
     Model,
-    ModelCatalogMatch,
-    ModelCatalogSuggestion,
+    ModelCatalogCollection,
     ModelCollection,
     ModelConnectionTestResult,
-    ModelDeclarations,
     ModelExecutionSnapshot,
     UpdateModelRequest,
     new_model_id,
@@ -62,7 +58,6 @@ class ModelService:
         connection_tester: ModelConnectionTester | None = None,
         connection_test_timeout_seconds: float = 15,
         catalog: ModelCatalog | None = None,
-        base_models: BaseModelDirectory | None = None,
     ) -> None:
         self._sessions = sessions
         self._registry = registry
@@ -70,7 +65,6 @@ class ModelService:
         self._connection_tester = connection_tester
         self._connection_test_timeout_seconds = connection_test_timeout_seconds
         self._catalog = catalog
-        self._base_models = base_models or BaseModelDirectory()
 
     async def create(
         self,
@@ -79,28 +73,8 @@ class ModelService:
         workspace_id: str | None,
         request: CreateModelRequest,
     ) -> Model:
-        match = await self._authoring_suggestions(
-            actor=actor,
-            workspace_id=workspace_id,
-            provider_id=request.provider_id,
-            upstream_model=request.upstream_model,
-            base_model=request.base_model,
-            base_model_supplied="base_model" in request.model_fields_set,
-            model_api=request.model_api,
-            action=WorkspaceAction.models_manage,
-        )
-        selection = match.items[0] if len(match.items) == 1 else None
-        base_model = selection.base_model if selection is not None else None
-        model_api = request.model_api or (selection.model_api if selection is not None else None)
-        if model_api is None:
-            raise ModelError(
-                "model_api_required",
-                "Model API is required when no unique base model supplies one.",
-                category=ErrorCategory.invalid_request,
-            )
+        model_api = request.model_api
         declarations = request.declarations
-        if selection is not None:
-            declarations = merge_declarations(selection.declarations, declarations)
         now = self._clock()
         try:
             async with transaction(self._sessions) as session:
@@ -132,7 +106,7 @@ class ModelService:
                     name=request.name,
                     description=request.description,
                     upstream_model=request.upstream_model,
-                    base_model=base_model,
+                    catalog_ref=request.catalog_ref.model_dump(mode="json") if request.catalog_ref else None,
                     model_api=model_api,
                     settings=request.settings,
                     declarations=declarations.model_dump(mode="json"),
@@ -167,92 +141,12 @@ class ModelService:
                 category=ErrorCategory.conflict,
             ) from error
 
-    async def catalog_suggestions(
-        self,
-        *,
-        actor: AuthenticatedActor,
-        workspace_id: str | None,
-        provider_id: str,
-        upstream_model: str,
-        base_model: str | None,
-        base_model_supplied: bool,
-        model_api: str | None,
-    ) -> ModelCatalogMatch:
-        return await self._authoring_suggestions(
-            actor=actor,
-            workspace_id=workspace_id,
-            provider_id=provider_id,
-            upstream_model=upstream_model,
-            base_model=base_model,
-            base_model_supplied=base_model_supplied,
-            model_api=model_api,
-            action=WorkspaceAction.models_read,
-        )
-
-    def base_model_candidates(self) -> BaseModelCandidateCollection:
-        return self._base_models.candidates()
-
-    async def _authoring_suggestions(
-        self,
-        *,
-        actor: AuthenticatedActor,
-        workspace_id: str | None,
-        provider_id: str,
-        upstream_model: str,
-        base_model: str | None,
-        base_model_supplied: bool,
-        model_api: str | None,
-        action: WorkspaceAction,
-    ) -> ModelCatalogMatch:
+    async def catalog_models(self, *, actor: AuthenticatedActor, workspace_id: str | None) -> ModelCatalogCollection:
         async with transaction(self._sessions) as session:
-            workspace = await authorize_models(session, actor=actor, workspace_id=workspace_id, action=action)
-            provider = await require_provider(
-                session,
-                organization_id=workspace.organization_id,
-                workspace_id=workspace.workspace_id,
-                provider_id=provider_id,
-            )
-            if model_api is not None:
-                self._registry.validate_model_api(provider.type, model_api)
-            supported_model_apis = self._registry.definition(provider.type).supported_model_apis
-        try:
-            resolution = self._base_models.resolve(
-                provider_type=provider.type,
-                provider_configuration=provider.configuration,
-                supported_model_apis=supported_model_apis,
-                upstream_model=upstream_model,
-                base_model=base_model,
-                base_model_supplied=base_model_supplied,
-                model_api=model_api,
-            )
-        except ValueError as error:
-            raise ModelError("invalid_base_model", str(error), category=ErrorCategory.invalid_request) from error
-        return await self._catalog_suggestions(provider.type, provider.configuration, resolution)
-
-    async def _catalog_suggestions(
-        self,
-        provider_type: str,
-        provider_configuration: dict[str, object],
-        resolution: BaseModelResolution,
-    ) -> ModelCatalogMatch:
-        items: list[ModelCatalogSuggestion] = []
-        labels = self._registry.definition(provider_type).model_api_labels
-        for selection in resolution.items:
-            declarations = (
-                await self._catalog.declarations(provider_type, provider_configuration, selection.reference)
-                if self._catalog is not None
-                else ModelDeclarations()
-            )
-            model_api = selection.model_api
-            items.append(
-                ModelCatalogSuggestion(
-                    base_model=selection.reference.base_model,
-                    model_api=model_api,
-                    model_api_label=labels[model_api] if model_api is not None else None,
-                    declarations=declarations,
-                )
-            )
-        return ModelCatalogMatch(source=resolution.source, items=tuple(items))
+            await authorize_models(session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.models_read)
+        if self._catalog is None:
+            return ModelCatalogCollection(status="unavailable", released_since=DEFAULT_RELEASED_SINCE)
+        return await self._catalog.models()
 
     async def get(self, *, actor: AuthenticatedActor, workspace_id: str | None, model_id: str) -> Model:
         async with transaction(self._sessions) as session:
@@ -397,15 +291,8 @@ class ModelService:
             if "upstream_model" in request.model_fields_set:
                 assert request.upstream_model is not None
                 record.upstream_model = request.upstream_model
-            if "base_model" in request.model_fields_set:
-                if request.base_model is not None:
-                    try:
-                        self._base_models.require(request.base_model)
-                    except ValueError as error:
-                        raise ModelError(
-                            "invalid_base_model", str(error), category=ErrorCategory.invalid_request
-                        ) from error
-                record.base_model = request.base_model
+            if "catalog_ref" in request.model_fields_set:
+                record.catalog_ref = request.catalog_ref.model_dump(mode="json") if request.catalog_ref else None
             record.model_api = model_api
             record.settings = settings
             if "declarations" in request.model_fields_set:

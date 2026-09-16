@@ -18,11 +18,6 @@ async def test_provider_catalog_static_schema_manual_model_test_and_run(model_la
     probe = await journey.post(provider_path + "/test", {}, expected=200)
     assert probe["success"] and probe["code"] == "connection_succeeded"
     assert len(journey.requests(case)) == 1, "Provider test must read only one catalog page"
-    catalog = await journey.post(provider_path + "/discover-models", {}, expected=200)
-    assert [item["upstream_model"] for item in catalog["items"]] == ["fixture-a", "fixture-z", "manual-model"]
-    assert "settings_schemas" not in catalog
-    assert "next_cursor" not in catalog
-    assert len(journey.requests(case)) == 3
     definitions = await journey.live.collection("/api/v1/model-provider-types")
     definition = next(item for item in definitions if item["type"] == "openai")
     assert set(definition["settings_schemas"]) == {"openai.responses", "openai.chat_completions"}
@@ -39,7 +34,7 @@ async def test_provider_catalog_static_schema_manual_model_test_and_run(model_la
         expected=201,
     )
     assert manual["upstream_model"] == "not-in-the-catalog"
-    assert not journey.requests(case, inference=True), "Discovery and manual creation cannot perform inference"
+    assert not journey.requests(case, inference=True), "Provider probes and manual creation cannot perform inference"
     models = await journey.live.collection(journey.base + "/models")
     assert any(item["id"] == manual["id"] for item in models)
     assert await journey.live.request("GET", model_path) == before
@@ -55,20 +50,20 @@ async def test_provider_catalog_static_schema_manual_model_test_and_run(model_la
 
 
 @pytest.mark.parametrize("catalog_status", [404, 503])
-async def test_failed_discovery_keeps_manual_model_usable(model_lab, catalog_status):
+async def test_failed_connection_probe_keeps_manual_model_usable(model_lab, catalog_status):
     journey = model_lab
     case = await journey.model(catalog_status=catalog_status)
     path = journey.base + "/model-providers/" + case["provider"]["id"]
-    response = await journey.live.http.post(path + "/discover-models")
-    assert response.status_code == 502 and response.json()["error"]["code"] == "provider_discovery_failed"
+    response = await journey.post(path + "/test", {}, expected=200)
+    assert not response["success"]
     assert (await journey.invoke(case))["output_text"] == case["answer"]
 
 
-async def test_empty_catalog_is_success_and_not_an_allowlist(model_lab):
+async def test_empty_probe_response_is_not_an_allowlist(model_lab):
     journey = model_lab
     case = await journey.model(empty_catalog=True)
     path = journey.base + "/model-providers/" + case["provider"]["id"]
-    assert (await journey.post(path + "/discover-models", {}, expected=200))["items"] == []
+    assert (await journey.post(path + "/test", {}, expected=200))["success"]
     assert (await journey.invoke(case))["output_text"] == case["answer"]
 
 

@@ -482,6 +482,26 @@
 .pendingAction small {
   color: var(--a13n-secondary);
 }
+.approvalChoices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.approvalDetails {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--a13n-hover);
+  overflow-wrap: anywhere;
+}
+.approvalDetails p {
+  margin: 0;
+}
+.approvalDetails span {
+  color: var(--a13n-secondary);
+  margin-right: 8px;
+}
 .failure {
   background: color-mix(in srgb, var(--a13n-danger) 6%, var(--a13n-canvas));
   padding: 16px;

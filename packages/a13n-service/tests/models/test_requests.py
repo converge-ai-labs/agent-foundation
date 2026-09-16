@@ -466,6 +466,25 @@ async def test_explicit_unified_thinking_is_not_silently_dropped(profile, thinki
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_default_on_omits_thinking_for_unknown_model(streaming):
+    sent = []
+
+    def handler(request):
+        sent.append(json.loads(request.content))
+        return _reply(streaming)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
+        model = await _live_model(client, upstream_model="local-scripted")
+        settings = {"thinking": True, "max_tokens": 512}
+        await _request(model, streaming=streaming, settings=settings)
+
+    assert len(sent) == 1
+    assert "reasoning_effort" not in sent[0]
+    assert settings == {"thinking": True, "max_tokens": 512}
+
+
+@pytest.mark.anyio
 async def test_always_enabled_fresh_profile_accepts_positive_unified_thinking():
     initial = TestModel(profile=ModelProfile(supports_thinking=False))
     fresh = TestModel(profile=ModelProfile(supports_thinking=False, thinking_always_enabled=True))

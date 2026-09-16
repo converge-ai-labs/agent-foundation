@@ -27,6 +27,7 @@ async def verify(client: Client, manifest: dict) -> dict:
     base = f"/api/v1/workspaces/{manifest['workspace_id']}"
     counts = {}
     sessions = []
+    web_providers = []
     for resource in (
         "agents",
         "skills",
@@ -34,6 +35,7 @@ async def verify(client: Client, manifest: dict) -> dict:
         "sessions",
         "models",
         "model-providers",
+        "web-providers",
         "environments",
         "environment-templates",
         "environment-providers",
@@ -53,8 +55,21 @@ async def verify(client: Client, manifest: dict) -> dict:
             raise RuntimeError(f"The {resource} fixture no longer exercises the default page boundary")
         if resource == "sessions":
             sessions = values
+        elif resource == "web-providers":
+            web_providers = values
     if counts["sessions"] != manifest["session_count"]:
         raise RuntimeError("Session count changed during seed verification")
+    if {item["type"] for item in web_providers} != {"brave", "exa"} or any(
+        not item["enabled"] or not item["credential_configured"] for item in web_providers
+    ):
+        raise RuntimeError("Built-in Web Provider fixtures are not selectable")
+    for provider_type in ("brave", "exa"):
+        if not any(
+            item["id"] == manifest["scenarios"]["resources"][f"web_provider_{provider_type}"]
+            and item["type"] == provider_type
+            for item in web_providers
+        ):
+            raise RuntimeError(f"Seeded {provider_type} Web Provider is missing")
 
     async def session_threads(session: dict) -> list[dict]:
         threads = await client.collection(f"/api/v1/sessions/{session['id']}/threads")

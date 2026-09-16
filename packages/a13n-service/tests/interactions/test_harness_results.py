@@ -5,6 +5,7 @@ import hashlib
 import pytest
 import rfc8785
 from a13n_harness import HarnessRunResult
+from a13n_harness.tools import APPROVAL_PRESENTATION_KEY
 from a13n_service.interactions.domain import PendingCallKind, RunWaitReason
 from a13n_service.interactions.harness_results import HarnessOutcomeProjectionError, StoredHarnessOutcomeAdapter
 from a13n_service.interactions.objects import RunPayloadStore
@@ -114,6 +115,15 @@ async def test_suspended_result_preserves_native_requests_and_classifies_pending
                 tool_call_id="approval-1",
             )
         ],
+        metadata={
+            "approval-1": {
+                APPROVAL_PRESENTATION_KEY: {
+                    "target": "path: /workspace/report.md",
+                    "reason": "Tool reviewer requires approval.",
+                    "risk": "high",
+                }
+            }
+        },
     )
     adapter = StoredHarnessOutcomeAdapter(
         organization_id=ORGANIZATION_ID,
@@ -133,6 +143,11 @@ async def test_suspended_result_preserves_native_requests_and_classifies_pending
         PendingCallKind.client_tool,
         PendingCallKind.approval,
     ]
+    assert projection.candidate.pending.calls[-1].presentation == {
+        "target": "path: /workspace/report.md",
+        "reason": "Tool reviewer requires approval.",
+        "risk": "high",
+    }
     assert projection.deferred is not None
     assert projection.deferred.requests == TypeAdapter(DeferredToolRequests).dump_python(
         deferred,

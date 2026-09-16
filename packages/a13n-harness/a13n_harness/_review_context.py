@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 from html import escape
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Literal
 from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults, ToolDenied
 
-from a13n_harness._json import dump_json_text, redact_bearer
+from a13n_harness._json import dump_json_text
 
 if TYPE_CHECKING:
     from a13n_harness.context import AgentContext
@@ -102,16 +102,6 @@ async def record_approval_denials(
                 }
             ),
         )
-
-
-def compact_target(arguments: dict[str, Any]) -> str:
-    """A single bounded locator/command preview, not an argument dump."""
-    for key in ("file_path", "path", "url", "command", "cwd", "name"):
-        value = arguments.get(key)
-        if isinstance(value, str):
-            text = " ".join(redact_bearer(value).split())
-            return f"{key}: {text[:200]}" + (" [truncated]" if len(text) > 200 else "")
-    return ""
 
 
 def select_review_history(

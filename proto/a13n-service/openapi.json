@@ -2556,65 +2556,6 @@
         "title": "AuthorizationRedirect",
         "type": "object"
       },
-      "BaseModelCandidate": {
-        "additionalProperties": false,
-        "properties": {
-          "base_model": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "Base Model",
-            "type": "string"
-          },
-          "inferred_model_api": {
-            "anyOf": [
-              {
-                "maxLength": 96,
-                "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Inferred Model Api"
-          },
-          "model_api_label": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Model Api Label"
-          }
-        },
-        "required": [
-          "base_model",
-          "inferred_model_api",
-          "model_api_label"
-        ],
-        "title": "BaseModelCandidate",
-        "type": "object"
-      },
-      "BaseModelCandidateCollection": {
-        "additionalProperties": false,
-        "properties": {
-          "items": {
-            "items": {
-              "$ref": "#/components/schemas/BaseModelCandidate"
-            },
-            "title": "Items",
-            "type": "array"
-          }
-        },
-        "required": [
-          "items"
-        ],
-        "title": "BaseModelCandidateCollection",
-        "type": "object"
-      },
       "BinaryContent": {
         "additionalProperties": false,
         "properties": {
@@ -3443,6 +3384,78 @@
           "next_cursor"
         ],
         "title": "BotThreadCollection",
+        "type": "object"
+      },
+      "CatalogModel": {
+        "additionalProperties": false,
+        "properties": {
+          "declarations": {
+            "$ref": "#/components/schemas/ModelDeclarations-Output"
+          },
+          "identity": {
+            "title": "Identity",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "pricing_warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pricing Warning"
+          },
+          "provider_name": {
+            "title": "Provider Name",
+            "type": "string"
+          },
+          "ref": {
+            "$ref": "#/components/schemas/CatalogRef"
+          },
+          "release_date": {
+            "format": "date",
+            "title": "Release Date",
+            "type": "string"
+          }
+        },
+        "required": [
+          "ref",
+          "identity",
+          "name",
+          "provider_name",
+          "release_date",
+          "declarations"
+        ],
+        "title": "CatalogModel",
+        "type": "object"
+      },
+      "CatalogRef": {
+        "additionalProperties": false,
+        "description": "A models.dev provider-qualified identity, independent of the outbound ID.",
+        "properties": {
+          "model": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Model",
+            "type": "string"
+          },
+          "provider": {
+            "pattern": "^[a-z0-9][a-z0-9_-]{0,127}$",
+            "title": "Provider",
+            "type": "string"
+          }
+        },
+        "required": [
+          "provider",
+          "model"
+        ],
+        "title": "CatalogRef",
         "type": "object"
       },
       "ChangePasswordRequest": {
@@ -6785,21 +6798,18 @@
       "CreateModelRequest": {
         "additionalProperties": false,
         "properties": {
-          "base_model": {
+          "catalog_ref": {
             "anyOf": [
               {
-                "maxLength": 256,
-                "minLength": 1,
-                "type": "string"
+                "$ref": "#/components/schemas/CatalogRef"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Base Model"
+            ]
           },
           "declarations": {
-            "$ref": "#/components/schemas/ModelDeclarations"
+            "$ref": "#/components/schemas/ModelDeclarations-Input"
           },
           "description": {
             "anyOf": [
@@ -6823,17 +6833,10 @@
             "type": "string"
           },
           "model_api": {
-            "anyOf": [
-              {
-                "maxLength": 96,
-                "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Model Api"
+            "maxLength": 96,
+            "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$",
+            "title": "Model Api",
+            "type": "string"
           },
           "name": {
             "maxLength": 128,
@@ -6865,7 +6868,8 @@
           "key",
           "provider_id",
           "name",
-          "upstream_model"
+          "upstream_model",
+          "model_api"
         ],
         "title": "CreateModelRequest",
         "type": "object"
@@ -11392,16 +11396,15 @@
       "Model": {
         "additionalProperties": false,
         "properties": {
-          "base_model": {
+          "catalog_ref": {
             "anyOf": [
               {
-                "type": "string"
+                "$ref": "#/components/schemas/CatalogRef"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Base Model"
+            ]
           },
           "created_at": {
             "format": "date-time",
@@ -11412,7 +11415,7 @@
             "$ref": "#/components/schemas/PrincipalRef"
           },
           "declarations": {
-            "$ref": "#/components/schemas/ModelDeclarations"
+            "$ref": "#/components/schemas/ModelDeclarations-Output"
           },
           "description": {
             "anyOf": [
@@ -11513,68 +11516,6 @@
         "title": "Model",
         "type": "object"
       },
-      "ModelCandidate": {
-        "additionalProperties": false,
-        "properties": {
-          "display_name": {
-            "anyOf": [
-              {
-                "maxLength": 128,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Display Name"
-          },
-          "limits": {
-            "$ref": "#/components/schemas/ModelLimits"
-          },
-          "native_profile": {
-            "$ref": "#/components/schemas/ModelProfile"
-          },
-          "parameter_support": {
-            "additionalProperties": {
-              "enum": [
-                "supported",
-                "unsupported",
-                "unknown"
-              ],
-              "type": "string"
-            },
-            "title": "Parameter Support",
-            "type": "object"
-          },
-          "profile": {
-            "$ref": "#/components/schemas/ModelProfile"
-          },
-          "suggested_model_api": {
-            "title": "Suggested Model Api",
-            "type": "string"
-          },
-          "suggested_settings": {
-            "additionalProperties": {
-              "$ref": "#/components/schemas/JsonValue"
-            },
-            "title": "Suggested Settings",
-            "type": "object"
-          },
-          "upstream_model": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "Upstream Model",
-            "type": "string"
-          }
-        },
-        "required": [
-          "upstream_model",
-          "suggested_model_api"
-        ],
-        "title": "ModelCandidate",
-        "type": "object"
-      },
       "ModelCapability": {
         "description": "Harness-owned capabilities of the active Agent model.",
         "enum": [
@@ -11585,129 +11526,37 @@
         "title": "ModelCapability",
         "type": "string"
       },
-      "ModelCatalogMatch": {
+      "ModelCatalogCollection": {
         "additionalProperties": false,
         "properties": {
           "items": {
             "default": [],
             "items": {
-              "$ref": "#/components/schemas/ModelCatalogSuggestion"
+              "$ref": "#/components/schemas/CatalogModel"
             },
             "title": "Items",
             "type": "array"
           },
-          "source": {
+          "released_since": {
+            "format": "date",
+            "title": "Released Since",
+            "type": "string"
+          },
+          "status": {
             "enum": [
-              "none",
-              "explicit",
-              "exact",
-              "normalized",
-              "name_tokens",
-              "ambiguous"
+              "ready",
+              "stale",
+              "unavailable"
             ],
-            "title": "Source",
+            "title": "Status",
             "type": "string"
           }
         },
         "required": [
-          "source"
+          "status",
+          "released_since"
         ],
-        "title": "ModelCatalogMatch",
-        "type": "object"
-      },
-      "ModelCatalogSuggestion": {
-        "additionalProperties": false,
-        "properties": {
-          "base_model": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "Base Model",
-            "type": "string"
-          },
-          "declarations": {
-            "$ref": "#/components/schemas/ModelDeclarations"
-          },
-          "model_api": {
-            "anyOf": [
-              {
-                "maxLength": 96,
-                "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Model Api"
-          },
-          "model_api_label": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Model Api Label"
-          }
-        },
-        "required": [
-          "base_model",
-          "model_api",
-          "model_api_label",
-          "declarations"
-        ],
-        "title": "ModelCatalogSuggestion",
-        "type": "object"
-      },
-      "ModelCatalogSuggestionRequest": {
-        "additionalProperties": false,
-        "properties": {
-          "base_model": {
-            "anyOf": [
-              {
-                "maxLength": 256,
-                "minLength": 1,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Base Model"
-          },
-          "model_api": {
-            "anyOf": [
-              {
-                "maxLength": 96,
-                "pattern": "^[a-z][a-z0-9_]*(?:\\.[a-z][a-z0-9_]*)+$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Model Api"
-          },
-          "provider_id": {
-            "maxLength": 72,
-            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
-            "title": "Provider Id",
-            "type": "string"
-          },
-          "upstream_model": {
-            "maxLength": 256,
-            "minLength": 1,
-            "title": "Upstream Model",
-            "type": "string"
-          }
-        },
-        "required": [
-          "provider_id",
-          "upstream_model"
-        ],
-        "title": "ModelCatalogSuggestionRequest",
+        "title": "ModelCatalogCollection",
         "type": "object"
       },
       "ModelCollection": {
@@ -11775,7 +11624,7 @@
         "title": "ModelConnectionTestResult",
         "type": "object"
       },
-      "ModelDeclarations": {
+      "ModelDeclarations-Input": {
         "additionalProperties": false,
         "description": "Harness-facing facts and authoring choices declared for one saved Model.",
         "properties": {
@@ -11799,22 +11648,10 @@
             ],
             "title": "Context Window Tokens"
           },
-          "max_output_tokens": {
-            "anyOf": [
-              {
-                "exclusiveMinimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Max Output Tokens"
-          },
           "pricing": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/ModelPricing"
+                "$ref": "#/components/schemas/TokenPricing-Input"
               },
               {
                 "type": "null"
@@ -11842,41 +11679,69 @@
               }
             ],
             "title": "Supports Tools"
-          },
-          "thinking_efforts": {
-            "default": [],
-            "items": {
-              "enum": [
-                "minimal",
-                "low",
-                "medium",
-                "high",
-                "xhigh"
-              ],
-              "type": "string"
-            },
-            "title": "Thinking Efforts",
-            "type": "array"
           }
         },
-        "title": "ModelDeclarations",
+        "title": "ModelDeclarations-Input",
         "type": "object"
       },
-      "ModelDiscovery": {
+      "ModelDeclarations-Output": {
         "additionalProperties": false,
+        "description": "Harness-facing facts and authoring choices declared for one saved Model.",
         "properties": {
-          "items": {
+          "capabilities": {
             "items": {
-              "$ref": "#/components/schemas/ModelCandidate"
+              "$ref": "#/components/schemas/ModelCapability"
             },
-            "title": "Items",
-            "type": "array"
+            "title": "Capabilities",
+            "type": "array",
+            "uniqueItems": true
+          },
+          "context_window_tokens": {
+            "anyOf": [
+              {
+                "exclusiveMinimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Window Tokens"
+          },
+          "pricing": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/TokenPricing-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "structured_output": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Structured Output"
+          },
+          "supports_tools": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supports Tools"
           }
         },
-        "required": [
-          "items"
-        ],
-        "title": "ModelDiscovery",
+        "title": "ModelDeclarations-Output",
         "type": "object"
       },
       "ModelIdentity": {
@@ -11910,37 +11775,6 @@
           "response"
         ],
         "title": "ModelIdentity",
-        "type": "object"
-      },
-      "ModelLimits": {
-        "additionalProperties": false,
-        "properties": {
-          "context_window_tokens": {
-            "anyOf": [
-              {
-                "exclusiveMinimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Context Window Tokens"
-          },
-          "max_output_tokens": {
-            "anyOf": [
-              {
-                "exclusiveMinimum": 0.0,
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Max Output Tokens"
-          }
-        },
-        "title": "ModelLimits",
         "type": "object"
       },
       "ModelOverride": {
@@ -11983,167 +11817,6 @@
           }
         },
         "title": "ModelOverride",
-        "type": "object"
-      },
-      "ModelPricing": {
-        "additionalProperties": false,
-        "description": "Editable USD prices per million tokens.",
-        "properties": {
-          "cache_read": {
-            "anyOf": [
-              {
-                "minimum": 0.0,
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cache Read"
-          },
-          "cache_write": {
-            "anyOf": [
-              {
-                "minimum": 0.0,
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Cache Write"
-          },
-          "input": {
-            "anyOf": [
-              {
-                "minimum": 0.0,
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Input"
-          },
-          "output": {
-            "anyOf": [
-              {
-                "minimum": 0.0,
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Output"
-          }
-        },
-        "title": "ModelPricing",
-        "type": "object"
-      },
-      "ModelProfile": {
-        "additionalProperties": false,
-        "description": "Read-only Provider capability information returned by discovery.",
-        "properties": {
-          "input_modalities": {
-            "anyOf": [
-              {
-                "items": {
-                  "enum": [
-                    "text",
-                    "image",
-                    "audio",
-                    "video"
-                  ],
-                  "type": "string"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Input Modalities"
-          },
-          "supports_audio_input": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Supports Audio Input"
-          },
-          "supports_image_output": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Supports Image Output"
-          },
-          "supports_json_object_output": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Supports Json Object Output"
-          },
-          "supports_json_schema_output": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Supports Json Schema Output"
-          },
-          "supports_thinking": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Supports Thinking"
-          },
-          "supports_tools": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Supports Tools"
-          },
-          "thinking_always_enabled": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Thinking Always Enabled"
-          }
-        },
-        "title": "ModelProfile",
         "type": "object"
       },
       "ModelProvider": {
@@ -12269,6 +11942,14 @@
       "ModelProviderDefinition": {
         "additionalProperties": false,
         "properties": {
+          "catalog_providers": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "title": "Catalog Providers",
+            "type": "array"
+          },
           "configuration_schema": {
             "additionalProperties": true,
             "title": "Configuration Schema",
@@ -12309,10 +11990,6 @@
             "title": "Supported Model Apis",
             "type": "array"
           },
-          "supports_model_discovery": {
-            "title": "Supports Model Discovery",
-            "type": "boolean"
-          },
           "type": {
             "title": "Type",
             "type": "string"
@@ -12326,8 +12003,7 @@
           "supported_model_apis",
           "default_model_api",
           "model_api_labels",
-          "settings_schemas",
-          "supports_model_discovery"
+          "settings_schemas"
         ],
         "title": "ModelProviderDefinition",
         "type": "object"
@@ -18793,6 +18469,262 @@
         "title": "ThreadRunSubmissionRequest",
         "type": "object"
       },
+      "TokenPriceTier-Input": {
+        "additionalProperties": false,
+        "description": "Complete rates for requests strictly above the input threshold.",
+        "properties": {
+          "above": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Above"
+          },
+          "rates": {
+            "$ref": "#/components/schemas/TokenRates-Input"
+          }
+        },
+        "required": [
+          "rates"
+        ],
+        "title": "TokenPriceTier-Input",
+        "type": "object"
+      },
+      "TokenPriceTier-Output": {
+        "additionalProperties": false,
+        "description": "Complete rates for requests strictly above the input threshold.",
+        "properties": {
+          "above": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Above"
+          },
+          "rates": {
+            "$ref": "#/components/schemas/TokenRates-Output"
+          }
+        },
+        "required": [
+          "rates"
+        ],
+        "title": "TokenPriceTier-Output",
+        "type": "object"
+      },
+      "TokenPricing-Input": {
+        "additionalProperties": false,
+        "description": "Cliff prices: one input-length tier prices the entire request.",
+        "properties": {
+          "currency": {
+            "const": "USD",
+            "default": "USD",
+            "title": "Currency",
+            "type": "string"
+          },
+          "tier_basis": {
+            "const": "input_tokens",
+            "default": "input_tokens",
+            "title": "Tier Basis",
+            "type": "string"
+          },
+          "tiers": {
+            "items": {
+              "$ref": "#/components/schemas/TokenPriceTier-Input"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Tiers",
+            "type": "array"
+          },
+          "unit": {
+            "const": "million_tokens",
+            "default": "million_tokens",
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tiers"
+        ],
+        "title": "TokenPricing-Input",
+        "type": "object"
+      },
+      "TokenPricing-Output": {
+        "additionalProperties": false,
+        "description": "Cliff prices: one input-length tier prices the entire request.",
+        "properties": {
+          "currency": {
+            "const": "USD",
+            "default": "USD",
+            "title": "Currency",
+            "type": "string"
+          },
+          "tier_basis": {
+            "const": "input_tokens",
+            "default": "input_tokens",
+            "title": "Tier Basis",
+            "type": "string"
+          },
+          "tiers": {
+            "items": {
+              "$ref": "#/components/schemas/TokenPriceTier-Output"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Tiers",
+            "type": "array"
+          },
+          "unit": {
+            "const": "million_tokens",
+            "default": "million_tokens",
+            "title": "Unit",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tiers"
+        ],
+        "title": "TokenPricing-Output",
+        "type": "object"
+      },
+      "TokenRates-Input": {
+        "additionalProperties": false,
+        "description": "USD per million tokens; null is unknown, never free.",
+        "properties": {
+          "cache_read": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Read"
+          },
+          "cache_write": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Write"
+          },
+          "input": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input"
+          },
+          "output": {
+            "anyOf": [
+              {
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output"
+          }
+        },
+        "title": "TokenRates-Input",
+        "type": "object"
+      },
+      "TokenRates-Output": {
+        "additionalProperties": false,
+        "description": "USD per million tokens; null is unknown, never free.",
+        "properties": {
+          "cache_read": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Read"
+          },
+          "cache_write": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cache Write"
+          },
+          "input": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input"
+          },
+          "output": {
+            "anyOf": [
+              {
+                "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output"
+          }
+        },
+        "title": "TokenRates-Output",
+        "type": "object"
+      },
       "Tool": {
         "additionalProperties": true,
         "description": "A tool definition.",
@@ -20031,23 +19963,20 @@
       "UpdateModelRequest": {
         "additionalProperties": false,
         "properties": {
-          "base_model": {
+          "catalog_ref": {
             "anyOf": [
               {
-                "maxLength": 256,
-                "minLength": 1,
-                "type": "string"
+                "$ref": "#/components/schemas/CatalogRef"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Base Model"
+            ]
           },
           "declarations": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/ModelDeclarations"
+                "$ref": "#/components/schemas/ModelDeclarations-Input"
               },
               {
                 "type": "null"
@@ -26859,64 +26788,6 @@
         "summary": "Complete Password Reset",
         "tags": [
           "identity-recovery"
-        ]
-      }
-    },
-    "/api/v1/base-models": {
-      "get": {
-        "operationId": "get_base_models",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BaseModelCandidateCollection"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Service error.",
-            "headers": {
-              "Retry-After": {
-                "schema": {
-                  "type": "string"
-                }
-              },
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "SessionAuth": []
-          }
-        ],
-        "summary": "List Base Models",
-        "tags": [
-          "model-management"
         ]
       }
     },
@@ -35655,9 +35526,9 @@
         ]
       }
     },
-    "/api/v1/organizations/{organization}/model-catalog/suggestions": {
-      "post": {
-        "operationId": "post_organizations_organization_model_catalog_suggestions",
+    "/api/v1/organizations/{organization}/model-catalog": {
+      "get": {
+        "operationId": "get_organizations_organization_model_catalog",
         "parameters": [
           {
             "in": "path",
@@ -35669,22 +35540,12 @@
             }
           }
         ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ModelCatalogSuggestionRequest"
-              }
-            }
-          },
-          "required": true
-        },
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ModelCatalogMatch"
+                  "$ref": "#/components/schemas/ModelCatalogCollection"
                 }
               }
             },
@@ -35745,7 +35606,7 @@
             "SessionAuth": []
           }
         ],
-        "summary": "Suggest Organization Model Declarations",
+        "summary": "Organization List Model Catalog",
         "tags": [
           "model-management"
         ]
@@ -36213,101 +36074,6 @@
           }
         ],
         "summary": "Organization Update Model Provider",
-        "tags": [
-          "model-management"
-        ]
-      }
-    },
-    "/api/v1/organizations/{organization}/model-providers/{provider_id}/discover-models": {
-      "post": {
-        "operationId": "post_organizations_organization_model_providers_provider_id_discover_models",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "provider_id",
-            "required": true,
-            "schema": {
-              "title": "Provider Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "organization",
-            "required": true,
-            "schema": {
-              "title": "Organization",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ModelDiscovery"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid request.",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Service error.",
-            "headers": {
-              "Retry-After": {
-                "schema": {
-                  "type": "string"
-                }
-              },
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "SessionAuth": []
-          }
-        ],
-        "summary": "Organization Discover Provider Models",
         "tags": [
           "model-management"
         ]
@@ -51371,9 +51137,9 @@
         ]
       }
     },
-    "/api/v1/workspaces/{workspace}/model-catalog/suggestions": {
-      "post": {
-        "operationId": "post_workspaces_workspace_model_catalog_suggestions",
+    "/api/v1/workspaces/{workspace}/model-catalog": {
+      "get": {
+        "operationId": "get_workspaces_workspace_model_catalog",
         "parameters": [
           {
             "in": "path",
@@ -51385,22 +51151,12 @@
             }
           }
         ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/ModelCatalogSuggestionRequest"
-              }
-            }
-          },
-          "required": true
-        },
         "responses": {
           "200": {
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ModelCatalogMatch"
+                  "$ref": "#/components/schemas/ModelCatalogCollection"
                 }
               }
             },
@@ -51461,7 +51217,7 @@
             "SessionAuth": []
           }
         ],
-        "summary": "Suggest Workspace Model Declarations",
+        "summary": "List Model Catalog",
         "tags": [
           "model-management"
         ]
@@ -51929,101 +51685,6 @@
           }
         ],
         "summary": "Update Model Provider",
-        "tags": [
-          "model-management"
-        ]
-      }
-    },
-    "/api/v1/workspaces/{workspace}/model-providers/{provider_id}/discover-models": {
-      "post": {
-        "operationId": "post_workspaces_workspace_model_providers_provider_id_discover_models",
-        "parameters": [
-          {
-            "in": "path",
-            "name": "provider_id",
-            "required": true,
-            "schema": {
-              "title": "Provider Id",
-              "type": "string"
-            }
-          },
-          {
-            "in": "path",
-            "name": "workspace",
-            "required": true,
-            "schema": {
-              "title": "Workspace",
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ModelDiscovery"
-                }
-              }
-            },
-            "description": "Successful Response",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Invalid request.",
-            "headers": {
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
-          "default": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            },
-            "description": "Service error.",
-            "headers": {
-              "Retry-After": {
-                "schema": {
-                  "type": "string"
-                }
-              },
-              "X-Request-ID": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "BearerAuth": []
-          },
-          {
-            "SessionAuth": []
-          }
-        ],
-        "summary": "Discover Provider Models",
         "tags": [
           "model-management"
         ]

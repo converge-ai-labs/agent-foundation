@@ -1,6 +1,11 @@
 """Managed invocation, deferred continuation, and client-tool contracts."""
 
-from a13n_harness.tools.approval import ApprovalSource, ToolApprovalContext
+from a13n_harness.tools.approval import (
+    APPROVAL_PRESENTATION_KEY,
+    ApprovalPresentation,
+    ApprovalSource,
+    ToolApprovalContext,
+)
 from a13n_harness.tools.client import (
     ClientToolDefinition,
     ClientToolsCapability,
@@ -43,8 +48,10 @@ from a13n_harness.tools.policy import (
 )
 
 __all__ = [
+    "APPROVAL_PRESENTATION_KEY",
     "HARNESS_TOOL_METADATA_KEY",
     "RECOVERY_RETRY_SAFE_METADATA_KEY",
+    "ApprovalPresentation",
     "ApprovalSource",
     "ApprovalVerifier",
     "CanonicalResource",

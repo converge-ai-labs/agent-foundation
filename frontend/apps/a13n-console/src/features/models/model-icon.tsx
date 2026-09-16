@@ -7,7 +7,7 @@ export function modelBrand(
   upstream: string,
   provider?: string,
 ): string | undefined {
-  const parts = upstream.trim().toLowerCase().split("/").reverse();
+  const parts = upstream.trim().toLowerCase().split(/[/.]/).reverse();
   for (const part of parts) {
     if (resolveBrand({ identity: part, alias: part })) return part;
     const family = identities.find(
@@ -16,6 +16,8 @@ export function modelBrand(
         /^[\d._:-]/.test(part.slice(identity.length)),
     );
     if (family) return family;
+    if (/^glm[-\d]/.test(part)) return "zhipu";
+    if (/^(doubao[-.]|seed[-\d])/.test(part)) return "doubao";
     if (/^(gpt[-\d]|o[134](?:[-.]|$))/.test(part)) return "openai";
   }
   return provider;
@@ -24,10 +26,20 @@ export function modelBrand(
 export function ModelIcon({
   upstream,
   provider,
+  catalogRef,
+  size = 32,
 }: {
   upstream: string;
   provider?: string;
+  catalogRef?: { provider: string; model: string } | null;
+  size?: number;
 }) {
-  const identity = modelBrand(upstream, provider);
-  return <BrandIcon identity={identity} alias={identity} size={32} />;
+  const identity =
+    catalogRef === null
+      ? undefined
+      : modelBrand(
+          catalogRef ? `${catalogRef.provider}/${catalogRef.model}` : upstream,
+          provider,
+        );
+  return <BrandIcon identity={identity} alias={identity} size={size} />;
 }
