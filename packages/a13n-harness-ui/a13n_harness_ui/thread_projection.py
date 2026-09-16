@@ -75,9 +75,10 @@ class _ThreadCursor(SurfaceModel):
     project_ids: tuple[str, ...] | None = None
     project_ids_digest: str | None = None
     projectless: bool = False
-    sort: Literal["updated", "activity"] = "updated"
+    sort: Literal["updated", "activity", "touched"] = "updated"
     include_archived: bool
     archived_only: bool = False
+    active_only: bool | None = None
     updated_at: datetime
     thread_id: str
 
@@ -127,7 +128,9 @@ class ThreadProjectionService:
         archived_only: bool = False,
         project_ids: tuple[str, ...] | None = None,
         projectless: bool = False,
-        sort: Literal["updated", "activity"] = "updated",
+        sort: Literal["updated", "activity", "touched"] = "updated",
+        active_only: bool | None = None,
+        active_thread_ids: tuple[str, ...] = (),
         cursor: str | None = None,
         limit: int = 20,
     ) -> ThreadPage:
@@ -156,6 +159,7 @@ class ThreadProjectionService:
                 )
                 or decoded.projectless != projectless
                 or decoded.sort != sort
+                or decoded.active_only != active_only
             ):
                 raise ThreadError("Thread cursor belongs to another query.", code="thread_cursor_mismatch")
             before = (decoded.updated_at, decoded.thread_id)
@@ -167,6 +171,8 @@ class ThreadProjectionService:
             project_ids=project_ids,
             projectless=projectless,
             sort=sort,
+            thread_ids=active_thread_ids if active_only is True else None,
+            exclude_thread_ids=active_thread_ids if active_only is False else (),
             before=before,
             limit=limit + 1,
         )
@@ -184,7 +190,12 @@ class ThreadProjectionService:
                     project_id=project_id,
                     include_archived=include_archived,
                     archived_only=archived_only,
-                    updated_at=last.updated_at if sort == "updated" else (last.activity_at or last.created_at),
+                    active_only=active_only,
+                    updated_at={
+                        "updated": last.updated_at,
+                        "activity": last.activity_at or last.created_at,
+                        "touched": last.touched_at or last.created_at,
+                    }[sort],
                     # A filter can cover many unavailable Projects; keep its cursor bounded.
                     project_ids_digest=project_ids_digest,
                     projectless=projectless,
@@ -334,6 +345,7 @@ class ThreadProjectionService:
             title=thread.title,
             excerpt=thread.excerpt,
             activity_at=thread.activity_at,
+            touched_at=thread.touched_at,
             archived=thread.archived,
             configuration=_configuration(thread.configuration),
             continuation_state="initial" if thread.continuation is None else "selected",

@@ -1092,6 +1092,7 @@ def create_webui(
         query: Annotated[str | None, Query(max_length=512)] = None,
         include_archived: bool = False,
         archived_only: bool = False,
+        include_active: bool = False,
         cursor: Annotated[str | None, Query(max_length=2048)] = None,
         limit: Annotated[int, Query(ge=1, le=100)] = 20,
     ) -> ThreadActivityPage:
@@ -1101,6 +1102,7 @@ def create_webui(
             query=query,
             include_archived=include_archived,
             archived_only=archived_only,
+            include_active=include_active,
             cursor=cursor,
             limit=limit,
         )
@@ -1166,7 +1168,7 @@ def create_webui(
         query: Annotated[str | None, Query(max_length=500)] = None,
         project_id: str | None = None,
         include_archived: bool = False,
-        sort: Literal["updated", "activity"] = "updated",
+        sort: Literal["updated", "activity", "touched"] = "updated",
         cursor: str | None = None,
         limit: Annotated[int, Query(ge=1, le=100)] = 20,
     ) -> ThreadPage:
@@ -1193,6 +1195,10 @@ def create_webui(
         return await app().get_thread_transcript(
             thread_id=thread_id, expected_continuation_id=expected_continuation_id, cursor=cursor, limit=limit
         )
+
+    @server.post("/api/threads/{thread_id}/touch", response_model=ThreadSummary)
+    async def touch_thread(thread_id: str) -> ThreadSummary:
+        return await app().touch_thread(thread_id)
 
     @server.patch(
         "/api/threads/{thread_id}/metadata", response_model=ThreadSummary, openapi_extra=_body(ThreadMetadataMutation)

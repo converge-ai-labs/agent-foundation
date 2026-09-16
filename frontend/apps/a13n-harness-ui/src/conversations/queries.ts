@@ -48,11 +48,13 @@ export function useThreads(
     enabled = true,
     limit = 30,
     archivedOnly = false,
+    includeActive = false,
   }: {
     scope?: "all" | "projectless" | "unavailable";
     enabled?: boolean;
     limit?: number;
     archivedOnly?: boolean;
+    includeActive?: boolean;
   } = {},
 ) {
   const { client } = useTransport();
@@ -65,6 +67,7 @@ export function useThreads(
       scope,
       limit,
       archivedOnly,
+      includeActive,
     ],
     enabled,
     initialPageParam: undefined as string | undefined,
@@ -78,6 +81,7 @@ export function useThreads(
               project_scope: scope,
               include_archived: archived,
               archived_only: archivedOnly,
+              include_active: includeActive,
               cursor: pageParam,
               limit,
             },
@@ -100,6 +104,7 @@ export function useThreads(
     scope,
     limit,
     archivedOnly,
+    includeActive,
   ]);
   useEffect(() => {
     if (list.isSuccess)

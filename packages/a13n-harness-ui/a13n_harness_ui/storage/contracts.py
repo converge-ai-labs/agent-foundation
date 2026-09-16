@@ -107,6 +107,7 @@ class Thread(StoredContract):
     title: str | None = Field(default=None, max_length=512)
     excerpt: ConversationExcerpt = Field(default_factory=ConversationExcerpt)
     activity_at: datetime | None = None
+    touched_at: datetime | None = None
     archived: bool = False
     configuration: ThreadConfiguration
     initial_state: ObjectRef

@@ -261,7 +261,10 @@ function ProjectGroup({
     scope: group.scope,
     enabled: enabled && expanded,
     limit: 5,
+    includeActive: true,
   });
+  const activeRows = list.data?.pages[0]?.active_rows ?? [];
+  const activeIds = new Set(activeRows.map((row) => row.thread.thread_id));
   const rows = [
     ...new Map(
       (list.data?.pages.flatMap((page) => page.rows) ?? []).map((row) => [
@@ -273,6 +276,7 @@ function ProjectGroup({
   const pinned =
     selected &&
     !selected.archived &&
+    !activeIds.has(selected.thread_id) &&
     !rows.some((row) => row.thread.thread_id === selected.thread_id)
       ? selected
       : undefined;
@@ -376,6 +380,23 @@ function ProjectGroup({
         </div>
       </div>
       <div hidden={!expanded} className={styles.groupThreads}>
+        {activeRows.length > 0 && (
+          <div role="group" aria-label="Running conversations">
+            <small className={styles.emptyGroup}>
+              Running · {activeRows.length}
+            </small>
+            {activeRows.map((row) => (
+              <ThreadRow
+                key={row.thread.thread_id}
+                row={row}
+                presence={presence}
+              />
+            ))}
+          </div>
+        )}
+        {activeRows.length > 0 && (rows.length > 0 || pinned) && (
+          <small className={styles.emptyGroup}>Recent</small>
+        )}
         {pinned && (
           <div className={styles.pinnedThread}>
             <small className={styles.emptyGroup}>
@@ -384,9 +405,15 @@ function ProjectGroup({
             <ThreadRow row={{ thread: pinned }} presence={presence} />
           </div>
         )}
-        {rows.map((row) => (
-          <ThreadRow key={row.thread.thread_id} row={row} presence={presence} />
-        ))}
+        {rows
+          .filter((row) => !activeIds.has(row.thread.thread_id))
+          .map((row) => (
+            <ThreadRow
+              key={row.thread.thread_id}
+              row={row}
+              presence={presence}
+            />
+          ))}
         {expanded && !list.data && list.isPending && (
           <div
             role="status"
@@ -397,9 +424,12 @@ function ProjectGroup({
             <span>Loading conversations…</span>
           </div>
         )}
-        {list.isSuccess && !list.isPreviousData && !rows.length && (
-          <small className={styles.emptyGroup}>No conversations yet</small>
-        )}
+        {list.isSuccess &&
+          !list.isPreviousData &&
+          !rows.length &&
+          !activeRows.length && (
+            <small className={styles.emptyGroup}>No conversations yet</small>
+          )}
         <ErrorNotice error={list.error} retry={() => void list.refetch()} />
         {list.hasNextPage && (
           <Button

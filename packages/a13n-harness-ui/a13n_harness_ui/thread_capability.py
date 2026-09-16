@@ -109,6 +109,7 @@ class ThreadToolController:
             thread_id=thread_id,
             prompt=prompt,
             model_overrides=RunModelOverrides(model_id=model_id) if model_id is not None else None,
+            touch=True,
         )
         return receipt.model_dump(mode="json")
 
@@ -157,7 +158,7 @@ class ThreadToolController:
         )
         try:
             receipt = await self._root_runs.submit_prompt(
-                thread_id=created.thread_id, prompt=prompt, model_overrides=model_overrides
+                thread_id=created.thread_id, prompt=prompt, model_overrides=model_overrides, touch=True
             )
         except HarnessUiError as exc:
             # Creation and run admission are separate durable effects. Never hide the created identity.
