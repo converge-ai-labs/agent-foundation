@@ -132,9 +132,38 @@ it("renders one thumbnail per authored occurrence and keeps hidden descriptions 
   expect(screen.getAllByText("photo.png")).toHaveLength(2);
   expect(screen.queryByText("hidden description")).toBeNull();
   const visible = [
-    ...view.container.querySelectorAll(
-      "header ~ span, header ~ details > summary",
-    ),
+    ...view.container.querySelectorAll("header ~ span, header ~ div > button"),
   ].map((node) => node.textContent);
   expect(visible).toEqual(["before ", "photo.png", " between ", "photo.png"]);
+});
+
+it("opens retained images in a full-screen dialog with fit, actual-size and download controls", async () => {
+  const url = urls();
+  const fetch = vi.fn().mockImplementation(async () => new Response("png"));
+  render(
+    <TransportContext value={{ fetch } as unknown as Transport}>
+      <InputContent
+        threadId="one"
+        renderText={(text) => text}
+        parts={[{ kind: "media", metadata: { harness_ui: { attachment } } }]}
+      />
+    </TransportContext>,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Preview photo.png" }));
+  const dialog = await screen.findByRole("dialog", { name: "photo.png" });
+  await waitFor(() =>
+    expect(dialog.querySelector("img")?.getAttribute("src")).toBe(
+      "blob:retained-image",
+    ),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Actual size" }));
+  expect(screen.getByRole("button", { name: "Fit to screen" })).toBeTruthy();
+  expect(
+    screen
+      .getByRole("link", { name: "Download image" })
+      .getAttribute("download"),
+  ).toBe("photo.png");
+  fireEvent.click(screen.getByRole("button", { name: "Close image preview" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  expect(url.revokeObjectURL).toHaveBeenCalledWith("blob:retained-image");
 });

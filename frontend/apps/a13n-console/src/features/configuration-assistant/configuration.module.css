@@ -1,0 +1,143 @@
+.start {
+  max-width: 900px;
+  margin: 2rem auto;
+  display: grid;
+  gap: 3rem;
+}
+.intro {
+  display: grid;
+  justify-items: start;
+  gap: 1.25rem;
+  max-width: 640px;
+}
+.intro h2 {
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+.intro p,
+.notice {
+  color: var(--muted-foreground);
+  font-size: 0.875rem;
+}
+.history {
+  display: grid;
+  gap: 1rem;
+}
+.history h2,
+.review h2 {
+  font-size: 0.875rem;
+  font-weight: 600;
+}
+.history > a {
+  display: flex;
+  justify-content: space-between;
+  padding: 0.875rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.875rem;
+}
+.workspace {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+.header h1 {
+  font-size: 1rem;
+  font-weight: 600;
+}
+.header nav {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.8125rem;
+}
+.panes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(330px, 38%);
+  flex: 1;
+  min-height: 0;
+}
+.conversation {
+  overflow: auto;
+  min-width: 0;
+  padding: 1rem;
+}
+.review {
+  overflow: auto;
+  min-width: 0;
+  padding: 1.5rem;
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  font-size: 0.8125rem;
+}
+.review code {
+  overflow-wrap: anywhere;
+  font-size: 0.7rem;
+}
+.review dl {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0.5rem 1rem;
+}
+.review dt {
+  color: var(--muted-foreground);
+}
+.review dd {
+  min-width: 0;
+}
+.notice {
+  padding: 0.875rem;
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  display: grid;
+  gap: 0.5rem;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.difference {
+  display: grid;
+  gap: 0.5rem;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.difference pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 240px;
+  overflow: auto;
+  font-size: 0.75rem;
+}
+.empty {
+  max-width: 680px;
+  margin: 3rem auto;
+  display: grid;
+  gap: 1.5rem;
+}
+@media (max-width: 1000px) {
+  .panes {
+    grid-template-columns: minmax(0, 1fr);
+    overflow: auto;
+  }
+  .conversation,
+  .review {
+    overflow: visible;
+  }
+  .review {
+    border-left: 0;
+    border-top: 1px solid var(--border);
+  }
+}

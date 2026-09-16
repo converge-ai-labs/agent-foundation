@@ -111,6 +111,23 @@ beforeEach(() => {
           return json({
             agents: [
               { agent_id: "agent-one", name: "Writer", model_id: "model-one" },
+              {
+                agent_id: "agent-two",
+                name: "Reviewer",
+                model_id: "model-two",
+              },
+            ],
+            models: [
+              {
+                model_id: "model-one",
+                name: "Primary model",
+                route: "openai:primary",
+              },
+              {
+                model_id: "model-two",
+                name: "Other model",
+                route: "openai:other",
+              },
             ],
             environments: [
               {
@@ -122,13 +139,22 @@ beforeEach(() => {
           });
         if (pathname === `/api/threads/${id}`) {
           await readPaused;
-          return json({ thread: { thread_id: id } });
+          return json({ thread: { thread_id: id }, continuation_id: null });
         }
+        if (pathname === `/api/threads/${id}/transcript`)
+          return json({
+            continuation_id: "initial:one",
+            entries: [],
+            next_cursor: null,
+          });
+        throw new Error(`Unexpected read ${url}`);
       }
       if (pathname.endsWith("configuration-preview"))
         return json({
           configuration: {
-            agent_source: { id: "agent-one" },
+            agent_source: {
+              id: (await request.clone().json()).agent_id || "agent-one",
+            },
             environment_profile_id: "environment-native",
           },
         });
@@ -215,7 +241,7 @@ async function fill() {
   });
   await waitFor(() =>
     expect(
-      screen.getByRole("combobox", { name: "Agent & model" }).textContent,
+      screen.getByRole("combobox", { name: "Agent" }).textContent,
     ).toContain("Writer"),
   );
   act(() => drafts.get(id)!.doc.getText("text").insert(0, "Build this"));
@@ -370,4 +396,74 @@ it("does not steal navigation when an uncertain creation is reconciled after lea
   expect(creations.get(id)!.created).toBe(true);
   expect(screen.getByLabelText("Location").textContent).toBe("/settings");
   expect(writes).toHaveLength(1);
+});
+
+it("distinguishes inherited choices and sends an independent model without changing the agent binding", async () => {
+  const user = (await import("@testing-library/user-event")).default.setup();
+  mount();
+  await fill();
+  expect(screen.queryByRole("button", { name: "Composer help" })).toBeNull();
+  await user.click(screen.getByRole("combobox", { name: "Agent" }));
+  expect(
+    await screen.findByRole("option", { name: /Default · Writer/ }),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("option", { name: /Writer.*agent-one/ }),
+  ).toBeTruthy();
+  await user.click(screen.getByRole("option", { name: /Reviewer.*agent-two/ }));
+  await waitFor(() => expect(screen.queryByRole("listbox")).toBeNull());
+  fireEvent.keyDown(screen.getByRole("combobox", { name: "Model" }), {
+    key: "ArrowDown",
+  });
+  expect(
+    (await screen.findByRole("option", { name: /Agent default/ })).textContent,
+  ).toContain("Other model");
+  await user.click(
+    screen.getByRole("option", { name: /Primary model.*model-one/ }),
+  );
+  await user.click(screen.getByRole("link", { name: "Settings" }));
+  await user.click(screen.getByRole("link", { name: "Return to draft" }));
+  expect(screen.getByRole("combobox", { name: "Model" }).textContent).toContain(
+    "Primary model",
+  );
+  await waitFor(() =>
+    expect(
+      (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false),
+  );
+  await user.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() => expect(writes).toHaveLength(2));
+  expect(await writes[0].json()).toEqual({
+    thread_id: id,
+    defaults: { project_id: "project-one", agent_id: "agent-two" },
+  });
+  expect(await writes[1].json()).toEqual({
+    parts: ["Build this"],
+    model_id: "model-one",
+  });
+});
+
+it("keeps the same composer mounted while the accepted conversation's first frame loads", async () => {
+  let resume!: () => void;
+  readPaused = new Promise<void>((resolve) => {
+    resume = resolve;
+  });
+  mount();
+  await fill();
+  const editor = screen.getByRole("textbox", { name: "Shared prompt" });
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() => expect(reads).toContain(`/api/threads/${id}`));
+  expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBe(editor);
+  expect(screen.getByLabelText("Location").textContent).toBe(`/new/${id}`);
+  expect(writes).toHaveLength(2);
+  await act(async () => resume());
+  await waitFor(() =>
+    expect(screen.getByLabelText("Location").textContent).toBe(
+      `/threads/${id}`,
+    ),
+  );
+  expect(queries.getQueryData(["thread", id, "detail"])).toBeTruthy();
+  expect(queries.getQueryData(["thread", id, "history", null])).toBeTruthy();
+  expect(writes).toHaveLength(2);
 });

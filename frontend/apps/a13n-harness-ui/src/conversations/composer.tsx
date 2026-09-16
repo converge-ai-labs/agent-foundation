@@ -8,21 +8,15 @@ import {
   type ReactNode,
 } from "react";
 import { useQueries, useQueryClient } from "@tanstack/react-query";
-import {
-  Button,
-  ModalFrame,
-  Popover,
-  PopoverTrigger,
-  PopoverPopup,
-  PopoverTitle,
-} from "a13n-ui";
-import { Paperclip, ArrowUp, Question, X } from "@phosphor-icons/react";
+import { Button, ModalFrame } from "a13n-ui";
+import { Paperclip, Plus, ArrowUp, Stop, X } from "@phosphor-icons/react";
 import type { EditorView } from "@codemirror/view";
 import {
   attachmentSelections,
   attachmentToken,
   isReadyAttachment,
 } from "./inline-attachments";
+import { ImagePreview } from "./image-preview";
 import { AttachmentThumbnail } from "./attachment-thumbnail";
 import { useTransport } from "../transport/context";
 import {
@@ -95,6 +89,7 @@ export async function submitDraft(
   threadId: string,
   action: "send" | "steer",
   receipt?: string,
+  modelId?: string,
 ) {
   if (
     draft.submission.kind === "pending" ||
@@ -120,7 +115,10 @@ export async function submitDraft(
       const accepted = await result(
         transport.client.POST("/api/threads/{thread_id}/submit", {
           params: { path: { thread_id: threadId } },
-          body: { parts: captured.parts },
+          body: {
+            parts: captured.parts,
+            ...(modelId ? { model_id: modelId } : {}),
+          },
         }),
       );
       if (!accepted.receipt_id || accepted.thread_id !== threadId)
@@ -152,11 +150,12 @@ export async function submitDraft(
     draft.clear(captured);
     draft.submission = {
       kind: "accepted",
+      action,
       receipt: acceptedReceipt,
       message:
         action === "send"
           ? "Input accepted. Execution may still be preparing."
-          : "Instruction accepted by the current operation.",
+          : "Steer sent. The running operation accepted your instruction; application is not yet confirmed.",
     };
   } catch (error) {
     // A definite application rejection differs from a lost response/proxy failure.
@@ -189,6 +188,8 @@ export function Composer({
   onPreparing,
   onSubmitted,
   controls,
+  leadingControls,
+  modelId,
   threadId,
   activity,
   canRun,
@@ -207,8 +208,10 @@ export function Composer({
   local?: boolean;
   prepareThread?: () => Promise<void>;
   onPreparing?: (preparing: boolean) => void;
-  onSubmitted?: () => void;
+  onSubmitted?: () => void | Promise<void>;
   controls?: ReactNode;
+  leadingControls?: ReactNode;
+  modelId?: string;
 }) {
   const draft = useDraft(threadId);
   const [preparing, setPreparing] = useState(false);
@@ -297,20 +300,56 @@ export function Composer({
       ? false
       : !isReadyAttachment(id) || !attachments[index].data,
   );
-  const valid = !!(input.prompt.trim() || selections.length) && !missing;
-  const canSend =
-    canRun &&
-    !busy &&
-    (local || draft.synchronized) &&
+  const hasInput = !!(input.prompt.trim() || selections.length);
+  const valid = hasInput && !missing;
+  const [stopping, setStopping] = useState(false);
+  const ready =
+    local ||
+    (draft.status === "Connected" && !draft.replacement && !draft.error);
+  const canSteer =
+    busy &&
+    ready &&
     !preparing &&
     !pending &&
     !unknown &&
-    valid;
+    valid &&
+    !!activity.available_actions?.includes("steer");
+  const stopAction = busy && !hasInput;
+  const canStop =
+    stopAction &&
+    !!activity.receipt_id &&
+    !!activity.available_actions?.includes("cancel") &&
+    !stopping &&
+    !preparing &&
+    !pending;
+  const stop = async () => {
+    if (!canStop || !activity.receipt_id) return;
+    setStopping(true);
+    setError("");
+    try {
+      await result(
+        transport.client.POST("/api/operations/{receipt_id}/cancel", {
+          params: { path: { receipt_id: activity.receipt_id } },
+        }),
+      );
+    } catch (failure) {
+      setError(
+        failure instanceof Error
+          ? failure.message
+          : "Could not confirm Stop. Refresh the operation before retrying.",
+      );
+    } finally {
+      setStopping(false);
+      reconcile();
+    }
+  };
+  const canSend =
+    canRun && !busy && ready && !preparing && !pending && !unknown && valid;
   const submit = async (action: "send" | "steer") => {
     if (action === "send" && !canSend) return;
     if (
       action === "steer" &&
-      (!draft.synchronized ||
+      (!ready ||
         pending ||
         unknown ||
         !valid ||
@@ -321,10 +360,10 @@ export function Composer({
     const controller = new AbortController();
     preparation.current = controller;
     try {
+      setPreparing(true);
+      onPreparing?.(true);
+      setError("");
       if (prepareThread) {
-        setPreparing(true);
-        onPreparing?.(true);
-        setError("");
         await prepareThread();
         controller.signal.throwIfAborted();
         await Promise.all(
@@ -333,8 +372,11 @@ export function Composer({
             return item?.status === "staged" ? [uploadOne(key, item.file)] : [];
           }),
         );
-        await waitForSynchronization(draft, controller.signal);
       }
+      // Typing need not toggle the button while each edit awaits its echo.
+      // Explicit Send/Steer still waits for the complete shared snapshot.
+      if (!draft.synchronized)
+        await waitForSynchronization(draft, controller.signal);
       controller.signal.throwIfAborted();
       await submitDraft(
         draft,
@@ -342,9 +384,10 @@ export function Composer({
         threadId,
         action,
         activity.receipt_id ?? undefined,
+        modelId,
       );
       reconcile();
-      if (!controller.signal.aborted) onSubmitted?.();
+      if (!controller.signal.aborted) await onSubmitted?.();
     } catch (failure) {
       if (!controller.signal.aborted)
         setError(
@@ -539,10 +582,11 @@ export function Composer({
       <div inert={preparing}>
         <ComposerEditor
           autoFocus={autoFocus}
+          local={local}
           draft={draft}
           profile={profile}
           presence={(value) => connection.current?.presence(value)}
-          submit={() => void submit("send")}
+          submit={() => void submit(busy ? "steer" : "send")}
           editor={editor}
           attachments={{
             transport,
@@ -623,6 +667,23 @@ export function Composer({
           {error || draft.error}
         </p>
       )}
+      {draft.submission.kind === "accepted" &&
+        draft.submission.action === "steer" && (
+          <div role="status" className={styles.steerNotice}>
+            <span>{draft.submission.message}</span>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label="Dismiss steer notification"
+              onClick={() => {
+                draft.submission = { kind: "idle" };
+                draft.notify();
+              }}
+            >
+              <X />
+            </Button>
+          </div>
+        )}
       {(draft.submission.kind === "rejected" || unknown) && (
         <div role="alert" className={styles.warning}>
           <p>{"message" in draft.submission && draft.submission.message}</p>
@@ -670,68 +731,57 @@ export function Composer({
             variant="ghost"
             size="icon-sm"
             aria-label="Attach files"
-            title="Attach files"
+            title="Attach files · you can also paste or drop files"
             loading={uploading}
             disabled={preparing}
             onClick={() => upload.current?.click()}
           >
-            <Paperclip />
+            <Plus />
           </Button>
-          <Popover>
-            <PopoverTrigger
-              render={<Button variant="ghost" size="icon-sm" />}
-              aria-label="Composer help"
-            >
-              <Question />
-            </PopoverTrigger>
-            <PopoverPopup
-              side="top"
-              align="start"
-              className={styles.composerHelp}
-            >
-              <PopoverTitle>Writing a message</PopoverTitle>
-              <p>Enter for a new line · Ctrl/⌘+Enter to send.</p>
-              <p>Paste or drop files to attach them.</p>
-              <p>
-                {local
-                  ? "This input is private to this tab until you send. Files are uploaded when you send. Closing or reloading this tab discards it."
-                  : "Drafts are shared with people in this conversation. They are not saved across server restarts."}
-              </p>
-              <p>
-                While the agent is working, keep drafting here or use Send as
-                instruction. A next message is not queued automatically.
-              </p>
-            </PopoverPopup>
-          </Popover>
-          {busy && (
-            <span className={styles.composerContext}>Draft next message</span>
-          )}
+          {leadingControls}
         </div>
         <div>
           {controls}
-          {busy && activity.available_actions?.includes("steer") && (
-            <Button
-              variant="outline"
-              disabled={!draft.synchronized || pending || unknown || !valid}
-              onClick={() => void submit("steer")}
-            >
-              Send as instruction
-            </Button>
-          )}
           <Button
-            size="sm"
-            title="Send message · Ctrl/⌘+Enter"
-            disabled={!canSend}
-            loading={pending || preparing}
-            onClick={() => void submit("send")}
+            size="icon"
+            className={styles.sendButton}
+            aria-label={
+              preparing
+                ? "Preparing"
+                : pending
+                  ? "Submitting"
+                  : stopAction
+                    ? "Stop"
+                    : busy
+                      ? "Steer"
+                      : "Send"
+            }
+            title={
+              stopAction
+                ? "Stop this operation"
+                : busy
+                  ? "Steer current operation · Ctrl/⌘+Enter"
+                  : "Send message · Ctrl/⌘+Enter"
+            }
+            disabled={stopAction ? !canStop : busy ? !canSteer : !canSend}
+            loading={pending || preparing || stopping}
+            onClick={() =>
+              stopAction ? void stop() : void submit(busy ? "steer" : "send")
+            }
           >
-            <ArrowUp />
-            {preparing ? "Preparing" : pending ? "Submitting" : "Send"}
+            {stopAction ? <Stop weight="fill" /> : <ArrowUp />}
           </Button>
         </div>
       </div>
+      {preview?.image && preview.url && (
+        <ImagePreview
+          src={preview.url}
+          name={preview.name}
+          close={() => setPreview(null)}
+        />
+      )}
       <ModalFrame
-        open={!!preview}
+        open={!!preview && !preview.image}
         onOpenChange={(open) => {
           if (!open) {
             previewRequest.current?.abort();
@@ -771,12 +821,6 @@ export function Composer({
         )}
         {comment && preview ? (
           <CommentReferenceContent source={comment} text={preview.text} />
-        ) : preview?.image && preview.url ? (
-          <img
-            className={styles.attachmentPreview}
-            src={preview.url}
-            alt={preview.name}
-          />
         ) : (
           <pre className={styles.code}>{preview?.text}</pre>
         )}

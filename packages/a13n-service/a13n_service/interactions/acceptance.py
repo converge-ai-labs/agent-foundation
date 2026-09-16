@@ -634,6 +634,27 @@ async def require_session(database: AsyncSession, run: Run) -> SessionRecord:
         raise RunAcceptanceError(
             "session_not_found", "The interaction Session was not found", category=ErrorCategory.not_found
         )
+    if (record.configuration_owner_user_id is not None) != (run.configuration_context is not None):
+        raise RunAcceptanceError(
+            "configuration_scope_required", "Configuration scope cannot be added or removed by ordinary Run admission"
+        )
+    if run.configuration_context is not None:
+        from a13n_service.agent_configuration.authorization import authorize_execution
+
+        if (
+            run.configuration_context.session_id != run.session_id
+            or run.configuration_context.thread_id != run.thread_id
+            or run.environment_id is not None
+        ):
+            raise RunAcceptanceError("configuration_scope_invalid", "The accepted configuration binding is invalid")
+        await authorize_execution(
+            database,
+            principal=run.authority_principal,
+            organization_id=run.organization_id,
+            workspace_id=record.workspace_id,
+            agent_id=run.agent_id,
+            context=run.configuration_context,
+        )
     return record
 
 
@@ -734,6 +755,18 @@ async def validate_advancement(
     next_head_run_id: str | None,
 ) -> None:
     if current is None:
+        if run.lineage_kind is RunLineageKind.fork:
+            if (
+                thread.current_run_id is not None
+                or thread.head_run_id is not None
+                or next_head_run_id is not None
+                or thread.origin_kind != ThreadOriginKind.fork.value
+                or run.parent_run_id != thread.origin_run_id
+                or run.retry_of_run_id is not None
+            ):
+                raise RunAcceptanceError("thread_origin_invalid", "First fork Run must preserve the Thread origin")
+            await _require_origin(database, thread.to_resource(), run)
+            return
         if (
             thread.current_run_id is not None
             or thread.head_run_id is not None

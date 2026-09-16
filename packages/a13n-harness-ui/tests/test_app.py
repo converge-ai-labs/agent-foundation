@@ -37,7 +37,13 @@ from a13n_harness_ui.composition import (
 from a13n_harness_ui.configuration import load_harness_ui_configuration
 from a13n_harness_ui.environment_profiles import SANDBOX_PROFILE_ID
 from a13n_harness_ui.environment_runtime import EnvironmentRunService
-from a13n_harness_ui.errors import AppStateError, ConfigurationError, StoreConflictError, ThreadError
+from a13n_harness_ui.errors import (
+    AppStateError,
+    ConfigurationError,
+    LivePresentationError,
+    StoreConflictError,
+    ThreadError,
+)
 from a13n_harness_ui.model_accounts import (
     DEFAULT_GROK_OAUTH_CLIENT_ID,
     DEFAULT_GROK_OAUTH_ISSUER,
@@ -1205,7 +1211,8 @@ async def test_checkpoint_save_failure_preserves_prior_selection(tmp_path: Path,
         failed = await app.wait_root_operation(second.receipt_id)
         assert failed.status is RootOperationStatus.failed
         assert failed.outcome is not None
-        assert failed.outcome.execution.status == "completed"
+        # The first request checkpoint fails before dispatching the model.
+        assert failed.outcome.execution.status == "failed"
         assert failed.outcome.continuation.status == "failed"
         retained = await app.get_thread(thread.thread_id)
         assert retained.continuation_id == prior
@@ -1803,3 +1810,309 @@ async def test_focused_watch_resets_when_new_run_saves_during_bootstrap(tmp_path
         async with app.watch_thread(root_thread_id=thread.thread_id) as watch:
             assert watch.snapshot.thread.continuation_id is not None
             assert watch.root_stream is None
+
+
+async def test_root_input_checkpoint_is_saved_before_model_output_and_advances_at_completion(tmp_path, monkeypatch):
+    started = Event()
+    release = Event()
+
+    async def model(messages, info):
+        started.set()
+        await release.wait()
+        yield "Checkpointed answer"
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    settings = _settings(tmp_path / "state")
+    root = _write_configuration(tmp_path)
+    async with open_harness_ui_app(settings, configuration_path=root) as app:
+        thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Save this question now")
+        with fail_after(10):
+            await started.wait()
+        detail = await app.get_thread(thread.thread_id)
+        assert detail.continuation_id is not None
+        assert detail.thread.excerpt.first_input == "Save this question now"
+        assert detail.thread.root_activity.state == "running"
+        # The model may enter before the observer publishes the native marker.
+        # Retry only that finite cutover race, never substitute the selected head
+        # for the original base of the in-flight replay.
+        with fail_after(10):
+            while True:
+                try:
+                    async with app.watch_thread(root_thread_id=thread.thread_id) as watch:
+                        replay = watch.root_stream
+                        if replay is not None:
+                            markers = [
+                                item
+                                for batch in replay.batches()
+                                for item in batch
+                                if item.payload is not None and item.payload.get("name") == "a13n.harness_ui.checkpoint"
+                            ]
+                            if markers:
+                                assert watch.snapshot.thread.continuation_id == detail.continuation_id
+                                assert replay.summary.base_continuation_id is None
+                                assert len(markers) == 1
+                                payload = markers[0].payload
+                                assert payload is not None
+                                value = payload["value"]
+                                assert isinstance(value, dict)
+                                event = value["event"]
+                                assert isinstance(event, dict)
+                                assert event["continuation_id"] == detail.continuation_id
+                                break
+                except LivePresentationError as exc:
+                    assert exc.code == "live_snapshot_changed"
+                await sleep(0)
+        history = await app.get_thread_transcript(thread_id=thread.thread_id)
+        assert [
+            part.text
+            for entry in history.entries
+            for part in entry.parts
+            if part.kind == "user" and part.metadata.display
+        ] == ["Save this question now"]
+        # A second reader observes the checkpoint without waiting for the Run.
+        async with open_harness_ui_app(settings, configuration_path=root) as reopened:
+            saved = await reopened.get_thread_transcript(thread_id=thread.thread_id)
+            assert saved == history
+        release.set()
+        with fail_after(10):
+            outcome = await app.wait_root_operation(receipt.receipt_id)
+        assert outcome.status is RootOperationStatus.completed
+        final = await app.get_thread(thread.thread_id)
+        assert final.continuation_id != detail.continuation_id
+        history = await app.get_thread_transcript(thread_id=thread.thread_id)
+        assert [
+            part.text
+            for entry in history.entries
+            for part in entry.parts
+            if part.kind == "user" and part.metadata.display
+        ] == ["Save this question now"]
+        assert any(part.text == "Checkpointed answer" for entry in history.entries for part in entry.parts)
+        assert final.thread.excerpt.first_input == "Save this question now"
+
+
+async def test_consumed_steering_checkpoint_and_terminal_save_use_successive_selected_heads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first_started = Event()
+    second_started = Event()
+    release_first = Event()
+    release_second = Event()
+    calls = 0
+
+    async def model(messages: list[ModelMessage], info: AgentInfo) -> AsyncIterator[str]:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            first_started.set()
+            await release_first.wait()
+            yield "First answer"
+        else:
+            second_started.set()
+            await release_second.wait()
+            yield "Steered answer"
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    root = _write_configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
+        selections = []
+        select_continuation = app._store.threads.select_continuation
+
+        async def record_selection(**kwargs):
+            result = await select_continuation(**kwargs)
+            selections.append((kwargs["expected"], kwargs["replacement"]))
+            return result
+
+        monkeypatch.setattr(app._store.threads, "select_continuation", record_selection)
+        thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Initial task")
+        try:
+            with fail_after(10):
+                await first_started.wait()
+            initial = await app.get_thread(thread.thread_id)
+            assert initial.continuation_id is not None
+            steering = await app.steer_root_operation(receipt_id=receipt.receipt_id, message="Focus on correctness")
+            assert steering.accepted
+            assert steering.enqueue_id is not None
+            # Admission is not a durable input journal: only consumed input
+            # belongs to a selected complete continuation.
+            assert len(selections) == 1
+            pending = await app.get_thread_transcript(thread_id=thread.thread_id)
+            assert [
+                part.text
+                for entry in pending.entries
+                for part in entry.parts
+                if part.kind == "user" and part.metadata.display
+            ] == ["Initial task"]
+
+            release_first.set()
+            with fail_after(10):
+                await second_started.wait()
+            consumed = await app.get_thread(thread.thread_id)
+            assert consumed.continuation_id != initial.continuation_id
+            assert len(selections) == 2
+            assert consumed.thread.excerpt.first_input == "Initial task"
+            assert consumed.thread.excerpt.latest_input == "Focus on correctness"
+            history = await app.get_thread_transcript(thread_id=thread.thread_id)
+            assert [
+                part.text
+                for entry in history.entries
+                for part in entry.parts
+                if part.kind == "user" and part.metadata.display
+            ] == ["Initial task", "Focus on correctness"]
+            assert any(part.text == "First answer" for entry in history.entries for part in entry.parts)
+            assert not any(part.text == "Steered answer" for entry in history.entries for part in entry.parts)
+            release_second.set()
+            with fail_after(10):
+                outcome = await app.wait_root_operation(receipt.receipt_id)
+        finally:
+            release_first.set()
+            release_second.set()
+
+        assert outcome.status is RootOperationStatus.completed
+        assert calls == 2
+        assert len(selections) == 3
+        assert selections[0][0] is None
+        assert selections[1][0] == selections[0][1]
+        assert selections[2][0] == selections[1][1]
+        final = await app.get_thread(thread.thread_id)
+        assert final.continuation_id == selections[2][1].logical_digest
+        assert final.continuation_id != consumed.continuation_id
+        final_history = await app.get_thread_transcript(thread_id=thread.thread_id)
+        assert [
+            part.text
+            for entry in final_history.entries
+            for part in entry.parts
+            if part.kind == "user" and part.metadata.display
+        ] == ["Initial task", "Focus on correctness"]
+        assert any(part.text == "Steered answer" for entry in final_history.entries for part in entry.parts)
+
+
+@pytest.mark.parametrize("cancel_count", [1, 3])
+async def test_checkpoint_cancellation_after_commit_preserves_terminal_head_and_marker(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, cancel_count: int
+) -> None:
+    import asyncio
+    from contextvars import ContextVar
+
+    from a13n_harness_ui.root_checkpoint import RootCheckpointCapability, ThreadCheckpointEvent
+    from pydantic_ai import RunContext
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    selecting = ContextVar("selecting_continuation", default=False)
+    committed = asyncio.Event()
+    release = asyncio.Event()
+    model_calls = 0
+    request_task = None
+    markers = []
+    commit = AsyncSession.commit
+    emit = RunContext.emit
+    wrap_model_request = RootCheckpointCapability.wrap_model_request
+
+    async def delayed_commit(self):
+        await commit(self)
+        if selecting.get() and not committed.is_set():
+            # The durable head has changed, but select_continuation has not
+            # returned to advance the operation's expected reference yet.
+            committed.set()
+            await release.wait()
+
+    async def record_emit(self, event):
+        result = await emit(self, event)
+        if isinstance(event, ThreadCheckpointEvent):
+            markers.append(event.continuation_id)
+        return result
+
+    async def record_request_task(self, ctx, *, request_context, handler):
+        nonlocal request_task
+        request_task = asyncio.current_task()
+        return await wrap_model_request(self, ctx, request_context=request_context, handler=handler)
+
+    async def model(messages, info):
+        nonlocal model_calls
+        model_calls += 1
+        yield "Model must not be dispatched"
+
+    async def resolve(self, context, model_id):
+        return FunctionModel(stream_function=model)
+
+    monkeypatch.setattr(AsyncSession, "commit", delayed_commit)
+    monkeypatch.setattr(RunContext, "emit", record_emit)
+    monkeypatch.setattr(RootCheckpointCapability, "wrap_model_request", record_request_task)
+    monkeypatch.setattr(HarnessUiModelResolver, "__call__", resolve)
+    root = _write_configuration(tmp_path)
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=root) as app:
+        selections = []
+        select_continuation = app._store.threads.select_continuation
+
+        async def record_selection(**kwargs):
+            if selections:
+                assert markers == [selections[0][1].logical_digest]
+            selections.append((kwargs["expected"], kwargs["replacement"]))
+            token = selecting.set(True)
+            try:
+                return await select_continuation(**kwargs)
+            finally:
+                selecting.reset(token)
+
+        monkeypatch.setattr(app._store.threads, "select_continuation", record_selection)
+        thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="Keep this input after cancellation")
+        try:
+            with fail_after(10):
+                await committed.wait()
+                assert request_task is not None
+                selected = await app.get_thread(thread.thread_id)
+                assert len(selections) == 1
+                assert selected.continuation_id == selections[0][1].logical_digest
+                assert (await app.cancel_root_operation(receipt.receipt_id)).accepted
+                for index in range(cancel_count):
+                    if index:
+                        # Native cancellation is idempotent at the App boundary;
+                        # repeat Task.cancel() to exercise a second interruption
+                        # while the first cancellation is joining publication.
+                        assert request_task.cancel()
+                    while request_task.cancelling() < index + 1:
+                        await asyncio.sleep(0)
+                    # Cancellation has queued the suspended task. Yield before
+                    # releasing commit so it actually receives CancelledError,
+                    # rather than merely racing a cancellation request.
+                    await asyncio.sleep(0)
+                assert not release.is_set()
+                assert model_calls == 0
+                release.set()
+                operation = await app.wait_root_operation(receipt.receipt_id)
+        finally:
+            release.set()
+            with fail_after(10):
+                await app.wait_root_operation(receipt.receipt_id)
+
+        assert operation.status is RootOperationStatus.cancelled
+        assert operation.failure is None
+        assert model_calls == 0
+        assert len(selections) == 2
+        assert selections[0][0] is None
+        assert selections[1][0] == selections[0][1]
+        final = await app.get_thread(thread.thread_id)
+        assert final.continuation_id == selections[1][1].logical_digest
+        assert final.continuation_id != selected.continuation_id
+        # App cancellation can stop live consumption before delivery; native
+        # marker emission must still complete before terminal saving begins.
+        assert markers == [selections[0][1].logical_digest]
+        with fail_after(10):
+            async with app.watch_thread(root_thread_id=thread.thread_id) as watch:
+                assert watch.snapshot.thread.continuation_id == final.continuation_id
+                assert watch.root_stream is None
+        history = await app.get_thread_transcript(thread_id=thread.thread_id)
+        assert [
+            part.text
+            for entry in history.entries
+            for part in entry.parts
+            if part.kind == "user" and part.metadata.display
+        ] == ["Keep this input after cancellation"]

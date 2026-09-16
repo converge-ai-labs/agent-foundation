@@ -338,7 +338,7 @@ it("dispatches native custom payloads and folds task/context operations without 
     name: "compaction completed",
     result: "Keep this context",
   });
-  expect(blocks.filter((block) => block.diagnostic)).toHaveLength(1);
+  expect(blocks.filter((block) => block.diagnostic)).toHaveLength(0);
   expect(blocks.find((block) => block.id.endsWith(":execution"))).toMatchObject(
     { name: "Execution failed", text: "Provider disconnected" },
   );
@@ -713,4 +713,126 @@ it("merges same-version task batches, rejects stale projections and never mixes 
   expect(display.tasks?.tasks?.[0].blocks).toEqual(["task-next"]);
   display.accept(snapshot());
   expect(display.tasks).toBeUndefined();
+});
+
+it("cuts over only the saved checkpoint prefix and reconstructs boundaries on replay", () => {
+  const events = [
+    {
+      event_type: "TEXT_MESSAGE_CONTENT",
+      payload: { message_id: "input", delta: "First input" },
+    },
+    {
+      event_type: "CUSTOM",
+      payload: {
+        name: "a13n.harness_ui.checkpoint",
+        value: { event: { continuation_id: "checkpoint-a" } },
+      },
+    },
+    {
+      event_type: "TEXT_MESSAGE_CONTENT",
+      payload: { message_id: "answer", delta: "First answer" },
+    },
+    {
+      event_type: "TEXT_MESSAGE_CONTENT",
+      payload: { message_id: "steer", delta: "Instruction" },
+    },
+    {
+      event_type: "CUSTOM",
+      payload: {
+        name: "a13n.harness_ui.checkpoint",
+        value: { event: { continuation_id: "checkpoint-b" } },
+      },
+    },
+    {
+      event_type: "TEXT_MESSAGE_CONTENT",
+      payload: { message_id: "suffix", delta: "Still streaming" },
+    },
+  ];
+  const display = new FocusDisplay();
+  const replay = () => {
+    display.accept(snapshot(events.length));
+    display.accept(
+      focusFrame({
+        kind: "root_stream",
+        run_id: "run-one",
+        events: events.map((event, index) => ({
+          ...event,
+          index,
+          payload_omitted: false,
+        })),
+      }),
+    );
+    display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+  };
+  replay();
+  const text = (head: string | null) =>
+    display.blocksAfter(head).map((block) => block.text);
+  expect(text(null)).toEqual([
+    "First input",
+    "First answer",
+    "Instruction",
+    "Still streaming",
+  ]);
+  // A slow response for A must not suppress the output that only B saved.
+  expect(text("checkpoint-a")).toEqual([
+    "First answer",
+    "Instruction",
+    "Still streaming",
+  ]);
+  expect(text("checkpoint-b")).toEqual(["Still streaming"]);
+  expect(showFocusedOutput(display, "checkpoint-b", "run-one")).toBe(true);
+  // A failed terminal save retains its unsaved suffix, even after activity clears.
+  expect(showFocusedOutput(display, "checkpoint-b", null)).toBe(true);
+  expect(showFocusedOutput(display, "terminal-head", null)).toBe(false);
+  expect(showFocusedOutput(display, "unobserved-checkpoint", "run-one")).toBe(
+    false,
+  );
+  replay();
+  expect(text("checkpoint-b")).toEqual(["Still streaming"]);
+  display.reset();
+  expect(display.checkpoints.size).toBe(0);
+});
+
+it("updates context from the latest attributed root request, not cumulative or child usage", () => {
+  const display = new FocusDisplay();
+  const record = (
+    response_ordinal: number,
+    input_tokens: number,
+    extra = {},
+  ) => ({
+    kind: "model",
+    run_id: "run-one",
+    response_ordinal,
+    request_usage: { input_tokens, output_tokens: 20 },
+    ...extra,
+  });
+  const reports = [
+    [record(0, 100)],
+    [record(1, 200), record(9, 999, { parent_agent_instance_id: "parent" })],
+    [record(0, 100), record(1, 200)],
+    [
+      record(10, 999, { run_id: "other" }),
+      record(11, 999, { delegation_id: "child" }),
+    ],
+  ];
+  display.accept(snapshot(reports.length));
+  display.accept(
+    focusFrame({
+      kind: "root_stream",
+      run_id: "run-one",
+      events: reports.map((records, index) => ({
+        index,
+        event_type: "CUSTOM",
+        payload_omitted: false,
+        payload: {
+          name: "a13n.harness.usage",
+          value: { event: { payload: { type: "usage_report", records } } },
+        },
+      })),
+    }),
+  );
+  expect(display.contextUsage).toEqual({ tokens: 220, ordinal: 1 });
+  expect(display.blocks.size).toBe(0);
+  display.reset();
+  expect(display.contextUsage).toBeUndefined();
 });

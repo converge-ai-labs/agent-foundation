@@ -367,10 +367,17 @@ export function SessionLayout() {
 export function ThreadLayout() {
   const { t } = useTranslation(),
     { sessionId = "", threadId = "", runId } = useParams(),
-    { workspace } = useWorkspace(),
+    { workspace, basePath } = useWorkspace(),
     client = useClient(),
     queries = conversationQueries(client, workspace.id);
   const thread = useQuery(queries.thread(threadId));
+  if (thread.data?.configuration_draft_id)
+    return (
+      <Navigate
+        to={`${basePath}/configuration-threads/${threadId}${runId ? `?run=${runId}` : ""}`}
+        replace
+      />
+    );
   const selected =
     runId ?? thread.data?.current_run_id ?? thread.data?.head_run_id;
   if (thread.data && thread.data.session_id !== sessionId)

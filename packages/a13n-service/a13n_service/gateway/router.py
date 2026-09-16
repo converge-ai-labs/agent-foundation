@@ -868,6 +868,22 @@ class _NotificationConnection:
                             self._subscriptions[item.definition.subscription_id] = item
                 self._last_authorized = now
             for subscription in subscriptions:
+                applications = await self._service.read_applications(
+                    subscription,
+                    limit=self._settings.gateway.notification_poll_limit,
+                )
+                for fact in applications:
+                    for topic in _fact_topics(fact, subscription.definition.topics):
+                        await self._send_notification(subscription, fact, topic)
+                    await self._service.acknowledge_application(fact)
+                if applications:
+                    async with self._state_lock:
+                        current = self._subscriptions.get(subscription.definition.subscription_id)
+                        if current is not None:
+                            self._subscriptions[subscription.definition.subscription_id] = replace(
+                                current,
+                                after_application=applications[-1].application_cursor,
+                            )
                 facts = await self._service.read(
                     subscription,
                     limit=self._settings.gateway.notification_poll_limit,
@@ -944,6 +960,9 @@ class _NotificationConnection:
 
 
 def _fact_topics(fact: NotificationFact, selected: tuple[NotificationTopic, ...]) -> tuple[NotificationTopic, ...]:
+    if fact.event_type == "configuration.applied":
+        topic = "thread.updated" if fact.thread_id is not None else "session.updated"
+        return (topic,) if topic in selected else ()
     candidates: list[NotificationTopic] = ["run.updated", "thread.updated", "session.updated"]
     if fact.event_type == "run.waiting":
         candidates.append("pending_action.updated")

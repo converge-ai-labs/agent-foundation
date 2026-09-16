@@ -78,7 +78,7 @@ Schema version `1` retains the previous `url | path` source union. Schema versio
 
 The same version-appropriate source union is used for submission and the accepted value. Service does not accept inline binary bodies in `AgentInput`. A caller that owns local bytes can first publish them as an immutable [Asset](32-asset-management.md#native-management-api), publish them through an authorized Environment path, or use an eligible URL.
 
-`content` is an ordered sequence representing one user-authored message boundary; it never accepts system, assistant, or tool roles. A `TextContent.text` value is non-empty and retains its exact Unicode value and position. `structured_content` is the independent Agent-specific machine-readable channel. It is not a JSON content block, cannot carry control or authority fields, and enters model context only through the selected AgentRevision's locked input adapter.
+`content` is an ordered sequence representing one user-authored message boundary; it never accepts system, assistant, or tool roles. A `TextContent.text` value is non-empty and retains its exact Unicode value and position. `structured_content` is the independent Agent-specific machine-readable channel. It is not a JSON content block, cannot carry control or authority fields, and enters model context only through the accepted effective configuration's locked input adapter.
 
 Text, structured content, and binary content are independently optional and can appear in any combination, including an empty input. AgentRevisions do not enable or disable `AgentInput` block types, media types, sources, or deliveries. Service-wide hard limits and content policy still apply.
 
@@ -139,7 +139,7 @@ Every `AgentConfig` stores one trusted input adapter key and bounded configurati
 
 [Agent Management](28-agent-management.md#protocol-configuration) can define an optional `ProtocolConfig.input_data_schema` for non-null `structured_content`. Absent structured content remains valid, and the schema does not restrict text or binary blocks, media types, sources, or deliveries. Acceptance validates the wire, Service hard limits, source authority, content policy, delivery feasibility, and any applicable structured-content schema.
 
-The immutable AgentRevision freezes the trusted adapter key and configuration; the Run pins that Revision. After validating the frozen configuration, the Worker preserves block order, maps `TextContent` to native user text, applies the delivery table above to binary content, and lets only the locked adapter incorporate `structured_content` into Harness `RunInputValue`.
+For ordinary Runs, the immutable AgentRevision freezes the trusted adapter key and configuration and the Run pins that Revision. Protected configuration-assistant Runs freeze the deployed adapter selection directly in their effective configuration under [Run Persistence](12-run-persistence.md#configuration-and-resource-references). After validating the frozen configuration, the Worker preserves block order, maps `TextContent` to native user text, applies the delivery table above to binary content, and lets only the locked adapter incorporate `structured_content` into Harness `RunInputValue`.
 
 The adapter returns `None` only for accepted empty input. It receives no credential or ambient authority and cannot widen frozen execution or content policy. Replacement Workers use the same accepted input, Revision,; an unavailable or incompatible adapter fails before model or tool work.
 

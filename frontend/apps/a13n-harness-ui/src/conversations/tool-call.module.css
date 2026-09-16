@@ -8,7 +8,19 @@
   gap: 0.25rem;
 }
 .tool [data-slot="disclosure-surface"] {
-  background: color-mix(in srgb, var(--muted) 25%, transparent);
+  background: color-mix(in srgb, var(--muted) 16%, transparent);
+}
+.tool [data-slot="disclosure-surface"] > button {
+  min-height: 32px;
+  padding-block: 6px;
+  font-size: 12px;
+  color: var(--a13n-text-supporting);
+}
+.tool .title {
+  font-size: 12px;
+}
+.tool .title strong {
+  font-weight: 400;
 }
 .title {
   display: flex;

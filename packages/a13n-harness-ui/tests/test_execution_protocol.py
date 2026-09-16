@@ -137,7 +137,10 @@ async def test_child_question_competing_response_history_and_restart(
             # Another participant targets exactly the same pending batch.
             async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as other:
                 conflict = await other.post(prefix + "/decisions", json=body)
-                assert conflict.status_code == 409 and conflict.json()["error"]["code"] == "thread_run_active"
+                # The resumed request checkpoint already superseded this batch.
+                assert (
+                    conflict.status_code == 409 and conflict.json()["error"]["code"] == "thread_continuation_conflict"
+                )
             release.set()
             assert (await settled(api, second))["status"] == "completed"
             stale = await api.post(prefix + "/decisions", json=body)

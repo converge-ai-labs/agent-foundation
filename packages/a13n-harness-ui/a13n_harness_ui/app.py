@@ -746,6 +746,7 @@ class HarnessUiApp:
         project_scope: Literal["all", "projectless", "unavailable"] = "all",
         query: str | None = None,
         include_archived: bool = False,
+        archived_only: bool = False,
         cursor: str | None = None,
         limit: int = 20,
     ) -> ThreadActivityPage:
@@ -755,6 +756,7 @@ class HarnessUiApp:
                 project_scope=project_scope,
                 query=query,
                 include_archived=include_archived,
+                archived_only=archived_only,
                 cursor=cursor,
                 limit=limit,
             )
@@ -1983,7 +1985,7 @@ class HarnessUiApp:
             cursor = subscription.cursor
             root_stream = subscription.root_stream
             if tasks.continuation_id != thread.continuation_id or (
-                root_stream is not None and root_stream.summary.base_continuation_id != thread.continuation_id
+                root_stream is not None and not root_stream.includes_continuation(thread.continuation_id)
             ):
                 raise LivePresentationError(
                     "The selected history changed during focused bootstrap.", code="live_snapshot_changed"
@@ -2336,6 +2338,7 @@ async def open_harness_ui_app(
                 subagent_operator=operator,
                 subscription_sources=subscription_sources,
                 live_hub=live_hub,
+                summary_hub=summary_hub,
                 cleanup_timeout_seconds=cleanup_timeout,
                 thread_files=thread_files,
             )

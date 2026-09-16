@@ -1,7 +1,7 @@
 .navigation {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 8px;
   min-height: 0;
   flex: 1;
 }
@@ -9,8 +9,34 @@
   font-size: 12px;
 }
 .navigationFilters {
-  display: grid;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.navigationFilters > :first-child {
+  flex: 1;
+  min-width: 0;
+}
+.scopePopup {
+  width: 240px;
+}
+.activeFilter {
+  color: var(--a13n-text);
+  background: var(--a13n-hover);
+}
+.navigationHeading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
+  padding-inline: 8px 2px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.navigationHeading > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .threadGroups {
   flex: 1;
@@ -35,19 +61,14 @@
     opacity: 1;
   }
 }
-.refreshingGroup {
-  align-self: center;
-  font-size: 10px;
-  color: var(--a13n-secondary);
-}
 .groupHeading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 6px;
-  margin-top: 12px;
-  color: var(--a13n-secondary);
-  font-size: 12px;
+  margin-top: 6px;
+  color: var(--a13n-text-supporting);
+  font-size: 13px;
 }
 .groupHeading:not(:has(.projectDrag)) {
   padding-inline-start: 22px;
@@ -222,12 +243,6 @@
   color: var(--a13n-secondary);
   padding: 5px 8px;
 }
-.archiveFilter {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  color: var(--a13n-secondary);
-}
 .form {
   display: grid;
   gap: 16px;
@@ -293,12 +308,15 @@
   margin-bottom: 8px;
 }
 .markdown {
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.7;
   overflow-wrap: anywhere;
 }
 .markdown p {
   margin: 0 0 12px;
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
 }
 .userMessage .markdown > :last-child {
   margin-bottom: 0;
@@ -361,6 +379,21 @@
   margin-left: 0;
   padding-left: 16px;
   color: var(--a13n-secondary);
+}
+.reasoning {
+  margin: 16px 0;
+  color: var(--a13n-text-supporting);
+}
+.reasoning > summary {
+  width: fit-content;
+  margin-bottom: 10px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.reasoning > summary:focus-visible {
+  outline: 1px solid var(--ring);
+  outline-offset: 3px;
 }
 .activity {
   padding: 8px 10px;
@@ -441,8 +474,8 @@
   width: 100%;
   margin: 0 auto;
   border: 1px solid var(--a13n-border);
-  border-radius: 16px;
-  padding: 8px 12px 10px;
+  border-radius: 20px;
+  padding: 8px 14px 12px;
   background: var(--a13n-canvas);
 }
 .composer:focus-within {
@@ -453,14 +486,22 @@
   font-size: 12px;
   color: var(--a13n-secondary);
 }
-.composerHelp {
-  width: min(340px, calc(100vw - 32px));
-  font-size: 13px;
-  line-height: 1.6;
+.steerNotice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  color: var(--a13n-text-supporting);
+  font-size: 12px;
+  line-height: 1.5;
 }
-.composerHelp p {
-  margin: 8px 0 0;
-  color: var(--a13n-secondary);
+.steerNotice > span {
+  flex: 1;
+}
+.sendButton {
+  flex-shrink: 0;
+  border-radius: 50%;
+  box-shadow: none;
 }
 .composerContext {
   font-size: 12px;
@@ -476,13 +517,15 @@
 .composerActions > div {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
+  min-width: 0;
 }
 .composerActions > div:first-child {
   color: var(--a13n-secondary);
 }
 .composerActions > div:last-child {
   margin-left: auto;
+  justify-content: flex-end;
 }
 .attachments {
   list-style: none;
@@ -581,6 +624,10 @@
   }
   .composerActions > div {
     flex-wrap: wrap;
+  }
+  .composerActions > div:last-child {
+    flex: 1 1 100%;
+    flex-wrap: nowrap;
   }
   .userMessage {
     max-width: 95%;
@@ -912,7 +959,7 @@
   max-width: min(280px, 100%);
   margin: 2px 3px;
   border: 1px solid var(--a13n-border);
-  border-radius: 7px;
+  border-radius: 9px;
   background: var(--a13n-surface);
   font-family: inherit;
   font-size: 12px;
@@ -929,8 +976,15 @@
   color: inherit;
   font: inherit;
   cursor: pointer;
-  padding: 6px 8px;
+  padding: 4px 7px;
   min-width: 0;
+}
+.inlineAttachmentOpen img {
+  width: 24px;
+  height: 24px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
 }
 .inlineAttachmentOpen span {
   overflow: hidden;
@@ -940,7 +994,7 @@
 .inlineAttachmentRemove {
   align-self: stretch;
   color: var(--a13n-secondary);
-  border-left: 1px solid var(--a13n-border);
+  padding-inline: 7px;
   flex-shrink: 0;
 }
 .inlineAttachment button:hover {
@@ -953,21 +1007,15 @@
 .attachmentThumbnail {
   width: 36px;
   height: 36px;
-  object-fit: cover;
+  object-fit: contain;
   border-radius: 4px;
   flex-shrink: 0;
 }
 .attachmentThumbnail[hidden] {
   display: none;
 }
-.attachmentPreview {
-  display: block;
-  max-width: 100%;
-  max-height: 65dvh;
-  object-fit: contain;
-  margin: 12px auto;
-}
 .inputText {
+  font-size: 15px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   line-height: 1.8;
@@ -982,7 +1030,7 @@
   background: var(--a13n-surface);
   font-size: 12px;
 }
-.inputAttachment > summary {
+.inputAttachment > details > summary {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -990,16 +1038,39 @@
   cursor: pointer;
   list-style: none;
 }
-.inputAttachment > summary::-webkit-details-marker {
+.inputAttachment > details > summary::-webkit-details-marker {
   display: none;
 }
-.inputAttachment > summary::after {
+.inputAttachment > details > summary::after {
   content: "+";
   color: var(--a13n-secondary);
   margin-left: 8px;
 }
-.inputAttachment[open] > summary::after {
+.inputAttachment > details[open] > summary::after {
   content: "−";
+}
+.imageAttachment {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  max-width: 100%;
+  color: var(--a13n-text);
+  background: transparent;
+  border: 0;
+  border-radius: 8px;
+  cursor: zoom-in;
+  text-align: start;
+}
+.imageAttachment:hover {
+  background: var(--a13n-hover);
+}
+.imageAttachment:focus-visible {
+  outline: 1px solid var(--ring);
+}
+.imageAttachment .attachmentThumbnail {
+  width: 64px;
+  height: 64px;
 }
 .inputAttachment strong {
   font-weight: 500;
@@ -1016,7 +1087,7 @@
 .inputAttachmentDetails small {
   color: var(--a13n-secondary);
 }
-.inputAttachment[open] .attachmentThumbnail {
+.inputAttachment > details[open] .attachmentThumbnail {
   width: 96px;
   height: 72px;
   object-fit: contain;

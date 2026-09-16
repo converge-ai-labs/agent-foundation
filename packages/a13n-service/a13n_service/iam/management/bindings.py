@@ -14,6 +14,7 @@ from ..authorization import (
     authorize_organization_admin_principal,
     authorize_persisted_workspace_principal_action,
     authorize_workspace,
+    require_ordinary_agent,
 )
 from ..domain import AuthenticatedActor, AuthorizationError, PrincipalRef, PrincipalType
 from ..models import ApiKeyRecord, RoleBindingRecord, UserRecord, WorkspaceRecord
@@ -89,6 +90,8 @@ async def grant_role(
     now: datetime,
     additive: bool = False,
 ) -> RoleBindingRecord:
+    if resource_type == "agent":
+        await require_ordinary_agent(session, agent_id=resource_id)
     row = await session.scalar(
         select(RoleBindingRecord).where(
             RoleBindingRecord.principal_type == principal_type,

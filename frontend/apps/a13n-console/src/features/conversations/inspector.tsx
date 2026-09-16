@@ -120,9 +120,13 @@ export function RunInspector({
                 </dd>
                 <dt>{t("Agent revision")}</dt>
                 <dd>
-                  <AgentLink agentId={run.agent_id}>
-                    {run.agent_revision_id}
-                  </AgentLink>
+                  {run.agent_revision_id ? (
+                    <AgentLink agentId={run.agent_id}>
+                      {run.agent_revision_id}
+                    </AgentLink>
+                  ) : (
+                    t("None")
+                  )}
                 </dd>
                 <dt>{t("Effective configuration digest")}</dt>
                 <dd>
@@ -145,7 +149,7 @@ export function RunInspector({
 function RunFacts({ run }: { run: Schema["RunResource"] }) {
   const { t, i18n } = useTranslation();
   const { can, basePath } = useWorkspace();
-  const agent = useAgent(run.agent_id);
+  const agent = useAgent(run.agent_revision_id ? run.agent_id : undefined);
   const active = isActiveRun(run.status);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
@@ -168,9 +172,13 @@ function RunFacts({ run }: { run: Schema["RunResource"] }) {
       </dd>
       <dt>{t("Agent")}</dt>
       <dd>
-        <AgentLink agentId={run.agent_id}>
-          {agent.data?.name ?? run.agent_id}
-        </AgentLink>
+        {run.agent_revision_id ? (
+          <AgentLink agentId={run.agent_id}>
+            {agent.data?.name ?? run.agent_id}
+          </AgentLink>
+        ) : (
+          t("Configuration assistant")
+        )}
       </dd>
       <dt>{t("Started")}</dt>
       <dd>{run.started_at ? <Timestamp value={run.started_at} /> : "—"}</dd>

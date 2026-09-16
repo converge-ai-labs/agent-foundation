@@ -470,8 +470,10 @@ export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
           </span>
         }
         summary={
-          <span className={info.failed ? styles.error : styles.phase}>
-            {info.phase === "Result received" ? "" : info.phase}
+          <span className={styles.phase}>
+            {info.phase === "Result received" || info.phase === "Failed"
+              ? ""
+              : info.phase}
           </span>
         }
       >
@@ -524,9 +526,7 @@ export const ToolActivity = memo(function ToolActivity({
         }
         summary={
           info.status ? (
-            <span className={info.issue ? styles.error : styles.phase}>
-              {info.status}
-            </span>
+            <span className={styles.phase}>{info.status}</span>
           ) : undefined
         }
       >
@@ -546,11 +546,7 @@ export const ToolActivity = memo(function ToolActivity({
                       <span title={detail.summary}>{detail.summary}</span>
                     )}
                     {detail.phase !== "Result received" && (
-                      <small
-                        className={detail.failed ? styles.error : styles.phase}
-                      >
-                        {detail.phase}
-                      </small>
+                      <small className={styles.phase}>{detail.phase}</small>
                     )}
                   </header>
                   <ToolActions tool={tool} />

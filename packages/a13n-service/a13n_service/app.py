@@ -11,6 +11,7 @@ from fastapi import FastAPI, HTTPException, Request, status
 from sqlalchemy import text
 
 from a13n_service import __version__
+from a13n_service.agent_configuration.router import router as configuration_router
 from a13n_service.agents.router import router as agent_router
 from a13n_service.api import api_error_response, install_api_conventions
 from a13n_service.assets.router import router as asset_router
@@ -195,6 +196,7 @@ def create_app(settings: Settings | None = None, *, components: Components | Non
         app.include_router(recovery_router)
         app.include_router(image_router)
         app.include_router(agent_router)
+        app.include_router(configuration_router)
         app.include_router(environment_router)
         app.include_router(thread_router)
         app.include_router(asset_router)

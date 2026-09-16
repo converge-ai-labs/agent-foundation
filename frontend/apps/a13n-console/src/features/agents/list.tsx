@@ -142,9 +142,12 @@ export function Agents() {
               },
               {
                 label: t("Model"),
-                render: (agent) => (
-                  <AgentModel revisionId={agent.current_revision_id} />
-                ),
+                render: (agent) =>
+                  agent.current_revision_id ? (
+                    <AgentModel revisionId={agent.current_revision_id} />
+                  ) : (
+                    "—"
+                  ),
               },
               {
                 label: t("Status"),

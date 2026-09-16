@@ -106,6 +106,7 @@ from a13n_harness_ui.surfaces import (
     RootControlResult,
     RootOperationView,
     RootRunReceipt,
+    RunModelOverrides,
     SurfaceModel,
     TaskPage,
     ThreadActivityPage,
@@ -192,6 +193,10 @@ class PromptRequest(SurfaceModel):
 
 class SteerRequest(SurfaceModel):
     prompt: str = Field(min_length=1, max_length=256 * 1024)
+
+
+class SubmitRequest(PromptRequest):
+    model_id: str | None = Field(default=None, min_length=1, max_length=128)
 
 
 class RootSteerRequest(PromptRequest):
@@ -1081,6 +1086,7 @@ def create_webui(
         project_scope: Literal["all", "projectless", "unavailable"] = "all",
         query: Annotated[str | None, Query(max_length=512)] = None,
         include_archived: bool = False,
+        archived_only: bool = False,
         cursor: Annotated[str | None, Query(max_length=2048)] = None,
         limit: Annotated[int, Query(ge=1, le=100)] = 20,
     ) -> ThreadActivityPage:
@@ -1089,6 +1095,7 @@ def create_webui(
             project_scope=project_scope,
             query=query,
             include_archived=include_archived,
+            archived_only=archived_only,
             cursor=cursor,
             limit=limit,
         )
@@ -1243,12 +1250,15 @@ def create_webui(
             },
         )
 
-    @server.post("/api/threads/{thread_id}/submit", response_model=RootRunReceipt, openapi_extra=_body(PromptRequest))
+    @server.post("/api/threads/{thread_id}/submit", response_model=RootRunReceipt, openapi_extra=_body(SubmitRequest))
     async def submit(thread_id: str, request: Request) -> RootRunReceipt:
-        document = await _document(request, PromptRequest)
+        document = await _document(request, SubmitRequest)
         try:
             return await app().submit_thread(
-                thread_id=thread_id, prompt=document.input(), attachment_ids=document.attachment_ids
+                thread_id=thread_id,
+                prompt=document.input(),
+                attachment_ids=document.attachment_ids,
+                model_overrides=RunModelOverrides(model_id=document.model_id) if document.model_id else None,
             )
         except ValueError as exc:
             raise HarnessUiError(str(exc), code="input_invalid") from exc

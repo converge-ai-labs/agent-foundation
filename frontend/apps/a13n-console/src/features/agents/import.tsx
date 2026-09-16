@@ -41,6 +41,7 @@ import {
 } from "./transfer";
 
 export function AgentCreationMenu() {
+  const { basePath } = useWorkspace();
   const { t } = useTranslation();
   const navigate = useNavigate();
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -55,6 +56,9 @@ export function AgentCreationMenu() {
           <CaretDownIcon size={14} />
         </MenuTrigger>
         <MenuPopup align="end" className="min-w-48">
+          <MenuItem onClick={() => navigate(`${basePath}/configuration/new`)}>
+            {t("Configure with assistant")}
+          </MenuItem>
           <MenuItem onClick={() => navigate("new")}>
             <PlusIcon size={16} />
             {t("New agent")}

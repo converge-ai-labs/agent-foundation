@@ -101,6 +101,7 @@ class ModelDeclarations(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    supports_tools: bool | None = None
     thinking_efforts: tuple[ThinkingEffort, ...] = ()
     capabilities: frozenset[ModelCapability] = Field(default_factory=frozenset)
     context_window_tokens: int | None = Field(default=None, gt=0)

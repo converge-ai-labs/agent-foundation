@@ -102,6 +102,7 @@ nav:
           - Use Console: a13n-service/console.md
           - Identity and access: a13n-service/identity.md
           - Agents, Threads, and Runs: a13n-service/agents-and-runs.md
+          - Configuration Assistant: a13n-service/configuration-assistant.md
       - Configure resources:
           - Resource lifecycles: a13n-service/resources.md
           - Models: a13n-service/models.md

@@ -532,7 +532,16 @@ async def test_root_preserves_answer_but_marks_failed_save(tmp_path, monkeypatch
     provider, exporter = telemetry
     await install_model(monkeypatch)
 
+    select_state = RootRunExecutor._select_state
+    saves = 0
+
     async def fail_save(self, **kwargs):
+        nonlocal saves
+        saves += 1
+        if saves == 1:
+            return await select_state(self, **kwargs)
+        # Fail terminal persistence only; the request checkpoint must succeed
+        # before the model can produce the answer this test observes.
         return RootContinuationSelection(status="failed", error=ValueError("private save detail"))
 
     monkeypatch.setattr(RootRunExecutor, "_select_state", fail_save)

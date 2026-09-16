@@ -256,7 +256,9 @@ async def _load_executions(
         parent = parents_by_id.get(relationship_record.parent_run_id)
         child = children_by_id.get(relationship_record.child_run_id)
         thread = threads_by_id.get(relationship_record.child_thread_id)
-        revision = None if child is None else revisions_by_id.get(child.agent_revision_id)
+        revision = (
+            None if child is None or child.agent_revision_id is None else revisions_by_id.get(child.agent_revision_id)
+        )
         if parent is None or child is None or thread is None or revision is None:
             raise SubagentOperatorError(
                 "subagent_execution_corrupt",

@@ -10,6 +10,7 @@ from a13n_harness import HarnessState
 from a13n_harness.usage import intersect_usage_limits
 from pydantic_ai.usage import UsageLimits
 
+from a13n_service.agent_configuration.context import ConfigurationRunContext
 from a13n_service.agents.domain import EffectiveAgentConfig, PreparedAgentPlugins
 from a13n_service.agents.invocation_resolution import FrozenAgentInvocation
 from a13n_service.digests import digest_request
@@ -37,7 +38,7 @@ from .state import HostContinuationState, RunCheckpoint
 class RunStateSeed(StrictModel):
     run_id: ObjectId
     agent_id: ObjectId
-    agent_revision_id: ObjectId
+    agent_revision_id: ObjectId | None
     effective_agent_config: EffectiveAgentConfig
     prepared_plugins: PreparedAgentPlugins | None = None
     usage_limits: UsageLimits | None = None
@@ -203,7 +204,7 @@ def _clone_harness(value: HarnessState) -> HarnessState:
 
 class FrozenRunFields(TypedDict):
     agent_id: str
-    agent_revision_id: str
+    agent_revision_id: str | None
     effective_agent_config_digest: str
     model_execution_observation: ModelExecutionObservation
     connection_selections: tuple[JsonObject, ...]
@@ -244,6 +245,7 @@ class NewRunPolicy:
         input: AcceptedAgentInput,
         request_fingerprint: str,
         origin: SubmissionOrigin,
+        configuration_context: ConfigurationRunContext | None = None,
     ) -> Run:
         return accepted_run(
             now=now,
@@ -257,6 +259,7 @@ class NewRunPolicy:
             lineage_kind=lineage_kind,
             trigger_type=origin.trigger_type,
             native_tool_contexts=origin.native_tool_contexts,
+            configuration_context=configuration_context,
             bot_memory=origin.bot_memory,
             **frozen_run_fields(invocation),
             priority=self.priority,

@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 
-export function useThreadUsage(threadId: string, active = false) {
+export function useThreadUsage(threadId: string) {
   const { client } = useTransport();
   return useQuery({
     queryKey: ["thread", threadId, "usage"],
@@ -13,10 +13,9 @@ export function useThreadUsage(threadId: string, active = false) {
           signal,
         }),
       ),
-    refetchInterval: active ? 5000 : false,
   });
 }
-export function useContextUsage(threadId: string, active = false) {
+export function useContextUsage(threadId: string) {
   const { client } = useTransport();
   return useQuery({
     queryKey: ["thread", threadId, "context-usage"],
@@ -27,7 +26,6 @@ export function useContextUsage(threadId: string, active = false) {
           signal,
         }),
       ),
-    refetchInterval: active ? 5000 : false,
   });
 }
 type ThreadUsage = NonNullable<ReturnType<typeof useThreadUsage>["data"]>;
@@ -71,7 +69,7 @@ export function elapsedTime(
   operation: Schema<"RootOperationView"> | null | undefined,
   now: number,
 ) {
-  if (!operation?.started_at) return "—";
+  if (!operation) return "—";
   const active =
     operation.status === "preparing" || operation.status === "running";
   const end = operation.completed_at
@@ -79,7 +77,8 @@ export function elapsedTime(
     : active
       ? now
       : NaN;
-  const duration = end - Date.parse(operation.started_at);
+  const duration =
+    end - Date.parse(operation.started_at ?? operation.receipt.submitted_at);
   if (!Number.isFinite(duration)) return "—";
   const seconds = Math.max(0, Math.floor(duration / 1000));
   if (seconds < 60) return `${seconds}s`;

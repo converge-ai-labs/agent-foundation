@@ -28,7 +28,7 @@ from .domain import Run
 
 @dataclass(frozen=True, slots=True)
 class PreparedAgentResources:
-    capabilities: dict[str, tuple[AbstractCapability[AgentContext], ...]]
+    capabilities: dict[str | None, tuple[AbstractCapability[AgentContext], ...]]
     models: tuple[ModelExecutionSnapshot, ...]
 
     def for_definition(
@@ -46,11 +46,24 @@ async def validate_agent_resources(
     current_context: Callable[[], AttemptContext],
     skills: SkillRuntimePreparer,
     external_tools: ExternalToolRuntime,
-) -> dict[str, PreparedSkillRuntime]:
+) -> dict[str | None, PreparedSkillRuntime]:
     """Validate retained dependencies without opening execution resources."""
     children = inline_child_executions(config)
     async with short_session(sessions) as session:
         for agent_id in {run.agent_id, *(edge.child_agent_id for edge, _ in children.values())}:
+            if run.configuration_context is not None and agent_id == run.agent_id:
+                from a13n_service.agent_configuration.authorization import authorize_execution
+
+                await authorize_execution(
+                    session,
+                    principal=run.authority_principal,
+                    organization_id=run.organization_id,
+                    workspace_id=workspace_id,
+                    agent_id=agent_id,
+                    context=run.configuration_context,
+                    snapshot=current_context().authorization.snapshot,
+                )
+                continue
             await authorize_persisted_agent_principal_actions(
                 session,
                 principal=run.authority_principal,
@@ -60,7 +73,8 @@ async def validate_agent_resources(
                 actions=frozenset({WorkspaceAction.agent_invoke}),
                 snapshot=current_context().authorization.snapshot,
             )
-    await external_tools.validate(current_context)
+    if run.configuration_context is None:
+        await external_tools.validate(current_context)
     configurations = {run.agent_revision_id: config}
     for revision_id, (edge, child) in children.items():
         await external_tools.validate(
@@ -69,7 +83,7 @@ async def validate_agent_resources(
             selections=FrozenRunConnectivity(child.connection_selections),
         )
         configurations[revision_id] = child.effective_config
-    prepared: dict[str, PreparedSkillRuntime] = {}
+    prepared: dict[str | None, PreparedSkillRuntime] = {}
     for revision_id, selected in configurations.items():
         prepared[revision_id] = await skills.prepare(
             organization_id=run.organization_id,
@@ -87,14 +101,18 @@ async def prepare_agent_resources(
     asset_publication: AssetRuntime,
     config: EffectiveAgentConfig,
     current_context: Callable[[], AttemptContext],
-    skills: dict[str, PreparedSkillRuntime],
+    skills: dict[str | None, PreparedSkillRuntime],
     external_tools: ExternalToolRuntime,
     stack: AsyncExitStack,
 ) -> PreparedAgentResources:
     """Open fresh root and inline-child clients in the owning Attempt resource scope."""
     children = inline_child_executions(config)
-    capabilities: dict[str, tuple[AbstractCapability[AgentContext], ...]] = {}
-    capabilities[run.agent_revision_id] = await stack.enter_async_context(external_tools.capabilities(current_context))
+    capabilities: dict[str | None, tuple[AbstractCapability[AgentContext], ...]] = {}
+    capabilities[run.agent_revision_id] = (
+        await stack.enter_async_context(external_tools.capabilities(current_context))
+        if run.configuration_context is None
+        else ()
+    )
     configurations = {run.agent_revision_id: config}
     for revision_id, (edge, child) in children.items():
         capabilities[revision_id] = await stack.enter_async_context(
@@ -107,6 +125,7 @@ async def prepare_agent_resources(
         configurations[revision_id] = child.effective_config
     for revision_id, selected in configurations.items():
         if enabled_tool(selected.toolsets, "assets", "publish") is not None:
+            assert revision_id is not None
             agent_id = run.agent_id if revision_id == run.agent_revision_id else children[revision_id][0].child_agent_id
             capabilities[revision_id] = (
                 *capabilities[revision_id],

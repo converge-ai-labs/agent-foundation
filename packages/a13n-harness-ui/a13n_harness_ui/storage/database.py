@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol, cast
 
 from alembic.util.exc import CommandError
-from anyio import CancelScope, fail_after, move_on_after, to_thread
+from anyio import CancelScope, Lock, Semaphore, fail_after, move_on_after, to_thread
 from anyio.lowlevel import checkpoint_if_cancelled
 from sqlalchemy import URL, event, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -23,6 +23,12 @@ if TYPE_CHECKING:
     from a13n_harness_ui.settings import StorageSettings
 
 
+# Preserve SQLAlchemy's default capacity while admitting cancellable waiters
+# outside driver I/O, which must remain shielded through connection return.
+_POOL_SIZE = 5
+_MAX_OVERFLOW = 10
+
+
 class _Cursor(Protocol):
     def execute(self, statement: str) -> object: ...
 
@@ -33,12 +39,21 @@ class _Connection(Protocol):
     def cursor(self) -> _Cursor: ...
 
 
+class DatabaseSessions(async_sessionmaker[AsyncSession]):
+    """One engine's sessions and process-local connection/writer admission."""
+
+    def __init__(self, engine: AsyncEngine) -> None:
+        super().__init__(engine, expire_on_commit=False, autoflush=False)
+        self.write_lock = Lock()
+        self.connection_slots = Semaphore(_POOL_SIZE + _MAX_OVERFLOW)
+
+
 @dataclass(frozen=True, slots=True)
 class Database:
     """Process-local async access to one migrated metadata database."""
 
     engine: AsyncEngine
-    sessions: async_sessionmaker[AsyncSession]
+    sessions: DatabaseSessions
 
 
 @asynccontextmanager
@@ -57,7 +72,7 @@ async def open_database(path: Path, settings: StorageSettings) -> AsyncGenerator
     try:
         database = Database(
             engine=engine,
-            sessions=async_sessionmaker(engine, expire_on_commit=False, autoflush=False),
+            sessions=DatabaseSessions(engine),
         )
         try:
             await check_database(database)
@@ -75,40 +90,38 @@ async def open_database(path: Path, settings: StorageSettings) -> AsyncGenerator
 
 
 @asynccontextmanager
-async def short_session(factory: async_sessionmaker[AsyncSession]) -> AsyncGenerator[AsyncSession]:
+async def short_session(factory: DatabaseSessions) -> AsyncGenerator[AsyncSession]:
     """Own one short session and return its connection before cancellation propagates."""
 
     await checkpoint_if_cancelled()
-    with CancelScope(shield=True):
-        session = factory()
-        try:
-            yield session
-        finally:
-            with CancelScope(shield=True):
+    async with factory.connection_slots:
+        # Repeated AnyIO cancellation during aiosqlite I/O can interrupt driver
+        # invalidation itself. Shield only admitted work, never admission waits.
+        with CancelScope(shield=True):
+            session = factory()
+            try:
+                yield session
+            finally:
                 await session.close()
 
 
 @asynccontextmanager
-async def transaction(factory: async_sessionmaker[AsyncSession]) -> AsyncGenerator[AsyncSession]:
+async def transaction(factory: DatabaseSessions) -> AsyncGenerator[AsyncSession]:
     """Own one short transaction and its session through commit or rollback."""
 
     await checkpoint_if_cancelled()
-    with CancelScope(shield=True):
-        session = factory()
+    # SQLite has one writer. Queue locally before checking out a connection,
+    # leaving the pool available to readers and cancelled waiters free to exit.
+    # BEGIN IMMEDIATE still arbitrates writers from other App processes.
+    async with factory.write_lock, short_session(factory) as session:
+        await session.execute(text("BEGIN IMMEDIATE"))
         try:
-            await session.execute(text("BEGIN IMMEDIATE"))
-            try:
-                yield session
-            except BaseException:
-                with CancelScope(shield=True):
-                    await session.rollback()
-                raise
-            else:
-                with CancelScope(shield=True):
-                    await session.commit()
-        finally:
-            with CancelScope(shield=True):
-                await session.close()
+            yield session
+        except BaseException:
+            await session.rollback()
+            raise
+        else:
+            await session.commit()
 
 
 async def check_database(database: Database, *, timeout_seconds: float = 3.0) -> None:
@@ -127,7 +140,7 @@ async def check_database(database: Database, *, timeout_seconds: float = 3.0) ->
 
 def _create_engine(path: Path, settings: StorageSettings) -> AsyncEngine:
     url = URL.create("sqlite+aiosqlite", database=str(path.absolute()))
-    engine = create_async_engine(url)
+    engine = create_async_engine(url, pool_size=_POOL_SIZE, max_overflow=_MAX_OVERFLOW)
     busy_timeout_ms = int(settings.busy_timeout_seconds * 1000)
 
     @event.listens_for(engine.sync_engine, "connect")
@@ -144,4 +157,4 @@ def _create_engine(path: Path, settings: StorageSettings) -> AsyncEngine:
     return engine
 
 
-__all__ = ["Database", "check_database", "open_database", "short_session", "transaction"]
+__all__ = ["Database", "DatabaseSessions", "check_database", "open_database", "short_session", "transaction"]

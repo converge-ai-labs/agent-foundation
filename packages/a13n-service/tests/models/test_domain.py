@@ -48,6 +48,7 @@ def test_execution_snapshot_contains_only_request_selection_fields() -> None:
 def test_model_declarations_have_one_consistent_typed_default_shape() -> None:
     declarations = ModelDeclarations()
     assert declarations.model_dump(mode="json") == {
+        "supports_tools": None,
         "thinking_efforts": [],
         "capabilities": [],
         "context_window_tokens": None,

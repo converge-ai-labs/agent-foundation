@@ -73,17 +73,18 @@ async def main() -> None:
             if setup
             else {
                 "models/fixture.yaml": 'schema_version: "1"\nkind: model\nid: model-fixture\nname: Fixture\nroute: openai:gpt-5\nauthentication: {kind: api_key, env: FIXTURE_MODEL_KEY}\n',
+                "models/alternate.yaml": 'schema_version: "1"\nkind: model\nid: model-alternate\nname: Alternate\nroute: openai:gpt-5\nauthentication: {kind: api_key, env: FIXTURE_MODEL_KEY}\n',
                 "agents/fixture.yaml": 'schema_version: "1"\nkind: agent\nid: agent-fixture\nname: Fixture\nmodel: model-fixture\n',
             }
         )
         for name, content in sources.items():
             path = configuration.parent / name
-            path.parent.mkdir()
+            path.parent.mkdir(exist_ok=True)
             path.write_text(content, encoding="utf-8")
 
         async def model(messages, info):
             yield "Protocol "
-            await asyncio.sleep(0.4)
+            await asyncio.sleep(6 if "--slow" in sys.argv else 0.4)
             yield "response"
 
         async def resolve(self, context, model_id):

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from a13n_harness.memory_plugins import MemoryBackendCatalog
 
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
+from a13n_service.agents.resolution import AgentResolver
 from a13n_service.connectivity.selection_resolution import ConnectivitySelectionResolver
 from a13n_service.models.providers import ProviderRegistry
 from a13n_service.models.runtime import AcceptedModelSelector
@@ -42,3 +43,13 @@ def build_agent_resources(
         memory_backend_catalog=selected_memory,
     )
     return AgentResources(models, connectivity, invocations, selected_web_providers, selected_memory)
+
+
+def build_agent_resolver(components: Components, shared: SharedRuntime, resources: AgentResources) -> AgentResolver:
+    return components.agent_resolver or AgentResolver(
+        shared.storage.sessions,
+        resources.models,
+        connectivity_resolver=resources.connectivity,
+        web_provider_registry=resources.web_providers,
+        memory_backend_catalog=resources.memory_backends,
+    )

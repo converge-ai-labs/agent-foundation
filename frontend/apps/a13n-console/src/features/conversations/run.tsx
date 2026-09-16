@@ -1,14 +1,14 @@
 import { Button, DisclosureSection } from "a13n-ui";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router";
 
 import { ArrowDownIcon, SquareIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { commandHeaders, data } from "../../shared/api";
+import { commandHeaders, data, type Schema } from "../../shared/api";
 import {
   ErrorNotice,
   ErrorToast,
@@ -33,6 +33,8 @@ import { PendingFeedback } from "./pending";
 import { useAgent } from "../agents/queries";
 import { useRun } from "./queries";
 import { ThreadQueue } from "./queue";
+import { ConfigurationFeedback } from "../configuration-assistant/feedback";
+import { ContinueWithoutFeedback } from "../configuration-assistant/continuation";
 
 export function RunPage() {
   const { runId = "", threadId = "", sessionId = "" } = useParams();
@@ -45,14 +47,19 @@ export function RunPage() {
     />
   );
 }
-function RunContent({
+export function RunContent({
   runId,
   threadId,
   sessionId,
+  configuration,
 }: {
   runId: string;
   threadId: string;
   sessionId: string;
+  configuration?: {
+    composer: ReactNode;
+    accepted: (receipt: Schema["RunAcceptanceReceipt"]) => void;
+  };
 }) {
   const { t } = useTranslation(),
     client = useClient(),
@@ -62,7 +69,7 @@ function RunContent({
   const live = useLiveRun(runId);
   const runQuery = useRun(runId);
   const run = runQuery.data;
-  const agent = useAgent(run?.agent_id);
+  const agent = useAgent(configuration ? undefined : run?.agent_id);
   const transcript = useRef<HTMLDivElement>(null);
   const [following, setFollowing] = useState(true);
   const threadQuery = useQuery({
@@ -121,6 +128,27 @@ function RunContent({
       });
     },
   });
+  const retryKey = useIdempotency();
+  const retry = useMutation({
+    mutationFn: () => {
+      const body = {
+        expected_thread_version: thread!.version,
+      };
+      return client.http
+        .POST("/api/v1/runs/{run_id}/retry", {
+          params: {
+            path: { run_id: runId },
+            header: commandHeaders(workspace.id, retryKey.forBody(body)),
+          },
+          body,
+        })
+        .then(data);
+    },
+    onSuccess: (receipt) => {
+      retryKey.reset();
+      configuration?.accepted(receipt);
+    },
+  });
   if (runQuery.isPending || threadQuery.isPending)
     return <Loading variant="detail" />;
   if (!run || !thread)
@@ -154,7 +182,7 @@ function RunContent({
         </div>
       </header>
       <ErrorNotice error={runQuery.error ?? threadQuery.error} />
-      <ErrorToast error={interrupt.error} />
+      <ErrorToast error={interrupt.error ?? retry.error} />
       {live.gap && (
         <p role="status" className={styles.notice}>
           {t(
@@ -179,7 +207,9 @@ function RunContent({
         <PresentedItems
           items={live.items}
           runState={run.status}
-          agentName={agent.data?.name}
+          agentName={
+            configuration ? t("Configuration assistant") : agent.data?.name
+          }
           agentId={run.agent_id}
           agentImageUrl={agent.data?.image_url}
         >
@@ -226,7 +256,25 @@ function RunContent({
       {waiting && run.sealed_state_digest_sha256 && (
         <>
           <ErrorNotice error={pending.error} />
-          {pending.data && <PendingFeedback actions={pending.data.items} />}
+          {pending.data &&
+            (configuration ? (
+              <ConfigurationFeedback
+                key={run.sealed_state_digest_sha256}
+                run={run}
+                thread={thread}
+                actions={pending.data.items}
+                accepted={configuration.accepted}
+              />
+            ) : (
+              <PendingFeedback actions={pending.data.items} />
+            ))}
+          {configuration && can("run.continue") && can("run.feedback") && (
+            <ContinueWithoutFeedback
+              run={run}
+              thread={thread}
+              accepted={configuration.accepted}
+            />
+          )}
         </>
       )}
       {!following && (
@@ -249,6 +297,20 @@ function RunContent({
           {t("Jump to latest")}
         </Button>
       )}
+      {configuration &&
+        current &&
+        ["failed", "cancelled"].includes(run.status) &&
+        can("run.retry") && (
+          <Button
+            size="sm"
+            variant="outline"
+            loading={retry.isPending}
+            onClick={() => retry.mutate()}
+            type="button"
+          >
+            {t("Retry run")}
+          </Button>
+        )}
       {((current && active && can("run.interrupt")) || !current) && (
         <div className={styles.composerDock}>
           {current && active && can("run.interrupt") && (
@@ -283,17 +345,20 @@ function RunContent({
           )}
         </div>
       )}
-      <ThreadQueue
-        thread={thread}
-        canConsume={
-          (!thread.current_run_id ||
-            (!!currentRun.data &&
-              !isActiveRun(currentRun.data.status) &&
-              currentRun.data.status !== "waiting")) &&
-          (!thread.head_run_id ||
-            (!!headRun.data && headRun.data.status !== "waiting"))
-        }
-      />
+      {configuration?.composer}
+      {!configuration && (
+        <ThreadQueue
+          thread={thread}
+          canConsume={
+            (!thread.current_run_id ||
+              (!!currentRun.data &&
+                !isActiveRun(currentRun.data.status) &&
+                currentRun.data.status !== "waiting")) &&
+            (!thread.head_run_id ||
+              (!!headRun.data && headRun.data.status !== "waiting"))
+          }
+        />
+      )}
     </div>
   );
 }

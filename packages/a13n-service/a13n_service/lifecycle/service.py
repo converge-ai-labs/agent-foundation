@@ -9,9 +9,9 @@ from a13n_service.iam import (
     AuthenticatedActor,
     AuthorizationError,
     WorkspaceAction,
-    authorize_agent,
     authorize_agent_scoped_collection,
 )
+from a13n_service.interactions.access import authorize_interaction, configuration_visibility
 from a13n_service.storage import short_session
 
 from .cursors import LifecycleCursorError, decode_lifecycle_cursor, encode_lifecycle_cursor
@@ -62,6 +62,13 @@ class LifecycleEventService:
                     organization_id=authorization.workspace.organization_id,
                     workspace_id=workspace_id,
                     visible_agent_ids=authorization.visible_agent_ids,
+                    configuration_access=await configuration_visibility(
+                        database,
+                        actor=actor,
+                        organization_id=authorization.workspace.organization_id,
+                        workspace_id=workspace_id,
+                        action=WorkspaceAction.lifecycle_event_read,
+                    ),
                     after_seq=after_seq,
                     limit=limit,
                 )
@@ -139,11 +146,12 @@ class LifecycleEventService:
             if run is None:
                 raise _resource_not_found()
             try:
-                await authorize_agent(
+                await authorize_interaction(
                     database,
                     actor=actor,
                     workspace_id=workspace_id,
                     agent_id=run.agent_id,
+                    session_id=run.session_id,
                     action=WorkspaceAction.lifecycle_event_read,
                 )
             except AuthorizationError as error:

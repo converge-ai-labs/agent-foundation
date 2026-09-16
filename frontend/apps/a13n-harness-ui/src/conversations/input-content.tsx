@@ -4,6 +4,7 @@ import type { Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { ErrorNotice } from "../shell/ui";
 import styles from "./conversation.module.css";
+import { RetainedImagePreview } from "./image-preview";
 import { AttachmentThumbnail } from "./attachment-thumbnail";
 import { commentReference, CommentReferenceContent } from "./comment-reference";
 
@@ -38,6 +39,8 @@ function Attachment({
 }) {
   const transport = useTransport();
   const comment = commentReference(attachment);
+  const image = attachment.media_type.startsWith("image/");
+  const [preview, setPreview] = useState(false);
   const [url, setUrl] = useState("");
   const download = useRef<AbortController | null>(null);
   useEffect(
@@ -53,88 +56,117 @@ function Attachment({
     [url],
   );
   return (
-    <details className={styles.inputAttachment}>
-      <summary>
-        <AttachmentThumbnail threadId={threadId} attachment={attachment} />
-        <strong>
-          {comment
-            ? comment.author
-              ? `Comment · ${comment.author}`
-              : "Comment reference"
-            : attachment.name}
-        </strong>
-        {comment?.preview && (
-          <span className={styles.commentReferencePreview}>
-            {comment.preview}
-          </span>
-        )}
-      </summary>
-      <div className={styles.inputAttachmentDetails}>
-        {comment && (
-          <CommentReferenceContent
-            source={comment}
-            text={related.map((part) => part.text ?? "").join("\n")}
-          />
-        )}
-        <small>
-          {attachment.media_type} · {attachment.size.toLocaleString()} bytes
-        </small>
-        {attachment.source && (
-          <details>
-            <summary>Captured source and revision</summary>
-            <pre className={styles.code}>
-              {JSON.stringify(attachment.source, null, 2)}
-            </pre>
-          </details>
-        )}
-        {url ? (
-          <a href={url} download={attachment.name}>
-            Download original bytes
-          </a>
-        ) : (
-          <Button
-            variant="ghost"
-            loading={loading}
-            onClick={() => {
-              setLoading(true);
-              setError(undefined);
-              download.current?.abort();
-              const controller = new AbortController();
-              download.current = controller;
-              void transport
-                .fetch(
-                  `/api/threads/${encodeURIComponent(threadId)}/attachments/${encodeURIComponent(attachment.attachment_id)}`,
-                  { signal: controller.signal },
-                )
-                .then((response) => response.blob())
-                .then((blob) => {
-                  if (!controller.signal.aborted)
-                    setUrl(URL.createObjectURL(blob));
-                })
-                .catch((failure) => {
-                  if (!controller.signal.aborted) setError(failure);
-                })
-                .finally(() => {
-                  if (!controller.signal.aborted) setLoading(false);
-                });
-            }}
-          >
-            Prepare download
-          </Button>
-        )}
-        {!comment && (
-          <details className={styles.rawSource}>
-            <summary>Model-visible attachment content</summary>
-            {related.map((item, offset) => (
-              <pre key={offset} className={styles.code}>
-                {item.text || JSON.stringify(item.value, null, 2)}
+    <div className={styles.inputAttachment}>
+      {image && (
+        <button
+          type="button"
+          className={styles.imageAttachment}
+          onClick={() => setPreview(true)}
+          aria-label={`Preview ${attachment.name}`}
+        >
+          <AttachmentThumbnail threadId={threadId} attachment={attachment} />
+          <strong>{attachment.name}</strong>
+        </button>
+      )}
+      <details>
+        <summary>
+          {image ? (
+            "Attachment details"
+          ) : (
+            <>
+              <AttachmentThumbnail
+                threadId={threadId}
+                attachment={attachment}
+              />
+              <strong>
+                {comment
+                  ? comment.author
+                    ? `Comment · ${comment.author}`
+                    : "Comment reference"
+                  : attachment.name}
+              </strong>
+              {comment?.preview && (
+                <span className={styles.commentReferencePreview}>
+                  {comment.preview}
+                </span>
+              )}
+            </>
+          )}
+        </summary>
+        <div className={styles.inputAttachmentDetails}>
+          {comment && (
+            <CommentReferenceContent
+              source={comment}
+              text={related.map((part) => part.text ?? "").join("\n")}
+            />
+          )}
+          <small>
+            {attachment.media_type} · {attachment.size.toLocaleString()} bytes
+          </small>
+          {attachment.source && (
+            <details>
+              <summary>Captured source and revision</summary>
+              <pre className={styles.code}>
+                {JSON.stringify(attachment.source, null, 2)}
               </pre>
-            ))}
-          </details>
-        )}
-        <ErrorNotice error={error} />
-      </div>
-    </details>
+            </details>
+          )}
+          {url ? (
+            <a href={url} download={attachment.name}>
+              Download original bytes
+            </a>
+          ) : (
+            <Button
+              variant="ghost"
+              loading={loading}
+              onClick={() => {
+                setLoading(true);
+                setError(undefined);
+                download.current?.abort();
+                const controller = new AbortController();
+                download.current = controller;
+                void transport
+                  .fetch(
+                    `/api/threads/${encodeURIComponent(threadId)}/attachments/${encodeURIComponent(attachment.attachment_id)}`,
+                    { signal: controller.signal },
+                  )
+                  .then((response) => response.blob())
+                  .then((blob) => {
+                    if (!controller.signal.aborted)
+                      setUrl(URL.createObjectURL(blob));
+                  })
+                  .catch((failure) => {
+                    if (!controller.signal.aborted) setError(failure);
+                  })
+                  .finally(() => {
+                    if (!controller.signal.aborted) setLoading(false);
+                  });
+              }}
+            >
+              Prepare download
+            </Button>
+          )}
+          {!comment && (
+            <details className={styles.rawSource}>
+              <summary>Model-visible attachment content</summary>
+              {related.map((item, offset) => (
+                <pre key={offset} className={styles.code}>
+                  {item.text || JSON.stringify(item.value, null, 2)}
+                </pre>
+              ))}
+            </details>
+          )}
+          <ErrorNotice error={error} />
+        </div>
+      </details>
+      {preview && (
+        <RetainedImagePreview
+          threadId={threadId}
+          attachment={attachment}
+          close={() => setPreview(false)}
+        />
+      )}
+    </div>
   );
 }
 function Media({ part }: { part: InputPart }) {

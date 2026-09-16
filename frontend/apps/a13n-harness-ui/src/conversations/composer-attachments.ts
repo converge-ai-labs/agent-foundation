@@ -73,9 +73,22 @@ class AttachmentWidget extends WidgetType {
         ),
       );
       open.append(image);
+    } else {
+      const file = this.draft.uploads.get(this.key)?.file;
+      if (file?.type.startsWith("image/")) {
+        const image = document.createElement("img");
+        const url = URL.createObjectURL(file);
+        image.src = url;
+        image.alt = "";
+        imageDisposers.set(chip, () => URL.revokeObjectURL(url));
+        open.append(image);
+      }
     }
     const label = document.createElement("span");
     const source = commentReference(attachment);
+    const upload = this.draft.uploads.get(this.key);
+    const stagedName =
+      upload?.status === "staged" ? upload.file.name : undefined;
     if (source) {
       chip.classList.add(styles.inlineComment);
       const heading = document.createElement("small");
@@ -91,9 +104,13 @@ class AttachmentWidget extends WidgetType {
         quote.textContent = `“${source.quote}”`;
         label.append(quote);
       }
-    } else label.textContent = this.name;
+    } else {
+      label.textContent = stagedName ?? this.name;
+    }
     open.append(label);
-    open.title = this.name;
+    open.title = stagedName
+      ? `${stagedName} · Uploads when you send`
+      : this.name;
     open.setAttribute("aria-label", this.name);
     open.onclick = () => {
       if (isReadyAttachment(this.id)) this.context.preview(this.id, attachment);

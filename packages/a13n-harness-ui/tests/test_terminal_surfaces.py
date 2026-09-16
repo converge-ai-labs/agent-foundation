@@ -14,6 +14,8 @@ from a13n_harness_ui.surfaces import (
     SkillReference,
     ThreadConfigurationMutationInput,
     ThreadConfigurationPatch,
+    ThreadMetadataMutation,
+    ThreadMetadataPatch,
 )
 from a13n_harness_ui.thread_files import AttachmentUpload, ComposerAttachment, ComposerInput
 from anyio import Event, fail_after
@@ -368,3 +370,47 @@ async def test_skill_reference_validation_rejects_invalid_references(tmp_path: P
         assert error.value.code == (
             "skill_reference_invalid" if "duplicate" in invalid else "skill_reference_unavailable"
         )
+
+
+async def test_archived_activity_filters_before_pagination_and_binds_cursors(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    configuration = _write_configuration(tmp_path, projects=(("project-main", "Main", workspace),))
+    async with open_harness_ui_app(_settings(tmp_path / "state"), configuration_path=configuration) as app:
+        archived = []
+        for index in range(3):
+            thread = await app.create_thread(
+                defaults=NewThreadDefaults(project_id="project-main"), title=f"Stored {index}"
+            )
+            archived.append(
+                await app.update_thread_metadata(
+                    thread_id=thread.thread_id,
+                    mutation=ThreadMetadataMutation(
+                        expected_version=thread.metadata_version, patch=ThreadMetadataPatch(archived=True)
+                    ),
+                )
+            )
+        active = await app.create_thread(defaults=NewThreadDefaults(project_id="project-main"), title="Active")
+        page = await app.thread_activity(project_id=None, archived_only=True, limit=2)
+        assert page.total == 3 and len(page.rows) == 2 and page.next_cursor
+        assert all(row.thread.archived for row in page.rows)
+        remaining = await app.thread_activity(project_id=None, archived_only=True, limit=2, cursor=page.next_cursor)
+        assert len(remaining.rows) == 1 and remaining.next_cursor is None
+        assert {row.thread.thread_id for row in (*page.rows, *remaining.rows)} == {
+            thread.thread_id for thread in archived
+        }
+        with pytest.raises(ThreadError, match="another query"):
+            await app.thread_activity(project_id=None, include_archived=True, cursor=page.next_cursor)
+        ordinary = await app.thread_activity(project_id=None)
+        assert [row.thread.thread_id for row in ordinary.rows] == [active.thread_id]
+        search = await app.thread_activity(project_id=None, archived_only=True, query="Stored 1")
+        assert search.total == 1 and search.rows[0].thread.title == "Stored 1"
+        await app.update_thread_metadata(
+            thread_id=archived[0].thread_id,
+            mutation=ThreadMetadataMutation(
+                expected_version=archived[0].metadata_version,
+                patch=ThreadMetadataPatch(archived=False),
+            ),
+        )
+        assert (await app.thread_activity(project_id=None, archived_only=True)).total == 2
+        assert (await app.thread_activity(project_id=None)).total == 2

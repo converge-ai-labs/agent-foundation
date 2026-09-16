@@ -26,7 +26,7 @@ from a13n_service.memory.composition import build_memory_service
 from a13n_service.models.providers import ProviderRegistry
 from a13n_service.object_retention.publication import PublicationObjectStore
 from a13n_service.observability import build_observability_runtime
-from a13n_service.process.agents import build_agent_resources
+from a13n_service.process.agents import build_agent_resolver, build_agent_resources
 from a13n_service.process.background import BackgroundTask, run_critical_component, shutdown_background_components
 from a13n_service.process.components import Components
 from a13n_service.process.connectivity import build_connectivity_runtime
@@ -162,6 +162,7 @@ async def open_process_runtime(
                     provider_catalogs=provider_catalogs,
                     plugin_catalog=plugin_catalog,
                     invocations=agent_resources.invocations,
+                    configuration_resolver=build_agent_resolver(components, shared, agent_resources),
                     observability=observability,
                 )
             control = None

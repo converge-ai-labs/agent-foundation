@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, false, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ApplicationError, ErrorCategory
@@ -15,10 +15,9 @@ from a13n_service.iam import (
     AuthenticatedActor,
     AuthorizationError,
     WorkspaceAction,
-    authorize_agent,
     authorize_agent_scoped_collection,
-    authorize_workspace,
 )
+from a13n_service.interactions.access import authorize_interaction, configuration_visibility
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.lifecycle.models import LifecycleEventRecord
 from a13n_service.storage import short_session
@@ -51,6 +50,8 @@ class AuthorizedNotificationSubscription:
     workspace_id: str
     visible_agent_ids: frozenset[str] | None
     after_seq: int
+    actor: AuthenticatedActor | None = None
+    after_application: tuple[datetime, str] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,6 +66,7 @@ class NotificationFact:
     run_id: str | None
     occurred_at: datetime
     event_type: str
+    application_cursor: tuple[datetime, str] | None = None
 
 
 class NotificationService:
@@ -72,6 +74,62 @@ class NotificationService:
 
     def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
         self._sessions = sessions
+
+    async def read_applications(
+        self,
+        subscription: AuthorizedNotificationSubscription,
+        *,
+        limit: int,
+    ) -> tuple[NotificationFact, ...]:
+        from a13n_service.agent_configuration.notifications import read_application_hints
+
+        if subscription.actor is None or subscription.after_application is None:
+            return ()
+        topics: tuple[NotificationTopic, ...] = tuple(
+            topic for topic in subscription.definition.topics if topic in {"thread.updated", "session.updated"}
+        )
+        if not topics:
+            return ()
+        rows = await read_application_hints(
+            self._sessions,
+            actor=subscription.actor,
+            workspace_id=subscription.workspace_id,
+            organization_id=subscription.organization_id,
+            thread_id=subscription.definition.resource_id if subscription.definition.scope == "thread" else None,
+            actions=frozenset({WorkspaceAction.notification_subscribe, *_topic_actions(topics)}),
+            after=subscription.after_application,
+            limit=limit,
+        )
+        return tuple(
+            NotificationFact(
+                seq=0,
+                resource_type="thread" if subscription.definition.scope == "thread" else "session",
+                resource_id=subscription.definition.resource_id
+                if subscription.definition.scope == "thread"
+                else row.id,
+                resource_version=None,
+                workspace_id=row.workspace_id,
+                session_id=row.id,
+                thread_id=subscription.definition.resource_id if subscription.definition.scope == "thread" else None,
+                run_id=None,
+                occurred_at=cursor[0],
+                event_type="configuration.applied",
+                application_cursor=cursor,
+            )
+            for row, cursor in rows
+        )
+
+    async def acknowledge_application(self, fact: NotificationFact) -> None:
+        from a13n_service.agent_configuration.notifications import acknowledge_application_hint
+        from a13n_service.durable_operations.models import OutboxRecord
+
+        if fact.application_cursor is None:
+            return
+        async with short_session(self._sessions) as database:
+            intent = await database.get(OutboxRecord, fact.application_cursor[1])
+            application_id = None if intent is None else intent.source_id
+        if application_id is not None:
+            await acknowledge_application_hint(self._sessions, application_id=application_id)
 
     async def authorize(
         self,
@@ -124,8 +182,26 @@ class NotificationService:
             )
             if definition.scope == "thread":
                 query = query.where(LifecycleEventRecord.thread_id == definition.resource_id)
-            if subscription.visible_agent_ids is not None:
-                query = query.where(RunRecord.agent_id.in_(subscription.visible_agent_ids))
+            ordinary = (
+                true()
+                if subscription.visible_agent_ids is None
+                else RunRecord.agent_id.in_(subscription.visible_agent_ids)
+            )
+            protected = false()
+            if subscription.actor is not None:
+                protected = and_(
+                    *[
+                        await configuration_visibility(
+                            database,
+                            actor=subscription.actor,
+                            organization_id=subscription.organization_id,
+                            workspace_id=subscription.workspace_id,
+                            action=action,
+                        )
+                        for action in {WorkspaceAction.notification_subscribe, *_topic_actions(definition.topics)}
+                    ]
+                )
+            query = query.where(or_(and_(SessionRecord.configuration_owner_user_id.is_(None), ordinary), protected))
             rows = (await database.execute(query)).all()
         return tuple(
             NotificationFact(
@@ -155,7 +231,7 @@ class NotificationService:
                 actor=actor,
                 subscription=subscription.definition,
             )
-        return replace(current, after_seq=subscription.after_seq)
+        return replace(current, after_seq=subscription.after_seq, after_application=subscription.after_application)
 
     async def _authorize_one(
         self,
@@ -219,16 +295,14 @@ class NotificationService:
                 if run is None and thread.current_run_id is not None:
                     raise AuthorizationError("run_not_found", concealed=True)
                 for action in {WorkspaceAction.notification_subscribe, *_topic_actions(subscription.topics)}:
-                    if run is None:
-                        await authorize_workspace(database, actor=actor, workspace_id=workspace_id, action=action)
-                    else:
-                        await authorize_agent(
-                            database,
-                            actor=actor,
-                            workspace_id=workspace_id,
-                            agent_id=run.agent_id,
-                            action=action,
-                        )
+                    await authorize_interaction(
+                        database,
+                        actor=actor,
+                        workspace_id=workspace_id,
+                        session_id=thread.session_id,
+                        agent_id=None if run is None else run.agent_id,
+                        action=action,
+                    )
                 organization_id = thread.organization_id
                 visible_agent_ids = frozenset({run.agent_id}) if run else None
             high = await database.scalar(
@@ -248,6 +322,8 @@ class NotificationService:
             workspace_id=workspace_id,
             visible_agent_ids=visible_agent_ids,
             after_seq=high or 0,
+            actor=actor,
+            after_application=(datetime.now(UTC), ""),
         )
 
 

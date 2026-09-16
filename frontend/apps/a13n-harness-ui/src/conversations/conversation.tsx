@@ -9,18 +9,20 @@ import {
 import { Link, useParams, useSearchParams } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
-import { ArrowDown, Stop } from "@phosphor-icons/react";
-import { result } from "../transport/client";
-import { useTransport } from "../transport/context";
+import { ArrowDown } from "@phosphor-icons/react";
+import { result, type Schema } from "../transport/client";
+import { useSelectors, useTransport } from "../transport/context";
 import { ErrorNotice, TextField } from "../shell/ui";
 import type { Profile } from "../shell/presence";
 import { readPreference, writePreference } from "../shell/preferences";
 import { Composer, useDraft } from "./composer";
 import { ComposerStatus } from "./composer-status";
+import { ThreadRunChoices } from "./thread-run-choices";
 import { Decisions } from "./decisions";
 import { ConversationDetails } from "./details";
 import { WorkInspector } from "./work-inspector";
 import { Discussion } from "./comments";
+import { refreshThread } from "./refresh";
 import { refreshThreadLists, useHistory, useThread } from "./queries";
 import { FocusDisplay, showFocusedOutput, watchThread } from "./stream";
 import { LiveOutput, SavedEntry } from "./transcript";
@@ -46,6 +48,40 @@ function Conversation({
   const transport = useTransport();
   const queries = useQueryClient();
   const detail = useThread(threadId);
+  const selectors = useSelectors();
+  const agentSelection = useMutation({
+    mutationFn: async (agentId: string) => {
+      if (!detail.data)
+        throw new Error("Refresh the conversation before choosing an agent.");
+      return result(
+        transport.client.PATCH("/api/threads/{thread_id}/configuration", {
+          params: { path: { thread_id: threadId } },
+          body: {
+            expected_version: detail.data.thread.configuration.version,
+            patch: { agent_id: agentId },
+          },
+        }),
+      );
+    },
+    onSuccess: (updated) => {
+      queries.setQueryData<Schema<"ThreadDetail">>(
+        ["thread", threadId, "detail"],
+        (current) => {
+          if (
+            !current ||
+            current.thread.configuration.version > updated.configuration.version
+          )
+            return current;
+          return {
+            ...current,
+            thread: { ...current.thread, configuration: updated.configuration },
+          };
+        },
+      );
+    },
+    onSettled: () =>
+      queries.invalidateQueries({ queryKey: ["thread", threadId] }),
+  });
   const [search, setSearch] = useSearchParams();
   const dialog = search.get("dialog");
   const closeDialog = () =>
@@ -82,6 +118,58 @@ function Conversation({
   const reader = useRef<HTMLDivElement>(null);
   const restoreScroll = useRef(readPreference(`scroll.${threadId}`, ""));
   const follow = useRef(true);
+  const scrollFrame = useRef<number | null>(null);
+  const stopScrolling = useCallback(() => {
+    if (scrollFrame.current !== null) cancelAnimationFrame(scrollFrame.current);
+    scrollFrame.current = null;
+  }, []);
+  const scrollToLatest = useCallback(
+    (instant = false) => {
+      const element = reader.current;
+      if (!element) return;
+      if (
+        instant ||
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches
+      ) {
+        stopScrolling();
+        element.scrollTop = element.scrollHeight;
+        return;
+      }
+      if (scrollFrame.current !== null) return;
+      let previous = performance.now();
+      const step = (now: number) => {
+        if (!follow.current) {
+          scrollFrame.current = null;
+          return;
+        }
+        const target = Math.max(0, element.scrollHeight - element.clientHeight);
+        const distance = target - element.scrollTop;
+        if (Math.abs(distance) < 1) {
+          element.scrollTop = target;
+          scrollFrame.current = null;
+          return;
+        }
+        // Some browsers quantize scrollTop to whole pixels. Keep progressing
+        // near the target instead of scheduling frames forever below one pixel.
+        element.scrollTop +=
+          Math.sign(distance) *
+          Math.max(
+            1,
+            Math.abs(distance) *
+              (1 - Math.exp(-Math.min(now - previous, 64) / 65)),
+          );
+        previous = now;
+        scrollFrame.current = requestAnimationFrame(step);
+      };
+      scrollFrame.current = requestAnimationFrame(step);
+    },
+    [stopScrolling],
+  );
+  useEffect(() => stopScrolling, [stopScrolling]);
+  const interruptScroll = () => {
+    stopScrolling();
+    follow.current = false;
+  };
   const olderAnchor = useRef<{ height: number; top: number } | null>(null);
   const [newOutput, setNewOutput] = useState(false);
   const reconcile = useCallback(() => {
@@ -91,7 +179,6 @@ function Conversation({
   }, [queries, threadId]);
   useEffect(() => {
     let paint: ReturnType<typeof setTimeout> | undefined;
-    let refresh: ReturnType<typeof setTimeout> | undefined;
     const close = watchThread(
       transport,
       threadId,
@@ -104,20 +191,13 @@ function Conversation({
           }, 50);
       },
       setConnection,
-      () => {
-        if (!refresh)
-          refresh = setTimeout(() => {
-            refresh = undefined;
-            reconcile();
-          }, 150);
-      },
+      (reason) => refreshThread(queries, threadId, reason),
     );
     return () => {
       close();
       clearTimeout(paint);
-      clearTimeout(refresh);
     };
-  }, [transport, threadId, display, reconcile]);
+  }, [transport, threadId, display, queries]);
   const entries = useMemo(
     () =>
       history.data?.pages
@@ -153,9 +233,10 @@ function Conversation({
     operation?.run_id,
     history.isPreviousHistory,
   );
+  const liveBlocks = display.blocksAfter(continuation);
   const visibleContent = `${continuation}:${entries.length}:${
     showLive
-      ? [...display.blocks.values()]
+      ? liveBlocks
           .filter((block) => !block.diagnostic)
           .map(
             (block) =>
@@ -187,7 +268,7 @@ function Conversation({
         element.scrollHeight -
         olderAnchor.current.height;
       olderAnchor.current = null;
-    } else if (follow.current) element.scrollTop = element.scrollHeight;
+    } else if (follow.current) scrollToLatest(!lastContent.current || restored);
     else if (
       !restored &&
       !olderAnchor.current &&
@@ -195,7 +276,49 @@ function Conversation({
     )
       setNewOutput(true);
     lastContent.current = visibleContent;
-  }, [revision, visibleContent, history.data, history.isFetchingNextPage]);
+  }, [
+    revision,
+    visibleContent,
+    history.data,
+    history.isFetchingNextPage,
+    scrollToLatest,
+  ]);
+  useEffect(() => {
+    const element = reader.current;
+    const content = element?.firstElementChild;
+    if (!content || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (follow.current && !olderAnchor.current) scrollToLatest();
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [!!detail.data, scrollToLatest]);
+  useEffect(() => {
+    const element = reader.current;
+    // Also retry the top-edge observation after an in-flight refetch settles.
+    // Short/context-only pages need no scroll gesture to fill the viewport.
+    if (
+      element &&
+      element.clientHeight > 0 &&
+      element.scrollTop < 160 &&
+      history.hasNextPage &&
+      !history.isFetching &&
+      !history.isFetchNextPageError &&
+      !olderAnchor.current
+    ) {
+      olderAnchor.current = {
+        height: element.scrollHeight,
+        top: element.scrollTop,
+      };
+      void history.fetchNextPage();
+    }
+  }, [
+    history.data,
+    history.hasNextPage,
+    history.isFetching,
+    history.isFetchNextPageError,
+    history.fetchNextPage,
+  ]);
   useLayoutEffect(() => {
     const element = reader.current;
     return () => {
@@ -223,23 +346,6 @@ function Conversation({
       ),
     onSuccess: () => {
       setRename(false);
-      reconcile();
-    },
-    onError: reconcile,
-  });
-  const stop = useMutation({
-    mutationFn: (receipt: string) =>
-      result(
-        transport.client.POST("/api/operations/{receipt_id}/cancel", {
-          params: { path: { receipt_id: receipt } },
-        }),
-      ),
-    onSuccess: (outcome) => {
-      setMessage(
-        outcome.accepted
-          ? "Stop accepted for this operation."
-          : "This operation is no longer cancellable.",
-      );
       reconcile();
     },
     onError: reconcile,
@@ -275,23 +381,9 @@ function Conversation({
       onReferenceAdded={() => setReferenceAdded((value) => value + 1)}
     >
       <div className={styles.page}>
-        {(connection !== "Live" ||
-          thread.root_activity.state !== "inactive") && (
+        {connection !== "Live" && connection !== "Connecting" && (
           <div className={styles.activityBar}>
-            <small role="status">
-              {connection !== "Live" ? connection : thread.root_activity.state}
-            </small>
-            {thread.root_activity.available_actions?.includes("cancel") &&
-              thread.root_activity.receipt_id && (
-                <Button
-                  variant="outline"
-                  loading={stop.isPending}
-                  onClick={() => stop.mutate(thread.root_activity.receipt_id!)}
-                >
-                  <Stop />
-                  Stop
-                </Button>
-              )}
+            <small role="status">{connection}</small>
           </div>
         )}
 
@@ -313,35 +405,63 @@ function Conversation({
           </p>
         )}
         <ErrorNotice
-          error={detail.error || history.error || metadata.error || stop.error}
+          error={detail.error || history.error || metadata.error}
           retry={reconcile}
         />
         <div
           ref={reader}
           className={styles.reading}
+          onWheel={(event) => {
+            if (event.deltaY < 0) interruptScroll();
+          }}
+          onTouchStart={interruptScroll}
+          onPointerDown={interruptScroll}
+          onKeyDown={(event) => {
+            if (["ArrowUp", "PageUp", "Home"].includes(event.key))
+              interruptScroll();
+          }}
           onScroll={() => {
             const element = reader.current!;
-            follow.current =
-              element.scrollHeight - element.scrollTop - element.clientHeight <
-              64;
+            if (scrollFrame.current === null)
+              follow.current =
+                element.scrollHeight -
+                  element.scrollTop -
+                  element.clientHeight <
+                64;
             if (follow.current) setNewOutput(false);
+            if (
+              element.scrollTop < 160 &&
+              history.hasNextPage &&
+              !history.isFetching &&
+              !history.isFetchNextPageError &&
+              !olderAnchor.current
+            ) {
+              olderAnchor.current = {
+                height: element.scrollHeight,
+                top: element.scrollTop,
+              };
+              void history.fetchNextPage();
+            }
           }}
         >
           <div className={styles.transcript}>
-            {history.hasNextPage && (
+            {history.isFetchingNextPage && (
+              <small role="status">Loading earlier messages…</small>
+            )}
+            {history.isFetchNextPageError && (
               <Button
                 variant="ghost"
-                loading={history.isFetchingNextPage}
                 onClick={() => {
-                  if (reader.current)
+                  const element = reader.current;
+                  if (element)
                     olderAnchor.current = {
-                      height: reader.current.scrollHeight,
-                      top: reader.current.scrollTop,
+                      height: element.scrollHeight,
+                      top: element.scrollTop,
                     };
                   void history.fetchNextPage();
                 }}
               >
-                Load earlier messages
+                Retry earlier messages
               </Button>
             )}
             {entries.map((entry, index) => (
@@ -367,7 +487,7 @@ function Conversation({
             ))}
             {showLive && (
               <LiveOutput
-                blocks={[...display.blocks.values()]}
+                blocks={liveBlocks}
                 gap={display.gap}
                 threadId={threadId}
               />
@@ -380,6 +500,7 @@ function Conversation({
               />
             )}
             {!entries.length &&
+              thread.root_activity.state === "inactive" &&
               !showLive &&
               !history.isPending &&
               !history.error && (
@@ -403,7 +524,7 @@ function Conversation({
             onClick={() => {
               follow.current = true;
               setNewOutput(false);
-              reader.current?.scrollTo({ top: reader.current.scrollHeight });
+              scrollToLatest();
             }}
           >
             <ArrowDown />
@@ -418,18 +539,64 @@ function Conversation({
           reconcile={reconcile}
         />
         {!thread.archived && (
+          <ErrorNotice error={agentSelection.error || selectors.error} />
+        )}
+        {!thread.archived && (agentSelection.isError || detail.isError) && (
+          <Button
+            variant="ghost"
+            disabled={detail.isFetching}
+            onClick={async () => {
+              const refreshed = await detail.refetch();
+              if (refreshed.isSuccess) agentSelection.reset();
+            }}
+          >
+            Refresh agent selection before sending
+          </Button>
+        )}
+        {!thread.archived && (
           <Composer
             referenceAdded={referenceAdded}
             autoFocus={search.get("compose") === "1"}
             threadId={threadId}
             activity={thread.root_activity}
-            canRun={detail.data.available_actions?.includes("run") ?? false}
+            canRun={
+              !agentSelection.isPending &&
+              !agentSelection.isError &&
+              !detail.isError &&
+              (detail.data.available_actions?.includes("run") ?? false)
+            }
+            modelId={draft.modelId}
+            controls={
+              <ThreadRunChoices
+                catalog={selectors.data}
+                agentId={thread.configuration.agent_source.id}
+                modelId={draft.modelId}
+                disabled={
+                  agentSelection.isPending ||
+                  detail.isFetching ||
+                  draft.submission.kind === "pending" ||
+                  draft.submission.kind === "unknown"
+                }
+                onAgentChange={(value) => agentSelection.mutate(value)}
+                onModelChange={(value) => {
+                  draft.modelId = value;
+                  draft.notify();
+                }}
+              />
+            }
             profile={profile}
             unauthorized={unauthorized}
             reconcile={reconcile}
           />
         )}
-        {!thread.archived && <ComposerStatus threadId={threadId} />}
+        {!thread.archived && (
+          <ComposerStatus
+            threadId={threadId}
+            receipt={receipt}
+            busy={thread.root_activity.state !== "inactive"}
+            liveTokens={showLive ? display.contextUsage?.tokens : undefined}
+          />
+        )}
         <ModalFrame
           open={dialog === "share"}
           onOpenChange={(open) => {

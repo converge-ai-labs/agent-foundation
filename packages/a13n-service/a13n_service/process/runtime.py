@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from a13n_service.agent_configuration.service import ConfigurationService
     from a13n_service.agents.application import AgentManagement
     from a13n_service.assets.catalog import AssetCatalog
     from a13n_service.assets.uploads import AssetUploadService
@@ -74,6 +75,7 @@ class ControlRuntime:
     web_providers: WebProviderService | None = None
     memory_providers: MemoryProviderService | None = None
     identity: IdentityRuntime | None = None
+    configuration: ConfigurationService | None = None
 
 
 @dataclass(frozen=True, slots=True)

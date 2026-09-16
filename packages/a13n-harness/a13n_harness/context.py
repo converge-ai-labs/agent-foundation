@@ -520,6 +520,10 @@ class AgentContext:
 
     async def export_state(self, message_history: Sequence[ModelMessage]) -> HarnessState:
         """Export a detached continuation envelope without persistence side effects."""
+        # A request-boundary export can precede consumption of the native input
+        # event. Reconcile delivered steering from the same canonical history
+        # before snapshotting capability state; pending input stays unretained.
+        await self._steering.resolve_delivered(message_history)
         return HarnessState(
             schema_version="1",
             thread_id=self.thread_id,

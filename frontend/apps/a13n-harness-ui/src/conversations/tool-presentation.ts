@@ -532,15 +532,16 @@ export function activitySummary(tools: ToolView[]) {
     const searches = tools.length - reads;
     title = `${pending ? "Exploring" : "Explored"} ${[reads && count(files || reads, "file"), searches && count(searches, "lookup")].filter(Boolean).join(" · ")}`;
   }
+  const notices = issues.filter((info) => info.phase !== "Failed");
   return {
     title,
     issue: issues.length > 0,
     status: [
       pending ? `${pending} running` : "",
-      issues.length === 1
-        ? issues[0].phase
-        : issues.length
-          ? `${issues.length} need attention`
+      notices.length === 1
+        ? notices[0].phase
+        : notices.length
+          ? `${notices.length} need attention`
           : "",
     ]
       .filter(Boolean)

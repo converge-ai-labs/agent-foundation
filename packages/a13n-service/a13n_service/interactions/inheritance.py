@@ -2,6 +2,7 @@
 
 from typing import TypedDict
 
+from a13n_service.agent_configuration.context import ConfigurationRunContext
 from a13n_service.iam import PrincipalRef
 from a13n_service.memory.bots.binding import BotMemoryBinding
 from a13n_service.models.domain import ModelExecutionObservation
@@ -12,11 +13,12 @@ from .domain import JsonObject, Run
 class InheritedRunFields(TypedDict):
     authority_principal: PrincipalRef
     agent_id: str
-    agent_revision_id: str
+    agent_revision_id: str | None
     effective_agent_config_digest: str
     model_execution_observation: ModelExecutionObservation
     connection_selections: tuple[JsonObject, ...]
     native_tool_contexts: tuple[JsonObject, ...]
+    configuration_context: ConfigurationRunContext | None
     bot_memory: BotMemoryBinding | None
 
 
@@ -30,5 +32,6 @@ def inherited_run_fields(source: Run) -> InheritedRunFields:
         model_execution_observation=source.model_execution_observation,
         connection_selections=source.connection_selections,
         native_tool_contexts=source.native_tool_contexts,
+        configuration_context=source.configuration_context,
         bot_memory=source.bot_memory,
     )

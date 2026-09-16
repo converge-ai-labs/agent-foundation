@@ -6,7 +6,6 @@ import hashlib
 from datetime import UTC, datetime
 
 from sqlalchemy import and_, or_, select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_harness_ui.errors import StoreConflictError, ThreadError
 from a13n_harness_ui.output_comment_models import (
@@ -17,7 +16,7 @@ from a13n_harness_ui.output_comment_models import (
     SavedOutputTarget,
 )
 
-from .database import short_session, transaction
+from .database import DatabaseSessions, short_session, transaction
 from .models import ChildExecutionRecord, OutputCommentRecord, OutputCommentTombstoneRecord, ThreadRecord
 from .objects import ObjectKind, ObjectRef
 
@@ -47,7 +46,7 @@ def _reconcile(row: OutputCommentRecord, root_thread_id: str, publication: Comme
 
 
 class OutputCommentRepository:
-    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(self, sessions: DatabaseSessions) -> None:
         self._sessions = sessions
 
     async def get(self, root_thread_id: str, comment_id: str) -> OutputComment | None:

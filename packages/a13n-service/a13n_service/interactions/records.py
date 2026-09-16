@@ -52,6 +52,8 @@ def run_record(value: Run) -> RunRecord:
     input_inline = "input" in value.model_fields_set
     output_inline = "output" in value.model_fields_set
     return RunRecord(
+        configuration_context=_optional_json(value.configuration_context),
+        configuration_draft_id=None if value.configuration_context is None else value.configuration_context.draft_id,
         id=value.id,
         version=value.version,
         organization_id=value.organization_id,

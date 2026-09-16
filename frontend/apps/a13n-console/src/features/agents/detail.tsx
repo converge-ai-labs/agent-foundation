@@ -57,6 +57,8 @@ export function AgentDetail() {
           signal,
         }),
       );
+      if (!resource.value.current_revision_id)
+        throw new Error(t("Agent configuration is unavailable."));
       const revision = data(
         await client.http.GET("/api/v1/agent-revisions/{agent_revision_id}", {
           params: {
@@ -194,6 +196,16 @@ export function AgentDetail() {
       }
       context={
         <div className={styles.stack}>
+          {can("agent.update") && (
+            <Button
+              variant="outline"
+              onClick={() =>
+                navigate(`${basePath}/configuration/new?agent=${agent.id}`)
+              }
+            >
+              {t("Configure with assistant")}
+            </Button>
+          )}
           <ExportAgent agent={agent} config={query.data.revision.config} />
           <ModalFrame
             trigger={

@@ -125,3 +125,77 @@ it("keeps saved raw output identity intact and does not load remote Markdown ima
   );
   expect(view.container.querySelector("img,script")).toBeNull();
 });
+
+it.each(["background_process", "async_subagent"])(
+  "renders %s notices as system activity in saved and live output",
+  (source) => {
+    const text =
+      "Background process process-example has exited. Call shell_wait for available output.";
+    const parts = [
+      { kind: "user", text, metadata: { "a13n.steering-source": source } },
+      { kind: "system", text: "System context" },
+      { kind: "user", text: "Request context", metadata: { display: false } },
+    ];
+    const view = render(
+      <SavedEntry
+        entry={
+          {
+            position: 0,
+            message_kind: "request",
+            parts,
+          } as Schema<"TranscriptEntry">
+        }
+      />,
+    );
+    expect(screen.getByText("System notification")).toBeTruthy();
+    expect(screen.queryByText("You")).toBeNull();
+    expect(screen.queryByText("System context")).toBeNull();
+    expect(screen.queryByText("Request context")).toBeNull();
+    expect(screen.getByText(text).closest("details")).toBeTruthy();
+    view.rerender(
+      <LiveOutput
+        gap={false}
+        blocks={[
+          { id: "notice", kind: "user", text, metadata: parts[0].metadata },
+        ]}
+      />,
+    );
+    expect(screen.getByText(text).closest("details")).toBeTruthy();
+    expect(screen.queryByText("You")).toBeNull();
+    view.rerender(
+      <LiveOutput
+        gap={false}
+        blocks={[{ id: "real-user", kind: "user", text }]}
+      />,
+    );
+    expect(screen.queryByText("System notification")).toBeNull();
+    expect(screen.getByText(text).closest("details")).toBeNull();
+  },
+);
+
+it("opens saved and streaming reasoning by default and renders safe Markdown", () => {
+  const view = render(
+    <SavedEntry
+      entry={
+        {
+          position: 1,
+          message_kind: "response",
+          parts: [{ kind: "thinking", text: "**Plan**\n\n- Read the code" }],
+        } as Schema<"TranscriptEntry">
+      }
+    />,
+  );
+  expect(screen.getByText("Reasoning").closest("details")?.open).toBe(true);
+  expect(screen.getByText("Plan").tagName).toBe("STRONG");
+  expect(screen.getByText("Read the code").tagName).toBe("LI");
+  view.rerender(
+    <LiveOutput
+      gap={false}
+      blocks={[
+        { id: "thought", kind: "thinking", text: "**Streaming** reasoning" },
+      ]}
+    />,
+  );
+  expect(screen.getByText("Reasoning").closest("details")?.open).toBe(true);
+  expect(screen.getByText("Streaming").tagName).toBe("STRONG");
+});

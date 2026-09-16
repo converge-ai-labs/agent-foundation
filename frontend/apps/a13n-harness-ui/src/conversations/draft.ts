@@ -68,7 +68,12 @@ export type Submission =
       message: string;
       receipt?: string;
     }
-  | { kind: "accepted"; message: string; receipt: string }
+  | {
+      kind: "accepted";
+      action?: "send" | "steer";
+      message: string;
+      receipt: string;
+    }
   | { kind: "rejected"; message: string };
 
 export class ThreadDraft {
@@ -86,6 +91,8 @@ export class ThreadDraft {
   status = "Disconnected";
   error = "";
   submission: Submission = { kind: "idle" };
+  // A private, in-tab Send choice, not shared input or sticky Thread configuration.
+  modelId: string | undefined;
   replacement: Schema<"DraftFrame"> | undefined;
   private accepted: Y.Snapshot | undefined;
   private listeners = new Set<() => void>();

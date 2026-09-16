@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import TypeAdapter
 from sqlalchemy import (
@@ -53,12 +53,22 @@ class AgentRecord(Base):
             ondelete="CASCADE",
         ),
         CheckConstraint("source IN ('builtin', 'custom')", name="source_valid"),
+        CheckConstraint(
+            "system_purpose IS NULL OR (system_purpose = 'configuration_assistant' AND source = 'builtin')",
+            name="system_purpose_valid",
+        ),
         CheckConstraint("version >= 1", name="version_positive"),
+        CheckConstraint(
+            "(system_purpose IS NULL AND current_revision_id IS NOT NULL) OR "
+            "(system_purpose IS NOT NULL AND system_purpose = 'configuration_assistant' AND current_revision_id IS NULL AND version = 1)",
+            name="revision_source_valid",
+        ),
         CheckConstraint("length(name) BETWEEN 1 AND 128", name="name_bounded"),
         CheckConstraint("created_by_type IN ('user', 'service_account', 'system')", name="created_by_type_valid"),
         CheckConstraint("updated_by_type IN ('user', 'service_account', 'system')", name="updated_by_type_valid"),
         Index("uq_agents_id_organization", "id", "organization_id", "workspace_id", unique=True),
         Index("uq_agents_workspace_key", "workspace_id", "key", unique=True),
+        Index("uq_agents_workspace_system_purpose", "workspace_id", "system_purpose", unique=True),
         Index("ix_agents_workspace_updated", "workspace_id", "updated_at", "id"),
         Index("ix_agents_workspace_availability", "workspace_id", "enabled", "archived_at", "updated_at", "id"),
         Index(
@@ -74,6 +84,7 @@ class AgentRecord(Base):
     organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
     source: Mapped[str] = mapped_column(String(16), nullable=False)
+    system_purpose: Mapped[Literal["configuration_assistant"] | None] = mapped_column(String(32))
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     key: Mapped[str] = mapped_column(String(RESOURCE_KEY_MAX_LENGTH), nullable=False)
     image_id: Mapped[str | None] = mapped_column(String(72))
@@ -82,7 +93,7 @@ class AgentRecord(Base):
         LABELS_SQL_TYPE, nullable=False, default=dict, server_default=text("'{}'")
     )
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    current_revision_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    current_revision_id: Mapped[str | None] = mapped_column(String(72))
     enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     duplicated_from_agent_id: Mapped[str | None] = mapped_column(String(72))
@@ -101,6 +112,7 @@ class AgentRecord(Base):
             organization_id=self.organization_id,
             workspace_id=self.workspace_id,
             source=AgentSource(self.source),
+            system_purpose=self.system_purpose,
             name=self.name,
             key=self.key,
             description=self.description,

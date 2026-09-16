@@ -77,6 +77,7 @@ class _ThreadCursor(SurfaceModel):
     projectless: bool = False
     sort: Literal["updated", "activity"] = "updated"
     include_archived: bool
+    archived_only: bool = False
     updated_at: datetime
     thread_id: str
 
@@ -123,6 +124,7 @@ class ThreadProjectionService:
         query: str | None = None,
         project_id: str | None = None,
         include_archived: bool = False,
+        archived_only: bool = False,
         project_ids: tuple[str, ...] | None = None,
         projectless: bool = False,
         sort: Literal["updated", "activity"] = "updated",
@@ -146,6 +148,7 @@ class ThreadProjectionService:
                 decoded.query != normalized_query
                 or decoded.project_id != project_id
                 or decoded.include_archived is not include_archived
+                or decoded.archived_only is not archived_only
                 or (
                     decoded.project_ids_digest != project_ids_digest
                     if decoded.project_ids_digest is not None
@@ -160,6 +163,7 @@ class ThreadProjectionService:
             query=normalized_query,
             project_id=project_id,
             include_archived=include_archived,
+            archived_only=archived_only,
             project_ids=project_ids,
             projectless=projectless,
             sort=sort,
@@ -179,6 +183,7 @@ class ThreadProjectionService:
                     query=normalized_query,
                     project_id=project_id,
                     include_archived=include_archived,
+                    archived_only=archived_only,
                     updated_at=last.updated_at if sort == "updated" else (last.activity_at or last.created_at),
                     # A filter can cover many unavailable Projects; keep its cursor bounded.
                     project_ids_digest=project_ids_digest,
@@ -353,6 +358,9 @@ class ThreadProjectionService:
             ),
             None,
         )
+        observed = await self._store.usage.latest_root_request(thread_id=thread_id)
+        if observed is not None:
+            latest = observed.request_usage.input_tokens + observed.request_usage.output_tokens
         model = composition.root.model
         thinking = model.settings.get("thinking")
         return ContextUsageView(

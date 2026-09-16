@@ -276,7 +276,7 @@ Pydantic messages and portable Environment backend state live in separate `Harne
 
 ## State Export
 
-`AgentContext.export_state()` creates a detached `HarnessState` from the supplied complete message view, current Capability snapshot, and portable Environment export. It performs no persistence I/O and does not consult a Capability codec registry; Environment collection is owned by the fixed core resource rather than a Capability namespace.
+`AgentContext.export_state()` creates a detached `HarnessState` from the supplied complete message view, current Capability snapshot, and portable Environment export. Before snapshotting, it reconciles steering already present in that canonical message view into retained input state, independently of asynchronous event consumption. Accepted but unconsumed steering is not added to the checkpoint. It performs no persistence I/O and does not consult a Capability codec registry; Environment collection is owned by the fixed core resource rather than a Capability namespace.
 
 The normal inner run exports aligned messages and state. Trusted result middleware may return a different well-formed state for handoff, migration, or caching. The Harness does not require equality with `HarnessRunResult.all_messages()`.
 

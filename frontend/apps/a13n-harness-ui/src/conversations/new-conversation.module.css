@@ -44,21 +44,23 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px 20px;
+  gap: 8px 20px;
   margin: 0 12px -12px;
-  padding: 12px 16px 24px;
+  padding: 8px 12px 20px;
   border: 0;
   border-radius: 14px 14px 0 0;
   background: var(--a13n-surface);
 }
 .context > * {
-  flex: 1;
-  min-width: 150px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
 }
 .location {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
+  max-width: min(320px, 100%);
 }
 .location > svg {
   flex-shrink: 0;
@@ -67,28 +69,29 @@
   height: 18px;
 }
 .location > button {
-  flex: 1;
+  width: auto;
   min-width: 0;
+  height: 32px;
+  padding-inline: 6px;
   border-color: transparent;
   background: transparent;
   box-shadow: none;
 }
-.context > .mode {
-  flex: 0 1 auto;
+.mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   min-width: 0;
   color: var(--a13n-secondary);
   font-size: 12px;
+  white-space: nowrap;
 }
-.agentChoice {
-  min-width: 0;
-  max-width: min(320px, 38vw);
+.mode[data-full-control="true"] {
+  color: var(--warning-foreground);
 }
-.agentChoice > button {
-  max-width: 100%;
-  font-size: 12px;
-  border-color: transparent;
-  background: transparent;
-  box-shadow: none;
+.mode > svg {
+  width: 16px;
+  height: 16px;
 }
 .setup {
   display: inline-block;
@@ -112,11 +115,66 @@
     padding-inline: 10px;
     margin-inline: 6px;
   }
-  .context > * {
-    min-width: 120px;
+  .location {
+    max-width: 100%;
   }
-  .context > .mode {
-    flex-basis: 100%;
-    text-align: right;
+}
+
+.runChoices {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px 14px;
+  min-width: 0;
+}
+.runChoice {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 240px;
+}
+.runChoice > span {
+  font-size: 11px;
+  color: var(--a13n-secondary);
+  flex-shrink: 0;
+}
+.runChoice > button {
+  width: auto;
+  min-width: 0;
+  max-width: 100%;
+  height: 32px;
+  padding-inline: 6px;
+  font-size: 13px;
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+.location > button:hover,
+.runChoice > button:hover {
+  background: var(--a13n-hover);
+}
+@media (max-width: 600px) {
+  .runChoices {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
   }
+  .runChoice {
+    display: grid;
+    gap: 0;
+    max-width: 100%;
+  }
+  .runChoice > span {
+    padding-left: 6px;
+  }
+  .runChoice > button {
+    width: 100%;
+  }
+}
+
+.choicePopup {
+  min-width: min(300px, calc(100vw - 32px));
 }

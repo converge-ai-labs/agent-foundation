@@ -144,12 +144,12 @@ For an admitted prompt or deferred response, the App:
 06. publishes the immutable resolved Run composition;
 07. creates fresh native collaborators; each subscription-backed Model request resolves and refreshes its compatible OAuth credential when needed;
 08. starts one Harness stream and observer from the selected `HarnessState`;
-09. forwards public live events best effort;
+09. saves complete root model-request checkpoints after input consumption and context transformation, advances its expected continuation after each successful selection, and forwards public live events best effort;
 10. finalizes Environment adapters and publishes changed state;
 11. publishes and compare-and-selects any available valid terminal checkpoint, including failed or interrupted execution, under the [continuation policy](03-local-storage-and-recovery.md#run-composition-and-continuation);
 12. selects a detached terminal operation outcome with independent execution, continuation, Environment-state, and cleanup facts.
 
-No database transaction spans file I/O, catalog import, native construction, or steps 7 through 11. If capture fails, an already committed explicit Thread patch remains the Thread's desired next state and the operation reports why it could not start.
+No database transaction spans file I/O, catalog import, native construction, model execution, or event delivery. Checkpoint selection uses a separate short transaction; it does not hold a session while the Run continues. If capture fails, an already committed explicit Thread patch remains the Thread's desired next state and the operation reports why it could not start.
 
 ### Root Deferred Response
 
@@ -331,7 +331,7 @@ A focused watch establishes a subscribe-before-query boundary:
 
 1. read the selected history identity, then install the exact root-lineage subscriber and atomically capture its epoch, `cutover_sequence`, and the root observer's published prefix;
 2. query detached Thread, child, task, and root-operation projections, with retained queries bound to that continuation; require a fresh watch if the history identity changed across cutover, including when no observer existed at subscription;
-3. when present, describe `root_stream` by its exact Run, base continuation, and finite observer event count; if its base no longer matches the selected history, require a fresh watch rather than mixing histories;
+3. when present, describe `root_stream` by its exact Run, original base continuation, and finite observer event count; the selected history must match that base or a successfully selected checkpoint whose native marker is inside the captured prefix. Otherwise require a fresh watch rather than mixing histories. Mid-Run saves never rewrite the original Run base;
 4. attach `recent_events`, the newest available root-lineage ring tail at or below cutover, bounded to 128 KiB of encoded events and intended only as incomplete diagnostic context; and
 5. return the snapshot, bounded root observer replay batches, and subscription, whose subsequent delivery contains only matching events strictly after cutover.
 
@@ -449,7 +449,7 @@ The [WebUI contracts](webui/README.md) own browser navigation, configuration pre
 
 Source views expose current digests as read/provenance facts. Configuration-file saves and setup apply require no expected source or generation digest and use the [last-write-wins file boundary](01-configuration-and-resource-catalog.md#file-mutation-and-last-write-wins), including when a manual or API edit intervenes. Project definition paths enter through validated resource mutations. Separately enabled Host Files operates on native paths under the [computer-sharing boundary](webui/02-host-computer-sharing.md); direct source edits still require a later valid generation before changing runtime configuration.
 
-Thread attachment transport uses authenticated `POST /api/threads/{thread_id}/attachments?name=...` with a bounded raw byte body, and `GET /api/threads/{thread_id}/attachments/{attachment_id}` for a non-inline, no-store download. The stage response supplies the handle and metadata. The submit JSON accepts `prompt` and up to eight `attachment_ids`, including attachment-only submission. Failed validation is explicit and never silently drops an attachment. The attachment transport does not accept native paths as an input source or duplicate storage, image validation, input conversion, or pruning policy. The shared browser composer reuses this attachment boundary rather than inventing browser-owned attachment authority. Native file and Git diff capture stage reviewed bytes with the [computer-sharing provenance](webui/02-host-computer-sharing.md#captured-diff-context) through this same owner. Git repository discovery, status and selected diffs are App-owned read-only observations, not Agent Environment operations or another repository state store.
+Thread attachment transport uses authenticated `POST /api/threads/{thread_id}/attachments?name=...` with a bounded raw byte body, and `GET /api/threads/{thread_id}/attachments/{attachment_id}` for a non-inline, no-store download. The stage response supplies the handle and metadata. The submit JSON accepts `prompt` and up to eight `attachment_ids`, including attachment-only submission. It also accepts an optional configured `model_id`, mapped to the App's existing single-Run Model override; omission follows the Agent binding. The override does not mutate resources or sticky Thread configuration and is rejected on steering requests. The selector catalog exposes configured Model IDs, names, and routes without credentials or a connectivity claim. Failed validation is explicit and never silently drops an attachment. The attachment transport does not accept native paths as an input source or duplicate storage, image validation, input conversion, or pruning policy. The shared browser composer reuses this attachment boundary rather than inventing browser-owned attachment authority. Native file and Git diff capture stage reviewed bytes with the [computer-sharing provenance](webui/02-host-computer-sharing.md#captured-diff-context) through this same owner. Git repository discovery, status and selected diffs are App-owned read-only observations, not Agent Environment operations or another repository state store.
 
 ## Failure and Shutdown Semantics
 

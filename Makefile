@@ -91,8 +91,15 @@ setup: ## Prepare this checkout's stores, shared Langfuse and Service schema
 	@$(SERVICE_DEV) setup
 
 .PHONY: dev
-dev: ## Prepare and run this checkout's Service, scripted model and Console
+dev: ## Prepare and start this checkout's Service, scripted model and Console in the background
 	@$(SERVICE_DEV) dev
+
+.PHONY: dev-foreground dev-stop
+dev-foreground: ## Prepare and run Service and Console attached to this terminal
+	@$(SERVICE_DEV) dev --foreground
+
+dev-stop: ## Stop Service, scripted model and Console started in the background
+	@python3 -m dev.service --config "$(SERVICE_CONFIG)" --mem0-config "$(MEM0_CONFIG)" stop
 
 # Initialize only missing files; templates changing must never replace private settings.
 # Resolve the template beside the selected file, including explicit path overrides.
@@ -235,7 +242,7 @@ mem0-logs: ## Inspect this checkout's local Mem0 OSS startup and provider errors
 dev-status: ## Print this checkout's local instance and listeners as JSON without changing state
 	@python3 -m dev.service --config "$(SERVICE_CONFIG)" --mem0-config "$(MEM0_CONFIG)" status
 
-dev-down: ## Stop this checkout's Service and Mem0 infrastructure, preserving data and shared Langfuse
+dev-down: ## Stop this checkout's PostgreSQL, Redis and Mem0, preserving data and shared Langfuse
 	@$(SERVICE_DEV) down
 
 .PHONY: langfuse-up langfuse-down langfuse-test langfuse-reset

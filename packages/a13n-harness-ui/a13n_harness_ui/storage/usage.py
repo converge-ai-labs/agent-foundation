@@ -12,11 +12,11 @@ from a13n_harness.events import HarnessEvent, HarnessExtensionEvent, UsageReport
 from a13n_harness.usage import ModelUsageRecord, ProviderUsageRecord, UsageRecord
 from pydantic import Field, TypeAdapter
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from a13n_harness_ui.errors import StoreIntegrityError
 
-from .database import short_session, transaction
+from .database import DatabaseSessions, short_session, transaction
 from .models import ThreadRecord, ThreadUsageRecord
 
 _RECORD = TypeAdapter(Annotated[UsageRecord, Field(discriminator="kind")])
@@ -113,7 +113,7 @@ class _Totals:
 
 
 class ThreadUsageRepository:
-    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
+    def __init__(self, sessions: DatabaseSessions) -> None:
         self._sessions = sessions
 
     async def observe(self, *, thread_id: str, item: object) -> None:
@@ -170,6 +170,19 @@ class ThreadUsageRepository:
                     )
                 )
                 await session.flush()
+
+    async def latest_root_request(self, *, thread_id: str, run_id: str | None = None) -> ModelUsageRecord | None:
+        """Read request-local usage already committed during execution, not Run totals."""
+        query = select(ThreadUsageRecord.payload_json).where(
+            ThreadUsageRecord.root_thread_id == thread_id,
+            ThreadUsageRecord.descendant.is_(False),
+            func.json_extract(ThreadUsageRecord.payload_json, "$.kind") == "model",
+        )
+        if run_id is not None:
+            query = query.where(ThreadUsageRecord.run_id == run_id)
+        async with short_session(self._sessions) as session:
+            payload = await session.scalar(query.order_by(ThreadUsageRecord.sequence.desc()).limit(1))
+        return None if payload is None else ModelUsageRecord.model_validate_json(payload)
 
     async def snapshot(self, *, thread_id: str) -> ThreadUsageView:
         """Read a finite high-water snapshot in detached batches with bounded aggregation memory."""

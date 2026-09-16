@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, JsonValue
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ApplicationError, ErrorCategory
@@ -20,10 +20,9 @@ from a13n_service.iam import (
     AuthenticatedActor,
     AuthorizationError,
     WorkspaceAction,
-    authorize_agent,
     authorize_agent_scoped_collection,
-    authorize_workspace,
 )
+from a13n_service.interactions.access import authorize_interaction, configuration_visibility
 from a13n_service.interactions.domain import RunLineageKind, RunStatus
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord, SessionRecord, ThreadRecord
 from a13n_service.labels import Labels, label_predicates
@@ -45,6 +44,7 @@ class _Resource(BaseModel):
 
 
 class ThreadResource(_Resource):
+    configuration_draft_id: str | None = None
     id: str
     version: int
     queue_version: int
@@ -62,6 +62,7 @@ class ThreadResource(_Resource):
 
 
 class RunResource(_Resource):
+    configuration_draft_id: str | None = None
     id: str
     version: int
     session_id: str
@@ -72,7 +73,7 @@ class RunResource(_Resource):
     lineage_kind: RunLineageKind
     trigger_type: str
     agent_id: str
-    agent_revision_id: str
+    agent_revision_id: str | None
     effective_agent_config_digest: str
     environment_id: str | None
     environment_access: str | None
@@ -216,9 +217,12 @@ class NativeInteractionQueries:
                 actor=actor,
                 workspace_id=workspace_id,
                 agent_id=run.agent_id if run else None,
+                session_id=thread.session_id,
                 action=WorkspaceAction.thread_read,
             )
-            return _thread(thread)
+            conversation = await database.get(SessionRecord, thread.session_id)
+            assert conversation is not None
+            return _thread(thread, configuration_draft_id=conversation.configuration_draft_id)
 
     async def list_threads(
         self,
@@ -241,6 +245,15 @@ class NativeInteractionQueries:
             )
             if session is None:
                 raise _not_found()
+            if session.configuration_owner_user_id is not None:
+                await authorize_interaction(
+                    database,
+                    actor=actor,
+                    workspace_id=session.workspace_id,
+                    session_id=session.id,
+                    agent_id=None,
+                    action=WorkspaceAction.thread_read,
+                )
             authorization = await _authorize_collection(
                 database,
                 actor=actor,
@@ -260,7 +273,7 @@ class NativeInteractionQueries:
                 .order_by(ThreadRecord.updated_at.desc(), ThreadRecord.id.desc())
                 .limit(limit + 1)
             )
-            if authorization.visible_agent_ids is not None:
+            if authorization.visible_agent_ids is not None and session.configuration_owner_user_id is None:
                 query = query.where(RunRecord.agent_id.in_(authorization.visible_agent_ids))
             query = query.where(*label_predicates(ThreadRecord.labels, labels))
             if boundary is not None:
@@ -273,7 +286,10 @@ class NativeInteractionQueries:
                 )
             records = tuple((await database.scalars(query)).all())
         page, next_cursor = _page(records, limit=limit, scope=scope, kind="threads")
-        return ThreadCollection(items=tuple(_thread(item) for item in page), next_cursor=next_cursor)
+        return ThreadCollection(
+            items=tuple(_thread(item, configuration_draft_id=session.configuration_draft_id) for item in page),
+            next_cursor=next_cursor,
+        )
 
     async def get_run(self, *, actor: AuthenticatedActor, run_id: str) -> RunResource:
         async with short_session(self._sessions) as database:
@@ -283,6 +299,7 @@ class NativeInteractionQueries:
                 actor=actor,
                 workspace_id=actor.workspace_id,
                 agent_id=run.agent_id,
+                session_id=run.session_id,
                 action=WorkspaceAction.run_read,
             )
             return _run(run)
@@ -306,7 +323,7 @@ class NativeInteractionQueries:
         boundary = _cursor_boundary(cursor, scope=scope, kind="runs")
         async with short_session(self._sessions) as database:
             if thread_id is not None:
-                _, current_run, thread_workspace_id = await _load_thread(
+                thread, current_run, thread_workspace_id = await _load_thread(
                     database,
                     actor=actor,
                     thread_id=thread_id,
@@ -316,6 +333,7 @@ class NativeInteractionQueries:
                     actor=actor,
                     workspace_id=thread_workspace_id,
                     agent_id=current_run.agent_id if current_run else None,
+                    session_id=thread.session_id,
                     action=WorkspaceAction.run_read,
                 )
             authorization = await _authorize_collection(
@@ -340,9 +358,29 @@ class NativeInteractionQueries:
                     SessionRecord.workspace_id == actual_workspace,
                     RunRecord.thread_id == thread_id,
                 )
-            if authorization.visible_agent_ids is not None:
-                query = query.where(RunRecord.agent_id.in_(authorization.visible_agent_ids))
-            query = query.where(*label_predicates(RunRecord.labels, labels))
+            ordinary = (
+                true()
+                if authorization.visible_agent_ids is None
+                else RunRecord.agent_id.in_(authorization.visible_agent_ids)
+            )
+            query = query.where(
+                or_(
+                    and_(SessionRecord.configuration_owner_user_id.is_(None), ordinary),
+                    await configuration_visibility(
+                        database,
+                        actor=actor,
+                        organization_id=authorization.workspace.organization_id,
+                        workspace_id=actor.workspace_id,
+                        action=WorkspaceAction.run_read,
+                    ),
+                )
+            )
+            query = query.where(
+                *label_predicates(
+                    RunRecord.labels,
+                    labels,
+                )
+            )
             query = query.order_by(RunRecord.created_at.desc(), RunRecord.id.desc()).limit(limit + 1)
             if boundary is not None:
                 created_at, resource_id = boundary
@@ -373,6 +411,7 @@ class NativeInteractionQueries:
                 actor=actor,
                 workspace_id=actor.workspace_id,
                 agent_id=run.agent_id,
+                session_id=run.session_id,
                 action=WorkspaceAction.run_read,
             )
             query = (
@@ -432,6 +471,7 @@ class NativeInteractionQueries:
                 actor=actor,
                 workspace_id=actor.workspace_id,
                 agent_id=run.agent_id,
+                session_id=run.session_id,
                 action=WorkspaceAction.run_read,
             )
             return _attempt(attempt)
@@ -444,6 +484,7 @@ class NativeInteractionQueries:
                 actor=actor,
                 workspace_id=actor.workspace_id,
                 agent_id=run.agent_id,
+                session_id=run.session_id,
                 action=WorkspaceAction.run_read,
             )
             resource = run.to_resource()
@@ -479,6 +520,7 @@ class NativeInteractionQueries:
                 actor=actor,
                 workspace_id=actor.workspace_id,
                 agent_id=run.agent_id,
+                session_id=run.session_id,
                 action=WorkspaceAction.run_read,
             )
             organization_id = run.organization_id
@@ -516,6 +558,7 @@ class NativeInteractionQueries:
                     actor=actor,
                     workspace_id=actor.workspace_id,
                     agent_id=current.agent_id,
+                    session_id=current.session_id,
                     action=WorkspaceAction.run_read,
                 )
                 reverse.append(current)
@@ -598,17 +641,16 @@ async def _authorize_agent(
     actor: AuthenticatedActor,
     workspace_id: str,
     agent_id: str | None,
+    session_id: str,
     action: WorkspaceAction,
 ) -> None:
     try:
-        if agent_id is None:
-            await authorize_workspace(database, actor=actor, workspace_id=workspace_id, action=action)
-            return
-        await authorize_agent(
+        await authorize_interaction(
             database,
             actor=actor,
             workspace_id=workspace_id,
             agent_id=agent_id,
+            session_id=session_id,
             action=action,
         )
     except AuthorizationError as error:
@@ -622,8 +664,9 @@ async def _authorize_collection(database: AsyncSession, **kwargs):
         raise _not_found() from error
 
 
-def _thread(record: ThreadRecord) -> ThreadResource:
+def _thread(record: ThreadRecord, *, configuration_draft_id: str | None) -> ThreadResource:
     return ThreadResource(
+        configuration_draft_id=configuration_draft_id,
         id=record.id,
         version=record.version,
         queue_version=record.queue_version,
@@ -644,6 +687,7 @@ def _thread(record: ThreadRecord) -> ThreadResource:
 def _run(record: RunRecord) -> RunResource:
     resource = record.to_resource()
     return RunResource(
+        configuration_draft_id=record.configuration_draft_id,
         id=resource.id,
         version=resource.version,
         session_id=resource.session_id,
