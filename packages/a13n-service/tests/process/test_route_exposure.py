@@ -145,15 +145,15 @@ def test_control_plane_openapi_uses_api_namespace() -> None:
         f"{account_prefix}/bot/replies",
         f"{account_prefix}/bot/memory-settings",
         f"{account_prefix}/memory-scopes",
-        f"{account_prefix}/memory-sharing-policies",
     } <= connectivity_paths.keys()
+    assert not any("/memory-sharing-policies" in path or "/publications" in path for path in connectivity_paths)
     assert {"get", "put"} <= connectivity_paths[f"{account_prefix}/bot/memory-settings"].keys()
     for path, operations in connectivity_paths.items():
         if path == f"{account_prefix}/bot/memory-settings":
             tag = "bot-memory"
         elif path.startswith(f"{account_prefix}/bot/"):
             tag = "bots"
-        elif path.startswith((f"{account_prefix}/memory-scopes", f"{account_prefix}/memory-sharing-policies")):
+        elif path.startswith(f"{account_prefix}/memory-scopes"):
             tag = "bot-memory"
         else:
             tag = "connectivity-management"
