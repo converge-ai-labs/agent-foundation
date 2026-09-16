@@ -22,7 +22,7 @@ The shared [Environment Provider contract](../a13n-environment/README.md) owns i
 | How to create, resume, connect, retain, stop or delete                    | Provider implementation                             |
 | File, shell and other Agent operation routing                             | Harness through the supplied Environment object     |
 
-One Workspace owns an actual Environment; its Provider and frozen TemplateRevision can belong to that Workspace or its Organization. Allocation always records the consuming Workspace, independently from the recipe owner. Threads in that Workspace may share the same Environment record. Cross-Workspace management of the same external target is unsupported; Service defines no deployment-global target resource or cross-organization target deduplication. IDs grant no authority.
+One Workspace owns an actual Environment; its Provider and frozen TemplateRevision can belong to that Workspace or its Organization. Allocation always records the consuming Workspace, independently from the template configuration owner. Threads in that Workspace may share the same Environment record. Cross-Workspace management of the same external target is unsupported; Service defines no deployment-global target resource or cross-organization target deduplication. IDs grant no authority.
 
 ## Configured Providers
 
@@ -77,9 +77,9 @@ class EnvironmentTemplateRevision:
 
 A revision retains its Template's ownership. Organization Templates reference only Organization Providers; Workspace Templates may reference local or parent Providers.
 
-`configuration` is the implementation's desired environment recipe: image or provider template, resource limits, initialization and supported workspace settings. It contains no current sandbox/container ID, credentials, live client or process handle. Required Provider runtime collaborators come from the selected Provider configuration and deployment. Initialization is provider-validated and runs for a new backing target, not on every reconnect. Restoring an earlier recipe creates a new revision.
+`configuration` is the implementation's desired environment template configuration: image or provider template, resource limits, initialization and supported workspace settings. It contains no current sandbox/container ID, credentials, live client or process handle. Required Provider runtime collaborators come from the selected Provider configuration and deployment. Initialization is provider-validated and runs for a new backing target, not on every reconnect. Restoring an earlier template configuration creates a new revision.
 
-The revision fixes preparation timing, retention and access ceiling together with the recipe. New revisions affect newly allocated Environments only. Existing Environments, including later automatic rebuilds, use their original revision. Credential rotation does not publish a template revision. Archiving a template prevents new allocation but does not revoke existing Environments.
+The revision stores its frozen template configuration as `template_config`, including preparation timing, retention and the access ceiling. New revisions affect newly allocated Environments only. Existing Environments, including later automatic rebuilds, use their original revision. Credential rotation does not publish a template revision. Archiving a template prevents new allocation but does not revoke existing Environments.
 
 ## Actual Environment Records
 
@@ -90,7 +90,7 @@ An Environment has one stable Service identity independent of its backing contai
 | `id`, `organization_id`, `workspace_id`  | Logical Environment identity and ownership                                                                           |
 | `name`                                   | Mutable human-readable label, 1–128 characters; names need not be unique                                             |
 | `provider_id`                            | Immutable configured backend identity                                                                                |
-| `template_revision_id`                   | Immutable recipe for a managed Environment; absent for externally managed registration                               |
+| `template_revision_id`                   | Immutable template configuration for a managed Environment; absent for externally managed registration               |
 | `ownership`                              | `managed` or `external`                                                                                              |
 | `state`                                  | Latest protected, validated shared `EnvironmentState`, if the Provider requires state                                |
 | `generation`                             | Monotonic backing-target generation; advances on known creation/replacement, not reconnect or resume                 |
@@ -104,7 +104,7 @@ An Environment has one stable Service identity independent of its backing contai
 
 The Provider ID must equal the referenced template revision's Provider ID. State is protected non-secret data; only current authorized runtime and private management reads can inspect it. A stateless local backend can retain no provider state while still having one Service Environment record and a fixed host/root scope. Worker scheduling must honor that scope; the same path on a different host is not the same environment.
 
-Only managed Environments carry a creation recipe, preparation policy and retention policy; a missing managed revision fails explicitly. External configuration is a connection configuration and carries no synthetic template or disabled retention policy.
+Only managed Environments carry a creation template configuration, preparation policy and retention policy; a missing managed revision fails explicitly. External configuration is a connection configuration and carries no synthetic template or disabled retention policy.
 
 An externally managed registration supplies a validated existing-target reference and access ceiling for the selected Provider, without a template. The Environment stores that ceiling; a managed Environment derives its ceiling from its frozen template revision. Service connects to it but does not create, rebuild, stop or delete it automatically. It cannot claim managed retention guarantees. Same-Workspace registration of an already registered target must reuse its Environment or fail conflict, using the canonical backend-scoped target identity. The uniqueness check spans Provider resource IDs: configuring the same backend twice does not create two lifecycle owners for one target. Target metadata is validated through the same Provider implementation; this is not another target resource or registry. Managed targets carry sufficient ownership evidence to reject adoption under an unrelated Environment. Explicit cross-Workspace registration of the same target is outside this contract and never grants shared lifecycle ownership.
 
@@ -196,15 +196,15 @@ Harness does not build provider connections or choose preparation timing. Bindin
 
 The preparation path inspects current target evidence:
 
-| Evidence                                                  | Behavior                                                                   |
-| --------------------------------------------------------- | -------------------------------------------------------------------------- |
-| Never created managed target                              | Create from frozen template revision                                       |
-| Matching running target                                   | Reuse and establish required process-local operation clients               |
-| Matching stopped target                                   | Resume that target and connect                                             |
-| Managed target authoritatively deleted                    | Rebuild from frozen recipe; advance generation and publish changed context |
-| Timeout, denial, unreachable backend or uncertain outcome | Report/reconcile; never infer absence                                      |
-| Incompatible ownership or target metadata                 | Fail conflict without adoption or mutation                                 |
-| Missing externally managed target                         | Report unavailable; no implicit creation                                   |
+| Evidence                                                  | Behavior                                                                                   |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Never created managed target                              | Create from frozen template revision                                                       |
+| Matching running target                                   | Reuse and establish required process-local operation clients                               |
+| Matching stopped target                                   | Resume that target and connect                                                             |
+| Managed target authoritatively deleted                    | Rebuild from frozen template configuration; advance generation and publish changed context |
+| Timeout, denial, unreachable backend or uncertain outcome | Report/reconcile; never infer absence                                                      |
+| Incompatible ownership or target metadata                 | Fail conflict without adoption or mutation                                                 |
+| Missing externally managed target                         | Report unavailable; no implicit creation                                                   |
 
 ## Workspace Capacity
 
@@ -254,7 +254,7 @@ For each candidate, one short transaction locks a still-due Environment, skippin
 
 A condition change starts that condition's clock; repeated observations or changes among users that leave the aggregate condition unchanged do not reset it. Active use cancels the current inactivity countdown. When use later ends, a new condition begins. A policy/condition change never wakes a stopped target. All state transitions recheck aggregate users and current deadlines under Environment coordination before dispatch. Run status transitions and Environment-use release are atomic; recovery and periodic reconciliation repair observations without double-acquiring or releasing use.
 
-Stop preserves the provider-defined state needed to resume the same target. It need not preserve process memory; the Provider declares that distinction. Delete releases the backing target and advances its status to deleted while preserving the Service record, frozen recipe and generation history. A later use resumes a stopped target or rebuilds a deleted managed target. Automatically stopping/deleting an Environment never deletes caller-owned bind sources or unrelated resources.
+Stop preserves the provider-defined state needed to resume the same target. It need not preserve process memory; the Provider declares that distinction. Delete releases the backing target and advances its status to deleted while preserving the Service record, frozen template configuration and generation history. A later use resumes a stopped target or rebuilds a deleted managed target. Automatically stopping/deleting an Environment never deletes caller-owned bind sources or unrelated resources.
 
 Keepalive maintains a running target while active use or the current pre-stop/pre-delete retention interval requires it. The same Provider implementation performs renewal where needed and reports actual supported expiry evidence, persisted as `expires_at`. The next deadline is the earliest retention action or renewal, up to 60 seconds before expiry and no more than one fifth of the remaining observed lifetime early. Short configured lifetimes therefore do not cause an immediate renewal loop. Failed or unknown renewals preserve operation evidence and use bounded retry delay. No-op renewal is valid only for a backend that does not require it. Renewal must neither start a stopped target nor override a due stop/delete. Provider limits or failed renewal are explicit availability failures, not guaranteed unlimited lifetime. Once stopped, Service still schedules deletion even if the provider itself retains stopped environments indefinitely.
 
@@ -280,7 +280,7 @@ The public resource catalog is:
 | Actual Environments             | `POST/GET /workspaces/{workspace}/environments`, `GET/PATCH /environments/{environment_id}`                    |
 | Explicit lifecycle commands     | `POST /environments/{environment_id}/stop`, `POST /environments/{environment_id}/delete`                       |
 
-Environment creation accepts a template choice or an explicitly externally managed registration. Both accept an optional name; omission generates a readable name containing an Environment ID suffix. Automatic Run/Thread allocations use the same naming rule. `PATCH /environments/{environment_id}` changes only the name under `environment.manage` and an exact `If-Match` precondition. Renaming preserves the target, generation, frozen recipe and existing Run references. It creates the record without mandatory immediate target preparation, matching Thread allocation. Stop/delete target commands use the [durable operation contract](06-durable-operations-and-outbox.md), reauthorize at dispatch and reject active use; manual commands explicitly override inactivity grace but do not affect unrelated target ownership. Delete here removes the backing target, not retained Environment history. There is no standalone connection test or template trial API. Saving configuration performs deterministic validation; actual preparation verifies runtime availability and reports bounded failures.
+Environment creation accepts a template choice or an explicitly externally managed registration. Both accept an optional name; omission generates a readable name containing an Environment ID suffix. Automatic Run/Thread allocations use the same naming rule. `PATCH /environments/{environment_id}` changes only the name under `environment.manage` and an exact `If-Match` precondition. Renaming preserves the target, generation, frozen template configuration and existing Run references. It creates the record without mandatory immediate target preparation, matching Thread allocation. Stop/delete target commands use the [durable operation contract](06-durable-operations-and-outbox.md), reauthorize at dispatch and reject active use; manual commands explicitly override inactivity grace but do not affect unrelated target ownership. Delete here removes the backing target, not retained Environment history. There is no standalone connection test or template trial API. Saving configuration performs deterministic validation; actual preparation verifies runtime availability and reports bounded failures.
 
 Provider and Template collections also expose `POST/GET /organizations/{organization}/environment-providers` and `POST/GET /organizations/{organization}/environment-templates`. Organization collections contain only Organization-owned configuration; Workspace collections include parent configuration. Detail and revision routes retain their exact resource IDs and authorize reads through the consuming scope and mutations through the owning scope. Actual Environment routes remain Workspace-only.
 
@@ -298,8 +298,8 @@ Disabling a Provider denies new Attempt preparation and is observed by active At
 
 The domain owns `environment_providers`, `environment_templates`, `environment_template_revisions` and `environments`. Provider credentials are columns of their owning Provider. Thread defaults and Run bindings are fields of their owning records; Environment coordination is bounded state on the Environment record. Existing durable operation and lifecycle/audit infrastructure carries command and generation-change evidence.
 
-01. A template revision is a recipe, not a running target.
-02. Each Environment has one immutable Workspace, Provider and managed recipe.
+01. A template revision is a template configuration, not a running target.
+02. Each Environment has one immutable Workspace, Provider and managed template configuration.
 03. Creating a Thread does not provision a target; template selection allocates its Environment automatically.
 04. Each Run freezes its Environment independently of Agent configuration and mutable Thread defaults.
 05. Preparation defaults to on_run; on_use performs no target I/O before actual use.

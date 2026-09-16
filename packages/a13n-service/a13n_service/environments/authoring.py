@@ -1,4 +1,4 @@
-"""Validate Agent defaults and exact child recipes without provisioning targets."""
+"""Validate Agent defaults and exact child template configurations without provisioning targets."""
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

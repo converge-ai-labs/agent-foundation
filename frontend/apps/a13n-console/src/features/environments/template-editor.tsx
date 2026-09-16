@@ -24,7 +24,7 @@ import { ErrorNotice, Loading } from "../../shared/feedback";
 import { FormActions, TextAreaField } from "../../shared/form";
 import styles from "../../shared/shared.module.css";
 import { type EnvironmentScope } from "./api";
-import { TemplateRecipe } from "./template-recipe";
+import { TemplateConfig } from "./template-config";
 
 export function TemplateEditor({
   scope,
@@ -89,7 +89,7 @@ export function TemplateEditor({
           ? t("Environment template · Version {{version}}", {
               version: query.data.value.version,
             })
-          : t("Choose a provider and define the environment recipe.")
+          : t("Choose a provider and define the template configuration.")
       }
       closeLabel={t("Close")}
     >
@@ -99,17 +99,19 @@ export function TemplateEditor({
         ) : query.error ? (
           <ErrorNotice error={query.error} />
         ) : !templateId ? (
-          <TemplateRecipe scope={scope} close={() => setOpen(false)} />
+          <TemplateConfig scope={scope} close={() => setOpen(false)} />
         ) : (
           query.data && (
             <div className={styles.stack}>
-              <Tabs key={generation} defaultValue="recipe">
+              <Tabs key={generation} defaultValue="templateConfig">
                 <TabsList aria-label={t("Environment template")}>
-                  <TabsTab value="recipe">{t("Recipe")}</TabsTab>
+                  <TabsTab value="templateConfig">
+                    {t("Template configuration")}
+                  </TabsTab>
                   <TabsTab value={"settings"}>{t("Settings")}</TabsTab>
                 </TabsList>
-                <TabsPanel value="recipe" keepMounted>
-                  <CurrentRecipe
+                <TabsPanel value="templateConfig" keepMounted>
+                  <CurrentTemplateConfig
                     template={query.data.value}
                     scope={scope}
                     editable={editable}
@@ -135,7 +137,7 @@ export function TemplateEditor({
   );
 }
 
-export function CurrentRecipe({
+export function CurrentTemplateConfig({
   template,
   scope,
   editable,
@@ -165,7 +167,7 @@ export function CurrentRecipe({
     <ErrorNotice error={query.error} />
   ) : (
     query.data && (
-      <TemplateRecipe
+      <TemplateConfig
         scope={scope}
         template={template}
         revision={query.data}

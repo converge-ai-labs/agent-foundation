@@ -23,7 +23,7 @@ REMOTE = {"http-envd", "websocket-envd"}
 RETENTION = {"idle": {"stop_after": None, "delete_after": None}}
 
 
-def recipe_configuration(kind, root, settings=None):
+def provider_configuration(kind, root, settings=None):
     root.mkdir(mode=0o700)
     shell = [{"profile_id": "default", "executable": "/bin/sh", "fixed_arguments": ["-c"]}]
     if kind == "direct-local":
@@ -49,7 +49,7 @@ def recipe_configuration(kind, root, settings=None):
 class BackendTarget:
     backend: EnvironmentBackend
     provider: dict
-    recipe: dict
+    template_config: dict
     root: Path
     state: dict | None
     process: asyncio.subprocess.Process | None
@@ -89,7 +89,7 @@ class BackendTarget:
     async def template(self, **overrides):
         return await self.backend.journey.post(
             self.backend.journey.base + "/environment-templates",
-            {"name": "Backend matrix " + uuid4().hex, **self.recipe, **overrides},
+            {"name": "Backend matrix " + uuid4().hex, **self.template_config, **overrides},
         )
 
     async def allocate(self, *, access="full", preparation="on_run"):
@@ -119,7 +119,7 @@ class EnvironmentBackend:
         directory = self.lab.root / native_id
         directory.mkdir(mode=0o700)
         root = directory / "workspace"
-        configuration = recipe_configuration(self.kind, root, self.settings)
+        configuration = provider_configuration(self.kind, root, self.settings)
         provider_body = {"name": "Backend matrix " + native_id, "type": "a13n." + self.kind, "configuration": {}}
         state, process, proxy, target = None, None, None, None
         stack = AsyncExitStack()
@@ -152,7 +152,7 @@ class EnvironmentBackend:
                     "state": {"daemon_environment_id": native_id},
                 }
             provider = await self.journey.post(self.journey.base + "/environment-providers", provider_body)
-            recipe = {
+            template_config = {
                 "provider_id": provider["id"],
                 "configuration": configuration,
                 "access": "full",
@@ -161,7 +161,7 @@ class EnvironmentBackend:
             }
             logger.info("Environment matrix backend=%s provider=%s", self.kind, provider["id"])
             try:
-                target = BackendTarget(self, provider, recipe, root, state, process, proxy)
+                target = BackendTarget(self, provider, template_config, root, state, process, proxy)
                 yield target
             finally:
                 with anyio.CancelScope(shield=True), anyio.fail_after(180):

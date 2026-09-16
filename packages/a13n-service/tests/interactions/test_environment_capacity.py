@@ -23,7 +23,7 @@ from tests.lifecycle_support import test_lifecycle_writer
 from .conftest import NOW, WORKSPACE_ID
 from .test_acceptance import _accepted_run
 from .test_attempt_execution import _accept_root, _authority, _worker
-from .test_environment_runtime import recipe
+from .test_environment_runtime import template_config
 from .worker_helpers import prepare_permissions
 
 pytestmark = pytest.mark.anyio
@@ -71,7 +71,7 @@ async def test_postgresql_last_slot_admits_only_one_concurrent_run(
     interaction_sessions, interaction_object_store, tmp_path, kind, status
 ):
     sessions = interaction_sessions
-    service, template, lifecycle = await recipe(sessions, tmp_path, "on_use")
+    service, template, lifecycle = await template_config(sessions, tmp_path, "on_use")
     lifecycle.capacity = CapacityLimits(
         max_targets=1 if kind == "targets" else 10, max_active=1 if kind == "active" else 10
     )
@@ -123,7 +123,7 @@ async def test_shared_run_reuses_active_slot_and_stopped_target_counts_until_del
     interaction_sessions, interaction_object_store, tmp_path, monkeypatch
 ):
     sessions = interaction_sessions
-    service, template, lifecycle = await recipe(sessions, tmp_path, "on_use")
+    service, template, lifecycle = await template_config(sessions, tmp_path, "on_use")
     lifecycle.capacity = CapacityLimits(max_targets=1, max_active=1)
     _, first, _ = await _accept_root(sessions, interaction_object_store)
     scheduler = AttemptScheduler(sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer())
@@ -177,7 +177,7 @@ async def test_preparation_reservation_release_requires_known_outcome(
     interaction_sessions, interaction_object_store, tmp_path, monkeypatch, status, failure
 ):
     sessions = interaction_sessions
-    service, template, lifecycle = await recipe(sessions, tmp_path, "on_use")
+    service, template, lifecycle = await template_config(sessions, tmp_path, "on_use")
     lifecycle.capacity = CapacityLimits(max_targets=1)
     _, run, _ = await _accept_root(sessions, interaction_object_store)
     claim = await AttemptScheduler(

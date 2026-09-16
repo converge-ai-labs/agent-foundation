@@ -224,10 +224,10 @@ async def test_template_schemas_are_versioned_and_provider_specific(environment_
     response = await environment_api_client.get("/api/v1/environment-provider-types")
     definition = response.json()["items"][0]
     assert set(definition["template_configuration_schemas"]) == set(definition["configuration_versions"])
-    recipe = definition["template_configuration_schemas"]["1"]
-    assert "root" in recipe["required"]
+    template_config = definition["template_configuration_schemas"]["1"]
+    assert "root" in template_config["required"]
     assert "host_id" in definition["configuration_schema"]["properties"]
-    assert "host_id" not in recipe["properties"]
+    assert "host_id" not in template_config["properties"]
 
 
 @pytest.mark.anyio

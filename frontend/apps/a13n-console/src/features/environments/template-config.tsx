@@ -15,12 +15,12 @@ import { ErrorNotice } from "../../shared/feedback";
 import { useIdempotency } from "../../shared/idempotency";
 import styles from "../../shared/shared.module.css";
 import { jsonObject, validateSettings } from "../../shared/validation";
-import { RecipeConfiguration } from "./recipe-configuration";
+import { ProviderConfiguration } from "./provider-configuration";
 import { environmentApi, type EnvironmentScope } from "./api";
 import { useEnvironmentTypes } from "./providers";
 import editorStyles from "./template-editor.module.css";
 
-export function TemplateRecipe({
+export function TemplateConfig({
   scope,
   template,
   revision,
@@ -98,7 +98,7 @@ export function TemplateRecipe({
         );
         throw error;
       }
-      const recipe = {
+      const templateConfig = {
         provider_id: providerId,
         configuration: parsedConfiguration,
         configuration_schema_version: version,
@@ -115,10 +115,14 @@ export function TemplateRecipe({
         return client.http
           .POST("/api/v1/environment-templates/{template_id}/revisions", {
             params: { path: { template_id: basis.id } },
-            body: { ...recipe, expected_version: basis.version },
+            body: { ...templateConfig, expected_version: basis.version },
           })
           .then(data);
-      const body = { ...recipe, name, description: description || null };
+      const body = {
+        ...templateConfig,
+        name,
+        description: description || null,
+      };
       return environmentApi(client, scope).createTemplate(
         body,
         key.forBody(body),
@@ -219,7 +223,7 @@ export function TemplateRecipe({
                 )
                   setAccess(value);
               }}
-              label={t("Access ceiling")}
+              label={t("Access permissions")}
               options={[
                 { value: "full", label: t("Full access") },
                 { value: "read_write", label: t("Read and write") },
@@ -228,7 +232,7 @@ export function TemplateRecipe({
             />
           </div>
           {providerId && (
-            <RecipeConfiguration
+            <ProviderConfiguration
               key={configurationKey}
               readOnly={readOnly}
               schema={configurationSchema}
@@ -315,7 +319,7 @@ export function TemplateRecipe({
       {basis && !readOnly && (
         <p className={styles.muted}>
           {t(
-            "New revisions apply to newly allocated environments. Existing environments keep their original recipe.",
+            "New revisions apply to newly allocated environments. Existing environments keep their original template configuration.",
           )}
         </p>
       )}

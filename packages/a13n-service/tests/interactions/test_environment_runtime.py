@@ -37,7 +37,7 @@ from .worker_helpers import prepare_permissions
 pytestmark = pytest.mark.anyio
 
 
-async def recipe(sessions, path, preparation, *, shell=False):
+async def template_config(sessions, path, preparation, *, shell=False):
     await seed_hook_actor_access(sessions)
     protector = SecretProtector.from_base64(encoded_key=base64.b64encode(b"e" * 32).decode(), encryption_key_id="test")
     catalog = build_environment_provider_catalog(builtin_keys=("a13n.direct-local",))
@@ -76,7 +76,7 @@ async def recipe(sessions, path, preparation, *, shell=False):
 async def test_run_automatically_allocates_and_prepares_at_configured_boundary(
     interaction_sessions, interaction_object_store, tmp_path, preparation
 ):
-    _, template, lifecycle = await recipe(interaction_sessions, tmp_path, preparation)
+    _, template, lifecycle = await template_config(interaction_sessions, tmp_path, preparation)
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
     async with short_session(interaction_sessions) as session:
         stored = await session.get(RunRecord, run.id)
@@ -115,7 +115,7 @@ async def test_run_automatically_allocates_and_prepares_at_configured_boundary(
 async def test_switching_defaults_does_not_retarget_retry_or_reuse_template_allocations(
     interaction_sessions, interaction_object_store, tmp_path
 ):
-    service, template, _ = await recipe(interaction_sessions, tmp_path, "on_use")
+    service, template, _ = await template_config(interaction_sessions, tmp_path, "on_use")
     _, first, _ = await _accept_root(interaction_sessions, interaction_object_store)
     other = await service.create_environment(
         actor=hook_actor(),
@@ -176,7 +176,7 @@ async def test_queued_choice_roundtrip_preserves_omitted_and_null():
 async def test_lazy_unused_environment_closes_without_preparation(
     interaction_sessions, interaction_object_store, tmp_path
 ):
-    _, _, lifecycle = await recipe(interaction_sessions, tmp_path, "on_use")
+    _, _, lifecycle = await template_config(interaction_sessions, tmp_path, "on_use")
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
     claim = await AttemptScheduler(
         interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
@@ -200,7 +200,7 @@ async def test_reconnect_preserves_backing_generation_after_cleanup_failure(
     from a13n_environment import EnvironmentError
     from a13n_environment.direct_local.provider import DirectLocalEnvironment
 
-    _, _, lifecycle = await recipe(interaction_sessions, tmp_path, "on_run")
+    _, _, lifecycle = await template_config(interaction_sessions, tmp_path, "on_run")
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
     claim = await AttemptScheduler(
         interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
@@ -245,7 +245,7 @@ async def test_worker_cannot_claim_environment_from_another_host(
 ):
     from a13n_service.environments.models import EnvironmentProviderRecord
 
-    _, _, _ = await recipe(interaction_sessions, tmp_path, "on_use")
+    _, _, _ = await template_config(interaction_sessions, tmp_path, "on_use")
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
     async with transaction(interaction_sessions) as session:
         stored = await session.get(RunRecord, run.id)
@@ -267,7 +267,7 @@ async def test_close_during_readiness_never_recovers_or_leaks_connection(
     from a13n_environment import EnvironmentError
     from a13n_environment.direct_local.provider import DirectLocalEnvironment
 
-    _, _, lifecycle = await recipe(interaction_sessions, tmp_path, "on_run")
+    _, _, lifecycle = await template_config(interaction_sessions, tmp_path, "on_run")
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
     claim = await AttemptScheduler(
         interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
@@ -300,7 +300,7 @@ async def test_concurrent_lazy_use_prepares_once(interaction_sessions, interacti
     import asyncio
     from unittest.mock import AsyncMock
 
-    _, _, lifecycle = await recipe(interaction_sessions, tmp_path, "on_use")
+    _, _, lifecycle = await template_config(interaction_sessions, tmp_path, "on_use")
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
     claim = await AttemptScheduler(
         interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
@@ -336,7 +336,7 @@ async def test_cancelled_delegate_entry_closes_acquired_connection(
 
     from a13n_environment.direct_local.provider import DirectLocalEnvironment
 
-    _, _, lifecycle = await recipe(interaction_sessions, tmp_path, "on_use")
+    _, _, lifecycle = await template_config(interaction_sessions, tmp_path, "on_use")
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
     claim = await AttemptScheduler(
         interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
@@ -363,7 +363,7 @@ async def test_postgresql_concurrent_thread_key_allocates_one_environment(intera
     from a13n_service.interactions.thread_domain import CreateThreadRequest
     from sqlalchemy import func, select
 
-    _, template, _ = await recipe(interaction_sessions, tmp_path, "on_use")
+    _, template, _ = await template_config(interaction_sessions, tmp_path, "on_use")
     read = thread_creation.load_replay
     barrier = asyncio.Barrier(2)
     calls = 0
@@ -412,7 +412,7 @@ async def test_postgresql_environment_lease_fences_competing_workers(
     from a13n_environment import EnvironmentProviderOutcomeCertainty
     from a13n_service.environments.lifecycle import EnvironmentOperationBusy, LifecycleOutcome
 
-    _, _, lifecycle = await recipe(interaction_sessions, tmp_path, "on_use")
+    _, _, lifecycle = await template_config(interaction_sessions, tmp_path, "on_use")
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
     claim = await AttemptScheduler(
         interaction_sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()
@@ -449,7 +449,7 @@ async def test_postgresql_shared_approval_wait_is_idle_only_after_last_active_us
     from .test_acceptance import _accepted_run
     from .test_attempt_execution import _wait_for_approval
 
-    await recipe(interaction_sessions, tmp_path, "on_use")
+    await template_config(interaction_sessions, tmp_path, "on_use")
     run, _ = await _wait_for_approval(interaction_sessions, interaction_object_store)
     now = NOW + timedelta(seconds=5)
     async with transaction(interaction_sessions) as session:
@@ -516,7 +516,7 @@ async def test_registered_external_environment_uses_connection_configuration(
 
     from a13n_service.environments.domain import RegisterEnvironmentRequest, TemplateConfiguration
 
-    service, _, lifecycle = await recipe(interaction_sessions, tmp_path, "on_use")
+    service, _, lifecycle = await template_config(interaction_sessions, tmp_path, "on_use")
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)
     async with short_session(interaction_sessions) as session:
         stored = await session.get(RunRecord, run.id)
@@ -555,7 +555,7 @@ async def test_registered_external_environment_uses_connection_configuration(
     assert await lifecycle.acquire_maintenance(external.id) is None
 
 
-async def test_missing_managed_recipe_never_falls_back_to_external_configuration():
+async def test_missing_managed_template_config_never_falls_back_to_external_configuration():
     from types import SimpleNamespace
     from unittest.mock import AsyncMock
 
@@ -568,7 +568,7 @@ async def test_missing_managed_recipe_never_falls_back_to_external_configuration
             template_revision_id=revision_id,
             external_configuration={"configuration": {"root": {"path": "/tmp"}}},
         )
-        with pytest.raises(ValueError, match="Managed Environment recipe"):
+        with pytest.raises(ValueError, match="Managed Environment template configuration"):
             await load_configuration(session, row)
 
 
@@ -582,7 +582,7 @@ async def test_environment_operations_use_no_database_queries_or_commits(
     from sqlalchemy import event
 
     sessions = interaction_sessions
-    _, _, lifecycle = await recipe(sessions, tmp_path, "on_run", shell=True)
+    _, _, lifecycle = await template_config(sessions, tmp_path, "on_run", shell=True)
     _, run, _ = await _accept_root(sessions, interaction_object_store)
     claim = await AttemptScheduler(sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer()).claim(
         run.id, _worker()
@@ -649,7 +649,7 @@ async def test_environment_eligibility_changes_at_shared_iam_refresh(
     from a13n_service.iam.models import WorkspaceRecord
 
     sessions = interaction_sessions
-    _, _, lifecycle = await recipe(sessions, tmp_path, "on_run")
+    _, _, lifecycle = await template_config(sessions, tmp_path, "on_run")
     _, run, _ = await _accept_root(sessions, interaction_object_store)
     claim = await AttemptScheduler(sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer()).claim(
         run.id, _worker()
@@ -697,7 +697,7 @@ async def test_environment_rejects_lost_local_lease_before_dispatch(
     from a13n_service.interactions.attempts import AttemptAuthorityError
 
     sessions = interaction_sessions
-    _, _, lifecycle = await recipe(sessions, tmp_path, "on_run")
+    _, _, lifecycle = await template_config(sessions, tmp_path, "on_run")
     _, run, _ = await _accept_root(sessions, interaction_object_store)
     claim = await AttemptScheduler(sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer()).claim(
         run.id, _worker()

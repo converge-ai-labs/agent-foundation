@@ -38,9 +38,9 @@ Stop and delete have distinct retention/lifecycle intentions. A command receipt 
 
 The underlying [Environment SDK](../a13n-environment/index.md) owns Provider operations and non-destructive adapter close. Service adds durable ownership, scheduling, capacity, and target retention. A mount root or provider label alone does not establish isolation.
 
-### Author recipes and name instances
+### Author template configurations and name instances
 
-Console renders the selected Provider’s recipe fields from the same versioned schema used by Service. Common settings appear first; Advanced configuration and JSON retain the complete recipe. For E2B, enter an existing E2B template name or ID. Build software images and choose CPU/RAM in E2B; Service does not build or list upstream templates.
+Console renders the selected Provider’s template configuration fields from the same versioned schema used by Service. Common settings appear first; Advanced configuration and JSON retain the complete template configuration. For E2B, enter an existing E2B template name or ID. Build software images and choose CPU/RAM in E2B; Service does not build or list upstream templates.
 
 Instance creation accepts an optional `name`. If omitted, Service generates a readable label. Rename an instance with `PATCH /api/v1/environments/{environment_id}` and its current `If-Match` ETag. Names need not be unique and never change the target or generation; continue using IDs for references.
 

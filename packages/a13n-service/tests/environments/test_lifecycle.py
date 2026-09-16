@@ -74,7 +74,7 @@ async def fixture_environment(service):
     template = await service.create_template(
         actor=actor(),
         workspace_id=WORKSPACE_ID,
-        idempotency_key="recipe",
+        idempotency_key="template_config",
         request=CreateTemplateRequest(
             name="Sandbox",
             provider_id=provider.id,

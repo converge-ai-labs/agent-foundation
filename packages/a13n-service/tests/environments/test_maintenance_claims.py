@@ -36,7 +36,7 @@ async def test_planning_failure_never_partially_claims_an_operation(
         error = (
             OperationalError(None, None, RuntimeError("Database unavailable"))
             if failure == "database"
-            else ValueError("Recipe unavailable")
+            else ValueError("Template configuration unavailable")
         )
         monkeypatch.setattr("a13n_service.environments.lifecycle.load_configuration", AsyncMock(side_effect=error))
     with pytest.raises(OperationalError if failure == "database" else ValueError):

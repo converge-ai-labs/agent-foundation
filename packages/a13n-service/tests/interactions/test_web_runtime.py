@@ -36,7 +36,7 @@ from tests.web.test_adapters import transport
 
 from .conftest import NOW, USER_ID, WORKSPACE_ID
 from .test_attempt_execution import _accept_root, _authority, _worker
-from .test_environment_runtime import recipe
+from .test_environment_runtime import template_config
 from .test_harness_runtime import _environment
 from .worker_helpers import prepare_permissions
 
@@ -64,7 +64,7 @@ async def fixture(
     interaction_sessions, interaction_object_store, handler, tmp_path, *, with_environment=True, web_transport=None
 ):
     if with_environment:
-        await recipe(interaction_sessions, tmp_path / "workspace", "on_use")
+        await template_config(interaction_sessions, tmp_path / "workspace", "on_use")
     else:
         await seed_hook_actor_access(interaction_sessions)
     _, run, _ = await _accept_root(interaction_sessions, interaction_object_store)

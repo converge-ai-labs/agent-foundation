@@ -11,8 +11,8 @@ vi.mock("../../auth/context", () => ({
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
-vi.mock("./template-recipe", () => ({
-  TemplateRecipe: () => <p>Recipe editor</p>,
+vi.mock("./template-config", () => ({
+  TemplateConfig: () => <p>Template configuration editor</p>,
 }));
 afterEach(() => {
   cleanup();
@@ -61,7 +61,7 @@ it("keeps settings drafts across tabs and saves against the original version", a
     screen.getByRole("textbox", { name: "Name" }),
     "Unsaved draft",
   );
-  await user.click(screen.getByRole("tab", { name: "Recipe" }));
+  await user.click(screen.getByRole("tab", { name: "Template configuration" }));
   await waitFor(() =>
     expect(screen.queryByRole("textbox", { name: "Name" })).toBeNull(),
   );

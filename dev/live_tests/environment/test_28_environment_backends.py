@@ -8,7 +8,7 @@ from uuid import uuid4
 import pytest
 
 from ..infrastructure.round_two_lab import REPOSITORY, open_lab
-from .environment_backends import BACKENDS, REMOTE, EnvironmentBackend, recipe_configuration
+from .environment_backends import BACKENDS, REMOTE, EnvironmentBackend, provider_configuration
 from .service_cases import (
     assert_access_policy,
     assert_managed_continuity,
@@ -74,7 +74,7 @@ async def test_environment_backend_templates_and_preparation(environment_backend
         async with backend.target() as target:
             denied = await journey.post(
                 journey.base + "/environment-templates",
-                {"name": "Unsupported remote template", **target.recipe},
+                {"name": "Unsupported remote template", **target.template_config},
                 expected=422,
             )
             assert denied["error"]["code"] == "environment_invalid", denied
@@ -85,10 +85,10 @@ async def test_environment_backend_templates_and_preparation(environment_backend
         async with backend.target() as target:
             template = await target.template(access="read_write", preparation=preparation)
             revised = {
-                **target.recipe,
+                **target.template_config,
                 "access": "full",
                 "preparation": preparation,
-                "configuration": recipe_configuration(
+                "configuration": provider_configuration(
                     backend.kind, target.root.parent / "version-two", backend.settings
                 ),
             }

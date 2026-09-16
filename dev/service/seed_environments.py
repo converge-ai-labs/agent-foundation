@@ -1,4 +1,4 @@
-"""Environment recipes, access modes, unused instances, and preparation failure."""
+"""Environment template configurations, access modes, unused instances, and preparation failure."""
 
 from pathlib import Path
 
@@ -50,14 +50,14 @@ async def environments(client: Client, base: str, catalog: dict, settings: Setti
     for name, access in (
         ("Read-only reference files", "read_only"),
         ("Writable draft files", "read_write"),
-        ("Archived recipe", "full"),
+        ("Archived template_config", "full"),
         ("Missing local directory", "full"),
     ):
         root = settings.filesystem.root / name.lower().replace(" ", "-")
         if name != "Missing local directory":
             root.mkdir(parents=True, mode=0o700)
             (root / "README.md").write_text("# Fictional local workspace\nNo customer content.\n")
-        recipe = {
+        template_config = {
             "provider_id": provider["id"],
             "access": access,
             "preparation": "on_run",
@@ -71,10 +71,10 @@ async def environments(client: Client, base: str, catalog: dict, settings: Setti
             "POST",
             base + "/environment-templates",
             expected=201,
-            json={"name": name, "description": "Public local fixture for Environment views", **recipe},
+            json={"name": name, "description": "Public local fixture for Environment views", **template_config},
         )
         scenarios["template_" + name.lower().replace(" ", "_")] = template["id"]
-        if name == "Archived recipe":
+        if name == "Archived template_config":
             path = f"/api/v1/environment-templates/{template['id']}"
             await client.request("PATCH", path, headers=await client.etag(path), json={"archived": True})
             continue
@@ -89,7 +89,7 @@ async def environments(client: Client, base: str, catalog: dict, settings: Setti
                 "POST",
                 f"/api/v1/environment-templates/{template['id']}/revisions",
                 expected=201,
-                json={**recipe, "expected_version": template["version"], "preparation": "on_use"},
+                json={**template_config, "expected_version": template["version"], "preparation": "on_use"},
             )
         elif name == "Missing local directory":
             failed = await run(

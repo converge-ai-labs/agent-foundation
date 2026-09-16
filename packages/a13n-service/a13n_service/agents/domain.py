@@ -112,7 +112,7 @@ class ChildEnvironmentPolicy(StrictModel):
     template_revision_id: ObjectId | None = None
 
     @model_validator(mode="after")
-    def validate_recipe(self) -> ChildEnvironmentPolicy:
+    def validate_template_config(self) -> ChildEnvironmentPolicy:
         if (self.mode == "dedicated") != (self.template_revision_id is not None):
             raise ValueError("only dedicated children require a template revision")
         return self

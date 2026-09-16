@@ -82,7 +82,7 @@ class ManagementJourney:
                 "configuration": {},
             },
         )
-        recipe = {
+        template_config = {
             "provider_id": provider["id"],
             "access": access,
             "preparation": preparation,
@@ -95,7 +95,7 @@ class ManagementJourney:
         if provider_type == "a13n.docker":
             # The sandbox user needs write access to this lab-owned bind directory.
             root.chmod(0o777)
-            recipe["configuration"] = {
+            template_config["configuration"] = {
                 "image": os.environ.get("LIVE_TEST_SANDBOX_IMAGE", "a13n-sandbox:local"),
                 "pull_policy": "never",
                 "mounts": [
@@ -107,8 +107,8 @@ class ManagementJourney:
                 ],
                 "shell_profiles": [{"profile_id": "default", "executable": "/bin/sh", "fixed_arguments": ["-c"]}],
             }
-        template = await self.post(self.base + "/environment-templates", {"name": name, **recipe})
-        return template, recipe, root
+        template = await self.post(self.base + "/environment-templates", {"name": name, **template_config})
+        return template, template_config, root
 
     async def environment(self, **options):
         template, _, root = await self.environment_template(**options)

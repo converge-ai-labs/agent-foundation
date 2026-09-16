@@ -20,14 +20,14 @@ from tests.lifecycle_support import test_lifecycle_writer
 
 from .conftest import NOW
 from .test_attempt_execution import _accept_root, _authority, _worker
-from .test_environment_runtime import recipe
+from .test_environment_runtime import template_config
 from .worker_helpers import prepare_permissions
 
 pytestmark = pytest.mark.anyio
 
 
 async def accepted_environment(sessions, object_store, path):
-    _, _, lifecycle = await recipe(sessions, path, "on_use")
+    _, _, lifecycle = await template_config(sessions, path, "on_use")
     _, run, _ = await _accept_root(sessions, object_store)
     claim = await AttemptScheduler(
         sessions, clock=lambda: NOW + timedelta(seconds=1), lifecycle=test_lifecycle_writer()

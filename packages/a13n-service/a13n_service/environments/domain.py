@@ -1,4 +1,4 @@
-"""Providers, versioned recipes, and actual working environments."""
+"""Providers, versioned template configurations, and actual working environments."""
 
 from __future__ import annotations
 

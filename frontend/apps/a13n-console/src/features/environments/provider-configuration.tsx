@@ -6,7 +6,7 @@ import { SchemaFields } from "../../shared/schema-fields";
 import styles from "../../shared/shared.module.css";
 import { jsonObject } from "../../shared/validation";
 
-export function RecipeConfiguration({
+export function ProviderConfiguration({
   schema,
   text,
   onChange,
@@ -55,7 +55,7 @@ export function RecipeConfiguration({
       {jsonMode || !value ? (
         <TextAreaField
           readOnly={readOnly}
-          label={t("Environment recipe (JSON)")}
+          label={t("Template configuration (JSON)")}
           value={text}
           onChange={onChange}
           error={error}
