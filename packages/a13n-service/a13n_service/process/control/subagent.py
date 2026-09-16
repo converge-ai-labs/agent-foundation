@@ -15,6 +15,8 @@ from a13n_service.subagents.successors import AsyncSubagentSuccessorReconciler
 def build_subagent_maintenance(
     settings: Settings, shared: SharedRuntime, replay: RunReplayStore
 ) -> SubagentMaintenance:
+    if shared.memory_behaviors is None:
+        raise RuntimeError("Execution memory behavior composition is required")
     sessions = shared.storage.sessions
     signals = RedisThreadControlSignals(shared.storage.redis)
     outcomes = RunOutcomeService(
@@ -24,7 +26,12 @@ def build_subagent_maintenance(
         ChildCancellationReconciler(sessions, outcomes),
         AsyncSubagentResultPublisher(sessions, replay, signals=signals),
         AsyncSubagentSuccessorReconciler(
-            sessions, RunStateStore(shared.storage.objects), replay, lifecycle=shared.lifecycle, signals=signals
+            sessions,
+            RunStateStore(shared.storage.objects),
+            replay,
+            bindings=shared.memory_behaviors,
+            lifecycle=shared.lifecycle,
+            signals=signals,
         ),
         poll_interval_seconds=settings.subagents.reconcile_poll_interval_seconds,
         batch_limit=settings.control.recovery_batch_limit,

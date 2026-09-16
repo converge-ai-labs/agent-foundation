@@ -30,6 +30,7 @@ from .mutations import create, delete
 from .operations import list_operations, operation, reconcile
 from .publications import audience, get_audience, list_publications, publish, withdraw
 from .service import BotMemoryService
+from .settings import AccountMemorySettings, ReplaceMemorySettings, get_settings, replace_settings
 from .sharing import list_policies, save_policy
 
 router = APIRouter(prefix="/api/v1/application-accounts/{account_id}", tags=["bot-memory"])
@@ -232,3 +233,15 @@ async def replace_policy(
     request: Request, actor: Actor, account_id: str, policy_id: str, body: ReplaceSharingPolicy
 ) -> SharingPolicy:
     return await save_policy(_service(request), actor, account_id, body, policy_id)
+
+
+@router.get("/bot/memory-settings", response_model=AccountMemorySettings)
+async def memory_settings(request: Request, actor: Actor, account_id: str) -> AccountMemorySettings:
+    return await get_settings(_memory(request), actor, account_id)
+
+
+@router.put("/bot/memory-settings", response_model=AccountMemorySettings)
+async def update_memory_settings(
+    request: Request, actor: Actor, account_id: str, body: ReplaceMemorySettings
+) -> AccountMemorySettings:
+    return await replace_settings(_memory(request), actor, account_id, body)

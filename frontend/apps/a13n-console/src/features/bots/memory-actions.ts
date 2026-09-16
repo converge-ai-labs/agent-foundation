@@ -1,3 +1,4 @@
+import type { RefObject } from "react";
 import { ApiError } from "../../service-client";
 import type { QueryClient } from "@tanstack/react-query";
 
@@ -19,3 +20,9 @@ export function unconfirmedWrite(error: unknown) {
     )
   );
 }
+
+export type MemoryDialogControl = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  finalFocus: RefObject<HTMLButtonElement | null>;
+};

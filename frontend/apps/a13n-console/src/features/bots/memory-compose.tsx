@@ -1,3 +1,4 @@
+import type { BotAccount } from "./account";
 import {
   Button,
   ChoiceField,
@@ -20,7 +21,7 @@ import shared from "../../shared/shared.module.css";
 import styles from "./bots.module.css";
 
 type Props = {
-  account: Schema["Account"];
+  account: BotAccount;
   scopeId: string;
   source?: Schema["Document"];
   mode: "create" | "correction" | "publish";

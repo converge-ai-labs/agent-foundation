@@ -89,6 +89,7 @@ class RootRunOutcome:
     environment: EnvironmentFinalization
     continuation: RootContinuationSelection
     composition: ObjectRef
+    interaction_timeout_seconds: float = 120.0
 
 
 class RootRunExecutor:
@@ -438,6 +439,7 @@ class RootRunExecutor:
             environment=finalization,
             continuation=continuation,
             composition=published.reference,
+            interaction_timeout_seconds=source.document.tools.interaction_timeout_seconds,
         )
 
     @asynccontextmanager

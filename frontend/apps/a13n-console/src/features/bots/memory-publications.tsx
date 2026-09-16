@@ -1,3 +1,5 @@
+import type { BotAccount } from "./account";
+import type { MemoryDialogControl } from "./memory-actions";
 import { Button, ModalFrame } from "a13n-ui";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -12,7 +14,12 @@ import { refreshMemory } from "./memory-actions";
 import { GroupPicker, useMemoryGroups } from "./memory-groups";
 import styles from "./bots.module.css";
 
-type Props = { account: Schema["Account"]; scopeId: string; sourceId?: string };
+type Props = {
+  account: BotAccount;
+  scopeId: string;
+  sourceId?: string;
+  dialog?: MemoryDialogControl;
+};
 export function MemoryPublications(props: Props) {
   const [open, setOpen] = useState(false),
     { t } = useTranslation();
@@ -20,16 +27,19 @@ export function MemoryPublications(props: Props) {
     <ModalFrame
       open={open}
       onOpenChange={setOpen}
+      {...props.dialog}
       title={t("Published copies")}
       size="lg"
       closeLabel={t("Close")}
       trigger={
-        <Button type="button" variant="outline" size="sm">
-          {t("Published copies")}
-        </Button>
+        props.dialog ? undefined : (
+          <Button type="button" variant="outline" size="sm">
+            {t("Published copies")}
+          </Button>
+        )
       }
     >
-      {open && <PublicationBrowser {...props} />}
+      {(props.dialog?.open ?? open) && <PublicationBrowser {...props} />}
     </ModalFrame>
   );
 }
@@ -121,7 +131,7 @@ function PublicationDetail({
   entry,
   onWithdraw,
 }: {
-  account: Schema["Account"];
+  account: BotAccount;
   scopeId: string;
   entry: Schema["DocumentEntry"];
   onWithdraw: () => void;

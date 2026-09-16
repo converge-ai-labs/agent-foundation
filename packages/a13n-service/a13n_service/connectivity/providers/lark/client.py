@@ -10,9 +10,9 @@ from uuid import NAMESPACE_URL, uuid5
 import httpx2
 from pydantic import JsonValue, TypeAdapter, ValidationError
 
-from a13n_service.connectivity.bots.observations import ConversationInfo, ConversationPage, InstallationInfo
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.http import EndpointValidator
+from a13n_service.connectivity.inspection import ConversationInfo, ConversationPage, InstallationInfo
 
 from . import inspection
 from .actions import (

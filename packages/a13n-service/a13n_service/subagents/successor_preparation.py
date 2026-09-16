@@ -87,7 +87,6 @@ def prepare_async_result_successor(
         model_execution_observation=selected_parent.model_execution_observation,
         connection_selections=selected_parent.connection_selections,
         native_tool_contexts=selected_parent.native_tool_contexts,
-        bot_memory=selected_parent.bot_memory,
         priority=selected_parent.priority,
         queue_name=selected_parent.queue_name,
         execution_budget=selected_parent.execution_budget,

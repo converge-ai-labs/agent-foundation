@@ -14,8 +14,8 @@ import httpx2
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter, ValidationError
 
 from a13n_service.connectivity.adapters import JsonObject
-from a13n_service.connectivity.bots.observations import ConversationInfo, ConversationPage, InstallationInfo
 from a13n_service.connectivity.http import ConnectivityHttpError, bounded_response_body, retry_after_seconds
+from a13n_service.connectivity.inspection import ConversationInfo, ConversationPage, InstallationInfo
 
 from . import inspection
 

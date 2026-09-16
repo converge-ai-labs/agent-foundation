@@ -38,6 +38,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.hooks.support import seed_hook_actor_access
 from tests.lifecycle_support import test_lifecycle_writer
+from tests.memory.selection_support import ordinary_memory
 
 from .conftest import (
     AGENT_ID,
@@ -125,6 +126,7 @@ async def test_accepts_prepared_root_state_and_round_trips_the_run(
         states,
         RunPayloadStore(interaction_object_store),
         _inline_hooks(),
+        bindings=ordinary_memory(interaction_sessions),
         clock=lambda: NOW,
         lifecycle=test_lifecycle_writer(),
     )
@@ -221,6 +223,7 @@ async def test_acceptance_atomically_creates_inline_hook_and_accepted_delivery(
         RunStateStore(interaction_object_store),
         RunPayloadStore(interaction_object_store),
         _inline_hooks(),
+        bindings=ordinary_memory(interaction_sessions),
         clock=lambda: NOW,
         lifecycle=test_lifecycle_writer(),
     )
@@ -324,6 +327,7 @@ async def test_acceptance_rejects_input_payload_owned_by_another_run(
         states,
         RunPayloadStore(interaction_object_store),
         _inline_hooks(),
+        bindings=ordinary_memory(interaction_sessions),
         clock=lambda: NOW,
         lifecycle=test_lifecycle_writer(),
     )
@@ -388,6 +392,7 @@ async def test_root_retry_is_atomic_exact_and_idempotent(
         states,
         payloads,
         _inline_hooks(),
+        bindings=ordinary_memory(interaction_sessions),
         clock=lambda: NOW + timedelta(seconds=2),
         lifecycle=test_lifecycle_writer(),
     )
@@ -564,6 +569,7 @@ async def test_new_session_cannot_begin_with_a_child_thread(
         states,
         RunPayloadStore(interaction_object_store),
         _inline_hooks(),
+        bindings=ordinary_memory(interaction_sessions),
         clock=lambda: NOW,
         lifecycle=test_lifecycle_writer(),
     )
@@ -620,6 +626,7 @@ async def test_existing_session_cannot_accept_another_root_thread(
         states,
         RunPayloadStore(interaction_object_store),
         _inline_hooks(),
+        bindings=ordinary_memory(interaction_sessions),
         clock=lambda: NOW,
         lifecycle=test_lifecycle_writer(),
     )

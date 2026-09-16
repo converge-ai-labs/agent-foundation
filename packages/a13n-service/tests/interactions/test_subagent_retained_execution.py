@@ -39,6 +39,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from tests.lifecycle_support import test_lifecycle_writer
+from tests.memory.selection_support import ordinary_memory
 
 from .conftest import (
     AGENT_ID,
@@ -317,6 +318,7 @@ async def _continue_parent(
         states,
         RunPayloadStore(objects),
         _inline_hooks(),
+        bindings=ordinary_memory(sessions),
         clock=lambda: NOW + timedelta(seconds=6),
         lifecycle=test_lifecycle_writer(),
     ).advance_thread(
@@ -390,6 +392,7 @@ async def _additional_parent_thread(
         states,
         RunPayloadStore(objects),
         _inline_hooks(),
+        bindings=ordinary_memory(sessions),
         clock=lambda: NOW,
         lifecycle=test_lifecycle_writer(),
     ).accept_new_thread(
@@ -458,6 +461,7 @@ def _operator_for_parent(
                 sessions,
                 states,
                 RunPayloadStore(objects),
+                bindings=ordinary_memory(sessions),
                 clock=lambda: NOW + timedelta(seconds=8),
                 lifecycle=test_lifecycle_writer(),
             ),

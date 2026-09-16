@@ -1,5 +1,6 @@
 """Document mode reaches actual model context without preloading memory bodies."""
 
+import asyncio
 import json
 from dataclasses import dataclass, field
 from typing import Literal
@@ -247,3 +248,102 @@ async def test_index_encoding_counts_utf8_envelope_and_preserves_navigation():
     payload = content.split("\n", 2)[2].rsplit("\n", 1)[0]
     assert "<发布>" not in content
     assert json.loads(payload) == {"text": original.text, "next_cursor": "next"}
+
+
+async def test_slow_initial_index_and_explicit_index_share_the_operation_budget(caplog):
+    class SlowStore(Store):
+        async def index(self, *, cursor=None):
+            # A valid operation just beyond the former five-second projection limit.
+            await asyncio.sleep(5.1)
+            return await super().index(cursor=cursor)
+
+    store = SlowStore()
+    calls = 0
+
+    async def model(messages, info):
+        nonlocal calls
+        assert "MEMORY.md is unavailable" not in repr(messages)
+        assert "Deployment checklist" in repr(messages)
+        if calls == 0:
+            calls += 1
+            yield {0: DeltaToolCall(name="memory_index", json_args="{}", tool_call_id="index-again")}
+        else:
+            assert store.indexes == 2
+            yield "done"
+
+    harness = HarnessBuilder().build(
+        AgentSpec(),
+        model=FunctionModel(stream_function=model),
+        output_type=str,
+        capabilities=(MemoryCapability(document_store=store),),
+    )
+    assert (await harness.run("Read memory")).output_or_raise() == "done"
+    assert not [r for r in caplog.records if r.msg == "memory_index_projection_failed"]
+
+
+@pytest.mark.parametrize("failure", ["timeout", "permission", "render"])
+async def test_initial_index_failure_logs_safe_diagnostics_and_stays_unavailable(failure, monkeypatch, caplog):
+    from a13n_harness.capabilities import memory_documents
+
+    monkeypatch.setattr(memory_documents, "_OPERATION_TIMEOUT_SECONDS", 0.02)
+
+    class FailedStore(Store):
+        async def index(self, *, cursor=None):
+            if failure == "timeout":
+                await asyncio.Event().wait()
+            if failure == "permission":
+                raise PermissionError("private-credential-and-memory")
+            return MemoryDocumentIndex("private-credential-and-memory" * 2000)
+
+    async def model(messages, info):
+        assert "MEMORY.md is unavailable" in repr(messages)
+        assert "private-credential-and-memory" not in repr(messages)
+        assert "Deployment checklist" not in repr(messages)
+        yield "done"
+
+    harness = HarnessBuilder().build(
+        AgentSpec(),
+        model=FunctionModel(stream_function=model),
+        output_type=str,
+        capabilities=(MemoryCapability(document_store=FailedStore()),),
+    )
+    result = await harness.run("Read memory")
+    assert result.output_or_raise() == "done"
+    records = [r for r in caplog.records if r.msg == "memory_index_projection_failed"]
+    assert len(records) == 1
+    record = records[0]
+    assert record.run_id == result.run_id and record.thread_id == result.thread_id
+    assert record.stage == ("render_index" if failure == "render" else "load_index")
+    assert (
+        record.error_type
+        == {"timeout": "TimeoutError", "permission": "PermissionError", "render": "ValueError"}[failure]
+    )
+    assert record.duration_seconds >= 0 and record.timeout_seconds == 0.02
+    assert record.exc_info is None and "private-credential-and-memory" not in repr(vars(record))
+
+
+async def test_index_cancellation_does_not_become_unavailable(caplog):
+    entered = asyncio.Event()
+
+    class WaitingStore(Store):
+        async def index(self, *, cursor=None):
+            entered.set()
+            await asyncio.Event().wait()
+            raise AssertionError("unreachable")
+
+    async def model(messages, info):
+        raise AssertionError("Cancellation must stop before model dispatch")
+        yield "unreachable"
+
+    harness = HarnessBuilder().build(
+        AgentSpec(),
+        model=FunctionModel(stream_function=model),
+        output_type=str,
+        capabilities=(MemoryCapability(document_store=WaitingStore()),),
+    )
+    task = asyncio.create_task(harness.run("Read memory"))
+    await asyncio.wait_for(entered.wait(), timeout=5)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert not [r for r in caplog.records if r.msg == "memory_index_projection_failed"]

@@ -137,6 +137,24 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/application-accounts/{account_id}/bot/memory-settings": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Memory Settings */
+    get: operations["get_application_accounts_account_id_bot_memory_settings"];
+    /** Update Memory Settings */
+    put: operations["put_application_accounts_account_id_bot_memory_settings"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/application-accounts/{account_id}/bot/replies": {
     parameters: {
       query?: never;
@@ -3295,6 +3313,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/workspaces/{workspace}/bots/feishu/installation": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Discover Feishu Installation */
+    post: operations["post_workspaces_workspace_bots_feishu_installation"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/workspaces/{workspace}/configuration-assistant/readiness": {
     parameters: {
       query?: never;
@@ -4183,7 +4218,6 @@ export interface components {
       /** Id */
       id: string;
       input_batching?: components["schemas"]["InputBatchingPolicy"] | null;
-      memory?: components["schemas"]["MemorySettings"] | null;
       /** Name */
       name: string;
       /** Organization Id */
@@ -4229,6 +4263,14 @@ export interface components {
     AccountCommandRequest: {
       /** Expected Version */
       expected_version: number;
+    };
+    /** AccountMemorySettings */
+    AccountMemorySettings: {
+      /** Account Id */
+      account_id: string;
+      memory: components["schemas"]["MemorySettings"] | null;
+      /** Version */
+      version: number;
     };
     /** AccountProviderDefinition */
     AccountProviderDefinition: {
@@ -5144,6 +5186,7 @@ export interface components {
       external_organization_id: string | null;
       /** External Organization Name */
       external_organization_name: string | null;
+      memory_settings: components["schemas"]["AccountMemorySettings"];
       /**
        * Setup Condition
        * @enum {string}
@@ -6117,7 +6160,6 @@ export interface components {
       /** Execution Service Account Id */
       execution_service_account_id?: string | null;
       input_batching?: components["schemas"]["InputBatchingPolicy"] | null;
-      memory?: components["schemas"]["MemorySettings"] | null;
       /** Name */
       name: string;
       /** Provider Config */
@@ -6580,6 +6622,16 @@ export interface components {
     DiscardDraftRequest: {
       /** Expected Version */
       expected_version: number;
+    };
+    /** DiscoverFeishuInstallationRequest */
+    DiscoverFeishuInstallationRequest: {
+      /** App Id */
+      app_id: string;
+      /**
+       * App Secret
+       * Format: password
+       */
+      app_secret: string;
     };
     /** Document */
     Document: {
@@ -8793,6 +8845,12 @@ export interface components {
         [key: string]: components["schemas"]["JsonValue"];
       } | null;
     };
+    /** ReplaceMemorySettings */
+    ReplaceMemorySettings: {
+      /** Expected Version */
+      expected_version: number;
+      memory: components["schemas"]["MemorySettings"] | null;
+    };
     /** ReplaceSharingPolicy */
     ReplaceSharingPolicy: {
       /**
@@ -10620,7 +10678,6 @@ export interface components {
       /** Expected Version */
       expected_version: number;
       input_batching?: components["schemas"]["InputBatchingPolicy"] | null;
-      memory?: components["schemas"]["MemorySettings"] | null;
       /** Name */
       name?: string | null;
       /** Provider Config */
@@ -11671,6 +11728,98 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["ConversationPage"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_application_accounts_account_id_bot_memory_settings: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        account_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AccountMemorySettings"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  put_application_accounts_account_id_bot_memory_settings: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        account_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ReplaceMemorySettings"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AccountMemorySettings"];
         };
       };
       /** @description Invalid request. */
@@ -22917,7 +23066,6 @@ export interface operations {
       query?: {
         limit?: number;
         cursor?: string | null;
-        bots_only?: boolean;
       };
       header?: never;
       path: {
@@ -23145,6 +23293,54 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["BotCollection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_workspaces_workspace_bots_feishu_installation: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["DiscoverFeishuInstallationRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["InstallationInfo"];
         };
       };
       /** @description Invalid request. */

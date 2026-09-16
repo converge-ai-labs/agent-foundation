@@ -2179,3 +2179,42 @@ async def test_summary_preserves_display_history_after_checkpoint_and_app_reopen
         assert result.status is RootOperationStatus.completed
         after = await reopened.get_thread_transcript(thread_id=thread.thread_id)
         assert [part.text for entry in after.entries for part in entry.parts].count("Original answer") == 1
+
+
+async def test_real_webui_app_resumes_and_restart_does_not_rearm_saved_questions(tmp_path):
+    root = _write_configuration(tmp_path)
+    root.write_text(root.read_text() + "tools:\n  interaction_timeout_seconds: 0.3\n")
+    settings = _settings(tmp_path / "state")
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as app:
+        app._root_runs._executor._agents = _DeferredReconstructor()
+        thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=thread.thread_id, prompt="ask")
+        await app.wait_root_operation(receipt.receipt_id)
+        first = await app.thread_decisions(thread_id=thread.thread_id)
+        assert first is not None and first.expires_at is not None and first.server_time is not None
+        second = await app.thread_decisions(thread_id=thread.thread_id)
+        assert second is not None and second.expires_at == first.expires_at
+        with fail_after(5):
+            while True:
+                latest = await app._root_runs.latest(thread.thread_id)
+                if latest is not None and latest.receipt.receipt_id != receipt.receipt_id:
+                    break
+                await sleep(0.01)
+        assert latest.status is RootOperationStatus.completed
+        assert latest.outcome is not None
+        assert "timed out" in str(latest.outcome.execution.output)
+        assert await app.thread_decisions(thread_id=thread.thread_id) is None
+
+        root.write_text(root.read_text().replace("0.3", "120"))
+        await app.reload_configuration()
+        pending_thread = await app.create_thread()
+        receipt = await app.submit_thread(thread_id=pending_thread.thread_id, prompt="ask")
+        await app.wait_root_operation(receipt.receipt_id)
+        pending = await app.thread_decisions(thread_id=pending_thread.thread_id)
+        assert pending is not None and pending.expires_at is not None
+    async with open_harness_ui_app(settings, configuration_path=root, host_mode="webui") as reopened:
+        retained = await reopened.thread_decisions(thread_id=pending_thread.thread_id)
+        assert retained is not None
+        assert retained.continuation_id == pending.continuation_id
+        assert retained.expires_at is None
+        assert await reopened.active_root_operation(pending_thread.thread_id) is None

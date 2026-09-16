@@ -55,6 +55,7 @@ from tests.interactions.conftest import (
 from tests.interactions.test_acceptance import _inline_hooks
 from tests.interactions.test_attempt_execution import _authority, _completed_state, _waiting_state, _worker
 from tests.lifecycle_support import test_lifecycle_writer
+from tests.memory.selection_support import ordinary_memory
 
 pytestmark = pytest.mark.anyio
 
@@ -131,6 +132,7 @@ def _commands(
         RunStateStore(objects),
         payloads,
         _inline_hooks(),
+        bindings=ordinary_memory(sessions),
         clock=lambda: NOW,
         lifecycle=test_lifecycle_writer(),
     )

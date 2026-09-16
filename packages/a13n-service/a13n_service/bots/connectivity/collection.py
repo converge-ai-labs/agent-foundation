@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
 
 from a13n_service.application_errors import ErrorCategory
+from a13n_service.bots.memory.settings import AccountMemorySettings, AccountSettingsRecord
 from a13n_service.connectivity.accounts.domain import Account
 from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.accounts.queries import require_account
@@ -32,6 +33,7 @@ class BotSummary(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     account: Account
+    memory_settings: AccountMemorySettings
     external_organization_id: str | None
     external_organization_name: str | None
     setup_condition: BotSetupCondition
@@ -180,6 +182,14 @@ async def list_bots(
         rows = (
             await session.execute(query.order_by(account.updated_at.desc(), account.id.desc()).limit(limit + 1))
         ).all()
+        settings_rows = {
+            row.account_id: row
+            for row in await session.scalars(
+                select(AccountSettingsRecord).where(
+                    AccountSettingsRecord.account_id.in_([row[0].id for row in rows[:limit]])
+                )
+            )
+        }
         now = utc_now()
         items = []
         for (
@@ -194,6 +204,12 @@ async def list_bots(
             target_enabled,
             confirmed_at,
         ) in rows[:limit]:
+            settings = settings_rows.get(record.id)
+            memory_settings = AccountMemorySettings(
+                account_id=record.id,
+                version=settings.version if settings else 0,
+                memory=settings.memory() if settings else None,
+            )
             stage: BotTestStage | None = None
             observed_at = None
             if probe:
@@ -202,6 +218,7 @@ async def list_bots(
                     record.status != "active"
                     or not record.receive_enabled
                     or not target_enabled
+                    or probe.settings_version != memory_settings.version
                     or probe.account_version != record.version
                     or probe.credential_generation != record.credential_generation
                     or probe.target_version != target_version
@@ -221,6 +238,7 @@ async def list_bots(
             items.append(
                 BotSummary(
                     account=record.to_resource(),
+                    memory_settings=memory_settings,
                     external_organization_id=org_id,
                     external_organization_name=org_name,
                     setup_condition=state,

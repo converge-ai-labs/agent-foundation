@@ -8,6 +8,7 @@ from a13n_service.interactions.inbox import ThreadInboxStore
 from a13n_service.interactions.lifecycle import LifecycleWriter
 from a13n_service.interactions.objects import RunPayloadStore, RunStateStore
 from a13n_service.interactions.outcomes import RunOutcomeService
+from a13n_service.interactions.ports.memory import ExecutionBindings
 from a13n_service.interactions.run_control import RunAttemptControl
 
 from .acceptance import ChildRunAcceptanceService
@@ -27,10 +28,11 @@ class ServiceSubagents:
         outcomes: RunOutcomeService,
         *,
         lifecycle: LifecycleWriter,
+        bindings: ExecutionBindings,
     ) -> None:
         self._sessions = sessions
         self._admission = ChildRunAdmissionPreparer(sessions, states)
-        self._acceptance = ChildRunAcceptanceService(sessions, states, payloads, lifecycle=lifecycle)
+        self._acceptance = ChildRunAcceptanceService(sessions, states, payloads, lifecycle=lifecycle, bindings=bindings)
         self._inbox = inbox
         self._outcomes = outcomes
 

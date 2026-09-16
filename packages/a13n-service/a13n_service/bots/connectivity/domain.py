@@ -2,11 +2,10 @@
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
+from a13n_service.connectivity.inspection import ConversationInfo, InstallationInfo
 from a13n_service.connectivity.providers.common.messaging import MessagingPolicy
-
-from .observations import ConversationInfo, InstallationInfo
 
 
 class BotSetup(BaseModel):
@@ -52,3 +51,10 @@ class ActivateBotRequest(BaseModel):
     agent_id: str = Field(min_length=1, max_length=128)
     execution_service_account_id: str = Field(min_length=1, max_length=128)
     policy: MessagingPolicy
+
+
+class DiscoverFeishuInstallationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    app_id: str = Field(min_length=1, max_length=256)
+    app_secret: SecretStr = Field(min_length=1, max_length=4096)

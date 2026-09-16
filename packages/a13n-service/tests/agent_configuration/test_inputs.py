@@ -23,6 +23,8 @@ from a13n_service.run_stream import RunReplayStore
 from a13n_service.storage import short_session, transaction
 from a13n_service.storage.object_store import LocalObjectStore
 
+from tests.memory.selection_support import ordinary_memory
+
 from ..agents.conftest import MODEL_ID, NOW, PROVIDER_ID, WORKSPACE_ID, actor
 from ..lifecycle_support import test_lifecycle_writer as lifecycle_writer
 from .test_drafts import new_draft, services
@@ -48,6 +50,7 @@ async def inputs_service(sessions, tmp_path, *, definition=None):
             states,
             RunPayloadStore(objects),
             InlineHookValidator(EndpointPolicy()),
+            bindings=ordinary_memory(sessions),
             lifecycle=lifecycle_writer(),
             clock=lambda: NOW,
         ),

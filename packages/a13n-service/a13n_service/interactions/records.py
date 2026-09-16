@@ -80,7 +80,6 @@ def run_record(value: Run) -> RunRecord:
         model_execution_observation_json=_json(value.model_execution_observation),
         connection_selections_json=list(value.connection_selections),
         native_tool_contexts_json=list(value.native_tool_contexts),
-        bot_memory_json=value.bot_memory.model_dump(mode="json") if value.bot_memory else None,
         priority=value.priority,
         queue_name=value.queue_name,
         available_at=value.available_at,

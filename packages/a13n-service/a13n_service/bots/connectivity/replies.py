@@ -9,11 +9,12 @@ from pydantic import BaseModel
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.bots.memory.settings import settings_version
 from a13n_service.connectivity.accounts.queries import require_account
 from a13n_service.connectivity.accounts.target_models import AccountTargetRecord
 from a13n_service.connectivity.http import ConnectivityHttpError
 from a13n_service.connectivity.ingress.admission_models import AgentThreadBindingRecord
-from a13n_service.connectivity.native_context import InboundRunContext, parse_native_contexts
+from a13n_service.connectivity.native_context import InboundRunContext, NativeToolContext, parse_native_contexts
 from a13n_service.connectivity.providers.lark.actions import LarkReplyOutcomeUnknown, LarkReplySucceeded
 from a13n_service.connectivity.providers.slack.client import SlackReplyOutcomeUnknown, SlackReplySucceeded
 from a13n_service.ids import new_object_id
@@ -124,6 +125,7 @@ class BotReplyObserver:
                         AccountTargetRecord.receive_enabled.is_(True),
                         BotTestRecord.account_id == account.id,
                         BotTestRecord.account_version == self._account_version,
+                        BotTestRecord.settings_version == await settings_version(database, account.id),
                         BotTestRecord.credential_generation == self._generation,
                         BotTestRecord.binding_id == context.binding_id,
                         BotTestRecord.target_id == context.target_id,
@@ -144,6 +146,7 @@ class BotReplyObserver:
                     run_attempt_id=self._attempt.run_attempt_id,
                     provider_key=context.provider_key,
                     account_version=self._account_version,
+                    settings_version=await settings_version(database, account.id),
                     credential_generation=self._generation,
                     status="dispatching",
                     started_at=now,
@@ -170,3 +173,29 @@ class BotReplyObserver:
         except Exception:
             pass
         logger.warning("bot_reply_observation_unconfirmed", extra={"reply_observation_id": identity})
+
+
+class ReplyObservations:
+    def __init__(self, sessions: async_sessionmaker[AsyncSession]) -> None:
+        self.sessions = sessions
+
+    def __call__(
+        self,
+        *,
+        action: str,
+        attempt: AttemptContext,
+        context: NativeToolContext,
+        workspace_id: str,
+        account_version: int,
+        credential_generation: int,
+    ) -> BotReplyObserver | None:
+        if not isinstance(context, InboundRunContext) or action not in {"slack.reply", "lark.reply"}:
+            return None
+        return BotReplyObserver(
+            self.sessions,
+            attempt=attempt,
+            context=context,
+            workspace_id=workspace_id,
+            account_version=account_version,
+            credential_generation=credential_generation,
+        )

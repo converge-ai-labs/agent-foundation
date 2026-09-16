@@ -223,11 +223,15 @@ async def test_service_bot_document_directory_with_real_oss(memory_sessions, ser
                     "credentials": {"bot_token": "fictional-test-token", "signing_secret": "fictional-test-signing"},
                     "receive_enabled": False,
                     "reception_scope": "configured_targets",
-                    "memory": {"provider_id": provider.json()["id"]},
                 },
             )
             assert account.status_code == 201, account.text
             base = f"/api/v1/application-accounts/{account.json()['id']}"
+            configured = await client.put(
+                base + "/bot/memory-settings",
+                json={"expected_version": 0, "memory": {"provider_id": provider.json()["id"]}},
+            )
+            assert configured.status_code == 200, configured.text
             scopes = []
             for name in ("C_ENGINEERING", "C_SUPPORT"):
                 target = await client.post(

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button, ChoiceField } from "a13n-ui";
 import { useTransport } from "../transport/context";
@@ -58,6 +58,12 @@ export function DecisionForm({
     {},
   );
   const [unknown, setUnknown] = useState(false);
+  const remaining = useDecisionCountdown(batch.expires_at, batch.server_time);
+  const expired = remaining === 0;
+  useEffect(() => {
+    // Expiry belongs to the App. Refetch only; never submit or retry from a timer.
+    if (expired) reconcile();
+  }, [expired, reconcile]);
   const send = useMutation({
     mutationFn: () =>
       result(
@@ -84,12 +90,20 @@ export function DecisionForm({
         Respond to this request set together. Another participant may resolve it
         first.
       </p>
+      {remaining !== null && (
+        <p role="status" aria-live="off">
+          {expired
+            ? "Response window ended. Waiting for the server to confirm the outcome."
+            : `Submit within ${remaining}s. On timeout, the server continues without answers or approvals, even if you leave this page. Unsubmitted answers are discarded.`}
+        </p>
+      )}
       <form
         className={styles.form}
         onSubmit={(event) => {
           event.preventDefault();
           if (
             !unknown &&
+            !expired &&
             !send.isPending &&
             !send.isSuccess &&
             !send.isError &&
@@ -100,14 +114,15 @@ export function DecisionForm({
       >
         <fieldset
           className={styles.responseInputs}
-          disabled={send.isPending || unknown || send.isSuccess}
+          disabled={send.isPending || unknown || send.isSuccess || expired}
         >
           {batch.requests.map((request) => (
             <DecisionInput
               key={request.request_id}
               request={request}
               onChange={(value) => {
-                if (send.isPending || unknown || send.isSuccess) return;
+                if (send.isPending || unknown || send.isSuccess || expired)
+                  return;
                 if (!unknown && !send.isSuccess) send.reset();
                 setResponses((previous) => ({
                   ...previous,
@@ -134,6 +149,7 @@ export function DecisionForm({
             type="submit"
             disabled={
               unknown ||
+              expired ||
               send.isSuccess ||
               send.isError ||
               batch.requests.some((request) => !responses[request.request_id])
@@ -150,6 +166,36 @@ export function DecisionForm({
     </section>
   );
 }
+function useDecisionCountdown(
+  expiresAt?: string | null,
+  serverTime?: string | null,
+) {
+  const [remaining, setRemaining] = useState<number | null>(null);
+  useEffect(() => {
+    if (!expiresAt) {
+      setRemaining(null);
+      return;
+    }
+    // Anchor to server time so a participant's wall-clock skew does not change
+    // the advertised window. Timers only repaint; the server enforces admission.
+    const duration =
+      Date.parse(expiresAt) -
+      (serverTime ? Date.parse(serverTime) : Date.now());
+    const started = performance.now();
+    const update = () =>
+      setRemaining(
+        Math.max(
+          0,
+          Math.ceil((duration - (performance.now() - started)) / 1000),
+        ),
+      );
+    update();
+    const timer = window.setInterval(update, 250);
+    return () => window.clearInterval(timer);
+  }, [expiresAt, serverTime]);
+  return remaining;
+}
+
 function DecisionInput({
   request,
   onChange,

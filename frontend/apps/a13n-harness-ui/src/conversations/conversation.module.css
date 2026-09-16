@@ -1027,7 +1027,7 @@
 .inputAttachment {
   display: inline-block;
   vertical-align: middle;
-  max-width: 100%;
+  max-width: calc(100% - 8px);
   margin: 3px 4px;
   border: 1px solid var(--a13n-border);
   border-radius: 8px;
@@ -1038,7 +1038,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 7px 10px;
+  padding: 4px 8px;
   cursor: pointer;
   list-style: none;
 }
@@ -1056,9 +1056,9 @@
 .imageAttachment {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 12px;
-  max-width: 100%;
+  gap: 8px;
+  padding: 6px 8px;
+  max-width: min(280px, 100%);
   color: var(--a13n-text);
   background: transparent;
   border: 0;
@@ -1073,8 +1073,8 @@
   outline: 1px solid var(--ring);
 }
 .imageAttachment .attachmentThumbnail {
-  width: 64px;
-  height: 64px;
+  width: 36px;
+  height: 36px;
 }
 .inputAttachment strong {
   font-weight: 500;

@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from a13n_service.connectivity.domain import JsonObject
 from a13n_service.connectivity.http import ConnectivityHttpError, EndpointValidator
+from a13n_service.connectivity.inspection import ConversationInfo, ConversationPage, InstallationInfo
 from a13n_service.connectivity.providers.lark.adapter import LarkAccountConfig, LarkAccountCredentials
 from a13n_service.connectivity.providers.lark.client import LarkNativeClient
 from a13n_service.connectivity.providers.lark.token import LarkTenantTokenProvider
@@ -14,8 +15,6 @@ from a13n_service.connectivity.providers.slack.adapter import SlackAccountConfig
 from a13n_service.connectivity.providers.slack.client import SlackNativeClient
 from a13n_service.credentials import CredentialSnapshot
 from a13n_service.secrets import SecretProtectionError, SecretProtector
-
-from .observations import ConversationInfo, ConversationPage, InstallationInfo
 
 
 class InstallationProbe:

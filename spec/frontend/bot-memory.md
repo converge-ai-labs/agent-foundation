@@ -181,7 +181,7 @@ Legacy records without metadata are not automatically attached to a group or sha
 
 ### Shared browser shell
 
-All memory interactions reuse the same Bot detail shell and consistent tabs, filters, and controls. The Memory toolbar exposes Memory settings and Sharing settings. Feishu uses enterprise/group labels within the same interaction model as Slack. Responsive, accessibility, localization, and non-success states follow the requirements below.
+All memory interactions reuse the same Bot detail shell and consistent tabs, filters, and controls. Bot-level memory storage and defaults use one configuration dialog, available from Settings and directly from the unconfigured Memory page through **Set up memory**. An explicit **Enable memory** switch is separate from storage selection. Enabling requires an enabled Provider with verified document-memory support; loading, discovery errors, and no compatible storage cannot be saved as an enabled binding. Administrators with Provider management permission can add storage through the existing Provider editor without losing their Bot configuration draft, and a successful creation selects the new storage. Provider creation alone does not enable Bot memory or verify connectivity. After first saving a storage binding, the Memory page prompts the administrator to choose groups and configure their memory. Groups are never silently enrolled, and sharing stays off by default. Canceling either configuration step makes no Bot memory change. The Memory page header exposes only cross-group sharing rules. The selected group heading owns memory creation and a More menu containing that group's memory settings, published shared content, and pending operations. Group settings opened from this menu retain the selected group. A pending-operation count appears only when unfinished operations exist; a paginated first-page count is marked as a lower bound. The menu retains access when the summary is empty or unavailable. Unconfigured groups remain configurable from their Channels/group detail page. Feishu uses enterprise/group labels within the same interaction model as Slack. Responsive, accessibility, localization, and non-success states follow the requirements below.
 
 ### 8.1 Three-pane browser
 
@@ -294,3 +294,7 @@ Logical Markdown navigation does not imply arbitrary filesystem operations, docu
 - [Messaging Reception](../a13n-service/40-connectivity/02-messaging-ingress.md)
 - [Identity and Access Management](../a13n-service/33-identity-and-access-management.md)
 - [Console](console.md)
+
+## Memory Settings API Boundary
+
+Console reads and updates the [Bot-owned settings resource](../a13n-service/42-memory.md#bot-memory-configuration), using its `expected_version` independently of Account version. Bot summaries supply separate Account and Memory settings projections. Existing-account selection uses the Bot collection endpoint. Generic Application Account forms neither read nor write memory configuration. This changes API ownership without changing the administrator-only management boundary or document browsing behavior.

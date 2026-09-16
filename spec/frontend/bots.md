@@ -91,7 +91,7 @@ Row activation opens detail. An incomplete setup shows a resume action. Empty st
 
 The wizard has five stages: **Platform and account → Connect → Verify → Agent and reception → Test**.
 
-1. Select Slack or Feishu. Reuse an eligible existing Account or connect a new application. An Account already represented in Bots opens its existing page rather than creating a duplicate.
+1. Choose between equally prominent Use an existing account and Create a new account options. The existing-account option shows selectable Accounts; the new-account option shows a compact Slack or Feishu platform selection. An Account already represented in Bots opens its existing page rather than creating a duplicate.
 2. Follow the provider-specific instructions below. Required credentials use write-only fields. Provider identity is resolved or verified by trusted API responses and authenticated events where possible; manual identifiers are an advanced fallback, not trusted proof of identity.
 3. Save the Account with reception disabled. Display its exact HTTP event endpoint, explain how to configure provider verification, and track verification independently from saving credentials. Challenge validation works before production reception is enabled.
 4. Select an existing same-Workspace Agent and an eligible execution Service Account. Explain that the latter controls the permissions under which incoming messages execute. No browser login or external sender supplies Service authority. New Agent creation is a linked flow that preserves the non-secret wizard draft.
@@ -111,7 +111,7 @@ Explain invitations into pilot channels and the additional permissions needed fo
 
 Guide the deployer through creating an enterprise custom application, enabling Bot capability, configuring message permissions and event subscriptions, and publishing an application version with the correct availability range.
 
-The current implementation path uses HTTP events. The wizard supplies the request URL and handles verification-token and optional encryption-key configuration alongside the App credentials. It validates App, tenant, and Bot identity. It explains that searching for the Bot and adding it through group settings can fail when the application has not been published or the operator is outside its availability range.
+The current implementation path uses HTTP events. The wizard supplies the request URL and handles verification-token and optional encryption-key configuration alongside the App credentials. The Feishu create form asks for App ID, App Secret, Verification Token, and an optional Encrypt Key. It does not ask the operator for Tenant Key or Bot Open Id. Before creating the Account, Service queries the official Feishu APIs with the supplied App credentials and derives both identifiers. Failed discovery creates no Account. The saved Account still contains the complete immutable identity, and the Verify stage displays the verified application and enterprise for confirmation. It explains that searching for the Bot and adding it through group settings can fail when the application has not been published or the operator is outside its availability range.
 
 Do not display a long-connection option until a corresponding Service transport is implemented and validated. No Feishu store application credentials or app-ticket lifecycle are implied by accepting custom-app credentials.
 
@@ -221,3 +221,7 @@ Memory management is owned by [Bot Memory](bot-memory.md). Backend content and c
 - [Messaging Reception](../a13n-service/40-connectivity/02-messaging-ingress.md)
 - [Console](console.md)
 - [Bot Memory](bot-memory.md)
+
+## Memory Settings API Boundary
+
+Console reads and updates the [Bot-owned settings resource](../a13n-service/42-memory.md#bot-memory-configuration), using its `expected_version` independently of Account version. Bot summaries supply separate Account and Memory settings projections. Existing-account selection uses the Bot collection endpoint. Generic Application Account forms neither read nor write memory configuration. This changes API ownership without changing the administrator-only management boundary or document browsing behavior.

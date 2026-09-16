@@ -171,6 +171,44 @@ async def test_lark_rejects_wrong_stale_signature_and_invalid_padding() -> None:
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("encrypted", [False, True])
+@pytest.mark.parametrize(
+    ("token", "challenge", "status"),
+    [
+        (_VERIFICATION_TOKEN, "challenge-value", 200),
+        ("wrong-token", "challenge-value", 401),
+        (None, "challenge-value", 401),
+        (_VERIFICATION_TOKEN, "", 400),
+        (_VERIFICATION_TOKEN, "x" * 4097, 400),
+        (_VERIFICATION_TOKEN, None, 400),
+    ],
+)
+async def test_lark_provider_url_verification_envelope(encrypted, token, challenge, status) -> None:
+    payload = {"type": "url_verification", "token": token, "challenge": challenge}
+    request = (
+        _encrypted_request(payload)
+        if encrypted
+        else ProviderRequest(headers={}, body=json.dumps(payload).encode(), content_type="application/json")
+    )
+    credentials = _credentials()
+    if not encrypted:
+        credentials.pop("encrypt_key")
+    adapter = LarkIngressAdapter()
+    if status != 200:
+        with pytest.raises(ProviderRequestError) as rejected:
+            await adapter.authenticate_and_normalize(
+                request, account_id="ing_test", account_config=_config(), credentials=credentials, received_at=NOW
+            )
+        assert rejected.value.response.status_code == status
+        return
+    decision = await adapter.authenticate_and_normalize(
+        request, account_id="ing_test", account_config=_config(), credentials=credentials, received_at=NOW
+    )
+    assert isinstance(decision, ProviderCompleteDecision)
+    assert json.loads(decision.response.body) == {"challenge": challenge}
+
+
+@pytest.mark.anyio
 async def test_lark_challenge_and_self_message_create_no_event() -> None:
     challenge_payload = _payload()
     header = challenge_payload["header"]

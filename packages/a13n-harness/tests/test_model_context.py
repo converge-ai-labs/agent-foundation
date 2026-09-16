@@ -300,6 +300,21 @@ async def test_capability_injection_preserves_the_active_prefix_across_model_req
         ),
     ]
     assert len(seen) == 3
+    # Hidden UI metadata is not sent to providers. Every fresh tool-results overlay
+    # must identify itself in the actual text so it cannot masquerade as new input.
+    for messages in seen[1:]:
+        final = messages[-1]
+        assert isinstance(final, ModelRequest)
+        runtime_context = [
+            item.content
+            for part in final.parts
+            if isinstance(part, UserPromptPart)
+            for item in user_prompt_content(part)
+            if isinstance(item, TextContent) and item.metadata.get("source_id") == "a13n.agent-context"
+        ]
+        assert len(runtime_context) == 1
+        assert "automatic runtime metadata, not a new user message" in runtime_context[0]
+        assert "Continue the existing task only if work remains" in runtime_context[0]
     assert seen_instructions == [seen_instructions[0]] * 3
     assert seen_instructions[0] is not None
     assert "Keep injected model context append-only." in seen_instructions[0]
