@@ -356,7 +356,11 @@ export function questionReceipt(tool: ToolView) {
   const questions = Array.isArray(info.args.questions)
     ? info.args.questions.filter(record)
     : [];
-  const items: { title: string; question: string; values: string[] }[] = [];
+  const items: {
+    title: string;
+    question: string;
+    values: { label: string; description?: string }[];
+  }[] = [];
   for (const [question, answer] of Object.entries(answers)) {
     const values = typeof answer === "string" ? [answer] : answer;
     if (
@@ -368,7 +372,19 @@ export function questionReceipt(tool: ToolView) {
     )
       return;
     const original = questions.find((item) => item.question === question);
-    items.push({ title: text(original?.header) || question, question, values });
+    const options = Array.isArray(original?.options)
+      ? original.options.filter(record)
+      : [];
+    items.push({
+      title: text(original?.header) || question,
+      question,
+      values: values.map((label) => ({
+        label,
+        description: text(
+          options.find((option) => option.label === label)?.description,
+        ),
+      })),
+    });
   }
   const order = (question: string) => {
     const index = questions.findIndex((item) => item.question === question);
@@ -376,7 +392,11 @@ export function questionReceipt(tool: ToolView) {
   };
   items.sort((left, right) => order(left.question) - order(right.question));
   if (typeof response === "string" && response.trim())
-    items.push({ title: "Response", question: "", values: [response] });
+    items.push({
+      title: "Response",
+      question: "",
+      values: [{ label: response }],
+    });
   if (!items.length) return;
   return { items, questions };
 }

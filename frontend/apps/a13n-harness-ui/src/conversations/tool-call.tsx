@@ -520,10 +520,22 @@ export const ToolCall = memo(function ToolCall({ tool }: { tool: ToolView }) {
         <dl className={styles.answers}>
           {receipt.items.map((item, index) => (
             <div key={index}>
-              <dt>{item.title}</dt>
+              <dt>
+                <span className={styles.questionHeader}>{item.title}</span>
+                {item.question && item.question !== item.title && (
+                  <p className={styles.questionText}>{item.question}</p>
+                )}
+              </dt>
               <dd>
                 {item.values.map((value, i) => (
-                  <p key={i}>{value}</p>
+                  <div key={i}>
+                    <p className={styles.answerLabel}>{value.label}</p>
+                    {value.description && (
+                      <p className={styles.answerDescription}>
+                        {value.description}
+                      </p>
+                    )}
+                  </div>
                 ))}
               </dd>
             </div>

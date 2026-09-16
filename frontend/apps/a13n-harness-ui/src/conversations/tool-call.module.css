@@ -273,15 +273,28 @@
   padding: 0.875rem 1rem;
   overflow-wrap: anywhere;
 }
-.answers dt {
+.questionHeader {
   font-size: 0.75rem;
   font-weight: 500;
   color: var(--muted-foreground);
 }
-.answers dd {
-  margin: 0.2rem 0 0;
+.questionText {
   font-size: 0.875rem;
   line-height: 1.6;
+}
+.answers dd {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.5rem 0 0;
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+.answerLabel {
+  font-weight: 500;
+}
+.answerDescription {
+  color: var(--muted-foreground);
+  font-size: 0.8125rem;
 }
 .answers p,
 .originalQuestion p {
