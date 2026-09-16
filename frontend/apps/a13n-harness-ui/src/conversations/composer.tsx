@@ -667,23 +667,6 @@ export function Composer({
           {error || draft.error}
         </p>
       )}
-      {draft.submission.kind === "accepted" &&
-        draft.submission.action === "steer" && (
-          <div role="status" className={styles.steerNotice}>
-            <span>{draft.submission.message}</span>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Dismiss steer notification"
-              onClick={() => {
-                draft.submission = { kind: "idle" };
-                draft.notify();
-              }}
-            >
-              <X />
-            </Button>
-          </div>
-        )}
       {(draft.submission.kind === "rejected" || unknown) && (
         <div role="alert" className={styles.warning}>
           <p>{"message" in draft.submission && draft.submission.message}</p>
@@ -760,8 +743,8 @@ export function Composer({
               stopAction
                 ? "Stop this operation"
                 : busy
-                  ? "Steer current operation · Ctrl/⌘+Enter"
-                  : "Send message · Ctrl/⌘+Enter"
+                  ? "Steer current operation · Enter"
+                  : "Send message · Enter"
             }
             disabled={stopAction ? !canStop : busy ? !canSteer : !canSend}
             loading={pending || preparing || stopping}

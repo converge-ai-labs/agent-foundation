@@ -95,8 +95,9 @@ function NotificationState({ children }: { children: ReactNode }) {
   const visited = useRef(new Set<string>());
   const native = useRef(new Set<Notification>());
   const alive = useRef(false);
-  const current = useRef({ enabled, navigate, toast });
-  current.current = { enabled, navigate, toast };
+  const threadId = match?.params.threadId;
+  const current = useRef({ enabled, navigate, toast, threadId });
+  current.current = { enabled, navigate, toast, threadId };
   const closeNative = useCallback(() => {
     native.current.forEach((item) => item.close());
     native.current.clear();
@@ -159,7 +160,10 @@ function NotificationState({ children }: { children: ReactNode }) {
         !alive.current ||
         !current.current.enabled ||
         readPreference(ENABLED, "true") === "false" ||
-        notificationPermission() !== "granted"
+        notificationPermission() !== "granted" ||
+        (tag !== "a13n-harness-ui.test" &&
+          document.visibilityState === "visible" &&
+          document.hasFocus())
       )
         return false;
       try {
@@ -246,22 +250,26 @@ function NotificationState({ children }: { children: ReactNode }) {
             : "Your input is needed";
       const title = `${state} · ${Array.from(name).slice(0, 80).join("")}`;
       const path = `/threads/${encodeURIComponent(threadId)}`;
-      current.current.toast.add({
-        id,
-        title,
-        description: notice.brief,
-        type:
-          notice.status === "failed"
-            ? "error"
-            : notice.status === "suspended"
-              ? "warning"
-              : "success",
-        timeout: notice.status === "suspended" ? 0 : 8000,
-        actionProps: {
-          children: "Open conversation",
-          onClick: () => current.current.navigate(path),
-        },
-      });
+      if (
+        notice.status !== "completed" ||
+        current.current.threadId !== threadId
+      )
+        current.current.toast.add({
+          id,
+          title,
+          description: notice.brief,
+          type:
+            notice.status === "failed"
+              ? "error"
+              : notice.status === "suspended"
+                ? "warning"
+                : "success",
+          timeout: notice.status === "suspended" ? 0 : 8000,
+          actionProps: {
+            children: "Open conversation",
+            onClick: () => current.current.navigate(path),
+          },
+        });
       if (!current.current.enabled || notificationPermission() !== "granted")
         return;
       void deliverOnce(id, () => {

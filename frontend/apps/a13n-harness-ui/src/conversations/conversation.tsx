@@ -25,7 +25,7 @@ import { Discussion } from "./comments";
 import { refreshThread } from "./refresh";
 import { refreshThreadLists, useHistory, useThread } from "./queries";
 import { FocusDisplay, showFocusedOutput, watchThread } from "./stream";
-import { LiveOutput, SavedEntry } from "./transcript";
+import { LiveOutput, SavedEntry, SteerNotice } from "./transcript";
 import { savedToolGroups } from "./tool-presentation";
 import styles from "./conversation.module.css";
 
@@ -492,6 +492,7 @@ function Conversation({
                 threadId={threadId}
               />
             )}
+            <SteerNotice draft={draft} />
             {!!detail.data.deferred_requests?.length && (
               <Decisions
                 threadId={threadId}

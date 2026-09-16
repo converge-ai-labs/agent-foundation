@@ -1,4 +1,7 @@
 import { memo, useState } from "react";
+import { Button } from "a13n-ui";
+import { X } from "@phosphor-icons/react";
+import type { ThreadDraft } from "./draft";
 import { ToolActivity } from "./tool-call";
 import {
   activityKind,
@@ -119,11 +122,35 @@ export const SavedEntry = memo(function SavedEntry({
     </article>
   );
 });
+export function SteerNotice({ draft }: { draft: ThreadDraft }) {
+  if (
+    draft.submission.kind !== "accepted" ||
+    draft.submission.action !== "steer"
+  )
+    return null;
+  return (
+    <div role="status" className={styles.steerNotice}>
+      <span>{draft.submission.message}</span>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        aria-label="Dismiss steer notification"
+        onClick={() => {
+          draft.submission = { kind: "idle" };
+          draft.notify();
+        }}
+      >
+        <X />
+      </Button>
+    </div>
+  );
+}
+
 export function LiveOutput({
   blocks,
   gap,
   threadId,
-  label = "Current output · not yet established as saved history",
+  label,
 }: {
   label?: string;
   blocks: DisplayBlock[];
@@ -167,7 +194,7 @@ export function LiveOutput({
   }
   return (
     <section className={styles.liveOutput} aria-label="Current unsaved output">
-      {items.length > 0 && <small>{label}</small>}
+      {items.length > 0 && label && <small>{label}</small>}
       {items.map((block, index) =>
         Array.isArray(block) ? (
           <InputContent

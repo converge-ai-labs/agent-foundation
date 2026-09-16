@@ -10,10 +10,20 @@ import {
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as Y from "yjs";
-import { Composer, ComposerDrafts } from "./composer";
+import { Composer, ComposerDrafts, useDraft } from "./composer";
+import { SteerNotice } from "./transcript";
 import { ThreadDraft, encode, values } from "./draft";
 import { TransportContext } from "../transport/context";
 import type { Schema, Transport } from "../transport/client";
+
+function MessageStream() {
+  const draft = useDraft("thread-one");
+  return (
+    <section aria-label="Message stream">
+      <SteerNotice draft={draft} />
+    </section>
+  );
+}
 
 beforeEach(() => {
   Object.defineProperty(Range.prototype, "getClientRects", {
@@ -176,6 +186,7 @@ it.each(["accepted", "rejected", "unknown"] as const)(
       <QueryClientProvider client={query}>
         <TransportContext value={transport}>
           <ComposerDrafts value={new Map([["thread-one", draft]])}>
+            <MessageStream />
             <Composer
               threadId="thread-one"
               canRun
@@ -219,7 +230,14 @@ it.each(["accepted", "rejected", "unknown"] as const)(
     });
     await waitFor(() => expect(draft.submission.kind).toBe(outcome));
     if (outcome === "accepted") {
-      expect(screen.getByRole("status").textContent).toContain("Steer sent.");
+      const status = screen.getByRole("status");
+      expect(
+        screen.getByRole("region", { name: "Message stream" }).contains(status),
+      ).toBe(true);
+      expect(
+        screen.getByRole("region", { name: "Next message" }).contains(status),
+      ).toBe(false);
+      expect(status.textContent).toContain("Steer sent.");
       expect(screen.getByRole("status").textContent).toContain(
         "application is not yet confirmed",
       );
@@ -286,7 +304,7 @@ it("keeps accepted receipts and healthy sync quiet while preserving errors and a
     screen
       .getByRole("textbox", { name: "Shared prompt" })
       .getAttribute("aria-description"),
-  ).toContain("Enter for a new line");
+  ).toContain("Enter to send; Shift+Enter for a new line");
   act(() => {
     draft.submission = { kind: "rejected", message: "Draft retained" };
     draft.notify();

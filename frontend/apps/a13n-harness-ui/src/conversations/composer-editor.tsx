@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from "react";
 import { EditorView, keymap, placeholder } from "@codemirror/view";
 import { Compartment } from "@codemirror/state";
-import { defaultKeymap } from "@codemirror/commands";
+import { defaultKeymap, insertNewline } from "@codemirror/commands";
 import { yCollab, yUndoManagerKeymap } from "y-codemirror.next";
 import { Awareness } from "y-protocols/awareness";
 import * as Y from "yjs";
@@ -37,8 +37,8 @@ export function ComposerEditor({
   const attributes = useRef(new Compartment());
   const currentView = useRef<EditorView | null>(null);
   const description = local
-    ? "Private to this tab until you send. Files upload on Send. Reloading discards this draft. Enter for a new line; Ctrl or Command plus Enter to send."
-    : "Shared with this conversation. Drafts do not survive server restarts. Enter for a new line; Ctrl or Command plus Enter to send.";
+    ? "Private to this tab until you send. Files upload on Send. Reloading discards this draft. Enter to send; Shift+Enter for a new line."
+    : "Shared with this conversation. Drafts do not survive server restarts. Enter to send; Shift+Enter for a new line.";
   const contentAttributes = useMemo(
     () =>
       EditorView.contentAttributes.of({
@@ -144,13 +144,14 @@ export function ComposerEditor({
         attributes.current.of(initialAttributes.current),
         placeholder("What would you like to work on?"),
         keymap.of([
-          {
-            key: "Mod-Enter",
-            run: (editor) => {
-              if (!editor.composing) send.current();
+          ...["Enter", "Mod-Enter"].map((key) => ({
+            key,
+            run: (editor: EditorView) => {
+              if (!editor.compositionStarted) send.current();
               return true;
             },
-          },
+          })),
+          { key: "Shift-Enter", run: insertNewline },
           ...yUndoManagerKeymap,
           ...defaultKeymap,
         ]),
@@ -160,15 +161,16 @@ export function ComposerEditor({
             backgroundColor: "transparent",
             color: "var(--a13n-text)",
             fontSize: "14px",
+            height: "88px",
           },
           ".cm-content": {
             fontFamily: "inherit",
-            minHeight: "76px",
-            padding: "14px 2px 8px",
+            minHeight: "64px",
+            padding: "8px 2px",
             lineHeight: "1.6",
           },
           ".cm-scroller": {
-            maxHeight: "240px",
+            height: "100%",
             overflow: "auto",
             fontFamily: "inherit",
           },

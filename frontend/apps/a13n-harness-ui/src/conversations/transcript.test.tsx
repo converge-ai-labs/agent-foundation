@@ -6,6 +6,16 @@ import { TransportContext } from "../transport/context";
 import { SavedEntry, LiveOutput, MessageText } from "./transcript";
 
 afterEach(cleanup);
+it("shows live prose without a persistence disclaimer and preserves gap warnings", () => {
+  const blocks = [{ id: "reply", kind: "assistant" as const, text: "Done." }];
+  const view = render(<LiveOutput blocks={blocks} gap={false} />);
+  expect(screen.getByText("Done.")).toBeTruthy();
+  expect(screen.queryByText(/not yet established/)).toBeNull();
+  view.rerender(<LiveOutput blocks={blocks} gap />);
+  expect(screen.getByRole("status").textContent).toContain(
+    "Some live content is unavailable",
+  );
+});
 const metadata = {
   harness_ui: {
     attachment: {

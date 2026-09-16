@@ -52,9 +52,34 @@ it("mounts the actual CodeMirror binding and retains remote updates without repl
   await waitFor(() => expect(textbox.textContent).toContain("Hello world"));
   expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBe(textbox);
   fireEvent.keyDown(textbox, { key: "Enter" });
-  expect(submit).not.toHaveBeenCalled();
-  fireEvent.keyDown(textbox, { key: "Enter", ctrlKey: true });
   expect(submit).toHaveBeenCalledTimes(1);
+  expect(draft.doc.getText("text").toString()).toBe("Hello world");
+  fireEvent.keyDown(textbox, { key: "Enter", shiftKey: true });
+  expect(submit).toHaveBeenCalledTimes(1);
+  expect(draft.doc.getText("text").toString()).toContain("\n");
+  fireEvent.keyDown(textbox, { key: "Enter", ctrlKey: true });
+  expect(submit).toHaveBeenCalledTimes(2);
+});
+it("does not submit Enter while an IME is composing", () => {
+  const submit = vi.fn();
+  render(
+    <ComposerEditor
+      draft={new ThreadDraft()}
+      profile={{ display_name: "Alice", color: "#2563eb" }}
+      presence={() => {}}
+      submit={submit}
+    />,
+  );
+  const textbox = screen.getByRole("textbox", { name: "Shared prompt" });
+  fireEvent.compositionStart(textbox);
+  fireEvent.keyDown(textbox, { key: "Enter", isComposing: true, keyCode: 229 });
+  fireEvent.keyDown(textbox, {
+    key: "Enter",
+    ctrlKey: true,
+    isComposing: true,
+  });
+  expect(submit).not.toHaveBeenCalled();
+  fireEvent.compositionEnd(textbox);
 });
 it("renders relative collaborator positions without sending them as CRDT roots", async () => {
   const draft = new ThreadDraft();
