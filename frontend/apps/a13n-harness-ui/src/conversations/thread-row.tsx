@@ -26,6 +26,7 @@ import {
   threadParticipants,
 } from "../shell/participant-avatars";
 import styles from "./conversation.module.css";
+import { useResults } from "./results";
 
 function threadState(row: ActivityRow) {
   if (row.pending_decision) return "Needs your answer";
@@ -64,6 +65,8 @@ export function ThreadRow({
   presence: Schema<"PresenceFrame"> | null;
   showRestore?: boolean;
 }) {
+  const { tracker: results } = useResults();
+  const unread = results?.isUnread(row.thread.thread_id);
   const navigate = useNavigate();
   const location = useLocation();
   const transport = useTransport();
@@ -115,6 +118,14 @@ export function ThreadRow({
             <strong title={title}>{title}</strong>
             {threadState(row) && <small>{threadState(row)}</small>}
           </span>
+          {unread && (
+            <span
+              className={styles.resultDot}
+              role="img"
+              aria-label="New result"
+              title="New result"
+            />
+          )}
         </NavLink>
         <ParticipantAvatars
           participants={threadParticipants(presence, row.thread.thread_id)}

@@ -8,6 +8,7 @@ import os
 import socket
 import subprocess
 import sys
+from contextlib import ExitStack
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -21,13 +22,21 @@ from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
 
 async def main() -> None:
-    with TemporaryDirectory(prefix="a13n-webui-protocol-") as directory:
+    with ExitStack() as stack:
+        # An explicit fixture root and port allow restart recovery tests. Ordinary
+        # protocol suites retain their isolated disposable directory and port.
+        directory = (
+            sys.argv[sys.argv.index("--root") + 1]
+            if "--root" in sys.argv
+            else stack.enter_context(TemporaryDirectory(prefix="a13n-webui-protocol-"))
+        )
         root = Path(directory)
+        root.mkdir(parents=True, exist_ok=True)
         os.environ["HOME"] = directory
         os.environ["USERPROFILE"] = directory
         os.environ["XDG_CONFIG_HOME"] = str(root / "xdg")
         os.environ["CODEX_HOME"] = str(root / "codex")
-        (root / "codex").mkdir()
+        (root / "codex").mkdir(exist_ok=True)
         os.environ["GROK_HOME"] = str(root / "grok")
         os.environ["GROK_AUTH_PATH"] = str(root / "grok" / "auth.json")
         if os.name == "posix":
@@ -65,7 +74,7 @@ async def main() -> None:
             (repository / "tracked.txt").write_text("worktree\n", encoding="utf-8")
             (repository / "new.txt").write_text("untracked\n", encoding="utf-8")
         configuration = root / "config" / "a13n-harness-ui.yaml"
-        configuration.parent.mkdir()
+        configuration.parent.mkdir(exist_ok=True)
         setup = "--setup" in sys.argv
         if not setup:
             timeout = 30 if "--slow" in sys.argv else 2
@@ -179,7 +188,9 @@ async def main() -> None:
             ),
         )
         sock = socket.socket()
-        sock.bind(("127.0.0.1", 0))
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        port = int(sys.argv[sys.argv.index("--port") + 1]) if "--port" in sys.argv else 0
+        sock.bind(("127.0.0.1", port))
         native = uvicorn.Server(
             uvicorn.Config(
                 server, log_level="error", lifespan="on", ws="websockets-sansio", timeout_graceful_shutdown=2

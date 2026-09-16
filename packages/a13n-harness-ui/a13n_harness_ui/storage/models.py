@@ -94,6 +94,10 @@ class ThreadRecord(Base):
     initial_state_digest: Mapped[str] = mapped_column(String(_DIGEST), nullable=False)
     continuation_schema_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
     continuation_digest: Mapped[str | None] = mapped_column(String(_DIGEST), nullable=True)
+    completion_version: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+    completion_run_id: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    completion_digest: Mapped[str | None] = mapped_column(String(_DIGEST), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True)
 
 
 class ThreadConfigurationRecord(Base):

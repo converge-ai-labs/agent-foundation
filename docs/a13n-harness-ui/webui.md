@@ -60,6 +60,16 @@ Existing installations keep their conversations and configuration. **General →
 
 **Projects** edits server directories and defaults directly, with a separate saved-default preview and per-axis provenance. Each folder has its own row with add/remove controls. **Browse** lets you navigate server directories one level at a time, go to a parent or entered path, and choose **Use this directory**; selection stays in the draft until you save. With `--no-share-computer`, enter paths manually instead. Saved defaults initialize new conversations; changes to project folders also affect future Runs in existing conversations. Default, None and Custom list selections remain distinct. Preview does not include unsaved source changes or execute a model. The top-right header automatically shows a generated collaboration name on first entry. Click it to change the name; **Save name** remembers it in this browser and updates live presence and composer labels. The online indicator opens the per-tab participant directory. This profile is not provider login or an authenticated identity.
 
+## New results in this browser
+
+Conversations you open or start in this browser are followed automatically. When a Run saves a successful result you have not read, its sidebar row gains a **New result** dot. Each Project groups **Running**, **New results**, and **Recent** conversations; unread results remain reachable even outside the five recent rows. Collapsed Projects show the number of conversations with new results. Multiple completions count once per conversation, and later running or failed work does not erase an unread success.
+
+The dot clears when the saved conversation is visible in a focused browser tab and you reach the bottom of its history. Merely selecting the conversation or receiving live text is not enough. Reading an older saved snapshot cannot clear a newer result. Archived conversations show their dots on **Archived**, not in ordinary Project counts.
+
+These reminders are personal to this browser and site address, shared across its tabs through IndexedDB. Reloading or reopening WebUI refreshes followed conversations independently of sidebar pagination, including results saved while the browser was closed or the server restarted. First visits treat existing results as historical; unopened collaborators' conversations do not all become unread. Clearing site data removes your follow/read state. If browser storage or refresh fails, an explicit warning explains the limitation and offers retry; existing reminders remain visible.
+
+This does not require desktop-notification permission and does not add closed-page push delivery. Live task notices below remain separate; reopening restores dots rather than replaying old notification banners.
+
 ## Task notifications
 
 After login, a persistent **Enable task notifications** prompt offers browser notification permission. Choose **Enable notifications** to open the browser permission dialog, or **Turn off reminders** to stop the prompt from appearing. If permission is blocked, allow it in this site's browser settings. Desktop notifications require a supported browser and a secure context such as HTTPS or localhost; remote plain HTTP may not support them.

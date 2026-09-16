@@ -49,6 +49,7 @@ import { ConversationNavigation } from "../conversations/navigation";
 import { ConversationPage } from "../conversations/conversation";
 import { NewConversationPage } from "../conversations/new-conversation";
 import { NativeWorkspace } from "../native/workspace";
+import { ResultsProvider, useResults } from "../conversations/results";
 
 import { pageLink } from "./page-links";
 import { readPreference, writePreference } from "./preferences";
@@ -72,7 +73,19 @@ const profileColors = [
   ),
 }));
 
-export function Workbench({
+export function Workbench(props: {
+  status: Schema<"ListenerStatus">;
+  forget: () => void;
+  unauthorized: () => void;
+}) {
+  return (
+    <ResultsProvider>
+      <WorkbenchContent {...props} />
+    </ResultsProvider>
+  );
+}
+
+function WorkbenchContent({
   status: initialStatus,
   forget,
   unauthorized,
@@ -81,6 +94,7 @@ export function Workbench({
   forget: () => void;
   unauthorized: () => void;
 }) {
+  const results = useResults();
   const setup = useSetup();
   const statusQuery = useStatus();
   const status = statusQuery.data ?? initialStatus;
@@ -230,6 +244,18 @@ export function Workbench({
       <div className={styles.workspace}>
         <main id="main-content" className={styles.main}>
           {disconnected && <ConnectionNotice retry={live.retrySummary} />}
+          {(results.storageError || results.lookupError) && (
+            <div role="alert" className={styles.notice}>
+              <p>{results.storageError || results.lookupError}</p>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => void results.tracker?.refresh()}
+              >
+                Retry new-result tracking
+              </Button>
+            </div>
+          )}
           {status.access === "dangerous_bypass" && (
             <div className={styles.notice}>
               Instance authentication is disabled by the server's explicit

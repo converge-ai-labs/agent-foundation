@@ -2757,6 +2757,34 @@
         }
       }
     },
+    "/api/threads/lookup": {
+      "post": {
+        "summary": "Lookup Threads",
+        "operationId": "lookup_threads_api_threads_lookup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ThreadLookup"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadPage"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/threads/activity": {
       "get": {
         "summary": "Thread Activity",
@@ -10662,6 +10690,41 @@
         "title": "ThreadAttachment",
         "description": "A Thread-scoped handle; paths are resolved by the App, never by clients."
       },
+      "ThreadCompletion": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "minimum": 1.0,
+            "title": "Version"
+          },
+          "run_id": {
+            "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
+            "title": "Run Id"
+          },
+          "continuation_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Continuation Id"
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Completed At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "run_id",
+          "continuation_id",
+          "completed_at"
+        ],
+        "title": "ThreadCompletion",
+        "description": "Latest successfully selected root result; independent of current operation state."
+      },
       "ThreadConfiguration": {
         "properties": {
           "version": {
@@ -11215,6 +11278,16 @@
           },
           "root_activity": {
             "$ref": "#/components/schemas/RootActivityView"
+          },
+          "completion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ThreadCompletion"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -11445,6 +11518,12 @@
       },
       "TranscriptPage": {
         "properties": {
+          "completion_version": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Completion Version",
+            "default": 0
+          },
           "continuation_id": {
             "anyOf": [
               {
@@ -13037,6 +13116,27 @@
         ],
         "title": "DecisionResponseBatch",
         "type": "object"
+      },
+      "ThreadLookup": {
+        "properties": {
+          "thread_ids": {
+            "items": {
+              "type": "string",
+              "maxLength": 80,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 100,
+            "minItems": 1,
+            "title": "Thread Ids"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "thread_ids"
+        ],
+        "title": "ThreadLookup"
       },
       "SteerRequest": {
         "additionalProperties": false,

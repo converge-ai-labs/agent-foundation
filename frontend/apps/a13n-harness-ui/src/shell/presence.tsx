@@ -6,6 +6,7 @@ import { watchSummary } from "../transport/events";
 import { refreshThread, scheduleRefresh } from "../conversations/refresh";
 import type { Schema } from "../transport/client";
 import { useNotifications } from "./notifications";
+import { useResults } from "../conversations/results";
 
 export type Profile = { display_name: string; color: string };
 export function pageFocus(
@@ -62,6 +63,7 @@ export function useLiveWorkbench(
   const transport = useTransport();
   const queries = useQueryClient();
   const notify = useNotifications()?.receive;
+  const { tracker: results } = useResults();
   const location = useLocation();
   const sources = useSources();
   const sourcePath = new URLSearchParams(location.search).get("path");
@@ -101,6 +103,11 @@ export function useLiveWorkbench(
       transport,
       (event) => {
         if (event) notify?.(event);
+        if (!event || event.kind === "configuration") results?.invalidate();
+        else if (["thread", "root_operation"].includes(event.kind))
+          results?.invalidate(
+            event.root_thread_id ?? event.thread_id ?? undefined,
+          );
         if (event?.kind === "comment")
           void queries.invalidateQueries({
             queryKey: event.root_thread_id
@@ -139,18 +146,20 @@ export function useLiveWorkbench(
     );
     summarySubscription.current = close;
     return close;
-  }, [transport, queries, notify]);
+  }, [transport, queries, notify, results]);
 
   useEffect(() => {
     if (summary === "Live") return;
     const timer = setInterval(() => {
-      if (document.visibilityState === "visible")
+      if (document.visibilityState === "visible") {
+        results?.invalidate();
         scheduleRefresh(queries, (query) =>
           ["thread", "threads"].includes(String(query.queryKey[0])),
         );
+      }
     }, 15000);
     return () => clearInterval(timer);
-  }, [summary, queries]);
+  }, [summary, queries, results]);
 
   useEffect(() => {
     if (!enabled) {

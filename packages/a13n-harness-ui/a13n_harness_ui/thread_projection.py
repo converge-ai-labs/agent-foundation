@@ -204,6 +204,19 @@ class ThreadProjectionService:
             )
         return ThreadPage(threads=summaries, total=total, next_cursor=next_cursor)
 
+    async def lookup_threads(self, thread_ids: tuple[str, ...]) -> ThreadPage:
+        """Bounded root lookup, including archived and off-page conversations; no history hydration."""
+        if not 1 <= len(thread_ids) <= 100 or any(not item or len(item) > 80 for item in thread_ids):
+            raise ThreadError("Thread lookup is outside supported bounds.", code="thread_page_invalid")
+        stored, total = await self._store.threads.list(
+            thread_ids=tuple(set(thread_ids)), include_archived=True, limit=100
+        )
+        activities = {} if self._root_activities is None else await self._root_activities(thread_ids)
+        return ThreadPage(
+            threads=tuple([await self._summary(item, activity=activities.get(item.thread_id)) for item in stored]),
+            total=total,
+        )
+
     async def detail(self, thread_id: str) -> ThreadDetail:
         thread = await self._required_thread(thread_id)
         summary = await self._summary(thread)
@@ -273,6 +286,7 @@ class ThreadProjectionService:
                 )
             )
         return TranscriptPage(
+            completion_version=0 if thread.completion is None else thread.completion.version,
             continuation_id=continuation_id,
             entries=entries,
             total=len(history),
@@ -347,6 +361,7 @@ class ThreadProjectionService:
             configuration=_configuration(thread.configuration),
             continuation_state="initial" if thread.continuation is None else "selected",
             root_activity=activity,
+            completion=thread.completion,
         )
 
     async def context_usage(self, thread_id: str) -> ContextUsageView:

@@ -99,6 +99,15 @@ class ThreadConfigurationMutation(StoredContract):
         return self
 
 
+class ThreadCompletion(StoredContract):
+    """Latest successfully selected root result; independent of current operation state."""
+
+    version: int = Field(ge=1)
+    run_id: str = Field(min_length=1, max_length=80)
+    continuation_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    completed_at: datetime
+
+
 class Thread(StoredContract):
     thread_id: str = Field(min_length=1, max_length=80)
     parent_thread_id: str | None = Field(default=None, min_length=1, max_length=80)
@@ -113,6 +122,7 @@ class Thread(StoredContract):
     configuration: ThreadConfiguration
     initial_state: ObjectRef
     continuation: ObjectRef | None = None
+    completion: ThreadCompletion | None = None
 
     @field_validator("created_at", "updated_at")
     @classmethod

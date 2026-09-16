@@ -10,6 +10,7 @@ import {
 import userEvent from "@testing-library/user-event";
 import { parse } from "yaml";
 import { BrowserApp } from "./app";
+import { IDBFactory } from "fake-indexeddb";
 import { onlineManager } from "@tanstack/react-query";
 
 const status = {
@@ -81,6 +82,7 @@ function fixture(request: Request): Response | Promise<Response> {
   return json([]);
 }
 beforeEach(() => {
+  vi.stubGlobal("indexedDB", new IDBFactory());
   vi.stubGlobal("matchMedia", () => ({
     matches: false,
     addListener() {},

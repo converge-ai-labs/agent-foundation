@@ -33,6 +33,8 @@ import { FocusDisplay, showFocusedOutput, watchThread } from "./stream";
 import { ConversationTranscript, RecoveryNotice } from "./transcript";
 import { inputSource } from "./local-input";
 import styles from "./conversation.module.css";
+import { useResults } from "./results";
+import { savedResultVisible } from "./result-visibility";
 
 export function ConversationPage(props: {
   profile: Profile;
@@ -53,6 +55,12 @@ function Conversation({
   const transport = useTransport();
   const queries = useQueryClient();
   const detail = useThread(threadId);
+  const results = useResults();
+  const tracker = results.tracker;
+  useEffect(() => {
+    if (detail.data)
+      void tracker?.follow(detail.data.thread, detail.dataUpdatedAt);
+  }, [detail.data, detail.dataUpdatedAt, tracker]);
   const selectors = useSelectors();
   const agentSelection = useMutation({
     mutationFn: async (agentId: string) => {
@@ -236,6 +244,47 @@ function Conversation({
     previousLocalInput.current = latestLocalInput;
   }, [latestLocalInput, scrollToLatest]);
   const continuation = history.data?.pages[0]?.continuation_id;
+  const completionVersion =
+    history.isPreviousHistory || history.isError
+      ? 0
+      : (history.data?.pages[0]?.completion_version ?? 0);
+  const acknowledged = results.followed.get(threadId);
+  useEffect(() => {
+    if (
+      !tracker ||
+      !completionVersion ||
+      acknowledged === undefined ||
+      acknowledged >= completionVersion
+    )
+      return;
+    const element = reader.current;
+    if (!element) return;
+    const check = () => {
+      if (!olderAnchor.current && savedResultVisible(element))
+        void tracker.acknowledge(threadId, completionVersion);
+    };
+    // The effect runs after transcript commit; the frame observes layout and the
+    // actual scroll position, never the optimistic follow/smooth-scroll flag.
+    const frame = requestAnimationFrame(check);
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? undefined
+        : new ResizeObserver(check);
+    observer?.observe(element);
+    if (element.firstElementChild) observer?.observe(element.firstElementChild);
+    element.addEventListener("scroll", check);
+    window.addEventListener("focus", check);
+    window.addEventListener("resize", check);
+    document.addEventListener("visibilitychange", check);
+    return () => {
+      cancelAnimationFrame(frame);
+      observer?.disconnect();
+      element.removeEventListener("scroll", check);
+      window.removeEventListener("focus", check);
+      window.removeEventListener("resize", check);
+      document.removeEventListener("visibilitychange", check);
+    };
+  }, [tracker, threadId, completionVersion, acknowledged, history.data]);
   const operation = detail.data?.thread.root_activity;
   const [lastReceipt, setLastReceipt] = useState<string | null>(null);
   useEffect(() => {

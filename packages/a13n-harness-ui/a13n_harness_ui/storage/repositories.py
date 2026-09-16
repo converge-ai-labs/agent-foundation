@@ -22,6 +22,7 @@ from .contracts import (
     ResourceIndexEntry,
     SafeFailure,
     Thread,
+    ThreadCompletion,
     ThreadConfiguration,
 )
 from .database import DatabaseSessions, short_session, transaction
@@ -428,6 +429,7 @@ class ThreadRepository:
         thread_id: str,
         expected: ObjectRef | None,
         replacement: ObjectRef,
+        completed_run_id: str | None = None,
         excerpt: ConversationExcerpt | None = None,
         activity_changed: bool = True,
         updated_at: datetime | None = None,
@@ -448,6 +450,14 @@ class ThreadRepository:
                 )
             record.continuation_schema_version = replacement.object_schema_version
             record.continuation_digest = replacement.logical_digest
+            if completed_run_id is not None:
+                if record.parent_thread_id is not None:
+                    raise ValueError("Only root Threads have completion markers")
+                if record.completion_run_id != completed_run_id:
+                    record.completion_version += 1
+                    record.completion_run_id = completed_run_id
+                    record.completion_digest = replacement.logical_digest
+                    record.completed_at = now
             if excerpt is not None:
                 record.first_input = excerpt.first_input
                 record.latest_input = excerpt.latest_input
@@ -841,7 +851,19 @@ def _search_text(record: ThreadRecord) -> str:
 
 
 def _thread_value(record: ThreadRecord, configuration: ThreadConfiguration) -> Thread:
+    completion = None
+    if record.completion_version:
+        assert record.completion_run_id is not None
+        assert record.completion_digest is not None
+        assert record.completed_at is not None
+        completion = ThreadCompletion(
+            version=record.completion_version,
+            run_id=record.completion_run_id,
+            continuation_id=record.completion_digest,
+            completed_at=record.completed_at,
+        )
     return Thread(
+        completion=completion,
         thread_id=record.thread_id,
         parent_thread_id=record.parent_thread_id,
         created_at=record.created_at,
