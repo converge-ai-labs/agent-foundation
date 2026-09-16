@@ -467,7 +467,7 @@ async def test_run_reasoning_choice_replaces_agent_reasoning_choice(
 ) -> None:
     payload = agent_config().model_dump(mode="python")
     payload["model"]["settings"] = {
-        "openai_reasoning_effort": "low",
+        "thinking": "low",
         "temperature": 0.2,
     }
     created = await agent_management.commands.create(

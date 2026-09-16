@@ -75,130 +75,68 @@ def test_top_level_merge_replaces_routing_and_retains_other_defaults() -> None:
     assert validate_settings("openrouter.chat_completions", {"extra_body": {"new_parameter": {"value": 1}}})
 
 
-def test_explicit_reasoning_choice_replaces_conflicting_inherited_settings() -> None:
+@pytest.mark.parametrize("api", BUILT_IN_MODEL_APIS)
+@pytest.mark.parametrize("thinking", [True, False, "minimal", "low", "medium", "high", "xhigh"])
+def test_unified_thinking_is_available_on_every_api(api, thinking):
+    assert validate_settings(api, {"thinking": thinking}) == {"thinking": thinking}
+
+
+@pytest.mark.parametrize("api", BUILT_IN_MODEL_APIS)
+@pytest.mark.parametrize(
+    "alias",
+    [
+        "openai_reasoning_effort",
+        "anthropic_thinking",
+        "anthropic_effort",
+        "google_thinking_config",
+        "openrouter_reasoning",
+    ],
+)
+def test_native_thinking_aliases_are_not_public_settings(api, alias):
+    assert alias not in settings_schema(api)["properties"]
+    with pytest.raises(ModelError):
+        validate_settings(api, {alias: "high"})
+
+
+@pytest.mark.parametrize("api", BUILT_IN_MODEL_APIS)
+def test_thinking_uses_ordinary_model_agent_run_precedence(api):
     assert effective_settings(
-        "openai.responses",
-        {
-            "openai_reasoning_effort": "low",
-            "temperature": 0.2,
-            "extra_body": {"metadata": {"source": "model"}},
-        },
-        {"thinking": "high", "max_tokens": 1000},
-    ) == {
+        api,
+        {"thinking": "low", "max_tokens": 2000},
+        {"thinking": "high"},
+        {"thinking": False, "max_tokens": 1000},
+    ) == {"thinking": False, "max_tokens": 1000}
+    assert effective_settings(api, {"thinking": "high"}, {"temperature": 0.2}) == {
         "thinking": "high",
         "temperature": 0.2,
-        "max_tokens": 1000,
-        "extra_body": {"metadata": {"source": "model"}},
     }
-    assert effective_settings(
-        "openai.responses",
-        {"thinking": "medium", "extra_body": {"metadata": {"source": "model"}}},
-        {"extra_body": {"reasoning": {"effort": "high"}, "metadata": {"source": "run"}}},
-    ) == {"extra_body": {"reasoning": {"effort": "high"}, "metadata": {"source": "run"}}}
 
 
-def test_reasoning_precedence_is_applied_across_each_override_layer() -> None:
-    assert effective_settings(
-        "openai.responses",
-        {"extra_body": {"reasoning": {"effort": "minimal"}}, "max_tokens": 2000},
-        {"openai_reasoning_effort": "low", "temperature": 0.2},
-        {"thinking": "high", "max_tokens": 1000},
-    ) == {"thinking": "high", "temperature": 0.2, "max_tokens": 1000}
-
-
-def test_same_layer_reasoning_alternatives_are_rejected() -> None:
-    with pytest.raises(ModelError) as invalid:
-        validate_settings(
-            "openrouter.chat_completions", {"thinking": "high", "openrouter_reasoning": {"effort": "low"}}
+@pytest.mark.parametrize(
+    ("api", "field", "path"),
+    [
+        (api, "extra_body", path)
+        for api in BUILT_IN_MODEL_APIS
+        for path in (
+            ["reasoning"]
+            if api.endswith("responses")
+            else ["thinking", "output_config"]
+            if api == "anthropic.messages"
+            else []
+            if api in {"google.generate_content", "bedrock.converse"}
+            else ["reasoning", "reasoning_effort", "thinking", "enable_thinking"]
         )
-    assert invalid.value.details == {
-        "path": ["settings", "openrouter_reasoning"],
-        "reason": "conflicting_reasoning_settings",
-    }
-
-
-def test_complementary_native_anthropic_reasoning_settings_can_coexist() -> None:
-    settings = {"anthropic_thinking": {"type": "adaptive"}, "anthropic_effort": "high"}
-    assert validate_settings("anthropic.messages", settings) == settings
-
-
-def test_partial_anthropic_reasoning_overrides_preserve_complementary_fields_across_layers() -> None:
-    assert effective_settings(
-        "anthropic.messages",
-        {"anthropic_thinking": {"type": "adaptive"}, "anthropic_effort": "low"},
-        {"anthropic_effort": "high"},
-        {"max_tokens": 1000},
-    ) == {
-        "anthropic_thinking": {"type": "adaptive"},
-        "anthropic_effort": "high",
-        "max_tokens": 1000,
-    }
-    assert effective_settings(
-        "anthropic.messages",
-        {"anthropic_thinking": {"type": "enabled", "budget_tokens": 1024}, "anthropic_effort": "low"},
-        {"anthropic_effort": "medium"},
-        {"anthropic_thinking": {"type": "adaptive"}},
-    ) == {"anthropic_thinking": {"type": "adaptive"}, "anthropic_effort": "medium"}
-
-
-def test_responses_reasoning_summary_is_canonicalized_when_unified_thinking_wins() -> None:
-    assert effective_settings(
-        "openai.responses",
-        {
-            "extra_body": {
-                "reasoning": {"effort": "low", "summary": "detailed"},
-                "metadata": {"a": "b"},
-            }
-        },
-        {"thinking": "high"},
-    ) == {
-        "extra_body": {"metadata": {"a": "b"}},
-        "openai_reasoning_summary": "detailed",
-        "thinking": "high",
-    }
-
-
-@pytest.mark.parametrize("reasoning", [{}, None, "malformed", []])
-def test_responses_reasoning_cleanup_tolerates_empty_and_malformed_containers(reasoning) -> None:
-    assert effective_settings(
-        "openai.responses",
-        {"extra_body": {"reasoning": reasoning, "metadata": {"a": "b"}}},
-        {"thinking": "high"},
-    ) == {"extra_body": {"metadata": {"a": "b"}}, "thinking": "high"}
-
-
-@pytest.mark.parametrize("output_config", [{}, None, "malformed", []])
-def test_bedrock_unified_thinking_replaces_suppressing_output_config(output_config) -> None:
-    defaults = {
-        "bedrock_additional_model_requests_fields": {
-            "output_config": output_config,
-            "unrelated": "preserved",
-        }
-    }
-    assert effective_settings("bedrock.converse", defaults, {"thinking": "high"}) == {
-        "bedrock_additional_model_requests_fields": {"unrelated": "preserved"},
-        "thinking": "high",
-    }
-
-
-def test_bedrock_native_thinking_and_effort_can_coexist() -> None:
-    settings = {
-        "bedrock_additional_model_requests_fields": {
-            "thinking": {"type": "adaptive"},
-            "output_config": {"effort": "high"},
-        }
-    }
-    assert validate_settings("bedrock.converse", settings) == settings
-    assert effective_settings(
-        "bedrock.converse",
-        settings,
-        {"bedrock_additional_model_requests_fields": {"output_config": {"effort": "low"}}},
-    ) == {
-        "bedrock_additional_model_requests_fields": {
-            "thinking": {"type": "adaptive"},
-            "output_config": {"effort": "low"},
-        }
-    }
+    ]
+    + [
+        ("bedrock.converse", "bedrock_additional_model_requests_fields", path)
+        for path in ["thinking", "output_config", "reasoning_effort", "reasoning_config"]
+    ],
+)
+@pytest.mark.parametrize("value", [{}, None, "malformed", [], {"effort": "high"}])
+def test_native_thinking_body_overrides_are_rejected(api, field, path, value):
+    with pytest.raises(ModelError) as invalid:
+        validate_settings(api, {field: {path: value}})
+    assert invalid.value.details["reason"] == "reserved_request_field"
 
 
 @pytest.mark.parametrize("api", BUILT_IN_MODEL_APIS)
@@ -271,13 +209,11 @@ def test_sibling_of_protected_nested_path_is_free_to_use():
     assert validate_settings("openai.responses", settings) == settings
 
 
-def test_complementary_reasoning_merge_does_not_mutate_input_layers() -> None:
-    defaults = {"bedrock_additional_model_requests_fields": {"thinking": {"type": "adaptive"}}}
-    overrides = {"bedrock_additional_model_requests_fields": {"output_config": {"effort": "high"}}}
-    effective = effective_settings("bedrock.converse", defaults, overrides)
-    assert effective["bedrock_additional_model_requests_fields"] == {
-        "thinking": {"type": "adaptive"},
-        "output_config": {"effort": "high"},
-    }
-    assert overrides == {"bedrock_additional_model_requests_fields": {"output_config": {"effort": "high"}}}
-    assert defaults == {"bedrock_additional_model_requests_fields": {"thinking": {"type": "adaptive"}}}
+def test_effective_settings_does_not_share_mutable_input_layers() -> None:
+    defaults = {"thinking": "low", "extra_body": {"custom": {"value": 1}}}
+    overrides = {"thinking": "high", "extra_headers": {"x-title": "test"}}
+    effective = effective_settings("openai.responses", defaults, overrides)
+    effective["extra_body"]["custom"]["value"] = 2
+    effective["extra_headers"]["x-title"] = "changed"
+    assert defaults == {"thinking": "low", "extra_body": {"custom": {"value": 1}}}
+    assert overrides == {"thinking": "high", "extra_headers": {"x-title": "test"}}
