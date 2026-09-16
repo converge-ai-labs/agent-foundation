@@ -22,12 +22,13 @@ from a13n_service.durable_operations.idempotency import (
 )
 from a13n_service.durable_operations.requests import request_scope
 from a13n_service.environments.selection import Omitted
-from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
+from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction
 from a13n_service.interactions.control_domain import RunAcceptanceReceipt
 from a13n_service.interactions.models import RunRecord
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, utc_now
 
+from .access import authorize_interaction
 from .domain import StrictModel
 from .errors import (
     InteractionCommandError,
@@ -79,10 +80,11 @@ class RunCommandEvidence:
                 run = await database.get(RunRecord, evidence.result_ref)
                 if run is None or run.organization_id != evidence.organization_id:
                     raise RuntimeError("Run command evidence references a missing Run")
-                await authorize_agent(
+                await authorize_interaction(
                     database,
                     actor=self._actor,
                     workspace_id=self._actor.workspace_id,
+                    session_id=run.session_id,
                     agent_id=run.agent_id,
                     action=WorkspaceAction.run_read,
                 )

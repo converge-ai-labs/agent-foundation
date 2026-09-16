@@ -46,7 +46,8 @@ async def test_accounting_migration_preserves_pending_entries_and_sequence_histo
 ):
     config = accounting_database
     migrator = DatabaseMigrator(config)
-    migrator.upgrade(ACCOUNTING_REVISION)
+    # Seed through current application models before exercising the historical boundary.
+    migrator.upgrade()
     async_engine = create_sql_engine(config)
     sessions = create_session_factory(async_engine)
     try:
@@ -100,6 +101,7 @@ async def test_accounting_migration_preserves_pending_entries_and_sequence_histo
     finally:
         engine.dispose()
 
+    migrator.upgrade()
     async_engine = create_sql_engine(config)
     sessions = create_session_factory(async_engine)
     try:

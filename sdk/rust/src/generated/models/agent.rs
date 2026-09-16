@@ -77,6 +77,14 @@ pub struct Agent {
     #[serde(rename = "source")]
     pub source: models::AgentSource,
 
+    #[serde(
+        rename = "system_purpose",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub system_purpose: Option<Option<SystemPurpose>>,
+
     #[serde(rename = "updated_at")]
     pub updated_at: chrono::DateTime<chrono::FixedOffset>,
 
@@ -127,10 +135,23 @@ impl Agent {
             name,
             organization_id,
             source,
+            system_purpose: None,
             updated_at,
             updated_by: Box::new(updated_by),
             version,
             workspace_id,
         }
+    }
+}
+///
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum SystemPurpose {
+    #[serde(rename = "configuration_assistant")]
+    ConfigurationAssistant,
+}
+
+impl Default for SystemPurpose {
+    fn default() -> SystemPurpose {
+        Self::ConfigurationAssistant
     }
 }

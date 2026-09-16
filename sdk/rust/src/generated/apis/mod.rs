@@ -122,6 +122,7 @@ impl From<&str> for ContentType {
     }
 }
 
+pub mod agent_configuration_api;
 pub mod agent_management_api;
 pub mod asset_management_api;
 pub mod connections_api;

@@ -14,7 +14,9 @@ export function SessionIdentity() {
   const run = useRun(runId);
   const valid =
     run.data?.session_id === sessionId && run.data?.thread_id === threadId;
-  const agent = useAgent(valid ? run.data?.agent_id : undefined);
+  const agent = useAgent(
+    valid && !run.data?.configuration_draft_id ? run.data?.agent_id : undefined,
+  );
   const title = valid
     ? inputText(run.data?.input, run.data?.input_text)
         .replace(/\s+/g, " ")

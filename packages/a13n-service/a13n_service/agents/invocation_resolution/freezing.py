@@ -71,13 +71,20 @@ class AgentInvocationFreezer:
         prepared: PreparedAgentInvocation,
     ) -> FrozenAgentInvocation:
         try:
-            await authorize_agent(
-                session,
-                actor=prepared.actor,
-                workspace_id=prepared.workspace_id,
-                agent_id=prepared.agent_id,
-                action=WorkspaceAction.agent_invoke,
-            )
+            if prepared.configuration_context is not None:
+                from a13n_service.agent_configuration.authorization import authorize_invocation
+
+                await authorize_invocation(
+                    session, actor=prepared.actor, agent_id=prepared.agent_id, context=prepared.configuration_context
+                )
+            else:
+                await authorize_agent(
+                    session,
+                    actor=prepared.actor,
+                    workspace_id=prepared.workspace_id,
+                    agent_id=prepared.agent_id,
+                    action=WorkspaceAction.agent_invoke,
+                )
             agent = await load_agent_record(
                 session,
                 organization_id=prepared.organization_id,

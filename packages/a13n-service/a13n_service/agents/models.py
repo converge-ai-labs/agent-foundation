@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import TypeAdapter
 from sqlalchemy import (
@@ -53,12 +53,17 @@ class AgentRecord(Base):
             ondelete="CASCADE",
         ),
         CheckConstraint("source IN ('builtin', 'custom')", name="source_valid"),
+        CheckConstraint(
+            "system_purpose IS NULL OR (system_purpose = 'configuration_assistant' AND source = 'builtin')",
+            name="system_purpose_valid",
+        ),
         CheckConstraint("version >= 1", name="version_positive"),
         CheckConstraint("length(name) BETWEEN 1 AND 128", name="name_bounded"),
         CheckConstraint("created_by_type IN ('user', 'service_account', 'system')", name="created_by_type_valid"),
         CheckConstraint("updated_by_type IN ('user', 'service_account', 'system')", name="updated_by_type_valid"),
         Index("uq_agents_id_organization", "id", "organization_id", "workspace_id", unique=True),
         Index("uq_agents_workspace_key", "workspace_id", "key", unique=True),
+        Index("uq_agents_workspace_system_purpose", "workspace_id", "system_purpose", unique=True),
         Index("ix_agents_workspace_updated", "workspace_id", "updated_at", "id"),
         Index("ix_agents_workspace_availability", "workspace_id", "enabled", "archived_at", "updated_at", "id"),
         Index(
@@ -74,6 +79,7 @@ class AgentRecord(Base):
     organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
     source: Mapped[str] = mapped_column(String(16), nullable=False)
+    system_purpose: Mapped[Literal["configuration_assistant"] | None] = mapped_column(String(32))
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     key: Mapped[str] = mapped_column(String(RESOURCE_KEY_MAX_LENGTH), nullable=False)
     image_id: Mapped[str | None] = mapped_column(String(72))
@@ -101,6 +107,7 @@ class AgentRecord(Base):
             organization_id=self.organization_id,
             workspace_id=self.workspace_id,
             source=AgentSource(self.source),
+            system_purpose=self.system_purpose,
             name=self.name,
             key=self.key,
             description=self.description,
@@ -162,6 +169,7 @@ class AgentRevisionRecord(Base):
     resolved_subagents: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     content_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     source_revision_id: Mapped[str | None] = mapped_column(String(72))
+    system_definition: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True))
     created_by_type: Mapped[str] = mapped_column(String(32), nullable=False)
     created_by_id: Mapped[str] = mapped_column(String(72), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

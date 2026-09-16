@@ -52,12 +52,16 @@ from .agent_run_override_output_toolsets_type_0 import AgentRunOverrideOutputToo
 from .agent_secret_binding import AgentSecretBinding
 from .agent_source import AgentSource
 from .api_key import ApiKey
+from .apply_draft_request import ApplyDraftRequest
 from .approve_pending_resolution import ApprovePendingResolution
 from .asset import Asset
 from .asset_binary_source import AssetBinarySource
 from .asset_collection import AssetCollection
 from .asset_source_kind import AssetSourceKind
 from .assistant_message import AssistantMessage
+from .assistant_readiness import AssistantReadiness
+from .assistant_readiness_reason_code import AssistantReadinessReasonCode
+from .assistant_readiness_setup_actions_item import AssistantReadinessSetupActionsItem
 from .audio_input_content import AudioInputContent
 from .auth_configuration import AuthConfiguration
 from .auth_session import AuthSession
@@ -90,6 +94,23 @@ from .complete_authorization_request import CompleteAuthorizationRequest
 from .complete_email_change_request import CompleteEmailChangeRequest
 from .complete_password_reset_request import CompletePasswordResetRequest
 from .complete_pending_resolution import CompletePendingResolution
+from .configuration_application_receipt import ConfigurationApplicationReceipt
+from .configuration_difference import ConfigurationDifference
+from .configuration_draft import ConfigurationDraft
+from .configuration_draft_mode import ConfigurationDraftMode
+from .configuration_draft_review import ConfigurationDraftReview
+from .configuration_draft_review_mode import ConfigurationDraftReviewMode
+from .configuration_draft_review_source_selector import ConfigurationDraftReviewSourceSelector
+from .configuration_draft_review_status import ConfigurationDraftReviewStatus
+from .configuration_draft_source_selector import ConfigurationDraftSourceSelector
+from .configuration_draft_status import ConfigurationDraftStatus
+from .configuration_input_request import ConfigurationInputRequest
+from .configuration_revision_view import ConfigurationRevisionView
+from .configuration_session_collection import ConfigurationSessionCollection
+from .configuration_session_view import ConfigurationSessionView
+from .configuration_thread_collection import ConfigurationThreadCollection
+from .configuration_thread_view import ConfigurationThreadView
+from .configuration_validation import ConfigurationValidation
 from .configure_mcpo_auth_client_request import ConfigureMCPOAuthClientRequest
 from .connection import Connection
 from .connection_check import ConnectionCheck
@@ -143,6 +164,7 @@ from .create_authorization_request import CreateAuthorizationRequest
 from .create_authorization_request_credentials_type_0 import CreateAuthorizationRequestCredentialsType0
 from .create_authorization_request_method import CreateAuthorizationRequestMethod
 from .create_authorization_request_options import CreateAuthorizationRequestOptions
+from .create_configuration_thread_request import CreateConfigurationThreadRequest
 from .create_connection_request import CreateConnectionRequest
 from .create_connector_provider_request import CreateConnectorProviderRequest
 from .create_connector_provider_request_configuration import CreateConnectorProviderRequestConfiguration
@@ -165,6 +187,7 @@ from .create_provider_request_configuration import CreateProviderRequestConfigur
 from .create_provider_request_credential_type_0 import CreateProviderRequestCredentialType0
 from .create_service_account_request import CreateServiceAccountRequest
 from .create_service_account_request_role import CreateServiceAccountRequestRole
+from .create_session_request import CreateSessionRequest
 from .create_skill_request import CreateSkillRequest
 from .create_skill_request_labels import CreateSkillRequestLabels
 from .create_skill_revision_request import CreateSkillRevisionRequest
@@ -183,12 +206,14 @@ from .create_web_provider_request_configuration import CreateWebProviderRequestC
 from .create_web_provider_request_credential import CreateWebProviderRequestCredential
 from .create_workspace_request import CreateWorkspaceRequest
 from .created_key import CreatedKey
+from .creation_metadata import CreationMetadata
 from .credential_context import CredentialContext
 from .delegation_context_policy import DelegationContextPolicy
 from .delegation_context_policy_history import DelegationContextPolicyHistory
 from .delegation_context_policy_task_state import DelegationContextPolicyTaskState
 from .delete_queued_submission_request import DeleteQueuedSubmissionRequest
 from .developer_message import DeveloperMessage
+from .discard_draft_request import DiscardDraftRequest
 from .document_input_content import DocumentInputContent
 from .duplicate_agent_request import DuplicateAgentRequest
 from .duplicate_agent_request_labels import DuplicateAgentRequestLabels
@@ -417,11 +442,13 @@ from .queued_submission_failure import QueuedSubmissionFailure
 from .queued_submission_mutation_receipt import QueuedSubmissionMutationReceipt
 from .queued_submission_state import QueuedSubmissionState
 from .reasoning_message import ReasoningMessage
+from .rebase_draft_request import RebaseDraftRequest
 from .receive_authorization_request import ReceiveAuthorizationRequest
 from .register_environment_request import RegisterEnvironmentRequest
 from .register_environment_request_configuration import RegisterEnvironmentRequestConfiguration
 from .register_environment_request_labels import RegisterEnvironmentRequestLabels
 from .reject_pending_resolution import RejectPendingResolution
+from .remove_operation import RemoveOperation
 from .reorder_queued_submissions_request import ReorderQueuedSubmissionsRequest
 from .replace_account_credentials_request import ReplaceAccountCredentialsRequest
 from .replace_account_credentials_request_credentials import ReplaceAccountCredentialsRequestCredentials
@@ -434,6 +461,7 @@ from .replace_credential_request_credential_type_0 import ReplaceCredentialReque
 from .replace_target_request import ReplaceTargetRequest
 from .replace_target_request_provider_policy_type_0 import ReplaceTargetRequestProviderPolicyType0
 from .replace_target_request_target_kind import ReplaceTargetRequestTargetKind
+from .replace_text_operation import ReplaceTextOperation
 from .resolved_agent_model import ResolvedAgentModel
 from .resolved_agent_model_settings import ResolvedAgentModelSettings
 from .resolved_skill_binding import ResolvedSkillBinding
@@ -471,11 +499,14 @@ from .safe_failure_retry_hint import SafeFailureRetryHint
 from .search_in import SearchIn
 from .secret_requirement import SecretRequirement
 from .security_event import SecurityEvent
+from .selected_assistant_model import SelectedAssistantModel
+from .selected_assistant_model_settings import SelectedAssistantModelSettings
 from .service_account import ServiceAccount
 from .session_collection import SessionCollection
 from .session_preview import SessionPreview
 from .session_resource import SessionResource
 from .session_resource_labels import SessionResourceLabels
+from .set_operation import SetOperation
 from .set_role_request import SetRoleRequest
 from .set_role_request_role import SetRoleRequestRole
 from .skill import Skill
@@ -494,6 +525,8 @@ from .skill_revision import SkillRevision
 from .skill_revision_collection import SkillRevisionCollection
 from .skill_selection import SkillSelection
 from .skill_upload_receipt import SkillUploadReceipt
+from .source_selection import SourceSelection
+from .source_selection_selector import SourceSelectionSelector
 from .start_run_request import StartRunRequest
 from .start_run_request_labels import StartRunRequestLabels
 from .start_run_request_session_labels import StartRunRequestSessionLabels
@@ -567,6 +600,7 @@ from .update_account_request import UpdateAccountRequest
 from .update_account_request_provider_config_type_0 import UpdateAccountRequestProviderConfigType0
 from .update_account_request_provider_policy_type_0 import UpdateAccountRequestProviderPolicyType0
 from .update_agent_request import UpdateAgentRequest
+from .update_configuration_draft_request import UpdateConfigurationDraftRequest
 from .update_connection_request import UpdateConnectionRequest
 from .update_connector_provider_request import UpdateConnectorProviderRequest
 from .update_connector_provider_request_credentials_type_0 import UpdateConnectorProviderRequestCredentialsType0
@@ -601,6 +635,8 @@ from .user import User
 from .user_message import UserMessage
 from .validation_error import ValidationError
 from .validation_error_context import ValidationErrorContext
+from .verification_acknowledgement import VerificationAcknowledgement
+from .verification_acknowledgement_outcome import VerificationAcknowledgementOutcome
 from .video_input_content import VideoInputContent
 from .waiting_resolution_defaults import WaitingResolutionDefaults
 from .waiting_run_feedback_request import WaitingRunFeedbackRequest
@@ -676,12 +712,16 @@ __all__ = (
     "AgentSecretBinding",
     "AgentSource",
     "ApiKey",
+    "ApplyDraftRequest",
     "ApprovePendingResolution",
     "Asset",
     "AssetBinarySource",
     "AssetCollection",
     "AssetSourceKind",
     "AssistantMessage",
+    "AssistantReadiness",
+    "AssistantReadinessReasonCode",
+    "AssistantReadinessSetupActionsItem",
     "AudioInputContent",
     "AuthConfiguration",
     "AuthSession",
@@ -714,6 +754,23 @@ __all__ = (
     "CompleteEmailChangeRequest",
     "CompletePasswordResetRequest",
     "CompletePendingResolution",
+    "ConfigurationApplicationReceipt",
+    "ConfigurationDifference",
+    "ConfigurationDraft",
+    "ConfigurationDraftMode",
+    "ConfigurationDraftReview",
+    "ConfigurationDraftReviewMode",
+    "ConfigurationDraftReviewSourceSelector",
+    "ConfigurationDraftReviewStatus",
+    "ConfigurationDraftSourceSelector",
+    "ConfigurationDraftStatus",
+    "ConfigurationInputRequest",
+    "ConfigurationRevisionView",
+    "ConfigurationSessionCollection",
+    "ConfigurationSessionView",
+    "ConfigurationThreadCollection",
+    "ConfigurationThreadView",
+    "ConfigurationValidation",
     "ConfigureMCPOAuthClientRequest",
     "Connection",
     "ConnectionCheck",
@@ -767,6 +824,7 @@ __all__ = (
     "CreateAuthorizationRequestCredentialsType0",
     "CreateAuthorizationRequestMethod",
     "CreateAuthorizationRequestOptions",
+    "CreateConfigurationThreadRequest",
     "CreateConnectionRequest",
     "CreateConnectorProviderRequest",
     "CreateConnectorProviderRequestConfiguration",
@@ -789,6 +847,7 @@ __all__ = (
     "CreateProviderRequestCredentialType0",
     "CreateServiceAccountRequest",
     "CreateServiceAccountRequestRole",
+    "CreateSessionRequest",
     "CreateSkillRequest",
     "CreateSkillRequestLabels",
     "CreateSkillRevisionRequest",
@@ -807,12 +866,14 @@ __all__ = (
     "CreateWebProviderRequestCredential",
     "CreateWorkspaceRequest",
     "CreatedKey",
+    "CreationMetadata",
     "CredentialContext",
     "DelegationContextPolicy",
     "DelegationContextPolicyHistory",
     "DelegationContextPolicyTaskState",
     "DeleteQueuedSubmissionRequest",
     "DeveloperMessage",
+    "DiscardDraftRequest",
     "DocumentInputContent",
     "DuplicateAgentRequest",
     "DuplicateAgentRequestLabels",
@@ -1029,11 +1090,13 @@ __all__ = (
     "QueuedSubmissionMutationReceipt",
     "QueuedSubmissionState",
     "ReasoningMessage",
+    "RebaseDraftRequest",
     "ReceiveAuthorizationRequest",
     "RegisterEnvironmentRequest",
     "RegisterEnvironmentRequestConfiguration",
     "RegisterEnvironmentRequestLabels",
     "RejectPendingResolution",
+    "RemoveOperation",
     "ReorderQueuedSubmissionsRequest",
     "ReplaceAccountCredentialsRequest",
     "ReplaceAccountCredentialsRequestCredentials",
@@ -1044,6 +1107,7 @@ __all__ = (
     "ReplaceTargetRequest",
     "ReplaceTargetRequestProviderPolicyType0",
     "ReplaceTargetRequestTargetKind",
+    "ReplaceTextOperation",
     "ResolvedAgentModel",
     "ResolvedAgentModelSettings",
     "ResolvedSkillBinding",
@@ -1081,11 +1145,14 @@ __all__ = (
     "SearchIn",
     "SecretRequirement",
     "SecurityEvent",
+    "SelectedAssistantModel",
+    "SelectedAssistantModelSettings",
     "ServiceAccount",
     "SessionCollection",
     "SessionPreview",
     "SessionResource",
     "SessionResourceLabels",
+    "SetOperation",
     "SetRoleRequest",
     "SetRoleRequestRole",
     "Skill",
@@ -1104,6 +1171,8 @@ __all__ = (
     "SkillRevisionCollection",
     "SkillSelection",
     "SkillUploadReceipt",
+    "SourceSelection",
+    "SourceSelectionSelector",
     "StartRunRequest",
     "StartRunRequestLabels",
     "StartRunRequestSessionLabels",
@@ -1177,6 +1246,7 @@ __all__ = (
     "UpdateAccountRequestProviderConfigType0",
     "UpdateAccountRequestProviderPolicyType0",
     "UpdateAgentRequest",
+    "UpdateConfigurationDraftRequest",
     "UpdateConnectionRequest",
     "UpdateConnectorProviderRequest",
     "UpdateConnectorProviderRequestCredentialsType0",
@@ -1211,6 +1281,8 @@ __all__ = (
     "UserMessage",
     "ValidationError",
     "ValidationErrorContext",
+    "VerificationAcknowledgement",
+    "VerificationAcknowledgementOutcome",
     "VideoInputContent",
     "WaitingResolutionDefaults",
     "WaitingRunFeedbackRequest",

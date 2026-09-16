@@ -194,6 +194,16 @@ export function AgentDetail() {
       }
       context={
         <div className={styles.stack}>
+          {can("agent.update") && (
+            <Button
+              variant="outline"
+              onClick={() =>
+                navigate(`${basePath}/configuration/new?agent=${agent.id}`)
+              }
+            >
+              {t("Configure with assistant")}
+            </Button>
+          )}
           <ExportAgent agent={agent} config={query.data.revision.config} />
           <ModalFrame
             trigger={

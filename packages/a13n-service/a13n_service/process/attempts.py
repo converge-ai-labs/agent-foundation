@@ -12,10 +12,14 @@ from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 from a13n_logging import get_logger
 from anyio import fail_after
 
+from a13n_service.agent_configuration.drafts import ConfigurationDrafts
+from a13n_service.agent_configuration.resources import ConfigurationResources
+from a13n_service.agent_configuration.runtime import ConfigurationCapability
 from a13n_service.assets.objects import AssetObjectStore
 from a13n_service.assets.runtime import AssetRuntime
 from a13n_service.connectivity.execution import ExternalToolRuntime
 from a13n_service.environments.lifecycle import EnvironmentLifecycle
+from a13n_service.gateway.queries import NativeInteractionQueries
 from a13n_service.interactions.attempt_executor import RunAttemptExecutor
 from a13n_service.interactions.attempts import AttemptContext, AttemptExecutionService, read_attempt_authority
 from a13n_service.interactions.control_wakeups import AttemptControlWakeups
@@ -73,7 +77,9 @@ class WorkerAttempts:
         observability: ObservabilityRuntime | None = None,
         queue_drain: QueueDrain | None = None,
         web_registry: WebProviderRegistry,
+        configuration_drafts: ConfigurationDrafts | None = None,
     ) -> None:
+        self._configuration_drafts = configuration_drafts
         self._shared = shared
         self._resources = execution
         self._environments = environments
@@ -173,6 +179,19 @@ class WorkerAttempts:
                     else SubagentCapability()
                 )
 
+            def configuration_capability() -> ConfigurationCapability:
+                if self._configuration_drafts is None:
+                    raise RuntimeError("Configuration drafts are unavailable on this Worker")
+                return ConfigurationCapability(
+                    sessions,
+                    self._configuration_drafts,
+                    ConfigurationResources(sessions),
+                    NativeInteractionQueries(sessions, self._replay),
+                    run=run,
+                    workspace_id=workspace_id,
+                    current_context=lambda: control.current_context,
+                )
+
             preparer = WorkerAttemptPreparer(
                 sessions=sessions,
                 run=run,
@@ -194,6 +213,7 @@ class WorkerAttempts:
                 secrets=self._secrets,
                 web=self._web,
                 memory=self._shared.memories,
+                configuration_capability=configuration_capability if self._configuration_drafts is not None else None,
             )
             projector = AttemptRunStreamProjector(self._stream, context)
             driver = HarnessDriver(

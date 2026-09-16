@@ -55,14 +55,19 @@ export function RunPage() {
     />
   );
 }
-function RunContent({
+export function RunContent({
   runId,
   threadId,
   sessionId,
+  configuration,
 }: {
   runId: string;
   threadId: string;
   sessionId: string;
+  configuration?: {
+    composer: React.ReactNode;
+    accepted: (receipt: Schema["RunAcceptanceReceipt"]) => void;
+  };
 }) {
   const { t } = useTranslation(),
     client = useClient(),
@@ -76,7 +81,7 @@ function RunContent({
     [steerIds, setSteerIds] = useState<string[]>([]);
   const runQuery = useRun(runId);
   const run = runQuery.data;
-  const agent = useAgent(run?.agent_id);
+  const agent = useAgent(configuration ? undefined : run?.agent_id);
   const transcript = useRef<HTMLDivElement>(null);
   const [following, setFollowing] = useState(true);
   const threadQuery = useQuery({
@@ -163,7 +168,8 @@ function RunContent({
         runId: receipt.run_id,
       },
     );
-    navigate(runPath(basePath, receipt));
+    if (configuration) configuration.accepted(receipt);
+    else navigate(runPath(basePath, receipt));
   }
   if (runQuery.isPending || threadQuery.isPending)
     return <Loading variant="detail" />;
@@ -199,7 +205,8 @@ function RunContent({
         </div>
         <div className={styles.inline}>
           <RunInspector run={run} />
-          {!current &&
+          {!configuration &&
+            !current &&
             run.status === "completed" &&
             currentRun.data &&
             !isActiveRun(currentRun.data.status) &&
@@ -220,7 +227,7 @@ function RunContent({
                 {t("Retry run")}
               </Button>
             )}
-          {run.status === "completed" && can("run.fork") && (
+          {!configuration && run.status === "completed" && can("run.fork") && (
             <ModalFrame
               trigger={
                 <Button size="sm" variant="outline" type="button">
@@ -281,7 +288,9 @@ function RunContent({
         <PresentedItems
           items={live.items}
           runState={run.status}
-          agentName={agent.data?.name}
+          agentName={
+            configuration ? t("Configuration assistant") : agent.data?.name
+          }
           agentId={run.agent_id}
           agentImageUrl={agent.data?.image_url}
         >
@@ -375,7 +384,7 @@ function RunContent({
       )}
       <div className={styles.composerDock}>
         <div className={styles.dockControls}>
-          {steer && can("run.continue") && (
+          {!configuration && steer && can("run.continue") && (
             <ChoiceField
               placeholder={t("Send mode")}
               value={steer ? mode : "message"}
@@ -411,7 +420,8 @@ function RunContent({
             </Button>
           )}
         </div>
-        {current && can("run.continue") && (
+        {configuration?.composer}
+        {!configuration && current && can("run.continue") && (
           <>
             {mode === "steer" && steer ? (
               <Composer
@@ -481,17 +491,19 @@ function RunContent({
           </p>
         )}
       </div>
-      <ThreadQueue
-        thread={thread}
-        canConsume={
-          (!thread.current_run_id ||
-            (!!currentRun.data &&
-              !isActiveRun(currentRun.data.status) &&
-              currentRun.data.status !== "waiting")) &&
-          (!thread.head_run_id ||
-            (!!headRun.data && headRun.data.status !== "waiting"))
-        }
-      />
+      {!configuration && (
+        <ThreadQueue
+          thread={thread}
+          canConsume={
+            (!thread.current_run_id ||
+              (!!currentRun.data &&
+                !isActiveRun(currentRun.data.status) &&
+                currentRun.data.status !== "waiting")) &&
+            (!thread.head_run_id ||
+              (!!headRun.data && headRun.data.status !== "waiting"))
+          }
+        />
+      )}
     </div>
   );
 }

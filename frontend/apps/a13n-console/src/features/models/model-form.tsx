@@ -89,6 +89,11 @@ export function ModelForm({
     [parameterError, setParameterError] = useState<string>(),
     [manual, setManual] = useState(!!original || !!candidate),
     [settledUpstream, setSettledUpstream] = useState(upstream);
+  const [toolsSupport, setToolsSupport] = useState<string>(
+    original?.value.declarations?.supports_tools == null
+      ? "unknown"
+      : String(original.value.declarations?.supports_tools),
+  );
   const providers = useQuery({
     queryKey: ["model-provider-choices", scope.kind, scope.id],
     queryFn: ({ signal }) =>
@@ -198,14 +203,28 @@ export function ModelForm({
         ...(original
           ? {
               base_model: original.value.base_model,
-              declarations: original.value.declarations,
+              declarations: {
+                ...original.value.declarations,
+                supports_tools:
+                  toolsSupport === "unknown" ? null : toolsSupport === "true",
+              },
             }
           : suggestion
             ? {
                 base_model: suggestion.base_model,
-                declarations: suggestion.declarations,
+                declarations: {
+                  ...suggestion.declarations,
+                  ...(toolsSupport !== "unknown"
+                    ? { supports_tools: toolsSupport === "true" }
+                    : {}),
+                },
               }
-            : {}),
+            : {
+                declarations: {
+                  supports_tools:
+                    toolsSupport === "unknown" ? null : toolsSupport === "true",
+                },
+              }),
       };
       if (!original)
         return api.createModel({ ...body, key, provider_id: provider });
@@ -223,7 +242,11 @@ export function ModelForm({
   });
   const dirty =
     !!original &&
-    (upstream.trim() !== original.value.upstream_model ||
+    (toolsSupport !==
+      (original.value.declarations?.supports_tools == null
+        ? "unknown"
+        : String(original.value.declarations?.supports_tools)) ||
+      upstream.trim() !== original.value.upstream_model ||
       callingApi !== original.value.model_api ||
       name !== original.value.name ||
       description !== (original.value.description ?? "") ||
@@ -508,6 +531,16 @@ export function ModelForm({
       )}
       {!original && identityFields}
 
+      <ChoiceField
+        label={t("Tool calling support")}
+        value={toolsSupport}
+        onValueChange={setToolsSupport}
+        options={[
+          { value: "unknown", label: t("Use catalog declaration") },
+          { value: "true", label: t("Supported") },
+          { value: "false", label: t("Unsupported") },
+        ]}
+      />
       <section className={modelStyles.defaultsFields}>
         <ModelParameters
           text={settingsText}

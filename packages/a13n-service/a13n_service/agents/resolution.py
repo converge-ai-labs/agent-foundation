@@ -65,6 +65,8 @@ class PreparedRevisionResolution:
     subagents: tuple[PreparedSubagent, ...]
     connectivity: PreparedConnectivity
     reviewer_model: PreparedModelExecution | None = None
+    creation: bool = False
+    authorization_agent_id: str | None = None
 
 
 class AgentResolver:
@@ -97,6 +99,8 @@ class AgentResolver:
         workspace_id: str,
         agent_id: str,
         config: AgentConfig,
+        creation: bool = False,
+        authorization_agent_id: str | None = None,
     ) -> PreparedRevisionResolution:
         self._validate_local_config(config)
         model = await self._model_selector.prepare(
@@ -116,12 +120,12 @@ class AgentResolver:
             else None
         )
         async with short_session(self._sessions) as session:
-            await authorize_agent(
+            await _authorize_revision(
                 session,
                 actor=actor,
                 workspace_id=workspace_id,
-                agent_id=agent_id,
-                action=WorkspaceAction.agent_revision_create,
+                agent_id=authorization_agent_id or agent_id,
+                creation=creation,
             )
             skills = await self._prepare_skills(
                 session,
@@ -157,6 +161,8 @@ class AgentResolver:
             subagents=subagents,
             connectivity=connectivity,
             reviewer_model=reviewer_model,
+            creation=creation,
+            authorization_agent_id=authorization_agent_id,
         )
 
     async def freeze_in_transaction(
@@ -165,12 +171,12 @@ class AgentResolver:
         *,
         prepared: PreparedRevisionResolution,
     ) -> ResolvedRevisionContent:
-        await authorize_agent(
+        await _authorize_revision(
             session,
             actor=prepared.actor,
             workspace_id=prepared.workspace_id,
-            agent_id=prepared.agent_id,
-            action=WorkspaceAction.agent_revision_create,
+            agent_id=prepared.authorization_agent_id or prepared.agent_id,
+            creation=prepared.creation,
         )
         if prepared.config.memory is not None:
             await authorize_workspace(
@@ -410,6 +416,21 @@ class AgentResolver:
                 )
             )
         return tuple(result)
+
+
+async def _authorize_revision(
+    session: AsyncSession, *, actor: AuthenticatedActor, workspace_id: str, agent_id: str, creation: bool
+) -> None:
+    if creation:
+        await authorize_workspace(session, actor=actor, workspace_id=workspace_id, action=WorkspaceAction.agent_create)
+    else:
+        await authorize_agent(
+            session,
+            actor=actor,
+            workspace_id=workspace_id,
+            agent_id=agent_id,
+            action=WorkspaceAction.agent_revision_create,
+        )
 
 
 def resolution_error(error: Exception) -> AgentError:

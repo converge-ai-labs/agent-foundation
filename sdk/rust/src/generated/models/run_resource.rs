@@ -22,6 +22,14 @@ pub struct RunResource {
     #[serde(rename = "completed_at", deserialize_with = "Option::deserialize")]
     pub completed_at: Option<chrono::DateTime<chrono::FixedOffset>>,
 
+    #[serde(
+        rename = "configuration_draft_id",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub configuration_draft_id: Option<Option<String>>,
+
     #[serde(rename = "created_at")]
     pub created_at: chrono::DateTime<chrono::FixedOffset>,
 
@@ -147,6 +155,7 @@ impl RunResource {
             agent_id,
             agent_revision_id,
             completed_at,
+            configuration_draft_id: None,
             created_at,
             effective_agent_config_digest,
             environment_access,

@@ -89,6 +89,21 @@ func (e ActivityMessageRole) Valid() bool {
 	}
 }
 
+// Defines values for AgentSystemPurpose.
+const (
+	ConfigurationAssistant AgentSystemPurpose = "configuration_assistant"
+)
+
+// Valid indicates whether the value is a known member of the AgentSystemPurpose enum.
+func (e AgentSystemPurpose) Valid() bool {
+	switch e {
+	case ConfigurationAssistant:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AgentConfigInputSubagentMode.
 const (
 	AgentConfigInputSubagentModeAsync  AgentConfigInputSubagentMode = "async"
@@ -257,6 +272,54 @@ const (
 func (e AssistantMessageRole) Valid() bool {
 	switch e {
 	case Assistant:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssistantReadinessReasonCode.
+const (
+	AssistantReadinessReasonCodeCompatibleModelRequired AssistantReadinessReasonCode = "compatible_model_required"
+	AssistantReadinessReasonCodeModelAccessDenied       AssistantReadinessReasonCode = "model_access_denied"
+	AssistantReadinessReasonCodeModelSetupRequired      AssistantReadinessReasonCode = "model_setup_required"
+	AssistantReadinessReasonCodeProviderSetupRequired   AssistantReadinessReasonCode = "provider_setup_required"
+	AssistantReadinessReasonCodeReady                   AssistantReadinessReasonCode = "ready"
+)
+
+// Valid indicates whether the value is a known member of the AssistantReadinessReasonCode enum.
+func (e AssistantReadinessReasonCode) Valid() bool {
+	switch e {
+	case AssistantReadinessReasonCodeCompatibleModelRequired:
+		return true
+	case AssistantReadinessReasonCodeModelAccessDenied:
+		return true
+	case AssistantReadinessReasonCodeModelSetupRequired:
+		return true
+	case AssistantReadinessReasonCodeProviderSetupRequired:
+		return true
+	case AssistantReadinessReasonCodeReady:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AssistantReadinessSetupActions.
+const (
+	ConfigureModel       AssistantReadinessSetupActions = "configure_model"
+	ConfigureProvider    AssistantReadinessSetupActions = "configure_provider"
+	ContactAdministrator AssistantReadinessSetupActions = "contact_administrator"
+)
+
+// Valid indicates whether the value is a known member of the AssistantReadinessSetupActions enum.
+func (e AssistantReadinessSetupActions) Valid() bool {
+	switch e {
+	case ConfigureModel:
+		return true
+	case ConfigureProvider:
+		return true
+	case ContactAdministrator:
 		return true
 	default:
 		return false
@@ -470,6 +533,132 @@ const (
 func (e CompletePendingResolutionAction) Valid() bool {
 	switch e {
 	case Complete:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ConfigurationDraftMode.
+const (
+	ConfigurationDraftModeCreate ConfigurationDraftMode = "create"
+	ConfigurationDraftModeUpdate ConfigurationDraftMode = "update"
+)
+
+// Valid indicates whether the value is a known member of the ConfigurationDraftMode enum.
+func (e ConfigurationDraftMode) Valid() bool {
+	switch e {
+	case ConfigurationDraftModeCreate:
+		return true
+	case ConfigurationDraftModeUpdate:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ConfigurationDraftSourceSelector.
+const (
+	ConfigurationDraftSourceSelectorCurrent  ConfigurationDraftSourceSelector = "current"
+	ConfigurationDraftSourceSelectorEmpty    ConfigurationDraftSourceSelector = "empty"
+	ConfigurationDraftSourceSelectorExplicit ConfigurationDraftSourceSelector = "explicit"
+)
+
+// Valid indicates whether the value is a known member of the ConfigurationDraftSourceSelector enum.
+func (e ConfigurationDraftSourceSelector) Valid() bool {
+	switch e {
+	case ConfigurationDraftSourceSelectorCurrent:
+		return true
+	case ConfigurationDraftSourceSelectorEmpty:
+		return true
+	case ConfigurationDraftSourceSelectorExplicit:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ConfigurationDraftStatus.
+const (
+	ConfigurationDraftStatusApplied   ConfigurationDraftStatus = "applied"
+	ConfigurationDraftStatusDiscarded ConfigurationDraftStatus = "discarded"
+	ConfigurationDraftStatusExpired   ConfigurationDraftStatus = "expired"
+	ConfigurationDraftStatusOpen      ConfigurationDraftStatus = "open"
+)
+
+// Valid indicates whether the value is a known member of the ConfigurationDraftStatus enum.
+func (e ConfigurationDraftStatus) Valid() bool {
+	switch e {
+	case ConfigurationDraftStatusApplied:
+		return true
+	case ConfigurationDraftStatusDiscarded:
+		return true
+	case ConfigurationDraftStatusExpired:
+		return true
+	case ConfigurationDraftStatusOpen:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ConfigurationDraftReviewMode.
+const (
+	ConfigurationDraftReviewModeCreate ConfigurationDraftReviewMode = "create"
+	ConfigurationDraftReviewModeUpdate ConfigurationDraftReviewMode = "update"
+)
+
+// Valid indicates whether the value is a known member of the ConfigurationDraftReviewMode enum.
+func (e ConfigurationDraftReviewMode) Valid() bool {
+	switch e {
+	case ConfigurationDraftReviewModeCreate:
+		return true
+	case ConfigurationDraftReviewModeUpdate:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ConfigurationDraftReviewSourceSelector.
+const (
+	ConfigurationDraftReviewSourceSelectorCurrent  ConfigurationDraftReviewSourceSelector = "current"
+	ConfigurationDraftReviewSourceSelectorEmpty    ConfigurationDraftReviewSourceSelector = "empty"
+	ConfigurationDraftReviewSourceSelectorExplicit ConfigurationDraftReviewSourceSelector = "explicit"
+)
+
+// Valid indicates whether the value is a known member of the ConfigurationDraftReviewSourceSelector enum.
+func (e ConfigurationDraftReviewSourceSelector) Valid() bool {
+	switch e {
+	case ConfigurationDraftReviewSourceSelectorCurrent:
+		return true
+	case ConfigurationDraftReviewSourceSelectorEmpty:
+		return true
+	case ConfigurationDraftReviewSourceSelectorExplicit:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ConfigurationDraftReviewStatus.
+const (
+	ConfigurationDraftReviewStatusApplied   ConfigurationDraftReviewStatus = "applied"
+	ConfigurationDraftReviewStatusDiscarded ConfigurationDraftReviewStatus = "discarded"
+	ConfigurationDraftReviewStatusExpired   ConfigurationDraftReviewStatus = "expired"
+	ConfigurationDraftReviewStatusOpen      ConfigurationDraftReviewStatus = "open"
+)
+
+// Valid indicates whether the value is a known member of the ConfigurationDraftReviewStatus enum.
+func (e ConfigurationDraftReviewStatus) Valid() bool {
+	switch e {
+	case ConfigurationDraftReviewStatusApplied:
+		return true
+	case ConfigurationDraftReviewStatusDiscarded:
+		return true
+	case ConfigurationDraftReviewStatusExpired:
+		return true
+	case ConfigurationDraftReviewStatusOpen:
 		return true
 	default:
 		return false
@@ -1913,6 +2102,21 @@ func (e RejectPendingResolutionAction) Valid() bool {
 	}
 }
 
+// Defines values for RemoveOperationOp.
+const (
+	Remove RemoveOperationOp = "remove"
+)
+
+// Valid indicates whether the value is a known member of the RemoveOperationOp enum.
+func (e RemoveOperationOp) Valid() bool {
+	switch e {
+	case Remove:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ReplaceTargetRequestTargetKind.
 const (
 	ReplaceTargetRequestTargetKindConversation ReplaceTargetRequestTargetKind = "conversation"
@@ -1925,6 +2129,21 @@ func (e ReplaceTargetRequestTargetKind) Valid() bool {
 	case ReplaceTargetRequestTargetKindConversation:
 		return true
 	case ReplaceTargetRequestTargetKindRepository:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReplaceTextOperationOp.
+const (
+	ReplaceText ReplaceTextOperationOp = "replace_text"
+)
+
+// Valid indicates whether the value is a known member of the ReplaceTextOperationOp enum.
+func (e ReplaceTextOperationOp) Valid() bool {
+	switch e {
+	case ReplaceText:
 		return true
 	default:
 		return false
@@ -2135,6 +2354,21 @@ func (e SearchIn) Valid() bool {
 	}
 }
 
+// Defines values for SetOperationOp.
+const (
+	Set SetOperationOp = "set"
+)
+
+// Valid indicates whether the value is a known member of the SetOperationOp enum.
+func (e SetOperationOp) Valid() bool {
+	switch e {
+	case Set:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SetRoleRequestRole.
 const (
 	SetRoleRequestRoleAdmin   SetRoleRequestRole = "admin"
@@ -2222,6 +2456,27 @@ func (e SkillPublicationReceiptOutcome) Valid() bool {
 	case AlreadyCurrent:
 		return true
 	case Published:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SourceSelectionSelector.
+const (
+	SourceSelectionSelectorCurrent  SourceSelectionSelector = "current"
+	SourceSelectionSelectorEmpty    SourceSelectionSelector = "empty"
+	SourceSelectionSelectorExplicit SourceSelectionSelector = "explicit"
+)
+
+// Valid indicates whether the value is a known member of the SourceSelectionSelector enum.
+func (e SourceSelectionSelector) Valid() bool {
+	switch e {
+	case SourceSelectionSelectorCurrent:
+		return true
+	case SourceSelectionSelectorEmpty:
+		return true
+	case SourceSelectionSelectorExplicit:
 		return true
 	default:
 		return false
@@ -2747,6 +3002,24 @@ func (e UserMessageRole) Valid() bool {
 	}
 }
 
+// Defines values for VerificationAcknowledgementOutcome.
+const (
+	VerificationAcknowledgementOutcomeFailed     VerificationAcknowledgementOutcome = "failed"
+	VerificationAcknowledgementOutcomeUnverified VerificationAcknowledgementOutcome = "unverified"
+)
+
+// Valid indicates whether the value is a known member of the VerificationAcknowledgementOutcome enum.
+func (e VerificationAcknowledgementOutcome) Valid() bool {
+	switch e {
+	case VerificationAcknowledgementOutcomeFailed:
+		return true
+	case VerificationAcknowledgementOutcomeUnverified:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for VideoInputContentType.
 const (
 	VideoInputContentTypeVideo VideoInputContentType = "video"
@@ -3061,27 +3334,31 @@ type ActorRef struct {
 
 // Agent defines model for Agent.
 type Agent struct {
-	ArchivedAt                   nullable.Nullable[time.Time] `json:"archived_at"`
-	CreatedAt                    time.Time                    `json:"created_at"`
-	CreatedBy                    ActorRef                     `json:"created_by"`
-	CurrentRevisionId            string                       `json:"current_revision_id"`
-	DefaultEnvironmentTemplateId nullable.Nullable[string]    `json:"default_environment_template_id,omitempty"`
-	Description                  nullable.Nullable[string]    `json:"description"`
-	DuplicatedFromAgentId        nullable.Nullable[string]    `json:"duplicated_from_agent_id"`
-	DuplicatedFromRevisionId     nullable.Nullable[string]    `json:"duplicated_from_revision_id"`
-	Enabled                      bool                         `json:"enabled"`
-	Id                           string                       `json:"id"`
-	ImageUrl                     nullable.Nullable[string]    `json:"image_url,omitempty"`
-	Key                          string                       `json:"key"`
-	Labels                       *map[string]interface{}      `json:"labels,omitempty"`
-	Name                         string                       `json:"name"`
-	OrganizationId               string                       `json:"organization_id"`
-	Source                       AgentSource                  `json:"source"`
-	UpdatedAt                    time.Time                    `json:"updated_at"`
-	UpdatedBy                    ActorRef                     `json:"updated_by"`
-	Version                      int                          `json:"version"`
-	WorkspaceId                  string                       `json:"workspace_id"`
+	ArchivedAt                   nullable.Nullable[time.Time]          `json:"archived_at"`
+	CreatedAt                    time.Time                             `json:"created_at"`
+	CreatedBy                    ActorRef                              `json:"created_by"`
+	CurrentRevisionId            string                                `json:"current_revision_id"`
+	DefaultEnvironmentTemplateId nullable.Nullable[string]             `json:"default_environment_template_id,omitempty"`
+	Description                  nullable.Nullable[string]             `json:"description"`
+	DuplicatedFromAgentId        nullable.Nullable[string]             `json:"duplicated_from_agent_id"`
+	DuplicatedFromRevisionId     nullable.Nullable[string]             `json:"duplicated_from_revision_id"`
+	Enabled                      bool                                  `json:"enabled"`
+	Id                           string                                `json:"id"`
+	ImageUrl                     nullable.Nullable[string]             `json:"image_url,omitempty"`
+	Key                          string                                `json:"key"`
+	Labels                       *map[string]interface{}               `json:"labels,omitempty"`
+	Name                         string                                `json:"name"`
+	OrganizationId               string                                `json:"organization_id"`
+	Source                       AgentSource                           `json:"source"`
+	SystemPurpose                nullable.Nullable[AgentSystemPurpose] `json:"system_purpose,omitempty"`
+	UpdatedAt                    time.Time                             `json:"updated_at"`
+	UpdatedBy                    ActorRef                              `json:"updated_by"`
+	Version                      int                                   `json:"version"`
+	WorkspaceId                  string                                `json:"workspace_id"`
 }
+
+// AgentSystemPurpose defines model for Agent.SystemPurpose.
+type AgentSystemPurpose string
 
 // AgentCollection defines model for AgentCollection.
 type AgentCollection struct {
@@ -3277,6 +3554,16 @@ type ApiKey struct {
 	UpdatedAt      time.Time                    `json:"updated_at"`
 }
 
+// ApplyDraftRequest defines model for ApplyDraftRequest.
+type ApplyDraftRequest struct {
+	ContentDigest               string                                         `json:"content_digest"`
+	DependencyDigest            string                                         `json:"dependency_digest"`
+	ExpectedTargetVersion       nullable.Nullable[int]                         `json:"expected_target_version,omitempty"`
+	ExpectedVersion             int                                            `json:"expected_version"`
+	VerificationAcknowledgement nullable.Nullable[VerificationAcknowledgement] `json:"verification_acknowledgement,omitempty"`
+	VerificationRunIds          *[]string                                      `json:"verification_run_ids,omitempty"`
+}
+
 // ApprovePendingResolution defines model for ApprovePendingResolution.
 type ApprovePendingResolution struct {
 	Action *ApprovePendingResolutionAction `json:"action,omitempty"`
@@ -3336,6 +3623,21 @@ type AssistantMessage struct {
 
 // AssistantMessageRole defines model for AssistantMessage.Role.
 type AssistantMessageRole string
+
+// AssistantReadiness defines model for AssistantReadiness.
+type AssistantReadiness struct {
+	Ready         bool                                      `json:"ready"`
+	ReasonCode    AssistantReadinessReasonCode              `json:"reason_code"`
+	SelectedModel nullable.Nullable[SelectedAssistantModel] `json:"selected_model,omitempty"`
+	SetupActions  []AssistantReadinessSetupActions          `json:"setup_actions"`
+	SetupUrl      string                                    `json:"setup_url"`
+}
+
+// AssistantReadinessReasonCode defines model for AssistantReadiness.ReasonCode.
+type AssistantReadinessReasonCode string
+
+// AssistantReadinessSetupActions defines model for AssistantReadiness.SetupActions.
+type AssistantReadinessSetupActions string
 
 // AudioInputContent An audio input content fragment.
 type AudioInputContent struct {
@@ -3549,6 +3851,172 @@ type CompletePendingResolution struct {
 
 // CompletePendingResolutionAction defines model for CompletePendingResolution.Action.
 type CompletePendingResolutionAction string
+
+// ConfigurationApplicationReceipt defines model for ConfigurationApplicationReceipt.
+type ConfigurationApplicationReceipt struct {
+	AgentId                     string                                         `json:"agent_id"`
+	AgentRevisionId             string                                         `json:"agent_revision_id"`
+	AgentVersion                int                                            `json:"agent_version"`
+	AppliedAt                   time.Time                                      `json:"applied_at"`
+	AppliedByUserId             string                                         `json:"applied_by_user_id"`
+	DraftId                     string                                         `json:"draft_id"`
+	NoChange                    bool                                           `json:"no_change"`
+	ReviewedDigest              string                                         `json:"reviewed_digest"`
+	ReviewedVersion             int                                            `json:"reviewed_version"`
+	VerificationAcknowledgement nullable.Nullable[VerificationAcknowledgement] `json:"verification_acknowledgement,omitempty"`
+	VerificationRunIds          *[]string                                      `json:"verification_run_ids,omitempty"`
+}
+
+// ConfigurationDifference defines model for ConfigurationDifference.
+type ConfigurationDifference struct {
+	After         JsonValue `json:"after"`
+	AfterPresent  bool      `json:"after_present"`
+	Before        JsonValue `json:"before"`
+	BeforePresent bool      `json:"before_present"`
+	Path          []string  `json:"path"`
+}
+
+// ConfigurationDraft defines model for ConfigurationDraft.
+type ConfigurationDraft struct {
+	ApplicationReceipt         nullable.Nullable[ConfigurationApplicationReceipt] `json:"application_receipt,omitempty"`
+	BaseAgentRevisionId        nullable.Nullable[string]                          `json:"base_agent_revision_id"`
+	BaseAgentVersion           nullable.Nullable[int]                             `json:"base_agent_version,omitempty"`
+	Config                     nullable.Nullable[AgentConfigOutput]               `json:"config"`
+	ContentDigest              string                                             `json:"content_digest"`
+	CreatedAt                  time.Time                                          `json:"created_at"`
+	CreationMetadata           nullable.Nullable[CreationMetadata]                `json:"creation_metadata,omitempty"`
+	EvidenceRefs               *[]string                                          `json:"evidence_refs,omitempty"`
+	Id                         string                                             `json:"id"`
+	LatestValidation           nullable.Nullable[ConfigurationValidation]         `json:"latest_validation,omitempty"`
+	Mode                       ConfigurationDraftMode                             `json:"mode"`
+	OrganizationId             string                                             `json:"organization_id"`
+	OwnerUserId                string                                             `json:"owner_user_id"`
+	PredecessorDraftId         nullable.Nullable[string]                          `json:"predecessor_draft_id,omitempty"`
+	SessionId                  string                                             `json:"session_id"`
+	SourceAgentRevisionId      nullable.Nullable[string]                          `json:"source_agent_revision_id"`
+	SourceAgentRevisionVersion nullable.Nullable[int]                             `json:"source_agent_revision_version,omitempty"`
+	SourceSelector             ConfigurationDraftSourceSelector                   `json:"source_selector"`
+	Status                     ConfigurationDraftStatus                           `json:"status"`
+	TargetAgentId              nullable.Nullable[string]                          `json:"target_agent_id"`
+	TerminalReason             nullable.Nullable[string]                          `json:"terminal_reason,omitempty"`
+	ThreadId                   string                                             `json:"thread_id"`
+	UpdatedAt                  time.Time                                          `json:"updated_at"`
+	Version                    int                                                `json:"version"`
+	WorkspaceId                string                                             `json:"workspace_id"`
+}
+
+// ConfigurationDraftMode defines model for ConfigurationDraft.Mode.
+type ConfigurationDraftMode string
+
+// ConfigurationDraftSourceSelector defines model for ConfigurationDraft.SourceSelector.
+type ConfigurationDraftSourceSelector string
+
+// ConfigurationDraftStatus defines model for ConfigurationDraft.Status.
+type ConfigurationDraftStatus string
+
+// ConfigurationDraftReview defines model for ConfigurationDraftReview.
+type ConfigurationDraftReview struct {
+	ApplicationReceipt         nullable.Nullable[ConfigurationApplicationReceipt] `json:"application_receipt,omitempty"`
+	Base                       nullable.Nullable[ConfigurationRevisionView]       `json:"base"`
+	BaseAgentRevisionId        nullable.Nullable[string]                          `json:"base_agent_revision_id"`
+	BaseAgentVersion           nullable.Nullable[int]                             `json:"base_agent_version,omitempty"`
+	BaseToCandidate            []ConfigurationDifference                          `json:"base_to_candidate"`
+	BaseToCurrentTarget        []ConfigurationDifference                          `json:"base_to_current_target"`
+	Config                     nullable.Nullable[AgentConfigOutput]               `json:"config"`
+	ContentDigest              string                                             `json:"content_digest"`
+	CreatedAt                  time.Time                                          `json:"created_at"`
+	CreationMetadata           nullable.Nullable[CreationMetadata]                `json:"creation_metadata,omitempty"`
+	CurrentTarget              nullable.Nullable[ConfigurationRevisionView]       `json:"current_target"`
+	CurrentTargetToCandidate   []ConfigurationDifference                          `json:"current_target_to_candidate"`
+	EvidenceRefs               *[]string                                          `json:"evidence_refs,omitempty"`
+	Id                         string                                             `json:"id"`
+	LatestValidation           nullable.Nullable[ConfigurationValidation]         `json:"latest_validation,omitempty"`
+	Mode                       ConfigurationDraftReviewMode                       `json:"mode"`
+	OrganizationId             string                                             `json:"organization_id"`
+	OwnerUserId                string                                             `json:"owner_user_id"`
+	PredecessorDraftId         nullable.Nullable[string]                          `json:"predecessor_draft_id,omitempty"`
+	SessionId                  string                                             `json:"session_id"`
+	Source                     nullable.Nullable[ConfigurationRevisionView]       `json:"source"`
+	SourceAgentRevisionId      nullable.Nullable[string]                          `json:"source_agent_revision_id"`
+	SourceAgentRevisionVersion nullable.Nullable[int]                             `json:"source_agent_revision_version,omitempty"`
+	SourceSelector             ConfigurationDraftReviewSourceSelector             `json:"source_selector"`
+	SourceToCandidate          []ConfigurationDifference                          `json:"source_to_candidate"`
+	Status                     ConfigurationDraftReviewStatus                     `json:"status"`
+	TargetAgentId              nullable.Nullable[string]                          `json:"target_agent_id"`
+	TargetConflict             bool                                               `json:"target_conflict"`
+	TerminalReason             nullable.Nullable[string]                          `json:"terminal_reason,omitempty"`
+	ThreadId                   string                                             `json:"thread_id"`
+	UpdatedAt                  time.Time                                          `json:"updated_at"`
+	Version                    int                                                `json:"version"`
+	WorkspaceId                string                                             `json:"workspace_id"`
+}
+
+// ConfigurationDraftReviewMode defines model for ConfigurationDraftReview.Mode.
+type ConfigurationDraftReviewMode string
+
+// ConfigurationDraftReviewSourceSelector defines model for ConfigurationDraftReview.SourceSelector.
+type ConfigurationDraftReviewSourceSelector string
+
+// ConfigurationDraftReviewStatus defines model for ConfigurationDraftReview.Status.
+type ConfigurationDraftReviewStatus string
+
+// ConfigurationInputRequest defines model for ConfigurationInputRequest.
+type ConfigurationInputRequest struct {
+	ExpectedThreadVersion int `json:"expected_thread_version"`
+
+	// Input Submitted or retained versioned ordinary Agent input.
+	Input  AgentInput                         `json:"input"`
+	Source nullable.Nullable[SourceSelection] `json:"source,omitempty"`
+}
+
+// ConfigurationRevisionView defines model for ConfigurationRevisionView.
+type ConfigurationRevisionView struct {
+	AgentId    string            `json:"agent_id"`
+	Config     AgentConfigOutput `json:"config"`
+	RevisionId string            `json:"revision_id"`
+	Version    int               `json:"version"`
+}
+
+// ConfigurationSessionCollection defines model for ConfigurationSessionCollection.
+type ConfigurationSessionCollection struct {
+	Items      []ConfigurationSessionView `json:"items"`
+	NextCursor nullable.Nullable[string]  `json:"next_cursor"`
+}
+
+// ConfigurationSessionView defines model for ConfigurationSessionView.
+type ConfigurationSessionView struct {
+	CreatedAt      time.Time                 `json:"created_at"`
+	Id             string                    `json:"id"`
+	OrganizationId string                    `json:"organization_id"`
+	OwnerUserId    string                    `json:"owner_user_id"`
+	RootThreadId   string                    `json:"root_thread_id"`
+	TargetAgentId  nullable.Nullable[string] `json:"target_agent_id"`
+	UpdatedAt      time.Time                 `json:"updated_at"`
+	WorkspaceId    string                    `json:"workspace_id"`
+}
+
+// ConfigurationThreadCollection defines model for ConfigurationThreadCollection.
+type ConfigurationThreadCollection struct {
+	Items      []ConfigurationThreadView `json:"items"`
+	NextCursor nullable.Nullable[string] `json:"next_cursor"`
+}
+
+// ConfigurationThreadView defines model for ConfigurationThreadView.
+type ConfigurationThreadView struct {
+	ActiveDraftId              nullable.Nullable[string]                          `json:"active_draft_id"`
+	LatestDraft                ConfigurationDraft                                 `json:"latest_draft"`
+	PreviousApplicationReceipt nullable.Nullable[ConfigurationApplicationReceipt] `json:"previous_application_receipt"`
+	Thread                     Thread                                             `json:"thread"`
+}
+
+// ConfigurationValidation defines model for ConfigurationValidation.
+type ConfigurationValidation struct {
+	CheckedAt        time.Time `json:"checked_at"`
+	ContentDigest    string    `json:"content_digest"`
+	DependencyDigest string    `json:"dependency_digest"`
+	DraftVersion     int       `json:"draft_version"`
+	Warnings         *[]string `json:"warnings,omitempty"`
+}
 
 // ConfigureMCPOAuthClientRequest defines model for ConfigureMCPOAuthClientRequest.
 type ConfigureMCPOAuthClientRequest struct {
@@ -3819,6 +4287,12 @@ type CreateAuthorizationRequest struct {
 // CreateAuthorizationRequestMethod defines model for CreateAuthorizationRequest.Method.
 type CreateAuthorizationRequestMethod string
 
+// CreateConfigurationThreadRequest defines model for CreateConfigurationThreadRequest.
+type CreateConfigurationThreadRequest struct {
+	ForkFromRunId string                             `json:"fork_from_run_id"`
+	Source        nullable.Nullable[SourceSelection] `json:"source,omitempty"`
+}
+
 // CreateConnectionRequest defines model for CreateConnectionRequest.
 type CreateConnectionRequest struct {
 	Name   string                         `json:"name"`
@@ -3920,6 +4394,12 @@ type CreateServiceAccountRequest struct {
 // CreateServiceAccountRequestRole defines model for CreateServiceAccountRequest.Role.
 type CreateServiceAccountRequestRole string
 
+// CreateSessionRequest defines model for CreateSessionRequest.
+type CreateSessionRequest struct {
+	Source        nullable.Nullable[SourceSelection] `json:"source,omitempty"`
+	TargetAgentId nullable.Nullable[string]          `json:"target_agent_id,omitempty"`
+}
+
 // CreateSkillRequest defines model for CreateSkillRequest.
 type CreateSkillRequest struct {
 	Labels *map[string]interface{}   `json:"labels,omitempty"`
@@ -4003,6 +4483,12 @@ type CreatedKey struct {
 	Key    ApiKey `json:"key"`
 }
 
+// CreationMetadata defines model for CreationMetadata.
+type CreationMetadata struct {
+	Description nullable.Nullable[string] `json:"description,omitempty"`
+	Name        string                    `json:"name"`
+}
+
 // CredentialContext The authenticated credential boundary, independent of resource grants.
 type CredentialContext struct {
 	OrganizationId nullable.Nullable[string] `json:"organization_id"`
@@ -4039,6 +4525,11 @@ type DeveloperMessage struct {
 
 // DeveloperMessageRole defines model for DeveloperMessage.Role.
 type DeveloperMessageRole string
+
+// DiscardDraftRequest defines model for DiscardDraftRequest.
+type DiscardDraftRequest struct {
+	ExpectedVersion int `json:"expected_version"`
+}
 
 // DocumentInputContent A document input content fragment.
 type DocumentInputContent struct {
@@ -4896,6 +5387,7 @@ type ModelDeclarations struct {
 	MaxOutputTokens     nullable.Nullable[int]              `json:"max_output_tokens,omitempty"`
 	Pricing             nullable.Nullable[ModelPricing]     `json:"pricing,omitempty"`
 	StructuredOutput    nullable.Nullable[bool]             `json:"structured_output,omitempty"`
+	SupportsTools       nullable.Nullable[bool]             `json:"supports_tools,omitempty"`
 	ThinkingEfforts     *[]ModelDeclarationsThinkingEfforts `json:"thinking_efforts,omitempty"`
 }
 
@@ -5285,6 +5777,13 @@ type ReasoningMessage struct {
 // ReasoningMessageRole defines model for ReasoningMessage.Role.
 type ReasoningMessageRole string
 
+// RebaseDraftRequest defines model for RebaseDraftRequest.
+type RebaseDraftRequest struct {
+	Config                AgentConfigInput `json:"config"`
+	ExpectedTargetVersion int              `json:"expected_target_version"`
+	ExpectedVersion       int              `json:"expected_version"`
+}
+
 // ReceiveAuthorizationRequest defines model for ReceiveAuthorizationRequest.
 type ReceiveAuthorizationRequest struct {
 	BrowserNonce string                    `json:"browser_nonce"`
@@ -5311,6 +5810,15 @@ type RejectPendingResolution struct {
 
 // RejectPendingResolutionAction defines model for RejectPendingResolution.Action.
 type RejectPendingResolutionAction string
+
+// RemoveOperation defines model for RemoveOperation.
+type RemoveOperation struct {
+	Op   RemoveOperationOp `json:"op"`
+	Path []string          `json:"path"`
+}
+
+// RemoveOperationOp defines model for RemoveOperation.Op.
+type RemoveOperationOp string
 
 // ReorderQueuedSubmissionsRequest defines model for ReorderQueuedSubmissionsRequest.
 type ReorderQueuedSubmissionsRequest struct {
@@ -5349,6 +5857,17 @@ type ReplaceTargetRequest struct {
 
 // ReplaceTargetRequestTargetKind defines model for ReplaceTargetRequest.TargetKind.
 type ReplaceTargetRequestTargetKind string
+
+// ReplaceTextOperation defines model for ReplaceTextOperation.
+type ReplaceTextOperation struct {
+	NewText string                 `json:"new_text"`
+	OldText string                 `json:"old_text"`
+	Op      ReplaceTextOperationOp `json:"op"`
+	Path    []string               `json:"path"`
+}
+
+// ReplaceTextOperationOp defines model for ReplaceTextOperation.Op.
+type ReplaceTextOperationOp string
 
 // ResolvedAgentModel defines model for ResolvedAgentModel.
 type ResolvedAgentModel struct {
@@ -5563,6 +6082,7 @@ type RunResource struct {
 	AgentId                    string                       `json:"agent_id"`
 	AgentRevisionId            string                       `json:"agent_revision_id"`
 	CompletedAt                nullable.Nullable[time.Time] `json:"completed_at"`
+	ConfigurationDraftId       nullable.Nullable[string]    `json:"configuration_draft_id,omitempty"`
 	CreatedAt                  time.Time                    `json:"created_at"`
 	EffectiveAgentConfigDigest string                       `json:"effective_agent_config_digest"`
 	EnvironmentAccess          nullable.Nullable[string]    `json:"environment_access"`
@@ -5651,6 +6171,14 @@ type SecurityEvent struct {
 	WorkspaceId    nullable.Nullable[string] `json:"workspace_id"`
 }
 
+// SelectedAssistantModel defines model for SelectedAssistantModel.
+type SelectedAssistantModel struct {
+	ModelId         string               `json:"model_id"`
+	ModelKey        string               `json:"model_key"`
+	SelectionReason string               `json:"selection_reason"`
+	Settings        map[string]JsonValue `json:"settings"`
+}
+
 // ServiceAccount defines model for ServiceAccount.
 type ServiceAccount struct {
 	CreatedAt      time.Time                    `json:"created_at"`
@@ -5693,6 +6221,16 @@ type SessionResource struct {
 	UpdatedAt   time.Time                         `json:"updated_at"`
 	WorkspaceId string                            `json:"workspace_id"`
 }
+
+// SetOperation defines model for SetOperation.
+type SetOperation struct {
+	Op    SetOperationOp `json:"op"`
+	Path  []string       `json:"path"`
+	Value JsonValue      `json:"value"`
+}
+
+// SetOperationOp defines model for SetOperation.Op.
+type SetOperationOp string
 
 // SetRoleRequest defines model for SetRoleRequest.
 type SetRoleRequest struct {
@@ -5834,6 +6372,15 @@ type SkillUploadReceipt struct {
 	UploadId             string                    `json:"upload_id"`
 	WorkspaceId          string                    `json:"workspace_id"`
 }
+
+// SourceSelection defines model for SourceSelection.
+type SourceSelection struct {
+	RevisionId nullable.Nullable[string] `json:"revision_id,omitempty"`
+	Selector   *SourceSelectionSelector  `json:"selector,omitempty"`
+}
+
+// SourceSelectionSelector defines model for SourceSelection.Selector.
+type SourceSelectionSelector string
 
 // StartRunRequest defines model for StartRunRequest.
 type StartRunRequest struct {
@@ -6027,20 +6574,21 @@ type ThreadQueueMutationReceipt struct {
 
 // ThreadResource defines model for ThreadResource.
 type ThreadResource struct {
-	CreatedAt            time.Time                 `json:"created_at"`
-	CurrentRunId         nullable.Nullable[string] `json:"current_run_id"`
-	DefaultEnvironmentId nullable.Nullable[string] `json:"default_environment_id"`
-	HeadRunId            nullable.Nullable[string] `json:"head_run_id"`
-	Id                   string                    `json:"id"`
-	Labels               map[string]interface{}    `json:"labels"`
-	OriginKind           string                    `json:"origin_kind"`
-	OriginRunId          nullable.Nullable[string] `json:"origin_run_id"`
-	OriginThreadId       nullable.Nullable[string] `json:"origin_thread_id"`
-	QueueVersion         int                       `json:"queue_version"`
-	Role                 string                    `json:"role"`
-	SessionId            string                    `json:"session_id"`
-	UpdatedAt            time.Time                 `json:"updated_at"`
-	Version              int                       `json:"version"`
+	ConfigurationLatestDraftId nullable.Nullable[string] `json:"configuration_latest_draft_id,omitempty"`
+	CreatedAt                  time.Time                 `json:"created_at"`
+	CurrentRunId               nullable.Nullable[string] `json:"current_run_id"`
+	DefaultEnvironmentId       nullable.Nullable[string] `json:"default_environment_id"`
+	HeadRunId                  nullable.Nullable[string] `json:"head_run_id"`
+	Id                         string                    `json:"id"`
+	Labels                     map[string]interface{}    `json:"labels"`
+	OriginKind                 string                    `json:"origin_kind"`
+	OriginRunId                nullable.Nullable[string] `json:"origin_run_id"`
+	OriginThreadId             nullable.Nullable[string] `json:"origin_thread_id"`
+	QueueVersion               int                       `json:"queue_version"`
+	Role                       string                    `json:"role"`
+	SessionId                  string                    `json:"session_id"`
+	UpdatedAt                  time.Time                 `json:"updated_at"`
+	Version                    int                       `json:"version"`
 }
 
 // ThreadRole defines model for ThreadRole.
@@ -6309,6 +6857,19 @@ type UpdateAgentRequest struct {
 	Name                         nullable.Nullable[string] `json:"name,omitempty"`
 }
 
+// UpdateConfigurationDraftRequest defines model for UpdateConfigurationDraftRequest.
+type UpdateConfigurationDraftRequest struct {
+	CreationMetadata nullable.Nullable[CreationMetadata]                `json:"creation_metadata,omitempty"`
+	ExpectedDigest   nullable.Nullable[string]                          `json:"expected_digest,omitempty"`
+	ExpectedVersion  int                                                `json:"expected_version"`
+	Operations       *[]UpdateConfigurationDraftRequest_Operations_Item `json:"operations,omitempty"`
+}
+
+// UpdateConfigurationDraftRequest_Operations_Item defines model for UpdateConfigurationDraftRequest.operations.Item.
+type UpdateConfigurationDraftRequest_Operations_Item struct {
+	union json.RawMessage
+}
+
 // UpdateConnectionRequest defines model for UpdateConnectionRequest.
 type UpdateConnectionRequest struct {
 	ExpectedVersion int    `json:"expected_version"`
@@ -6553,6 +7114,15 @@ type ValidationError_Loc_Item struct {
 	union json.RawMessage
 }
 
+// VerificationAcknowledgement defines model for VerificationAcknowledgement.
+type VerificationAcknowledgement struct {
+	Outcome VerificationAcknowledgementOutcome `json:"outcome"`
+	Reason  string                             `json:"reason"`
+}
+
+// VerificationAcknowledgementOutcome defines model for VerificationAcknowledgement.Outcome.
+type VerificationAcknowledgementOutcome string
+
 // VideoInputContent A video input content fragment.
 type VideoInputContent struct {
 	Metadata             nullable.Nullable[interface{}] `json:"metadata,omitempty"`
@@ -6744,6 +7314,46 @@ type PostApplicationAccountsAccountIdActionParams struct {
 
 // PostApplicationAccountsAccountIdActionParamsAction defines parameters for PostApplicationAccountsAccountIdAction.
 type PostApplicationAccountsAccountIdActionParamsAction string
+
+// PatchConfigurationDraftsDraftIdParams defines parameters for PatchConfigurationDraftsDraftId.
+type PatchConfigurationDraftsDraftIdParams struct {
+	IdempotencyKey string `json:"Idempotency-Key"`
+	IfMatch        string `json:"If-Match"`
+}
+
+// PostConfigurationDraftsDraftIdApplyParams defines parameters for PostConfigurationDraftsDraftIdApply.
+type PostConfigurationDraftsDraftIdApplyParams struct {
+	IdempotencyKey string `json:"Idempotency-Key"`
+	IfMatch        string `json:"If-Match"`
+}
+
+// PostConfigurationDraftsDraftIdDiscardParams defines parameters for PostConfigurationDraftsDraftIdDiscard.
+type PostConfigurationDraftsDraftIdDiscardParams struct {
+	IdempotencyKey string `json:"Idempotency-Key"`
+	IfMatch        string `json:"If-Match"`
+}
+
+// PostConfigurationDraftsDraftIdRebaseParams defines parameters for PostConfigurationDraftsDraftIdRebase.
+type PostConfigurationDraftsDraftIdRebaseParams struct {
+	IdempotencyKey string `json:"Idempotency-Key"`
+	IfMatch        string `json:"If-Match"`
+}
+
+// GetConfigurationSessionsSessionIdThreadsParams defines parameters for GetConfigurationSessionsSessionIdThreads.
+type GetConfigurationSessionsSessionIdThreadsParams struct {
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// PostConfigurationSessionsSessionIdThreadsParams defines parameters for PostConfigurationSessionsSessionIdThreads.
+type PostConfigurationSessionsSessionIdThreadsParams struct {
+	IdempotencyKey string `json:"Idempotency-Key"`
+}
+
+// PostConfigurationThreadsThreadIdInputsParams defines parameters for PostConfigurationThreadsThreadIdInputs.
+type PostConfigurationThreadsThreadIdInputsParams struct {
+	IdempotencyKey string `json:"Idempotency-Key"`
+}
 
 // DeleteConnectionsConnectionIdParams defines parameters for DeleteConnectionsConnectionId.
 type DeleteConnectionsConnectionIdParams struct {
@@ -7310,6 +7920,22 @@ type PostWorkspacesWorkspaceAssetsParams struct {
 	IdempotencyKey string  `json:"Idempotency-Key"`
 }
 
+// GetWorkspacesWorkspaceConfigurationAssistantReadinessParams defines parameters for GetWorkspacesWorkspaceConfigurationAssistantReadiness.
+type GetWorkspacesWorkspaceConfigurationAssistantReadinessParams struct {
+	TargetAgentId *string `form:"target_agent_id,omitempty" json:"target_agent_id,omitempty"`
+}
+
+// GetWorkspacesWorkspaceConfigurationSessionsParams defines parameters for GetWorkspacesWorkspaceConfigurationSessions.
+type GetWorkspacesWorkspaceConfigurationSessionsParams struct {
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// PostWorkspacesWorkspaceConfigurationSessionsParams defines parameters for PostWorkspacesWorkspaceConfigurationSessions.
+type PostWorkspacesWorkspaceConfigurationSessionsParams struct {
+	IdempotencyKey string `json:"Idempotency-Key"`
+}
+
 // GetWorkspacesWorkspaceConnectionsParams defines parameters for GetWorkspacesWorkspaceConnections.
 type GetWorkspacesWorkspaceConnectionsParams struct {
 	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
@@ -7639,6 +8265,24 @@ type PostAuthPasswordResetJSONRequestBody = PasswordResetRequest
 // PostAuthPasswordResetCompleteJSONRequestBody defines body for PostAuthPasswordResetComplete for application/json ContentType.
 type PostAuthPasswordResetCompleteJSONRequestBody = CompletePasswordResetRequest
 
+// PatchConfigurationDraftsDraftIdJSONRequestBody defines body for PatchConfigurationDraftsDraftId for application/json ContentType.
+type PatchConfigurationDraftsDraftIdJSONRequestBody = UpdateConfigurationDraftRequest
+
+// PostConfigurationDraftsDraftIdApplyJSONRequestBody defines body for PostConfigurationDraftsDraftIdApply for application/json ContentType.
+type PostConfigurationDraftsDraftIdApplyJSONRequestBody = ApplyDraftRequest
+
+// PostConfigurationDraftsDraftIdDiscardJSONRequestBody defines body for PostConfigurationDraftsDraftIdDiscard for application/json ContentType.
+type PostConfigurationDraftsDraftIdDiscardJSONRequestBody = DiscardDraftRequest
+
+// PostConfigurationDraftsDraftIdRebaseJSONRequestBody defines body for PostConfigurationDraftsDraftIdRebase for application/json ContentType.
+type PostConfigurationDraftsDraftIdRebaseJSONRequestBody = RebaseDraftRequest
+
+// PostConfigurationSessionsSessionIdThreadsJSONRequestBody defines body for PostConfigurationSessionsSessionIdThreads for application/json ContentType.
+type PostConfigurationSessionsSessionIdThreadsJSONRequestBody = CreateConfigurationThreadRequest
+
+// PostConfigurationThreadsThreadIdInputsJSONRequestBody defines body for PostConfigurationThreadsThreadIdInputs for application/json ContentType.
+type PostConfigurationThreadsThreadIdInputsJSONRequestBody = ConfigurationInputRequest
+
 // PostConnectionAuthorizationsAuthorizationIdCompleteJSONRequestBody defines body for PostConnectionAuthorizationsAuthorizationIdComplete for application/json ContentType.
 type PostConnectionAuthorizationsAuthorizationIdCompleteJSONRequestBody = CompleteAuthorizationRequest
 
@@ -7875,6 +8519,9 @@ type PostWorkspacesWorkspaceAgentsAgentRevisionsRevisionIdRestoreJSONRequestBody
 
 // PostWorkspacesWorkspaceApplicationAccountsJSONRequestBody defines body for PostWorkspacesWorkspaceApplicationAccounts for application/json ContentType.
 type PostWorkspacesWorkspaceApplicationAccountsJSONRequestBody = CreateAccountRequest
+
+// PostWorkspacesWorkspaceConfigurationSessionsJSONRequestBody defines body for PostWorkspacesWorkspaceConfigurationSessions for application/json ContentType.
+type PostWorkspacesWorkspaceConfigurationSessionsJSONRequestBody = CreateSessionRequest
 
 // PostWorkspacesWorkspaceConnectionsJSONRequestBody defines body for PostWorkspacesWorkspaceConnections for application/json ContentType.
 type PostWorkspacesWorkspaceConnectionsJSONRequestBody = CreateConnectionRequest
@@ -11959,6 +12606,143 @@ func (t *ToolPermissionSetting) UnmarshalJSON(b []byte) error {
 	return err
 }
 
+// AsSetOperation returns the union data inside the UpdateConfigurationDraftRequest_Operations_Item as a SetOperation
+func (t UpdateConfigurationDraftRequest_Operations_Item) AsSetOperation() (SetOperation, error) {
+	var body SetOperation
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromSetOperation overwrites any union data inside the UpdateConfigurationDraftRequest_Operations_Item as the provided SetOperation
+func (t *UpdateConfigurationDraftRequest_Operations_Item) FromSetOperation(v SetOperation) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"op":"set"}`))
+	t.union = b
+	return err
+}
+
+// MergeSetOperation performs a merge with any union data inside the UpdateConfigurationDraftRequest_Operations_Item, using the provided SetOperation
+func (t *UpdateConfigurationDraftRequest_Operations_Item) MergeSetOperation(v SetOperation) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"op":"set"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsRemoveOperation returns the union data inside the UpdateConfigurationDraftRequest_Operations_Item as a RemoveOperation
+func (t UpdateConfigurationDraftRequest_Operations_Item) AsRemoveOperation() (RemoveOperation, error) {
+	var body RemoveOperation
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromRemoveOperation overwrites any union data inside the UpdateConfigurationDraftRequest_Operations_Item as the provided RemoveOperation
+func (t *UpdateConfigurationDraftRequest_Operations_Item) FromRemoveOperation(v RemoveOperation) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"op":"remove"}`))
+	t.union = b
+	return err
+}
+
+// MergeRemoveOperation performs a merge with any union data inside the UpdateConfigurationDraftRequest_Operations_Item, using the provided RemoveOperation
+func (t *UpdateConfigurationDraftRequest_Operations_Item) MergeRemoveOperation(v RemoveOperation) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"op":"remove"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsReplaceTextOperation returns the union data inside the UpdateConfigurationDraftRequest_Operations_Item as a ReplaceTextOperation
+func (t UpdateConfigurationDraftRequest_Operations_Item) AsReplaceTextOperation() (ReplaceTextOperation, error) {
+	var body ReplaceTextOperation
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromReplaceTextOperation overwrites any union data inside the UpdateConfigurationDraftRequest_Operations_Item as the provided ReplaceTextOperation
+func (t *UpdateConfigurationDraftRequest_Operations_Item) FromReplaceTextOperation(v ReplaceTextOperation) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"op":"replace_text"}`))
+	t.union = b
+	return err
+}
+
+// MergeReplaceTextOperation performs a merge with any union data inside the UpdateConfigurationDraftRequest_Operations_Item, using the provided ReplaceTextOperation
+func (t *UpdateConfigurationDraftRequest_Operations_Item) MergeReplaceTextOperation(v ReplaceTextOperation) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"op":"replace_text"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t UpdateConfigurationDraftRequest_Operations_Item) Discriminator() (string, error) {
+	var discriminator struct {
+		Discriminator string `json:"op"`
+	}
+	err := json.Unmarshal(t.union, &discriminator)
+	return discriminator.Discriminator, err
+}
+
+func (t UpdateConfigurationDraftRequest_Operations_Item) ValueByDiscriminator() (interface{}, error) {
+	discriminator, err := t.Discriminator()
+	if err != nil {
+		return nil, err
+	}
+	switch discriminator {
+	case "remove":
+		return t.AsRemoveOperation()
+	case "replace_text":
+		return t.AsReplaceTextOperation()
+	case "set":
+		return t.AsSetOperation()
+	default:
+		return nil, errors.New("unknown discriminator value: " + discriminator)
+	}
+}
+
+func (t UpdateConfigurationDraftRequest_Operations_Item) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *UpdateConfigurationDraftRequest_Operations_Item) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
 // AsUsageLimitsInputCostLimit0 returns the union data inside the UsageLimitsInput_CostLimit as a UsageLimitsInputCostLimit0
 func (t UsageLimitsInput_CostLimit) AsUsageLimitsInputCostLimit0() (UsageLimitsInputCostLimit0, error) {
 	var body UsageLimitsInputCostLimit0
@@ -12991,6 +13775,110 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /api/v1/base-models (the `GetBaseModels` operationId).
 	GetBaseModels(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetConfigurationDraftsDraftId Get Draft
+	//
+	// Corresponds with GET /api/v1/configuration-drafts/{draft_id} (the `GetConfigurationDraftsDraftId` operationId).
+	GetConfigurationDraftsDraftId(ctx context.Context, draftId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PatchConfigurationDraftsDraftIdWithBody Update Draft
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PATCH /api/v1/configuration-drafts/{draft_id} (the `PatchConfigurationDraftsDraftId` operationId).
+	PatchConfigurationDraftsDraftIdWithBody(ctx context.Context, draftId string, params *PatchConfigurationDraftsDraftIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PatchConfigurationDraftsDraftId Update Draft
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PATCH /api/v1/configuration-drafts/{draft_id} (the `PatchConfigurationDraftsDraftId` operationId).
+	PatchConfigurationDraftsDraftId(ctx context.Context, draftId string, params *PatchConfigurationDraftsDraftIdParams, body PatchConfigurationDraftsDraftIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostConfigurationDraftsDraftIdApplyWithBody Apply Draft
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v1/configuration-drafts/{draft_id}/apply (the `PostConfigurationDraftsDraftIdApply` operationId).
+	PostConfigurationDraftsDraftIdApplyWithBody(ctx context.Context, draftId string, params *PostConfigurationDraftsDraftIdApplyParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostConfigurationDraftsDraftIdApply Apply Draft
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v1/configuration-drafts/{draft_id}/apply (the `PostConfigurationDraftsDraftIdApply` operationId).
+	PostConfigurationDraftsDraftIdApply(ctx context.Context, draftId string, params *PostConfigurationDraftsDraftIdApplyParams, body PostConfigurationDraftsDraftIdApplyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostConfigurationDraftsDraftIdDiscardWithBody Discard Draft
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v1/configuration-drafts/{draft_id}/discard (the `PostConfigurationDraftsDraftIdDiscard` operationId).
+	PostConfigurationDraftsDraftIdDiscardWithBody(ctx context.Context, draftId string, params *PostConfigurationDraftsDraftIdDiscardParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostConfigurationDraftsDraftIdDiscard Discard Draft
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v1/configuration-drafts/{draft_id}/discard (the `PostConfigurationDraftsDraftIdDiscard` operationId).
+	PostConfigurationDraftsDraftIdDiscard(ctx context.Context, draftId string, params *PostConfigurationDraftsDraftIdDiscardParams, body PostConfigurationDraftsDraftIdDiscardJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostConfigurationDraftsDraftIdRebaseWithBody Rebase Draft
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v1/configuration-drafts/{draft_id}/rebase (the `PostConfigurationDraftsDraftIdRebase` operationId).
+	PostConfigurationDraftsDraftIdRebaseWithBody(ctx context.Context, draftId string, params *PostConfigurationDraftsDraftIdRebaseParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostConfigurationDraftsDraftIdRebase Rebase Draft
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v1/configuration-drafts/{draft_id}/rebase (the `PostConfigurationDraftsDraftIdRebase` operationId).
+	PostConfigurationDraftsDraftIdRebase(ctx context.Context, draftId string, params *PostConfigurationDraftsDraftIdRebaseParams, body PostConfigurationDraftsDraftIdRebaseJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetConfigurationSessionsSessionId Get Session
+	//
+	// Corresponds with GET /api/v1/configuration-sessions/{session_id} (the `GetConfigurationSessionsSessionId` operationId).
+	GetConfigurationSessionsSessionId(ctx context.Context, sessionId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetConfigurationSessionsSessionIdThreads List Threads
+	//
+	// Corresponds with GET /api/v1/configuration-sessions/{session_id}/threads (the `GetConfigurationSessionsSessionIdThreads` operationId).
+	GetConfigurationSessionsSessionIdThreads(ctx context.Context, sessionId string, params *GetConfigurationSessionsSessionIdThreadsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostConfigurationSessionsSessionIdThreadsWithBody Create Thread
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v1/configuration-sessions/{session_id}/threads (the `PostConfigurationSessionsSessionIdThreads` operationId).
+	PostConfigurationSessionsSessionIdThreadsWithBody(ctx context.Context, sessionId string, params *PostConfigurationSessionsSessionIdThreadsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostConfigurationSessionsSessionIdThreads Create Thread
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v1/configuration-sessions/{session_id}/threads (the `PostConfigurationSessionsSessionIdThreads` operationId).
+	PostConfigurationSessionsSessionIdThreads(ctx context.Context, sessionId string, params *PostConfigurationSessionsSessionIdThreadsParams, body PostConfigurationSessionsSessionIdThreadsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetConfigurationThreadsThreadId Get Thread
+	//
+	// Corresponds with GET /api/v1/configuration-threads/{thread_id} (the `GetConfigurationThreadsThreadId` operationId).
+	GetConfigurationThreadsThreadId(ctx context.Context, threadId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostConfigurationThreadsThreadIdInputsWithBody Submit Input
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v1/configuration-threads/{thread_id}/inputs (the `PostConfigurationThreadsThreadIdInputs` operationId).
+	PostConfigurationThreadsThreadIdInputsWithBody(ctx context.Context, threadId string, params *PostConfigurationThreadsThreadIdInputsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostConfigurationThreadsThreadIdInputs Submit Input
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v1/configuration-threads/{thread_id}/inputs (the `PostConfigurationThreadsThreadIdInputs` operationId).
+	PostConfigurationThreadsThreadIdInputs(ctx context.Context, threadId string, params *PostConfigurationThreadsThreadIdInputsParams, body PostConfigurationThreadsThreadIdInputsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetConnectionAuthorizationsAuthorizationId Get Connection Authorization
 	//
@@ -14666,6 +15554,30 @@ type ClientInterface interface {
 	// Corresponds with POST /api/v1/workspaces/{workspace}/assets (the `PostWorkspacesWorkspaceAssets` operationId).
 	PostWorkspacesWorkspaceAssetsWithBody(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceAssetsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetWorkspacesWorkspaceConfigurationAssistantReadiness Readiness
+	//
+	// Corresponds with GET /api/v1/workspaces/{workspace}/configuration-assistant/readiness (the `GetWorkspacesWorkspaceConfigurationAssistantReadiness` operationId).
+	GetWorkspacesWorkspaceConfigurationAssistantReadiness(ctx context.Context, workspace string, params *GetWorkspacesWorkspaceConfigurationAssistantReadinessParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetWorkspacesWorkspaceConfigurationSessions List Sessions
+	//
+	// Corresponds with GET /api/v1/workspaces/{workspace}/configuration-sessions (the `GetWorkspacesWorkspaceConfigurationSessions` operationId).
+	GetWorkspacesWorkspaceConfigurationSessions(ctx context.Context, workspace string, params *GetWorkspacesWorkspaceConfigurationSessionsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostWorkspacesWorkspaceConfigurationSessionsWithBody Create Session
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v1/workspaces/{workspace}/configuration-sessions (the `PostWorkspacesWorkspaceConfigurationSessions` operationId).
+	PostWorkspacesWorkspaceConfigurationSessionsWithBody(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceConfigurationSessionsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostWorkspacesWorkspaceConfigurationSessions Create Session
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v1/workspaces/{workspace}/configuration-sessions (the `PostWorkspacesWorkspaceConfigurationSessions` operationId).
+	PostWorkspacesWorkspaceConfigurationSessions(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceConfigurationSessionsParams, body PostWorkspacesWorkspaceConfigurationSessionsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetWorkspacesWorkspaceConnections List Connections
 	//
 	// Corresponds with GET /api/v1/workspaces/{workspace}/connections (the `GetWorkspacesWorkspaceConnections` operationId).
@@ -15766,6 +16678,270 @@ func (c *Client) PostAuthPasswordResetComplete(ctx context.Context, body PostAut
 // Corresponds with GET /api/v1/base-models (the `GetBaseModels` operationId).
 func (c *Client) GetBaseModels(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetBaseModelsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetConfigurationDraftsDraftId Get Draft
+//
+// Corresponds with GET /api/v1/configuration-drafts/{draft_id} (the `GetConfigurationDraftsDraftId` operationId).
+func (c *Client) GetConfigurationDraftsDraftId(ctx context.Context, draftId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetConfigurationDraftsDraftIdRequest(c.Server, draftId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PatchConfigurationDraftsDraftIdWithBody Update Draft
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PATCH /api/v1/configuration-drafts/{draft_id} (the `PatchConfigurationDraftsDraftId` operationId).
+func (c *Client) PatchConfigurationDraftsDraftIdWithBody(ctx context.Context, draftId string, params *PatchConfigurationDraftsDraftIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPatchConfigurationDraftsDraftIdRequestWithBody(c.Server, draftId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PatchConfigurationDraftsDraftId Update Draft
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PATCH /api/v1/configuration-drafts/{draft_id} (the `PatchConfigurationDraftsDraftId` operationId).
+func (c *Client) PatchConfigurationDraftsDraftId(ctx context.Context, draftId string, params *PatchConfigurationDraftsDraftIdParams, body PatchConfigurationDraftsDraftIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPatchConfigurationDraftsDraftIdRequest(c.Server, draftId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostConfigurationDraftsDraftIdApplyWithBody Apply Draft
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v1/configuration-drafts/{draft_id}/apply (the `PostConfigurationDraftsDraftIdApply` operationId).
+func (c *Client) PostConfigurationDraftsDraftIdApplyWithBody(ctx context.Context, draftId string, params *PostConfigurationDraftsDraftIdApplyParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostConfigurationDraftsDraftIdApplyRequestWithBody(c.Server, draftId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostConfigurationDraftsDraftIdApply Apply Draft
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v1/configuration-drafts/{draft_id}/apply (the `PostConfigurationDraftsDraftIdApply` operationId).
+func (c *Client) PostConfigurationDraftsDraftIdApply(ctx context.Context, draftId string, params *PostConfigurationDraftsDraftIdApplyParams, body PostConfigurationDraftsDraftIdApplyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostConfigurationDraftsDraftIdApplyRequest(c.Server, draftId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostConfigurationDraftsDraftIdDiscardWithBody Discard Draft
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v1/configuration-drafts/{draft_id}/discard (the `PostConfigurationDraftsDraftIdDiscard` operationId).
+func (c *Client) PostConfigurationDraftsDraftIdDiscardWithBody(ctx context.Context, draftId string, params *PostConfigurationDraftsDraftIdDiscardParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostConfigurationDraftsDraftIdDiscardRequestWithBody(c.Server, draftId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostConfigurationDraftsDraftIdDiscard Discard Draft
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v1/configuration-drafts/{draft_id}/discard (the `PostConfigurationDraftsDraftIdDiscard` operationId).
+func (c *Client) PostConfigurationDraftsDraftIdDiscard(ctx context.Context, draftId string, params *PostConfigurationDraftsDraftIdDiscardParams, body PostConfigurationDraftsDraftIdDiscardJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostConfigurationDraftsDraftIdDiscardRequest(c.Server, draftId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostConfigurationDraftsDraftIdRebaseWithBody Rebase Draft
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v1/configuration-drafts/{draft_id}/rebase (the `PostConfigurationDraftsDraftIdRebase` operationId).
+func (c *Client) PostConfigurationDraftsDraftIdRebaseWithBody(ctx context.Context, draftId string, params *PostConfigurationDraftsDraftIdRebaseParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostConfigurationDraftsDraftIdRebaseRequestWithBody(c.Server, draftId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostConfigurationDraftsDraftIdRebase Rebase Draft
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v1/configuration-drafts/{draft_id}/rebase (the `PostConfigurationDraftsDraftIdRebase` operationId).
+func (c *Client) PostConfigurationDraftsDraftIdRebase(ctx context.Context, draftId string, params *PostConfigurationDraftsDraftIdRebaseParams, body PostConfigurationDraftsDraftIdRebaseJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostConfigurationDraftsDraftIdRebaseRequest(c.Server, draftId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetConfigurationSessionsSessionId Get Session
+//
+// Corresponds with GET /api/v1/configuration-sessions/{session_id} (the `GetConfigurationSessionsSessionId` operationId).
+func (c *Client) GetConfigurationSessionsSessionId(ctx context.Context, sessionId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetConfigurationSessionsSessionIdRequest(c.Server, sessionId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetConfigurationSessionsSessionIdThreads List Threads
+//
+// Corresponds with GET /api/v1/configuration-sessions/{session_id}/threads (the `GetConfigurationSessionsSessionIdThreads` operationId).
+func (c *Client) GetConfigurationSessionsSessionIdThreads(ctx context.Context, sessionId string, params *GetConfigurationSessionsSessionIdThreadsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetConfigurationSessionsSessionIdThreadsRequest(c.Server, sessionId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostConfigurationSessionsSessionIdThreadsWithBody Create Thread
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v1/configuration-sessions/{session_id}/threads (the `PostConfigurationSessionsSessionIdThreads` operationId).
+func (c *Client) PostConfigurationSessionsSessionIdThreadsWithBody(ctx context.Context, sessionId string, params *PostConfigurationSessionsSessionIdThreadsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostConfigurationSessionsSessionIdThreadsRequestWithBody(c.Server, sessionId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostConfigurationSessionsSessionIdThreads Create Thread
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v1/configuration-sessions/{session_id}/threads (the `PostConfigurationSessionsSessionIdThreads` operationId).
+func (c *Client) PostConfigurationSessionsSessionIdThreads(ctx context.Context, sessionId string, params *PostConfigurationSessionsSessionIdThreadsParams, body PostConfigurationSessionsSessionIdThreadsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostConfigurationSessionsSessionIdThreadsRequest(c.Server, sessionId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetConfigurationThreadsThreadId Get Thread
+//
+// Corresponds with GET /api/v1/configuration-threads/{thread_id} (the `GetConfigurationThreadsThreadId` operationId).
+func (c *Client) GetConfigurationThreadsThreadId(ctx context.Context, threadId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetConfigurationThreadsThreadIdRequest(c.Server, threadId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostConfigurationThreadsThreadIdInputsWithBody Submit Input
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v1/configuration-threads/{thread_id}/inputs (the `PostConfigurationThreadsThreadIdInputs` operationId).
+func (c *Client) PostConfigurationThreadsThreadIdInputsWithBody(ctx context.Context, threadId string, params *PostConfigurationThreadsThreadIdInputsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostConfigurationThreadsThreadIdInputsRequestWithBody(c.Server, threadId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostConfigurationThreadsThreadIdInputs Submit Input
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v1/configuration-threads/{thread_id}/inputs (the `PostConfigurationThreadsThreadIdInputs` operationId).
+func (c *Client) PostConfigurationThreadsThreadIdInputs(ctx context.Context, threadId string, params *PostConfigurationThreadsThreadIdInputsParams, body PostConfigurationThreadsThreadIdInputsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostConfigurationThreadsThreadIdInputsRequest(c.Server, threadId, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -20150,6 +21326,70 @@ func (c *Client) PostWorkspacesWorkspaceAssetsWithBody(ctx context.Context, work
 	return c.Client.Do(req)
 }
 
+// GetWorkspacesWorkspaceConfigurationAssistantReadiness Readiness
+//
+// Corresponds with GET /api/v1/workspaces/{workspace}/configuration-assistant/readiness (the `GetWorkspacesWorkspaceConfigurationAssistantReadiness` operationId).
+func (c *Client) GetWorkspacesWorkspaceConfigurationAssistantReadiness(ctx context.Context, workspace string, params *GetWorkspacesWorkspaceConfigurationAssistantReadinessParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkspacesWorkspaceConfigurationAssistantReadinessRequest(c.Server, workspace, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetWorkspacesWorkspaceConfigurationSessions List Sessions
+//
+// Corresponds with GET /api/v1/workspaces/{workspace}/configuration-sessions (the `GetWorkspacesWorkspaceConfigurationSessions` operationId).
+func (c *Client) GetWorkspacesWorkspaceConfigurationSessions(ctx context.Context, workspace string, params *GetWorkspacesWorkspaceConfigurationSessionsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkspacesWorkspaceConfigurationSessionsRequest(c.Server, workspace, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostWorkspacesWorkspaceConfigurationSessionsWithBody Create Session
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v1/workspaces/{workspace}/configuration-sessions (the `PostWorkspacesWorkspaceConfigurationSessions` operationId).
+func (c *Client) PostWorkspacesWorkspaceConfigurationSessionsWithBody(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceConfigurationSessionsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostWorkspacesWorkspaceConfigurationSessionsRequestWithBody(c.Server, workspace, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostWorkspacesWorkspaceConfigurationSessions Create Session
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v1/workspaces/{workspace}/configuration-sessions (the `PostWorkspacesWorkspaceConfigurationSessions` operationId).
+func (c *Client) PostWorkspacesWorkspaceConfigurationSessions(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceConfigurationSessionsParams, body PostWorkspacesWorkspaceConfigurationSessionsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostWorkspacesWorkspaceConfigurationSessionsRequest(c.Server, workspace, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // GetWorkspacesWorkspaceConnections List Connections
 //
 // Corresponds with GET /api/v1/workspaces/{workspace}/connections (the `GetWorkspacesWorkspaceConnections` operationId).
@@ -22728,6 +23968,577 @@ func NewGetBaseModelsRequest(server string) (*http.Request, error) {
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetConfigurationDraftsDraftIdRequest constructs an http.Request for the GetConfigurationDraftsDraftId method
+func NewGetConfigurationDraftsDraftIdRequest(server string, draftId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "draft_id", draftId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/configuration-drafts/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPatchConfigurationDraftsDraftIdRequest calls the generic PatchConfigurationDraftsDraftId builder with application/json body
+func NewPatchConfigurationDraftsDraftIdRequest(server string, draftId string, params *PatchConfigurationDraftsDraftIdParams, body PatchConfigurationDraftsDraftIdJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPatchConfigurationDraftsDraftIdRequestWithBody(server, draftId, params, "application/json", bodyReader)
+}
+
+// NewPatchConfigurationDraftsDraftIdRequestWithBody constructs an http.Request for the PatchConfigurationDraftsDraftId method, with any body, and a specified content type
+func NewPatchConfigurationDraftsDraftIdRequestWithBody(server string, draftId string, params *PatchConfigurationDraftsDraftIdParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "draft_id", draftId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/configuration-drafts/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+		var headerParam1 string
+
+		headerParam1, err = runtime.StyleParamWithOptions("simple", false, "If-Match", params.IfMatch, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("If-Match", headerParam1)
+
+	}
+
+	return req, nil
+}
+
+// NewPostConfigurationDraftsDraftIdApplyRequest calls the generic PostConfigurationDraftsDraftIdApply builder with application/json body
+func NewPostConfigurationDraftsDraftIdApplyRequest(server string, draftId string, params *PostConfigurationDraftsDraftIdApplyParams, body PostConfigurationDraftsDraftIdApplyJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostConfigurationDraftsDraftIdApplyRequestWithBody(server, draftId, params, "application/json", bodyReader)
+}
+
+// NewPostConfigurationDraftsDraftIdApplyRequestWithBody constructs an http.Request for the PostConfigurationDraftsDraftIdApply method, with any body, and a specified content type
+func NewPostConfigurationDraftsDraftIdApplyRequestWithBody(server string, draftId string, params *PostConfigurationDraftsDraftIdApplyParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "draft_id", draftId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/configuration-drafts/%s/apply", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+		var headerParam1 string
+
+		headerParam1, err = runtime.StyleParamWithOptions("simple", false, "If-Match", params.IfMatch, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("If-Match", headerParam1)
+
+	}
+
+	return req, nil
+}
+
+// NewPostConfigurationDraftsDraftIdDiscardRequest calls the generic PostConfigurationDraftsDraftIdDiscard builder with application/json body
+func NewPostConfigurationDraftsDraftIdDiscardRequest(server string, draftId string, params *PostConfigurationDraftsDraftIdDiscardParams, body PostConfigurationDraftsDraftIdDiscardJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostConfigurationDraftsDraftIdDiscardRequestWithBody(server, draftId, params, "application/json", bodyReader)
+}
+
+// NewPostConfigurationDraftsDraftIdDiscardRequestWithBody constructs an http.Request for the PostConfigurationDraftsDraftIdDiscard method, with any body, and a specified content type
+func NewPostConfigurationDraftsDraftIdDiscardRequestWithBody(server string, draftId string, params *PostConfigurationDraftsDraftIdDiscardParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "draft_id", draftId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/configuration-drafts/%s/discard", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+		var headerParam1 string
+
+		headerParam1, err = runtime.StyleParamWithOptions("simple", false, "If-Match", params.IfMatch, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("If-Match", headerParam1)
+
+	}
+
+	return req, nil
+}
+
+// NewPostConfigurationDraftsDraftIdRebaseRequest calls the generic PostConfigurationDraftsDraftIdRebase builder with application/json body
+func NewPostConfigurationDraftsDraftIdRebaseRequest(server string, draftId string, params *PostConfigurationDraftsDraftIdRebaseParams, body PostConfigurationDraftsDraftIdRebaseJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostConfigurationDraftsDraftIdRebaseRequestWithBody(server, draftId, params, "application/json", bodyReader)
+}
+
+// NewPostConfigurationDraftsDraftIdRebaseRequestWithBody constructs an http.Request for the PostConfigurationDraftsDraftIdRebase method, with any body, and a specified content type
+func NewPostConfigurationDraftsDraftIdRebaseRequestWithBody(server string, draftId string, params *PostConfigurationDraftsDraftIdRebaseParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "draft_id", draftId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/configuration-drafts/%s/rebase", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+		var headerParam1 string
+
+		headerParam1, err = runtime.StyleParamWithOptions("simple", false, "If-Match", params.IfMatch, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("If-Match", headerParam1)
+
+	}
+
+	return req, nil
+}
+
+// NewGetConfigurationSessionsSessionIdRequest constructs an http.Request for the GetConfigurationSessionsSessionId method
+func NewGetConfigurationSessionsSessionIdRequest(server string, sessionId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "session_id", sessionId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/configuration-sessions/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetConfigurationSessionsSessionIdThreadsRequest constructs an http.Request for the GetConfigurationSessionsSessionIdThreads method
+func NewGetConfigurationSessionsSessionIdThreadsRequest(server string, sessionId string, params *GetConfigurationSessionsSessionIdThreadsParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "session_id", sessionId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/configuration-sessions/%s/threads", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostConfigurationSessionsSessionIdThreadsRequest calls the generic PostConfigurationSessionsSessionIdThreads builder with application/json body
+func NewPostConfigurationSessionsSessionIdThreadsRequest(server string, sessionId string, params *PostConfigurationSessionsSessionIdThreadsParams, body PostConfigurationSessionsSessionIdThreadsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostConfigurationSessionsSessionIdThreadsRequestWithBody(server, sessionId, params, "application/json", bodyReader)
+}
+
+// NewPostConfigurationSessionsSessionIdThreadsRequestWithBody constructs an http.Request for the PostConfigurationSessionsSessionIdThreads method, with any body, and a specified content type
+func NewPostConfigurationSessionsSessionIdThreadsRequestWithBody(server string, sessionId string, params *PostConfigurationSessionsSessionIdThreadsParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "session_id", sessionId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/configuration-sessions/%s/threads", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+	}
+
+	return req, nil
+}
+
+// NewGetConfigurationThreadsThreadIdRequest constructs an http.Request for the GetConfigurationThreadsThreadId method
+func NewGetConfigurationThreadsThreadIdRequest(server string, threadId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "thread_id", threadId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/configuration-threads/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostConfigurationThreadsThreadIdInputsRequest calls the generic PostConfigurationThreadsThreadIdInputs builder with application/json body
+func NewPostConfigurationThreadsThreadIdInputsRequest(server string, threadId string, params *PostConfigurationThreadsThreadIdInputsParams, body PostConfigurationThreadsThreadIdInputsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostConfigurationThreadsThreadIdInputsRequestWithBody(server, threadId, params, "application/json", bodyReader)
+}
+
+// NewPostConfigurationThreadsThreadIdInputsRequestWithBody constructs an http.Request for the PostConfigurationThreadsThreadIdInputs method, with any body, and a specified content type
+func NewPostConfigurationThreadsThreadIdInputsRequestWithBody(server string, threadId string, params *PostConfigurationThreadsThreadIdInputsParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "thread_id", threadId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/configuration-threads/%s/inputs", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
 	}
 
 	return req, nil
@@ -32917,6 +34728,200 @@ func NewPostWorkspacesWorkspaceAssetsRequestWithBody(server string, workspace st
 	return req, nil
 }
 
+// NewGetWorkspacesWorkspaceConfigurationAssistantReadinessRequest constructs an http.Request for the GetWorkspacesWorkspaceConfigurationAssistantReadiness method
+func NewGetWorkspacesWorkspaceConfigurationAssistantReadinessRequest(server string, workspace string, params *GetWorkspacesWorkspaceConfigurationAssistantReadinessParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/configuration-assistant/readiness", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.TargetAgentId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "target_agent_id", *params.TargetAgentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetWorkspacesWorkspaceConfigurationSessionsRequest constructs an http.Request for the GetWorkspacesWorkspaceConfigurationSessions method
+func NewGetWorkspacesWorkspaceConfigurationSessionsRequest(server string, workspace string, params *GetWorkspacesWorkspaceConfigurationSessionsParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/configuration-sessions", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostWorkspacesWorkspaceConfigurationSessionsRequest calls the generic PostWorkspacesWorkspaceConfigurationSessions builder with application/json body
+func NewPostWorkspacesWorkspaceConfigurationSessionsRequest(server string, workspace string, params *PostWorkspacesWorkspaceConfigurationSessionsParams, body PostWorkspacesWorkspaceConfigurationSessionsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostWorkspacesWorkspaceConfigurationSessionsRequestWithBody(server, workspace, params, "application/json", bodyReader)
+}
+
+// NewPostWorkspacesWorkspaceConfigurationSessionsRequestWithBody constructs an http.Request for the PostWorkspacesWorkspaceConfigurationSessions method, with any body, and a specified content type
+func NewPostWorkspacesWorkspaceConfigurationSessionsRequestWithBody(server string, workspace string, params *PostWorkspacesWorkspaceConfigurationSessionsParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/configuration-sessions", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+	}
+
+	return req, nil
+}
+
 // NewGetWorkspacesWorkspaceConnectionsRequest constructs an http.Request for the GetWorkspacesWorkspaceConnections method
 func NewGetWorkspacesWorkspaceConnectionsRequest(server string, workspace string, params *GetWorkspacesWorkspaceConnectionsParams) (*http.Request, error) {
 	var err error
@@ -37884,6 +39889,118 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /api/v1/base-models (the `GetBaseModels` operationId).
 	GetBaseModelsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetBaseModelsResponse, error)
 
+	// GetConfigurationDraftsDraftIdWithResponse Get Draft
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/configuration-drafts/{draft_id} (the `GetConfigurationDraftsDraftId` operationId).
+	GetConfigurationDraftsDraftIdWithResponse(ctx context.Context, draftId string, reqEditors ...RequestEditorFn) (*GetConfigurationDraftsDraftIdResponse, error)
+
+	// PatchConfigurationDraftsDraftIdWithBodyWithResponse Update Draft
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /api/v1/configuration-drafts/{draft_id} (the `PatchConfigurationDraftsDraftId` operationId).
+	PatchConfigurationDraftsDraftIdWithBodyWithResponse(ctx context.Context, draftId string, params *PatchConfigurationDraftsDraftIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchConfigurationDraftsDraftIdResponse, error)
+
+	// PatchConfigurationDraftsDraftIdWithResponse Update Draft
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /api/v1/configuration-drafts/{draft_id} (the `PatchConfigurationDraftsDraftId` operationId).
+	PatchConfigurationDraftsDraftIdWithResponse(ctx context.Context, draftId string, params *PatchConfigurationDraftsDraftIdParams, body PatchConfigurationDraftsDraftIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchConfigurationDraftsDraftIdResponse, error)
+
+	// PostConfigurationDraftsDraftIdApplyWithBodyWithResponse Apply Draft
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/configuration-drafts/{draft_id}/apply (the `PostConfigurationDraftsDraftIdApply` operationId).
+	PostConfigurationDraftsDraftIdApplyWithBodyWithResponse(ctx context.Context, draftId string, params *PostConfigurationDraftsDraftIdApplyParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostConfigurationDraftsDraftIdApplyResponse, error)
+
+	// PostConfigurationDraftsDraftIdApplyWithResponse Apply Draft
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/configuration-drafts/{draft_id}/apply (the `PostConfigurationDraftsDraftIdApply` operationId).
+	PostConfigurationDraftsDraftIdApplyWithResponse(ctx context.Context, draftId string, params *PostConfigurationDraftsDraftIdApplyParams, body PostConfigurationDraftsDraftIdApplyJSONRequestBody, reqEditors ...RequestEditorFn) (*PostConfigurationDraftsDraftIdApplyResponse, error)
+
+	// PostConfigurationDraftsDraftIdDiscardWithBodyWithResponse Discard Draft
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/configuration-drafts/{draft_id}/discard (the `PostConfigurationDraftsDraftIdDiscard` operationId).
+	PostConfigurationDraftsDraftIdDiscardWithBodyWithResponse(ctx context.Context, draftId string, params *PostConfigurationDraftsDraftIdDiscardParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostConfigurationDraftsDraftIdDiscardResponse, error)
+
+	// PostConfigurationDraftsDraftIdDiscardWithResponse Discard Draft
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/configuration-drafts/{draft_id}/discard (the `PostConfigurationDraftsDraftIdDiscard` operationId).
+	PostConfigurationDraftsDraftIdDiscardWithResponse(ctx context.Context, draftId string, params *PostConfigurationDraftsDraftIdDiscardParams, body PostConfigurationDraftsDraftIdDiscardJSONRequestBody, reqEditors ...RequestEditorFn) (*PostConfigurationDraftsDraftIdDiscardResponse, error)
+
+	// PostConfigurationDraftsDraftIdRebaseWithBodyWithResponse Rebase Draft
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/configuration-drafts/{draft_id}/rebase (the `PostConfigurationDraftsDraftIdRebase` operationId).
+	PostConfigurationDraftsDraftIdRebaseWithBodyWithResponse(ctx context.Context, draftId string, params *PostConfigurationDraftsDraftIdRebaseParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostConfigurationDraftsDraftIdRebaseResponse, error)
+
+	// PostConfigurationDraftsDraftIdRebaseWithResponse Rebase Draft
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/configuration-drafts/{draft_id}/rebase (the `PostConfigurationDraftsDraftIdRebase` operationId).
+	PostConfigurationDraftsDraftIdRebaseWithResponse(ctx context.Context, draftId string, params *PostConfigurationDraftsDraftIdRebaseParams, body PostConfigurationDraftsDraftIdRebaseJSONRequestBody, reqEditors ...RequestEditorFn) (*PostConfigurationDraftsDraftIdRebaseResponse, error)
+
+	// GetConfigurationSessionsSessionIdWithResponse Get Session
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/configuration-sessions/{session_id} (the `GetConfigurationSessionsSessionId` operationId).
+	GetConfigurationSessionsSessionIdWithResponse(ctx context.Context, sessionId string, reqEditors ...RequestEditorFn) (*GetConfigurationSessionsSessionIdResponse, error)
+
+	// GetConfigurationSessionsSessionIdThreadsWithResponse List Threads
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/configuration-sessions/{session_id}/threads (the `GetConfigurationSessionsSessionIdThreads` operationId).
+	GetConfigurationSessionsSessionIdThreadsWithResponse(ctx context.Context, sessionId string, params *GetConfigurationSessionsSessionIdThreadsParams, reqEditors ...RequestEditorFn) (*GetConfigurationSessionsSessionIdThreadsResponse, error)
+
+	// PostConfigurationSessionsSessionIdThreadsWithBodyWithResponse Create Thread
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/configuration-sessions/{session_id}/threads (the `PostConfigurationSessionsSessionIdThreads` operationId).
+	PostConfigurationSessionsSessionIdThreadsWithBodyWithResponse(ctx context.Context, sessionId string, params *PostConfigurationSessionsSessionIdThreadsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostConfigurationSessionsSessionIdThreadsResponse, error)
+
+	// PostConfigurationSessionsSessionIdThreadsWithResponse Create Thread
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/configuration-sessions/{session_id}/threads (the `PostConfigurationSessionsSessionIdThreads` operationId).
+	PostConfigurationSessionsSessionIdThreadsWithResponse(ctx context.Context, sessionId string, params *PostConfigurationSessionsSessionIdThreadsParams, body PostConfigurationSessionsSessionIdThreadsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostConfigurationSessionsSessionIdThreadsResponse, error)
+
+	// GetConfigurationThreadsThreadIdWithResponse Get Thread
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/configuration-threads/{thread_id} (the `GetConfigurationThreadsThreadId` operationId).
+	GetConfigurationThreadsThreadIdWithResponse(ctx context.Context, threadId string, reqEditors ...RequestEditorFn) (*GetConfigurationThreadsThreadIdResponse, error)
+
+	// PostConfigurationThreadsThreadIdInputsWithBodyWithResponse Submit Input
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/configuration-threads/{thread_id}/inputs (the `PostConfigurationThreadsThreadIdInputs` operationId).
+	PostConfigurationThreadsThreadIdInputsWithBodyWithResponse(ctx context.Context, threadId string, params *PostConfigurationThreadsThreadIdInputsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostConfigurationThreadsThreadIdInputsResponse, error)
+
+	// PostConfigurationThreadsThreadIdInputsWithResponse Submit Input
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/configuration-threads/{thread_id}/inputs (the `PostConfigurationThreadsThreadIdInputs` operationId).
+	PostConfigurationThreadsThreadIdInputsWithResponse(ctx context.Context, threadId string, params *PostConfigurationThreadsThreadIdInputsParams, body PostConfigurationThreadsThreadIdInputsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostConfigurationThreadsThreadIdInputsResponse, error)
+
 	// GetConnectionAuthorizationsAuthorizationIdWithResponse Get Connection Authorization
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -39773,6 +41890,34 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with POST /api/v1/workspaces/{workspace}/assets (the `PostWorkspacesWorkspaceAssets` operationId).
 	PostWorkspacesWorkspaceAssetsWithBodyWithResponse(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceAssetsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceAssetsResponse, error)
+
+	// GetWorkspacesWorkspaceConfigurationAssistantReadinessWithResponse Readiness
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/workspaces/{workspace}/configuration-assistant/readiness (the `GetWorkspacesWorkspaceConfigurationAssistantReadiness` operationId).
+	GetWorkspacesWorkspaceConfigurationAssistantReadinessWithResponse(ctx context.Context, workspace string, params *GetWorkspacesWorkspaceConfigurationAssistantReadinessParams, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceConfigurationAssistantReadinessResponse, error)
+
+	// GetWorkspacesWorkspaceConfigurationSessionsWithResponse List Sessions
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/workspaces/{workspace}/configuration-sessions (the `GetWorkspacesWorkspaceConfigurationSessions` operationId).
+	GetWorkspacesWorkspaceConfigurationSessionsWithResponse(ctx context.Context, workspace string, params *GetWorkspacesWorkspaceConfigurationSessionsParams, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceConfigurationSessionsResponse, error)
+
+	// PostWorkspacesWorkspaceConfigurationSessionsWithBodyWithResponse Create Session
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/workspaces/{workspace}/configuration-sessions (the `PostWorkspacesWorkspaceConfigurationSessions` operationId).
+	PostWorkspacesWorkspaceConfigurationSessionsWithBodyWithResponse(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceConfigurationSessionsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceConfigurationSessionsResponse, error)
+
+	// PostWorkspacesWorkspaceConfigurationSessionsWithResponse Create Session
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/workspaces/{workspace}/configuration-sessions (the `PostWorkspacesWorkspaceConfigurationSessions` operationId).
+	PostWorkspacesWorkspaceConfigurationSessionsWithResponse(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceConfigurationSessionsParams, body PostWorkspacesWorkspaceConfigurationSessionsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceConfigurationSessionsResponse, error)
 
 	// GetWorkspacesWorkspaceConnectionsWithResponse List Connections
 	//
@@ -42185,6 +44330,776 @@ func (r GetBaseModelsResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetBaseModelsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetConfigurationDraftsDraftIdResponse200Headers the declared response headers of an HTTP 200 response for GetConfigurationDraftsDraftId
+type GetConfigurationDraftsDraftIdResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetConfigurationDraftsDraftIdResponse400Headers the declared response headers of an HTTP 400 response for GetConfigurationDraftsDraftId
+type GetConfigurationDraftsDraftIdResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetConfigurationDraftsDraftIdResponseDefaultHeaders the declared response headers of an HTTP default response for GetConfigurationDraftsDraftId
+type GetConfigurationDraftsDraftIdResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetConfigurationDraftsDraftIdResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ConfigurationDraftReview
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetConfigurationDraftsDraftIdResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetConfigurationDraftsDraftIdResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetConfigurationDraftsDraftIdResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetConfigurationDraftsDraftIdResponse) GetJSON200() *ConfigurationDraftReview {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetConfigurationDraftsDraftIdResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetConfigurationDraftsDraftIdResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetConfigurationDraftsDraftIdResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetConfigurationDraftsDraftIdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetConfigurationDraftsDraftIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetConfigurationDraftsDraftIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PatchConfigurationDraftsDraftIdResponse200Headers the declared response headers of an HTTP 200 response for PatchConfigurationDraftsDraftId
+type PatchConfigurationDraftsDraftIdResponse200Headers struct {
+	XRequestID *string
+}
+
+// PatchConfigurationDraftsDraftIdResponse400Headers the declared response headers of an HTTP 400 response for PatchConfigurationDraftsDraftId
+type PatchConfigurationDraftsDraftIdResponse400Headers struct {
+	XRequestID *string
+}
+
+// PatchConfigurationDraftsDraftIdResponseDefaultHeaders the declared response headers of an HTTP default response for PatchConfigurationDraftsDraftId
+type PatchConfigurationDraftsDraftIdResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PatchConfigurationDraftsDraftIdResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ConfigurationDraft
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PatchConfigurationDraftsDraftIdResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PatchConfigurationDraftsDraftIdResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PatchConfigurationDraftsDraftIdResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PatchConfigurationDraftsDraftIdResponse) GetJSON200() *ConfigurationDraft {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PatchConfigurationDraftsDraftIdResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PatchConfigurationDraftsDraftIdResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PatchConfigurationDraftsDraftIdResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PatchConfigurationDraftsDraftIdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PatchConfigurationDraftsDraftIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PatchConfigurationDraftsDraftIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PostConfigurationDraftsDraftIdApplyResponse200Headers the declared response headers of an HTTP 200 response for PostConfigurationDraftsDraftIdApply
+type PostConfigurationDraftsDraftIdApplyResponse200Headers struct {
+	XRequestID *string
+}
+
+// PostConfigurationDraftsDraftIdApplyResponse400Headers the declared response headers of an HTTP 400 response for PostConfigurationDraftsDraftIdApply
+type PostConfigurationDraftsDraftIdApplyResponse400Headers struct {
+	XRequestID *string
+}
+
+// PostConfigurationDraftsDraftIdApplyResponseDefaultHeaders the declared response headers of an HTTP default response for PostConfigurationDraftsDraftIdApply
+type PostConfigurationDraftsDraftIdApplyResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PostConfigurationDraftsDraftIdApplyResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ConfigurationApplicationReceipt
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PostConfigurationDraftsDraftIdApplyResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PostConfigurationDraftsDraftIdApplyResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PostConfigurationDraftsDraftIdApplyResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PostConfigurationDraftsDraftIdApplyResponse) GetJSON200() *ConfigurationApplicationReceipt {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PostConfigurationDraftsDraftIdApplyResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PostConfigurationDraftsDraftIdApplyResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PostConfigurationDraftsDraftIdApplyResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostConfigurationDraftsDraftIdApplyResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostConfigurationDraftsDraftIdApplyResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostConfigurationDraftsDraftIdApplyResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PostConfigurationDraftsDraftIdDiscardResponse200Headers the declared response headers of an HTTP 200 response for PostConfigurationDraftsDraftIdDiscard
+type PostConfigurationDraftsDraftIdDiscardResponse200Headers struct {
+	XRequestID *string
+}
+
+// PostConfigurationDraftsDraftIdDiscardResponse400Headers the declared response headers of an HTTP 400 response for PostConfigurationDraftsDraftIdDiscard
+type PostConfigurationDraftsDraftIdDiscardResponse400Headers struct {
+	XRequestID *string
+}
+
+// PostConfigurationDraftsDraftIdDiscardResponseDefaultHeaders the declared response headers of an HTTP default response for PostConfigurationDraftsDraftIdDiscard
+type PostConfigurationDraftsDraftIdDiscardResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PostConfigurationDraftsDraftIdDiscardResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ConfigurationDraft
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PostConfigurationDraftsDraftIdDiscardResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PostConfigurationDraftsDraftIdDiscardResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PostConfigurationDraftsDraftIdDiscardResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PostConfigurationDraftsDraftIdDiscardResponse) GetJSON200() *ConfigurationDraft {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PostConfigurationDraftsDraftIdDiscardResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PostConfigurationDraftsDraftIdDiscardResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PostConfigurationDraftsDraftIdDiscardResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostConfigurationDraftsDraftIdDiscardResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostConfigurationDraftsDraftIdDiscardResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostConfigurationDraftsDraftIdDiscardResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PostConfigurationDraftsDraftIdRebaseResponse200Headers the declared response headers of an HTTP 200 response for PostConfigurationDraftsDraftIdRebase
+type PostConfigurationDraftsDraftIdRebaseResponse200Headers struct {
+	XRequestID *string
+}
+
+// PostConfigurationDraftsDraftIdRebaseResponse400Headers the declared response headers of an HTTP 400 response for PostConfigurationDraftsDraftIdRebase
+type PostConfigurationDraftsDraftIdRebaseResponse400Headers struct {
+	XRequestID *string
+}
+
+// PostConfigurationDraftsDraftIdRebaseResponseDefaultHeaders the declared response headers of an HTTP default response for PostConfigurationDraftsDraftIdRebase
+type PostConfigurationDraftsDraftIdRebaseResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PostConfigurationDraftsDraftIdRebaseResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ConfigurationDraft
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PostConfigurationDraftsDraftIdRebaseResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PostConfigurationDraftsDraftIdRebaseResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PostConfigurationDraftsDraftIdRebaseResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PostConfigurationDraftsDraftIdRebaseResponse) GetJSON200() *ConfigurationDraft {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PostConfigurationDraftsDraftIdRebaseResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PostConfigurationDraftsDraftIdRebaseResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PostConfigurationDraftsDraftIdRebaseResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostConfigurationDraftsDraftIdRebaseResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostConfigurationDraftsDraftIdRebaseResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostConfigurationDraftsDraftIdRebaseResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetConfigurationSessionsSessionIdResponse200Headers the declared response headers of an HTTP 200 response for GetConfigurationSessionsSessionId
+type GetConfigurationSessionsSessionIdResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetConfigurationSessionsSessionIdResponse400Headers the declared response headers of an HTTP 400 response for GetConfigurationSessionsSessionId
+type GetConfigurationSessionsSessionIdResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetConfigurationSessionsSessionIdResponseDefaultHeaders the declared response headers of an HTTP default response for GetConfigurationSessionsSessionId
+type GetConfigurationSessionsSessionIdResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetConfigurationSessionsSessionIdResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ConfigurationSessionView
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetConfigurationSessionsSessionIdResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetConfigurationSessionsSessionIdResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetConfigurationSessionsSessionIdResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetConfigurationSessionsSessionIdResponse) GetJSON200() *ConfigurationSessionView {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetConfigurationSessionsSessionIdResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetConfigurationSessionsSessionIdResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetConfigurationSessionsSessionIdResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetConfigurationSessionsSessionIdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetConfigurationSessionsSessionIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetConfigurationSessionsSessionIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetConfigurationSessionsSessionIdThreadsResponse200Headers the declared response headers of an HTTP 200 response for GetConfigurationSessionsSessionIdThreads
+type GetConfigurationSessionsSessionIdThreadsResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetConfigurationSessionsSessionIdThreadsResponse400Headers the declared response headers of an HTTP 400 response for GetConfigurationSessionsSessionIdThreads
+type GetConfigurationSessionsSessionIdThreadsResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetConfigurationSessionsSessionIdThreadsResponseDefaultHeaders the declared response headers of an HTTP default response for GetConfigurationSessionsSessionIdThreads
+type GetConfigurationSessionsSessionIdThreadsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetConfigurationSessionsSessionIdThreadsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ConfigurationThreadCollection
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetConfigurationSessionsSessionIdThreadsResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetConfigurationSessionsSessionIdThreadsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetConfigurationSessionsSessionIdThreadsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetConfigurationSessionsSessionIdThreadsResponse) GetJSON200() *ConfigurationThreadCollection {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetConfigurationSessionsSessionIdThreadsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetConfigurationSessionsSessionIdThreadsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetConfigurationSessionsSessionIdThreadsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetConfigurationSessionsSessionIdThreadsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetConfigurationSessionsSessionIdThreadsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetConfigurationSessionsSessionIdThreadsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PostConfigurationSessionsSessionIdThreadsResponse201Headers the declared response headers of an HTTP 201 response for PostConfigurationSessionsSessionIdThreads
+type PostConfigurationSessionsSessionIdThreadsResponse201Headers struct {
+	XRequestID *string
+}
+
+// PostConfigurationSessionsSessionIdThreadsResponse400Headers the declared response headers of an HTTP 400 response for PostConfigurationSessionsSessionIdThreads
+type PostConfigurationSessionsSessionIdThreadsResponse400Headers struct {
+	XRequestID *string
+}
+
+// PostConfigurationSessionsSessionIdThreadsResponseDefaultHeaders the declared response headers of an HTTP default response for PostConfigurationSessionsSessionIdThreads
+type PostConfigurationSessionsSessionIdThreadsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PostConfigurationSessionsSessionIdThreadsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *ConfigurationThreadView
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers201 the parsed response headers for an HTTP 201 response
+	Headers201 *PostConfigurationSessionsSessionIdThreadsResponse201Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PostConfigurationSessionsSessionIdThreadsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PostConfigurationSessionsSessionIdThreadsResponseDefaultHeaders
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r PostConfigurationSessionsSessionIdThreadsResponse) GetJSON201() *ConfigurationThreadView {
+	return r.JSON201
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PostConfigurationSessionsSessionIdThreadsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PostConfigurationSessionsSessionIdThreadsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PostConfigurationSessionsSessionIdThreadsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostConfigurationSessionsSessionIdThreadsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostConfigurationSessionsSessionIdThreadsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostConfigurationSessionsSessionIdThreadsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetConfigurationThreadsThreadIdResponse200Headers the declared response headers of an HTTP 200 response for GetConfigurationThreadsThreadId
+type GetConfigurationThreadsThreadIdResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetConfigurationThreadsThreadIdResponse400Headers the declared response headers of an HTTP 400 response for GetConfigurationThreadsThreadId
+type GetConfigurationThreadsThreadIdResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetConfigurationThreadsThreadIdResponseDefaultHeaders the declared response headers of an HTTP default response for GetConfigurationThreadsThreadId
+type GetConfigurationThreadsThreadIdResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetConfigurationThreadsThreadIdResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ConfigurationThreadView
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetConfigurationThreadsThreadIdResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetConfigurationThreadsThreadIdResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetConfigurationThreadsThreadIdResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetConfigurationThreadsThreadIdResponse) GetJSON200() *ConfigurationThreadView {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetConfigurationThreadsThreadIdResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetConfigurationThreadsThreadIdResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetConfigurationThreadsThreadIdResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetConfigurationThreadsThreadIdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetConfigurationThreadsThreadIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetConfigurationThreadsThreadIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PostConfigurationThreadsThreadIdInputsResponse202Headers the declared response headers of an HTTP 202 response for PostConfigurationThreadsThreadIdInputs
+type PostConfigurationThreadsThreadIdInputsResponse202Headers struct {
+	XRequestID *string
+}
+
+// PostConfigurationThreadsThreadIdInputsResponse400Headers the declared response headers of an HTTP 400 response for PostConfigurationThreadsThreadIdInputs
+type PostConfigurationThreadsThreadIdInputsResponse400Headers struct {
+	XRequestID *string
+}
+
+// PostConfigurationThreadsThreadIdInputsResponseDefaultHeaders the declared response headers of an HTTP default response for PostConfigurationThreadsThreadIdInputs
+type PostConfigurationThreadsThreadIdInputsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PostConfigurationThreadsThreadIdInputsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON202 the response for an HTTP 202 `application/json` response
+	JSON202 *RunAcceptanceReceipt
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers202 the parsed response headers for an HTTP 202 response
+	Headers202 *PostConfigurationThreadsThreadIdInputsResponse202Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PostConfigurationThreadsThreadIdInputsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PostConfigurationThreadsThreadIdInputsResponseDefaultHeaders
+}
+
+// GetJSON202 returns the response for an HTTP 202 `application/json` response
+func (r PostConfigurationThreadsThreadIdInputsResponse) GetJSON202() *RunAcceptanceReceipt {
+	return r.JSON202
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PostConfigurationThreadsThreadIdInputsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PostConfigurationThreadsThreadIdInputsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PostConfigurationThreadsThreadIdInputsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostConfigurationThreadsThreadIdInputsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostConfigurationThreadsThreadIdInputsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostConfigurationThreadsThreadIdInputsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -56715,6 +59630,237 @@ func (r PostWorkspacesWorkspaceAssetsResponse) ContentType() string {
 	return ""
 }
 
+// GetWorkspacesWorkspaceConfigurationAssistantReadinessResponse200Headers the declared response headers of an HTTP 200 response for GetWorkspacesWorkspaceConfigurationAssistantReadiness
+type GetWorkspacesWorkspaceConfigurationAssistantReadinessResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetWorkspacesWorkspaceConfigurationAssistantReadinessResponse400Headers the declared response headers of an HTTP 400 response for GetWorkspacesWorkspaceConfigurationAssistantReadiness
+type GetWorkspacesWorkspaceConfigurationAssistantReadinessResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetWorkspacesWorkspaceConfigurationAssistantReadinessResponseDefaultHeaders the declared response headers of an HTTP default response for GetWorkspacesWorkspaceConfigurationAssistantReadiness
+type GetWorkspacesWorkspaceConfigurationAssistantReadinessResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetWorkspacesWorkspaceConfigurationAssistantReadinessResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AssistantReadiness
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetWorkspacesWorkspaceConfigurationAssistantReadinessResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetWorkspacesWorkspaceConfigurationAssistantReadinessResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetWorkspacesWorkspaceConfigurationAssistantReadinessResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetWorkspacesWorkspaceConfigurationAssistantReadinessResponse) GetJSON200() *AssistantReadiness {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetWorkspacesWorkspaceConfigurationAssistantReadinessResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetWorkspacesWorkspaceConfigurationAssistantReadinessResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetWorkspacesWorkspaceConfigurationAssistantReadinessResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkspacesWorkspaceConfigurationAssistantReadinessResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkspacesWorkspaceConfigurationAssistantReadinessResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetWorkspacesWorkspaceConfigurationAssistantReadinessResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetWorkspacesWorkspaceConfigurationSessionsResponse200Headers the declared response headers of an HTTP 200 response for GetWorkspacesWorkspaceConfigurationSessions
+type GetWorkspacesWorkspaceConfigurationSessionsResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetWorkspacesWorkspaceConfigurationSessionsResponse400Headers the declared response headers of an HTTP 400 response for GetWorkspacesWorkspaceConfigurationSessions
+type GetWorkspacesWorkspaceConfigurationSessionsResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetWorkspacesWorkspaceConfigurationSessionsResponseDefaultHeaders the declared response headers of an HTTP default response for GetWorkspacesWorkspaceConfigurationSessions
+type GetWorkspacesWorkspaceConfigurationSessionsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetWorkspacesWorkspaceConfigurationSessionsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ConfigurationSessionCollection
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetWorkspacesWorkspaceConfigurationSessionsResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetWorkspacesWorkspaceConfigurationSessionsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetWorkspacesWorkspaceConfigurationSessionsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetWorkspacesWorkspaceConfigurationSessionsResponse) GetJSON200() *ConfigurationSessionCollection {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetWorkspacesWorkspaceConfigurationSessionsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetWorkspacesWorkspaceConfigurationSessionsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetWorkspacesWorkspaceConfigurationSessionsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkspacesWorkspaceConfigurationSessionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkspacesWorkspaceConfigurationSessionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetWorkspacesWorkspaceConfigurationSessionsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PostWorkspacesWorkspaceConfigurationSessionsResponse201Headers the declared response headers of an HTTP 201 response for PostWorkspacesWorkspaceConfigurationSessions
+type PostWorkspacesWorkspaceConfigurationSessionsResponse201Headers struct {
+	XRequestID *string
+}
+
+// PostWorkspacesWorkspaceConfigurationSessionsResponse400Headers the declared response headers of an HTTP 400 response for PostWorkspacesWorkspaceConfigurationSessions
+type PostWorkspacesWorkspaceConfigurationSessionsResponse400Headers struct {
+	XRequestID *string
+}
+
+// PostWorkspacesWorkspaceConfigurationSessionsResponseDefaultHeaders the declared response headers of an HTTP default response for PostWorkspacesWorkspaceConfigurationSessions
+type PostWorkspacesWorkspaceConfigurationSessionsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PostWorkspacesWorkspaceConfigurationSessionsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *ConfigurationSessionView
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers201 the parsed response headers for an HTTP 201 response
+	Headers201 *PostWorkspacesWorkspaceConfigurationSessionsResponse201Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PostWorkspacesWorkspaceConfigurationSessionsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PostWorkspacesWorkspaceConfigurationSessionsResponseDefaultHeaders
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r PostWorkspacesWorkspaceConfigurationSessionsResponse) GetJSON201() *ConfigurationSessionView {
+	return r.JSON201
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PostWorkspacesWorkspaceConfigurationSessionsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PostWorkspacesWorkspaceConfigurationSessionsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PostWorkspacesWorkspaceConfigurationSessionsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostWorkspacesWorkspaceConfigurationSessionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostWorkspacesWorkspaceConfigurationSessionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostWorkspacesWorkspaceConfigurationSessionsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // GetWorkspacesWorkspaceConnectionsResponse200Headers the declared response headers of an HTTP 200 response for GetWorkspacesWorkspaceConnections
 type GetWorkspacesWorkspaceConnectionsResponse200Headers struct {
 	XRequestID *string
@@ -62513,6 +65659,214 @@ func (c *ClientWithResponses) GetBaseModelsWithResponse(ctx context.Context, req
 	return ParseGetBaseModelsResponse(rsp)
 }
 
+// GetConfigurationDraftsDraftIdWithResponse Get Draft
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/configuration-drafts/{draft_id} (the `GetConfigurationDraftsDraftId` operationId).
+func (c *ClientWithResponses) GetConfigurationDraftsDraftIdWithResponse(ctx context.Context, draftId string, reqEditors ...RequestEditorFn) (*GetConfigurationDraftsDraftIdResponse, error) {
+	rsp, err := c.GetConfigurationDraftsDraftId(ctx, draftId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetConfigurationDraftsDraftIdResponse(rsp)
+}
+
+// PatchConfigurationDraftsDraftIdWithBodyWithResponse Update Draft
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /api/v1/configuration-drafts/{draft_id} (the `PatchConfigurationDraftsDraftId` operationId).
+func (c *ClientWithResponses) PatchConfigurationDraftsDraftIdWithBodyWithResponse(ctx context.Context, draftId string, params *PatchConfigurationDraftsDraftIdParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchConfigurationDraftsDraftIdResponse, error) {
+	rsp, err := c.PatchConfigurationDraftsDraftIdWithBody(ctx, draftId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePatchConfigurationDraftsDraftIdResponse(rsp)
+}
+
+// PatchConfigurationDraftsDraftIdWithResponse Update Draft
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /api/v1/configuration-drafts/{draft_id} (the `PatchConfigurationDraftsDraftId` operationId).
+func (c *ClientWithResponses) PatchConfigurationDraftsDraftIdWithResponse(ctx context.Context, draftId string, params *PatchConfigurationDraftsDraftIdParams, body PatchConfigurationDraftsDraftIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchConfigurationDraftsDraftIdResponse, error) {
+	rsp, err := c.PatchConfigurationDraftsDraftId(ctx, draftId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePatchConfigurationDraftsDraftIdResponse(rsp)
+}
+
+// PostConfigurationDraftsDraftIdApplyWithBodyWithResponse Apply Draft
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/configuration-drafts/{draft_id}/apply (the `PostConfigurationDraftsDraftIdApply` operationId).
+func (c *ClientWithResponses) PostConfigurationDraftsDraftIdApplyWithBodyWithResponse(ctx context.Context, draftId string, params *PostConfigurationDraftsDraftIdApplyParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostConfigurationDraftsDraftIdApplyResponse, error) {
+	rsp, err := c.PostConfigurationDraftsDraftIdApplyWithBody(ctx, draftId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostConfigurationDraftsDraftIdApplyResponse(rsp)
+}
+
+// PostConfigurationDraftsDraftIdApplyWithResponse Apply Draft
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/configuration-drafts/{draft_id}/apply (the `PostConfigurationDraftsDraftIdApply` operationId).
+func (c *ClientWithResponses) PostConfigurationDraftsDraftIdApplyWithResponse(ctx context.Context, draftId string, params *PostConfigurationDraftsDraftIdApplyParams, body PostConfigurationDraftsDraftIdApplyJSONRequestBody, reqEditors ...RequestEditorFn) (*PostConfigurationDraftsDraftIdApplyResponse, error) {
+	rsp, err := c.PostConfigurationDraftsDraftIdApply(ctx, draftId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostConfigurationDraftsDraftIdApplyResponse(rsp)
+}
+
+// PostConfigurationDraftsDraftIdDiscardWithBodyWithResponse Discard Draft
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/configuration-drafts/{draft_id}/discard (the `PostConfigurationDraftsDraftIdDiscard` operationId).
+func (c *ClientWithResponses) PostConfigurationDraftsDraftIdDiscardWithBodyWithResponse(ctx context.Context, draftId string, params *PostConfigurationDraftsDraftIdDiscardParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostConfigurationDraftsDraftIdDiscardResponse, error) {
+	rsp, err := c.PostConfigurationDraftsDraftIdDiscardWithBody(ctx, draftId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostConfigurationDraftsDraftIdDiscardResponse(rsp)
+}
+
+// PostConfigurationDraftsDraftIdDiscardWithResponse Discard Draft
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/configuration-drafts/{draft_id}/discard (the `PostConfigurationDraftsDraftIdDiscard` operationId).
+func (c *ClientWithResponses) PostConfigurationDraftsDraftIdDiscardWithResponse(ctx context.Context, draftId string, params *PostConfigurationDraftsDraftIdDiscardParams, body PostConfigurationDraftsDraftIdDiscardJSONRequestBody, reqEditors ...RequestEditorFn) (*PostConfigurationDraftsDraftIdDiscardResponse, error) {
+	rsp, err := c.PostConfigurationDraftsDraftIdDiscard(ctx, draftId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostConfigurationDraftsDraftIdDiscardResponse(rsp)
+}
+
+// PostConfigurationDraftsDraftIdRebaseWithBodyWithResponse Rebase Draft
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/configuration-drafts/{draft_id}/rebase (the `PostConfigurationDraftsDraftIdRebase` operationId).
+func (c *ClientWithResponses) PostConfigurationDraftsDraftIdRebaseWithBodyWithResponse(ctx context.Context, draftId string, params *PostConfigurationDraftsDraftIdRebaseParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostConfigurationDraftsDraftIdRebaseResponse, error) {
+	rsp, err := c.PostConfigurationDraftsDraftIdRebaseWithBody(ctx, draftId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostConfigurationDraftsDraftIdRebaseResponse(rsp)
+}
+
+// PostConfigurationDraftsDraftIdRebaseWithResponse Rebase Draft
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/configuration-drafts/{draft_id}/rebase (the `PostConfigurationDraftsDraftIdRebase` operationId).
+func (c *ClientWithResponses) PostConfigurationDraftsDraftIdRebaseWithResponse(ctx context.Context, draftId string, params *PostConfigurationDraftsDraftIdRebaseParams, body PostConfigurationDraftsDraftIdRebaseJSONRequestBody, reqEditors ...RequestEditorFn) (*PostConfigurationDraftsDraftIdRebaseResponse, error) {
+	rsp, err := c.PostConfigurationDraftsDraftIdRebase(ctx, draftId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostConfigurationDraftsDraftIdRebaseResponse(rsp)
+}
+
+// GetConfigurationSessionsSessionIdWithResponse Get Session
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/configuration-sessions/{session_id} (the `GetConfigurationSessionsSessionId` operationId).
+func (c *ClientWithResponses) GetConfigurationSessionsSessionIdWithResponse(ctx context.Context, sessionId string, reqEditors ...RequestEditorFn) (*GetConfigurationSessionsSessionIdResponse, error) {
+	rsp, err := c.GetConfigurationSessionsSessionId(ctx, sessionId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetConfigurationSessionsSessionIdResponse(rsp)
+}
+
+// GetConfigurationSessionsSessionIdThreadsWithResponse List Threads
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/configuration-sessions/{session_id}/threads (the `GetConfigurationSessionsSessionIdThreads` operationId).
+func (c *ClientWithResponses) GetConfigurationSessionsSessionIdThreadsWithResponse(ctx context.Context, sessionId string, params *GetConfigurationSessionsSessionIdThreadsParams, reqEditors ...RequestEditorFn) (*GetConfigurationSessionsSessionIdThreadsResponse, error) {
+	rsp, err := c.GetConfigurationSessionsSessionIdThreads(ctx, sessionId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetConfigurationSessionsSessionIdThreadsResponse(rsp)
+}
+
+// PostConfigurationSessionsSessionIdThreadsWithBodyWithResponse Create Thread
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/configuration-sessions/{session_id}/threads (the `PostConfigurationSessionsSessionIdThreads` operationId).
+func (c *ClientWithResponses) PostConfigurationSessionsSessionIdThreadsWithBodyWithResponse(ctx context.Context, sessionId string, params *PostConfigurationSessionsSessionIdThreadsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostConfigurationSessionsSessionIdThreadsResponse, error) {
+	rsp, err := c.PostConfigurationSessionsSessionIdThreadsWithBody(ctx, sessionId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostConfigurationSessionsSessionIdThreadsResponse(rsp)
+}
+
+// PostConfigurationSessionsSessionIdThreadsWithResponse Create Thread
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/configuration-sessions/{session_id}/threads (the `PostConfigurationSessionsSessionIdThreads` operationId).
+func (c *ClientWithResponses) PostConfigurationSessionsSessionIdThreadsWithResponse(ctx context.Context, sessionId string, params *PostConfigurationSessionsSessionIdThreadsParams, body PostConfigurationSessionsSessionIdThreadsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostConfigurationSessionsSessionIdThreadsResponse, error) {
+	rsp, err := c.PostConfigurationSessionsSessionIdThreads(ctx, sessionId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostConfigurationSessionsSessionIdThreadsResponse(rsp)
+}
+
+// GetConfigurationThreadsThreadIdWithResponse Get Thread
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/configuration-threads/{thread_id} (the `GetConfigurationThreadsThreadId` operationId).
+func (c *ClientWithResponses) GetConfigurationThreadsThreadIdWithResponse(ctx context.Context, threadId string, reqEditors ...RequestEditorFn) (*GetConfigurationThreadsThreadIdResponse, error) {
+	rsp, err := c.GetConfigurationThreadsThreadId(ctx, threadId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetConfigurationThreadsThreadIdResponse(rsp)
+}
+
+// PostConfigurationThreadsThreadIdInputsWithBodyWithResponse Submit Input
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/configuration-threads/{thread_id}/inputs (the `PostConfigurationThreadsThreadIdInputs` operationId).
+func (c *ClientWithResponses) PostConfigurationThreadsThreadIdInputsWithBodyWithResponse(ctx context.Context, threadId string, params *PostConfigurationThreadsThreadIdInputsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostConfigurationThreadsThreadIdInputsResponse, error) {
+	rsp, err := c.PostConfigurationThreadsThreadIdInputsWithBody(ctx, threadId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostConfigurationThreadsThreadIdInputsResponse(rsp)
+}
+
+// PostConfigurationThreadsThreadIdInputsWithResponse Submit Input
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/configuration-threads/{thread_id}/inputs (the `PostConfigurationThreadsThreadIdInputs` operationId).
+func (c *ClientWithResponses) PostConfigurationThreadsThreadIdInputsWithResponse(ctx context.Context, threadId string, params *PostConfigurationThreadsThreadIdInputsParams, body PostConfigurationThreadsThreadIdInputsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostConfigurationThreadsThreadIdInputsResponse, error) {
+	rsp, err := c.PostConfigurationThreadsThreadIdInputs(ctx, threadId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostConfigurationThreadsThreadIdInputsResponse(rsp)
+}
+
 // GetConnectionAuthorizationsAuthorizationIdWithResponse Get Connection Authorization
 //
 // Returns a wrapper object for the known response body format(s).
@@ -66023,6 +69377,58 @@ func (c *ClientWithResponses) PostWorkspacesWorkspaceAssetsWithBodyWithResponse(
 	return ParsePostWorkspacesWorkspaceAssetsResponse(rsp)
 }
 
+// GetWorkspacesWorkspaceConfigurationAssistantReadinessWithResponse Readiness
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/workspaces/{workspace}/configuration-assistant/readiness (the `GetWorkspacesWorkspaceConfigurationAssistantReadiness` operationId).
+func (c *ClientWithResponses) GetWorkspacesWorkspaceConfigurationAssistantReadinessWithResponse(ctx context.Context, workspace string, params *GetWorkspacesWorkspaceConfigurationAssistantReadinessParams, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceConfigurationAssistantReadinessResponse, error) {
+	rsp, err := c.GetWorkspacesWorkspaceConfigurationAssistantReadiness(ctx, workspace, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkspacesWorkspaceConfigurationAssistantReadinessResponse(rsp)
+}
+
+// GetWorkspacesWorkspaceConfigurationSessionsWithResponse List Sessions
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/workspaces/{workspace}/configuration-sessions (the `GetWorkspacesWorkspaceConfigurationSessions` operationId).
+func (c *ClientWithResponses) GetWorkspacesWorkspaceConfigurationSessionsWithResponse(ctx context.Context, workspace string, params *GetWorkspacesWorkspaceConfigurationSessionsParams, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceConfigurationSessionsResponse, error) {
+	rsp, err := c.GetWorkspacesWorkspaceConfigurationSessions(ctx, workspace, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkspacesWorkspaceConfigurationSessionsResponse(rsp)
+}
+
+// PostWorkspacesWorkspaceConfigurationSessionsWithBodyWithResponse Create Session
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/workspaces/{workspace}/configuration-sessions (the `PostWorkspacesWorkspaceConfigurationSessions` operationId).
+func (c *ClientWithResponses) PostWorkspacesWorkspaceConfigurationSessionsWithBodyWithResponse(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceConfigurationSessionsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceConfigurationSessionsResponse, error) {
+	rsp, err := c.PostWorkspacesWorkspaceConfigurationSessionsWithBody(ctx, workspace, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostWorkspacesWorkspaceConfigurationSessionsResponse(rsp)
+}
+
+// PostWorkspacesWorkspaceConfigurationSessionsWithResponse Create Session
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/workspaces/{workspace}/configuration-sessions (the `PostWorkspacesWorkspaceConfigurationSessions` operationId).
+func (c *ClientWithResponses) PostWorkspacesWorkspaceConfigurationSessionsWithResponse(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceConfigurationSessionsParams, body PostWorkspacesWorkspaceConfigurationSessionsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceConfigurationSessionsResponse, error) {
+	rsp, err := c.PostWorkspacesWorkspaceConfigurationSessions(ctx, workspace, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostWorkspacesWorkspaceConfigurationSessionsResponse(rsp)
+}
+
 // GetWorkspacesWorkspaceConnectionsWithResponse List Connections
 //
 // Returns a wrapper object for the known response body format(s).
@@ -69079,6 +72485,806 @@ func ParseGetBaseModelsResponse(rsp *http.Response) (*GetBaseModelsResponse, err
 		response.Headers200 = &headers
 	case true:
 		var headers GetBaseModelsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetConfigurationDraftsDraftIdResponse parses an HTTP response from a GetConfigurationDraftsDraftIdWithResponse call
+func ParseGetConfigurationDraftsDraftIdResponse(rsp *http.Response) (*GetConfigurationDraftsDraftIdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetConfigurationDraftsDraftIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ConfigurationDraftReview
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetConfigurationDraftsDraftIdResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetConfigurationDraftsDraftIdResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetConfigurationDraftsDraftIdResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePatchConfigurationDraftsDraftIdResponse parses an HTTP response from a PatchConfigurationDraftsDraftIdWithResponse call
+func ParsePatchConfigurationDraftsDraftIdResponse(rsp *http.Response) (*PatchConfigurationDraftsDraftIdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PatchConfigurationDraftsDraftIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ConfigurationDraft
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PatchConfigurationDraftsDraftIdResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PatchConfigurationDraftsDraftIdResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PatchConfigurationDraftsDraftIdResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePostConfigurationDraftsDraftIdApplyResponse parses an HTTP response from a PostConfigurationDraftsDraftIdApplyWithResponse call
+func ParsePostConfigurationDraftsDraftIdApplyResponse(rsp *http.Response) (*PostConfigurationDraftsDraftIdApplyResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostConfigurationDraftsDraftIdApplyResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ConfigurationApplicationReceipt
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PostConfigurationDraftsDraftIdApplyResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PostConfigurationDraftsDraftIdApplyResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PostConfigurationDraftsDraftIdApplyResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePostConfigurationDraftsDraftIdDiscardResponse parses an HTTP response from a PostConfigurationDraftsDraftIdDiscardWithResponse call
+func ParsePostConfigurationDraftsDraftIdDiscardResponse(rsp *http.Response) (*PostConfigurationDraftsDraftIdDiscardResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostConfigurationDraftsDraftIdDiscardResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ConfigurationDraft
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PostConfigurationDraftsDraftIdDiscardResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PostConfigurationDraftsDraftIdDiscardResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PostConfigurationDraftsDraftIdDiscardResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePostConfigurationDraftsDraftIdRebaseResponse parses an HTTP response from a PostConfigurationDraftsDraftIdRebaseWithResponse call
+func ParsePostConfigurationDraftsDraftIdRebaseResponse(rsp *http.Response) (*PostConfigurationDraftsDraftIdRebaseResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostConfigurationDraftsDraftIdRebaseResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ConfigurationDraft
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PostConfigurationDraftsDraftIdRebaseResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PostConfigurationDraftsDraftIdRebaseResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PostConfigurationDraftsDraftIdRebaseResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetConfigurationSessionsSessionIdResponse parses an HTTP response from a GetConfigurationSessionsSessionIdWithResponse call
+func ParseGetConfigurationSessionsSessionIdResponse(rsp *http.Response) (*GetConfigurationSessionsSessionIdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetConfigurationSessionsSessionIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ConfigurationSessionView
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetConfigurationSessionsSessionIdResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetConfigurationSessionsSessionIdResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetConfigurationSessionsSessionIdResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetConfigurationSessionsSessionIdThreadsResponse parses an HTTP response from a GetConfigurationSessionsSessionIdThreadsWithResponse call
+func ParseGetConfigurationSessionsSessionIdThreadsResponse(rsp *http.Response) (*GetConfigurationSessionsSessionIdThreadsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetConfigurationSessionsSessionIdThreadsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ConfigurationThreadCollection
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetConfigurationSessionsSessionIdThreadsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetConfigurationSessionsSessionIdThreadsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetConfigurationSessionsSessionIdThreadsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePostConfigurationSessionsSessionIdThreadsResponse parses an HTTP response from a PostConfigurationSessionsSessionIdThreadsWithResponse call
+func ParsePostConfigurationSessionsSessionIdThreadsResponse(rsp *http.Response) (*PostConfigurationSessionsSessionIdThreadsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostConfigurationSessionsSessionIdThreadsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest ConfigurationThreadView
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 201:
+		var headers PostConfigurationSessionsSessionIdThreadsResponse201Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers201 = &headers
+	case rsp.StatusCode == 400:
+		var headers PostConfigurationSessionsSessionIdThreadsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PostConfigurationSessionsSessionIdThreadsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetConfigurationThreadsThreadIdResponse parses an HTTP response from a GetConfigurationThreadsThreadIdWithResponse call
+func ParseGetConfigurationThreadsThreadIdResponse(rsp *http.Response) (*GetConfigurationThreadsThreadIdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetConfigurationThreadsThreadIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ConfigurationThreadView
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetConfigurationThreadsThreadIdResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetConfigurationThreadsThreadIdResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetConfigurationThreadsThreadIdResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePostConfigurationThreadsThreadIdInputsResponse parses an HTTP response from a PostConfigurationThreadsThreadIdInputsWithResponse call
+func ParsePostConfigurationThreadsThreadIdInputsResponse(rsp *http.Response) (*PostConfigurationThreadsThreadIdInputsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostConfigurationThreadsThreadIdInputsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 202:
+		var dest RunAcceptanceReceipt
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON202 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 202:
+		var headers PostConfigurationThreadsThreadIdInputsResponse202Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers202 = &headers
+	case rsp.StatusCode == 400:
+		var headers PostConfigurationThreadsThreadIdInputsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PostConfigurationThreadsThreadIdInputsResponseDefaultHeaders
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
@@ -84221,6 +88427,246 @@ func ParsePostWorkspacesWorkspaceAssetsResponse(rsp *http.Response) (*PostWorksp
 		response.Headers400 = &headers
 	case true:
 		var headers PostWorkspacesWorkspaceAssetsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetWorkspacesWorkspaceConfigurationAssistantReadinessResponse parses an HTTP response from a GetWorkspacesWorkspaceConfigurationAssistantReadinessWithResponse call
+func ParseGetWorkspacesWorkspaceConfigurationAssistantReadinessResponse(rsp *http.Response) (*GetWorkspacesWorkspaceConfigurationAssistantReadinessResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkspacesWorkspaceConfigurationAssistantReadinessResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AssistantReadiness
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetWorkspacesWorkspaceConfigurationAssistantReadinessResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetWorkspacesWorkspaceConfigurationAssistantReadinessResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetWorkspacesWorkspaceConfigurationAssistantReadinessResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetWorkspacesWorkspaceConfigurationSessionsResponse parses an HTTP response from a GetWorkspacesWorkspaceConfigurationSessionsWithResponse call
+func ParseGetWorkspacesWorkspaceConfigurationSessionsResponse(rsp *http.Response) (*GetWorkspacesWorkspaceConfigurationSessionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkspacesWorkspaceConfigurationSessionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ConfigurationSessionCollection
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetWorkspacesWorkspaceConfigurationSessionsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetWorkspacesWorkspaceConfigurationSessionsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetWorkspacesWorkspaceConfigurationSessionsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePostWorkspacesWorkspaceConfigurationSessionsResponse parses an HTTP response from a PostWorkspacesWorkspaceConfigurationSessionsWithResponse call
+func ParsePostWorkspacesWorkspaceConfigurationSessionsResponse(rsp *http.Response) (*PostWorkspacesWorkspaceConfigurationSessionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostWorkspacesWorkspaceConfigurationSessionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest ConfigurationSessionView
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 201:
+		var headers PostWorkspacesWorkspaceConfigurationSessionsResponse201Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers201 = &headers
+	case rsp.StatusCode == 400:
+		var headers PostWorkspacesWorkspaceConfigurationSessionsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PostWorkspacesWorkspaceConfigurationSessionsResponseDefaultHeaders
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {

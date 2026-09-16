@@ -114,6 +114,7 @@ class AgentCommands:
                 workspace_id=workspace_id,
                 agent_id=agent_id,
                 config=request.config,
+                creation=True,
             )
         except Exception as error:
             raise resolution_error(error) from error

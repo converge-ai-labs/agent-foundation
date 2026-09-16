@@ -607,6 +607,18 @@
           "source": {
             "$ref": "#/components/schemas/AgentSource"
           },
+          "system_purpose": {
+            "anyOf": [
+              {
+                "const": "configuration_assistant",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "System Purpose"
+          },
           "updated_at": {
             "format": "date-time",
             "title": "Updated At",
@@ -1757,6 +1769,62 @@
         "title": "ApiKey",
         "type": "object"
       },
+      "ApplyDraftRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "content_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Content Digest",
+            "type": "string"
+          },
+          "dependency_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Dependency Digest",
+            "type": "string"
+          },
+          "expected_target_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Target Version"
+          },
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          },
+          "verification_acknowledgement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationAcknowledgement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "verification_run_ids": {
+            "default": [],
+            "items": {
+              "maxLength": 72,
+              "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Verification Run Ids",
+            "type": "array"
+          }
+        },
+        "required": ["expected_version", "content_digest", "dependency_digest"],
+        "title": "ApplyDraftRequest",
+        "type": "object"
+      },
       "ApprovePendingResolution": {
         "additionalProperties": false,
         "properties": {
@@ -1983,6 +2051,55 @@
         },
         "required": ["id"],
         "title": "AssistantMessage",
+        "type": "object"
+      },
+      "AssistantReadiness": {
+        "additionalProperties": false,
+        "properties": {
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "reason_code": {
+            "enum": [
+              "ready",
+              "provider_setup_required",
+              "model_setup_required",
+              "model_access_denied",
+              "compatible_model_required"
+            ],
+            "title": "Reason Code",
+            "type": "string"
+          },
+          "selected_model": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SelectedAssistantModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "setup_actions": {
+            "items": {
+              "enum": [
+                "configure_provider",
+                "configure_model",
+                "contact_administrator"
+              ],
+              "type": "string"
+            },
+            "title": "Setup Actions",
+            "type": "array"
+          },
+          "setup_url": {
+            "title": "Setup Url",
+            "type": "string"
+          }
+        },
+        "required": ["ready", "reason_code", "setup_actions", "setup_url"],
+        "title": "AssistantReadiness",
         "type": "object"
       },
       "AudioInputContent": {
@@ -2835,6 +2952,905 @@
         },
         "required": ["call_id", "result"],
         "title": "CompletePendingResolution",
+        "type": "object"
+      },
+      "ConfigurationApplicationReceipt": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "agent_revision_id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Agent Revision Id",
+            "type": "string"
+          },
+          "agent_version": {
+            "minimum": 1.0,
+            "title": "Agent Version",
+            "type": "integer"
+          },
+          "applied_at": {
+            "format": "date-time",
+            "title": "Applied At",
+            "type": "string"
+          },
+          "applied_by_user_id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Applied By User Id",
+            "type": "string"
+          },
+          "draft_id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Draft Id",
+            "type": "string"
+          },
+          "no_change": {
+            "title": "No Change",
+            "type": "boolean"
+          },
+          "reviewed_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Reviewed Digest",
+            "type": "string"
+          },
+          "reviewed_version": {
+            "minimum": 1.0,
+            "title": "Reviewed Version",
+            "type": "integer"
+          },
+          "verification_acknowledgement": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationAcknowledgement"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "verification_run_ids": {
+            "default": [],
+            "items": {
+              "maxLength": 72,
+              "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Verification Run Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "draft_id",
+          "reviewed_version",
+          "reviewed_digest",
+          "agent_id",
+          "agent_revision_id",
+          "agent_version",
+          "applied_by_user_id",
+          "applied_at",
+          "no_change"
+        ],
+        "title": "ConfigurationApplicationReceipt",
+        "type": "object"
+      },
+      "ConfigurationDifference": {
+        "additionalProperties": false,
+        "properties": {
+          "after": {
+            "$ref": "#/components/schemas/JsonValue"
+          },
+          "after_present": {
+            "title": "After Present",
+            "type": "boolean"
+          },
+          "before": {
+            "$ref": "#/components/schemas/JsonValue"
+          },
+          "before_present": {
+            "title": "Before Present",
+            "type": "boolean"
+          },
+          "path": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Path",
+            "type": "array"
+          }
+        },
+        "required": [
+          "path",
+          "before",
+          "after",
+          "before_present",
+          "after_present"
+        ],
+        "title": "ConfigurationDifference",
+        "type": "object"
+      },
+      "ConfigurationDraft": {
+        "additionalProperties": false,
+        "properties": {
+          "application_receipt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConfigurationApplicationReceipt"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "base_agent_revision_id": {
+            "anyOf": [
+              {
+                "maxLength": 72,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Agent Revision Id"
+          },
+          "base_agent_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Agent Version"
+          },
+          "config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentConfig-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "content_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Content Digest",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "creation_metadata": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreationMetadata"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "evidence_refs": {
+            "default": [],
+            "items": {
+              "maxLength": 72,
+              "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Evidence Refs",
+            "type": "array"
+          },
+          "id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "latest_validation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConfigurationValidation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mode": {
+            "enum": ["create", "update"],
+            "title": "Mode",
+            "type": "string"
+          },
+          "organization_id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "owner_user_id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Owner User Id",
+            "type": "string"
+          },
+          "predecessor_draft_id": {
+            "anyOf": [
+              {
+                "maxLength": 72,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predecessor Draft Id"
+          },
+          "session_id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "source_agent_revision_id": {
+            "anyOf": [
+              {
+                "maxLength": 72,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Agent Revision Id"
+          },
+          "source_agent_revision_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Agent Revision Version"
+          },
+          "source_selector": {
+            "enum": ["current", "explicit", "empty"],
+            "title": "Source Selector",
+            "type": "string"
+          },
+          "status": {
+            "enum": ["open", "applied", "discarded", "expired"],
+            "title": "Status",
+            "type": "string"
+          },
+          "target_agent_id": {
+            "anyOf": [
+              {
+                "maxLength": 72,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Agent Id"
+          },
+          "terminal_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terminal Reason"
+          },
+          "thread_id": {
+            "title": "Thread Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          },
+          "workspace_id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "workspace_id",
+          "owner_user_id",
+          "session_id",
+          "thread_id",
+          "mode",
+          "target_agent_id",
+          "source_selector",
+          "source_agent_revision_id",
+          "base_agent_revision_id",
+          "version",
+          "config",
+          "content_digest",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ConfigurationDraft",
+        "type": "object"
+      },
+      "ConfigurationDraftReview": {
+        "additionalProperties": false,
+        "properties": {
+          "application_receipt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConfigurationApplicationReceipt"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "base": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConfigurationRevisionView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "base_agent_revision_id": {
+            "anyOf": [
+              {
+                "maxLength": 72,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Agent Revision Id"
+          },
+          "base_agent_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Agent Version"
+          },
+          "base_to_candidate": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigurationDifference"
+            },
+            "title": "Base To Candidate",
+            "type": "array"
+          },
+          "base_to_current_target": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigurationDifference"
+            },
+            "title": "Base To Current Target",
+            "type": "array"
+          },
+          "config": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AgentConfig-Output"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "content_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Content Digest",
+            "type": "string"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "creation_metadata": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreationMetadata"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "current_target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConfigurationRevisionView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "current_target_to_candidate": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigurationDifference"
+            },
+            "title": "Current Target To Candidate",
+            "type": "array"
+          },
+          "evidence_refs": {
+            "default": [],
+            "items": {
+              "maxLength": 72,
+              "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Evidence Refs",
+            "type": "array"
+          },
+          "id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Id",
+            "type": "string"
+          },
+          "latest_validation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConfigurationValidation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mode": {
+            "enum": ["create", "update"],
+            "title": "Mode",
+            "type": "string"
+          },
+          "organization_id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "owner_user_id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Owner User Id",
+            "type": "string"
+          },
+          "predecessor_draft_id": {
+            "anyOf": [
+              {
+                "maxLength": 72,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predecessor Draft Id"
+          },
+          "session_id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Session Id",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConfigurationRevisionView"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_agent_revision_id": {
+            "anyOf": [
+              {
+                "maxLength": 72,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Agent Revision Id"
+          },
+          "source_agent_revision_version": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Agent Revision Version"
+          },
+          "source_selector": {
+            "enum": ["current", "explicit", "empty"],
+            "title": "Source Selector",
+            "type": "string"
+          },
+          "source_to_candidate": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigurationDifference"
+            },
+            "title": "Source To Candidate",
+            "type": "array"
+          },
+          "status": {
+            "enum": ["open", "applied", "discarded", "expired"],
+            "title": "Status",
+            "type": "string"
+          },
+          "target_agent_id": {
+            "anyOf": [
+              {
+                "maxLength": 72,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Agent Id"
+          },
+          "target_conflict": {
+            "title": "Target Conflict",
+            "type": "boolean"
+          },
+          "terminal_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Terminal Reason"
+          },
+          "thread_id": {
+            "title": "Thread Id",
+            "type": "string"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "version": {
+            "minimum": 1.0,
+            "title": "Version",
+            "type": "integer"
+          },
+          "workspace_id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "workspace_id",
+          "owner_user_id",
+          "session_id",
+          "thread_id",
+          "mode",
+          "target_agent_id",
+          "source_selector",
+          "source_agent_revision_id",
+          "base_agent_revision_id",
+          "version",
+          "config",
+          "content_digest",
+          "status",
+          "created_at",
+          "updated_at",
+          "source",
+          "base",
+          "current_target",
+          "source_to_candidate",
+          "base_to_candidate",
+          "current_target_to_candidate",
+          "base_to_current_target",
+          "target_conflict"
+        ],
+        "title": "ConfigurationDraftReview",
+        "type": "object"
+      },
+      "ConfigurationInputRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_thread_version": {
+            "minimum": 1.0,
+            "title": "Expected Thread Version",
+            "type": "integer"
+          },
+          "input": {
+            "$ref": "#/components/schemas/AgentInput"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SourceSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": ["expected_thread_version", "input"],
+        "title": "ConfigurationInputRequest",
+        "type": "object"
+      },
+      "ConfigurationRevisionView": {
+        "additionalProperties": false,
+        "properties": {
+          "agent_id": {
+            "title": "Agent Id",
+            "type": "string"
+          },
+          "config": {
+            "$ref": "#/components/schemas/AgentConfig-Output"
+          },
+          "revision_id": {
+            "title": "Revision Id",
+            "type": "string"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": ["agent_id", "revision_id", "version", "config"],
+        "title": "ConfigurationRevisionView",
+        "type": "object"
+      },
+      "ConfigurationSessionCollection": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigurationSessionView"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": ["items", "next_cursor"],
+        "title": "ConfigurationSessionCollection",
+        "type": "object"
+      },
+      "ConfigurationSessionView": {
+        "additionalProperties": false,
+        "properties": {
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "organization_id": {
+            "title": "Organization Id",
+            "type": "string"
+          },
+          "owner_user_id": {
+            "title": "Owner User Id",
+            "type": "string"
+          },
+          "root_thread_id": {
+            "title": "Root Thread Id",
+            "type": "string"
+          },
+          "target_agent_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Agent Id"
+          },
+          "updated_at": {
+            "format": "date-time",
+            "title": "Updated At",
+            "type": "string"
+          },
+          "workspace_id": {
+            "title": "Workspace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "organization_id",
+          "workspace_id",
+          "owner_user_id",
+          "target_agent_id",
+          "root_thread_id",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ConfigurationSessionView",
+        "type": "object"
+      },
+      "ConfigurationThreadCollection": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ConfigurationThreadView"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "required": ["items", "next_cursor"],
+        "title": "ConfigurationThreadCollection",
+        "type": "object"
+      },
+      "ConfigurationThreadView": {
+        "additionalProperties": false,
+        "properties": {
+          "active_draft_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Active Draft Id"
+          },
+          "latest_draft": {
+            "$ref": "#/components/schemas/ConfigurationDraft"
+          },
+          "previous_application_receipt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConfigurationApplicationReceipt"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "thread": {
+            "$ref": "#/components/schemas/Thread"
+          }
+        },
+        "required": [
+          "thread",
+          "active_draft_id",
+          "latest_draft",
+          "previous_application_receipt"
+        ],
+        "title": "ConfigurationThreadView",
+        "type": "object"
+      },
+      "ConfigurationValidation": {
+        "additionalProperties": false,
+        "properties": {
+          "checked_at": {
+            "format": "date-time",
+            "title": "Checked At",
+            "type": "string"
+          },
+          "content_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Content Digest",
+            "type": "string"
+          },
+          "dependency_digest": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Dependency Digest",
+            "type": "string"
+          },
+          "draft_version": {
+            "minimum": 1.0,
+            "title": "Draft Version",
+            "type": "integer"
+          },
+          "warnings": {
+            "default": [],
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 32,
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "draft_version",
+          "content_digest",
+          "dependency_digest",
+          "checked_at"
+        ],
+        "title": "ConfigurationValidation",
         "type": "object"
       },
       "ConfigureMCPOAuthClientRequest": {
@@ -4030,6 +5046,30 @@
         "title": "CreateAuthorizationRequest",
         "type": "object"
       },
+      "CreateConfigurationThreadRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "fork_from_run_id": {
+            "maxLength": 72,
+            "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+            "title": "Fork From Run Id",
+            "type": "string"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SourceSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": ["fork_from_run_id"],
+        "title": "CreateConfigurationThreadRequest",
+        "type": "object"
+      },
       "CreateConnectionRequest": {
         "additionalProperties": false,
         "properties": {
@@ -4519,6 +5559,36 @@
         "title": "CreateServiceAccountRequest",
         "type": "object"
       },
+      "CreateSessionRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SourceSelection"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target_agent_id": {
+            "anyOf": [
+              {
+                "maxLength": 72,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Target Agent Id"
+          }
+        },
+        "title": "CreateSessionRequest",
+        "type": "object"
+      },
       "CreateSkillRequest": {
         "additionalProperties": false,
         "properties": {
@@ -4874,6 +5944,30 @@
         "title": "CreatedKey",
         "type": "object"
       },
+      "CreationMetadata": {
+        "additionalProperties": false,
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": ["name"],
+        "title": "CreationMetadata",
+        "type": "object"
+      },
       "CredentialContext": {
         "description": "The authenticated credential boundary, independent of resource grants.",
         "properties": {
@@ -4984,6 +6078,19 @@
         },
         "required": ["id", "content"],
         "title": "DeveloperMessage",
+        "type": "object"
+      },
+      "DiscardDraftRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          }
+        },
+        "required": ["expected_version"],
+        "title": "DiscardDraftRequest",
         "type": "object"
       },
       "DocumentInputContent": {
@@ -8471,6 +9578,17 @@
             ],
             "title": "Structured Output"
           },
+          "supports_tools": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Supports Tools"
+          },
           "thinking_efforts": {
             "default": [],
             "items": {
@@ -10319,6 +11437,27 @@
         "title": "ReasoningMessage",
         "type": "object"
       },
+      "RebaseDraftRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "config": {
+            "$ref": "#/components/schemas/AgentConfig-Input"
+          },
+          "expected_target_version": {
+            "minimum": 1.0,
+            "title": "Expected Target Version",
+            "type": "integer"
+          },
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          }
+        },
+        "required": ["expected_version", "expected_target_version", "config"],
+        "title": "RebaseDraftRequest",
+        "type": "object"
+      },
       "ReceiveAuthorizationRequest": {
         "additionalProperties": false,
         "properties": {
@@ -10444,6 +11583,29 @@
         },
         "required": ["call_id"],
         "title": "RejectPendingResolution",
+        "type": "object"
+      },
+      "RemoveOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "remove",
+            "title": "Op",
+            "type": "string"
+          },
+          "path": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Path",
+            "type": "array"
+          }
+        },
+        "required": ["op", "path"],
+        "title": "RemoveOperation",
         "type": "object"
       },
       "ReorderQueuedSubmissionsRequest": {
@@ -10613,6 +11775,40 @@
         },
         "required": ["target_kind", "external_target_id", "expected_version"],
         "title": "ReplaceTargetRequest",
+        "type": "object"
+      },
+      "ReplaceTextOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "new_text": {
+            "maxLength": 262144,
+            "title": "New Text",
+            "type": "string"
+          },
+          "old_text": {
+            "maxLength": 262144,
+            "minLength": 1,
+            "title": "Old Text",
+            "type": "string"
+          },
+          "op": {
+            "const": "replace_text",
+            "title": "Op",
+            "type": "string"
+          },
+          "path": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Path",
+            "type": "array"
+          }
+        },
+        "required": ["op", "path", "old_text", "new_text"],
+        "title": "ReplaceTextOperation",
         "type": "object"
       },
       "ResolvedAgentModel": {
@@ -11542,6 +12738,17 @@
             ],
             "title": "Completed At"
           },
+          "configuration_draft_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Configuration Draft Id"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -12101,6 +13308,33 @@
         "title": "SecurityEvent",
         "type": "object"
       },
+      "SelectedAssistantModel": {
+        "additionalProperties": false,
+        "properties": {
+          "model_id": {
+            "title": "Model Id",
+            "type": "string"
+          },
+          "model_key": {
+            "title": "Model Key",
+            "type": "string"
+          },
+          "selection_reason": {
+            "title": "Selection Reason",
+            "type": "string"
+          },
+          "settings": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "title": "Settings",
+            "type": "object"
+          }
+        },
+        "required": ["model_id", "model_key", "settings", "selection_reason"],
+        "title": "SelectedAssistantModel",
+        "type": "object"
+      },
       "ServiceAccount": {
         "properties": {
           "created_at": {
@@ -12342,6 +13576,32 @@
           "run_count"
         ],
         "title": "SessionResource",
+        "type": "object"
+      },
+      "SetOperation": {
+        "additionalProperties": false,
+        "properties": {
+          "op": {
+            "const": "set",
+            "title": "Op",
+            "type": "string"
+          },
+          "path": {
+            "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "type": "string"
+            },
+            "maxItems": 16,
+            "title": "Path",
+            "type": "array"
+          },
+          "value": {
+            "$ref": "#/components/schemas/JsonValue"
+          }
+        },
+        "required": ["op", "path", "value"],
+        "title": "SetOperation",
         "type": "object"
       },
       "SetRoleRequest": {
@@ -12947,6 +14207,32 @@
           "consumed_by_revision_id"
         ],
         "title": "SkillUploadReceipt",
+        "type": "object"
+      },
+      "SourceSelection": {
+        "additionalProperties": false,
+        "properties": {
+          "revision_id": {
+            "anyOf": [
+              {
+                "maxLength": 72,
+                "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision Id"
+          },
+          "selector": {
+            "default": "current",
+            "enum": ["current", "explicit", "empty"],
+            "title": "Selector",
+            "type": "string"
+          }
+        },
+        "title": "SourceSelection",
         "type": "object"
       },
       "StartRunRequest": {
@@ -13919,6 +15205,17 @@
       "ThreadResource": {
         "additionalProperties": false,
         "properties": {
+          "configuration_latest_draft_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Configuration Latest Draft Id"
+          },
           "created_at": {
             "format": "date-time",
             "title": "Created At",
@@ -15155,6 +16452,68 @@
         "title": "UpdateAgentRequest",
         "type": "object"
       },
+      "UpdateConfigurationDraftRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "creation_metadata": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CreationMetadata"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expected_digest": {
+            "anyOf": [
+              {
+                "pattern": "^[0-9a-f]{64}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expected Digest"
+          },
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          },
+          "operations": {
+            "default": [],
+            "items": {
+              "discriminator": {
+                "mapping": {
+                  "remove": "#/components/schemas/RemoveOperation",
+                  "replace_text": "#/components/schemas/ReplaceTextOperation",
+                  "set": "#/components/schemas/SetOperation"
+                },
+                "propertyName": "op"
+              },
+              "oneOf": [
+                {
+                  "$ref": "#/components/schemas/SetOperation"
+                },
+                {
+                  "$ref": "#/components/schemas/RemoveOperation"
+                },
+                {
+                  "$ref": "#/components/schemas/ReplaceTextOperation"
+                }
+              ]
+            },
+            "maxItems": 32,
+            "title": "Operations",
+            "type": "array"
+          }
+        },
+        "required": ["expected_version"],
+        "title": "UpdateConfigurationDraftRequest",
+        "type": "object"
+      },
       "UpdateConnectionRequest": {
         "additionalProperties": false,
         "properties": {
@@ -16214,6 +17573,25 @@
         },
         "required": ["loc", "msg", "type"],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "VerificationAcknowledgement": {
+        "additionalProperties": false,
+        "properties": {
+          "outcome": {
+            "enum": ["unverified", "failed"],
+            "title": "Outcome",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 2048,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          }
+        },
+        "required": ["outcome", "reason"],
+        "title": "VerificationAcknowledgement",
         "type": "object"
       },
       "VideoInputContent": {
@@ -18773,6 +20151,1037 @@
         ],
         "summary": "List Base Models",
         "tags": ["model-management"]
+      }
+    },
+    "/api/v1/configuration-drafts/{draft_id}": {
+      "get": {
+        "operationId": "get_configuration_drafts_draft_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "title": "Draft Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationDraftReview"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get Draft",
+        "tags": ["agent-configuration"]
+      },
+      "patch": {
+        "operationId": "patch_configuration_drafts_draft_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "title": "Draft Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateConfigurationDraftRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationDraft"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Update Draft",
+        "tags": ["agent-configuration"]
+      }
+    },
+    "/api/v1/configuration-drafts/{draft_id}/apply": {
+      "post": {
+        "operationId": "post_configuration_drafts_draft_id_apply",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "title": "Draft Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApplyDraftRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationApplicationReceipt"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Apply Draft",
+        "tags": ["agent-configuration"]
+      }
+    },
+    "/api/v1/configuration-drafts/{draft_id}/discard": {
+      "post": {
+        "operationId": "post_configuration_drafts_draft_id_discard",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "title": "Draft Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DiscardDraftRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationDraft"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Discard Draft",
+        "tags": ["agent-configuration"]
+      }
+    },
+    "/api/v1/configuration-drafts/{draft_id}/rebase": {
+      "post": {
+        "operationId": "post_configuration_drafts_draft_id_rebase",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "draft_id",
+            "required": true,
+            "schema": {
+              "title": "Draft Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "If-Match",
+            "required": true,
+            "schema": {
+              "maxLength": 256,
+              "minLength": 1,
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RebaseDraftRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationDraft"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Rebase Draft",
+        "tags": ["agent-configuration"]
+      }
+    },
+    "/api/v1/configuration-sessions/{session_id}": {
+      "get": {
+        "operationId": "get_configuration_sessions_session_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationSessionView"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get Session",
+        "tags": ["agent-configuration"]
+      }
+    },
+    "/api/v1/configuration-sessions/{session_id}/threads": {
+      "get": {
+        "operationId": "get_configuration_sessions_session_id_threads",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationThreadCollection"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "List Threads",
+        "tags": ["agent-configuration"]
+      },
+      "post": {
+        "operationId": "post_configuration_sessions_session_id_threads",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateConfigurationThreadRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationThreadView"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Create Thread",
+        "tags": ["agent-configuration"]
+      }
+    },
+    "/api/v1/configuration-threads/{thread_id}": {
+      "get": {
+        "operationId": "get_configuration_threads_thread_id",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "title": "Thread Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationThreadView"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Get Thread",
+        "tags": ["agent-configuration"]
+      }
+    },
+    "/api/v1/configuration-threads/{thread_id}/inputs": {
+      "post": {
+        "operationId": "post_configuration_threads_thread_id_inputs",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "thread_id",
+            "required": true,
+            "schema": {
+              "title": "Thread Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ConfigurationInputRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RunAcceptanceReceipt"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Submit Input",
+        "tags": ["agent-configuration"]
       }
     },
     "/api/v1/connection-authorizations/{authorization_id}": {
@@ -37578,6 +39987,322 @@
         ],
         "summary": "Upload Asset",
         "tags": ["asset-management"]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/configuration-assistant/readiness": {
+      "get": {
+        "operationId": "get_workspaces_workspace_configuration_assistant_readiness",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "target_agent_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Target Agent Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AssistantReadiness"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Readiness",
+        "tags": ["agent-configuration"]
+      }
+    },
+    "/api/v1/workspaces/{workspace}/configuration-sessions": {
+      "get": {
+        "operationId": "get_workspaces_workspace_configuration_sessions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 50,
+              "maximum": 100,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "maxLength": 2048,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationSessionCollection"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "List Sessions",
+        "tags": ["agent-configuration"]
+      },
+      "post": {
+        "operationId": "post_workspaces_workspace_configuration_sessions",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "workspace",
+            "required": true,
+            "schema": {
+              "title": "Workspace",
+              "type": "string"
+            }
+          },
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": true,
+            "schema": {
+              "maxLength": 512,
+              "minLength": 1,
+              "title": "Idempotency-Key",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateSessionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigurationSessionView"
+                }
+              }
+            },
+            "description": "Successful Response",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Invalid request.",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "default": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Service error.",
+            "headers": {
+              "Retry-After": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "SessionAuth": []
+          }
+        ],
+        "summary": "Create Session",
+        "tags": ["agent-configuration"]
       }
     },
     "/api/v1/workspaces/{workspace}/connections": {

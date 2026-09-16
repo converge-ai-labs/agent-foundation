@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.agent_configuration.context import ConfigurationRunContext
 from a13n_service.connectivity.selection_resolution import (
     ConnectivitySelectionResolver,
 )
@@ -81,6 +82,7 @@ class AgentInvocationPreparer:
         expected_current_revision_id: str | None = None,
         config_override: AgentRunOverride | None = None,
         root_state_policy: RootAgentStatePolicy = RootAgentStatePolicy.invocable,
+        configuration_context: ConfigurationRunContext | None = None,
         _active_agents: tuple[str, ...] = (),
         _budget: _GraphBudget | None = None,
     ) -> PreparedAgentInvocation:
@@ -95,13 +97,20 @@ class AgentInvocationPreparer:
         workspace_id = actor.workspace_id
         try:
             async with short_session(self._sessions) as session:
-                authorized = await authorize_agent(
-                    session,
-                    actor=actor,
-                    workspace_id=workspace_id,
-                    agent_id=agent_id,
-                    action=WorkspaceAction.agent_invoke,
-                )
+                if configuration_context is not None:
+                    from a13n_service.agent_configuration.authorization import authorize_invocation
+
+                    authorized = await authorize_invocation(
+                        session, actor=actor, agent_id=agent_id, context=configuration_context
+                    )
+                else:
+                    authorized = await authorize_agent(
+                        session,
+                        actor=actor,
+                        workspace_id=workspace_id,
+                        agent_id=agent_id,
+                        action=WorkspaceAction.agent_invoke,
+                    )
                 agent = await load_agent_record(
                     session,
                     organization_id=authorized.organization_id,
@@ -226,6 +235,7 @@ class AgentInvocationPreparer:
             subagents=children,
             connectivity=connectivity,
             reviewer_model=reviewer_model,
+            configuration_context=configuration_context,
         )
 
     async def _prepare_subagents(

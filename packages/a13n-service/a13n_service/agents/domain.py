@@ -388,6 +388,7 @@ class PreparedAgentPlugins(StrictModel):
 
 
 class Agent(StrictModel):
+    system_purpose: Literal["configuration_assistant"] | None = None
     image_url: str | None = None
     default_environment_template_id: ObjectId | None = None
     id: ObjectId

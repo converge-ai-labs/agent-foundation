@@ -70,6 +70,16 @@ class SessionRecord(Base):
             ondelete="CASCADE",
         ),
         UniqueConstraint("organization_id", "id", name="uq_sessions_organization_id"),
+        ForeignKeyConstraint(
+            ("configuration_target_agent_id", "organization_id", "workspace_id"),
+            ("agents.id", "agents.organization_id", "agents.workspace_id"),
+            ondelete="RESTRICT",
+        ),
+        CheckConstraint(
+            "configuration_owner_user_id IS NOT NULL OR configuration_target_agent_id IS NULL",
+            name="configuration_scope_valid",
+        ),
+        Index("ix_sessions_configuration_owner", "workspace_id", "configuration_owner_user_id", "updated_at", "id"),
         Index("ix_sessions_workspace_created", "organization_id", "workspace_id", "created_at", "id"),
         Index("ix_sessions_workspace_updated", "organization_id", "workspace_id", "updated_at", "id"),
         Index("ix_sessions_labels", "labels", postgresql_using="gin", postgresql_ops={"labels": "jsonb_path_ops"}),
@@ -78,6 +88,8 @@ class SessionRecord(Base):
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    configuration_owner_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    configuration_target_agent_id: Mapped[str | None] = mapped_column(String(72))
     labels: Mapped[dict[str, str]] = mapped_column(
         LABELS_SQL_TYPE, nullable=False, default=dict, server_default=text("'{}'")
     )
@@ -151,6 +163,34 @@ class ThreadRecord(Base):
         ),
         UniqueConstraint("organization_id", "id", name="uq_threads_organization_id"),
         UniqueConstraint("organization_id", "session_id", "id", name="uq_threads_session_id"),
+        ForeignKeyConstraint(
+            ("configuration_active_draft_id", "organization_id", "session_id", "id"),
+            (
+                "configuration_drafts.id",
+                "configuration_drafts.organization_id",
+                "configuration_drafts.session_id",
+                "configuration_drafts.thread_id",
+            ),
+            name="fk_threads_configuration_active_draft",
+            ondelete="RESTRICT",
+            deferrable=True,
+            initially="DEFERRED",
+            use_alter=True,
+        ),
+        ForeignKeyConstraint(
+            ("configuration_latest_draft_id", "organization_id", "session_id", "id"),
+            (
+                "configuration_drafts.id",
+                "configuration_drafts.organization_id",
+                "configuration_drafts.session_id",
+                "configuration_drafts.thread_id",
+            ),
+            name="fk_threads_configuration_latest_draft",
+            ondelete="RESTRICT",
+            deferrable=True,
+            initially="DEFERRED",
+            use_alter=True,
+        ),
         Index(
             "uq_threads_session_root",
             "organization_id",
@@ -182,6 +222,8 @@ class ThreadRecord(Base):
     head_run_id: Mapped[str | None] = mapped_column(String(72))
     current_run_id: Mapped[str | None] = mapped_column(String(72))
     default_environment_id: Mapped[str | None] = mapped_column(ForeignKey("environments.id"))
+    configuration_active_draft_id: Mapped[str | None] = mapped_column(String(72))
+    configuration_latest_draft_id: Mapped[str | None] = mapped_column(String(72))
     labels: Mapped[dict[str, str]] = mapped_column(
         LABELS_SQL_TYPE, nullable=False, default=dict, server_default=text("'{}'")
     )
@@ -210,7 +252,26 @@ class ThreadRecord(Base):
 
 class RunRecord(Base):
     __tablename__ = "runs"
+    configuration_context: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True))
+    configuration_draft_id: Mapped[str | None] = mapped_column(String(72))
     __table_args__ = (
+        ForeignKeyConstraint(
+            ("configuration_draft_id", "organization_id", "session_id", "thread_id"),
+            (
+                "configuration_drafts.id",
+                "configuration_drafts.organization_id",
+                "configuration_drafts.session_id",
+                "configuration_drafts.thread_id",
+            ),
+            name="fk_runs_configuration_draft_same_thread",
+            ondelete="RESTRICT",
+            use_alter=True,
+        ),
+        CheckConstraint(
+            "(configuration_draft_id IS NULL AND configuration_context IS NULL) OR "
+            "(configuration_draft_id IS NOT NULL AND configuration_context IS NOT NULL)",
+            name="configuration_binding_consistent",
+        ),
         CheckConstraint(
             "(environment_id IS NULL AND environment_access IS NULL AND environment_use_started_at IS NULL) OR (environment_id IS NOT NULL AND environment_access IN ('read_only','read_write','full'))",
             name="environment_selection_valid",
@@ -501,6 +562,7 @@ class RunRecord(Base):
 
     def to_resource(self) -> Run:
         values: dict[str, Any] = {
+            "configuration_context": self.configuration_context,
             "id": self.id,
             "version": self.version,
             "organization_id": self.organization_id,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 
 from attrs import define as _attrs_define
 
@@ -42,6 +42,7 @@ class Agent:
         default_environment_template_id (None | str | Unset):
         image_url (None | str | Unset):
         labels (AgentLabels | Unset):
+        system_purpose (Literal['configuration_assistant'] | None | Unset):
     """
 
     archived_at: datetime.datetime | None
@@ -64,6 +65,7 @@ class Agent:
     default_environment_template_id: str | Unset | None = UNSET
     image_url: str | Unset | None = UNSET
     labels: AgentLabels | Unset = UNSET
+    system_purpose: Literal["configuration_assistant"] | Unset | None = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.principal_ref import PrincipalRef
@@ -133,6 +135,12 @@ class Agent:
         if not isinstance(self.labels, Unset):
             labels = self.labels.to_dict()
 
+        system_purpose: Literal["configuration_assistant"] | Unset | None
+        if isinstance(self.system_purpose, Unset):
+            system_purpose = UNSET
+        else:
+            system_purpose = self.system_purpose
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update(
@@ -162,6 +170,8 @@ class Agent:
             field_dict["image_url"] = image_url
         if labels is not UNSET:
             field_dict["labels"] = labels
+        if system_purpose is not UNSET:
+            field_dict["system_purpose"] = system_purpose
 
         return field_dict
 
@@ -292,6 +302,21 @@ class Agent:
         else:
             labels = AgentLabels.from_dict(_labels)
 
+        def _parse_system_purpose(data: object) -> Literal["configuration_assistant"] | Unset | None:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            system_purpose_type_0 = cast(Literal["configuration_assistant"], data)
+            if system_purpose_type_0 != "configuration_assistant":
+                raise ValueError(
+                    f"system_purpose_type_0 must match const 'configuration_assistant', got '{system_purpose_type_0}'"
+                )
+            return system_purpose_type_0
+            return cast(Literal["configuration_assistant"] | Unset | None, data)
+
+        system_purpose = _parse_system_purpose(d.pop("system_purpose", UNSET))
+
         agent = cls(
             archived_at=archived_at,
             created_at=created_at,
@@ -313,6 +338,7 @@ class Agent:
             default_environment_template_id=default_environment_template_id,
             image_url=image_url,
             labels=labels,
+            system_purpose=system_purpose,
         )
 
         return agent

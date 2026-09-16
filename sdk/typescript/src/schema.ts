@@ -311,6 +311,144 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/configuration-drafts/{draft_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Draft */
+    get: operations["get_configuration_drafts_draft_id"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Update Draft */
+    patch: operations["patch_configuration_drafts_draft_id"];
+    trace?: never;
+  };
+  "/api/v1/configuration-drafts/{draft_id}/apply": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Apply Draft */
+    post: operations["post_configuration_drafts_draft_id_apply"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/configuration-drafts/{draft_id}/discard": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Discard Draft */
+    post: operations["post_configuration_drafts_draft_id_discard"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/configuration-drafts/{draft_id}/rebase": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Rebase Draft */
+    post: operations["post_configuration_drafts_draft_id_rebase"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/configuration-sessions/{session_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Session */
+    get: operations["get_configuration_sessions_session_id"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/configuration-sessions/{session_id}/threads": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Threads */
+    get: operations["get_configuration_sessions_session_id_threads"];
+    put?: never;
+    /** Create Thread */
+    post: operations["post_configuration_sessions_session_id_threads"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/configuration-threads/{thread_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Thread */
+    get: operations["get_configuration_threads_thread_id"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/configuration-threads/{thread_id}/inputs": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Submit Input */
+    post: operations["post_configuration_threads_thread_id_inputs"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/connection-authorizations/{authorization_id}": {
     parameters: {
       query?: never;
@@ -2710,6 +2848,41 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/workspaces/{workspace}/configuration-assistant/readiness": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Readiness */
+    get: operations["get_workspaces_workspace_configuration_assistant_readiness"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/workspaces/{workspace}/configuration-sessions": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Sessions */
+    get: operations["get_workspaces_workspace_configuration_sessions"];
+    put?: never;
+    /** Create Session */
+    post: operations["post_workspaces_workspace_configuration_sessions"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/workspaces/{workspace}/connections": {
     parameters: {
       query?: never;
@@ -3744,6 +3917,8 @@ export interface components {
       /** Organization Id */
       organization_id: string;
       source: components["schemas"]["AgentSource"];
+      /** System Purpose */
+      system_purpose?: "configuration_assistant" | null;
       /**
        * Updated At
        * Format: date-time
@@ -4112,6 +4287,24 @@ export interface components {
        */
       updated_at: string;
     };
+    /** ApplyDraftRequest */
+    ApplyDraftRequest: {
+      /** Content Digest */
+      content_digest: string;
+      /** Dependency Digest */
+      dependency_digest: string;
+      /** Expected Target Version */
+      expected_target_version?: number | null;
+      /** Expected Version */
+      expected_version: number;
+      verification_acknowledgement?:
+        components["schemas"]["VerificationAcknowledgement"] | null;
+      /**
+       * Verification Run Ids
+       * @default []
+       */
+      verification_run_ids?: string[];
+    };
     /** ApprovePendingResolution */
     ApprovePendingResolution: {
       /**
@@ -4197,6 +4390,28 @@ export interface components {
       toolCalls?: components["schemas"]["ToolCall"][] | null;
     } & {
       [key: string]: unknown;
+    };
+    /** AssistantReadiness */
+    AssistantReadiness: {
+      /** Ready */
+      ready: boolean;
+      /**
+       * Reason Code
+       * @enum {string}
+       */
+      reason_code:
+        | "ready"
+        | "provider_setup_required"
+        | "model_setup_required"
+        | "model_access_denied"
+        | "compatible_model_required";
+      selected_model?: components["schemas"]["SelectedAssistantModel"] | null;
+      /** Setup Actions */
+      setup_actions: (
+        "configure_provider" | "configure_model" | "contact_administrator"
+      )[];
+      /** Setup Url */
+      setup_url: string;
     };
     /**
      * AudioInputContent
@@ -4522,6 +4737,283 @@ export interface components {
       /** Call Id */
       call_id: string;
       result: components["schemas"]["JsonValue"];
+    };
+    /** ConfigurationApplicationReceipt */
+    ConfigurationApplicationReceipt: {
+      /** Agent Id */
+      agent_id: string;
+      /** Agent Revision Id */
+      agent_revision_id: string;
+      /** Agent Version */
+      agent_version: number;
+      /**
+       * Applied At
+       * Format: date-time
+       */
+      applied_at: string;
+      /** Applied By User Id */
+      applied_by_user_id: string;
+      /** Draft Id */
+      draft_id: string;
+      /** No Change */
+      no_change: boolean;
+      /** Reviewed Digest */
+      reviewed_digest: string;
+      /** Reviewed Version */
+      reviewed_version: number;
+      verification_acknowledgement?:
+        components["schemas"]["VerificationAcknowledgement"] | null;
+      /**
+       * Verification Run Ids
+       * @default []
+       */
+      verification_run_ids?: string[];
+    };
+    /** ConfigurationDifference */
+    ConfigurationDifference: {
+      after: components["schemas"]["JsonValue"];
+      /** After Present */
+      after_present: boolean;
+      before: components["schemas"]["JsonValue"];
+      /** Before Present */
+      before_present: boolean;
+      /** Path */
+      path: string[];
+    };
+    /** ConfigurationDraft */
+    ConfigurationDraft: {
+      application_receipt?:
+        components["schemas"]["ConfigurationApplicationReceipt"] | null;
+      /** Base Agent Revision Id */
+      base_agent_revision_id: string | null;
+      /** Base Agent Version */
+      base_agent_version?: number | null;
+      config: components["schemas"]["AgentConfig-Output"] | null;
+      /** Content Digest */
+      content_digest: string;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      creation_metadata?: components["schemas"]["CreationMetadata"] | null;
+      /**
+       * Evidence Refs
+       * @default []
+       */
+      evidence_refs?: string[];
+      /** Id */
+      id: string;
+      latest_validation?:
+        components["schemas"]["ConfigurationValidation"] | null;
+      /**
+       * Mode
+       * @enum {string}
+       */
+      mode: "create" | "update";
+      /** Organization Id */
+      organization_id: string;
+      /** Owner User Id */
+      owner_user_id: string;
+      /** Predecessor Draft Id */
+      predecessor_draft_id?: string | null;
+      /** Session Id */
+      session_id: string;
+      /** Source Agent Revision Id */
+      source_agent_revision_id: string | null;
+      /** Source Agent Revision Version */
+      source_agent_revision_version?: number | null;
+      /**
+       * Source Selector
+       * @enum {string}
+       */
+      source_selector: "current" | "explicit" | "empty";
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: "open" | "applied" | "discarded" | "expired";
+      /** Target Agent Id */
+      target_agent_id: string | null;
+      /** Terminal Reason */
+      terminal_reason?: string | null;
+      /** Thread Id */
+      thread_id: string;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      /** Version */
+      version: number;
+      /** Workspace Id */
+      workspace_id: string;
+    };
+    /** ConfigurationDraftReview */
+    ConfigurationDraftReview: {
+      application_receipt?:
+        components["schemas"]["ConfigurationApplicationReceipt"] | null;
+      base: components["schemas"]["ConfigurationRevisionView"] | null;
+      /** Base Agent Revision Id */
+      base_agent_revision_id: string | null;
+      /** Base Agent Version */
+      base_agent_version?: number | null;
+      /** Base To Candidate */
+      base_to_candidate: components["schemas"]["ConfigurationDifference"][];
+      /** Base To Current Target */
+      base_to_current_target: components["schemas"]["ConfigurationDifference"][];
+      config: components["schemas"]["AgentConfig-Output"] | null;
+      /** Content Digest */
+      content_digest: string;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      creation_metadata?: components["schemas"]["CreationMetadata"] | null;
+      current_target: components["schemas"]["ConfigurationRevisionView"] | null;
+      /** Current Target To Candidate */
+      current_target_to_candidate: components["schemas"]["ConfigurationDifference"][];
+      /**
+       * Evidence Refs
+       * @default []
+       */
+      evidence_refs?: string[];
+      /** Id */
+      id: string;
+      latest_validation?:
+        components["schemas"]["ConfigurationValidation"] | null;
+      /**
+       * Mode
+       * @enum {string}
+       */
+      mode: "create" | "update";
+      /** Organization Id */
+      organization_id: string;
+      /** Owner User Id */
+      owner_user_id: string;
+      /** Predecessor Draft Id */
+      predecessor_draft_id?: string | null;
+      /** Session Id */
+      session_id: string;
+      source: components["schemas"]["ConfigurationRevisionView"] | null;
+      /** Source Agent Revision Id */
+      source_agent_revision_id: string | null;
+      /** Source Agent Revision Version */
+      source_agent_revision_version?: number | null;
+      /**
+       * Source Selector
+       * @enum {string}
+       */
+      source_selector: "current" | "explicit" | "empty";
+      /** Source To Candidate */
+      source_to_candidate: components["schemas"]["ConfigurationDifference"][];
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: "open" | "applied" | "discarded" | "expired";
+      /** Target Agent Id */
+      target_agent_id: string | null;
+      /** Target Conflict */
+      target_conflict: boolean;
+      /** Terminal Reason */
+      terminal_reason?: string | null;
+      /** Thread Id */
+      thread_id: string;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      /** Version */
+      version: number;
+      /** Workspace Id */
+      workspace_id: string;
+    };
+    /** ConfigurationInputRequest */
+    ConfigurationInputRequest: {
+      /** Expected Thread Version */
+      expected_thread_version: number;
+      input: components["schemas"]["AgentInput"];
+      source?: components["schemas"]["SourceSelection"] | null;
+    };
+    /** ConfigurationRevisionView */
+    ConfigurationRevisionView: {
+      /** Agent Id */
+      agent_id: string;
+      config: components["schemas"]["AgentConfig-Output"];
+      /** Revision Id */
+      revision_id: string;
+      /** Version */
+      version: number;
+    };
+    /** ConfigurationSessionCollection */
+    ConfigurationSessionCollection: {
+      /** Items */
+      items: components["schemas"]["ConfigurationSessionView"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
+    /** ConfigurationSessionView */
+    ConfigurationSessionView: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Id */
+      id: string;
+      /** Organization Id */
+      organization_id: string;
+      /** Owner User Id */
+      owner_user_id: string;
+      /** Root Thread Id */
+      root_thread_id: string;
+      /** Target Agent Id */
+      target_agent_id: string | null;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+      /** Workspace Id */
+      workspace_id: string;
+    };
+    /** ConfigurationThreadCollection */
+    ConfigurationThreadCollection: {
+      /** Items */
+      items: components["schemas"]["ConfigurationThreadView"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
+    /** ConfigurationThreadView */
+    ConfigurationThreadView: {
+      /** Active Draft Id */
+      active_draft_id: string | null;
+      latest_draft: components["schemas"]["ConfigurationDraft"];
+      previous_application_receipt:
+        components["schemas"]["ConfigurationApplicationReceipt"] | null;
+      thread: components["schemas"]["Thread"];
+    };
+    /** ConfigurationValidation */
+    ConfigurationValidation: {
+      /**
+       * Checked At
+       * Format: date-time
+       */
+      checked_at: string;
+      /** Content Digest */
+      content_digest: string;
+      /** Dependency Digest */
+      dependency_digest: string;
+      /** Draft Version */
+      draft_version: number;
+      /**
+       * Warnings
+       * @default []
+       */
+      warnings?: string[];
     };
     /** ConfigureMCPOAuthClientRequest */
     ConfigureMCPOAuthClientRequest: {
@@ -4939,6 +5431,12 @@ export interface components {
       /** State */
       state?: string | null;
     };
+    /** CreateConfigurationThreadRequest */
+    CreateConfigurationThreadRequest: {
+      /** Fork From Run Id */
+      fork_from_run_id: string;
+      source?: components["schemas"]["SourceSelection"] | null;
+    };
     /** CreateConnectionRequest */
     CreateConnectionRequest: {
       /** Name */
@@ -5101,6 +5599,12 @@ export interface components {
        */
       role: "viewer" | "runner" | "builder";
     };
+    /** CreateSessionRequest */
+    CreateSessionRequest: {
+      source?: components["schemas"]["SourceSelection"] | null;
+      /** Target Agent Id */
+      target_agent_id?: string | null;
+    };
     /** CreateSkillRequest */
     CreateSkillRequest: {
       /** Labels */
@@ -5228,6 +5732,13 @@ export interface components {
       bearer: string;
       key: components["schemas"]["ApiKey"];
     };
+    /** CreationMetadata */
+    CreationMetadata: {
+      /** Description */
+      description?: string | null;
+      /** Name */
+      name: string;
+    };
     /**
      * CredentialContext
      * @description The authenticated credential boundary, independent of resource grants.
@@ -5283,6 +5794,11 @@ export interface components {
       role: "developer";
     } & {
       [key: string]: unknown;
+    };
+    /** DiscardDraftRequest */
+    DiscardDraftRequest: {
+      /** Expected Version */
+      expected_version: number;
     };
     /**
      * DocumentInputContent
@@ -6623,6 +7139,8 @@ export interface components {
       pricing?: components["schemas"]["ModelPricing"] | null;
       /** Structured Output */
       structured_output?: boolean | null;
+      /** Supports Tools */
+      supports_tools?: boolean | null;
       /**
        * Thinking Efforts
        * @default []
@@ -7237,6 +7755,14 @@ export interface components {
     } & {
       [key: string]: unknown;
     };
+    /** RebaseDraftRequest */
+    RebaseDraftRequest: {
+      config: components["schemas"]["AgentConfig-Input"];
+      /** Expected Target Version */
+      expected_target_version: number;
+      /** Expected Version */
+      expected_version: number;
+    };
     /** ReceiveAuthorizationRequest */
     ReceiveAuthorizationRequest: {
       /** Browser Nonce */
@@ -7278,6 +7804,16 @@ export interface components {
       call_id: string;
       /** Reason */
       reason?: string | null;
+    };
+    /** RemoveOperation */
+    RemoveOperation: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      op: "remove";
+      /** Path */
+      path: string[];
     };
     /** ReorderQueuedSubmissionsRequest */
     ReorderQueuedSubmissionsRequest: {
@@ -7335,6 +7871,20 @@ export interface components {
        * @enum {string}
        */
       target_kind: "conversation" | "repository";
+    };
+    /** ReplaceTextOperation */
+    ReplaceTextOperation: {
+      /** New Text */
+      new_text: string;
+      /** Old Text */
+      old_text: string;
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      op: "replace_text";
+      /** Path */
+      path: string[];
     };
     /** ResolvedAgentModel */
     ResolvedAgentModel: {
@@ -7656,6 +8206,8 @@ export interface components {
       agent_revision_id: string;
       /** Completed At */
       completed_at: string | null;
+      /** Configuration Draft Id */
+      configuration_draft_id?: string | null;
       /**
        * Created At
        * Format: date-time
@@ -7833,6 +8385,19 @@ export interface components {
       /** Workspace Id */
       workspace_id: string | null;
     };
+    /** SelectedAssistantModel */
+    SelectedAssistantModel: {
+      /** Model Id */
+      model_id: string;
+      /** Model Key */
+      model_key: string;
+      /** Selection Reason */
+      selection_reason: string;
+      /** Settings */
+      settings: {
+        [key: string]: components["schemas"]["JsonValue"];
+      };
+    };
     /** ServiceAccount */
     ServiceAccount: {
       /**
@@ -7910,6 +8475,17 @@ export interface components {
       updated_at: string;
       /** Workspace Id */
       workspace_id: string;
+    };
+    /** SetOperation */
+    SetOperation: {
+      /**
+       * @description discriminator enum property added by openapi-typescript
+       * @enum {string}
+       */
+      op: "set";
+      /** Path */
+      path: string[];
+      value: components["schemas"]["JsonValue"];
     };
     /** SetRoleRequest */
     SetRoleRequest: {
@@ -8119,6 +8695,17 @@ export interface components {
       upload_id: string;
       /** Workspace Id */
       workspace_id: string;
+    };
+    /** SourceSelection */
+    SourceSelection: {
+      /** Revision Id */
+      revision_id?: string | null;
+      /**
+       * Selector
+       * @default current
+       * @enum {string}
+       */
+      selector?: "current" | "explicit" | "empty";
     };
     /** StartRunRequest */
     StartRunRequest: {
@@ -8411,6 +8998,8 @@ export interface components {
     };
     /** ThreadResource */
     ThreadResource: {
+      /** Configuration Latest Draft Id */
+      configuration_latest_draft_id?: string | null;
       /**
        * Created At
        * Format: date-time
@@ -8816,6 +9405,23 @@ export interface components {
       /** Name */
       name?: string | null;
     };
+    /** UpdateConfigurationDraftRequest */
+    UpdateConfigurationDraftRequest: {
+      creation_metadata?: components["schemas"]["CreationMetadata"] | null;
+      /** Expected Digest */
+      expected_digest?: string | null;
+      /** Expected Version */
+      expected_version: number;
+      /**
+       * Operations
+       * @default []
+       */
+      operations?: (
+        | components["schemas"]["SetOperation"]
+        | components["schemas"]["RemoveOperation"]
+        | components["schemas"]["ReplaceTextOperation"]
+      )[];
+    };
     /** UpdateConnectionRequest */
     UpdateConnectionRequest: {
       /** Expected Version */
@@ -9134,6 +9740,16 @@ export interface components {
       msg: string;
       /** Error Type */
       type: string;
+    };
+    /** VerificationAcknowledgement */
+    VerificationAcknowledgement: {
+      /**
+       * Outcome
+       * @enum {string}
+       */
+      outcome: "unverified" | "failed";
+      /** Reason */
+      reason: string;
     };
     /**
      * VideoInputContent
@@ -10396,6 +11012,489 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["BaseModelCandidateCollection"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_configuration_drafts_draft_id: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        draft_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConfigurationDraftReview"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  patch_configuration_drafts_draft_id: {
+    parameters: {
+      query?: never;
+      header: {
+        "Idempotency-Key": string;
+        "If-Match": string;
+      };
+      path: {
+        draft_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["UpdateConfigurationDraftRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConfigurationDraft"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_configuration_drafts_draft_id_apply: {
+    parameters: {
+      query?: never;
+      header: {
+        "Idempotency-Key": string;
+        "If-Match": string;
+      };
+      path: {
+        draft_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ApplyDraftRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConfigurationApplicationReceipt"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_configuration_drafts_draft_id_discard: {
+    parameters: {
+      query?: never;
+      header: {
+        "Idempotency-Key": string;
+        "If-Match": string;
+      };
+      path: {
+        draft_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["DiscardDraftRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConfigurationDraft"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_configuration_drafts_draft_id_rebase: {
+    parameters: {
+      query?: never;
+      header: {
+        "Idempotency-Key": string;
+        "If-Match": string;
+      };
+      path: {
+        draft_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["RebaseDraftRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConfigurationDraft"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_configuration_sessions_session_id: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConfigurationSessionView"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_configuration_sessions_session_id_threads: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConfigurationThreadCollection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_configuration_sessions_session_id_threads: {
+    parameters: {
+      query?: never;
+      header: {
+        "Idempotency-Key": string;
+      };
+      path: {
+        session_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateConfigurationThreadRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConfigurationThreadView"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_configuration_threads_thread_id: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        thread_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConfigurationThreadView"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_configuration_threads_thread_id_inputs: {
+    parameters: {
+      query?: never;
+      header: {
+        "Idempotency-Key": string;
+      };
+      path: {
+        thread_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ConfigurationInputRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      202: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["RunAcceptanceReceipt"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
         };
       };
       /** @description Service error. */
@@ -19310,6 +20409,149 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["Asset"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_workspaces_workspace_configuration_assistant_readiness: {
+    parameters: {
+      query?: {
+        target_agent_id?: string | null;
+      };
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["AssistantReadiness"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_workspaces_workspace_configuration_sessions: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConfigurationSessionCollection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_workspaces_workspace_configuration_sessions: {
+    parameters: {
+      query?: never;
+      header: {
+        "Idempotency-Key": string;
+      };
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateSessionRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConfigurationSessionView"];
         };
       };
       /** @description Invalid request. */

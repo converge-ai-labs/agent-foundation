@@ -102,10 +102,18 @@ async def short_session(
 
 @asynccontextmanager
 async def transaction(
-    factory: async_sessionmaker[AsyncSession], *, cleanup_timeout_seconds: float = 5
+    factory: async_sessionmaker[AsyncSession],
+    *,
+    cleanup_timeout_seconds: float = 5,
+    sqlite_immediate: bool = False,
 ) -> AsyncGenerator[AsyncSession]:
     async with short_session(factory, cleanup_timeout_seconds=cleanup_timeout_seconds) as session:
         try:
+            if sqlite_immediate and session.get_bind().dialect.name == "sqlite":
+                # SQLite has no row locks. Start the physical transaction before
+                # reads/savepoints so a composite write is serialized and a
+                # released savepoint can never commit outside its outer boundary.
+                await session.execute(text("BEGIN IMMEDIATE"))
             yield session
         except BaseException as error:
             try:

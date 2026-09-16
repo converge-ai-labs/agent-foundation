@@ -16,8 +16,6 @@ from a13n_service.iam import (
     AuthenticatedActor,
     AuthorizationError,
     WorkspaceAction,
-    authorize_agent,
-    authorize_persisted_agent_principal_actions,
 )
 from a13n_service.interactions.acceptance import RunAcceptanceError, RunAcceptanceReceipt, RunAcceptanceService
 from a13n_service.interactions.control_domain import (
@@ -53,6 +51,7 @@ from a13n_service.interactions.state import RunPayloadEnvelope
 from a13n_service.storage import short_session
 from a13n_service.temporal import Clock, utc_now
 
+from .access import authorize_interaction, authorize_retained_execution
 from .command_evidence import (
     RunCommandEvidence,
     fingerprint_request,
@@ -178,21 +177,15 @@ class ContinuationCommands:
 
         async def validate_final(database: AsyncSession) -> None:
             try:
-                await authorize_agent(
+                await authorize_interaction(
                     database,
                     actor=actor,
                     workspace_id=actor.workspace_id,
+                    session_id=source.session_id,
                     agent_id=source.agent_id,
                     action=WorkspaceAction.run_retry,
                 )
-                await authorize_persisted_agent_principal_actions(
-                    database,
-                    principal=source.authority_principal,
-                    organization_id=source.organization_id,
-                    workspace_id=actor.workspace_id,
-                    agent_id=source.agent_id,
-                    actions=frozenset({WorkspaceAction.agent_invoke}),
-                )
+                await authorize_retained_execution(database, source=source, workspace_id=actor.workspace_id)
             except AuthorizationError as error:
                 raise command_not_found() from error
 
@@ -483,21 +476,15 @@ class ContinuationCommands:
         async def validate_final(database: AsyncSession) -> None:
             try:
                 for action in actions:
-                    await authorize_agent(
+                    await authorize_interaction(
                         database,
                         actor=actor,
                         workspace_id=actor.workspace_id,
+                        session_id=source.session_id,
                         agent_id=source.agent_id,
                         action=action,
                     )
-                await authorize_persisted_agent_principal_actions(
-                    database,
-                    principal=source.authority_principal,
-                    organization_id=source.organization_id,
-                    workspace_id=actor.workspace_id,
-                    agent_id=source.agent_id,
-                    actions=frozenset({WorkspaceAction.agent_invoke}),
-                )
+                await authorize_retained_execution(database, source=source, workspace_id=actor.workspace_id)
             except AuthorizationError as error:
                 raise command_not_found() from error
 
@@ -553,10 +540,11 @@ class ContinuationCommands:
                 raise command_not_found()
             source_record, thread_record = row
             try:
-                await authorize_agent(
+                await authorize_interaction(
                     database,
                     actor=actor,
                     workspace_id=actor.workspace_id,
+                    session_id=source_record.session_id,
                     agent_id=source_record.agent_id,
                     action=WorkspaceAction.run_retry,
                 )
@@ -620,10 +608,11 @@ class ContinuationCommands:
             source_record, thread_record = row
             try:
                 for action in actions:
-                    await authorize_agent(
+                    await authorize_interaction(
                         database,
                         actor=actor,
                         workspace_id=actor.workspace_id,
+                        session_id=source_record.session_id,
                         agent_id=source_record.agent_id,
                         action=action,
                     )

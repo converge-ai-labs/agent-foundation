@@ -272,6 +272,7 @@ async def test_manual_model_ids_do_not_require_discovery(api_client):
     )
     assert created.status_code == 201
     assert created.json()["declarations"] == {
+        "supports_tools": None,
         "thinking_efforts": [],
         "capabilities": [],
         "context_window_tokens": 200000,
@@ -314,6 +315,7 @@ async def test_model_capabilities_are_readonly_discovery_information(api_client)
     assert {"profile", "limits"}.isdisjoint(created.json())
     assert created.json()["settings"] == {"max_tokens": 8000}
     assert created.json()["declarations"] == {
+        "supports_tools": None,
         "thinking_efforts": [],
         "capabilities": [],
         "context_window_tokens": None,
@@ -373,6 +375,7 @@ async def test_catalog_suggestions_prefill_omitted_declarations_but_explicit_cle
     assert created.status_code == 201, created.text
     assert created.json()["base_model"] == "openai:gpt-5"
     assert created.json()["declarations"] == {
+        "supports_tools": None,
         "thinking_efforts": [],
         "capabilities": ["image_understanding"],
         "context_window_tokens": None,

@@ -72,6 +72,7 @@ class BuiltinAgents:
                     current.organization_id != workspace.organization_id
                     or current.workspace_id != workspace.workspace_id
                     or current.source != AgentSource.builtin.value
+                    or current.system_purpose is not None
                 ):
                     raise builtin_identity_conflict()
                 organization_id = workspace.organization_id
@@ -116,6 +117,7 @@ class BuiltinAgents:
                     record.organization_id != workspace.organization_id
                     or record.workspace_id != workspace.workspace_id
                     or record.source != AgentSource.builtin.value
+                    or record.system_purpose is not None
                 ):
                     raise builtin_identity_conflict()
                 elif not record.enabled or record.archived_at is not None:
@@ -228,6 +230,7 @@ class BuiltinAgents:
                     AgentRecord.organization_id == workspace.organization_id,
                     AgentRecord.workspace_id == workspace.workspace_id,
                     AgentRecord.source == AgentSource.builtin.value,
+                    AgentRecord.system_purpose.is_(None),
                 )
             )
             if (

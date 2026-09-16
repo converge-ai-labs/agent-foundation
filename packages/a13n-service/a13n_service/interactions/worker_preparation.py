@@ -18,7 +18,7 @@ from a13n_harness import (
     RunInputValue,
     RunPreparationContext,
 )
-from a13n_harness.capabilities import SubagentCapability, WebBinding
+from a13n_harness.capabilities import SubagentCapability, UserInteractionCapability, WebBinding
 from a13n_harness.errors import RunError
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 from anyio import to_thread
@@ -27,6 +27,8 @@ from pydantic_ai import ToolDenied
 from pydantic_ai.tools import DeferredToolRequests, DeferredToolResults
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from a13n_service.agent_configuration.knowledge import KnowledgeBundles, knowledge_capability
+from a13n_service.agent_configuration.runtime import ConfigurationCapability, validate_configuration_definition
 from a13n_service.agents.execution_graph import inline_child_executions
 from a13n_service.agents.plugin_preparation import prepare_agent_plugins
 from a13n_service.agents.reconstruction import AgentDefinitionReconstructionContext, AgentReconstructor
@@ -61,6 +63,7 @@ from .harness_runtime import (
     HarnessInvocation,
     ImmediateHarnessInput,
     MaterializedHarnessInput,
+    MountedHarnessEnvironments,
     SingleHarnessEnvironment,
 )
 from .input import AcceptedAgentInput
@@ -95,11 +98,13 @@ class WorkerAttemptPreparer:
         secrets: AgentSecretRuntime | None = None,
         web: WebRuntime | None = None,
         memory: MemoryService | None = None,
+        configuration_capability: Callable[[], ConfigurationCapability] | None = None,
     ) -> None:
         self._subagent_capability = subagent_capability
         self._secrets = secrets
         self._web = web
         self._memory = memory
+        self._configuration_capability = configuration_capability
         self._bound_secrets: BoundAgentSecrets | None = None
         self._environments = environments
         self._external_tools = external_tools
@@ -135,7 +140,14 @@ class WorkerAttemptPreparer:
             run_id=context.run_id,
             run_attempt_id=context.run_attempt_id,
             environment_id=self._run.environment_id,
+            configuration_context=self._run.configuration_context,
         )
+        if self._run.configuration_context is not None:
+            if self._configuration_capability is None:
+                raise RunError("Configuration tools are unavailable.", code="configuration_worker_incompatible")
+            async with short_session(self._sessions) as session:
+                await validate_configuration_definition(session, run=self._run, config=config)
+            await to_thread.run_sync(KnowledgeBundles().verify, self._run.configuration_context.knowledge_bundle)
         if graph_uses_memory(config):
             if self._memory is None:
                 raise RunError("Memory is unavailable.", code="memory_provider_unavailable")
@@ -197,6 +209,21 @@ class WorkerAttemptPreparer:
         async with attempt_resource_stack(cleanup_timeout_seconds=context.cleanup_timeout.total_seconds()) as stack:
             stack.callback(self._sources.close)
             invocation = await self._prepare(context, stack)
+            if self._run.configuration_context is not None:
+                environment = await to_thread.run_sync(
+                    KnowledgeBundles().environment, self._run.configuration_context.knowledge_bundle
+                )
+                invocation = replace(
+                    invocation,
+                    environment=MountedHarnessEnvironments(
+                        entries={
+                            "builtin-skills": EnvironmentMount(environment, access=EnvironmentAccess("read_only"))
+                        },
+                        default_environment="builtin-skills",
+                    ),
+                )
+                yield invocation
+                return
             environment = await prepare_run_environment(self._environments, context)
             if environment is not None:
                 stack.push_async_callback(environment.close)
@@ -226,6 +253,14 @@ class WorkerAttemptPreparer:
 
         def capabilities(context: AgentDefinitionReconstructionContext):
             selected = resources.for_definition(context)
+            if context.is_root and run.configuration_context is not None:
+                assert self._configuration_capability is not None
+                selected = (
+                    *selected,
+                    self._configuration_capability(),
+                    knowledge_capability(),
+                    UserInteractionCapability(),
+                )
             if not context.is_root:
                 selected = (InlineRunControlCapability(self._control, agent_id=context.agent_id), *selected)
             if context.config.memory is not None:

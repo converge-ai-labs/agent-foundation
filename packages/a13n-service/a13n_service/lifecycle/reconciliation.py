@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from sqlalchemy import and_, func, select
+from sqlalchemy import and_, false, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.elements import ColumnElement
 
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord, SessionRecord
 
@@ -20,6 +21,7 @@ async def read_workspace_events(
     visible_agent_ids: frozenset[str] | None,
     after_seq: int | None,
     limit: int,
+    configuration_access: ColumnElement[bool] | None = None,
 ) -> LifecycleWorkspacePage:
     session_join = and_(
         SessionRecord.organization_id == LifecycleEventRecord.organization_id,
@@ -33,12 +35,19 @@ async def read_workspace_events(
         LifecycleEventRecord.organization_id == organization_id,
         SessionRecord.workspace_id == workspace_id,
     )
-    if visible_agent_ids is not None:
-        run_join = and_(
-            RunRecord.organization_id == LifecycleEventRecord.organization_id,
-            RunRecord.id == LifecycleEventRecord.run_id,
+    run_join = and_(
+        RunRecord.organization_id == LifecycleEventRecord.organization_id,
+        RunRecord.id == LifecycleEventRecord.run_id,
+    )
+    events = events.outerjoin(RunRecord, run_join).where(
+        or_(
+            and_(
+                SessionRecord.configuration_owner_user_id.is_(None),
+                true() if visible_agent_ids is None else RunRecord.agent_id.in_(visible_agent_ids),
+            ),
+            false() if configuration_access is None else configuration_access,
         )
-        events = events.join(RunRecord, run_join).where(RunRecord.agent_id.in_(visible_agent_ids))
+    )
     floor, high = (await database.execute(boundary)).one()
     if floor is None or high is None:
         return LifecycleWorkspacePage((), None, 0, 0)

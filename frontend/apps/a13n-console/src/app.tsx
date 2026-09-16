@@ -18,6 +18,17 @@ import { Shell } from "./layout/shell";
 import { WorkspaceProvider } from "./layout/workspace";
 import { Empty, ErrorPage, Loading, Page } from "./shared/feedback";
 
+const ConfigurationPage = lazy(() =>
+  import("./features/configuration-assistant/page").then((module) => ({
+    default: module.ConfigurationPage,
+  })),
+);
+const ConfigurationStart = lazy(() =>
+  import("./features/configuration-assistant/start").then((module) => ({
+    default: module.ConfigurationStart,
+  })),
+);
+
 const ModelsPage = lazy(() =>
   import("./features/models/page").then((module) => ({
     default: module.ModelsPage,
@@ -214,6 +225,14 @@ function AppContent() {
                       element={<WorkspaceShell />}
                     >
                       <Route index element={<Navigate to="agents" replace />} />
+                      <Route
+                        path="configuration/new"
+                        element={<ConfigurationStart />}
+                      />
+                      <Route
+                        path="configuration-threads/:threadId"
+                        element={<ConfigurationPage />}
+                      />
                       <Route path="agents" element={<Agents />} />
                       <Route path="agents/new" element={<CreateAgent />} />
                       <Route

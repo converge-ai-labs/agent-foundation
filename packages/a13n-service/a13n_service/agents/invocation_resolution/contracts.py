@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
+from a13n_service.agent_configuration.context import ConfigurationRunContext
 from a13n_service.connectivity.selection_domain import (
     ConnectionRunSelection,
 )
@@ -62,6 +63,7 @@ class PreparedAgentInvocation:
     subagents: tuple[PreparedChildInvocation, ...]
     connectivity: PreparedConnectivity
     reviewer_model: PreparedModelExecution | None = None
+    configuration_context: ConfigurationRunContext | None = None
 
 
 @dataclass(frozen=True, slots=True)

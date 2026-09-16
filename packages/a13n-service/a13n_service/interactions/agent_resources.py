@@ -51,6 +51,19 @@ async def validate_agent_resources(
     children = inline_child_executions(config)
     async with short_session(sessions) as session:
         for agent_id in {run.agent_id, *(edge.child_agent_id for edge, _ in children.values())}:
+            if run.configuration_context is not None and agent_id == run.agent_id:
+                from a13n_service.agent_configuration.authorization import authorize_execution
+
+                await authorize_execution(
+                    session,
+                    principal=run.authority_principal,
+                    organization_id=run.organization_id,
+                    workspace_id=workspace_id,
+                    agent_id=agent_id,
+                    context=run.configuration_context,
+                    snapshot=current_context().authorization.snapshot,
+                )
+                continue
             await authorize_persisted_agent_principal_actions(
                 session,
                 principal=run.authority_principal,
@@ -60,7 +73,8 @@ async def validate_agent_resources(
                 actions=frozenset({WorkspaceAction.agent_invoke}),
                 snapshot=current_context().authorization.snapshot,
             )
-    await external_tools.validate(current_context)
+    if run.configuration_context is None:
+        await external_tools.validate(current_context)
     configurations = {run.agent_revision_id: config}
     for revision_id, (edge, child) in children.items():
         await external_tools.validate(
@@ -94,7 +108,11 @@ async def prepare_agent_resources(
     """Open fresh root and inline-child clients in the owning Attempt resource scope."""
     children = inline_child_executions(config)
     capabilities: dict[str, tuple[AbstractCapability[AgentContext], ...]] = {}
-    capabilities[run.agent_revision_id] = await stack.enter_async_context(external_tools.capabilities(current_context))
+    capabilities[run.agent_revision_id] = (
+        await stack.enter_async_context(external_tools.capabilities(current_context))
+        if run.configuration_context is None
+        else ()
+    )
     configurations = {run.agent_revision_id: config}
     for revision_id, (edge, child) in children.items():
         capabilities[revision_id] = await stack.enter_async_context(

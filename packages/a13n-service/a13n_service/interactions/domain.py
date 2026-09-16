@@ -17,6 +17,7 @@ from pydantic import (
     model_validator,
 )
 
+from a13n_service.agent_configuration.context import ConfigurationRunContext
 from a13n_service.digests import Sha256Digest
 from a13n_service.iam.domain import PrincipalRef
 from a13n_service.ids import ObjectId, new_object_id
@@ -243,6 +244,7 @@ class Thread(StrictModel):
 
 
 class Run(StrictModel):
+    configuration_context: ConfigurationRunContext | None = None
     id: ObjectId
     version: int = Field(ge=1)
     organization_id: ObjectId
@@ -492,6 +494,7 @@ def accepted_run(
     model_execution_observation: ModelExecutionObservation,
     connection_selections: tuple[JsonObject, ...] = (),
     native_tool_contexts: tuple[JsonObject, ...] = (),
+    configuration_context: ConfigurationRunContext | None = None,
     priority: int,
     queue_name: BoundedText,
     execution_budget: ExecutionBudget,
@@ -527,6 +530,7 @@ def accepted_run(
         model_execution_observation=model_execution_observation,
         connection_selections=connection_selections,
         native_tool_contexts=native_tool_contexts,
+        configuration_context=configuration_context,
         priority=priority,
         queue_name=queue_name,
         execution_budget=execution_budget,

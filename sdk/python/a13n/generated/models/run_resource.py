@@ -8,6 +8,7 @@ from attrs import define as _attrs_define
 
 from ..models.run_lineage_kind import RunLineageKind
 from ..models.run_status import RunStatus
+from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
     from ..models.run_resource_labels import RunResourceLabels
@@ -50,6 +51,7 @@ class RunResource:
         version (int):
         wait_reason (None | str):
         waiting_at (datetime.datetime | None):
+        configuration_draft_id (None | str | Unset):
     """
 
     agent_id: str
@@ -82,6 +84,7 @@ class RunResource:
     version: int
     wait_reason: str | None
     waiting_at: datetime.datetime | None
+    configuration_draft_id: str | Unset | None = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         agent_id = self.agent_id
@@ -172,6 +175,12 @@ class RunResource:
         else:
             waiting_at = self.waiting_at
 
+        configuration_draft_id: str | Unset | None
+        if isinstance(self.configuration_draft_id, Unset):
+            configuration_draft_id = UNSET
+        else:
+            configuration_draft_id = self.configuration_draft_id
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update(
@@ -208,6 +217,8 @@ class RunResource:
                 "waiting_at": waiting_at,
             }
         )
+        if configuration_draft_id is not UNSET:
+            field_dict["configuration_draft_id"] = configuration_draft_id
 
         return field_dict
 
@@ -388,6 +399,15 @@ class RunResource:
 
         waiting_at = _parse_waiting_at(d.pop("waiting_at"))
 
+        def _parse_configuration_draft_id(data: object) -> str | Unset | None:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(str | Unset | None, data)
+
+        configuration_draft_id = _parse_configuration_draft_id(d.pop("configuration_draft_id", UNSET))
+
         run_resource = cls(
             agent_id=agent_id,
             agent_revision_id=agent_revision_id,
@@ -419,6 +439,7 @@ class RunResource:
             version=version,
             wait_reason=wait_reason,
             waiting_at=waiting_at,
+            configuration_draft_id=configuration_draft_id,
         )
 
         return run_resource

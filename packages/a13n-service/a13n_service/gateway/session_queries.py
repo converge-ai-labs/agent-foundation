@@ -5,13 +5,14 @@ from __future__ import annotations
 from datetime import datetime
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator, model_validator
-from sqlalchemy import and_, false, func, or_, select
+from sqlalchemy import and_, false, func, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from a13n_service.agents.models import AgentRecord
 from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent_scoped_collection
 from a13n_service.iam.authorization import AuthorizedAgentCollection
+from a13n_service.interactions.access import authorize_interaction, configuration_visibility
 from a13n_service.interactions.domain import RunStatus
 from a13n_service.interactions.models import RunRecord, SessionRecord, ThreadRecord
 from a13n_service.labels import LabelFilterValues, Labels, label_predicates, parse_label_filters
@@ -111,8 +112,10 @@ async def collect_sessions(
             dialect=database.bind.dialect.name,
         )
     )
-    if authorization.visible_agent_ids is not None:
-        query = query.where(
+    ordinary = (
+        true()
+        if authorization.visible_agent_ids is None
+        else (
             select(RunRecord.id)
             .where(
                 RunRecord.organization_id == SessionRecord.organization_id,
@@ -121,6 +124,19 @@ async def collect_sessions(
             )
             .exists()
         )
+    )
+    query = query.where(
+        or_(
+            and_(SessionRecord.configuration_owner_user_id.is_(None), ordinary),
+            await configuration_visibility(
+                database,
+                actor=actor,
+                organization_id=authorization.workspace.organization_id,
+                workspace_id=workspace_id,
+                action=WorkspaceAction.session_read,
+            ),
+        )
+    )
     if filters.q:
         matched_thread = (
             select(ThreadRecord.session_id)
@@ -185,6 +201,53 @@ async def collect_sessions(
     counts = await _session_run_counts(
         database, organization_id=authorization.workspace.organization_id, session_ids=session_ids, runs=runs
     )
+    for record in records[:limit]:
+        if record.configuration_owner_user_id is None:
+            continue
+        previews.pop(record.id, None)
+        counts.pop(record.id, None)
+        try:
+            await authorize_interaction(
+                database,
+                actor=actor,
+                workspace_id=workspace_id,
+                session_id=record.id,
+                agent_id=None,
+                action=WorkspaceAction.run_read,
+            )
+        except AuthorizationError:
+            continue
+        counts[record.id] = (
+            await database.scalar(select(func.count(RunRecord.id)).where(RunRecord.session_id == record.id)) or 0
+        )
+        try:
+            await authorize_interaction(
+                database,
+                actor=actor,
+                workspace_id=workspace_id,
+                session_id=record.id,
+                agent_id=None,
+                action=WorkspaceAction.thread_read,
+            )
+        except AuthorizationError:
+            continue
+        latest = await database.scalar(
+            select(RunRecord)
+            .join(ThreadRecord, RunRecord.id == func.coalesce(ThreadRecord.current_run_id, ThreadRecord.head_run_id))
+            .where(ThreadRecord.session_id == record.id)
+            .order_by(ThreadRecord.updated_at.desc(), ThreadRecord.id.desc())
+            .limit(1)
+        )
+        if latest is not None:
+            previews[record.id] = SessionPreview(
+                thread_id=latest.thread_id,
+                run_id=latest.id,
+                input_text=None if latest.input_text is None else latest.input_text[:256],
+                output_text=None if latest.output_text is None else latest.output_text[:512],
+                agent_name=None,
+                run_status=RunStatus(latest.status),
+                trigger_type=latest.trigger_type,
+            )
     return tuple(_session(item, previews.get(item.id), counts.get(item.id)) for item in records)
 
 
@@ -276,6 +339,7 @@ async def _session_previews(
             AgentRecord.organization_id == organization_id,
             AgentRecord.workspace_id == workspace_id,
             AgentRecord.id.in_({row[5] for row in rows}),
+            AgentRecord.system_purpose.is_(None),
         )
         if agents.visible_agent_ids is not None:
             agent_query = agent_query.where(AgentRecord.id.in_(agents.visible_agent_ids))
