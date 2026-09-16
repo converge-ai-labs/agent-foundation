@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import { useMatch, useNavigate } from "react-router";
 import {
   Button,
-  Checkbox,
   FormField,
   Input,
   SearchPicker,
+  Popover,
+  PopoverTrigger,
+  PopoverPopup,
   Menu,
   MenuTrigger,
   MenuPopup,
@@ -13,6 +15,7 @@ import {
 } from "a13n-ui";
 import {
   Plus,
+  Funnel,
   Folder,
   CaretRight,
   DotsThree,
@@ -52,8 +55,8 @@ export function ConversationNavigation({
   const selectedId = match?.params.threadId ?? "";
   const selected = useThread(selectedId).data?.thread;
   const [query, setQuery] = useState("");
-  const [archived, setArchived] = useState(false);
   const [scope, setScope] = useState("");
+  const [filterOpen, setFilterOpen] = useState(false);
   const scopedProject = projects.data?.find(
     (project) => project.project_id === scope,
   );
@@ -98,25 +101,6 @@ export function ConversationNavigation({
   }, [searching, order.cancel]);
   return (
     <div className={styles.navigation}>
-      <Button
-        variant="ghost"
-        onClick={() =>
-          navigate(
-            newConversationPath(
-              scopedProject?.project_id ??
-                selected?.configuration.project_id ??
-                null,
-            ),
-          )
-        }
-      >
-        <Plus />
-        New conversation
-      </Button>
-      <Button variant="outline" onClick={() => setAdding(true)}>
-        <Plus />
-        Add project
-      </Button>
       <div className={styles.navigationFilters}>
         <FormField label="Find conversations" hideLabel>
           <Input
@@ -126,27 +110,60 @@ export function ConversationNavigation({
             onChange={(event) => setQuery(event.target.value)}
           />
         </FormField>
-        <SearchPicker
-          label="Project scope"
-          placeholder="All Projects"
-          emptyMessage="No matching projects."
-          value={scopedProject?.project_id ?? ""}
-          onValueChange={setScope}
-          groups={[
-            {
-              label: "Projects",
-              options: [
-                { value: "", label: "All Projects", icon: <Folder /> },
-                ...(projects.data ?? []).map((project) => ({
-                  value: project.project_id,
-                  label: project.name,
-                  keywords: [project.project_id],
-                  icon: <Folder />,
-                })),
-              ],
-            },
-          ]}
-        />
+        <Popover open={filterOpen} onOpenChange={setFilterOpen}>
+          <PopoverTrigger
+            render={<Button variant="ghost" size="icon-sm" />}
+            aria-label="Filter by project"
+            title={
+              scopedProject
+                ? `Project: ${scopedProject.name}`
+                : "Filter by project"
+            }
+            className={scopedProject ? styles.activeFilter : undefined}
+          >
+            <Funnel weight={scopedProject ? "fill" : "regular"} />
+          </PopoverTrigger>
+          <PopoverPopup align="end" className={styles.scopePopup}>
+            <SearchPicker
+              label="Project scope"
+              placeholder="All Projects"
+              emptyMessage="No matching projects."
+              value={scopedProject?.project_id ?? ""}
+              onValueChange={(value) => {
+                setScope(value);
+                setFilterOpen(false);
+              }}
+              groups={[
+                {
+                  label: "Projects",
+                  options: [
+                    { value: "", label: "All Projects", icon: <Folder /> },
+                    ...(projects.data ?? []).map((project) => ({
+                      value: project.project_id,
+                      label: project.name,
+                      keywords: [project.project_id],
+                      icon: <Folder />,
+                    })),
+                  ],
+                },
+              ]}
+            />
+          </PopoverPopup>
+        </Popover>
+      </div>
+      <div className={styles.navigationHeading}>
+        <span title={scopedProject?.name}>
+          {scopedProject?.name ?? "Projects"}
+        </span>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label="Add project"
+          title="Add project"
+          onClick={() => setAdding(true)}
+        >
+          <Plus />
+        </Button>
       </div>
       <ErrorNotice
         error={projects.error}
@@ -178,7 +195,6 @@ export function ConversationNavigation({
                 !searching &&
                 (!scopedProject || scopedProject.project_id === group.projectId)
               }
-              archived={archived}
               presence={presence}
               selected={activeGroup === group.id ? selected : undefined}
               create={() =>
@@ -193,7 +209,6 @@ export function ConversationNavigation({
           <SearchResults
             query={query.trim()}
             project={scopedProject}
-            archived={archived}
             presence={presence}
           />
         )}
@@ -201,10 +216,6 @@ export function ConversationNavigation({
       <span className={styles.srOnly} role="status">
         {order.announcement}
       </span>
-      <label className={styles.archiveFilter}>
-        <Checkbox checked={archived} onCheckedChange={setArchived} />
-        Include archived
-      </label>
       {adding && (
         <NewProject
           close={() => setAdding(false)}
@@ -228,7 +239,6 @@ function ProjectGroup({
   toggle,
   enabled,
   hidden,
-  archived,
   presence,
   selected,
   create,
@@ -240,7 +250,6 @@ function ProjectGroup({
   toggle: (open: boolean) => void;
   enabled: boolean;
   hidden: boolean;
-  archived: boolean;
   presence: Presence;
   selected?: Schema<"ThreadSummary">;
   create: () => void;
@@ -248,11 +257,14 @@ function ProjectGroup({
   order: ReturnType<typeof useProjectOrder>;
 }) {
   const navigate = useNavigate();
-  const list = useThreads("", group.projectId, archived, {
+  const list = useThreads("", group.projectId, false, {
     scope: group.scope,
     enabled: enabled && expanded,
     limit: 5,
+    includeActive: true,
   });
+  const activeRows = list.data?.pages[0]?.active_rows ?? [];
+  const activeIds = new Set(activeRows.map((row) => row.thread.thread_id));
   const rows = [
     ...new Map(
       (list.data?.pages.flatMap((page) => page.rows) ?? []).map((row) => [
@@ -262,7 +274,10 @@ function ProjectGroup({
     ).values(),
   ];
   const pinned =
-    selected && !rows.some((row) => row.thread.thread_id === selected.thread_id)
+    selected &&
+    !selected.archived &&
+    !activeIds.has(selected.thread_id) &&
+    !rows.some((row) => row.thread.thread_id === selected.thread_id)
       ? selected
       : undefined;
   return (
@@ -295,13 +310,13 @@ function ProjectGroup({
             className={expanded ? styles.expandedChevron : undefined}
           />
           <Folder />
-          <span>{group.name}</span>
+          <span title={group.name}>{group.name}</span>
         </button>
         <div className={styles.groupActions}>
           {expanded && list.isFetching && !!list.data && (
             <span
               role="status"
-              className={styles.refreshingGroup}
+              className={styles.srOnly}
               aria-label={`Updating conversations in ${group.name}`}
             >
               Updating…
@@ -365,6 +380,23 @@ function ProjectGroup({
         </div>
       </div>
       <div hidden={!expanded} className={styles.groupThreads}>
+        {activeRows.length > 0 && (
+          <div role="group" aria-label="Running conversations">
+            <small className={styles.emptyGroup}>
+              Running · {activeRows.length}
+            </small>
+            {activeRows.map((row) => (
+              <ThreadRow
+                key={row.thread.thread_id}
+                row={row}
+                presence={presence}
+              />
+            ))}
+          </div>
+        )}
+        {activeRows.length > 0 && (rows.length > 0 || pinned) && (
+          <small className={styles.emptyGroup}>Recent</small>
+        )}
         {pinned && (
           <div className={styles.pinnedThread}>
             <small className={styles.emptyGroup}>
@@ -373,9 +405,15 @@ function ProjectGroup({
             <ThreadRow row={{ thread: pinned }} presence={presence} />
           </div>
         )}
-        {rows.map((row) => (
-          <ThreadRow key={row.thread.thread_id} row={row} presence={presence} />
-        ))}
+        {rows
+          .filter((row) => !activeIds.has(row.thread.thread_id))
+          .map((row) => (
+            <ThreadRow
+              key={row.thread.thread_id}
+              row={row}
+              presence={presence}
+            />
+          ))}
         {expanded && !list.data && list.isPending && (
           <div
             role="status"
@@ -386,9 +424,12 @@ function ProjectGroup({
             <span>Loading conversations…</span>
           </div>
         )}
-        {list.isSuccess && !list.isPreviousData && !rows.length && (
-          <small className={styles.emptyGroup}>No conversations yet</small>
-        )}
+        {list.isSuccess &&
+          !list.isPreviousData &&
+          !rows.length &&
+          !activeRows.length && (
+            <small className={styles.emptyGroup}>No conversations yet</small>
+          )}
         <ErrorNotice error={list.error} retry={() => void list.refetch()} />
         {list.hasNextPage && (
           <Button
@@ -409,15 +450,13 @@ function ProjectGroup({
 function SearchResults({
   query,
   project,
-  archived,
   presence,
 }: {
   query: string;
   project?: { project_id: string; name: string };
-  archived: boolean;
   presence: Presence;
 }) {
-  const list = useThreads(query, project?.project_id, archived);
+  const list = useThreads(query, project?.project_id);
   const rows = [
     ...new Map(
       (list.data?.pages.flatMap((page) => page.rows) ?? []).map((row) => [

@@ -329,6 +329,14 @@
   padding: 10px 0;
   margin-top: auto;
 }
+.composerDock[data-floating-controls] {
+  background: transparent;
+  pointer-events: none;
+}
+.composerDock[data-floating-controls] button {
+  pointer-events: auto;
+  background: var(--a13n-canvas);
+}
 .dockControls {
   display: flex;
   justify-content: space-between;
@@ -406,7 +414,17 @@
   position: sticky;
   bottom: 128px;
   z-index: 3;
+  background: var(--a13n-elevated);
+  border-color: var(--a13n-input-border);
   box-shadow: var(--a13n-shadow);
+}
+.jumpToLatest:hover,
+.jumpToLatest:active,
+.jumpToLatest[data-pressed] {
+  background: color-mix(in srgb, var(--a13n-elevated) 95%, var(--a13n-text));
+}
+.jumpToLatest[data-external-composer] {
+  bottom: 12px;
 }
 .spinning {
   animation: spin 1.5s linear infinite;
@@ -481,6 +499,26 @@
 }
 .pendingAction small {
   color: var(--a13n-secondary);
+}
+.approvalChoices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.approvalDetails {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border-radius: 8px;
+  background: var(--a13n-hover);
+  overflow-wrap: anywhere;
+}
+.approvalDetails p {
+  margin: 0;
+}
+.approvalDetails span {
+  color: var(--a13n-secondary);
+  margin-right: 8px;
 }
 .failure {
   background: color-mix(in srgb, var(--a13n-danger) 6%, var(--a13n-canvas));

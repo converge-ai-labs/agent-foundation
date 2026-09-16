@@ -1,5 +1,5 @@
 import type { BotAccount } from "./account";
-import { ApiError } from "@converge.ai/a13n";
+import { ApiError } from "../../service-client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";

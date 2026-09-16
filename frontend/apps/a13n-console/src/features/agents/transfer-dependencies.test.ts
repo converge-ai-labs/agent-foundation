@@ -1,4 +1,4 @@
-import { createClient } from "@converge.ai/a13n";
+import { createClient } from "../../service-client";
 import { expect, it, vi } from "vitest";
 import { initialConfig } from "./configuration";
 import {

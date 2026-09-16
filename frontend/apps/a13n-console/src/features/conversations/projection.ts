@@ -1,4 +1,4 @@
-import type { RunEvent } from "@converge.ai/a13n";
+import type { RunEvent } from "../../service-client";
 import type { Schema } from "../../shared/api";
 export interface PresentedItem {
   id: string;

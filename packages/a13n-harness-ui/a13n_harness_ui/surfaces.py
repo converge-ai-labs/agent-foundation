@@ -120,6 +120,7 @@ class ThreadSummary(SurfaceModel):
     title: str | None = Field(default=None, max_length=512)
     excerpt: ConversationExcerpt = Field(default_factory=ConversationExcerpt)
     activity_at: datetime | None = None
+    touched_at: datetime | None = None
     archived: bool
     configuration: ThreadConfigurationView
     continuation_state: Literal["initial", "selected"]
@@ -582,6 +583,7 @@ class ThreadActivityView(SurfaceModel):
 class ThreadActivityPage(SurfaceModel):
     project_id: str | None = Field(default=None, min_length=1, max_length=128)
     rows: tuple[ThreadActivityView, ...]
+    active_rows: tuple[ThreadActivityView, ...] = ()
     total: int = Field(ge=0)
     next_cursor: str | None = Field(default=None, min_length=1, max_length=4096)
 

@@ -4,7 +4,6 @@ from dataclasses import replace
 
 import httpx2
 import pytest
-from a13n_service.models.provider_adapters.base import ProviderOperationError
 from a13n_service.models.provider_operations import NativeProviderOperations
 from a13n_service.models.provider_runtime import RuntimeProvider
 from a13n_service.models.providers import built_in_provider_registry
@@ -16,15 +15,6 @@ class _ProviderResolver:
 
     async def resolve_provider(self, **_: str) -> RuntimeProvider:
         return self.provider
-
-
-def test_provider_registry_projects_integration_discovery_support() -> None:
-    registry = built_in_provider_registry()
-
-    for definition in registry.definitions():
-        assert definition.supports_model_discovery is (
-            registry.integration(definition.type).model_discovery is not None
-        )
 
 
 @pytest.mark.anyio
@@ -118,7 +108,7 @@ def test_provider_registry_projects_integration_discovery_support() -> None:
         ),
     ],
 )
-async def test_provider_native_discovery_is_advisory(
+async def test_provider_probe_uses_configured_endpoint_and_headers(
     provider: RuntimeProvider,
     payload: dict[str, object],
     expected: str,
@@ -148,93 +138,6 @@ async def test_provider_native_discovery_is_advisory(
             organization_id="org_1234567890abcdef",
             workspace_id="ws_1234567890abcdef",
         )
-        result = await operations.discover(
-            provider_id="mprov_1234567890abcdef",
-            organization_id="org_1234567890abcdef",
-            workspace_id="ws_1234567890abcdef",
-        )
-
-    assert result.items[0].upstream_model == expected
-    assert (
-        result.items[0].suggested_model_api == built_in_provider_registry().definition(provider.type).default_model_api
-    )
-
-
-@pytest.mark.anyio
-async def test_discovery_follows_pages_deduplicates_and_does_not_truncate() -> None:
-    calls = 0
-
-    async def handler(request: httpx2.Request) -> httpx2.Response:
-        nonlocal calls
-        calls += 1
-        if calls == 1:
-            return httpx2.Response(
-                200,
-                json={
-                    "models": [{"name": "models/embedding", "supportedGenerationMethods": ["embedContent"]}],
-                    "nextPageToken": "next",
-                },
-            )
-        assert request.url.params["pageToken"] == "next"
-        return httpx2.Response(200, json={"models": [{"name": f"models/gemini-{i:04}"} for i in range(601)]})
-
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
-        operations = NativeProviderOperations(
-            provider_resolver=_ProviderResolver(
-                RuntimeProvider("google_gemini", {}, "https://generativelanguage.googleapis.com", "secret")
-            ),
-            registry=built_in_provider_registry(),
-            http_client=client,
-        )
-        result = await operations.discover(provider_id="p", organization_id="o", workspace_id="w")
-    assert len(result.items) == 601
-    assert calls == 2
-    assert result.items[-1].upstream_model == "gemini-0600"
-
-
-@pytest.mark.anyio
-@pytest.mark.parametrize(("provider_type", "cursor_key"), [("anthropic", "after_id"), ("openai", "after")])
-async def test_adapter_owns_upstream_paging(provider_type, cursor_key):
-    requests = []
-
-    async def handler(request):
-        requests.append(request)
-        if len(requests) == 1:
-            return httpx2.Response(200, json={"data": [{"id": "z"}, {"id": "a"}], "has_more": True, "last_id": "a"})
-        assert request.url.params[cursor_key] == "a"
-        return httpx2.Response(200, json={"data": [{"id": "a"}, {"id": "b"}], "has_more": False})
-
-    async with httpx2.AsyncClient(transport=httpx2.MockTransport(handler)) as client:
-        operations = NativeProviderOperations(
-            provider_resolver=_ProviderResolver(
-                RuntimeProvider(provider_type, {}, "https://models.example/v1", "secret")
-            ),
-            registry=built_in_provider_registry(),
-            http_client=client,
-        )
-        result = await operations.discover(provider_id="p", organization_id="o", workspace_id="w")
-    assert [item.upstream_model for item in result.items] == ["a", "b", "z"]
-    assert set(result.model_dump()) == {"items"}
-    assert len(requests) == 2
-
-
-@pytest.mark.anyio
-async def test_discovery_rejects_oversized_output_instead_of_returning_partial_catalog(monkeypatch):
-    from a13n_service.models import provider_operations
-
-    monkeypatch.setattr(provider_operations, "_MAX_DISCOVERY_OUTPUT_BYTES", 100)
-    async with httpx2.AsyncClient(
-        transport=httpx2.MockTransport(lambda request: httpx2.Response(200, json={"data": [{"id": "model"}]}))
-    ) as client:
-        operations = NativeProviderOperations(
-            provider_resolver=_ProviderResolver(
-                RuntimeProvider("openrouter", {}, "https://openrouter.ai/api/v1", "secret")
-            ),
-            registry=built_in_provider_registry(),
-            http_client=client,
-        )
-        with pytest.raises(ProviderOperationError, match="output byte limit"):
-            await operations.discover(provider_id="p", organization_id="o", workspace_id="w")
 
 
 @pytest.mark.anyio
@@ -256,24 +159,6 @@ async def test_probe_stops_after_first_page():
         )
         await ops.test(provider_id="p", organization_id="o", workspace_id="w")
     assert len(calls) == 1
-
-
-@pytest.mark.anyio
-async def test_catalog_deduplicates_schemas_and_fits_ten_thousand_models():
-    async with httpx2.AsyncClient(
-        transport=httpx2.MockTransport(
-            lambda request: httpx2.Response(200, json={"data": [{"id": f"model-{i:05}"} for i in range(10000)]})
-        )
-    ) as client:
-        ops = NativeProviderOperations(
-            provider_resolver=_ProviderResolver(RuntimeProvider("openai", {}, "https://models.example/v1", "secret")),
-            registry=built_in_provider_registry(),
-            http_client=client,
-        )
-        result = await ops.discover(provider_id="p", organization_id="o", workspace_id="w")
-    assert len(result.items) == 10000
-    assert all("settings_schema" not in item.model_dump() for item in result.items)
-    assert len(result.model_dump_json().encode()) < 6 * 1024 * 1024
 
 
 @pytest.mark.anyio

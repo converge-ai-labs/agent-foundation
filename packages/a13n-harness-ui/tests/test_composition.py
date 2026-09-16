@@ -501,6 +501,14 @@ async def test_reconstruction_builds_fresh_graph_and_keeps_root_capability_root_
     assert "a13n.dynamic-environment" in reconstructed.definition_capability_ids
     assert reconstructed.executable.definition.model_recovery.enabled
     assert reconstructed.executable.definition.model_recovery.max_attempts == 5
+    from a13n_harness.recovery import DEFAULT_RECOVERY_PROMPT
+    from pydantic_ai.messages import TextContent
+
+    prompt = reconstructed.executable.definition.model_recovery.continuation_prompt
+    assert len(prompt) == 1
+    assert isinstance(prompt[0], TextContent)
+    assert prompt[0].content == DEFAULT_RECOVERY_PROMPT
+    assert prompt[0].metadata == {"display": False, "source_id": "a13n-harness-ui.model-recovery"}
     for child in reconstructed.executable.subagents.values():
         assert child.definition.definition_id != reconstructed.executable.definition.definition_id
         assert child.definition.model_recovery == reconstructed.executable.definition.model_recovery

@@ -1,7 +1,0 @@
-package: generated
-generate:
-  models: true
-  client: true
-output-options:
-  skip-prune: true
-  nullable-type: true

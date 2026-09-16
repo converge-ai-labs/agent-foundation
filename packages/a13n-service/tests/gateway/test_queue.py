@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import asyncio
 
+import httpx2
 import pytest
+from a13n_service.api import install_api_conventions
 from a13n_service.durable_operations.models import IdempotencyEvidenceRecord
+from a13n_service.gateway import router as gateway_router
+from a13n_service.iam import authenticate_request
 from a13n_service.interactions.control_domain import (
     ConsumeQueuedSubmissionRequest,
     InterruptRequest,
@@ -21,6 +25,7 @@ from a13n_service.interactions.submissions import DeleteQueuedSubmissionRequest,
 from a13n_service.storage import short_session, transaction
 from a13n_service.storage.object_store import LocalObjectStore
 from anyio import Event
+from fastapi import FastAPI
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -527,3 +532,112 @@ async def test_thread_submission_retry_after_lost_response_returns_original_rece
             )
             == 1
         )
+
+
+async def test_delete_http_query_contract_and_empty_replay_after_row_removal(
+    lifecycle_interaction_sessions, tmp_path, monkeypatch
+):
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    thread_id = await _active_thread(lifecycle_interaction_sessions, tmp_path)
+    service = await _service(lifecycle_interaction_sessions, tmp_path)
+    entries = [
+        await service.enqueue(
+            actor=_actor(),
+            thread_id=thread_id,
+            expected_thread_version=1,
+            submission=_intent(text),
+            idempotency_key=f"enqueue-{text}",
+        )
+        for text in ("first", "second")
+    ]
+    entry_id = entries[0].queued_submission.queued_submission_id
+    app = FastAPI()
+    install_api_conventions(app)
+    app.include_router(gateway_router.router)
+    app.dependency_overrides[authenticate_request] = _actor
+    monkeypatch.setattr(gateway_router, "_queued_submissions", lambda _request: service)
+    path = f"/api/v1/queued-submissions/{entry_id}"
+    async with httpx2.AsyncClient(base_url="http://testserver", transport=httpx2.ASGITransport(app=app)) as client:
+        headers = {"Idempotency-Key": "delete-query"}
+        # A JSON body is not a substitute for the required query precondition.
+        body_only = await client.request("DELETE", path, headers=headers, json={"expected_version": 1})
+        assert body_only.status_code == 400
+        for version in ("0", "-1", "invalid"):
+            invalid = await client.delete(path, params={"expected_version": version}, headers=headers)
+            assert invalid.status_code == 400
+        missing_key = await client.delete(path, params={"expected_version": 1})
+        assert missing_key.status_code == 400
+        stale = await client.delete(path, params={"expected_version": 2}, headers=headers)
+        assert stale.status_code == 409
+        assert (await service.get(actor=_actor(), queued_submission_id=entry_id)).version == 1
+        # One mutation, including when identical HTTP requests race; both return no content.
+        replies = await asyncio.gather(
+            *(client.delete(path, params={"expected_version": 1}, headers=headers) for _ in range(2))
+        )
+        for reply in replies:
+            assert reply.status_code == 204, reply.text
+            assert reply.content == b"" and "content-type" not in reply.headers
+        assert (await client.get(path)).status_code == 404
+        replay = await client.delete(path, params={"expected_version": 1}, headers=headers)
+        assert replay.status_code == 204 and replay.content == b""
+        changed = await client.delete(path, params={"expected_version": 2}, headers=headers)
+        assert changed.status_code == 409
+        assert changed.json()["error"]["code"] == "idempotency_conflict"
+        absent = await client.delete(path, params={"expected_version": 1}, headers={"Idempotency-Key": "new-delete"})
+        assert absent.status_code == 404
+    remaining = await service.list(actor=_actor(), thread_id=thread_id, state=QueuedSubmissionState.queued, limit=100)
+    assert len(remaining.items) == 1 and remaining.items[0].position == 1
+    async with short_session(lifecycle_interaction_sessions) as database:
+        thread = await database.get(ThreadRecord, thread_id)
+        assert thread is not None and thread.queue_version == 3 and thread.version == 1
+        evidence = (
+            await database.scalars(
+                select(IdempotencyEvidenceRecord).where(IdempotencyEvidenceRecord.operation == "queue.delete")
+            )
+        ).all()
+        assert len(evidence) == 1
+
+
+async def test_delete_replays_concurrent_commit_after_preflight(lifecycle_interaction_sessions, tmp_path, monkeypatch):
+
+    await seed_hook_actor_access(lifecycle_interaction_sessions)
+    thread_id = await _active_thread(lifecycle_interaction_sessions, tmp_path)
+    service = await _service(lifecycle_interaction_sessions, tmp_path)
+    queued = await service.enqueue(
+        actor=_actor(),
+        thread_id=thread_id,
+        expected_thread_version=1,
+        submission=_intent("delete-race"),
+        idempotency_key="enqueue-race",
+    )
+    reached, release = Event(), Event()
+    original = service._submission_scope
+    pause = True
+
+    async def delayed(*args, **kwargs):
+        nonlocal pause
+        if pause:
+            pause = False
+            reached.set()
+            await release.wait()
+        return await original(*args, **kwargs)
+
+    monkeypatch.setattr(service, "_submission_scope", delayed)
+    kwargs = {
+        "actor": _actor(),
+        "queued_submission_id": queued.queued_submission.queued_submission_id,
+        "request": DeleteQueuedSubmissionRequest(expected_version=1),
+        "idempotency_key": "same-delete",
+    }
+    pending = asyncio.create_task(service.delete(**kwargs))
+    try:
+        async with asyncio.timeout(10):
+            await reached.wait()
+            committed = await service.delete(**kwargs)
+            release.set()
+            assert await pending == committed
+    finally:
+        release.set()
+        if not pending.done():
+            pending.cancel()
+        await asyncio.gather(pending, return_exceptions=True)

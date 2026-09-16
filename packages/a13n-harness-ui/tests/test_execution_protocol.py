@@ -22,7 +22,14 @@ from .test_interactive_protocol import frame_until, listener
 pytestmark = pytest.mark.anyio
 
 
-@pytest.mark.parametrize("child_output", ["Child completed.", "Detailed finding.\n\n" * 600 + "End of review."])
+@pytest.mark.parametrize(
+    "child_output",
+    [
+        "Child completed.",
+        "Detailed finding.\n\n" * 600 + "End of review.",
+        "Long finding.\n\n" * 6000 + "Final retained paragraph.",
+    ],
+)
 async def test_child_question_competing_response_history_and_restart(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, child_output: str
 ) -> None:
@@ -155,12 +162,15 @@ async def test_child_question_competing_response_history_and_restart(
             )
             child_review = await api.get(prefix + f"/children/{child['execution_id']}/review")
             assert child_review.status_code == 200, child_review.text
-            assert child_review.json()["summary"] == child_output
-            assert child_review.json()["truncated"] is False
+            if len(child_output) <= 32 * 1024:
+                assert child_review.json()["summary"] == child_output
+                assert child_review.json()["truncated"] is False
             output_page = await api.get(prefix + f"/children/{child['execution_id']}/saved-output", params={"limit": 1})
             assert output_page.status_code == 200, output_page.text
             output = output_page.json()["outputs"][0]
-            assert output["text"] == child_output
+            assert output["text"] == child_output[: 64 * 1024]
+            assert output["total_characters"] == len(child_output)
+            assert output["target"]["location"]["activity"] is None
             child_comment = publication(output["target"])
             posted = await api.post(prefix + "/comments", json=child_comment)
             assert posted.status_code == 200, posted.text
@@ -178,14 +188,25 @@ async def test_child_question_competing_response_history_and_restart(
             assert restored == history
             assert (await api.post(prefix + "/comments", json=child_comment)).json() == child_comment_record
             original = await api.post(prefix + "/saved-output", json=child_comment["target"])
-            assert original.status_code == 200 and original.json()["text"] == child_output
+            assert original.status_code == 200
+            page = original.json()
+            text = page["text"]
+            while page["next_offset"] is not None:
+                response = await api.post(
+                    prefix + "/saved-output", json=child_comment["target"], params={"offset": page["next_offset"]}
+                )
+                assert response.status_code == 200
+                page = response.json()
+                text += page["text"]
+            assert text == child_output
             assert (await api.get(prefix + "/children")).json()["executions"][0]["execution_id"] == child[
                 "execution_id"
             ]
             restored_review = await api.get(prefix + f"/children/{child['execution_id']}/review")
             assert restored_review.status_code == 200, restored_review.text
-            assert restored_review.json()["summary"] == child_output
-            assert restored_review.json()["truncated"] is False
+            if len(child_output) <= 32 * 1024:
+                assert restored_review.json()["summary"] == child_output
+                assert restored_review.json()["truncated"] is False
             assert (await api.get(prefix + "/decisions")).json() is None
 
 

@@ -130,9 +130,12 @@ async def test_recoverable_queue_head_blocks_its_tail_but_not_other_threads(cont
         )
         expected = list(zip(rows, cases, strict=True))
     else:
-        await live.request(
-            "DELETE", path, json={"expected_version": rows[0]["version"]}, headers={"Idempotency-Key": uuid4().hex}
+        deleted = await live.http.delete(
+            path,
+            params={"expected_version": rows[0]["version"]},
+            headers={"Idempotency-Key": uuid4().hex},
         )
+        assert deleted.status_code == 204 and deleted.content == b""
         assert (await live.http.get(path)).status_code == 404
         expected = [(rows[1], cases[1])]
     parent = completed
@@ -187,12 +190,12 @@ async def test_queue_last_slot_has_one_winner_and_released_capacity_accepts_reje
     assert await live.thread(before["id"]) == full
     feedback = None
     if release_capacity == "delete":
-        await live.request(
-            "DELETE",
+        deleted = await live.http.delete(
             f"/api/v1/queued-submissions/{prefix['queued_submission_id']}",
-            json={"expected_version": prefix["version"]},
+            params={"expected_version": prefix["version"]},
             headers={"Idempotency-Key": uuid4().hex},
         )
+        assert deleted.status_code == 204 and deleted.content == b""
         expected = []
     else:
         model = journey.arm("prefix-model", "model.request", role="control", case_id=cases[0]["case_id"], request=1)
@@ -264,7 +267,8 @@ async def test_consumed_queue_entry_never_requeues_when_its_run_terminates_and_c
         ("PATCH", {"expected_version": consumed["version"], "submission": consumed["submission"]}),
         ("DELETE", {"expected_version": consumed["version"]}),
     ]:
-        await live.request(method, path, expected=409, json=body, headers={"Idempotency-Key": uuid4().hex})
+        payload = {"params": body} if method == "DELETE" else {"json": body}
+        await live.request(method, path, expected=409, **payload, headers={"Idempotency-Key": uuid4().hex})
         assert await journey.queue_row(first) == consumed and await live.thread(source["thread_id"]) == before
     next_model = journey.arm("second", "model.request", role="control", case_id=later["case_id"], request=1)
     journey.release(recovery)

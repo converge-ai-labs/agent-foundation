@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import re
 import stat
@@ -15,11 +14,6 @@ COMPONENTS = (
     "a13n-logging",
     "a13n-service",
     "a13n-envd",
-    "a13n-service-cli",
-    "a13n-python",
-    "a13n-go",
-    "a13n-rust",
-    "a13n-typescript",
 )
 ENVIRONMENT_PROVIDER_MANIFEST = Path("packages/a13n-environment/pyproject.toml")
 ENVIRONMENT_PROVIDER_PACKAGE = "a13n-environment"
@@ -55,15 +49,6 @@ A13N_ENVD_MANIFEST = Path("crates/a13n-envd/Cargo.toml")
 A13N_ENVD_LOCK = Path("Cargo.lock")
 A13N_ENVD_CLIENT_MANIFEST = Path("packages/a13n-envd-client/pyproject.toml")
 A13N_ENVD_CLIENT_PACKAGE = "a13n-envd-client"
-SDK_PYTHON_MANIFEST = Path("sdk/python/pyproject.toml")
-SDK_PYTHON_LOCK = Path("sdk/python/uv.lock")
-SDK_RUST_MANIFEST = Path("sdk/rust/Cargo.toml")
-SDK_RUST_LOCK = Path("sdk/rust/Cargo.lock")
-A13N_SERVICE_CLI_MANIFEST = Path("sdk/rust/a13n-service-cli/Cargo.toml")
-A13N_SERVICE_CLI_LOCK = Path("sdk/rust/a13n-service-cli/Cargo.lock")
-A13N_SERVICE_CLI_PACKAGE = "a13n-service-cli"
-SDK_TYPESCRIPT_MANIFEST = Path("sdk/typescript/package.json")
-SDK_TYPESCRIPT_LOCK = Path("sdk/typescript/package-lock.json")
 RELEASE_VERSION_PATTERN = re.compile(
     r"(?P<major>0|[1-9][0-9]*)\."
     r"(?P<minor>0|[1-9][0-9]*)\."
@@ -137,18 +122,6 @@ def _load_toml(root: Path, relative_path: Path) -> dict[str, object]:
             return tomllib.load(file)
     except (OSError, tomllib.TOMLDecodeError) as error:
         raise ReleaseVersionError(f"Cannot read TOML from {relative_path}: {error}") from error
-
-
-def _load_json(root: Path, relative_path: Path) -> dict[str, object]:
-    path = root / relative_path
-    try:
-        with path.open(encoding="utf-8") as file:
-            value = json.load(file)
-    except (OSError, json.JSONDecodeError) as error:
-        raise ReleaseVersionError(f"Cannot read JSON from {relative_path}: {error}") from error
-    if not isinstance(value, dict):
-        raise ReleaseVersionError(f"Expected a JSON object in {relative_path}")
-    return value
 
 
 def _mapping(value: object, label: str) -> dict[str, object]:
@@ -226,11 +199,6 @@ def release_dependency_ranges(root: Path, manifest: Path) -> dict[str, str]:
     return ranges
 
 
-def _cargo_package_version(root: Path, relative_path: Path) -> str:
-    package = _mapping(_load_toml(root, relative_path).get("package"), f"package.version in {relative_path}")
-    return _string(package.get("version"), f"package.version in {relative_path}")
-
-
 def _workspace_package_version(root: Path) -> str:
     workspace = _mapping(
         _load_toml(root, A13N_ENVD_WORKSPACE_MANIFEST).get("workspace"),
@@ -266,23 +234,6 @@ def _lock_package_version(root: Path, relative_path: Path, package_name: str) ->
             f"Expected exactly one package {package_name} in {relative_path}, found {len(matches)}"
         )
     return _string(matches[0].get("version"), f"package {package_name} version in {relative_path}")
-
-
-def _npm_version(root: Path, relative_path: Path) -> str:
-    return _string(_load_json(root, relative_path).get("version"), f"version in {relative_path}")
-
-
-def _npm_lock_root_version(root: Path) -> str:
-    lock = _load_json(root, SDK_TYPESCRIPT_LOCK)
-    packages = _mapping(lock.get("packages"), f'packages[""] version in {SDK_TYPESCRIPT_LOCK}')
-    root_package = _mapping(
-        packages.get(""),
-        f'packages[""] version in {SDK_TYPESCRIPT_LOCK}',
-    )
-    return _string(
-        root_package.get("version"),
-        f'packages[""] version in {SDK_TYPESCRIPT_LOCK}',
-    )
 
 
 def component_versions(root: Path, component: str) -> dict[str, str]:
@@ -350,39 +301,6 @@ def component_versions(root: Path, component: str) -> dict[str, str]:
                 A13N_ENVD_CLIENT_PACKAGE,
             ),
         }
-    if component == "a13n-python":
-        return {
-            str(SDK_PYTHON_MANIFEST): _project_version(root, SDK_PYTHON_MANIFEST),
-            f"{SDK_PYTHON_LOCK} package a13n": _lock_package_version(
-                root,
-                SDK_PYTHON_LOCK,
-                "a13n",
-            ),
-        }
-    if component == "a13n-rust":
-        return {
-            str(SDK_RUST_MANIFEST): _cargo_package_version(root, SDK_RUST_MANIFEST),
-            f"{SDK_RUST_LOCK} package a13n": _lock_package_version(
-                root,
-                SDK_RUST_LOCK,
-                "a13n",
-            ),
-        }
-    if component == "a13n-service-cli":
-        return {
-            str(A13N_SERVICE_CLI_MANIFEST): _cargo_package_version(root, A13N_SERVICE_CLI_MANIFEST),
-            f"{A13N_SERVICE_CLI_LOCK} package {A13N_SERVICE_CLI_PACKAGE}": _lock_package_version(
-                root,
-                A13N_SERVICE_CLI_LOCK,
-                A13N_SERVICE_CLI_PACKAGE,
-            ),
-        }
-    if component == "a13n-typescript":
-        return {
-            str(SDK_TYPESCRIPT_MANIFEST): _npm_version(root, SDK_TYPESCRIPT_MANIFEST),
-            str(SDK_TYPESCRIPT_LOCK): _npm_version(root, SDK_TYPESCRIPT_LOCK),
-            f'{SDK_TYPESCRIPT_LOCK} packages[""]': _npm_lock_root_version(root),
-        }
     return {}
 
 
@@ -391,7 +309,7 @@ def _expected_component_versions(
     release_version: ReleaseVersion,
     labels: tuple[str, ...],
 ) -> dict[str, str]:
-    if component in {"a13n-harness", "a13n-harness-ui", "a13n-logging", "a13n-service", "a13n-python"}:
+    if component in {"a13n-harness", "a13n-harness-ui", "a13n-logging", "a13n-service"}:
         return {label: release_version.python_package for label in labels}
     if component == "a13n-envd":
         python_labels = {
@@ -530,35 +448,6 @@ def _replace_lock_package_version(
     return "".join(lines)
 
 
-def _replace_json_versions(
-    content: str,
-    version: str,
-    path: Path,
-    *,
-    include_lock_root: bool,
-) -> str:
-    try:
-        value = json.loads(content)
-    except json.JSONDecodeError as error:
-        raise ReleaseVersionError(f"Cannot read JSON from {path}: {error}") from error
-    if not isinstance(value, dict) or not isinstance(value.get("version"), str):
-        raise ReleaseVersionError(f"Missing version in {path}")
-
-    changed = value["version"] != version
-    value["version"] = version
-    if include_lock_root:
-        packages = _mapping(value.get("packages"), f'packages[""] version in {path}')
-        root_package = _mapping(packages.get(""), f'packages[""] version in {path}')
-        if not isinstance(root_package.get("version"), str):
-            raise ReleaseVersionError(f'Missing packages[""] version in {path}')
-        changed = changed or root_package["version"] != version
-        root_package["version"] = version
-
-    if not changed:
-        return content
-    return f"{json.dumps(value, indent=2, ensure_ascii=False)}\n"
-
-
 def _read_text(root: Path, relative_path: Path) -> str:
     try:
         return (root / relative_path).read_text(encoding="utf-8")
@@ -689,58 +578,6 @@ def prepare_component_version(root: Path, component: str, version: str) -> tuple
             A13N_ENVD_CLIENT_PACKAGE,
             python_version,
             ROOT_UV_LOCK,
-        )
-    elif component == "a13n-python":
-        planned[SDK_PYTHON_MANIFEST] = _replace_table_version(
-            _read_text(root, SDK_PYTHON_MANIFEST),
-            "project",
-            python_version,
-            SDK_PYTHON_MANIFEST,
-        )
-        planned[SDK_PYTHON_LOCK] = _replace_lock_package_version(
-            _read_text(root, SDK_PYTHON_LOCK),
-            "a13n",
-            python_version,
-            SDK_PYTHON_LOCK,
-        )
-    elif component == "a13n-rust":
-        planned[SDK_RUST_MANIFEST] = _replace_table_version(
-            _read_text(root, SDK_RUST_MANIFEST),
-            "package",
-            canonical_version,
-            SDK_RUST_MANIFEST,
-        )
-        planned[SDK_RUST_LOCK] = _replace_lock_package_version(
-            _read_text(root, SDK_RUST_LOCK),
-            "a13n",
-            canonical_version,
-            SDK_RUST_LOCK,
-        )
-    elif component == "a13n-service-cli":
-        planned[A13N_SERVICE_CLI_MANIFEST] = _replace_table_version(
-            _read_text(root, A13N_SERVICE_CLI_MANIFEST),
-            "package",
-            canonical_version,
-            A13N_SERVICE_CLI_MANIFEST,
-        )
-        planned[A13N_SERVICE_CLI_LOCK] = _replace_lock_package_version(
-            _read_text(root, A13N_SERVICE_CLI_LOCK),
-            A13N_SERVICE_CLI_PACKAGE,
-            canonical_version,
-            A13N_SERVICE_CLI_LOCK,
-        )
-    elif component == "a13n-typescript":
-        planned[SDK_TYPESCRIPT_MANIFEST] = _replace_json_versions(
-            _read_text(root, SDK_TYPESCRIPT_MANIFEST),
-            canonical_version,
-            SDK_TYPESCRIPT_MANIFEST,
-            include_lock_root=False,
-        )
-        planned[SDK_TYPESCRIPT_LOCK] = _replace_json_versions(
-            _read_text(root, SDK_TYPESCRIPT_LOCK),
-            canonical_version,
-            SDK_TYPESCRIPT_LOCK,
-            include_lock_root=True,
         )
 
     manifests = {

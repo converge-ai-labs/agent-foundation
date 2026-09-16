@@ -327,7 +327,7 @@ Within `model`, an absent `model_key` inherits the Agent selection; a supplied k
 
 `connection_tools` replaces the complete selection when present. Absence inherits, `[]` clears, and null for the whole category is invalid. Entries use the same complete selection types as Agent configuration; there is no per-alias patch or mapped deletion. Overrides can select existing authorized connections, tool scopes, and deferred loading, but cannot supply endpoints, credentials, external integration services, arbitrary headers, or native Ingress targets.
 
-Each supplied `toolsets` entry replaces that complete Toolset selection; omitted entries inherit. An explicit `enabled=false` disables the Toolset and preserves its submitted child settings. Null Toolset entries are invalid. Active Provider/resource references are revalidated with override authority. `reviewer` uses whole-value replacement: absence inherits and null clears it only when no active Tool resolves to review.
+Each supplied `toolsets` entry replaces that complete Toolset selection; omitted entries inherit. An explicit `enabled=false` disables the Toolset and preserves its submitted child settings. Null Toolset entries are invalid. Active Provider/resource references are revalidated with override authority. `reviewer` uses whole-value replacement: absence inherits and null clears it; an active Tool resolving to review without a reviewer adds no reviewer restriction.
 
 `subagents` remains a name-keyed patch: an absent map inherits, explicit null clears all entries, an empty object changes nothing, and a mapped null deletes one entry. Its entries select managed Agents only.
 

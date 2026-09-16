@@ -40,7 +40,7 @@ async def official_openai(request):
 
 
 async def test_official_provider_discovery_and_model_test(official_openai):
-    await direct_model.check_provider_discovery_and_model_test(official_openai)
+    await direct_model.check_provider_connection_and_model_test(official_openai)
 
 
 async def test_official_stream_usage_and_continuation(official_openai):

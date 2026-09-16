@@ -156,7 +156,9 @@ def test_linux_gate_rejects_failed_classification(result: str) -> None:
     "paths,expected",
     [
         (["frontend/apps/a13n-console/src/features/traces/detail.tsx"], {"frontend"}),
-        (["sdk/typescript/src/client.ts"], {"frontend"}),
+        (["frontend/apps/a13n-console/src/service-client/client.ts"], {"frontend"}),
+        (["proto/a13n-service/openapi.json"], {"frontend"}),
+        (["sdk/typescript/src/client.ts"], set()),
         (["frontend/apps/a13n-harness-ui/src/shell/workbench.tsx"], {"distribution"}),
         (["frontend/apps/a13n-harness-ui/src/openapi.json"], {"distribution"}),
         (["frontend/packages/a13n-ui/src/components/button.tsx"], {"frontend", "distribution"}),

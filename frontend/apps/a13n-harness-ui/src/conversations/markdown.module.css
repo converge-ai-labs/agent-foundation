@@ -1,0 +1,203 @@
+.markdown {
+  min-width: 0;
+  font-size: 15px;
+  line-height: 1.75;
+  overflow-wrap: anywhere;
+}
+.markdown > :first-child {
+  margin-top: 0;
+}
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+.markdown p {
+  margin: 0 0 12px;
+  font-size: inherit;
+  line-height: inherit;
+  color: inherit;
+}
+.markdown ul,
+.markdown ol {
+  padding-left: 24px;
+  margin-block: 12px;
+}
+.markdown li {
+  margin: 4px 0;
+}
+.markdown li > p {
+  margin-bottom: 6px;
+}
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  font-weight: 500;
+  line-height: 1.4;
+  margin: 24px 0 12px;
+  color: var(--a13n-text);
+}
+.markdown h1 {
+  font-size: 23px;
+}
+.markdown h2 {
+  font-size: 20px;
+}
+.markdown h3 {
+  font-size: 17px;
+}
+.markdown h4,
+.markdown h5,
+.markdown h6 {
+  font-size: 15px;
+}
+.markdown code {
+  font-family: var(--a13n-mono);
+  font-size: 0.86em;
+}
+.markdown :not(pre) > code {
+  padding: 2px 5px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--a13n-secondary) 9%, transparent);
+}
+.markdown pre {
+  margin: 0;
+  padding: 14px 16px;
+  max-height: 440px;
+  overflow: auto;
+  white-space: pre;
+  overflow-wrap: normal;
+  font-family: var(--a13n-mono);
+  font-size: 13px;
+  line-height: 1.65;
+  tab-size: 2;
+}
+.markdown pre code {
+  font-size: inherit;
+}
+.codeBlock {
+  margin: 16px 0;
+  min-width: 0;
+  overflow: hidden;
+  background: var(--a13n-surface);
+  border: 1px solid var(--a13n-border);
+  border-radius: 10px;
+}
+.codeHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 38px;
+  padding: 2px 8px 2px 16px;
+  border-bottom: 1px solid var(--a13n-border);
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.codeHeader button,
+.diagramActions button {
+  color: var(--a13n-secondary);
+  font-weight: 400;
+}
+.diagramActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 6px 8px 0;
+}
+.diagramCanvas {
+  display: flex;
+  justify-content: center;
+  padding: 16px 24px 24px;
+  overflow: auto;
+  max-height: 480px;
+}
+.diagramCanvas img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  object-fit: contain;
+}
+.markdown .diagramStatus {
+  margin: 0;
+  padding: 10px 16px;
+  color: var(--a13n-secondary);
+  font-size: 12px;
+}
+.tableScroll {
+  max-width: 100%;
+  overflow: auto;
+  margin: 18px 0;
+  border: 1px solid var(--a13n-border);
+  border-radius: 10px;
+  scrollbar-width: thin;
+}
+.tableScroll:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+.markdown table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  line-height: 1.6;
+  font-variant-numeric: tabular-nums;
+}
+.markdown th,
+.markdown td {
+  padding: 10px 14px;
+  vertical-align: top;
+  min-width: 100px;
+}
+.markdown th {
+  text-align: left;
+  font-weight: 500;
+  color: var(--a13n-text);
+  background: var(--a13n-surface);
+  white-space: nowrap;
+}
+.markdown td {
+  border-top: 1px solid var(--a13n-border);
+}
+.markdown tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--a13n-surface) 40%, transparent);
+}
+.markdown a {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+}
+.markdown a:hover {
+  text-decoration-color: currentColor;
+}
+.markdown blockquote {
+  border-left: 3px solid var(--a13n-border);
+  margin: 16px 0;
+  padding: 4px 0 4px 16px;
+  color: var(--a13n-text-supporting);
+}
+.markdown blockquote > :last-child {
+  margin-bottom: 0;
+}
+.markdown hr {
+  border: 0;
+  border-top: 1px solid var(--a13n-border);
+  margin: 24px 0;
+}
+.markdown input[type="checkbox"] {
+  margin-right: 6px;
+  accent-color: var(--a13n-secondary);
+}
+@media (max-width: 600px) {
+  .markdown {
+    font-size: 14px;
+  }
+  .markdown th,
+  .markdown td {
+    padding: 8px 10px;
+  }
+  .diagramCanvas {
+    padding: 12px;
+  }
+}

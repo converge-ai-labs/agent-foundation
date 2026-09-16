@@ -253,6 +253,12 @@ These are all schema-listed operations; the grouped table preserves method disti
 
 `GET /api/openapi.json`, `/healthz`, `/readyz`, and static navigation/assets are additional non-schema-listed boundaries. Serving an application shell at a recognized browser route does not implement that screen. `features.host_files` is true only when the App was opened with native sharing enabled. `features.host_git` is true when sharing is enabled and a Git executable is discoverable. `features.host_terminal` reports native POSIX terminal availability. `features.shared_drafts` reports the in-memory shared composer protocol. `features.page_presence` and `features.output_comments` report transient page awareness and durable saved-output comments, independently of native sharing. These backend features do not imply browser panels exist.
 
+## Skill catalogs and references
+
+`POST /api/threads/skills-preview` accepts `NewThreadDefaults` and returns a `SkillCatalogView` without creating a Thread. `GET /api/threads/{thread_id}/skills` returns the idle Thread's next-Run catalog or the active Run's pinned catalog. Items expose `item_id`, `name`, `description`, `source_id`, and `logical_path`; the response includes `catalog_id` and `context_kind`.
+
+Submit and root steer accept an optional `skill_references` array (at most 512 entries), each with `catalog_id`, `item_id`, and `name`. The App validates these references before admission. Old-catalog references resolve by name; references claiming the applicable catalog must match its item identity. Missing, ambiguous, or duplicate references reject input. Keep `$name` in the ordinary prompt or ordered text parts; the references do not expand Skill bytes or grant permissions. Omitting this field preserves existing input behavior.
+
 ## Native Git Changes
 
 Git Changes is read-only and uses the same computer-sharing gate as Files. Paths identify the server/container checkout, not the Agent's selected Environment. Disabling sharing returns `403 host_git_disabled`, including for direct App calls. A missing executable returns `503 host_git_unavailable` without disabling Files; repository errors are not reported as a clean worktree.

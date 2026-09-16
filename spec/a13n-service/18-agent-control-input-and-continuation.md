@@ -334,6 +334,8 @@ The same acceptance transaction binds every still-pending Thread-inbox delivery 
 
 On first execution, Service passes the complete normalized resolutions as `DeferredToolResume` and the accepted `AgentInput` as ordinary input to the same first model request. The first checkpoint that marks the composite Run input `applied` proves both values crossed the Harness input boundary together and that the isolated request reached the complete first-request hook boundary. A crash before that checkpoint replays both; recovery from an applied checkpoint supplies neither again.
 
+For `ask_user_question`, the pending presentation includes the validated question text, headers, options and multi-select flags. Feedback is validated against the sealed native request before a successor Run is accepted. Structured responses use the Harness question-answer envelope; plain text from older clients or retained Runs is normalized to a general `response` before native resume. Invalid answers are rejected as invalid feedback without advancing the Thread.
+
 ### Harness Mapping
 
 The Worker maps the accepted batch by owning boundary:

@@ -23,11 +23,22 @@ def test_reply_brief_is_actual_prose_not_heading_code_or_markdown() -> None:
         reply_brief(
             "# Done\n\n```python\nsecret = 1\n```\n\nFixed **the list**. See [tests](https://example.invalid).\n\nMore."
         )
-        == "Fixed the list. See tests."
+        == "Fixed the list. See tests. More."
     )
     assert reply_brief("# Done\n\n```python\nunfinished") == ""
-    assert reply_brief("已修复列表闪动。\n\n测试通过。") == "已修复列表闪动。"
+    assert reply_brief("已修复列表闪动。\n\n测试通过。") == "已修复列表闪动。 测试通过。"
     assert len(reply_brief("x" * 1000)) == 320
+
+
+def test_reply_brief_includes_details_after_a_short_introduction() -> None:
+    assert (
+        reply_brief(
+            "已同步最新代码\N{FULLWIDTH COLON}\n\n- `main` 已快进更新至 `origin/main`。\n- 工作区**干净**。\n\n未运行测试。"
+        )
+        == "已同步最新代码\N{FULLWIDTH COLON} main 已快进更新至 origin/main。 工作区干净。 未运行测试。"
+    )
+    assert reply_brief("Done:\r\n\r\n1. Updated files.\r\n2. Tests passed.") == "Done: Updated files. Tests passed."
+    assert reply_brief("Done.\n\n```text\nnot a preview\n```\n\nTests passed.") == "Done. Tests passed."
 
 
 @pytest.mark.anyio

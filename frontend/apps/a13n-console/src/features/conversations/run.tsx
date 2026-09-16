@@ -29,7 +29,6 @@ import { HistoryTranscript } from "./history";
 import { InputContent, PresentedItems } from "./items";
 import { useLiveRun } from "./live";
 import { MarkdownContent } from "../../shared/markdown";
-import { PendingFeedback } from "./pending";
 import { useAgent } from "../agents/queries";
 import { useRun } from "./queries";
 import { ThreadQueue } from "./queue";
@@ -256,18 +255,22 @@ export function RunContent({
       {waiting && run.sealed_state_digest_sha256 && (
         <>
           <ErrorNotice error={pending.error} />
-          {pending.data &&
-            (configuration ? (
-              <ConfigurationFeedback
-                key={run.sealed_state_digest_sha256}
-                run={run}
-                thread={thread}
-                actions={pending.data.items}
-                accepted={configuration.accepted}
-              />
-            ) : (
-              <PendingFeedback actions={pending.data.items} />
-            ))}
+          {pending.data && (
+            <ConfigurationFeedback
+              key={run.sealed_state_digest_sha256}
+              run={run}
+              thread={thread}
+              actions={pending.data.items}
+              accepted={(receipt) => {
+                configuration?.accepted(receipt);
+                void invalidateConversation(cache, workspace.id, {
+                  sessionId,
+                  threadId,
+                  runId,
+                });
+              }}
+            />
+          )}
           {configuration && can("run.continue") && can("run.feedback") && (
             <ContinueWithoutFeedback
               run={run}
@@ -280,6 +283,7 @@ export function RunContent({
       {!following && (
         <Button
           className={styles.jumpToLatest}
+          data-external-composer={configuration?.composer === null || undefined}
           size="sm"
           variant="outline"
           onClick={() => {
@@ -312,7 +316,10 @@ export function RunContent({
           </Button>
         )}
       {((current && active && can("run.interrupt")) || !current) && (
-        <div className={styles.composerDock}>
+        <div
+          className={styles.composerDock}
+          data-floating-controls={(current && active) || undefined}
+        >
           {current && active && can("run.interrupt") && (
             <div className={styles.dockControls}>
               <Button

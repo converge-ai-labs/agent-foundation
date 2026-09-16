@@ -86,7 +86,7 @@ async def test_authentication_mode_and_header_rotation_reach_all_operations(mode
         headers={"x-team": "retained", "x-gateway-key": "initial"},
     )
     provider_path = journey.base + "/model-providers/" + case["provider"]["id"]
-    for action in ["test", "discover-models"]:
+    for action in ["test"]:
         await journey.post(provider_path + "/" + action, {}, expected=200)
     await journey.invoke(case)
 

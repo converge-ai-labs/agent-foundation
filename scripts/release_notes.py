@@ -15,11 +15,6 @@ TAG_PREFIXES = {
     "a13n-logging": "release/a13n-logging-v",
     "a13n-service": "release/a13n-service-v",
     "a13n-envd": "release/a13n-envd-v",
-    "a13n-service-cli": "release/a13n-service-cli-v",
-    "a13n-python": "release/a13n/python/",
-    "a13n-go": "release/a13n/go/",
-    "a13n-rust": "release/a13n/rust/",
-    "a13n-typescript": "release/a13n/typescript/",
 }
 INITIAL_NOTES = {
     "a13n-harness": "Initial release for a13n Harness libraries.",
@@ -27,11 +22,6 @@ INITIAL_NOTES = {
     "a13n-logging": "Initial release for a13n Logging.",
     "a13n-service": "Initial release for a13n Service.",
     "a13n-envd": "Initial release for a13n-envd.",
-    "a13n-service-cli": "Initial release for the a13n Service CLI.",
-    "a13n-python": "Initial release for the a13n SDK for Python.",
-    "a13n-go": "Initial release for the a13n SDK for Go.",
-    "a13n-rust": "Initial release for the a13n SDK for Rust.",
-    "a13n-typescript": "Initial release for the a13n SDK for TypeScript.",
 }
 RELEASE_NOTES_DIRECTORY = Path(".github/release-notes")
 
@@ -58,6 +48,7 @@ COMPONENT_PATHS = {
     "a13n-logging": ("packages/a13n-logging",),
     "a13n-service": (
         "packages/a13n-service",
+        "proto/a13n-service",
         "frontend/apps/a13n-console",
         "frontend/packages/a13n-ui",
         "deploy/containers/a13n-service",
@@ -65,18 +56,13 @@ COMPONENT_PATHS = {
     "a13n-envd": (
         "crates/a13n-envd",
         "packages/a13n-envd-client",
-        "proto",
+        "proto/a13n-envd",
         "Cargo.toml",
         "Cargo.lock",
         "deploy/containers/sandbox",
         "scripts/install-a13n-envd.sh",
         "scripts/install-a13n-envd.ps1",
     ),
-    "a13n-service-cli": ("sdk/rust/a13n-service-cli",),
-    "a13n-python": ("sdk/python",),
-    "a13n-go": ("sdk/go",),
-    "a13n-rust": ("sdk/rust", ":(exclude)sdk/rust/a13n-service-cli"),
-    "a13n-typescript": ("sdk/typescript",),
 }
 # Order resolves PRs carrying more than one category label.
 LABEL_CATEGORIES = {
@@ -309,8 +295,6 @@ def build_release_command(
         "--title",
         title,
     ]
-    if component == "a13n-service-cli":
-        command.append("--latest=false")
     if parse_release_version(version).is_prerelease:
         command.append("--prerelease")
     command.extend(("--notes-file", "-"))

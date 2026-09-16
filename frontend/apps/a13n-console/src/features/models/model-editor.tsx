@@ -18,7 +18,6 @@ export function ModelEditor({
   scope,
   modelId,
   providerId,
-  candidate,
   onSaved,
   controlledOpen,
   onClose,
@@ -27,7 +26,6 @@ export function ModelEditor({
   scope: ModelScope;
   modelId?: string;
   providerId?: string;
-  candidate?: Schema["ModelCandidate"];
   onSaved?: (model: Schema["Model"]) => void;
 } & ResourceEditorControl) {
   const client = useClient(),
@@ -83,7 +81,6 @@ export function ModelEditor({
               scope={scope}
               resource={modelId ? model.data : undefined}
               providerId={providerId}
-              candidate={candidate}
               onSaved={onSaved}
               close={() => setOpen(false)}
             />

@@ -1678,6 +1678,73 @@
         }
       }
     },
+    "/api/threads/skills-preview": {
+      "post": {
+        "summary": "Preview Skills",
+        "operationId": "preview_skills_api_threads_skills_preview_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/NewThreadDefaults"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillCatalogView"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/skills": {
+      "get": {
+        "summary": "Thread Skills",
+        "operationId": "thread_skills_api_threads__thread_id__skills_get",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SkillCatalogView"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/threads/{thread_id}/configuration": {
       "get": {
         "summary": "Inspect Configuration",
@@ -2755,6 +2822,26 @@
             }
           },
           {
+            "name": "archived_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Archived Only"
+            }
+          },
+          {
+            "name": "include_active",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Active"
+            }
+          },
+          {
             "name": "cursor",
             "in": "query",
             "required": false,
@@ -3267,7 +3354,8 @@
             "schema": {
               "enum": [
                 "updated",
-                "activity"
+                "activity",
+                "touched"
               ],
               "type": "string",
               "default": "updated",
@@ -3458,6 +3546,45 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TranscriptPage"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/threads/{thread_id}/touch": {
+      "post": {
+        "summary": "Touch Thread",
+        "operationId": "touch_thread_api_threads__thread_id__touch_post",
+        "parameters": [
+          {
+            "name": "thread_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Thread Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ThreadSummary"
                 }
               }
             }
@@ -9719,6 +9846,109 @@
         "title": "SidekickConfiguration",
         "description": "Instruction-guided collaboration; omitted Agent inherits the calling Agent."
       },
+      "SkillCatalogItemView": {
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Item Id"
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 16384,
+            "minLength": 1,
+            "title": "Description"
+          },
+          "source_id": {
+            "type": "string",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Source Id"
+          },
+          "logical_path": {
+            "type": "string",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Logical Path"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "item_id",
+          "name",
+          "description",
+          "source_id",
+          "logical_path"
+        ],
+        "title": "SkillCatalogItemView"
+      },
+      "SkillCatalogView": {
+        "properties": {
+          "catalog_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Catalog Id"
+          },
+          "context_kind": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "idle",
+              "active"
+            ],
+            "title": "Context Kind"
+          },
+          "thread_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Thread Id"
+          },
+          "receipt_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 128,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Receipt Id"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SkillCatalogItemView"
+            },
+            "type": "array",
+            "maxItems": 512,
+            "title": "Items"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "catalog_id",
+          "context_kind",
+          "items"
+        ],
+        "title": "SkillCatalogView"
+      },
       "StoreKind": {
         "type": "string",
         "enum": [
@@ -10231,6 +10461,14 @@
             },
             "type": "array",
             "title": "Rows"
+          },
+          "active_rows": {
+            "items": {
+              "$ref": "#/components/schemas/ThreadActivityView"
+            },
+            "type": "array",
+            "title": "Active Rows",
+            "default": []
           },
           "total": {
             "type": "integer",
@@ -10923,6 +11161,18 @@
               }
             ],
             "title": "Activity At"
+          },
+          "touched_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Touched At"
           },
           "archived": {
             "type": "boolean",
@@ -12889,6 +13139,34 @@
         "title": "InputAttachmentReference",
         "type": "object"
       },
+      "SkillReference": {
+        "additionalProperties": false,
+        "properties": {
+          "catalog_id": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Catalog Id",
+            "type": "string"
+          },
+          "item_id": {
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Item Id",
+            "type": "string"
+          },
+          "name": {
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "catalog_id",
+          "item_id",
+          "name"
+        ],
+        "title": "SkillReference",
+        "type": "object"
+      },
       "SubmitRequest": {
         "additionalProperties": false,
         "properties": {
@@ -12928,6 +13206,27 @@
               }
             ],
             "title": "Parts"
+          },
+          "skill_references": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SkillReference"
+            },
+            "maxItems": 512,
+            "title": "Skill References",
+            "type": "array"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "pattern": "^input[-_][0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
           },
           "model_id": {
             "anyOf": [
@@ -12985,6 +13284,27 @@
               }
             ],
             "title": "Parts"
+          },
+          "skill_references": {
+            "default": [],
+            "items": {
+              "$ref": "#/components/schemas/SkillReference"
+            },
+            "maxItems": 512,
+            "title": "Skill References",
+            "type": "array"
+          },
+          "source_id": {
+            "anyOf": [
+              {
+                "pattern": "^input[-_][0-9a-f]{32}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Id"
           }
         },
         "title": "RootSteerRequest",

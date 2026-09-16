@@ -1,4 +1,4 @@
-import { ApiError } from "@converge.ai/a13n";
+import { ApiError } from "../../service-client";
 import { useQuery } from "@tanstack/react-query";
 import { useClient } from "../../auth/context";
 import { data, type Schema } from "../../shared/api";

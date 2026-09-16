@@ -11,12 +11,11 @@ from pydantic_ai.providers.openai import OpenAIProvider
 
 from ..headers import HeaderName
 from .base import (
-    ModelListRequest,
+    ConnectionProbeRequest,
     ProviderIntegration,
     join_url,
     require_endpoint,
 )
-from .openai_provider import openai_style_discovery
 from .types import ProviderConfiguration, RuntimeProvider
 
 
@@ -74,14 +73,14 @@ def _build_provider(
     return OpenAIProvider(openai_client=client)
 
 
-def _request(provider: RuntimeProvider) -> ModelListRequest:
+def _request(provider: RuntimeProvider) -> ConnectionProbeRequest:
     headers: dict[str, str] = {}
     if provider.credential:
         if provider.configuration.get("auth_mode") == "api_key_header":
             headers[str(provider.configuration["api_key_header_name"])] = provider.credential
         else:
             headers["authorization"] = f"Bearer {provider.credential}"
-    return ModelListRequest(url=join_url(require_endpoint(provider), "models"), headers=headers)
+    return ConnectionProbeRequest(url=join_url(require_endpoint(provider), "models"), headers=headers)
 
 
 def _validate_credential(configuration: Mapping[str, object], configured: bool) -> None:
@@ -101,6 +100,5 @@ INTEGRATION = ProviderIntegration(
     credential_required=False,
     endpoint="https://api.openai.com/v1",
     credential_validator=_validate_credential,
-    model_discovery=openai_style_discovery(_request),
-    model_profile=OpenAIProvider.model_profile,
+    connection_probe=_request,
 )

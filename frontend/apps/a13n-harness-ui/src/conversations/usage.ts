@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useTransport } from "../transport/context";
 import { result, type Schema } from "../transport/client";
 
-export function useThreadUsage(threadId: string, active = false) {
+export function useThreadUsage(threadId: string) {
   const { client } = useTransport();
   return useQuery({
     queryKey: ["thread", threadId, "usage"],
@@ -13,10 +13,9 @@ export function useThreadUsage(threadId: string, active = false) {
           signal,
         }),
       ),
-    refetchInterval: active ? 5000 : false,
   });
 }
-export function useContextUsage(threadId: string, active = false) {
+export function useContextUsage(threadId: string) {
   const { client } = useTransport();
   return useQuery({
     queryKey: ["thread", threadId, "context-usage"],
@@ -27,7 +26,6 @@ export function useContextUsage(threadId: string, active = false) {
           signal,
         }),
       ),
-    refetchInterval: active ? 5000 : false,
   });
 }
 type ThreadUsage = NonNullable<ReturnType<typeof useThreadUsage>["data"]>;

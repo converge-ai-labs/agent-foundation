@@ -6,6 +6,7 @@ import { type Schema } from "../../shared/api";
 import { ErrorNotice, Loading } from "../../shared/feedback";
 import styles from "../../shared/shared.module.css";
 import { type ModelScope } from "./api";
+import { ProviderIcon } from "../../shared/provider-icon";
 import { ProviderForm } from "./provider-form";
 import modelStyles from "./models.module.css";
 
@@ -83,6 +84,7 @@ export function ProviderSetup({
               options: providers.map((item) => ({
                 value: item.id,
                 label: item.name,
+                icon: <ProviderIcon type={item.type} />,
                 description:
                   definitions.find(
                     (definition) => definition.type === item.type,

@@ -8,6 +8,7 @@ from . import (
     deepseek,
     google_gemini,
     google_vertex,
+    minimax,
     moonshot,
     ollama,
     openai,
@@ -28,5 +29,6 @@ BUILT_IN_PROVIDER_INTEGRATIONS: tuple[ProviderIntegration, ...] = (
     alibaba_model_studio.INTEGRATION,
     deepseek.INTEGRATION,
     moonshot.INTEGRATION,
+    minimax.INTEGRATION,
     zhipu.INTEGRATION,
 )

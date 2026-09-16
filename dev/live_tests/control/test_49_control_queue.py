@@ -79,24 +79,30 @@ async def test_queue_mutation_and_completion_handoff_use_one_committed_intent(co
         if winner == "mutation"
         else journey.arm("consumed-model", "model.request", role="control", case_id=cases[0]["case_id"], request=1)
     )
+    recovery = journey.arm("scanner", "control.queue_recovery", role="control", thread_id=source["thread_id"])
     journey.release(model)
     hit = await journey.reached(handoff)
     before = await live.thread(source["thread_id"])
     key = uuid4().hex
-    response = await live.http.request(method, path, json=body, headers={"Idempotency-Key": key})
-    assert response.status_code == (200 if winner == "mutation" else 409), response.text
+    payload = {"params": body} if method == "DELETE" else {"json": body}
+    response = await live.http.request(method, path, **payload, headers={"Idempotency-Key": key})
+    success = 204 if method == "DELETE" else 200
+    assert response.status_code == (success if winner == "mutation" else 409), response.text
     if winner == "mutation":
         after = await live.thread(source["thread_id"])
         assert after["version"] == before["version"] and after["current_run_id"] == source["run_id"]
         assert after["queue_version"] == before["queue_version"] + 1
-        replay = await live.http.request(method, path, json=body, headers={"Idempotency-Key": key})
-        assert replay.status_code == 200 and replay.json() == response.json()
+        replay = await live.http.request(method, path, **payload, headers={"Idempotency-Key": key})
+        assert replay.status_code == success and replay.content == response.content
+        if method == "DELETE":
+            assert response.content == b""
         assert (await live.http.get(f"/api/v1/runs/{hit['successor_run_id']}")).status_code == 404
     else:
         assert await live.thread(source["thread_id"]) == before
         consumed = await journey.queue_row(rows[0])
         assert consumed["state"] == "consumed" and consumed["consumed_run_id"] == before["current_run_id"]
     journey.release(handoff)
+    journey.release(recovery)
     parent = await live.finish(source["run_id"])
     expected = list(zip(rows, cases, strict=True))
     if winner == "mutation":
@@ -200,7 +206,8 @@ async def test_queue_stale_versions_and_invalid_reorders_leave_intent_unchanged(
         ("PATCH", {"expected_version": rows[0]["version"] + 1, "submission": rows[0]["submission"]}),
         ("DELETE", {"expected_version": rows[0]["version"] + 1}),
     ]:
-        await live.request(method, path, expected=409, json=body, headers={"Idempotency-Key": uuid4().hex})
+        payload = {"params": body} if method == "DELETE" else {"json": body}
+        await live.request(method, path, expected=409, **payload, headers={"Idempotency-Key": uuid4().hex})
     reorder = f"/api/v1/threads/{waiting['thread_id']}/queued-submissions/reorder"
     for ids, version, status in [
         ([row["queued_submission_id"] for row in rows], thread["queue_version"] + 1, 409),

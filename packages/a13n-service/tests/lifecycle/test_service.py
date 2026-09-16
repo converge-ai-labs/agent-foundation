@@ -254,3 +254,7 @@ async def test_run_attempt_lifecycle_resolves_authority_through_owning_run(
     assert page.resource_type == "run_attempt"
     assert [event.event_type for event in page.items] == ["run_attempt.leased"]
     assert page.high_watermark_resource_seq == 1
+
+    assert page.items[0].actor_id is None
+    assert "worker_id" not in page.items[0].payload
+    assert page.items[0].payload["worker_build_id"] == "build-1"

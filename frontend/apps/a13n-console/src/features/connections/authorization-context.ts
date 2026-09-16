@@ -1,4 +1,4 @@
-import type { Client } from "@converge.ai/a13n";
+import type { Client } from "../../service-client";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import { authorizationHref } from "../../shared/authorization-link";
 

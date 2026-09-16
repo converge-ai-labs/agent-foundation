@@ -13,14 +13,18 @@ from a13n_service.hooks.models import HookSubscriptionRecord, HookSubscriptionRe
 from a13n_service.hooks.outbox import (
     claim_webhook_deliveries,
 )
-from a13n_service.hooks.persistence import create_hook_subscription
+from a13n_service.hooks.persistence import create_hook_subscription, write_hook_lifecycle
 from a13n_service.hooks.publisher import WebhookPublisher
 from a13n_service.interactions.models import RunRecord
+from a13n_service.lifecycle.domain import LifecycleEventDraft
+from a13n_service.lifecycle.models import LifecycleEventRecord
+from a13n_service.lifecycle.persistence import append_lifecycle_event
 from a13n_service.secrets import SecretProtector
 from a13n_service.secrets.models import SecretRecord
 from a13n_service.settings import Settings
 from a13n_service.storage import short_session, transaction
 from anyio import sleep
+from pydantic import JsonValue
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -66,6 +70,7 @@ async def _prepare_delivery(
     *,
     endpoint_url: str = "https://hooks.example.com/foundation",
     managed: bool = False,
+    output_reference: dict[str, JsonValue] | None = None,
 ) -> tuple[str, str, SecretProtector]:
     await seed_run_and_secret(sessions)
     protector = SecretProtector(key=b"0123456789abcdef0123456789abcdef", encryption_key_id="key-v1")
@@ -95,7 +100,7 @@ async def _prepare_delivery(
             actor_type="user",
             actor_id=USER_ID,
             subscription=InlineHookSubscriptionInput(
-                hook_names=("run.accepted",),
+                hook_names=("run.accepted" if output_reference is None else "run.completed",),
                 webhook=WebhookDestinationConfig(
                     endpoint_url=endpoint_url,
                     signing_secret_id=SECRET_ID,
@@ -103,15 +108,36 @@ async def _prepare_delivery(
             ).bind_run_scope(session_id=SESSION_ID, thread_id=THREAD_ID, run_id=RUN_ID),
             now=NOW,
         )
-        await test_lifecycle_writer().append_run_lifecycle(
-            database,
-            run,
-            "run.accepted",
-            mutation_id="mut_8181818181818181",
-            occurred_at=NOW,
-            actor_type="user",
-            actor_id=USER_ID,
-        )
+        if output_reference is None:
+            await test_lifecycle_writer().append_run_lifecycle(
+                database,
+                run,
+                "run.accepted",
+                mutation_id="mut_8181818181818181",
+                occurred_at=NOW,
+                actor_type="user",
+                actor_id=USER_ID,
+            )
+        else:
+            event = await append_lifecycle_event(
+                database,
+                LifecycleEventDraft(
+                    organization_id=ORGANIZATION_ID,
+                    entity_type="run",
+                    entity_id=RUN_ID,
+                    entity_version=run.version,
+                    event_type="run.completed",
+                    mutation_id="mut_8181818181818181",
+                    session_id=SESSION_ID,
+                    thread_id=THREAD_ID,
+                    run_id=RUN_ID,
+                    actor_type="worker",
+                    actor_id="wrk_private",
+                    occurred_at=NOW,
+                    payload={"output_object": output_reference},
+                ),
+            )
+            await write_hook_lifecycle(database, event)
         revision_id = subscription.current_revision_id
     async with short_session(sessions) as database:
         delivery_id = await database.scalar(select(OutboxRecord.id))
@@ -473,3 +499,29 @@ async def test_postgresql_reclaim_fences_stale_publisher(
     async with transaction(hook_interaction_sessions) as database:
         assert not await complete_outbox(database, first, completed_at=reclaimed_at)
         assert await complete_outbox(database, second, completed_at=reclaimed_at)
+
+
+async def test_webhook_delivery_omits_legacy_output_storage_locator(
+    hook_interaction_sessions: async_sessionmaker[AsyncSession],
+) -> None:
+    delivery_id, _, protector = await _prepare_delivery(
+        hook_interaction_sessions,
+        output_reference={"object_key": "private/output.json", "size_bytes": 256},
+    )
+    requests = []
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        return httpx2.Response(204)
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as client:
+        publisher = WebhookPublisher(hook_interaction_sessions, client, _AllowEndpoint(), protector, clock=_Clock())
+        assert await publisher.publish_once() == 1
+    assert len(requests) == 1
+    body = json.loads(requests[0].content)
+    assert body["delivery_id"] == delivery_id
+    assert body["payload"] == {"output_object": {"size_bytes": 256}}
+    assert b"private/output.json" not in requests[0].content
+    async with short_session(hook_interaction_sessions) as database:
+        record = await database.scalar(select(LifecycleEventRecord))
+        assert record.payload["output_object"]["object_key"] == "private/output.json"

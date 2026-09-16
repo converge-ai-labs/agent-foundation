@@ -1,4 +1,4 @@
-import type { Client } from "@converge.ai/a13n";
+import type { Client } from "../../service-client";
 import { representation, workspaceHeaders } from "../../shared/api";
 
 export function changeAgentImage(

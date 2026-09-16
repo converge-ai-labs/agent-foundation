@@ -1,4 +1,4 @@
-import { ApiError } from "@converge.ai/a13n";
+import { ApiError } from "../../service-client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   cleanup,
@@ -12,7 +12,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { MemoryContents } from "./contents";
 import { memoryApi, memoryKey, type MemoryTarget } from "./api";
 import { MemoryRecordEditor } from "./record-editor";
-import type { Client } from "@converge.ai/a13n";
+import type { Client } from "../../service-client";
 
 const http = vi.hoisted(() => ({
   GET: vi.fn(),

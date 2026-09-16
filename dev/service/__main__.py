@@ -5,16 +5,25 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import signal
 import socket
 import subprocess
 import sys
 import time
+import traceback
 from dataclasses import asdict
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from .instance import Instance, ensure_instance, load_instance
-from .lifecycle import ProcessSpec, inherited_lifecycle_lock, lifecycle_lock, supervise
+from .lifecycle import (
+    ProcessSpec,
+    background_applications,
+    inherited_lifecycle_lock,
+    lifecycle_lock,
+    stop_background_applications,
+    supervise,
+)
 from .preparation import prepare
 
 if TYPE_CHECKING:
@@ -28,6 +37,7 @@ LOCAL_MEM0_CONFIG = ROOT / "dev/mem0/local.toml"
 LOCKED_COMMANDS = {"dev", "service-dev", "setup", "down", "reset", "mem0"}
 LISTENER_COMMANDS = {"dev", "service-dev", "setup"}
 CHILD_OWNER = "A13N_DEV_CHILD_OWNER"
+APPLICATION_LOG = Path("var/dev/applications.log")
 
 
 def check_ports(instance: Instance, *, console: bool = False) -> None:
@@ -117,7 +127,7 @@ def _console(environment: Environment) -> None:
     )
 
 
-def _run_dev(environment: Environment, config: Path, mem0_config: Path) -> None:
+def _run_dev(environment: Environment, config: Path, mem0_config: Path, *, detached: bool = False) -> None:
     owner = str(os.getpid())
     command = [
         sys.executable,
@@ -131,7 +141,10 @@ def _run_dev(environment: Environment, config: Path, mem0_config: Path) -> None:
         str(mem0_config),
     ]
     child_environment = {**os.environ, CHILD_OWNER: owner}
-    print("Starting a13n Service and Console. Press Ctrl+C to stop both.", flush=True)
+    if detached:
+        print("Starting detached a13n Service and Console.", flush=True)
+    else:
+        print("Starting a13n Service and Console. Press Ctrl+C to stop both.", flush=True)
     signum = supervise(
         ROOT,
         (
@@ -141,6 +154,57 @@ def _run_dev(environment: Environment, config: Path, mem0_config: Path) -> None:
     )
     if signum is not None:
         raise SystemExit(128 + signum)
+
+
+def _wait_for_background_start(pid: int, environment: Environment, log: Path) -> None:
+    ports = (environment.ports.service, environment.ports.model, environment.ports.console)
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
+        exited, status = os.waitpid(pid, os.WNOHANG)
+        if exited:
+            raise RuntimeError(f"Detached development applications exited during startup (status {status}); see {log}")
+        if all(_port_in_use(port) for port in ports):
+            print(f"Development applications are running in the background. Logs: {log}")
+            print(f"Stop them with make dev-stop. Console: http://127.0.0.1:{environment.ports.console}")
+            return
+        time.sleep(0.1)
+    os.kill(pid, signal.SIGTERM)
+    os.waitpid(pid, 0)
+    raise RuntimeError(f"Timed out starting detached development applications; see {log}")
+
+
+def _run_detached(environment: Environment, config: Path, mem0_config: Path) -> None:
+    log = environment.root / APPLICATION_LOG
+    log.parent.mkdir(parents=True, exist_ok=True)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    pid = os.fork()
+    if pid:
+        _wait_for_background_start(pid, environment, log)
+        return
+
+    status = 0
+    try:
+        os.setsid()
+        signal.signal(signal.SIGHUP, signal.SIG_IGN)
+        input_fd = os.open(os.devnull, os.O_RDONLY)
+        log_fd = os.open(log, os.O_CREAT | os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW, 0o600)
+        try:
+            os.dup2(input_fd, sys.stdin.fileno())
+            os.dup2(log_fd, sys.stdout.fileno())
+            os.dup2(log_fd, sys.stderr.fileno())
+        finally:
+            os.close(input_fd)
+            os.close(log_fd)
+        with background_applications(environment.root):
+            _run_dev(environment, config, mem0_config, detached=True)
+    except SystemExit as error:
+        status = error.code if isinstance(error.code, int) else 1
+    except BaseException:
+        traceback.print_exc()
+        status = 1
+    finally:
+        os._exit(status)
 
 
 def _port_in_use(port: int) -> bool:
@@ -181,7 +245,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--prepared-fd", type=int, help=argparse.SUPPRESS)
     parser.add_argument("--instance-root", type=Path, help=argparse.SUPPRESS)
     commands = parser.add_subparsers(dest="command", required=True)
-    for command in ("dev", "service-dev", "setup", "status", "down", "check-ports"):
+    command = commands.add_parser("dev")
+    command.add_argument("--foreground", action="store_true")
+    for command in ("service-dev", "setup", "status", "stop", "down", "check-ports"):
         commands.add_parser(command)
     command = commands.add_parser("reset")
     command.add_argument("state", choices=("empty", "seeded"))
@@ -236,7 +302,10 @@ def _run_prepared(args: argparse.Namespace, root: Path) -> None:
     if args.command in {"dev", "service-dev", "setup"}:
         setup(environment, langfuse, args.config, mem0_settings=mem0_settings)
     if args.command == "dev":
-        _run_dev(environment, args.config, args.mem0_config)
+        if args.foreground:
+            _run_dev(environment, args.config, args.mem0_config)
+        else:
+            _run_detached(environment, args.config, args.mem0_config)
     elif args.command == "service-dev":
         _serve(environment, langfuse)
     elif args.command == "reset":
@@ -277,6 +346,12 @@ def main(*, instance_root: Path = ROOT) -> None:
     try:
         if args.command == "status":
             _status(root)
+            return
+        if args.command == "stop":
+            if stop_background_applications(root):
+                print("Stopped detached development applications.")
+            else:
+                print("Detached development applications are not running.")
             return
         if args.command == "check-ports":
             check_ports(ensure_instance(root), console=True)

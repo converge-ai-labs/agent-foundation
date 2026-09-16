@@ -59,7 +59,7 @@ Facts carry identity, resource version, mutation correlation, timestamps, and bo
 
 The endpoint is `/api/v1/notifications` with subprotocol `a13n.service.notifications.v1`. It is a best-effort attachment, not a replacement for durable event pagination. Subscription schemas are included in the [Native contract asset](../assets/reference/service-openapi.json), even though WebSocket traffic is not an HTTP operation in OpenAPI.
 
-Browser clients use the authorized session and origin. Application clients need a WebSocket implementation that can attach the authorization header. Never put credentials in a URL or subprotocol. The [TypeScript helper](sdks.md#stream-and-notification-lifetimes) sends the subscription handshake, acknowledges heartbeats, and exposes connection/gap state.
+Browser clients use the authorized session and origin. Application clients need a WebSocket implementation that can attach the authorization header. Never put credentials in a URL or subprotocol. For language-specific subscription and connection helpers, use the documentation in the [SDK repositories](sdks.md).
 
 On a gap or reconnect, reconcile durable events and current resources. Changing subscriptions means closing the old attachment and opening a new one. A successful WebSocket connection does not grant authority beyond the credential's current boundary.
 

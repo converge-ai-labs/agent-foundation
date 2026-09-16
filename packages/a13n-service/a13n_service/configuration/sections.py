@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from enum import StrEnum
 from pathlib import Path
 from typing import Literal, Self
@@ -47,6 +47,10 @@ class Section(BaseModel):
 
 class MemorySettings(Section):
     timeout_seconds: float = Field(default=30, gt=0, le=300)
+
+
+class ConfigurationAssistantSettings(Section):
+    total_tokens_limit: int | None = Field(default=None, ge=1)
 
 
 class ObservabilityQuerySettings(Section):
@@ -150,6 +154,7 @@ class DatabaseSettings(PostgreSQLConfig):
 
 
 class ModelsSettings(Section):
+    catalog_released_since: date = date(2026, 4, 23)
     private_endpoint_domains: tuple[str, ...] = ()
     private_endpoint_cidrs: tuple[str, ...] = ()
     resolve_dns_on_save: bool = True

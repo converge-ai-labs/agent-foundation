@@ -58,7 +58,7 @@ export function NativeWorkspace({
   const thread = useThread(threadId ?? "");
   const isNew =
     location.pathname === "/" ||
-    !!matchPath("/new/:draftId", location.pathname);
+    !!matchPath("/new/:draftId?", location.pathname);
   const isWorkspace = location.pathname === "/" || !!threadId || isNew;
   const projectLoading = !!threadId && (thread.isPending || projects.isPending);
   const resolvedProject = projects.data?.find(
@@ -363,7 +363,9 @@ export function NativeWorkspace({
               "Untitled conversation"
             : isWorkspace
               ? "New conversation"
-              : "Settings"}
+              : location.pathname === "/archived"
+                ? "Archived conversations"
+                : "Settings"}
         </h1>
         {isWorkspace && (
           <div className={styles.panelTools} aria-label="Workbench views">

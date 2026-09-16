@@ -93,6 +93,8 @@ class ConfigurationReadiness:
                 return AssistantReadiness(
                     ready=False, reason_code="provider_setup_required", setup_actions=actions, setup_url=setup_url
                 )
+            setup_url = f"/workspace/{quote(workspace.key, safe='')}/models"
+            actions = ("configure_model",) if can_manage else ("contact_administrator",)
             records = tuple(
                 await session.scalars(
                     select(ModelRecord).where(
@@ -155,14 +157,10 @@ def select_candidate(model: Model, *, definition: AssistantDefinition) -> tuple[
     if model.declarations.supports_tools is False:
         return None
     for index, preference in enumerate(definition.preferences):
-        if model.upstream_model not in preference.upstream_models:
+        identity = model.catalog_ref.model if model.catalog_ref is not None else model.upstream_model
+        if identity not in preference.upstream_models:
             continue
         if model.model_api not in preference.model_apis:
-            return None
-        if (
-            preference.required_thinking_effort is not None
-            and preference.required_thinking_effort not in model.declarations.thinking_efforts
-        ):
             return None
         return index, preference.settings, preference.family
     if model.declarations.supports_tools is True:

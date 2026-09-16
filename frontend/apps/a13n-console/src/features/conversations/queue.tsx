@@ -233,23 +233,21 @@ export function ThreadQueue({
                     trigger={t("Delete")}
                     danger
                     action={() =>
-                      client.http
-                        .DELETE(
-                          "/api/v1/queued-submissions/{queued_submission_id}",
-                          {
-                            params: {
-                              path: {
-                                queued_submission_id: item.queued_submission_id,
-                              },
-                              header: commandHeaders(
-                                workspace.id,
-                                crypto.randomUUID(),
-                              ),
+                      client.http.DELETE(
+                        "/api/v1/queued-submissions/{queued_submission_id}",
+                        {
+                          params: {
+                            path: {
+                              queued_submission_id: item.queued_submission_id,
                             },
-                            body: { expected_version: item.version },
+                            query: { expected_version: item.version },
+                            header: commandHeaders(
+                              workspace.id,
+                              crypto.randomUUID(),
+                            ),
                           },
-                        )
-                        .then(data)
+                        },
+                      )
                     }
                   />
                 )}

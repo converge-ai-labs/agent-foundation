@@ -1,3 +1,10 @@
+import {
+  SparkleIcon,
+  InfoIcon,
+  ChatsCircleIcon,
+  GitBranchIcon,
+  SidebarSimpleIcon,
+} from "@phosphor-icons/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, ModalFrame } from "a13n-ui";
 import { useState } from "react";
@@ -143,42 +150,63 @@ function ConfigurationConversation({ threadId }: { threadId: string }) {
   return (
     <div className={styles.workspace}>
       <header className={styles.header}>
-        <h1>{t("Configuration assistant")}</h1>
-        <nav aria-label={t("Configuration conversations")}>
-          <Link to={`${basePath}/configuration/new`}>
+        <h1>
+          <SparkleIcon size={20} aria-hidden="true" />
+          {t("Configuration assistant")}
+        </h1>
+        <nav
+          className={styles.conversationNav}
+          aria-label={t("Configuration conversations")}
+        >
+          <Link
+            className={styles.historyLink}
+            to={`${basePath}/configuration/new`}
+          >
+            <ChatsCircleIcon size={16} aria-hidden="true" />
             {t("Your conversations")}
           </Link>
-          {branches.data?.items.map((branch, index) => (
-            <Link
-              key={branch.thread.id}
-              aria-current={branch.thread.id === threadId ? "page" : undefined}
-              to={`${basePath}/configuration-threads/${branch.thread.id}`}
-            >
-              {t("Thread")} {index + 1}
-            </Link>
-          ))}
+          <span className={styles.navDivider} aria-hidden="true" />
+          <div className={`${styles.threadLinks} a13n-scrollbar`}>
+            {branches.data?.items.map((branch, index) => (
+              <Link
+                key={branch.thread.id}
+                aria-current={
+                  branch.thread.id === threadId ? "page" : undefined
+                }
+                to={`${basePath}/configuration-threads/${branch.thread.id}`}
+              >
+                <GitBranchIcon size={15} aria-hidden="true" />
+                {t("Thread")} {index + 1}
+              </Link>
+            ))}
+          </div>
         </nav>
-        {runId && (
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setInspectorOpen(true)}
-          >
-            {t("Run details")}
-          </Button>
-        )}
-        {run.data?.status === "completed" && (
-          <Button
-            variant="outline"
-            size="sm"
-            loading={fork.isPending}
-            onClick={() => fork.mutate()}
-          >
-            {t("Fork conversation")}
-          </Button>
-        )}
+        <div className={styles.headerActions}>
+          {runId && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setInspectorOpen(true)}
+            >
+              <SidebarSimpleIcon size={16} aria-hidden="true" />
+              {t("Run details")}
+            </Button>
+          )}
+          {run.data?.status === "completed" && (
+            <Button
+              variant="outline"
+              size="sm"
+              loading={fork.isPending}
+              onClick={() => fork.mutate()}
+            >
+              <GitBranchIcon size={16} aria-hidden="true" />
+              {t("Fork conversation")}
+            </Button>
+          )}
+        </div>
       </header>
-      <p className={styles.notice}>
+      <p className={styles.threadNotice}>
+        <InfoIcon size={16} aria-hidden="true" />
         {t(
           "All threads in this conversation edit the same draft. Start a new conversation for an independent candidate.",
         )}
@@ -196,33 +224,43 @@ function ConfigurationConversation({ threadId }: { threadId: string }) {
         )}
       </ModalFrame>
       <div className={styles.panes}>
-        <div
-          className={`${styles.conversation} a13n-scrollbar`}
-          data-session-stage
+        <section
+          className={styles.chatPane}
+          aria-label={t("Configuration conversation")}
         >
-          {runId ? (
-            <RunContent
-              key={runId}
-              runId={runId}
-              threadId={thread.id}
-              sessionId={thread.session_id}
-              configuration={{
-                composer,
-                accepted: (receipt) => void accepted(receipt),
-              }}
-            />
-          ) : (
-            <div className={styles.empty}>
-              <h2>{t("What should this agent do?")}</h2>
-              <p>
-                {t(
-                  "Describe its purpose, expected results and any tools it needs.",
-                )}
-              </p>
-              {composer}
-            </div>
-          )}
-        </div>
+          <div
+            className={`${styles.conversation} a13n-scrollbar`}
+            data-session-stage
+          >
+            {runId ? (
+              <RunContent
+                key={runId}
+                runId={runId}
+                threadId={thread.id}
+                sessionId={thread.session_id}
+                configuration={{
+                  composer: null,
+                  accepted: (receipt) => void accepted(receipt),
+                }}
+              />
+            ) : (
+              <div className={styles.empty}>
+                <div className={styles.assistantIcon}>
+                  <SparkleIcon size={28} weight="duotone" aria-hidden="true" />
+                </div>
+                <h2>{t("What should this agent do?")}</h2>
+                <p>
+                  {t(
+                    "Describe its purpose, expected results and any tools it needs.",
+                  )}
+                </p>
+              </div>
+            )}
+          </div>
+          <div className={styles.composerDock}>
+            <div className={styles.composerInner}>{composer}</div>
+          </div>
+        </section>
         <DraftReview key={draft.id} draftId={draft.id} />
       </div>
     </div>

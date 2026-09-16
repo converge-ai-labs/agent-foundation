@@ -9,7 +9,7 @@ import {
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
-import { ApiError } from "@converge.ai/a13n";
+import { ApiError } from "../../service-client";
 
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";

@@ -131,9 +131,11 @@ it("blocks unsupported bindings and saves a declared document provider", async (
     screen.getByRole("combobox", { name: "Memory storage" }),
   );
   expect(
-    screen
-      .getByRole("option", { name: "Legacy · Document memory unsupported" })
-      .getAttribute("aria-disabled"),
+    (
+      await screen.findByRole("option", {
+        name: "Legacy · Document memory unsupported",
+      })
+    ).getAttribute("aria-disabled"),
   ).toBe("true");
   await userEvent.click(screen.getByRole("option", { name: "Documents" }));
   await userEvent.click(screen.getByRole("button", { name: "Save changes" }));

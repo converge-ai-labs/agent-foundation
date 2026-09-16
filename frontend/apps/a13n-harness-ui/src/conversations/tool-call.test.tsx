@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from "vitest";
-import { cleanup, render, screen, fireEvent } from "@testing-library/react";
+import {
+  cleanup,
+  render,
+  screen,
+  fireEvent,
+  within,
+} from "@testing-library/react";
 import { ToolCall, OpenHostFile, editPatch } from "./tool-call";
 import {
   describeTool,
@@ -115,7 +121,7 @@ it("shows actual applied content without confusing source +++ lines or missing f
       }}
     />,
   );
-  fireEvent.click(screen.getByRole("button", { name: /Edit.*Failed/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Edit/ }));
   expect(screen.getByText("Applied edit")).toBeTruthy();
   expect(screen.getByText("+1")).toBeTruthy();
   expect(screen.queryByText("Requested replacement")).toBeNull();
@@ -184,7 +190,9 @@ it("renders tool calls inline and exposes bounded shell output with raw fallback
     html.indexOf("After"),
   );
   fireEvent.click(screen.getByRole("button", { name: /Ran 1 command/ }));
-  expect(screen.getByText("hello")).toBeTruthy();
+  expect(
+    within(screen.getByRole("region", { name: "stdout" })).getByText("hello"),
+  ).toBeTruthy();
   expect(screen.getByText("warning")).toBeTruthy();
   expect(screen.getByText(/Partial process output/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "Arguments & result" }));
@@ -224,4 +232,201 @@ it("does not present interrupted history repair as a received execution result",
   render(<ToolCall tool={tool} />);
   expect(screen.getByText("Interrupted", { exact: true })).toBeTruthy();
   expect(screen.queryByText("Result received")).toBeNull();
+});
+
+it("renders multi-edit requested fragments as diffs without claiming applied evidence", () => {
+  render(
+    <ToolCall
+      tool={{
+        id: "multi",
+        name: "multi_edit",
+        input: {
+          file_path: "/tmp/test.py",
+          edits: [
+            { old_string: "before-one", new_string: "after-one" },
+            { old_string: "before-two", new_string: "after-two" },
+          ],
+        },
+        result: { ok: true },
+      }}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: /Edit/ }));
+  expect(screen.getAllByText("Requested replacement")).toHaveLength(2);
+  expect(screen.queryByText("Applied edit")).toBeNull();
+  expect(screen.getByText("+after-one")).toBeTruthy();
+  expect(screen.getByText("-before-two")).toBeTruthy();
+});
+
+it("shows the whole recorded written file rather than a diff or a requested fragment", () => {
+  const after = 'const value = "saved";\n' + "// more\n".repeat(2000);
+  render(
+    <ToolCall
+      tool={{
+        id: "write",
+        name: "write",
+        input: { file_path: "/tmp/test.ts", content: "not the recorded file" },
+        edit: { file_path: "/tmp/test.ts", before: "old", after },
+        result: { ok: true },
+      }}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: /Edit/ }));
+  const region = screen.getByRole("region", { name: "Written content" });
+  expect(region.querySelector("code")?.textContent).toBe(after);
+  expect(region.querySelector(".hljs-keyword")).not.toBeNull();
+  expect(screen.queryByText("Applied edit")).toBeNull();
+});
+
+const questionTool = {
+  id: "question",
+  name: "ask_user_question",
+  input: {
+    questions: [
+      {
+        header: "Scope",
+        question: "Which scope?",
+        options: [
+          { label: "WebUI", description: "Only the browser surface" },
+          { label: "All", description: "Every surface" },
+        ],
+      },
+      {
+        header: "Checks",
+        question: "Which checks?",
+        multiSelect: true,
+        options: [
+          { label: "Tests", description: "Run tests" },
+          { label: "Browser", description: "Check rendering" },
+        ],
+      },
+    ],
+  },
+  result: {
+    answers: { "Which scope?": "WebUI", "Which checks?": ["Tests", "Browser"] },
+  },
+};
+
+it("shows answered question titles and all answers by default, with original questions behind a disclosure", () => {
+  render(
+    <ToolCall
+      tool={{
+        ...questionTool,
+        result: {
+          answers: {
+            "Which checks?": ["Tests", "Browser"],
+            "Which scope?": "WebUI",
+          },
+        },
+      }}
+    />,
+  );
+  expect(
+    Array.from(document.querySelectorAll("dt"), (item) => item.textContent),
+  ).toEqual(["Scope", "Checks"]);
+  const receipt = screen.getByRole("region", { name: "Your answers" });
+  for (const text of ["Scope", "WebUI", "Checks", "Tests", "Browser"])
+    expect(within(receipt).getByText(text)).toBeTruthy();
+  expect(screen.queryByText("Which scope?")).toBeNull();
+  expect(screen.queryByText("Only the browser surface")).toBeNull();
+  const toggle = screen.getByRole("button", { name: "Questions & details" });
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  fireEvent.click(toggle);
+  expect(screen.getByText("Which scope?")).toBeTruthy();
+  expect(screen.getByText("Only the browser surface")).toBeTruthy();
+  expect(screen.getByText("Every surface")).toBeTruthy();
+  fireEvent.click(toggle);
+  expect(screen.queryByText("Which scope?")).toBeNull();
+  expect(screen.getByText("WebUI")).toBeTruthy();
+});
+
+it("preserves free-text and general responses in live and saved question receipts", () => {
+  const result = {
+    answers: { "Which scope?": "A custom scope\nwith a second line" },
+    response: "Please keep the rest unchanged.",
+  };
+  const { unmount } = render(
+    <LiveOutput
+      gap={false}
+      blocks={[
+        {
+          id: "question",
+          kind: "tool",
+          name: questionTool.name,
+          text: JSON.stringify(questionTool.input),
+          result: JSON.stringify(result),
+          done: true,
+        },
+      ]}
+    />,
+  );
+  expect(screen.getByText(/A custom scope/).textContent).toBe(
+    result.answers["Which scope?"],
+  );
+  expect(screen.getByText("Please keep the rest unchanged.")).toBeTruthy();
+  unmount();
+  const entries = [
+    {
+      position: 0,
+      parts: [
+        {
+          kind: "tool_call",
+          tool_call_id: "q",
+          tool_name: questionTool.name,
+          value: questionTool.input,
+        },
+      ],
+    },
+    {
+      position: 1,
+      parts: [
+        {
+          kind: "tool_result",
+          tool_call_id: "q",
+          value: result,
+          outcome: "success",
+        },
+      ],
+    },
+  ] as Schema<"TranscriptEntry">[];
+  render(
+    <>
+      {entries.map((entry) => (
+        <SavedEntry
+          key={entry.position}
+          entry={entry}
+          toolGroups={savedToolGroups(entries)}
+        />
+      ))}
+    </>,
+  );
+  expect(screen.getAllByRole("region", { name: "Your answers" })).toHaveLength(
+    1,
+  );
+  expect(screen.getByText("Scope")).toBeTruthy();
+  expect(screen.getByText(/A custom scope/).textContent).toBe(
+    result.answers["Which scope?"],
+  );
+});
+
+it("keeps missing, omitted, malformed and unsuccessful question results in the ordinary tool view", () => {
+  for (const changes of [
+    { result: undefined },
+    { result: { answers: {} } },
+    { result: { answers: { "Which scope?": [42] } } },
+    { resultOmitted: true },
+    { outcome: "failed" as const },
+    { outcome: "denied" as const },
+    { outcome: "interrupted" as const },
+    { retry: true },
+  ]) {
+    const { unmount } = render(
+      <ToolCall tool={{ ...questionTool, ...changes }} />,
+    );
+    expect(screen.queryByRole("region", { name: "Your answers" })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /ask_user_question/ }),
+    ).toBeTruthy();
+    unmount();
+  }
 });

@@ -342,6 +342,7 @@ async def test_media_capability_returns_native_binary_with_run_scoped_reader() -
     assert len(binaries) == 1
     assert binaries[0].data == b"\x89PNG"
     assert binaries[0].media_type == "image/png"
+    assert binaries[0].vendor_metadata == {"display": False}
     provider_record = next(record for record in result.usage_records if isinstance(record, ProviderUsageRecord))
     assert provider_record.source == "media.reader"
     assert provider_record.usage.usage_id == "media-1"

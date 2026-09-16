@@ -25,7 +25,6 @@ from pydantic_ai.providers import Provider
 
 BuiltModel = PydanticModel[Any]
 NativeProvider = Provider[Any]
-SettingsPath = tuple[str, ...]
 
 # Connection fields are Provider-owned, even on custom compatible endpoints.
 _CONNECTION_FIELDS = ("api_key", "authorization", "credentials", "base_url", "endpoint", "headers", "extra_headers")
@@ -39,6 +38,10 @@ _CHAT_FIELDS = (
     "stream",
     "stream_options",
     "response_format",
+    "reasoning_effort",
+    "reasoning",
+    "thinking",
+    "enable_thinking",
 )
 _RESPONSES_FIELDS = (
     "model",
@@ -50,40 +53,24 @@ _RESPONSES_FIELDS = (
     "stream_options",
     "previous_response_id",
     "conversation",
+    "reasoning",
 )
-_ANTHROPIC_FIELDS = ("model", "messages", "system", "tools", "tool_choice", "stream", "container", "output_format")
+_ANTHROPIC_FIELDS = (
+    "model",
+    "messages",
+    "system",
+    "tools",
+    "tool_choice",
+    "stream",
+    "container",
+    "output_format",
+    "thinking",
+    "output_config",
+)
 
 
 def _paths(*fields: str) -> tuple[tuple[str, ...], ...]:
     return tuple((name,) for name in (*_CONNECTION_FIELDS, *fields))
-
-
-@dataclass(frozen=True, slots=True)
-class ReasoningAlternative:
-    paths: tuple[SettingsPath, ...]
-    preserved_fields: tuple[tuple[SettingsPath, SettingsPath], ...] = ()
-
-
-def _reasoning(
-    *paths: SettingsPath,
-    preserve: tuple[tuple[SettingsPath, SettingsPath], ...] = (),
-) -> ReasoningAlternative:
-    return ReasoningAlternative(paths, preserve)
-
-
-_OPENAI_RESPONSES_REASONING_ALTERNATIVES = (
-    _reasoning(("thinking",)),
-    _reasoning(("openai_reasoning_effort",)),
-    _reasoning(
-        ("extra_body", "reasoning"),
-        preserve=((("extra_body", "reasoning", "summary"), ("openai_reasoning_summary",)),),
-    ),
-)
-_OPENAI_CHAT_REASONING_ALTERNATIVES = (
-    _reasoning(("thinking",)),
-    _reasoning(("openai_reasoning_effort",)),
-    _reasoning(("extra_body", "reasoning_effort")),
-)
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,7 +81,6 @@ class ModelApiBinding:
     settings_type: Any
     protected_body_paths: tuple[tuple[str, ...], ...]
     supports_extra_body: bool = True
-    reasoning_alternatives: tuple[ReasoningAlternative, ...] = ()
 
     def build(
         self,
@@ -123,7 +109,6 @@ BUILT_IN_MODEL_APIS = _index(
             OpenAIResponsesModel,
             OpenAIResponsesModelSettings,
             (*_paths(*_RESPONSES_FIELDS), ("text", "format")),
-            reasoning_alternatives=_OPENAI_RESPONSES_REASONING_ALTERNATIVES,
         ),
         ModelApiBinding(
             "openai.chat_completions",
@@ -131,23 +116,13 @@ BUILT_IN_MODEL_APIS = _index(
             OpenAIChatModel,
             OpenAIChatModelSettings,
             _paths(*_CHAT_FIELDS),
-            reasoning_alternatives=_OPENAI_CHAT_REASONING_ALTERNATIVES,
         ),
         ModelApiBinding(
             "anthropic.messages",
             "Anthropic Messages",
             AnthropicModel,
             AnthropicModelSettings,
-            (*_paths(*_ANTHROPIC_FIELDS), ("output_config", "format")),
-            reasoning_alternatives=(
-                _reasoning(("thinking",)),
-                _reasoning(("anthropic_thinking",), ("anthropic_effort",)),
-                _reasoning(
-                    ("extra_body", "thinking"),
-                    ("extra_body", "output_config"),
-                    preserve=((("extra_body", "output_config", "task_budget"), ("anthropic_task_budget",)),),
-                ),
-            ),
+            _paths(*_ANTHROPIC_FIELDS),
         ),
         ModelApiBinding(
             "google.generate_content",
@@ -156,27 +131,22 @@ BUILT_IN_MODEL_APIS = _index(
             GoogleModelSettings,
             (),
             supports_extra_body=False,
-            reasoning_alternatives=(
-                _reasoning(("thinking",)),
-                _reasoning(("google_thinking_config",)),
-            ),
         ),
         ModelApiBinding(
             "bedrock.converse",
             "Amazon Bedrock Converse",
             BedrockConverseModel,
             BedrockModelSettings,
-            _paths(*_ANTHROPIC_FIELDS, "modelId", "toolConfig", "outputConfig", "inferenceConfig"),
-            supports_extra_body=False,
-            reasoning_alternatives=(
-                _reasoning(("thinking",)),
-                _reasoning(
-                    ("bedrock_additional_model_requests_fields", "thinking"),
-                    ("bedrock_additional_model_requests_fields", "output_config"),
-                ),
-                _reasoning(("bedrock_additional_model_requests_fields", "reasoning_effort")),
-                _reasoning(("bedrock_additional_model_requests_fields", "reasoning_config")),
+            _paths(
+                *_ANTHROPIC_FIELDS,
+                "modelId",
+                "toolConfig",
+                "outputConfig",
+                "inferenceConfig",
+                "reasoning_effort",
+                "reasoning_config",
             ),
+            supports_extra_body=False,
         ),
         ModelApiBinding(
             "bedrock_mantle.responses",
@@ -184,7 +154,6 @@ BUILT_IN_MODEL_APIS = _index(
             BedrockMantleResponsesModel,
             OpenAIResponsesModelSettings,
             (*_paths(*_RESPONSES_FIELDS), ("text", "format")),
-            reasoning_alternatives=_OPENAI_RESPONSES_REASONING_ALTERNATIVES,
         ),
         ModelApiBinding(
             "bedrock_mantle.chat_completions",
@@ -192,7 +161,6 @@ BUILT_IN_MODEL_APIS = _index(
             BedrockMantleChatModel,
             OpenAIChatModelSettings,
             _paths(*_CHAT_FIELDS),
-            reasoning_alternatives=_OPENAI_CHAT_REASONING_ALTERNATIVES,
         ),
         ModelApiBinding(
             "openrouter.chat_completions",
@@ -200,13 +168,6 @@ BUILT_IN_MODEL_APIS = _index(
             OpenRouterModel,
             OpenRouterModelSettings,
             _paths(*_CHAT_FIELDS, "models", "preset", "transforms"),
-            reasoning_alternatives=(
-                _reasoning(("thinking",)),
-                _reasoning(("openrouter_reasoning",)),
-                _reasoning(("openai_reasoning_effort",)),
-                _reasoning(("extra_body", "reasoning")),
-                _reasoning(("extra_body", "reasoning_effort")),
-            ),
         ),
         ModelApiBinding(
             "ollama.chat_completions",
@@ -214,7 +175,6 @@ BUILT_IN_MODEL_APIS = _index(
             OllamaModel,
             OpenAIChatModelSettings,
             _paths(*_CHAT_FIELDS, "format"),
-            reasoning_alternatives=_OPENAI_CHAT_REASONING_ALTERNATIVES,
         ),
     )
 )

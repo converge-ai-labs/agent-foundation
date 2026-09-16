@@ -31,6 +31,7 @@ import {
 import styles from "../../shared/shared.module.css";
 import { modelApi, type ModelScope } from "./api";
 import { ModelEditor } from "./model-editor";
+import { ModelIcon } from "./model-icon";
 import modelStyles from "./models.module.css";
 
 export function ModelsPage() {
@@ -261,12 +262,20 @@ export function Models({ scope }: { scope: ModelScope }) {
                   label: t("Model"),
                   tone: "primary",
                   render: (item) => (
-                    <ResourceIdentity
-                      name={item.name}
-                      resourceId={item.id}
-                      resourceKey={item.key}
-                      description={<CopyableResourceKey value={item.key} />}
-                    />
+                    <div className="flex min-w-0 items-center gap-3">
+                      <ModelIcon
+                        upstream={item.upstream_model}
+                        catalogRef={item.catalog_ref}
+                        provider={providerById.get(item.provider_id)?.type}
+                        size={20}
+                      />
+                      <ResourceIdentity
+                        name={item.name}
+                        resourceId={item.id}
+                        resourceKey={item.key}
+                        description={<CopyableResourceKey value={item.key} />}
+                      />
+                    </div>
                   ),
                 },
                 {

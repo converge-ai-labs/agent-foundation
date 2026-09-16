@@ -477,7 +477,9 @@ class FileToolset:
                 message = f"The {media_type} file {file_path} is attached in the user message."
                 return ToolReturn(
                     return_value=message,
-                    content=[BinaryContent(data=data, media_type=media_type)],
+                    # Native tool attachments may be stored in a UserPromptPart,
+                    # but they are model content, not a new authored user turn.
+                    content=[BinaryContent(data=data, media_type=media_type, vendor_metadata={"display": False})],
                 )
 
             try:

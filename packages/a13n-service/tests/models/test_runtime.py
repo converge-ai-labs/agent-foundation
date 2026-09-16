@@ -261,7 +261,7 @@ async def test_factory_routes_openai_base_profile_through_explicit_openai_protoc
         model_id="mdl_1234567890abcdef",
         model_key="relay",
         upstream_model="my-gpt-5",
-        base_model="openai:gpt-5",
+        catalog_ref={"provider": "openai", "model": "gpt-5"},
         model_api="openai.chat_completions",
     )
     provider = RuntimeProvider("openai", {}, "https://api.openai.com/v1", "secret")
@@ -283,7 +283,7 @@ async def test_factory_does_not_copy_anthropic_profile_to_openai_protocol() -> N
         model_id="mdl_1234567890abcdef",
         model_key="relay",
         upstream_model="relay-claude-sonnet-4-5",
-        base_model="anthropic:claude-sonnet-4-5",
+        catalog_ref={"provider": "anthropic", "model": "claude-sonnet-4-5"},
         model_api="openai.chat_completions",
     )
     provider = RuntimeProvider("openai", {}, "https://api.openai.com/v1", "secret")
@@ -339,6 +339,7 @@ def _runtime_providers() -> dict[str, RuntimeProvider]:
         ),
         "deepseek": RuntimeProvider("deepseek", {}, "https://api.deepseek.com", "secret"),
         "moonshot": RuntimeProvider("moonshot", {}, "https://api.moonshot.cn/v1", "secret"),
+        "minimax": RuntimeProvider("minimax", {}, "https://api.minimax.io/v1", "secret"),
         "zhipu": RuntimeProvider("zhipu", {}, "https://open.bigmodel.cn/api/paas/v4", "secret"),
     }
 

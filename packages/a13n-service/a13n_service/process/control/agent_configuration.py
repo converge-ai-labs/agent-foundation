@@ -35,7 +35,7 @@ def build_configuration_service(
     if shared.memory_behaviors is None:
         raise RuntimeError("Execution memory behavior composition is required")
     sessions = shared.storage.sessions
-    definition = load_definition()
+    definition = load_definition(total_tokens_limit=settings.configuration_assistant.total_tokens_limit)
     readiness = ConfigurationReadiness(sessions, execution.model_provider_registry, definition)
     states = RunStateStore(shared.storage.objects)
     return ConfigurationService(

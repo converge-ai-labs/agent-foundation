@@ -33,6 +33,10 @@ The store supports local restart and inspection, not durable work scheduling. Ha
 | Root receipts, active tasks, Models, credentials, clients, adapters, streams, and shell processes | Process memory                | Current App only                                                         |
 | Logs and OpenTelemetry                                                                            | Configured process outputs    | Diagnostics only                                                         |
 
+## Child Inspection Results
+
+The existing immutable child checkpoint retains bounded activity snapshots and the latest complete final answer. Activity budgets do not truncate that final answer; bounded HTTP windows paginate it for human inspection. A later failed or interrupted segment does not replace the previous complete result with an activity preview. This remains inspection state, not a separate event store or continuation authority. Older checkpoints whose answers were already truncated remain readable but cannot recover bytes that were never saved.
+
 ## Tool Presentation Evidence
 
 Root Runs can retain observed filesystem edit evidence in the corresponding tool-return's application-only metadata, under `a13n.harness-ui.applied_edit`. It contains the observed `file_path`, `before`, `after`, and an explicit `omitted` flag. The existing selected `HarnessState` continuation serializes this metadata; it is not added to model-facing tool content, stored in a new event log, or published as a separate execution authority. Other tool metadata remains unchanged.
@@ -186,6 +190,14 @@ Before each normal root model request, Harness UI exports the complete canonical
 Every successful checkpoint advances the expected reference for subsequent request-boundary and terminal saves. Publication and selection complete under cancellation shielding; a failed selection does not advance the expected reference or emit a success marker. The native live stream emits a checkpoint marker only after selection succeeds, ordered after the input represented by that checkpoint and before the following model output. This marker is a process-local display cutover hint, not another persistence authority.
 
 Harness UI also publishes every available valid terminal `HarnessState`, including failed and cancelled results, and compare-and-selects it against the latest successfully selected reference for that operation. After an unexpected exception or external cancellation, it attempts to export the Harness-retained shutdown checkpoint and publish it under cancellation shielding before propagating the original error. Saving a checkpoint does not turn failed or cancelled execution into success and never automatically replays input or effects. Deferred requests accompany only a suspended result. If export, publication, or selection fails, the prior or concurrently selected continuation remains current and the save failure is diagnosed independently. Root receipts, input, partial output, live AG-UI events, Environment files, and child display never synthesize a continuation.
+
+## Navigation Recency
+
+A Thread has an independent nullable `touched_at` navigation time. New Threads initialize it to creation time. Explicit touch advances it monotonically in one short transaction without changing `updated_at`, conversation activity, metadata/configuration versions, excerpts, or continuation selection. It is navigation metadata, not evidence that input or work has been saved. Reads, checkpoint saves, progress, automatic continuation, completion, failure, cancellation, and metadata/configuration edits never touch navigation recency.
+
+Explicit surface prompt/deferred-response admissions and explicit cross-Thread create/run operations touch before dispatch, after rejecting conflicting active admission. A touch failure prevents that admission. Accepted human steering touches after enqueue; a touch failure is diagnosed without reporting the already-enqueued input as rejected. Background cross-Thread messages and Agent steering do not touch the target. Opening a conversation alone does not touch it. The App and authenticated HTTP touch operation allow a caller to explicitly advance root navigation without starting work or restoring an archived Thread.
+
+Navigation sorting uses `coalesce(touched_at, created_at)`, descending with the Thread-ID tie-breaker. The additive SQLite migration seeds existing rows from their prior `updated_at` once, preserving the initial order without reading historical objects. Nullable storage allows supported older writers to omit the new column; such newly created rows fall back to creation time. Older writers continue to update existing fields without changing a previously touched navigation time. Upgrade performs one metadata scan and creates the navigation index under the existing serialized migration transaction. Downgrade drops only navigation metadata and its index, retaining Thread identities, incoming references, and checkpoints.
 
 ## Saved Conversation Excerpts
 

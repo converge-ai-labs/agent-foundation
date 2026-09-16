@@ -18,8 +18,7 @@ on:
       - "scripts/tests/test_prepare_harness_ui_image.py"
       - "scripts/tests/test_harness_ui_release_workflow.py"
       - "scripts/tests/test_envd_ci_workflow.py"
-      - "scripts/tests/test_sdk_codegen.py"
-      - "sdk/codegen/**"
+      - "scripts/tests/test_service_contract_notification.py"
       - "deploy/containers/**/Dockerfile"
       - "scripts/run_python_tests.py"
       - "conftest.py"
@@ -45,8 +44,7 @@ on:
       - "scripts/tests/test_prepare_harness_ui_image.py"
       - "scripts/tests/test_harness_ui_release_workflow.py"
       - "scripts/tests/test_envd_ci_workflow.py"
-      - "scripts/tests/test_sdk_codegen.py"
-      - "sdk/codegen/**"
+      - "scripts/tests/test_service_contract_notification.py"
       - "deploy/containers/**/Dockerfile"
       - "scripts/run_python_tests.py"
       - "conftest.py"
@@ -79,10 +77,12 @@ jobs:
           persist-credentials: false
 
       - name: Validate workflows
-        # actionlint 1.7.12 predates GitHub's concurrency queue syntax.
+        # 1.7.12 predates concurrency.queue and the App action's client-id input.
         run: >-
           docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12
           -ignore 'unexpected key "queue" for "concurrency" section'
+          -ignore 'missing input "app-id" which is required by action "actions/create-github-app-token@v3"'
+          -ignore 'input "client-id" is not defined in action "actions/create-github-app-token@v3"'
 
   release-tooling:
     name: Release tooling
@@ -117,7 +117,6 @@ jobs:
           scripts/release_version.py
           scripts/run_python_tests.py
           scripts/prepare_harness_ui_image.py
-          sdk/codegen/generate.py
 
       - name: Set up Node.js for workflow tests
         uses: actions/setup-node@v6
@@ -136,4 +135,4 @@ jobs:
           scripts/tests/test_prepare_harness_ui_image.py
           scripts/tests/test_harness_ui_release_workflow.py
           scripts/tests/test_envd_ci_workflow.py
-          scripts/tests/test_sdk_codegen.py
+          scripts/tests/test_service_contract_notification.py

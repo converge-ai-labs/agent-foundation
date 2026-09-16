@@ -1,3 +1,4 @@
+import { useContext } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Menu, MenuTrigger, MenuPopup, MenuItem } from "a13n-ui";
@@ -7,6 +8,7 @@ import {
   CircleNotch,
   WarningCircleIcon,
   Archive,
+  ArrowCounterClockwise,
   DotsThree,
   PencilSimple,
   ShareNetwork,
@@ -16,7 +18,7 @@ import { result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { ErrorNotice } from "../shell/ui";
 import { refreshThreadLists } from "./queries";
-import { newConversationPath } from "./new-conversation";
+import { NewConversationDrafts, newConversationPath } from "./new-conversation";
 import {
   ParticipantAvatars,
   threadParticipants,
@@ -54,14 +56,17 @@ type ActivityRow = Pick<Schema<"ThreadActivityView">, "thread"> &
 export function ThreadRow({
   row,
   presence,
+  showRestore = false,
 }: {
   row: ActivityRow;
   presence: Schema<"PresenceFrame"> | null;
+  showRestore?: boolean;
 }) {
   const navigate = useNavigate();
   const location = useLocation();
   const transport = useTransport();
   const queries = useQueryClient();
+  const newDrafts = useContext(NewConversationDrafts);
   const archive = useMutation({
     mutationFn: () =>
       result(
@@ -74,6 +79,7 @@ export function ThreadRow({
         }),
       ),
     onSuccess: () => {
+      if (!row.thread.archived) newDrafts.detachArchived(row.thread.thread_id);
       if (
         !row.thread.archived &&
         location.pathname ===
@@ -122,6 +128,19 @@ export function ThreadRow({
             "Untitled conversation"
           }
         />
+        {showRestore && row.thread.archived && (
+          <Button
+            variant="ghost"
+            size="sm"
+            loading={archive.isPending}
+            disabled={row.thread.root_activity.state !== "inactive"}
+            onClick={() => archive.mutate()}
+            aria-label={`Restore ${row.thread.title || "Untitled conversation"}`}
+          >
+            <ArrowCounterClockwise />
+            Restore
+          </Button>
+        )}
         <Menu>
           <MenuTrigger
             render={<Button variant="ghost" size="icon-sm" />}
@@ -135,7 +154,6 @@ export function ThreadRow({
               [
                 ["rename", "Rename conversation", PencilSimple],
                 ["share", "Share conversation", ShareNetwork],
-                ["comments", "Comments", ChatCircle],
                 ["details", "Conversation details", SlidersHorizontal],
               ] as const
             ).map(([action, label, Icon]) => (

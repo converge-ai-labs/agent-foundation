@@ -194,6 +194,7 @@ class ModelCostInput:
     request_started_at: datetime
     response_timestamp: datetime
     usage: RequestUsage
+    selected_model_id: str | None = None
 
 
 class ModelCostQuote(BaseModel):

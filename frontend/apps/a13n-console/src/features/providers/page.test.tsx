@@ -31,7 +31,7 @@ function Location() {
   return <output>{useLocation().search}</output>;
 }
 function mount(
-  query = "section=providers&category=search",
+  query = "section=providers&category=web",
   kind: "workspace" | "organization" = "workspace",
 ) {
   render(
@@ -94,7 +94,7 @@ it("restores category and scope, then switches domains without losing workspace 
 });
 it("allows an organization administrator to manage providers without a workspace", async () => {
   state.hasWorkspace = false;
-  mount("section=providers&category=search", "organization");
+  mount("section=providers&category=web", "organization");
   await screen.findByText("No Web Providers yet");
   expect(screen.getByRole("button", { name: "Add provider" })).toBeTruthy();
   expect(
@@ -103,7 +103,7 @@ it("allows an organization administrator to manage providers without a workspace
 });
 it("does not query organization resources when organization access is unavailable", () => {
   state.organizationAdmin = false;
-  mount("section=providers&category=search", "organization");
+  mount("section=providers&category=web", "organization");
   expect(screen.getByText("Access unavailable")).toBeTruthy();
   expect(state.GET).not.toHaveBeenCalled();
   expect(screen.queryByRole("button", { name: "Add provider" })).toBeNull();

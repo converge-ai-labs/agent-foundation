@@ -28,6 +28,8 @@ from a13n_harness.plugin_factories import (
     HarnessPluginFactoryContext,
 )
 from a13n_harness.plugins import AbstractHarnessPlugin
+from a13n_harness.pricing import AbstractModelCostCapability
+from a13n_harness.token_pricing import TokenPricing, TokenPricingCapability
 from a13n_harness.tools import (
     ToolPermissions,
     ToolPermissionsCapability,
@@ -260,6 +262,8 @@ class AgentReconstructor:
             DynamicEnvironmentCapability(environment_configuration(config.toolsets)),
             *self._provided_capabilities(node),
         ]
+        if not any(isinstance(item, AbstractModelCostCapability) for item in capabilities):
+            capabilities.append(_model_pricing(config))
         review = None
         if config.reviewer is not None:
             if config.resolved_reviewer_model is None:
@@ -503,3 +507,20 @@ __all__ = [
     "AgentDefinitionReconstructionError",
     "AgentReconstructor",
 ]
+
+
+def _model_pricing(config: EffectiveAgentConfig) -> TokenPricingCapability:
+    """One inherited policy selects each accepted model's own frozen prices."""
+    prices: dict[str, TokenPricing | None] = {}
+    pending = [config]
+    while pending:
+        node = pending.pop()
+        for model in (node.resolved_model, node.resolved_reviewer_model):
+            if model is None:
+                continue
+            snapshot = model.execution
+            if snapshot.model_id in prices and prices[snapshot.model_id] != snapshot.pricing:
+                raise AgentDefinitionReconstructionError("model_snapshot_mismatch")
+            prices[snapshot.model_id] = snapshot.pricing
+        pending.extend(child.effective_config for child in node.child_configs.values())
+    return TokenPricingCapability(prices)

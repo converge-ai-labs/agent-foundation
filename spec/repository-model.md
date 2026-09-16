@@ -20,8 +20,8 @@ This document defines the normative content and workflow boundaries of the Agent
 | `examples/`       | Runnable, tested developer examples of public integration and extension boundaries                    | Normative design, published user documentation, production packages, and release artifacts                        |
 | `packages/`       | Python 3.13 uv workspace packages whose distribution names use the `a13n-` prefix                     | Design discussion and unrelated generated artifacts                                                               |
 | `crates/`         | Rust workspace crates, including the native `a13n-envd` daemon                                        | Python packages and local reference repositories                                                                  |
-| `sdk/`            | Standalone a13n Service language SDKs and the companion remote client CLI                             | Root language workspace membership, service implementation, and generated release artifacts                       |
-| `proto/`          | Language-neutral protocol IDL consumed by deterministic repository generators                         | Handwritten language-local implementations, release artifacts, and normative design prose                         |
+| `sdk/`            | Ignored optional checkouts of independently maintained Service SDK repositories                       | Root language workspace membership, service implementation, and generated release artifacts                       |
+| `proto/`          | Language-neutral protocol IDL, Service contract exports, and shared wire evidence                     | Handwritten language-local implementations, release artifacts, and normative design prose                         |
 
 There is no repository-local `issues/` directory. "Issues" means the repository's GitHub Issues.
 
@@ -35,11 +35,9 @@ a13n-envd native releases publish immutable archives for Linux, macOS, and Windo
 
 Harness UI resolves its native a13n-envd version from the installed `a13n-envd-client` distribution, which is co-versioned with the daemon. Its wheel and sdist contain neither a separate native version resource nor per-target asset metadata, hashes, or native binaries. The application lazily acquires only the current target for Local EIP; Native and extension Providers do not use this Host runtime cache. The detailed ownership is defined by [Projects, Threads, and Environments](a13n-harness-ui/04-projects-threads-and-environments.md#local-eip-runtime).
 
-a13n Service SDKs are independent projects under `sdk/{python,go,rust,typescript}` rather than root language-workspace members. The companion CLI at `sdk/rust/a13n-service-cli` is also an independent Cargo project: it has its own manifest and lock file, is not a member of either Rust workspace, and is excluded from the Rust SDK source package. Its Cargo package is `a13n-service-cli`, and its installed executable is `a13n-service-cli`.
+a13n Service SDKs live in the independent `converge-ai-labs/a13n-sdk-{python,go,rust,typescript}` repositories. Optional local checkouts can live under ignored `sdk/{python,go,rust,typescript}` directories, but are not tracked entries, submodules, workspace members, or inputs to main-repository build, test, documentation, and release gates. The Rust SDK repository also owns the companion `a13n-service-cli` project and its independent release channel.
 
-The CLI is a remote client for the a13n Service `/api` boundary. Network commands consume typed operations from the `a13n` Rust SDK; the CLI does not own a parallel HTTP client, service persistence, queues, migrations, or infrastructure control. A network command is introduced only with the corresponding service API, Rust SDK operation, and end-to-end validation rather than as a nonfunctional placeholder.
-
-The CLI releases independently from all SDK channels through `release/a13n-service-cli-v<version>`. One release contains immutable archives for Linux x86_64 and ARM64, macOS x86_64 and ARM64, and Windows x86_64 and ARM64, plus `SHA256SUMS`. Archives contain the executable and repository license. The channel publishes no crate or registry package and defines no mutable `latest` selector for either stable or RC releases.
+Service owns the exported Native contract and shared protocol evidence under `proto/a13n-service/`. Each SDK repository owns its specifications, implementation, SHA-pinned Service snapshot, generators, validation, and release automation. [Service Contract Distribution and Client Boundaries](a13n-service/37-service-sdks-and-clients.md) defines that consumption boundary; the main specification does not own language-specific SDK or CLI design.
 
 Projects under `examples/` may carry their own manifests and lock files when realistic packaging is part of the integration being demonstrated. They remain outside production package workspaces and release groups; example distribution names and artifacts are not platform packages.
 
@@ -47,11 +45,11 @@ Projects under `examples/` may carry their own manifests and lock files when rea
 
 The [Harness UI development image](a13n-harness-ui/webui/03-distribution.md#docker-development-image) is a container delivery of the same workbench, including its bundled browser. Its build and deployment definitions belong under `deploy/`. It creates neither an independent frontend release line nor an Agent Environment Provider; existing Harness UI version and cross-group dependency ownership remain unchanged.
 
-Maintained component source directories and public distributions use the same canonical `a13n-` name, such as `packages/a13n-environment` and `a13n-environment`. Python imports normalize hyphens to underscores, such as `a13n_environment`; the same rule applies to Harness, Harness UI, Stream Protocol, Envd client, Service, and logging. The standalone Service SDKs use `a13n` as the Python distribution and import and the Rust crate and library identifier. The TypeScript SDK uses `@converge.ai/a13n` as its public npm package and import specifier. The Go module URL remains `github.com/converge-ai-labs/agent-foundation/sdk/go`, while its public package name is `a13n`.
+Maintained component source directories and public distributions use the same canonical `a13n-` name, such as `packages/a13n-environment` and `a13n-environment`. Python imports normalize hyphens to underscores, such as `a13n_environment`; the same rule applies to Harness, Harness UI, Stream Protocol, Envd client, Service, and logging. Independent Service SDK repositories own their package identities and publication metadata.
 
 ## Frontend Workspace
 
-`frontend/` owns one private pnpm workspace and lockfile. `frontend/apps/a13n-console` is the React/TypeScript/Vite Service Console with English as the default and fallback language and Simplified Chinese translation resources. It consumes the TypeScript Service SDK and shared design system; its product navigation and interaction boundary are owned by [Console](frontend/console.md). `frontend/packages/a13n-ui` owns shared React components, design tokens, and its independent development showcase, as defined by the [frontend design system](frontend/design-system.md). Its private source exports exclude the showcase.
+`frontend/` owns one private pnpm workspace and lockfile. `frontend/apps/a13n-console` is the React/TypeScript/Vite Service Console with English as the default and fallback language and Simplified Chinese translation resources. It consumes the public Service contract through its own private client and uses the shared design system; its product navigation and interaction boundary are owned by [Console](frontend/console.md). `frontend/packages/a13n-ui` owns shared React components, design tokens, and its independent development showcase, as defined by the [frontend design system](frontend/design-system.md). Its private source exports exclude the showcase.
 
 `frontend/apps/a13n-harness-ui` retains its existing Python distribution ownership. The workspace migration does not add a frontend runtime to Service or change Harness UI release identity. Both applications use the workspace build tooling; standalone SDK projects remain outside this workspace. The root Make targets integrate frontend installation, checks, and builds. Compiled assets and dependency directories are not committed.
 
@@ -83,6 +81,8 @@ Documentation sources live in `docs/` and use Markdown. The canonical public sit
 - `.github/workflows/docs.yml` builds pull-request artifacts and deploys `main` to Cloudflare Pages through Wrangler.
 
 Configuration and generated output do not live in `docs/`. Every source file under `docs/` is Markdown.
+
+The main site owns Service guides and the Service HTTP API reference. Its SDK landing page links to the independent repositories and any available SDK-owned reference sites; it does not generate or vendor language-specific SDK API references.
 
 ## Specification Discipline
 
@@ -122,9 +122,9 @@ Independent release lines do not force consumer releases or lower-bound bumps fo
 
 ### Release Identity
 
-Every release channel accepts a canonical stable `X.Y.Z` identity or RC `X.Y.Z-rc.N` identity, where `N` is a positive integer without leading zeroes. The canonical identity appears in release tags, GitHub Release titles, Rust and npm package metadata, Go module tags, binary archive names, and exact container tags. Python package metadata, lock entries, and artifact names use the PEP 440-normalized `X.Y.ZrcN` spelling for the same RC identity.
+Every release channel accepts a canonical stable `X.Y.Z` identity or RC `X.Y.Z-rc.N` identity, where `N` is a positive integer without leading zeroes. The canonical identity appears in release tags, GitHub Release titles, Rust package metadata, binary archive names, and exact container tags. Python package metadata, lock entries, and artifact names use the PEP 440-normalized `X.Y.ZrcN` spelling for the same RC identity.
 
-An RC runs the owning release workflow, publishes its normal immutable artifacts to the owning registries, and creates a GitHub prerelease. It never advances a stable mutable selector: a13n Service and a13n-envd RCs do not modify the corresponding container `latest` tag, and a TypeScript SDK RC publishes under the npm `rc` dist-tag rather than `latest`. A stable release creates a normal GitHub Release and advances only the mutable `latest` selectors defined by its owning channel. The a13n Service CLI channel has no mutable selector for stable or RC releases. Standalone a13n-envd installers resolve only stable `release/a13n-envd-v*` releases by default; an RC requires an explicit canonical version.
+An RC runs the owning release workflow, publishes its normal immutable artifacts to the owning registries, and creates a GitHub prerelease. It never advances a stable mutable selector: a13n Service and a13n-envd RCs do not modify the corresponding container `latest` tag. A stable release creates a normal GitHub Release and advances only the mutable `latest` selectors defined by its owning channel. Standalone a13n-envd installers resolve only stable `release/a13n-envd-v*` releases by default; an RC requires an explicit canonical version.
 
 Release notes are generated automatically when a component tag is published; no separate notes file or preparation step is required. Entries are selected from first-parent Git history by changed paths belonging to that component, including its shipped assets and component documentation, rather than repository-wide pull-request activity. PR labels at generation time determine categories and exclusions; historical unlabelled PRs and direct commits fall back to Conventional Commit titles and explicit breaking-change markers. PR labels are automatically inferred from titles and breaking-change markers on opening and readiness, preserving existing type labels without introducing a merge gate. Draft PRs skip code CI; readiness and subsequent code updates trigger the applicable checks independently of label presence. Optional reviewed notes may supplement the generated entries. The Full Changelog link remains a repository-wide comparison, not a component-filtered view.
 
@@ -141,9 +141,10 @@ The root `Makefile` is the stable local entry point. `pre-commit` provides fast 
 - `make test` runs the Python workspace test suite;
 - `make examples-check` validates independent example locks, style, and types;
 - `make examples-check-all` additionally runs example tests, offline smoke paths, and builds;
-- `make build` builds every workspace package, private browser application, standalone SDK, and the a13n Service CLI, preparing generated package assets before Python distribution builds;
+- `make service-contract-check` verifies Service exports and Console generated types without requiring SDK checkouts;
+- `make build` builds every workspace package and private browser application, preparing generated package assets before Python distribution builds;
 - `make check` applies the repository formatting hooks, then verifies lint, static analysis, and types without running tests;
 - installed pre-commit hooks apply the same supported formatters to changed files before accepting a commit;
-- `make check-all` runs the complete EIP, example, browser application, Python, Rust, standalone SDK, and a13n Service CLI gates, including tests and builds.
+- `make check-all` runs the complete EIP, example, browser application, Python, Rust, and Service contract gates, including tests and builds.
 
 As implementation packages are added, their focused lint, type-check, test, and build commands must be added behind these stable Make targets rather than requiring contributors to discover unrelated tool-specific commands.

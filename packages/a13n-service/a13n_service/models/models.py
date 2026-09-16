@@ -25,7 +25,7 @@ from a13n_service.secrets.crypto import SecretProtector
 from a13n_service.temporal import assume_utc
 
 from .credentials import ProviderSecrets
-from .domain import Model, ModelDeclarations, ModelProvider
+from .domain import CatalogRef, Model, ModelDeclarations, ModelProvider
 
 
 class ModelProviderRecord(ResourceCredential[str | None], Base):
@@ -140,7 +140,7 @@ class ModelRecord(Base):
     name: Mapped[str] = mapped_column(String(128))
     description: Mapped[str | None] = mapped_column(String(2048))
     upstream_model: Mapped[str] = mapped_column(String(256))
-    base_model: Mapped[str | None] = mapped_column(String(256))
+    catalog_ref: Mapped[dict[str, str] | None] = mapped_column(JSON, nullable=True)
     model_api: Mapped[str] = mapped_column(String(96))
     settings: Mapped[dict[str, JsonValue]] = mapped_column(JSON)
     declarations: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
@@ -162,7 +162,7 @@ class ModelRecord(Base):
             name=self.name,
             description=self.description,
             upstream_model=self.upstream_model,
-            base_model=self.base_model,
+            catalog_ref=CatalogRef.model_validate(self.catalog_ref) if self.catalog_ref is not None else None,
             model_api=self.model_api,
             settings=self.settings,
             declarations=ModelDeclarations.model_validate(self.declarations),

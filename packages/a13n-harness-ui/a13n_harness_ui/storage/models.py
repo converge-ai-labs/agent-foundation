@@ -86,6 +86,7 @@ class ThreadRecord(Base):
     latest_reply: Mapped[str] = mapped_column(String(2048), nullable=False, default="", server_default=text("''"))
     reply_kind: Mapped[str] = mapped_column(String(16), nullable=False, default="none", server_default="none")
     activity_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True, index=True)
+    touched_at: Mapped[datetime | None] = mapped_column(UtcDateTime(), nullable=True, index=True)
     archived: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(UtcDateTime(), nullable=False, index=True)

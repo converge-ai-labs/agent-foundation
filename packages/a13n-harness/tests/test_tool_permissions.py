@@ -9,6 +9,8 @@ from a13n_harness import AgentContext, AgentSpec, DeferredToolResume, HarnessBui
 from a13n_harness.capabilities import ToolReviewAssessment, ToolReviewRequest, ToolReviewResult
 from a13n_harness.capabilities.tool_review import ToolReviewPolicy, render_review_instruction
 from a13n_harness.tools import ToolIdentity, ToolPermissions, ToolPermissionsCapability, source_tool_id
+from a13n_harness.tools.approval import ApprovalPresentation, approval_presentation
+from pydantic import ValidationError
 from pydantic_ai import RunContext, ToolApproved
 from pydantic_ai.capabilities import Capability
 from pydantic_ai.exceptions import ApprovalRequired
@@ -18,6 +20,18 @@ from pydantic_ai.tools import DeferredToolResults, Tool
 from pydantic_ai.toolsets import FunctionToolset
 
 pytestmark = pytest.mark.anyio
+
+
+def test_approval_presentation_hides_url_credentials_and_command_arguments() -> None:
+    assert approval_presentation({"url": "https://user:secret@example.org/page?token=secret#fragment"})["target"] == (
+        "url: https://example.org/page"
+    )
+    assert approval_presentation({"command": "deploy --token secret"})["target"] == "command: [arguments hidden]"
+    assert approval_presentation({"command": "deploy"}, reason="review")["reason"] == (
+        "Tool reviewer requires approval."
+    )
+    with pytest.raises(ValidationError):
+        ApprovalPresentation.model_validate({"reason": "api_key=secret"})
 
 
 def _model(name: str = "execute", arguments: dict | None = None) -> FunctionModel:

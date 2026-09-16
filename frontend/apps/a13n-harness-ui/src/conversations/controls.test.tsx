@@ -189,7 +189,10 @@ it("keeps child instructions after unknown control and addresses the exact paren
     available_actions: ["steer", "cancel"],
   } as Schema<"ChildExecutionView">;
   render(<Child child={child} reconcile={vi.fn()} />, {
-    wrapper: harness({ POST, GET: vi.fn().mockResolvedValue({ data: {} }) }),
+    wrapper: harness({
+      POST,
+      GET: vi.fn().mockResolvedValue({ data: { outputs: [] } }),
+    }),
   });
   fireEvent.click(screen.getByText("Explorer · running"));
   fireEvent.change(

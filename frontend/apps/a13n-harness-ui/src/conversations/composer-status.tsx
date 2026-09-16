@@ -1,7 +1,4 @@
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { result } from "../transport/client";
-import { useTransport } from "../transport/context";
 import {
   Button,
   Popover,
@@ -9,7 +6,7 @@ import {
   PopoverPopup,
   PopoverTitle,
 } from "a13n-ui";
-import { useThreads } from "./queries";
+import { useOperation, useThreads } from "./queries";
 import { ErrorNotice } from "../shell/ui";
 import {
   elapsedTime,
@@ -30,23 +27,8 @@ export function ComposerStatus({
   busy?: boolean;
   liveTokens?: number;
 }) {
-  const { client } = useTransport();
-  const activity = useThreads(threadId, undefined, true);
-  const observed = useQuery({
-    queryKey: ["thread", threadId, "operation", receipt],
-    enabled: !!receipt,
-    queryFn: ({ signal }) =>
-      result(
-        client.GET("/api/operations/{receipt_id}", {
-          params: { path: { receipt_id: receipt! } },
-          signal,
-        }),
-      ),
-    refetchInterval: (query) =>
-      busy || ["running", "preparing"].includes(query.state.data?.status ?? "")
-        ? 1000
-        : false,
-  });
+  const activity = useThreads(threadId, undefined, true, { enabled: !receipt });
+  const observed = useOperation(threadId, receipt);
   const operation =
     observed.data ??
     activity.data?.pages
@@ -56,8 +38,8 @@ export function ComposerStatus({
     busy ||
     operation?.status === "running" ||
     operation?.status === "preparing";
-  const usage = useThreadUsage(threadId, active);
-  const context = useContextUsage(threadId, active);
+  const usage = useThreadUsage(threadId);
+  const context = useContextUsage(threadId);
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     if (!active) return;
@@ -140,8 +122,8 @@ export function ComposerStatus({
             onClick={() => {
               void usage.refetch();
               void context.refetch();
-              void activity.refetch();
               if (receipt) void observed.refetch();
+              else void activity.refetch();
             }}
           >
             Refresh usage

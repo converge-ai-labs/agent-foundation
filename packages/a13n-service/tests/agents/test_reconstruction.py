@@ -276,6 +276,14 @@ def _reconstruct(
     )
 
 
+def test_explicit_host_cost_policy_is_not_duplicated() -> None:
+    from a13n_harness.pricing import AbstractModelCostCapability, NoModelCostCapability
+
+    policy = NoModelCostCapability()
+    definition = _reconstruct(_effective(agent_config()), capability_provider=lambda context: (policy,))
+    assert [item for item in definition.capabilities if isinstance(item, AbstractModelCostCapability)] == [policy]
+
+
 def test_reconstructs_root_model_client_tools_output_and_fresh_capabilities() -> None:
     client_tool = {
         "name": "lookup_order",

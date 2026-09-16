@@ -18,18 +18,20 @@ import { ThreadDraft, encode, values } from "./draft";
 import {
   NewConversationDrafts,
   NewConversationPage,
-  type NewDraft,
+  newConversationPath,
 } from "./new-conversation";
+import { NewDraftStore } from "./new-draft";
 
 const id = `thread_${"a".repeat(32)}`;
-const path = `/new/${id}?project=project-one`;
+const path = newConversationPath("project-one");
 let writes: Request[];
 let reads: string[];
 let failure: "create" | "submit" | "reject" | null;
 let paused: Promise<void> | undefined;
 let readPaused: Promise<void> | undefined;
+let readFailure = false;
 let drafts: Map<string, ThreadDraft>;
-let creations: Map<string, NewDraft>;
+let creations: NewDraftStore;
 let queries: QueryClient;
 function json(data: unknown, status = 200) {
   return new Response(JSON.stringify(data), {
@@ -43,8 +45,11 @@ beforeEach(() => {
   failure = null;
   paused = undefined;
   readPaused = undefined;
+  readFailure = false;
   drafts = new Map();
-  creations = new Map();
+  localStorage.clear();
+  creations = new NewDraftStore();
+  creations.get(drafts, id);
   queries = new QueryClient({
     defaultOptions: {
       queries: { retry: false, staleTime: Infinity },
@@ -105,6 +110,7 @@ beforeEach(() => {
         if (pathname === "/api/projects")
           return json([
             { project_id: "project-one", name: "Example project", roots: [] },
+            { project_id: "project-two", name: "Second project", roots: [] },
           ]);
         if (pathname === "/api/setup") return json({ needed: false });
         if (pathname === "/api/selectors")
@@ -139,6 +145,11 @@ beforeEach(() => {
           });
         if (pathname === `/api/threads/${id}`) {
           await readPaused;
+          if (readFailure)
+            return json(
+              { error: { message: "Thread detail unavailable" } },
+              500,
+            );
           return json({ thread: { thread_id: id }, continuation_id: null });
         }
         if (pathname === `/api/threads/${id}/transcript`)
@@ -185,6 +196,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   cleanup();
+  creations.dispose();
   queries.clear();
   for (const draft of drafts.values()) {
     draft.undo.destroy();
@@ -195,7 +207,12 @@ afterEach(() => {
 });
 function Location() {
   const location = useLocation();
-  return <output aria-label="Location">{location.pathname}</output>;
+  return (
+    <>
+      <output aria-label="Location">{location.pathname}</output>
+      <output aria-label="Search">{location.search}</output>
+    </>
+  );
 }
 function mount(initial = path) {
   return render(
@@ -206,10 +223,15 @@ function mount(initial = path) {
             <MemoryRouter initialEntries={[initial]}>
               <Link to="/settings">Settings</Link>
               <Link to={initial}>Return to draft</Link>
+              <Link to="/">Home</Link>
+              <Link to={newConversationPath("project-two")}>
+                New in second project
+              </Link>
+              <Link to={newConversationPath()}>New without project</Link>
               <Location />
               <Routes>
                 <Route
-                  path="/new/:draftId"
+                  path="/new/:draftId?"
                   element={
                     <NewConversationPage
                       profile={{ display_name: "Test", color: "#000000" }}
@@ -284,6 +306,7 @@ it("keeps the blank composer and files local, then creates, uploads, synchronize
   });
   expect(await writes[2].json()).toEqual({
     parts: [{ attachment_id: "attachment-one" }, "Build this"],
+    source_id: expect.stringMatching(/^input_[0-9a-f]{32}$/),
   });
   expect(values(drafts.get(id)!.doc).prompt).toBe("");
 });
@@ -295,7 +318,7 @@ it("retains rejected creation input and permits an explicit retry with the same 
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await screen.findByText("Configuration not ready");
   expect(values(drafts.get(id)!.doc).prompt).toBe("Build this");
-  expect(creations.get(id)!.attempted).toBe(false);
+  expect(creations.current!.attempted).toBe(false);
   failure = null;
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await waitFor(() =>
@@ -364,7 +387,7 @@ it("does not send after navigating away during creation and preserves the draft 
 it("retains the home input across settings navigation without creating a conversation", async () => {
   mount("/");
   await screen.findByRole("textbox", { name: "Shared prompt" });
-  const home = creations.get("@home")!;
+  const home = creations.current!;
   act(() =>
     drafts.get(home.threadId)!.doc.getText("text").insert(0, "Keep this"),
   );
@@ -393,7 +416,7 @@ it("does not steal navigation when an uncertain creation is reconciled after lea
   await waitFor(() => expect(reads).toContain(`/api/threads/${id}`));
   fireEvent.click(screen.getByRole("link", { name: "Settings" }));
   await act(async () => resume());
-  expect(creations.get(id)!.created).toBe(true);
+  expect(creations.current!.created).toBe(true);
   expect(screen.getByLabelText("Location").textContent).toBe("/settings");
   expect(writes).toHaveLength(1);
 });
@@ -440,6 +463,7 @@ it("distinguishes inherited choices and sends an independent model without chang
   });
   expect(await writes[1].json()).toEqual({
     parts: ["Build this"],
+    source_id: expect.stringMatching(/^input_[0-9a-f]{32}$/),
     model_id: "model-one",
   });
 });
@@ -455,7 +479,7 @@ it("keeps the same composer mounted while the accepted conversation's first fram
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await waitFor(() => expect(reads).toContain(`/api/threads/${id}`));
   expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBe(editor);
-  expect(screen.getByLabelText("Location").textContent).toBe(`/new/${id}`);
+  expect(screen.getByLabelText("Location").textContent).toBe("/new");
   expect(writes).toHaveLength(2);
   await act(async () => resume());
   await waitFor(() =>
@@ -466,4 +490,232 @@ it("keeps the same composer mounted while the accepted conversation's first fram
   expect(queries.getQueryData(["thread", id, "detail"])).toBeTruthy();
   expect(queries.getQueryData(["thread", id, "history", null])).toBeTruthy();
   expect(writes).toHaveLength(2);
+});
+
+function reload(initial = path) {
+  cleanup();
+  creations.dispose();
+  for (const draft of drafts.values()) {
+    draft.undo.destroy();
+    draft.doc.destroy();
+  }
+  drafts = new Map();
+  creations = new NewDraftStore();
+  return mount(initial);
+}
+
+it("uses one composer across project plus actions, Home and settings without creating Threads", async () => {
+  mount();
+  await fill();
+  const editor = screen.getByRole("textbox", { name: "Shared prompt" });
+  const original = creations.current!;
+  act(() => {
+    original.composer.modelId = "model-two";
+    original.composer.notify();
+  });
+  fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
+  await screen.findByRole("heading", {
+    name: "What would you like to build in Second project?",
+  });
+  expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBe(editor);
+  expect(editor.textContent).toBe("Build this");
+  expect(creations.current).toBe(original);
+  expect(original.defaults.project_id).toBe("project-two");
+  expect(original.composer.modelId).toBe("model-two");
+  fireEvent.click(screen.getByRole("link", { name: "Settings" }));
+  fireEvent.click(screen.getByRole("link", { name: "Home" }));
+  await screen.findByRole("heading", {
+    name: "What would you like to build in Second project?",
+  });
+  expect(
+    screen.getByRole("textbox", { name: "Shared prompt" }).textContent,
+  ).toBe("Build this");
+  fireEvent.click(screen.getByRole("link", { name: "New without project" }));
+  await screen.findByRole("heading", { name: "What would you like to build?" });
+  expect(creations.current!.defaults.project_id).toBeNull();
+  expect(values(original.composer.doc).prompt).toBe("Build this");
+  expect(writes).toHaveLength(0);
+  expect(screen.getByLabelText("Location").textContent).toBe("/new");
+});
+
+it("restores text and choices after a full reload and persists deleting the input", async () => {
+  mount();
+  await fill();
+  act(() => {
+    creations.current!.composer.modelId = "model-two";
+    creations.current!.composer.notify();
+  });
+  fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
+  await screen.findByRole("heading", {
+    name: "What would you like to build in Second project?",
+  });
+  reload("/");
+  await screen.findByRole("heading", {
+    name: "What would you like to build in Second project?",
+  });
+  expect(
+    screen.getByRole("textbox", { name: "Shared prompt" }).textContent,
+  ).toBe("Build this");
+  expect(creations.current!.threadId).toBe(id);
+  expect(screen.getByRole("combobox", { name: "Model" }).textContent).toContain(
+    "Other model",
+  );
+  act(() => {
+    const text = creations.current!.composer.doc.getText("text");
+    text.delete(0, text.length);
+  });
+  reload("/");
+  await screen.findByRole("textbox", { name: "Shared prompt" });
+  expect(values(creations.current!.composer.doc).prompt).toBe("");
+  expect(writes).toHaveLength(0);
+});
+
+it("creates the selected project only on Send, then starts a fresh singleton after acceptance", async () => {
+  mount();
+  await fill();
+  fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
+  await screen.findByRole("heading", {
+    name: "What would you like to build in Second project?",
+  });
+  await waitFor(() =>
+    expect(
+      (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(false),
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() =>
+    expect(screen.getByLabelText("Location").textContent).toBe(
+      `/threads/${id}`,
+    ),
+  );
+  expect((await writes[0].json()).defaults.project_id).toBe("project-two");
+  expect(localStorage.getItem("a13n-harness-ui.new-draft")).toBeNull();
+  fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
+  await screen.findByRole("textbox", { name: "Shared prompt" });
+  expect(values(creations.current!.composer.doc).prompt).toBe("");
+  expect(creations.current!.threadId).not.toBe(id);
+  expect(writes).toHaveLength(2);
+});
+
+it("retains the exact identity and frozen project when creation is uncertain across reload", async () => {
+  failure = "create";
+  mount();
+  await fill();
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByText(
+    "Unable to reach the server. Check your connection and try again.",
+  );
+  reload(newConversationPath("project-two"));
+  await screen.findByRole("heading", {
+    name: "What would you like to build in Example project?",
+  });
+  expect(creations.current!.attempted).toBe(true);
+  expect(creations.current!.threadId).toBe(id);
+  expect(
+    screen.getByRole("textbox", { name: "Shared prompt" }).textContent,
+  ).toBe("Build this");
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() =>
+    expect(screen.getByLabelText("Location").textContent).toBe(
+      `/threads/${id}`,
+    ),
+  );
+  expect(reads).toContain(`/api/threads/${id}`);
+  expect(writes).toHaveLength(1);
+});
+
+it("keeps an uncertain submission blocked after reload rather than replaying input", async () => {
+  failure = "submit";
+  mount();
+  await fill();
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await waitFor(() =>
+    expect(screen.getByLabelText("Location").textContent).toBe(
+      `/threads/${id}`,
+    ),
+  );
+  reload();
+  await screen.findByText(
+    /The previous input may already have been accepted\. Open the conversation/,
+  );
+  expect(creations.current!.composer.submission.kind).toBe("unknown");
+  expect(
+    (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  expect(
+    screen.getByRole("textbox", { name: "Shared prompt" }).textContent,
+  ).toBe("Build this");
+  expect(writes).toHaveLength(2);
+});
+
+it("retains staged files across project switches and explicitly requires reattachment after reload", async () => {
+  const view = mount();
+  await fill();
+  fireEvent.change(view.container.querySelector('input[type="file"]')!, {
+    target: {
+      files: [new File(["notes"], "notes.txt", { type: "text/plain" })],
+    },
+  });
+  fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
+  await screen.findByRole("heading", {
+    name: "What would you like to build in Second project?",
+  });
+  expect(creations.current!.composer.uploads.size).toBe(1);
+  reload("/");
+  await screen.findByText(/Local files are not saved across reloads/);
+  expect(values(creations.current!.composer.doc).prompt).toBe("Build this");
+  expect(
+    (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
+      .disabled,
+  ).toBe(true);
+  expect(writes).toHaveLength(0);
+});
+
+it("opens a fresh persistent composer on plus after accepted Send cannot load the saved page", async () => {
+  readFailure = true;
+  mount();
+  await fill();
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByText("Thread detail unavailable");
+  expect(screen.getByLabelText("Location").textContent).toBe("/new");
+  expect(creations.current).toBeUndefined();
+  fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
+  await screen.findByRole("heading", {
+    name: "What would you like to build in Second project?",
+  });
+  expect(creations.current!.threadId).not.toBe(id);
+  expect(creations.current!.attempted).toBe(false);
+  act(() =>
+    creations.current!.composer.doc.getText("text").insert(0, "Next task"),
+  );
+  reload("/");
+  expect(
+    (await screen.findByRole("textbox", { name: "Shared prompt" })).textContent,
+  ).toBe("Next task");
+  expect(writes).toHaveLength(2);
+});
+
+it("preserves native deep-link parameters when restoring or changing Project", async () => {
+  const user = (await import("@testing-library/user-event")).default.setup();
+  mount("/?native=files&native_path=%2Ftmp%2Fnotes.txt&terminal=terminal-one");
+  await screen.findByRole("textbox", { name: "Shared prompt" });
+  await waitFor(() =>
+    expect(screen.getByLabelText("Search").textContent).toContain("project="),
+  );
+  await user.click(screen.getByRole("combobox", { name: "Project" }));
+  await user.click(
+    await screen.findByRole("option", { name: "Second project" }),
+  );
+  await waitFor(() =>
+    expect(creations.current!.defaults.project_id).toBe("project-two"),
+  );
+  const search = new URLSearchParams(
+    screen.getByLabelText("Search").textContent!,
+  );
+  expect(search.get("native")).toBe("files");
+  expect(search.get("native_path")).toBe("/tmp/notes.txt");
+  expect(search.get("terminal")).toBe("terminal-one");
+  expect(search.get("project")).toBe("project-two");
 });

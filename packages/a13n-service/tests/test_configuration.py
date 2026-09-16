@@ -155,3 +155,18 @@ def test_cli_override_applies_before_validation(tmp_path, monkeypatch):
     result = CliRunner().invoke(main, ["--config", str(path), "serve", "--role", "worker", "--host", "127.0.0.2"])
     assert result.exit_code == 0, result.output
     assert captured[0]["host"] == "127.0.0.2"
+
+
+def test_configuration_assistant_budget_file_and_environment(tmp_path):
+    path = tmp_path / "service.toml"
+    path.write_text("[configuration_assistant]\ntotal_tokens_limit = 3000000\n")
+    assert load_settings(environ={}).configuration_assistant.total_tokens_limit is None
+    assert load_settings(path, environ={}).configuration_assistant.total_tokens_limit == 3_000_000
+    settings = load_settings(path, environ={"A13N_SERVICE_CONFIGURATION_ASSISTANT_TOTAL_TOKENS_LIMIT": "4000000"})
+    assert settings.configuration_assistant.total_tokens_limit == 4_000_000
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "1.5", "invalid"])
+def test_configuration_assistant_budget_rejects_invalid_limits(value):
+    with pytest.raises(ConfigurationError, match=r"configuration_assistant\.total_tokens_limit"):
+        load_settings(environ={"A13N_SERVICE_CONFIGURATION_ASSISTANT_TOTAL_TOKENS_LIMIT": value})
