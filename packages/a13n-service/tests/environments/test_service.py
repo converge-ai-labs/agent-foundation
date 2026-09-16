@@ -336,3 +336,50 @@ def test_request_identity_canonicalizes_objects_but_preserves_semantics():
     changed = first.model_copy(update={"configuration": {"steps": [1, 2]}})
     reversed_steps = first.model_copy(update={"configuration": {"steps": [2, 1]}})
     assert request_identity("key", changed) != request_identity("key", reversed_steps)
+
+
+@pytest.mark.parametrize("provider_type", ["a13n.direct-local", "a13n.docker"])
+async def test_child_sharing_and_dedicated_provider_contract(
+    environment_service, environment_sessions, tmp_path, provider_type
+):
+    from unittest.mock import Mock
+
+    from a13n_service.agents.domain import ChildEnvironmentPolicy
+    from a13n_service.environments.authoring import authorize_template
+    from a13n_service.interactions.environment_selection import child_environment_choice
+
+    provider = await environment_service.create_provider(
+        actor=actor(), workspace_id=WORKSPACE_ID, request=CreateProviderRequest(type=provider_type, name="Child")
+    )
+    template = await environment_service.create_template(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="child-template",
+        request=CreateTemplateRequest(
+            name="Child",
+            provider_id=provider.id,
+            configuration={"root": {"path": str(tmp_path)}} if provider_type == "a13n.direct-local" else {},
+            retention={"idle": {"stop_after": None, "delete_after": None}},
+        ),
+    )
+    parent = Mock(environment_id="env_parent1234567890")
+    policy = ChildEnvironmentPolicy(mode="dedicated", template_revision_id=template.current_revision_id)
+    async with short_session(environment_sessions) as session:
+        shared = await child_environment_choice(session, parent=parent, policy=ChildEnvironmentPolicy())
+        assert shared.environment_id == parent.environment_id
+        assert (
+            await child_environment_choice(session, parent=parent, policy=ChildEnvironmentPolicy(mode="none")) is None
+        )
+        if provider_type == "a13n.direct-local":
+            with pytest.raises(EnvironmentManagementError, match="dedicated"):
+                await authorize_template(
+                    session, actor=actor(), workspace_id=WORKSPACE_ID, revision_id=template.current_revision_id
+                )
+            with pytest.raises(EnvironmentManagementError, match="dedicated"):
+                await child_environment_choice(session, parent=parent, policy=policy)
+        else:
+            await authorize_template(
+                session, actor=actor(), workspace_id=WORKSPACE_ID, revision_id=template.current_revision_id
+            )
+            dedicated = await child_environment_choice(session, parent=parent, policy=policy)
+            assert dedicated == NewEnvironmentSelection(template_id=template.id, version=1)

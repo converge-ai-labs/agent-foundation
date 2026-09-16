@@ -86,13 +86,13 @@ With a local Docker Engine available, build the repository sandbox image and run
 
 ```bash
 # From the repository root
-make image-sandbox
+make image-docker-environment
 
 cd examples/environment-provider
 uv run environment-provider-example docker
 ```
 
-The example selects `a13n-sandbox:local`, the image produced by `make image-sandbox`. Pass `--image IMAGE` to use another compatible image; ordinary Docker authentication and pull behavior apply.
+The example selects `a13n-docker-environment:local`, the image produced by `make image-docker-environment`. Pass `--image IMAGE` to use another compatible image; ordinary Docker authentication and pull behavior apply.
 
 The Docker path demonstrates state and retention explicitly:
 
@@ -119,7 +119,7 @@ sequenceDiagram
     Host->>Cleanup: close
 ```
 
-The example supplies a `DockerSDKEngine` and `DirectoryDockerBootstrapStore` through `DockerProviderRuntime`. It stores bootstrap material under `.environment-provider-example/docker-bootstrap` unless `--bootstrap-root` selects another absolute Host location.
+The example supplies a native `DockerSDKEngine` through `DockerProviderRuntime`. The image needs Python and a POSIX shell; no Envd executable or bootstrap directory is needed.
 
 A production Host persists the latest state before releasing ownership of the lifecycle operation. If creation, readiness, execution, or close fails, read `dump_state()` during unconditional finalization: Docker may already have published the exact target identity even when a later step failed. Never infer absence from an unavailable inspection or select a container by a friendly name.
 

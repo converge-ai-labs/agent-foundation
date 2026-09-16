@@ -54,16 +54,16 @@ For complete Host-side built-in lifecycles, including Docker state re-entry and 
 
 There are two operation routes: **Native** uses the host OS or vendor APIs directly; **Envd** uses one shared EIP operation implementation over different deployment and connection arrangements.
 
-| Route  | Provider                    | Use it for                               | Operation and ownership boundary                          |
-| ------ | --------------------------- | ---------------------------------------- | --------------------------------------------------------- |
-| Native | `a13n.direct-local`         | Trusted local automation                 | Host OS operations; existing directory, no sandbox claim  |
-| Native | `a13n.e2b`                  | Native managed cloud sandbox             | E2B SDK; sandbox create/pause/resume/renew/destroy        |
-| Envd   | `a13n.local-envd`           | CLI and local Agents                     | Private stdio daemon; close preserves workspace           |
-| Envd   | `a13n.docker` (Docker Envd) | Small single-node self-hosted services   | Docker lifecycle plus HTTP EIP; close preserves container |
-| Envd   | `a13n.http-envd`            | Network-reachable external environments  | HTTP(S) EIP; connect-only                                 |
-| Envd   | `a13n.websocket-envd`       | Environments that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only  |
+| Route  | Provider              | Use it for                               | Operation and ownership boundary                            |
+| ------ | --------------------- | ---------------------------------------- | ----------------------------------------------------------- |
+| Native | `a13n.direct-local`   | Trusted local automation                 | Host OS operations; existing directory, no sandbox claim    |
+| Native | `a13n.e2b`            | Native managed cloud sandbox             | E2B SDK; sandbox create/pause/resume/renew/destroy          |
+| Envd   | `a13n.local-envd`     | CLI and local Agents                     | Private stdio daemon; close preserves workspace             |
+| Native | `a13n.docker`         | Single-host services                     | Docker Engine lifecycle and exec; close preserves container |
+| Envd   | `a13n.http-envd`      | Network-reachable external environments  | HTTP(S) EIP; connect-only                                   |
+| Envd   | `a13n.websocket-envd` | Environments that connect back to a Host | Reverse WebSocket EIP; Host-integrated SDK, connect-only    |
 
-Direct Local shares the Host account; E2B uses the native sandbox API and needs no envd installation. Envd-backed Providers use EIP for Agent operations, not Docker exec/copy/logs. Docker Envd retains its existing `a13n.docker` key.
+Direct Local shares the Host account. Docker uses native Engine operations; E2B uses its sandbox SDK. Neither requires Envd. Local and remote Envd Providers use EIP for Agent operations.
 
 Multi-tenant authorization and container allocation remain Host responsibilities. One daemon admits one active Session; Sessions are not tenant partitions. To work with multiple remote environments, register separate daemon identities and coordinate their use.
 
@@ -92,30 +92,23 @@ Run the real provider path with `make local-envd-test`, or follow the [Local Env
 
 ## Docker runtime
 
-Docker requires an async engine adapter and a durable bootstrap store:
+Docker uses an Engine connection from the Worker. No bootstrap store, guest daemon or published control port is needed:
 
 ```python
-from pathlib import Path
+import docker
+from a13n_environment import DockerProviderRuntime, DockerSDKEngine
 
-from a13n_environment import (
-    DirectoryDockerBootstrapStore,
-    DockerProviderRuntime,
-    DockerSDKEngine,
-)
-
-runtime = DockerProviderRuntime(
-    engine=DockerSDKEngine.from_env(),
-    bootstrap_store=DirectoryDockerBootstrapStore(
-        Path("/var/lib/my-host/docker-bootstrap")
-    ),
-)
+engine = DockerSDKEngine(docker.from_env())
+runtime = DockerProviderRuntime(engine=engine)
+# Construct and use Environment instances with this runtime, then:
+# await engine.close()
 ```
 
-The built-in directory store keeps its POSIX Host root private with mode `0700`. Files inside an allocation remain readable by the fixed non-root container user through the bind mount; unrelated Host users cannot traverse the private parent. A Host needing different ownership, persistence, or sharing supplies another `DockerBootstrapStore`.
+The native Provider overrides the image entrypoint, enables Docker init support and keeps the container alive between Runs. Its private working directory is `/workspace`. Optional bind mounts expose existing Host directories at explicit container targets; deletion preserves external data. Named-volume configuration is not supported. Registry authentication, credential helpers, mirrors and proxies remain Docker client configuration.
 
-Docker publishes EIP only on a Docker-assigned `127.0.0.1` Host port. It can use existing Host bind directories and external named volumes, but it never creates or deletes those sources. Registry authentication, credential helpers, mirrors, and proxies remain Docker client configuration.
+`close()` disconnects local observations without stopping the container or its background processes. A fresh managed adapter reuses the saved container; confirmed absence creates a replacement with an empty private workspace. Transport failures do not prove absence. Docker file paths are native container paths, while Harness adds its aggregate mount prefix; relative tool paths start in `/workspace`.
 
-Run the real image and Harness lifecycle check with `make docker-provider-test`, or follow the [Docker state lifecycle example](examples.md#docker).
+Use `make image-docker-environment docker-provider-live-test` for a real Engine test, or follow the [Docker lifecycle example](examples.md#docker). The [single-host Compose deployment](../a13n-service/configuration.md) uses a separate DinD Engine and a shared Unix socket.
 
 ## E2B runtime
 

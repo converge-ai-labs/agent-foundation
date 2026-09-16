@@ -4,7 +4,7 @@ import asyncio
 import json
 import logging
 import signal
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, closing
 from uuid import uuid4
 
 from ..infrastructure.management_support import ManagementJourney, last_tool_result
@@ -154,7 +154,7 @@ async def native_file(backend, target, environment, path):
         row = await backend.journey.live.request("GET", f"/__live__/environments/{environment['id']}/lifecycle")
 
         def read():
-            with docker.from_env() as client:
+            with closing(docker.from_env()) as client:
                 container = client.containers.get(row["state"]["state"]["container_id"])
                 result = container.exec_run(["cat", "/workspace/" + path])
                 assert result.exit_code == 0, result.output

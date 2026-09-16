@@ -58,16 +58,19 @@ def install(config, role):
         with (root / f"events-{os.getpid()}.jsonl").open("a") as output:
             output.write(json.dumps({"point": point, **values}) + "\n")
 
-    original_acquire = EnvironmentLifecycle.acquire
+    def observe_acquisition(original):
+        @wraps(original)
+        async def acquire(self, *args, **kwargs):
+            operation = await original(self, *args, **kwargs)
+            if operation is not None:
+                record("environment.acquired", facts(operation))
+                await faults.reach("environment.acquired", **facts(operation))
+            return operation
 
-    @wraps(original_acquire)
-    async def acquire(self, *args, **kwargs):
-        operation = await original_acquire(self, *args, **kwargs)
-        record("environment.acquired", facts(operation))
-        await faults.reach("environment.acquired", **facts(operation))
-        return operation
+        return acquire
 
-    EnvironmentLifecycle.acquire = acquire
+    EnvironmentLifecycle.acquire_preparation = observe_acquisition(EnvironmentLifecycle.acquire_preparation)
+    EnvironmentLifecycle.acquire_maintenance = observe_acquisition(EnvironmentLifecycle.acquire_maintenance)
     original_execute = EnvironmentLifecycle.execute
 
     @wraps(original_execute)
@@ -79,11 +82,11 @@ def install(config, role):
     original_publish = EnvironmentLifecycle.publish
 
     @wraps(original_publish)
-    async def publish(self, operation, environment, **kwargs):
-        values = {**facts(operation), "success": kwargs.get("error") is None}
+    async def publish(self, operation, outcome):
+        values = {**facts(operation), "success": outcome.succeeded}
         await faults.reach("environment.before_publication", **values)
         try:
-            result = await original_publish(self, operation, environment, **kwargs)
+            result = await original_publish(self, operation, outcome)
         except Exception:
             record("environment.publication_rejected", values)
             raise
