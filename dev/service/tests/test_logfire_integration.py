@@ -15,7 +15,6 @@ from a13n_service.configuration.sources import load_settings
 from a13n_service.trace_query import ProviderTraceQuery, ProviderTraceRead, TraceView
 from a13n_service.trace_query.logfire import LogfireTraceQueryProvider
 
-from dev.service.environment import Environment
 from dev.service.model import MODEL_URL
 from dev.service.seed_client import Client
 from dev.service.seed_identity import PASSWORD
@@ -426,7 +425,10 @@ def test_live_read_retry_never_replays_execution(monkeypatch, method, path, stat
 def test_seeded_service_logfire_round_trip(tmp_path):
     assert _CONFIG is not None
     settings = load_settings(Path(_CONFIG))
-    environment = Environment(settings)
+    from dev.service.resolution import resolve_environment
+
+    environment = resolve_environment(Path(_CONFIG))
+    assert environment is not None
     environment.validate()
     assert settings.service.host == "127.0.0.1"
     assert settings.observability.tracing and settings.observability.trace_content == "standard"

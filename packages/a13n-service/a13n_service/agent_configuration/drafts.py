@@ -52,7 +52,7 @@ class ConfigurationDrafts:
         attempt: AttemptContext | None = None,
     ) -> ConfigurationDraft:
         identity = request_identity(idempotency_key, request)
-        async with transaction(self._sessions, sqlite_immediate=True) as session:
+        async with transaction(self._sessions) as session:
             _, record = await load_owned_draft(session, actor=actor, draft_id=draft_id, write=True)
             await require_attempt(session, record=record, attempt=attempt, now=self._clock())
             replay = await load_replay(
@@ -97,7 +97,7 @@ class ConfigurationDrafts:
             )
         except Exception as error:
             raise resolution_error(error) from error
-        async with transaction(self._sessions, sqlite_immediate=True) as session:
+        async with transaction(self._sessions) as session:
             _, record = await load_owned_draft(session, actor=actor, draft_id=draft_id, write=True, lock=True)
             await require_attempt(session, record=record, attempt=attempt, now=self._clock())
             if attempt is not None:
@@ -169,7 +169,7 @@ class ConfigurationDrafts:
         from a13n_service.agents.persistence import lock_agent
 
         identity = request_identity(idempotency_key, request)
-        async with transaction(self._sessions, sqlite_immediate=True) as session:
+        async with transaction(self._sessions) as session:
             _, record = await load_owned_draft(session, actor=actor, draft_id=draft_id, write=True)
             replay = await load_replay(
                 session,
@@ -195,7 +195,7 @@ class ConfigurationDrafts:
             )
         except Exception as error:
             raise resolution_error(error) from error
-        async with transaction(self._sessions, sqlite_immediate=True) as session:
+        async with transaction(self._sessions) as session:
             _, record = await load_owned_draft(session, actor=actor, draft_id=draft_id, write=True, lock=True)
             replay = await load_replay(
                 session,
@@ -257,7 +257,7 @@ class ConfigurationDrafts:
         if_match: str,
     ) -> ConfigurationDraft:
         identity = request_identity(idempotency_key, request)
-        async with transaction(self._sessions, sqlite_immediate=True) as session:
+        async with transaction(self._sessions) as session:
             _, record = await load_owned_draft(session, actor=actor, draft_id=draft_id, write=True, lock=True)
             replay = await load_replay(
                 session,

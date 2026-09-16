@@ -1,15 +1,13 @@
-from pathlib import Path
-
 from a13n_service.database.migration import DatabaseMigrator
-from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
-from a13n_service.storage.relational import sync_database_url
+from a13n_service.storage.config import PostgreSQLConfig
+from a13n_service.storage.relational import database_url
 from sqlalchemy import create_engine, inspect
 
 AGENT_TABLES = {"agents", "agent_revisions"}
 
 
-def _assert_tables(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) -> None:
-    engine = create_engine(sync_database_url(config))
+def _assert_tables(config: PostgreSQLConfig, *, present: bool) -> None:
+    engine = create_engine(database_url(config))
     try:
         inspector = inspect(engine)
         tables = set(inspector.get_table_names())
@@ -29,7 +27,7 @@ def _assert_tables(config: PostgreSQLConfig | SQLiteConfig, *, present: bool) ->
         engine.dispose()
 
 
-def _exercise_migration(config: PostgreSQLConfig | SQLiteConfig) -> None:
+def _exercise_migration(config: PostgreSQLConfig) -> None:
     migrator = DatabaseMigrator(config)
 
     migrator.upgrade()
@@ -40,9 +38,5 @@ def _exercise_migration(config: PostgreSQLConfig | SQLiteConfig) -> None:
     _assert_tables(config, present=False)
 
 
-def test_agent_schema_migrates_up_and_down_on_sqlite(tmp_path: Path) -> None:
-    _exercise_migration(SQLiteConfig(path=tmp_path / "agent-agent-migrations.sqlite3"))
-
-
-def test_agent_schema_migrates_up_and_down_on_postgresql(pg_url: str) -> None:
-    _exercise_migration(PostgreSQLConfig(url=pg_url))
+def test_agent_schema_migrates_up_and_down(postgres_database: PostgreSQLConfig) -> None:
+    _exercise_migration(postgres_database)

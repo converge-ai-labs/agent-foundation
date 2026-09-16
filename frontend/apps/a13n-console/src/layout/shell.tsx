@@ -33,6 +33,7 @@ import { NavLink, Outlet, useLocation } from "react-router";
 import { Loading } from "../shared/feedback";
 import { AccountMenu } from "./account-menu";
 import { navigationGroups } from "./navigation";
+import { useMemoryProviders } from "../features/memory/availability";
 import { useWorkspace } from "./workspace";
 import { WorkspaceMenu } from "./workspace-menu";
 const SIDEBAR_STATE_KEY = "a13n-console-sidebar";
@@ -96,6 +97,7 @@ function WorkspaceNavigation({
 }) {
   const { t } = useTranslation();
   const { basePath } = useWorkspace();
+  const { visible: memoryVisible } = useMemoryProviders();
   const { pathname } = useLocation();
   const { setOpenMobile, isMobile } = useSidebar();
   const rail = collapsed && !isMobile;
@@ -172,6 +174,7 @@ function WorkspaceNavigation({
                   ))}
                 <SidebarMenu>
                   {group.entries.map(([path, label, Icon, children]) => {
+                    if (path === "memories" && !memoryVisible) return null;
                     const active =
                       pathname === destination(path) ||
                       pathname.startsWith(`${destination(path)}/`);

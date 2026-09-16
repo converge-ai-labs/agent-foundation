@@ -16,9 +16,11 @@ from a13n_service.configuration.sources import load_settings
 from a13n_service.storage import open_storage, short_session
 from sqlalchemy import text
 
-from dev.service.environment import LOCAL_CONFIG, Environment
+from dev.service.environment import LOCAL_CONFIG
+from dev.service.lifecycle import lifecycle_lock
 from dev.service.reset import reset
 from dev.service.seed import PASSWORD, seed
+from dev.service.tests.support import environment_for
 
 
 def free_port():
@@ -32,6 +34,11 @@ def free_port():
                 continue
             return port
     raise RuntimeError("No free local test port")
+
+
+def locked_reset(environment, state):
+    with lifecycle_lock(environment.root):
+        reset(environment, state)
 
 
 @pytest.fixture
@@ -57,19 +64,18 @@ def environment(tmp_path):
             "filesystem": {"root": root / "var/service/files"},
         },
     )
-    value = Environment(settings, root)
+    value = environment_for(settings, root)
     yield value
     value.compose("down", "--volumes", "--remove-orphans")
 
 
 def test_reset_seeded_then_empty_clears_all_stores_and_invalidates_login(environment, monkeypatch):
-    async def small_seed(settings):
-        model_port = urlsplit(settings.connectivity.http_origins[-1]).port
-        assert model_port is not None
+    async def small_seed(settings, *, model_port):
+        assert model_port == urlsplit(settings.connectivity.http_origins[-1]).port
         return await seed(settings, session_count=3, model_port=model_port)
 
     monkeypatch.setattr("dev.service.seed.seed", small_seed)
-    reset(environment, "seeded")
+    locked_reset(environment, "seeded")
     manifest = json.loads((environment.state / "seed.json").read_text())
     assert manifest["bulk_session_count"] == 3
     bulk_environments = manifest["bulk_environments"]
@@ -142,7 +148,7 @@ def test_reset_seeded_then_empty_clears_all_stores_and_invalidates_login(environ
 
     old_cookies = anyio.run(verify_seed)
     (environment.settings.filesystem.root / "user-created.txt").write_text("must disappear")
-    reset(environment, "empty")
+    locked_reset(environment, "empty")
     assert not (environment.state / "seed.json").exists()
     assert not (environment.settings.filesystem.root / "user-created.txt").exists()
     assert not environment.settings.objects.local_root.exists()
@@ -161,29 +167,29 @@ def test_reset_seeded_then_empty_clears_all_stores_and_invalidates_login(environ
                 assert (await client.get("/api/v1/users/me")).status_code == 401
 
     anyio.run(verify_empty)
-    reset(environment, "empty")
+    locked_reset(environment, "empty")
 
 
 def test_reset_rejects_active_database_connection(environment):
-    reset(environment, "empty")
+    locked_reset(environment, "empty")
 
     async def check():
         async with open_storage(environment.settings.storage_settings()) as store:
             async with short_session(store.sessions) as session:
                 await session.execute(text("SELECT 1"))
                 with pytest.raises(ValueError, match="active connections"):
-                    await anyio.to_thread.run_sync(reset, environment, "empty")
+                    await anyio.to_thread.run_sync(locked_reset, environment, "empty")
 
     anyio.run(check)
 
 
 def test_seed_failure_leaves_incomplete_marker(environment, monkeypatch):
-    async def broken(settings):
+    async def broken(settings, *, model_port):
         raise RuntimeError("intentional seed failure")
 
     monkeypatch.setattr("dev.service.seed.seed", broken)
     with pytest.raises(RuntimeError):
-        reset(environment, "seeded")
+        locked_reset(environment, "seeded")
     assert environment.incomplete.exists()
-    reset(environment, "empty")
+    locked_reset(environment, "empty")
     assert not environment.incomplete.exists()

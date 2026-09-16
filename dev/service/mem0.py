@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import httpx2
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
+from pydantic import BaseModel, ConfigDict, SecretStr, ValidationError
 
 from dev.mem0.configuration import FIXTURE_URL, configure
 
@@ -23,7 +23,6 @@ class Mem0Settings(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     enabled: bool = False
-    port: int = Field(default=18888, ge=1, le=65535)
     api_key: SecretStr = SecretStr("local-mem0-api-key")
 
 
@@ -41,7 +40,7 @@ class Mem0:
 
     @property
     def port(self) -> int:
-        return self.settings.port
+        return self.environment.ports.mem0
 
     @property
     def api_key(self) -> str:
@@ -53,7 +52,11 @@ class Mem0:
     def validate(self) -> None:
         settings = self.environment.settings
         _ = self.api_key
-        occupied = {settings.service.port, urlsplit(settings.iam.public_origin).port, 18080}
+        occupied = {
+            settings.service.port,
+            urlsplit(settings.iam.public_origin).port,
+            self.environment.ports.model,
+        }
         for address in (settings.database.url, settings.redis.url):
             if address is not None:
                 occupied.add(urlsplit(address.get_secret_value()).port)

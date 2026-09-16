@@ -31,11 +31,7 @@ _RESERVED_KEYS = frozenset(
         "settings",
     }
 )
-_KEY_CONSTRAINTS = {
-    "uq_organizations_key": "organizations.key",
-    "uq_workspaces_organization_key": "workspaces.organization_id, workspaces.key",
-    "uq_agents_workspace_key": "agents.workspace_id, agents.key",
-}
+_KEY_CONSTRAINTS = frozenset({"uq_organizations_key", "uq_workspaces_organization_key", "uq_agents_workspace_key"})
 
 
 def _unreserved(value: str) -> str:
@@ -67,10 +63,7 @@ class _KeyedRecord(Protocol):
 
 
 def _is_key_conflict(error: IntegrityError) -> bool:
-    return any(
-        is_unique_conflict(error, constraint=constraint, sqlite_columns=columns)
-        for constraint, columns in _KEY_CONSTRAINTS.items()
-    )
+    return any(is_unique_conflict(error, constraint=constraint) for constraint in _KEY_CONSTRAINTS)
 
 
 def _key_conflict() -> ApplicationError:

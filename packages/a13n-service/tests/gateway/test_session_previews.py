@@ -28,8 +28,9 @@ from tests.interactions.conftest import (
     THREAD_ID,
     USER_ID,
     WORKSPACE_ID,
+    sealed_row_rewrite,
 )
-from tests.interactions.conftest import postgres_interaction_sessions as postgres_interaction_sessions
+from tests.interactions.conftest import interaction_sessions as interaction_sessions
 from tests.sql_capture import capture_sql
 
 from .test_commands import _commands, _complete_run, _Freezing, _frozen, _Preparation, _request
@@ -82,7 +83,7 @@ async def _add_thread(
                         "session_id": session_id,
                         "thread_id": thread_id,
                         "agent_id": agent_id,
-                        "agent_revision_id": AGENT_REVISION_ID if agent_id == AGENT_ID else "agtr_hidden",
+                        "agent_revision_id": (AGENT_REVISION_ID if agent_id == AGENT_ID else "agtr_hidden"),
                         "input_text": f"input {suffix}",
                         "trigger_type": trigger_type,
                     }
@@ -151,7 +152,7 @@ async def test_preview_uses_latest_thread_with_stable_id_tiebreaker(
         original.updated_at = NOW + timedelta(seconds=100)
         agent = await database.get(AgentRecord, AGENT_ID)
         assert agent is not None
-        agent_name, status, trigger_type = agent.name, original.status, original.trigger_type
+        agent_name, status, trigger_type = (agent.name, original.status, original.trigger_type)
     page = await preview_queries.list_sessions(actor=hook_actor(), workspace_id=WORKSPACE_ID, limit=20, cursor=None)
     assert page.items[0].preview is not None
     assert page.items[0].preview.model_dump() == {
@@ -262,11 +263,13 @@ async def test_preview_text_is_bounded_unicode_and_prefers_current_over_head(
     )
     await _complete_run(lifecycle_interaction_sessions, objects, run_id=source.run_id)
     async with transaction(lifecycle_interaction_sessions) as database:
-        run = await database.get(RunRecord, source.run_id)
-        thread = await database.get(ThreadRecord, source.thread_id)
-        assert run is not None and thread is not None
-        run.output_text = "结果🌏" * 200
-        thread.current_run_id = None
+        async with sealed_row_rewrite(database):
+            run = await database.get(RunRecord, source.run_id)
+            thread = await database.get(ThreadRecord, source.thread_id)
+            assert run is not None and thread is not None
+            run.output_text = "结果🌏" * 200
+            thread.current_run_id = None
+            await database.flush()
     queries = NativeInteractionQueries(lifecycle_interaction_sessions, RunReplayStore(objects))
     page = await queries.list_sessions(actor=hook_actor(), workspace_id=WORKSPACE_ID, limit=20, cursor=None)
     assert page.items[0].preview is not None
@@ -328,10 +331,9 @@ async def test_session_pagination_has_constant_sql_count_and_page_local_previews
 
 
 async def test_postgresql_batch_previews_use_bounded_unicode_projections(
-    postgres_interaction_sessions: async_sessionmaker[AsyncSession],
-    tmp_path,
+    interaction_sessions: async_sessionmaker[AsyncSession], tmp_path
 ) -> None:
-    sessions = postgres_interaction_sessions
+    sessions = interaction_sessions
     await seed_run_and_secret(sessions)
     await seed_hook_actor_access(sessions)
     input_text, output_text = "输入🌏" * 300, "结果🌏" * 300
@@ -358,11 +360,13 @@ async def test_postgresql_batch_previews_use_bounded_unicode_projections(
     )
     await _complete_run(sessions, objects, run_id=completed.run_id)
     async with transaction(sessions) as database:
-        run = await database.get(RunRecord, completed.run_id)
-        owner = await database.get(SessionRecord, completed.session_id)
-        assert run is not None and owner is not None
-        run.output_text = output_text
-        owner.updated_at = NOW + timedelta(seconds=10)
+        async with sealed_row_rewrite(database):
+            run = await database.get(RunRecord, completed.run_id)
+            owner = await database.get(SessionRecord, completed.session_id)
+            assert run is not None and owner is not None
+            run.output_text = output_text
+            owner.updated_at = NOW + timedelta(seconds=10)
+            await database.flush()
     queries = NativeInteractionQueries(sessions, RunReplayStore(objects))
     counts = []
     for limit in (1, 5):

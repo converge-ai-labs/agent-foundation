@@ -85,7 +85,6 @@ def upgrade() -> None:
         ["organization_id", "workspace_id", "id"],
         unique=False,
         postgresql_where=sa.text("enabled AND deleted_at IS NULL AND expired_at IS NULL"),
-        sqlite_where=sa.text("enabled = 1 AND deleted_at IS NULL AND expired_at IS NULL"),
     )
     op.create_index(
         "ix_hook_subscriptions_workspace_updated",
@@ -100,9 +99,7 @@ def upgrade() -> None:
         sa.Column("workspace_id", sa.String(length=72), nullable=False),
         sa.Column("hook_subscription_id", sa.String(length=72), nullable=False),
         sa.Column("version", sa.BigInteger(), nullable=False),
-        sa.Column(
-            "hook_names", sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), "postgresql"), nullable=False
-        ),
+        sa.Column("hook_names", postgresql.JSONB(astext_type=sa.Text()), nullable=False),
         sa.Column("session_id", sa.String(length=72), nullable=True),
         sa.Column("thread_id", sa.String(length=72), nullable=True),
         sa.Column("run_id", sa.String(length=72), nullable=True),
@@ -182,7 +179,6 @@ def upgrade() -> None:
         ["organization_id", "run_id", "id"],
         unique=False,
         postgresql_where=sa.text("run_id IS NOT NULL"),
-        sqlite_where=sa.text("run_id IS NOT NULL"),
     )
     op.create_index(
         "ix_hook_subscription_revisions_session",
@@ -190,7 +186,6 @@ def upgrade() -> None:
         ["organization_id", "session_id", "id"],
         unique=False,
         postgresql_where=sa.text("session_id IS NOT NULL"),
-        sqlite_where=sa.text("session_id IS NOT NULL"),
     )
     op.create_index(
         "ix_hook_subscription_revisions_thread",
@@ -198,7 +193,6 @@ def upgrade() -> None:
         ["organization_id", "thread_id", "id"],
         unique=False,
         postgresql_where=sa.text("thread_id IS NOT NULL"),
-        sqlite_where=sa.text("thread_id IS NOT NULL"),
     )
     op.create_index(
         "uq_hook_subscription_revisions_id_organization",
@@ -206,17 +200,16 @@ def upgrade() -> None:
         ["id", "organization_id", "workspace_id"],
         unique=True,
     )
-    if op.get_bind().dialect.name == "postgresql":
-        op.create_foreign_key(
-            "fk_hook_subscriptions_current_revision",
-            "hook_subscriptions",
-            "hook_subscription_revisions",
-            ["current_revision_id", "id", "organization_id", "workspace_id"],
-            ["id", "hook_subscription_id", "organization_id", "workspace_id"],
-            ondelete="RESTRICT",
-            deferrable=True,
-            initially="DEFERRED",
-        )
+    op.create_foreign_key(
+        "fk_hook_subscriptions_current_revision",
+        "hook_subscriptions",
+        "hook_subscription_revisions",
+        ["current_revision_id", "id", "organization_id", "workspace_id"],
+        ["id", "hook_subscription_id", "organization_id", "workspace_id"],
+        ondelete="RESTRICT",
+        deferrable=True,
+        initially="DEFERRED",
+    )
     _create_revision_guards()
     _create_inline_guards()
 
@@ -225,26 +218,22 @@ def downgrade() -> None:
     """Remove the domain schema in reverse dependency order."""
     _drop_inline_guards()
     _drop_revision_guards()
-    if op.get_bind().dialect.name == "postgresql":
-        op.drop_constraint("fk_hook_subscriptions_current_revision", "hook_subscriptions", type_="foreignkey")
+    op.drop_constraint("fk_hook_subscriptions_current_revision", "hook_subscriptions", type_="foreignkey")
     op.drop_index("uq_hook_subscription_revisions_id_organization", table_name="hook_subscription_revisions")
     op.drop_index(
         "ix_hook_subscription_revisions_thread",
         table_name="hook_subscription_revisions",
         postgresql_where=sa.text("thread_id IS NOT NULL"),
-        sqlite_where=sa.text("thread_id IS NOT NULL"),
     )
     op.drop_index(
         "ix_hook_subscription_revisions_session",
         table_name="hook_subscription_revisions",
         postgresql_where=sa.text("session_id IS NOT NULL"),
-        sqlite_where=sa.text("session_id IS NOT NULL"),
     )
     op.drop_index(
         "ix_hook_subscription_revisions_run",
         table_name="hook_subscription_revisions",
         postgresql_where=sa.text("run_id IS NOT NULL"),
-        sqlite_where=sa.text("run_id IS NOT NULL"),
     )
     op.drop_index(
         "ix_hook_subscription_revisions_hook_names", table_name="hook_subscription_revisions", postgresql_using="gin"
@@ -256,7 +245,6 @@ def downgrade() -> None:
         "ix_hook_subscriptions_active_workspace",
         table_name="hook_subscriptions",
         postgresql_where=sa.text("enabled AND deleted_at IS NULL AND expired_at IS NULL"),
-        sqlite_where=sa.text("enabled = 1 AND deleted_at IS NULL AND expired_at IS NULL"),
     )
     op.drop_table("hook_subscriptions")
 
@@ -279,113 +267,77 @@ def _create_revision_guards() -> None:
         "created_by_id",
         "created_at",
     )
-    if op.get_bind().dialect.name == "postgresql":
-        op.create_check_constraint(
-            "hook_names_bounded",
-            "hook_subscription_revisions",
-            "jsonb_typeof(hook_names) = 'array' AND jsonb_array_length(hook_names) BETWEEN 1 AND 128",
-        )
-        changed = " OR ".join(f"NEW.{column} IS DISTINCT FROM OLD.{column}" for column in columns)
-        op.execute(
-            """
-            CREATE FUNCTION validate_hook_subscription_revision_insert()
-            RETURNS trigger
-            LANGUAGE plpgsql
-            AS $$
-            BEGIN
-                IF jsonb_typeof(NEW.hook_names) <> 'array'
-                   OR jsonb_array_length(NEW.hook_names) NOT BETWEEN 1 AND 128 THEN
-                    RAISE EXCEPTION 'HookSubscription hook names must be a bounded array';
-                END IF;
-                IF EXISTS (
-                    SELECT value
-                    FROM jsonb_array_elements_text(NEW.hook_names)
-                    GROUP BY value
-                    HAVING count(*) > 1
-                ) THEN
-                    RAISE EXCEPTION 'HookSubscription hook names must be unique';
-                END IF;
-                RETURN NEW;
-            END;
-            $$
-            """
-        )
-        op.execute(
-            """
-            CREATE TRIGGER validate_hook_subscription_revision_insert
-            BEFORE INSERT ON hook_subscription_revisions
-            FOR EACH ROW EXECUTE FUNCTION validate_hook_subscription_revision_insert()
-            """
-        )
-        op.execute(
-            f"""
-            CREATE FUNCTION reject_hook_subscription_revision_update()
-            RETURNS trigger
-            LANGUAGE plpgsql
-            AS $$
-            BEGIN
-                IF {changed} THEN
-                    RAISE EXCEPTION 'HookSubscription Revision columns are immutable';
-                END IF;
-                RETURN NEW;
-            END;
-            $$
-            """
-        )
-        op.execute(
-            """
-            CREATE TRIGGER reject_hook_subscription_revision_update
-            BEFORE UPDATE ON hook_subscription_revisions
-            FOR EACH ROW EXECUTE FUNCTION reject_hook_subscription_revision_update()
-            """
-        )
-        return
+    op.create_check_constraint(
+        "hook_names_bounded",
+        "hook_subscription_revisions",
+        "jsonb_typeof(hook_names) = 'array' AND jsonb_array_length(hook_names) BETWEEN 1 AND 128",
+    )
+    changed = " OR ".join(f"NEW.{column} IS DISTINCT FROM OLD.{column}" for column in columns)
+    op.execute(
+        """
+        CREATE FUNCTION validate_hook_subscription_revision_insert()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+            IF jsonb_typeof(NEW.hook_names) <> 'array'
+               OR jsonb_array_length(NEW.hook_names) NOT BETWEEN 1 AND 128 THEN
+                RAISE EXCEPTION 'HookSubscription hook names must be a bounded array';
+            END IF;
+            IF EXISTS (
+                SELECT value
+                FROM jsonb_array_elements_text(NEW.hook_names)
+                GROUP BY value
+                HAVING count(*) > 1
+            ) THEN
+                RAISE EXCEPTION 'HookSubscription hook names must be unique';
+            END IF;
+            RETURN NEW;
+        END;
+        $$
+        """
+    )
     op.execute(
         """
         CREATE TRIGGER validate_hook_subscription_revision_insert
         BEFORE INSERT ON hook_subscription_revisions
-        WHEN json_valid(NEW.hook_names) = 0
-             OR json_type(NEW.hook_names) <> 'array'
-             OR json_array_length(NEW.hook_names) NOT BETWEEN 1 AND 128
-             OR EXISTS (
-                 SELECT value
-                 FROM json_each(NEW.hook_names)
-                 GROUP BY value
-                 HAVING count(*) > 1
-             )
-        BEGIN
-            SELECT RAISE(ABORT, 'HookSubscription hook names must be a bounded unique array');
-        END
+        FOR EACH ROW EXECUTE FUNCTION validate_hook_subscription_revision_insert()
         """
     )
-    changed = " OR ".join(f"OLD.{column} IS NOT NEW.{column}" for column in columns)
     op.execute(
         f"""
+        CREATE FUNCTION reject_hook_subscription_revision_update()
+        RETURNS trigger
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+            IF {changed} THEN
+                RAISE EXCEPTION 'HookSubscription Revision columns are immutable';
+            END IF;
+            RETURN NEW;
+        END;
+        $$
+        """
+    )
+    op.execute(
+        """
         CREATE TRIGGER reject_hook_subscription_revision_update
         BEFORE UPDATE ON hook_subscription_revisions
-        WHEN {changed}
-        BEGIN
-            SELECT RAISE(ABORT, 'HookSubscription Revision columns are immutable');
-        END
+        FOR EACH ROW EXECUTE FUNCTION reject_hook_subscription_revision_update()
         """
     )
 
 
 def _drop_revision_guards() -> None:
-    if op.get_bind().dialect.name == "postgresql":
-        op.execute("DROP TRIGGER validate_hook_subscription_revision_insert ON hook_subscription_revisions")
-        op.execute("DROP FUNCTION validate_hook_subscription_revision_insert()")
-        op.execute("DROP TRIGGER reject_hook_subscription_revision_update ON hook_subscription_revisions")
-        op.execute("DROP FUNCTION reject_hook_subscription_revision_update()")
-        return
-    op.execute("DROP TRIGGER validate_hook_subscription_revision_insert")
-    op.execute("DROP TRIGGER reject_hook_subscription_revision_update")
+    op.execute("DROP TRIGGER validate_hook_subscription_revision_insert ON hook_subscription_revisions")
+    op.execute("DROP FUNCTION validate_hook_subscription_revision_insert()")
+    op.execute("DROP TRIGGER reject_hook_subscription_revision_update ON hook_subscription_revisions")
+    op.execute("DROP FUNCTION reject_hook_subscription_revision_update()")
 
 
 def _create_inline_guards() -> None:
     """Keep inline ownership, its single Revision, and expiry irreversible."""
-    postgres = op.get_bind().dialect.name == "postgresql"
-    differs = "IS DISTINCT FROM" if postgres else "IS NOT"
+    differs = "IS DISTINCT FROM"
     scope_invalid = f"""
         EXISTS (
             SELECT 1 FROM hook_subscriptions h
@@ -410,29 +362,24 @@ def _create_inline_guards() -> None:
         ("validate_inline_hook_revision", "hook_subscription_revisions", "INSERT", scope_invalid),
         ("preserve_inline_hook_head", "hook_subscriptions", "UPDATE", head_changed),
     ):
-        if postgres:
-            op.execute(f"""
-                CREATE FUNCTION {name}() RETURNS trigger LANGUAGE plpgsql AS $$
-                BEGIN
-                    IF {condition} THEN
-                        RAISE EXCEPTION 'Inline Hook configuration and ownership are immutable';
-                    END IF;
-                    RETURN NEW;
-                END;
-                $$
-            """)
-            op.execute(f"""
-                CREATE TRIGGER {name} BEFORE {operation} ON {table}
-                FOR EACH ROW EXECUTE FUNCTION {name}()
-            """)
-        else:
-            op.execute(f"""
-                CREATE TRIGGER {name} BEFORE {operation} ON {table}
-                WHEN {condition}
-                BEGIN
-                    SELECT RAISE(ABORT, 'Inline Hook configuration and ownership are immutable');
-                END
-            """)
+        op.execute(
+            f"""
+            CREATE FUNCTION {name}() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN
+                IF {condition} THEN
+                    RAISE EXCEPTION 'Inline Hook configuration and ownership are immutable';
+                END IF;
+                RETURN NEW;
+            END;
+            $$
+        """
+        )
+        op.execute(
+            f"""
+            CREATE TRIGGER {name} BEFORE {operation} ON {table}
+            FOR EACH ROW EXECUTE FUNCTION {name}()
+        """
+        )
 
 
 def _drop_inline_guards() -> None:
@@ -440,8 +387,5 @@ def _drop_inline_guards() -> None:
         ("validate_inline_hook_revision", "hook_subscription_revisions"),
         ("preserve_inline_hook_head", "hook_subscriptions"),
     ):
-        if op.get_bind().dialect.name == "postgresql":
-            op.execute(f"DROP TRIGGER {name} ON {table}")
-            op.execute(f"DROP FUNCTION {name}()")
-        else:
-            op.execute(f"DROP TRIGGER {name}")
+        op.execute(f"DROP TRIGGER {name} ON {table}")
+        op.execute(f"DROP FUNCTION {name}()")

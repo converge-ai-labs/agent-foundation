@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Button } from "a13n-ui";
+import { Button, ModalFrame } from "a13n-ui";
+import { useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -14,6 +15,7 @@ import { ErrorNotice, Loading } from "../../shared/feedback";
 import { useIdempotency } from "../../shared/idempotency";
 import { Composer } from "../conversations/composer";
 import { isActiveRun, invalidateConversation } from "../conversations/api";
+import { RunInspector } from "../conversations/inspector";
 import { RunContent } from "../conversations/run";
 import { useRun } from "../conversations/queries";
 import { useAssistantReadiness, useConfigurationThread } from "./api";
@@ -30,6 +32,7 @@ function ConfigurationConversation({ threadId }: { threadId: string }) {
   const { t } = useTranslation(),
     client = useClient(),
     { workspace, basePath, can } = useWorkspace();
+  const [inspectorOpen, setInspectorOpen] = useState(false);
   const query = useConfigurationThread(threadId),
     [params] = useSearchParams(),
     navigate = useNavigate();
@@ -155,6 +158,15 @@ function ConfigurationConversation({ threadId }: { threadId: string }) {
             </Link>
           ))}
         </nav>
+        {runId && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setInspectorOpen(true)}
+          >
+            {t("Run details")}
+          </Button>
+        )}
         {run.data?.status === "completed" && (
           <Button
             variant="outline"
@@ -172,6 +184,17 @@ function ConfigurationConversation({ threadId }: { threadId: string }) {
         )}
       </p>
       <ErrorNotice error={query.error ?? fork.error ?? branches.error} />
+      <ModalFrame
+        open={inspectorOpen}
+        onOpenChange={setInspectorOpen}
+        title={t("Run details")}
+        closeLabel={t("Close")}
+        size="lg"
+      >
+        {inspectorOpen && runId && (
+          <RunInspector runId={runId} onClose={() => setInspectorOpen(false)} />
+        )}
+      </ModalFrame>
       <div className={styles.panes}>
         <div
           className={`${styles.conversation} a13n-scrollbar`}

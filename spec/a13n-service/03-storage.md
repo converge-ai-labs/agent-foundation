@@ -31,7 +31,6 @@ flowchart LR
     Consumer --> Files["pathlib and AnyIO filesystem"]
 
     SQL --> PostgreSQL["PostgreSQL + Psycopg"]
-    SQL --> SQLite["SQLite + aiosqlite"]
     RedisAPI --> Redis["Redis service"]
     RedisAPI --> Memory["fakeredis shared memory"]
     Objects --> S3["S3-compatible service"]
@@ -42,7 +41,7 @@ flowchart LR
 
 | Capability                  | Consumer surface                          | Network backend                           | Local backend                                    |
 | --------------------------- | ----------------------------------------- | ----------------------------------------- | ------------------------------------------------ |
-| Relational                  | SQLAlchemy asynchronous Core and ORM APIs | PostgreSQL through Psycopg 3              | SQLite through aiosqlite                         |
+| Relational                  | SQLAlchemy asynchronous Core and ORM APIs | PostgreSQL through Psycopg 3              | —                                                |
 | Redis-compatible structures | `redis.asyncio.Redis`                     | Redis                                     | fakeredis with a process-shared fake server      |
 | Objects                     | Service `ObjectStore` protocol            | S3-compatible storage through aiobotocore | Object semantics over a confined local directory |
 | Files                       | `pathlib` plus AnyIO file operations      | NFS mounted by deployment                 | Local directory                                  |
@@ -69,13 +68,11 @@ async with await anyio.open_file(path, "rb") as file:
 
 SQLAlchemy's asynchronous `AsyncEngine`, `AsyncSession`, Core, and ORM APIs are the relational interface. Service does not wrap these APIs with generic `get`, `insert`, or `do` methods. A repository may add domain-specific queries, but a repository does not become part of the generic storage substrate.
 
-PostgreSQL is the distributed-service backend and uses Psycopg 3. SQLite is the zero-service backend for the minimal single-process profile and uses aiosqlite. The same SQLAlchemy models, unit-of-work shape, and consumer code serve both backends for the declared portable subset.
-
-The portable relational subset includes ordinary transactions, constraints, indexes, CRUD statements, joins, and SQLAlchemy-managed type conversion that has equivalent tested behavior on both backends. PostgreSQL-only SQL, data types, locking, isolation guarantees, advisory locks, and concurrency behavior are not portable. A feature that requires one of them declares PostgreSQL as a startup requirement instead of silently weakening its behavior on SQLite.
+PostgreSQL through Psycopg 3 is the only relational backend and serves every deployment profile. With a single backend there is no portable subset: models, queries, and schema revisions may use the full PostgreSQL surface — types, locking, isolation, advisory locks, and concurrency behavior — without declaring a backend requirement or degrading on a second dialect.
 
 The canonical engine and session factory are constructed once per process. Each operation opens a short-lived session and transaction. An `AsyncSession` is neither shared across concurrent tasks nor retained across agent execution, network I/O, sleeps, background work, or streaming responses. Cancellation observed before commit and exceptions roll back the active transaction. Connection checkout and commit shield the transfer of connection ownership; driver connection and statement timeouts bound database I/O. The session body remains cancellable, with cancellation checkpoints after checkout and before commit. Once commit starts, its outcome is allowed to settle before cancellation propagates; cancellation does not prove rollback. Connection cleanup has a separate bounded shield (5 seconds by default) and preserves the original failure if driver cleanup also fails. No scope may include external I/O or application waits.
 
-a13n Service's ordered migration history is the schema authority for both relational backends. Domains own the meaning of their relational models and schema changes, while the service owns their aggregation into one history. Revision ordering, backend portability, application ownership, and failure behavior are defined by the [Relational Schema Lifecycle](04-relational-schema.md). Runtime `create_all` calls never replace migration history.
+a13n Service's ordered migration history is the schema authority for the service database. Domains own the meaning of their relational models and schema changes, while the service owns their aggregation into one history. Revision ordering, backend portability, application ownership, and failure behavior are defined by the [Relational Schema Lifecycle](04-relational-schema.md). Runtime `create_all` calls never replace migration history.
 
 ## Redis-Compatible Data Structures
 
@@ -142,7 +139,7 @@ Local files and NFS do not have separate Python providers. Deployment mounts NFS
 
 The storage substrate may centralize confined-root resolution, bounded file streaming, and atomic same-filesystem replacement, but it does not invent a filesystem protocol or mirror the complete `open` API. Code accepting logical or untrusted names resolves them beneath the configured root, rejects absolute paths and parent traversal, and prevents symlink escape. Trusted internal code may use ordinary paths directly once the root boundary has been established.
 
-Blocking file operations run through AnyIO's worker-thread facilities on service paths, with bounded concurrency and bounded buffering. Atomic replace is guaranteed only within one filesystem. NFS mounting, authentication, availability, cache consistency, quotas, backups, and access modes remain deployment responsibilities. Filesystem locks and SQLite files on NFS are not distributed-coordination mechanisms.
+Blocking file operations run through AnyIO's worker-thread facilities on service paths, with bounded concurrency and bounded buffering. Atomic replace is guaranteed only within one filesystem. NFS mounting, authentication, availability, cache consistency, quotas, backups, and access modes remain deployment responsibilities. Filesystem locks are not distributed-coordination mechanisms.
 
 Filesystem storage and object storage remain distinct. Filesystem consumers may rename, traverse, and mutate paths; object consumers operate on opaque keys and conditional whole-object publication. Their implementations may share private byte-copy and atomic-file helpers without sharing an application interface.
 
@@ -164,11 +161,10 @@ Automatic retries are bounded, cancellation-aware, and limited to operations who
 
 ## Compatibility and Verification
 
-The storage substrate is an internal a13n Service contract. Changing its Python construction helpers does not change a public service or SDK API. Changing persisted object layout, object conditional semantics, the supported Redis command set, or the relational portable subset requires migration and compatibility review because deployed data or consumer behavior may depend on it.
+The storage substrate is an internal a13n Service contract. Changing its Python construction helpers does not change a public service or SDK API. Changing persisted object layout, object conditional semantics, the supported Redis command set, or the relational schema requires migration and compatibility review because deployed data or consumer behavior may depend on it.
 
-Each capability has a shared contract suite that runs the declared common behavior against both local and network backends:
+Relational tests run against PostgreSQL, the only backend. Each capability that still selects between local and network backends has a shared contract suite that runs the declared common behavior against both:
 
-- relational tests run against SQLite and PostgreSQL;
 - Redis tests run against fakeredis and a real Redis service;
 - object tests run against the local adapter and an S3-compatible service;
 - filesystem tests run once against the shared mounted-directory behavior, with deployment integration covering NFS separately.
@@ -179,7 +175,7 @@ Provider-specific integration tests cover behavior outside the common subset wit
 
 Using capability-specific interfaces means Service consumers learn SQLAlchemy, redis-py, object-store, and filesystem semantics rather than one uniform storage vocabulary. This cost keeps transactions, Redis structures, object publication, and path mutation explicit and prevents a lowest-common-denominator abstraction.
 
-Local backends optimize for zero-service development, not operational parity. They preserve the tested application-visible behavior needed by the minimal profile while accepting weaker durability, concurrency, and failure characteristics. Deployments that need network semantics run the corresponding network service locally.
+Local backends reduce external dependencies for development, not operational parity. They preserve the tested application-visible behavior needed by the Single-process profile while accepting weaker durability, concurrency, and failure characteristics. PostgreSQL remains required; deployments that need network semantics for another capability run that capability's network service locally.
 
 ## Invariants
 

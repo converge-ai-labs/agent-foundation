@@ -118,3 +118,13 @@ def test_mem0_configuration_and_credential_are_independent_pure_models():
         Mem0Credential(api_key="   ")
     with pytest.raises(ValidationError):
         config.base_url = "http://other"
+
+
+def test_document_capability_is_inert_and_opt_in():
+    plugin = _Plugin()
+    catalog = MemoryBackendCatalog((plugin, Mem0OSSBackendPlugin()))
+    assert catalog[plugin.key].supports_documents is False
+    assert catalog["a13n.mem0-oss"].supports_documents is True
+    plugin.supports_documents = "yes"
+    with pytest.raises(TypeError, match="boolean"):
+        MemoryBackendCatalog((plugin,))

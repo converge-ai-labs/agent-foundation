@@ -3,20 +3,29 @@
 from __future__ import annotations
 
 import base64
+import fcntl
+import hashlib
+import json
 import os
-import shlex
 import subprocess
 from contextlib import contextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import urlsplit
 
 import httpx2
 
 from .environment import ROOT, Environment
+from .state import atomic_write as _atomic_write
+from .state import machine_directory as _machine_directory
 
 # These are public local-only identities, not deployment credentials.
 USER_EMAIL = "dev@agent-foundation.local"
 USER_PASSWORD = "agent-foundation-local"
+PUBLIC_KEY = "lf_pk_agent_foundation_local"
+SECRET_KEY = "lf_sk_agent_foundation_local"
+SHARED_PROJECT = "agent-foundation-local-langfuse-v2"
+SHARED_CONFIG_VERSION = 1
 
 
 @dataclass(frozen=True)
@@ -40,6 +49,21 @@ class Langfuse:
     def base_url(self) -> str:
         return f"http://127.0.0.1:{self.port}"
 
+    @property
+    def project(self) -> str:
+        return SHARED_PROJECT
+
+    @contextmanager
+    def lock(self):
+        directory = _machine_directory()
+        directory.mkdir(parents=True, exist_ok=True)
+        fd = os.open(directory / "langfuse.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            yield
+        finally:
+            os.close(fd)
+
     def validate(self) -> None:
         if self.query.provider == "none":
             return
@@ -54,19 +78,21 @@ class Langfuse:
         if (
             url.scheme != "http"
             or url.hostname != "127.0.0.1"
-            or not url.port
-            or url.port >= 65535
+            or url.port != 3000
             or url.username is not None
             or url.password is not None
             or url.path not in {"", "/"}
             or url.query
             or url.fragment
         ):
-            raise ValueError(
-                "Local Langfuse requires http://127.0.0.1:PORT (PORT < 65535), without a path or credentials"
-            )
+            raise ValueError("Shared local Langfuse requires http://127.0.0.1:3000 without a path or credentials")
         if self.query.langfuse_public_key is None or self.query.langfuse_secret_key is None:
             raise ValueError("Local Langfuse requires its public and secret project keys in observability.query")
+        if (
+            self.query.langfuse_public_key.get_secret_value() != PUBLIC_KEY
+            or self.query.langfuse_secret_key.get_secret_value() != SECRET_KEY
+        ):
+            raise ValueError("Shared local Langfuse requires the repository's public fixture project keys")
         # The adjacent port exposes Langfuse media storage, not Service objects.
         settings = self.environment.settings
         assert settings.database.url is not None and settings.redis.url is not None
@@ -75,12 +101,93 @@ class Langfuse:
             urlsplit(settings.redis.url.get_secret_value()).port,
             settings.service.port,
             urlsplit(settings.iam.public_origin).port,
-            18080,
+            self.environment.ports.model,
         }
         if {self.port, self.port + 1} & occupied:
             raise ValueError("Langfuse HTTP/media ports overlap Service, Console, model, PostgreSQL or Redis ports")
 
-    def compose(self, *args: str, capture: bool = False) -> str:
+    def _project_resources(self) -> tuple[str, ...]:
+        commands = (
+            (
+                "docker",
+                "ps",
+                "-a",
+                "--filter",
+                f"label=com.docker.compose.project={self.project}",
+                "--format",
+                "{{.ID}}",
+            ),
+            (
+                "docker",
+                "volume",
+                "ls",
+                "--filter",
+                f"label=com.docker.compose.project={self.project}",
+                "--format",
+                "{{.Name}}",
+            ),
+        )
+        return tuple(
+            line
+            for command in commands
+            for line in subprocess.run(command, check=True, capture_output=True, text=True).stdout.splitlines()
+            if line
+        )
+
+    def _shared_compose(self, *, initialize: bool, require_compatible_source: bool) -> Path | None:
+        directory = _machine_directory()
+        directory.mkdir(parents=True, exist_ok=True)
+        compose = directory / "langfuse-v2.compose.yaml"
+        manifest = directory / "langfuse-v2.json"
+        if manifest.exists():
+            try:
+                value = json.loads(manifest.read_text())
+            except (OSError, json.JSONDecodeError):
+                raise ValueError(f"Invalid shared Langfuse configuration record: {manifest}") from None
+            if not isinstance(value, dict) or type(value.get("compose_sha256")) is not str:
+                raise ValueError(f"Invalid shared Langfuse configuration record: {manifest}")
+            source_hash = (
+                hashlib.sha256((ROOT / "dev/observability/langfuse.compose.yaml").read_bytes()).hexdigest()
+                if require_compatible_source
+                else value["compose_sha256"]
+            )
+            expected = {
+                "version": SHARED_CONFIG_VERSION,
+                "project": self.project,
+                "compose_sha256": source_hash,
+            }
+            if value != expected or not compose.is_file():
+                raise ValueError("Shared Langfuse configuration is missing or incompatible; no resources were changed")
+            if hashlib.sha256(compose.read_bytes()).hexdigest() != value["compose_sha256"]:
+                raise ValueError("Shared Langfuse compose artifact changed unexpectedly; no resources were changed")
+            return compose
+        source_content = (ROOT / "dev/observability/langfuse.compose.yaml").read_bytes()
+        source_hash = hashlib.sha256(source_content).hexdigest()
+        if not initialize:
+            if self._project_resources():
+                raise ValueError("Unmanaged shared Langfuse resources exist; they were not changed")
+            return None
+        if self._project_resources():
+            raise ValueError("Unmanaged shared Langfuse resources exist; they were not adopted or changed")
+        if compose.exists():
+            if hashlib.sha256(compose.read_bytes()).hexdigest() != source_hash:
+                raise ValueError("Partial shared Langfuse configuration is incompatible; no resources were changed")
+        else:
+            _atomic_write(compose, source_content)
+        _atomic_write(
+            manifest,
+            (
+                json.dumps(
+                    {"version": SHARED_CONFIG_VERSION, "project": self.project, "compose_sha256": source_hash},
+                    indent=2,
+                    sort_keys=True,
+                )
+                + "\n"
+            ).encode(),
+        )
+        return compose
+
+    def _compose(self, compose: Path, *args: str, capture: bool = False) -> str:
         self.validate()
         # Stopping an existing checkout stack must still work after opting out.
         if not self.enabled and (not args or args[0] not in {"stop", "down"}):
@@ -103,9 +210,9 @@ class Langfuse:
                 "--env-file",
                 os.devnull,
                 "--project-name",
-                self.environment.project + "-langfuse",
+                self.project,
                 "--file",
-                str(ROOT / "dev/observability/langfuse.compose.yaml"),
+                str(compose),
                 *args,
             ],
             env=env,
@@ -115,40 +222,29 @@ class Langfuse:
         )
         return result.stdout or ""
 
-    def warn_about_legacy_stack(self) -> None:
-        legacy_project = "agent-foundation-langfuse-dev"
-        running = subprocess.run(
-            ["docker", "ps", "--filter", f"label=com.docker.compose.project={legacy_project}", "--format", "{{.ID}}"],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        if running.stdout.strip():
-            command = shlex.join(
-                [
-                    "docker",
-                    "compose",
-                    "--env-file",
-                    os.devnull,
-                    "--project-name",
-                    legacy_project,
-                    "--file",
-                    str(ROOT / "dev/observability/langfuse.compose.yaml"),
-                    "stop",
-                ]
-            )
-            print(
-                "A legacy shared Langfuse stack is running. This checkout uses separate volumes; old traces are not migrated.\n"
-                "If its ports conflict, stop it without deleting data, then rerun setup:\n" + command,
-                flush=True,
-            )
-
     def start(self) -> None:
         if not self.enabled:
             return
-        self.warn_about_legacy_stack()
-        self.compose("up", "-d", "--wait", "--wait-timeout", "180")
-        self.check_credentials()
+        from .docker import ensure_docker
+
+        ensure_docker()
+        with self.lock():
+            compose = self._shared_compose(initialize=True, require_compatible_source=True)
+            assert compose is not None
+            self._compose(compose, "up", "-d", "--wait", "--wait-timeout", "180")
+            self.check_credentials()
+
+    def stop(self, *, reset: bool = False) -> None:
+        from .docker import ensure_docker
+
+        ensure_docker()
+        with self.lock():
+            compose = self._shared_compose(initialize=False, require_compatible_source=False)
+            if compose is not None:
+                self._compose(compose, "down", *(["--volumes"] if reset else []), "--remove-orphans")
+                if reset:
+                    (_machine_directory() / "langfuse-v2.json").unlink()
+                    compose.unlink()
 
     def check_credentials(self) -> None:
         assert self.query.langfuse_public_key is not None and self.query.langfuse_secret_key is not None

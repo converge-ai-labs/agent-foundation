@@ -198,10 +198,10 @@ async def test_outbox_rolls_back_with_lifecycle_and_state_transaction(
 
 
 async def test_postgresql_enforces_current_revision_and_matches_with_jsonb_gin(
-    hook_postgres_sessions: async_sessionmaker[AsyncSession],
+    hook_interaction_sessions: async_sessionmaker[AsyncSession],
 ) -> None:
-    await seed_run_and_secret(hook_postgres_sessions)
-    async with transaction(hook_postgres_sessions) as database:
+    await seed_run_and_secret(hook_interaction_sessions)
+    async with transaction(hook_interaction_sessions) as database:
         run = await database.get(RunRecord, RUN_ID)
         assert run is not None
         subscription = await create_inline_hook_subscription(
@@ -226,7 +226,7 @@ async def test_postgresql_enforces_current_revision_and_matches_with_jsonb_gin(
             actor_id=USER_ID,
         )
 
-    async with short_session(hook_postgres_sessions) as database:
+    async with short_session(hook_interaction_sessions) as database:
         delivery = await database.scalar(select(OutboxRecord))
         assert delivery is not None
         assert delivery.destination_ref == subscription.current_revision_id

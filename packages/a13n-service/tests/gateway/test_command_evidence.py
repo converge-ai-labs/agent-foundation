@@ -16,7 +16,7 @@ from sqlalchemy import select
 
 from tests.hooks.support import seed_hook_actor_access
 from tests.interactions.conftest import NOW, WORKSPACE_ID
-from tests.interactions.conftest import postgres_interaction_sessions as postgres_interaction_sessions
+from tests.interactions.conftest import interaction_sessions as interaction_sessions
 
 from .test_commands import _actor, _commands, _Freezing, _frozen, _Preparation, _request
 
@@ -78,8 +78,8 @@ async def test_binding_failure_rolls_back_run_lifecycle_and_http_receipt(
             assert (await database.scalars(select(model))).all() == []
 
 
-async def test_concurrent_start_reconciles_to_one_committed_receipt(postgres_interaction_sessions, tmp_path):
-    sessions = postgres_interaction_sessions
+async def test_concurrent_start_reconciles_to_one_committed_receipt(interaction_sessions, tmp_path):
+    sessions = interaction_sessions
     objects = await LocalObjectStore.create(tmp_path / "race-objects")
     both_preparing = Event()
 

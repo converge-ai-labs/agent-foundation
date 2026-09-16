@@ -174,7 +174,6 @@ class ThreadRecord(Base):
             "session_id",
             unique=True,
             postgresql_where=text("role = 'root'"),
-            sqlite_where=text("role = 'root'"),
         ),
         Index("ix_threads_session_created", "organization_id", "session_id", "created_at", "id"),
         Index("ix_threads_session_updated", "organization_id", "session_id", "updated_at", "id"),
@@ -414,7 +413,6 @@ class RunRecord(Base):
             "idempotency_key",
             unique=True,
             postgresql_where=text("idempotency_key IS NOT NULL"),
-            sqlite_where=text("idempotency_key IS NOT NULL"),
         ),
         Index(
             "uq_runs_active_thread",
@@ -422,7 +420,6 @@ class RunRecord(Base):
             "thread_id",
             unique=True,
             postgresql_where=text("status IN ('accepted', 'running')"),
-            sqlite_where=text("status IN ('accepted', 'running')"),
         ),
         Index(
             "uq_runs_live_root_thread",
@@ -432,7 +429,6 @@ class RunRecord(Base):
             postgresql_where=text(
                 "parent_run_id IS NULL AND status IN ('accepted', 'running', 'waiting', 'completed')"
             ),
-            sqlite_where=text("parent_run_id IS NULL AND status IN ('accepted', 'running', 'waiting', 'completed')"),
         ),
         Index(
             "ix_runs_worker_scan",
@@ -444,7 +440,6 @@ class RunRecord(Base):
             "created_at",
             "id",
             postgresql_where=text("status = 'accepted' OR (status = 'running' AND current_run_attempt_id IS NULL)"),
-            sqlite_where=text("status = 'accepted' OR (status = 'running' AND current_run_attempt_id IS NULL)"),
         ),
         Index("ix_runs_session_created", "organization_id", "session_id", "created_at", "id"),
         Index("ix_runs_agent_session", "organization_id", "agent_id", "session_id", "id"),
@@ -486,6 +481,7 @@ class RunRecord(Base):
     model_execution_observation_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     connection_selections_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     native_tool_contexts_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    bot_memory_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     priority: Mapped[int] = mapped_column(Integer, nullable=False)
     queue_name: Mapped[str] = mapped_column(String(256), nullable=False)
     available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -567,6 +563,7 @@ class RunRecord(Base):
             ),
             "connection_selections": _JSON_OBJECTS_ADAPTER.validate_python(self.connection_selections_json),
             "native_tool_contexts": _JSON_OBJECTS_ADAPTER.validate_python(self.native_tool_contexts_json),
+            "bot_memory": self.bot_memory_json,
             "priority": self.priority,
             "queue_name": self.queue_name,
             "available_at": assume_utc(self.available_at),
@@ -717,7 +714,6 @@ class RunAttemptRecord(Base):
             "lease_expires_at",
             "run_id",
             postgresql_where=text("status IN ('leased', 'running')"),
-            sqlite_where=text("status IN ('leased', 'running')"),
         ),
     )
 

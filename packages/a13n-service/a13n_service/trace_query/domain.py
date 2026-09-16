@@ -120,6 +120,9 @@ class TraceQueryCapabilities:
     history_from: datetime | None = None
 
 
+OBSERVATION_METADATA_PREFIX = "a13n.observation.metadata."
+
+
 @dataclass(frozen=True, slots=True)
 class ProviderTraceQuery:
     organization_id: str
@@ -131,9 +134,12 @@ class ProviderTraceQuery:
     cursor: str | None = None
     query: str | None = None
     search_in: SearchIn | None = None
+    session_id: str | None = None
     thread_id: str | None = None
     run_id: str | None = None
     run_attempt_id: str | None = None
+    # Observation-metadata key/value pairs matched on the root span.
+    metadata: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,9 +167,11 @@ def project_observation(item: Observation, view: TraceView) -> Observation:
             "scope": None,
             "status_message": None,
             "events": None,
-            "links": tuple(link.model_copy(update={"attributes": None}) for link in item.links)
-            if item.links is not None
-            else None,
+            "links": (
+                tuple(link.model_copy(update={"attributes": None}) for link in item.links)
+                if item.links is not None
+                else None
+            ),
         }
     )
 

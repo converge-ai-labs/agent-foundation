@@ -294,10 +294,9 @@ async def test_child_acceptance_reauthorizes_persisted_parent_principal(
 
 
 async def test_concurrent_child_acceptance_keeps_distinct_relationships_on_postgresql(
-    postgres_interaction_sessions: async_sessionmaker[AsyncSession],
-    interaction_object_store: ObjectStore,
+    interaction_sessions: async_sessionmaker[AsyncSession], interaction_object_store: ObjectStore
 ) -> None:
-    sessions = postgres_interaction_sessions
+    sessions = interaction_sessions
     await _grant_and_seed_child(sessions)
     states, parent, parent_state = await _accept_parent(sessions, interaction_object_store)
     scheduler = AttemptScheduler(

@@ -45,6 +45,7 @@ def workspace(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     uv.chmod(0o755)
     # The same recorder stands in for asset tooling, not the foreground server.
     shutil.copy2(uv, bin_dir / "pnpm")
+    shutil.copy2(uv, bin_dir / "python3")
     (tmp_path / "frontend").mkdir()
     for name in ("package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml"):
         (tmp_path / "frontend" / name).touch()
@@ -69,6 +70,26 @@ def run_make(workspace: Path, *args: str) -> subprocess.CompletedProcess[str]:
 def uv_calls(workspace: Path) -> list[list[str]]:
     log = workspace / "uv-calls.jsonl"
     return [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+
+
+@pytest.mark.parametrize(
+    ("target", "command"),
+    [
+        ("dev", "dev"),
+        ("service-dev", "service-dev"),
+        ("setup", "setup"),
+        ("dev-down", "down"),
+        ("dev-status", "status"),
+    ],
+)
+def test_service_make_targets_use_stdlib_bootstrap_without_implicit_uv_sync(workspace: Path, target, command) -> None:
+    result = run_make(workspace, target)
+    assert result.returncode == 0, result.stdout + result.stderr
+    calls = uv_calls(workspace)
+    assert len(calls) == 1
+    assert calls[0][:2] == ["-m", "dev.service"]
+    assert calls[0][-1] == command
+    assert "run" not in calls[0] and "--all-packages" not in calls[0]
 
 
 @pytest.mark.parametrize(("target", "profile", "command"), LAUNCHERS)

@@ -48,7 +48,7 @@ from a13n_service.skills.publication import SkillPublicationService
 from a13n_service.skills.sources import SkillSourcePreparer
 from a13n_service.skills.uploads import SkillUploadService
 from a13n_service.storage import short_session, transaction
-from a13n_service.storage.config import SQLiteConfig
+from a13n_service.storage.config import PostgreSQLConfig
 from a13n_service.storage.object_store import LocalObjectStore
 from a13n_service.storage.relational import create_session_factory, create_sql_engine
 from sqlalchemy import func, select
@@ -94,11 +94,8 @@ def actor(user_id: str = BUILDER_ID) -> AuthenticatedActor:
 
 
 @pytest.fixture
-async def skill_services(
-    tmp_path: Path,
-    service_sqlite_database: Path,
-) -> AsyncIterator[SkillTestServices]:
-    engine = create_sql_engine(SQLiteConfig(path=service_sqlite_database))
+async def skill_services(tmp_path: Path, service_database: PostgreSQLConfig) -> AsyncIterator[SkillTestServices]:
+    engine = create_sql_engine(service_database)
     sessions = create_session_factory(engine)
     async with transaction(sessions) as session:
         session.add(OrganizationRecord(id=ORG_ID, key="test", name="Test", created_at=NOW, updated_at=NOW))

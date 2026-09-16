@@ -1,5 +1,6 @@
 import {
   type Icon,
+  DatabaseIcon,
   PulseIcon,
   HeartIcon,
   CubeIcon,
@@ -8,6 +9,7 @@ import {
   MonitorIcon,
   PlugIcon,
   PuzzlePieceIcon,
+  RobotIcon,
 } from "@phosphor-icons/react";
 export const navigationGroups: {
   label: string;
@@ -25,6 +27,7 @@ export const navigationGroups: {
     entries: [
       ["models", "Models", CubeIcon],
       ["skills", "Skills", PuzzlePieceIcon],
+      ["memories", "Memories", DatabaseIcon],
       [
         "environments",
         "Environments",
@@ -39,6 +42,7 @@ export const navigationGroups: {
   {
     label: "Integrations",
     entries: [
+      ["bots", "Bots", RobotIcon],
       ["application-accounts", "Application accounts", PlugsConnectedIcon],
       ["connections", "Connections", PlugIcon],
     ],

@@ -196,6 +196,7 @@ async def open_lab(
     run_faults=None,
     performance=None,
     local_connectors=True,
+    bot_memory=False,
 ):
     if suite not in {"core", "round-two", "management"}:
         raise ValueError(f"Unknown live-test suite: {suite}")
@@ -256,6 +257,11 @@ async def open_lab(
             "timeout_seconds": 120,
             "encryption_key": base64.b64encode(secrets.token_bytes(32)).decode(),
         }
+        if bot_memory:
+            if not management:
+                raise ValueError("Bot journeys require the management TLS peer")
+            config["bot_memory"] = True
+            config["connectivity_url"] = free_origin()
         if smoke:
             config["smoke"] = True
         if websocket_envd:
@@ -390,6 +396,9 @@ async def open_lab(
         if performance is None:
             await lab.start_worker()
             logger.info("live_lab_worker_ready suite=%s seconds=%.2f", suite, monotonic() - phase)
+        if bot_memory:
+            connectivity = await lab.spawn("dev.live_tests.manage", "connectivity")
+            await lab.ready(connectivity, config["connectivity_url"])
         logger.info("live_lab_ready suite=%s setup_seconds=%.2f", suite, monotonic() - started)
         try:
             yield lab

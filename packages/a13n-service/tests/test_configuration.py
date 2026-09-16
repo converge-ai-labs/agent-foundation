@@ -38,26 +38,38 @@ def test_no_implicit_files_and_no_environment_in_model(tmp_path, monkeypatch):
     assert load_settings(environ={}).service.port == 8000
 
 
+def test_session_cookie_name_is_normal_configuration():
+    settings = load_settings(environ={"A13N_SERVICE_IAM_SESSION_COOKIE_NAME": "a13n_session_worktree"})
+    assert Settings().iam.session_cookie_name == "a13n_session"
+    assert settings.iam.session_cookie_name == "a13n_session_worktree"
+    assert settings.identity_configuration().session_cookie_name == "a13n_session_worktree"
+
+
 def test_relative_paths_share_file_base_even_for_environment_overrides(tmp_path, monkeypatch):
     path = tmp_path / "service.toml"
-    path.write_text('[database]\nbackend="sqlite"\nsqlite_path="data/service.sqlite3"\n')
+    path.write_text('[database]\nurl="postgresql://db.example/service"\n')
     other = tmp_path / "elsewhere"
     other.mkdir()
     monkeypatch.chdir(other)
     settings = load_settings(path, environ={"A13N_SERVICE_OBJECT_LOCAL_ROOT": "content"})
-    assert settings.database.sqlite_path == tmp_path / "data/service.sqlite3"
+    assert settings.database.url.get_secret_value() == "postgresql+psycopg://db.example/service"
     assert settings.objects.local_root == tmp_path / "content"
     assert settings.filesystem.root == tmp_path / "var/files"
 
 
 @pytest.mark.parametrize(
-    "document", ['[databse]\nbackend="sqlite"', '[database]\nbacked="sqlite"', '[observability.query]\nprovidre="none"']
+    "document",
+    [
+        '[databse]\nurl="postgresql://db.example/service"',
+        '[database]\nurls="postgresql://db.example/service"',
+        '[observability.query]\nprovidre="none"',
+    ],
 )
 def test_unknown_toml_fields_are_not_hidden_by_overrides(tmp_path, document):
     path = tmp_path / "service.toml"
     path.write_text(document)
     with pytest.raises(ConfigurationError, match="Unknown configuration field"):
-        load_settings(path, environ={"A13N_SERVICE_DATABASE_BACKEND": "postgresql"})
+        load_settings(path, environ={"A13N_SERVICE_DATABASE_URL": "postgresql://db.example/override"})
 
 
 def test_explicit_missing_or_invalid_toml_fails(tmp_path):
@@ -84,6 +96,25 @@ def test_sensitive_inputs_are_redacted_from_errors_and_representations(tmp_path)
     assert result.exit_code == 1
     assert "service.port" in result.output
     assert "private-invalid-port" not in result.output
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "not-a-url",
+        "mysql://admin:private-database-password@db.example/service",
+        "postgresql://admin:private-database-password@db.example:private-port/service",
+    ],
+)
+def test_config_check_rejects_invalid_database_urls_without_connecting_or_revealing_credentials(monkeypatch, value):
+    monkeypatch.setenv("A13N_SERVICE_DATABASE_URL", value)
+
+    result = CliRunner().invoke(main, ["config", "check"])
+
+    assert result.exit_code == 1
+    assert "database.url" in result.output
+    assert "private-database-password" not in result.output
+    assert "private-port" not in result.output
 
 
 def test_environment_catalog_is_unique_and_preserves_known_names():

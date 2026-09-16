@@ -29,6 +29,7 @@ class MemoryBackendPlugin[Configuration: BaseModel, Credential: BaseModel](ABC):
     display_name: ClassVar[str]
     configuration_model: type[Configuration]
     credential_model: type[Credential]
+    supports_documents: bool = False
 
     @abstractmethod
     def open(
@@ -70,6 +71,7 @@ class Mem0Credential(BaseModel):
 class Mem0OSSBackendPlugin(MemoryBackendPlugin[Mem0OSSConfiguration, Mem0Credential]):
     key = "a13n.mem0-oss"
     display_name = "Mem0 OSS"
+    supports_documents = True
     configuration_model = Mem0OSSConfiguration
     credential_model = Mem0Credential
 
@@ -84,6 +86,7 @@ class Mem0OSSBackendPlugin(MemoryBackendPlugin[Mem0OSSConfiguration, Mem0Credent
 class Mem0PlatformBackendPlugin(MemoryBackendPlugin[Mem0PlatformConfiguration, Mem0Credential]):
     key = "a13n.mem0-platform"
     display_name = "Mem0 Platform"
+    supports_documents = True
     configuration_model = Mem0PlatformConfiguration
     credential_model = Mem0Credential
 
@@ -108,6 +111,8 @@ class MemoryBackendCatalog(Mapping[str, MemoryBackendPlugin[Any, Any]]):
             key = _key(plugin.key)
             if key in selected:
                 raise ValueError(f"Duplicate memory backend key: {key}")
+            if type(plugin.supports_documents) is not bool:
+                raise TypeError("Memory document support must be a boolean")
             if not plugin.display_name.strip():
                 raise ValueError("Memory backend display name cannot be empty")
             if not issubclass(plugin.configuration_model, BaseModel) or not issubclass(

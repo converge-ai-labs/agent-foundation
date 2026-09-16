@@ -12,8 +12,10 @@ import httpx2
 import pytest
 from a13n_service.configuration.sources import load_settings
 
-from dev.service.environment import LOCAL_CONFIG, Environment
-from dev.service.langfuse import Langfuse, local_traces, trace_environment
+from dev.service import langfuse as langfuse_module
+from dev.service.environment import LOCAL_CONFIG
+from dev.service.langfuse import SHARED_PROJECT, Langfuse, local_traces, trace_environment
+from dev.service.tests.support import environment_for
 
 
 def local_langfuse(tmp_path, **query):
@@ -26,7 +28,7 @@ def local_langfuse(tmp_path, **query):
             "observability": {"query": query},
         },
     )
-    return Langfuse(Environment(settings, tmp_path))
+    return Langfuse(environment_for(settings, tmp_path))
 
 
 @pytest.mark.parametrize(
@@ -40,6 +42,8 @@ def local_langfuse(tmp_path, **query):
         {"langfuse_base_url": "http://127.0.0.1:3000?remote=true"},
         {"langfuse_base_url": "http://127.0.0.1:65535"},
         {"langfuse_base_url": "http://127.0.0.1:7999"},
+        {"langfuse_public_key": "incompatible"},
+        {"langfuse_secret_key": "incompatible"},
         {"langfuse_base_url": "http://127.0.0.1:15432"},
         {"langfuse_public_key": None},
         {"langfuse_secret_key": None},
@@ -49,7 +53,7 @@ def test_reject_nonlocal_or_conflicting_configuration_before_compose(tmp_path, q
     calls = []
     monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: calls.append(args))
     with pytest.raises(ValueError):
-        local_langfuse(tmp_path, **query).compose("up")
+        local_langfuse(tmp_path, **query)._compose(tmp_path / "shared.yaml", "up")
     assert calls == []
 
 
@@ -65,23 +69,19 @@ def test_compose_uses_selected_toml_and_checkout_not_dotenv(tmp_path, monkeypatc
         return SimpleNamespace(stdout="ready")
 
     monkeypatch.setattr(subprocess, "run", run)
-    langfuse = local_langfuse(
-        tmp_path,
-        langfuse_base_url="http://127.0.0.1:3100/",
-        langfuse_public_key="selected-public",
-        langfuse_secret_key="selected-secret",
-    )
-    assert langfuse.compose("ps", capture=True) == "ready"
+    langfuse = local_langfuse(tmp_path)
+    shared = tmp_path / "shared.yaml"
+    shared.write_text("services: {}\n")
+    assert langfuse._compose(shared, "ps", capture=True) == "ready"
     command, options = calls[0]
     assert command[command.index("--env-file") + 1] == os.devnull
-    assert command[command.index("--project-name") + 1] == langfuse.environment.project + "-langfuse"
-    assert options["env"]["LANGFUSE_LOCAL_PORT"] == "3100"
-    assert options["env"]["LANGFUSE_LOCAL_MINIO_PORT"] == "3101"
-    assert options["env"]["LANGFUSE_LOCAL_PUBLIC_KEY"] == "selected-public"
-    assert options["env"]["LANGFUSE_LOCAL_SECRET_KEY"] == "selected-secret"
+    assert command[command.index("--project-name") + 1] == SHARED_PROJECT
+    assert command[command.index("--file") + 1] == str(shared)
+    assert options["env"]["LANGFUSE_LOCAL_PORT"] == "3000"
+    assert options["env"]["LANGFUSE_LOCAL_MINIO_PORT"] == "3001"
+    assert options["env"]["LANGFUSE_LOCAL_PUBLIC_KEY"] == "lf_pk_agent_foundation_local"
+    assert options["env"]["LANGFUSE_LOCAL_SECRET_KEY"] == "lf_sk_agent_foundation_local"
     assert (tmp_path / ".env").read_text() == "LANGFUSE_LOCAL_PORT=9999\n"
-    other = dataclasses.replace(langfuse.environment, root=tmp_path / "other-checkout")
-    assert other.project != langfuse.environment.project
 
 
 def test_standard_export_profile_replaces_all_ambient_otel_settings(tmp_path, monkeypatch, capsys):
@@ -135,14 +135,63 @@ def test_disabled_traces_cannot_fall_back_to_ambient_exporter(tmp_path, monkeypa
 
 def test_start_checks_readiness_then_project_authentication(tmp_path, monkeypatch):
     calls = []
-    monkeypatch.setattr(Langfuse, "warn_about_legacy_stack", lambda self: None)
-    monkeypatch.setattr(Langfuse, "compose", lambda self, *args: calls.append(args))
+    monkeypatch.setattr("dev.service.docker.ensure_docker", lambda: calls.append("docker"))
+    monkeypatch.setattr(Langfuse, "_shared_compose", lambda self, **kwargs: tmp_path / "shared.yaml")
+    monkeypatch.setattr(Langfuse, "_compose", lambda self, path, *args: calls.append(args))
     monkeypatch.setattr(Langfuse, "check_credentials", lambda self: calls.append("authenticate"))
     local_langfuse(tmp_path).start()
-    assert calls == [("up", "-d", "--wait", "--wait-timeout", "180"), "authenticate"]
+    assert calls == ["docker", ("up", "-d", "--wait", "--wait-timeout", "180"), "authenticate"]
     calls.clear()
     local_langfuse(tmp_path, provider="none").start()
     assert calls == []
+
+
+def test_incompatible_second_source_cannot_mutate_shared_stack(tmp_path, monkeypatch):
+    machine = tmp_path / "machine"
+    source_root = tmp_path / "source"
+    source = source_root / "dev/observability/langfuse.compose.yaml"
+    source.parent.mkdir(parents=True)
+    source.write_text("services: {web: {image: first}}\n")
+    monkeypatch.setattr(langfuse_module, "ROOT", source_root)
+    monkeypatch.setattr(langfuse_module, "_machine_directory", lambda: machine)
+    monkeypatch.setattr("dev.service.docker.ensure_docker", lambda: None)
+    monkeypatch.setattr(Langfuse, "_project_resources", lambda self: ())
+    mutations = []
+    monkeypatch.setattr(Langfuse, "_compose", lambda self, path, *args: mutations.append((path, args)))
+    monkeypatch.setattr(Langfuse, "check_credentials", lambda self: None)
+    langfuse = local_langfuse(tmp_path)
+    langfuse.start()
+    assert len(mutations) == 1
+    source.write_text("services: {web: {image: incompatible}}\n")
+    with pytest.raises(ValueError, match=r"incompatible.*no resources were changed"):
+        langfuse.start()
+    assert len(mutations) == 1
+    langfuse.stop()
+    with pytest.raises(ValueError, match="incompatible"):
+        langfuse.start()
+    langfuse.stop(reset=True)
+    langfuse.start()
+    assert (machine / "langfuse-v2.compose.yaml").read_bytes() == source.read_bytes()
+
+
+def test_partial_shared_config_retries_before_first_mutation(tmp_path, monkeypatch):
+    machine = tmp_path / "machine"
+    source_root = tmp_path / "source"
+    source = source_root / "dev/observability/langfuse.compose.yaml"
+    source.parent.mkdir(parents=True)
+    source.write_text("services: {}\n")
+    machine.mkdir()
+    (machine / "langfuse-v2.compose.yaml").write_bytes(source.read_bytes())
+    monkeypatch.setattr(langfuse_module, "ROOT", source_root)
+    monkeypatch.setattr(langfuse_module, "_machine_directory", lambda: machine)
+    monkeypatch.setattr("dev.service.docker.ensure_docker", lambda: None)
+    monkeypatch.setattr(Langfuse, "_project_resources", lambda self: ())
+    calls = []
+    monkeypatch.setattr(Langfuse, "_compose", lambda self, path, *args: calls.append((path, args)))
+    monkeypatch.setattr(Langfuse, "check_credentials", lambda self: None)
+    local_langfuse(tmp_path).start()
+    assert (machine / "langfuse-v2.json").is_file()
+    assert calls[0][0] == machine / "langfuse-v2.compose.yaml"
 
 
 @pytest.mark.parametrize("status", [200, 401, 503])
@@ -175,12 +224,12 @@ def test_smoke_test_uses_selected_project_environment(tmp_path, monkeypatch):
     calls = []
     monkeypatch.setattr(Langfuse, "start", lambda self: calls.append("start"))
     monkeypatch.setattr(subprocess, "run", lambda command, **kwargs: calls.append((command, kwargs)))
-    langfuse = local_langfuse(tmp_path, langfuse_base_url="http://127.0.0.1:3100")
+    langfuse = local_langfuse(tmp_path)
     langfuse.test()
     assert calls[0] == "start"
     command, options = calls[1]
     assert command[-1] == "packages/a13n-service/tests/trace_query/test_langfuse_integration.py"
-    assert options["env"]["A13N_TEST_LANGFUSE_BASE_URL"] == "http://127.0.0.1:3100"
+    assert options["env"]["A13N_TEST_LANGFUSE_BASE_URL"] == "http://127.0.0.1:3000"
     assert options["env"]["A13N_TEST_LANGFUSE_PUBLIC_KEY"] == "lf_pk_agent_foundation_local"
 
 
@@ -218,31 +267,6 @@ def test_local_export_and_query_bypass_ambient_proxies_and_restore_them(tmp_path
     assert dict(os.environ) == before
 
 
-def test_legacy_stack_warning_is_read_only_and_preserves_old_volumes(tmp_path, monkeypatch, capsys):
-    calls = []
-
-    def run(command, **kwargs):
-        calls.append(command)
-        return SimpleNamespace(stdout="legacy-container\n")
-
-    monkeypatch.setattr(subprocess, "run", run)
-    local_langfuse(tmp_path).warn_about_legacy_stack()
-    assert calls == [
-        [
-            "docker",
-            "ps",
-            "--filter",
-            "label=com.docker.compose.project=agent-foundation-langfuse-dev",
-            "--format",
-            "{{.ID}}",
-        ]
-    ]
-    message = capsys.readouterr().out
-    assert "old traces are not migrated" in message
-    assert "--project-name agent-foundation-langfuse-dev" in message
-    assert "stop" in message and "--volumes" not in message
-
-
 @pytest.mark.parametrize("provider", ["none", "logfire"])
 def test_disabled_stack_can_be_stopped_without_ambient_compose_settings(tmp_path, monkeypatch, provider):
     monkeypatch.setenv("LANGFUSE_LOCAL_PORT", "9999")
@@ -260,10 +284,12 @@ def test_disabled_stack_can_be_stopped_without_ambient_compose_settings(tmp_path
         logfire_read_token="test-read-token",
         logfire_history_from="2026-09-14T00:00:00Z",
     )
-    langfuse.compose("stop")
+    shared = tmp_path / "shared.yaml"
+    shared.write_text("services: {}\n")
+    langfuse._compose(shared, "stop")
     command, options = calls[0]
     assert command[-1] == "stop"
-    assert command[command.index("--project-name") + 1] == langfuse.environment.project + "-langfuse"
+    assert command[command.index("--project-name") + 1] == SHARED_PROJECT
     assert "LANGFUSE_LOCAL_PORT" not in options["env"]
 
 

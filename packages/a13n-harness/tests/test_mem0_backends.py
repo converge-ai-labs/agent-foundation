@@ -10,6 +10,7 @@ from a13n_harness.capabilities.mem0_backends import (
     open_mem0_platform,
 )
 from a13n_harness.memory import (
+    MemoryDocumentScope,
     MemoryPage,
     MemoryPaginationUnsupported,
     MemoryScope,
@@ -328,3 +329,91 @@ async def test_native_page_cannot_return_records_outside_the_requested_subject()
     async with httpx2.AsyncClient(base_url="http://oss/", transport=httpx2.MockTransport(handle)) as client:
         with pytest.raises(MemoryRecordNotFound):
             await Mem0OSSBackend(client).list(SUBJECTS[0], limit=10)
+
+
+async def test_document_write_verifies_metadata_and_filters_exact_authorized_keys():
+    subject = MemorySubject(MemoryDocumentScope.CONVERSATION, "conversation-namespace")
+    saved = {}
+    calls = []
+
+    def handle(request):
+        body = json.loads(request.content) if request.content else None
+        calls.append(body)
+        if request.url.path == "/memories" and request.method == "POST":
+            saved.update(
+                id="doc-native", memory=body["messages"][0]["content"], run_id=body["run_id"], metadata=body["metadata"]
+            )
+            assert body["infer"] is False
+            return httpx2.Response(200, json={"results": [{"id": "doc-native", "event": "ADD"}]})
+        if request.url.path == "/search":
+            assert body["filters"] == {"run_id": subject.value, "record_key": {"in": ["doc-one"]}}
+            return httpx2.Response(200, json={"results": [saved]})
+        return httpx2.Response(200, json=saved)
+
+    async with httpx2.AsyncClient(base_url="http://oss/", transport=httpx2.MockTransport(handle)) as client:
+        backend = Mem0OSSBackend(client)
+        record = await backend.add_document(
+            "# Release\nSteps", subject=subject, metadata={"record_key": "doc-one", "activity_date": "2026-09-15"}
+        )
+        assert record.subjects == (subject,)
+        assert record.metadata["record_key"] == "doc-one"
+        assert await backend.search_documents("release", subject=subject, record_keys=("doc-one",), limit=5) == (
+            record,
+        )
+        before = len(calls)
+        assert await backend.search_documents("release", subject=subject, record_keys=(), limit=5) == ()
+        assert len(calls) == before
+
+
+async def test_document_metadata_mismatch_is_unconfirmed_without_retry():
+    writes = 0
+
+    def handle(request):
+        nonlocal writes
+        if request.method == "POST":
+            writes += 1
+            return httpx2.Response(200, json={"results": [{"id": "native", "event": "ADD"}]})
+        return httpx2.Response(
+            200,
+            json={
+                "id": "native",
+                "memory": "body",
+                "run_id": "scope",
+                "metadata": {"a13n_scope": "conversation", "record_key": "wrong"},
+            },
+        )
+
+    async with httpx2.AsyncClient(base_url="http://oss/", transport=httpx2.MockTransport(handle)) as client:
+        with pytest.raises(MemoryWriteUnconfirmed):
+            await Mem0OSSBackend(client).add_document(
+                "body",
+                subject=MemorySubject(MemoryDocumentScope.CONVERSATION, "scope"),
+                metadata={"record_key": "expected"},
+            )
+    assert writes == 1
+
+
+async def test_document_search_rejects_provider_filter_violation():
+    def handle(request):
+        return httpx2.Response(
+            200,
+            json={
+                "results": [
+                    {
+                        "id": "native",
+                        "memory": "body",
+                        "run_id": "scope",
+                        "metadata": {"a13n_scope": "conversation", "record_key": "not-authorized"},
+                    }
+                ]
+            },
+        )
+
+    async with httpx2.AsyncClient(base_url="http://oss/", transport=httpx2.MockTransport(handle)) as client:
+        with pytest.raises(ValueError, match="outside the authorized"):
+            await Mem0OSSBackend(client).search_documents(
+                "query",
+                subject=MemorySubject(MemoryDocumentScope.CONVERSATION, "scope"),
+                record_keys=("allowed",),
+                limit=5,
+            )

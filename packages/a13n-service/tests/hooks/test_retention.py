@@ -2,47 +2,58 @@ from datetime import timedelta
 
 import anyio
 import pytest
-from a13n_service.hooks.domain import CreateHookSubscriptionRequest, WebhookDestinationConfig
+from a13n_service.hooks.domain import (
+    CreateHookSubscriptionRequest,
+    InlineHookSubscriptionInput,
+    WebhookDestinationConfig,
+)
 from a13n_service.hooks.models import HookSubscriptionRecord, HookSubscriptionRevisionRecord
-from a13n_service.hooks.persistence import create_hook_subscription
+from a13n_service.hooks.persistence import create_hook_subscription, create_inline_hook_subscription
 from a13n_service.hooks.retention import HookRetention
 from a13n_service.iam.audit import SystemAuditActor, security_audit_record
 from a13n_service.storage import short_session, transaction
 from sqlalchemy import select
 
 from tests.hooks.support import RUN_ID, SECRET_ID, seed_run_and_secret
-from tests.interactions.conftest import NOW, ORGANIZATION_ID, USER_ID, WORKSPACE_ID
+from tests.interactions.conftest import NOW, ORGANIZATION_ID, SESSION_ID, THREAD_ID, USER_ID, WORKSPACE_ID
 
 pytestmark = pytest.mark.anyio
 
 
 async def _head(sessions, *, inline=False):
+    webhook = WebhookDestinationConfig(endpoint_url="https://example.com/hook", signing_secret_id=SECRET_ID)
     async with transaction(sessions) as database:
-        head = await create_hook_subscription(
-            database,
-            organization_id=ORGANIZATION_ID,
-            workspace_id=WORKSPACE_ID,
-            actor_type="user",
-            actor_id=USER_ID,
-            now=NOW,
-            subscription=CreateHookSubscriptionRequest(
-                hook_names=("run.completed",),
+        if inline:
+            head = await create_inline_hook_subscription(
+                database,
+                organization_id=ORGANIZATION_ID,
+                workspace_id=WORKSPACE_ID,
+                session_id=SESSION_ID,
+                thread_id=THREAD_ID,
                 run_id=RUN_ID,
-                webhook=WebhookDestinationConfig(endpoint_url="https://example.com/hook", signing_secret_id=SECRET_ID),
-            ),
-            inline_run_id=RUN_ID if inline else None,
-        )
+                actor_type="user",
+                actor_id=USER_ID,
+                subscription=InlineHookSubscriptionInput(hook_names=("run.completed",), webhook=webhook),
+                now=NOW,
+            )
+        else:
+            head = await create_hook_subscription(
+                database,
+                organization_id=ORGANIZATION_ID,
+                workspace_id=WORKSPACE_ID,
+                actor_type="user",
+                actor_id=USER_ID,
+                now=NOW,
+                subscription=CreateHookSubscriptionRequest(
+                    hook_names=("run.completed",), run_id=RUN_ID, webhook=webhook
+                ),
+            )
         head.deleted_at = NOW
         return head.id, head.current_revision_id
 
 
-@pytest.fixture(params=("hook_interaction_sessions", "hook_postgres_sessions"))
-def retention_sessions(request):
-    return request.getfixturevalue(request.param)
-
-
-async def test_collect_head_revision_cycle_with_overlapping_replicas(retention_sessions):
-    sessions = retention_sessions
+async def test_collect_head_revision_cycle_with_overlapping_replicas(hook_interaction_sessions):
+    sessions = hook_interaction_sessions
     await seed_run_and_secret(sessions)
     head_id, revision_id = await _head(sessions)
     results = []

@@ -6,6 +6,11 @@ import { initialConfig } from "./configuration";
 import { AgentForm } from "./form";
 
 vi.mock("../web/selection", () => ({ AgentSearchSelection: () => null }));
+vi.mock("../memory/selection", () => ({ AgentMemorySelection: () => null }));
+const memoryAvailability = vi.hoisted(() => ({ visible: true }));
+vi.mock("../memory/availability", () => ({
+  useMemoryProviders: () => memoryAvailability,
+}));
 vi.mock("./choices", () => ({
   useAgentChoices: () => ({
     isPending: false,
@@ -44,6 +49,7 @@ beforeEach(() =>
   ),
 );
 afterEach(() => {
+  memoryAvailability.visible = true;
   cleanup();
   vi.unstubAllGlobals();
 });
@@ -53,10 +59,12 @@ function editor(
   connectorTools: NonNullable<
     ReturnType<typeof initialConfig>["connection_tools"]
   > = [],
+  memory?: ReturnType<typeof initialConfig>["memory"],
 ) {
   const submit = vi.fn();
   const initial = {
     ...initialConfig("Research"),
+    memory,
     model: { model_key: "research" },
     instructions: "Check the evidence.",
     connection_tools: connectorTools,
@@ -223,3 +231,33 @@ it.each([
     expect(submit).not.toHaveBeenCalled();
   },
 );
+
+it("hides unconfigured memory without changing the submitted configuration", async () => {
+  memoryAvailability.visible = false;
+  const user = userEvent.setup();
+  const { submit } = editor();
+  expect(screen.queryByRole("heading", { name: "Memory" })).toBeNull();
+  await user.type(
+    screen.getByRole("textbox", { name: "System instructions" }),
+    " More detail.",
+  );
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  expect(submit.mock.calls[0][0].memory).toBeUndefined();
+});
+it("retains a saved memory section and values when its backend is unavailable", async () => {
+  memoryAvailability.visible = false;
+  const user = userEvent.setup();
+  const memory = {
+    provider_id: "memprov_0123456789abcdef",
+    auto_recall: false,
+    recall_threshold: 0,
+  };
+  const { submit } = editor(false, [], memory);
+  expect(screen.getByRole("heading", { name: "Memory" })).toBeTruthy();
+  await user.type(
+    screen.getByRole("textbox", { name: "System instructions" }),
+    " More detail.",
+  );
+  await user.click(screen.getByRole("button", { name: "Save changes" }));
+  expect(submit.mock.calls[0][0].memory).toEqual(memory);
+});

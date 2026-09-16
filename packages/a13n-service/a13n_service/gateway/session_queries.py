@@ -109,7 +109,6 @@ async def collect_sessions(
         *label_predicates(
             SessionRecord.labels,
             filters.labels,
-            dialect=database.bind.dialect.name,
         )
     )
     ordinary = (

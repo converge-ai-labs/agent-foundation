@@ -51,8 +51,8 @@ def _input(text: str) -> AcceptedAgentInput:
     return AcceptedAgentInput(schema_version="1", content=(TextContent(text=text),))
 
 
-async def test_failed_admission_rolls_back_thread_accounting(relational_interaction_sessions, interaction_object_store):
-    sessions = relational_interaction_sessions
+async def test_failed_admission_rolls_back_thread_accounting(interaction_sessions, interaction_object_store):
+    sessions = interaction_sessions
     _, run, _ = await _accept_root(sessions, interaction_object_store)
     store = ThreadInboxStore(sessions, clock=lambda: NOW)
 
@@ -74,10 +74,8 @@ async def test_failed_admission_rolls_back_thread_accounting(relational_interact
 
 
 @pytest.mark.parametrize("capacity", [3, 8])
-async def test_concurrent_steer_reserves_thread_capacity_once(
-    postgres_interaction_sessions, interaction_object_store, capacity
-):
-    sessions = postgres_interaction_sessions
+async def test_concurrent_steer_reserves_thread_capacity_once(interaction_sessions, interaction_object_store, capacity):
+    sessions = interaction_sessions
     _, run, _ = await _accept_root(sessions, interaction_object_store)
     payload = _input("same payload")
     store = ThreadInboxStore(sessions, max_pending_count=capacity, clock=lambda: NOW)
@@ -105,9 +103,9 @@ async def test_concurrent_steer_reserves_thread_capacity_once(
 
 
 async def test_stale_thread_projection_does_not_overwrite_new_accounting(
-    postgres_interaction_sessions, interaction_object_store
+    interaction_sessions, interaction_object_store
 ):
-    sessions = postgres_interaction_sessions
+    sessions = interaction_sessions
     _, run, _ = await _accept_root(sessions, interaction_object_store)
     # A pending admission commits after a different transaction has loaded the
     # Thread. Updating another field must not write that stale accounting back.
@@ -123,10 +121,8 @@ async def test_stale_thread_projection_does_not_overwrite_new_accounting(
         assert thread.pending_bytes == len(_input("new input").canonical_bytes())
 
 
-async def test_idle_control_reads_are_narrow_unlocked_and_still_fenced(
-    postgres_interaction_sessions, interaction_object_store
-):
-    sessions = postgres_interaction_sessions
+async def test_idle_control_reads_are_narrow_unlocked_and_still_fenced(interaction_sessions, interaction_object_store):
+    sessions = interaction_sessions
     _, run, _ = await _accept_root(sessions, interaction_object_store)
     claimed = await AttemptScheduler(sessions, clock=lambda: NOW, lifecycle=test_lifecycle_writer()).claim(
         run.id, _worker()

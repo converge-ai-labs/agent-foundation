@@ -12,6 +12,13 @@ import {
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import { Link } from "react-router";
+import {
+  MessagingFields,
+  messagingPolicy,
+  responseLabels,
+  placementLabels,
+} from "./messaging-fields";
 
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
@@ -31,9 +38,15 @@ import {
 import { useAccountProviders, useReceptionOptions } from "./data";
 import { BatchingFields } from "./form";
 
-export function AccountTargets({ account }: { account: Schema["Account"] }) {
+export function AccountTargets({
+  account,
+  bot = false,
+}: {
+  account: Schema["Account"];
+  bot?: boolean;
+}) {
   const client = useClient(),
-    { can } = useWorkspace(),
+    { can, basePath } = useWorkspace(),
     { t } = useTranslation(),
     page = useCursor();
   const query = useQuery({
@@ -58,9 +71,15 @@ export function AccountTargets({ account }: { account: Schema["Account"] }) {
     <div className={styles.stack}>
       <div className={styles.filters}>
         <p className={styles.muted}>
-          {t("Override routing for one exact conversation or repository.")}
+          {t(
+            bot
+              ? "Configure where this bot receives messages and how it responds."
+              : "Override routing for one exact conversation or repository.",
+          )}
         </p>
-        {can("account_target.manage") && <TargetEditor account={account} />}
+        {can("account_target.manage") && (
+          <TargetEditor account={account} bot={bot} />
+        )}
       </div>
       <ErrorNotice error={query.error} />
       {query.isPending ? (
@@ -71,11 +90,19 @@ export function AccountTargets({ account }: { account: Schema["Account"] }) {
             items={query.data.items}
             columns={[
               {
-                label: t("Target"),
+                label: t(bot ? "Conversation" : "Target"),
                 tone: "primary",
                 render: (item) => (
                   <>
-                    <Identifier value={item.external_target_id} primary />
+                    {bot ? (
+                      <Link
+                        to={`${basePath}/bots/${account.id}/channels/${item.id}`}
+                      >
+                        {item.external_target_id}
+                      </Link>
+                    ) : (
+                      <Identifier value={item.external_target_id} primary />
+                    )}
                     <small>
                       {t(
                         item.target_kind === "repository"
@@ -90,6 +117,32 @@ export function AccountTargets({ account }: { account: Schema["Account"] }) {
                 label: t("Agent"),
                 render: (item) => item.agent_id ?? t("Account default"),
               },
+              ...(bot
+                ? [
+                    {
+                      label: t("Response policy"),
+                      render: (item: Schema["AccountTarget"]) => {
+                        const selected = messagingPolicy(
+                          item.provider_policy ?? account.provider_policy,
+                        );
+                        return (
+                          <>
+                            {selected
+                              ? `${t(responseLabels[selected.interaction_mode])} · ${t(placementLabels[selected.reply_mode])}`
+                              : t("Platform default")}
+                            <small>
+                              {t(
+                                item.provider_policy
+                                  ? "Conversation override"
+                                  : "Account default",
+                              )}
+                            </small>
+                          </>
+                        );
+                      },
+                    },
+                  ]
+                : []),
               {
                 label: t("Reception"),
                 render: (item) => (
@@ -104,13 +157,15 @@ export function AccountTargets({ account }: { account: Schema["Account"] }) {
                 render: (item) =>
                   can("account_target.manage") && (
                     <div className={styles.actions}>
-                      <TargetEditor account={account} target={item} />
+                      <TargetEditor account={account} target={item} bot={bot} />
                       <Confirm
                         subject={item.external_target_id}
                         triggerVariant="ghost"
                         title={t("Delete target override")}
                         description={t(
-                          "The account's default routing will apply to future events for this target.",
+                          account.reception_scope === "configured_targets"
+                            ? "This conversation will no longer be admitted. Existing accepted work is not cancelled."
+                            : "The account's default routing will apply to future events for this target.",
                         )}
                         trigger={t("Delete")}
                         danger
@@ -139,9 +194,13 @@ export function AccountTargets({ account }: { account: Schema["Account"] }) {
       ) : (
         !query.error && (
           <Empty
-            title={t("No target overrides")}
+            title={t(
+              bot ? "No conversations configured" : "No target overrides",
+            )}
             description={t(
-              "Incoming events use the account defaults unless an exact target overrides them.",
+              account.reception_scope === "configured_targets"
+                ? "Add a conversation before enabling reception. Unconfigured conversations cannot trigger this bot."
+                : "Incoming events use the account defaults unless an exact target overrides them.",
             )}
           />
         )
@@ -149,12 +208,14 @@ export function AccountTargets({ account }: { account: Schema["Account"] }) {
     </div>
   );
 }
-function TargetEditor({
+export function TargetEditor({
   account,
   target,
+  bot = false,
 }: {
   account: Schema["Account"];
   target?: Schema["AccountTarget"];
+  bot?: boolean;
 }) {
   const { t } = useTranslation(),
     [open, setOpen] = useState(false);
@@ -167,13 +228,21 @@ function TargetEditor({
           variant={target ? "outline" : "default"}
           type="button"
         >
-          {t(target ? "Edit" : "Add target")}
+          {t(target ? "Edit" : bot ? "Add conversation" : "Add target")}
         </Button>
       }
       size={"md"}
-      title={t(target ? "Edit target override" : "Add target override")}
+      title={t(
+        bot
+          ? "Conversation settings"
+          : target
+            ? "Edit target override"
+            : "Add target override",
+      )}
       description={t(
-        "Override the account defaults for one external target, such as a conversation or repository.",
+        bot
+          ? "Configure this conversation. Agent and capability overrides are optional."
+          : "Override the account defaults for one external target, such as a conversation or repository.",
       )}
       closeLabel={t("Close")}
       open={open}
@@ -181,6 +250,7 @@ function TargetEditor({
       {open && (
         <TargetForm
           account={account}
+          bot={bot}
           initial={target}
           close={() => setOpen(false)}
         />
@@ -192,9 +262,11 @@ function TargetForm({
   account,
   initial,
   close,
+  bot = false,
 }: {
   account: Schema["Account"];
   initial?: Schema["AccountTarget"];
+  bot?: boolean;
   close: () => void;
 }) {
   const client = useClient(),
@@ -293,6 +365,31 @@ function TargetForm({
       close();
     },
   });
+  const agentField = (
+    <ChoiceField
+      placeholder={t("Select agent")}
+      value={agentId || "default"}
+      className="min-w-0"
+      onValueChange={(value) => setAgentId(value === "default" ? "" : value)}
+      label={t("Agent")}
+      options={[
+        { value: "default", label: t("Account default") },
+        ...(agentId && !options.agents.data?.some((item) => item.id === agentId)
+          ? [
+              {
+                value: agentId,
+                label: `${agentId} · ${t("Unavailable")}`,
+                disabled: true,
+              },
+            ]
+          : []),
+        ...(options.agents.data?.map((item) => ({
+          value: item.id,
+          label: item.name,
+        })) ?? []),
+      ]}
+    />
+  );
   return (
     <form
       className={styles.form}
@@ -304,57 +401,69 @@ function TargetForm({
       <ErrorNotice
         error={definitions.error ?? options.agents.error ?? reload.error}
       />
-      <ChoiceField
-        placeholder={t("Select target kind")}
-        value={kind}
-        className="min-w-0"
-        readOnly={!!basis}
-        onValueChange={(value) =>
-          setKind(value === "repository" ? "repository" : "conversation")
-        }
-        label={t("Target kind")}
-        options={
-          definition?.target_kinds.map((value) => ({
-            value,
-            label: t(value === "repository" ? "Repository" : "Conversation"),
-          })) ?? []
-        }
-      />
-      <FormField
-        className="min-w-0 w-full"
-        label={t("External target ID")}
-        description={t(
-          "Use the identifier from the external service, not its display name.",
-        )}
-        readOnly={!!basis}
-      >
-        <Input
-          required={true}
-          value={targetId}
-          onChange={(event) => setTargetId(event.target.value)}
-          maxLength={2048}
-        />
-      </FormField>
-      <ChoiceField
-        placeholder={t("Select agent")}
-        value={agentId || "default"}
-        className="min-w-0"
-        onValueChange={(value) => setAgentId(value === "default" ? "" : value)}
-        label={t("Agent")}
-        options={[
-          { value: "default", label: t("Account default") },
-          ...(options.agents.data?.map((item) => ({
-            value: item.id,
-            label: item.name,
-          })) ?? []),
-        ]}
-      />
+      {(!bot || !basis) && (
+        <>
+          <ChoiceField
+            placeholder={t("Select target kind")}
+            value={kind}
+            className="min-w-0"
+            readOnly={!!basis}
+            onValueChange={(value) =>
+              setKind(value === "repository" ? "repository" : "conversation")
+            }
+            label={t("Target kind")}
+            options={
+              definition?.target_kinds.map((value) => ({
+                value,
+                label: t(
+                  value === "repository" ? "Repository" : "Conversation",
+                ),
+              })) ?? []
+            }
+          />
+          <FormField
+            className="min-w-0 w-full"
+            label={t("External target ID")}
+            description={t(
+              "Use the identifier from the external service, not its display name.",
+            )}
+            readOnly={!!basis}
+          >
+            <Input
+              required={true}
+              value={targetId}
+              onChange={(event) => setTargetId(event.target.value)}
+              maxLength={2048}
+            />
+          </FormField>
+        </>
+      )}
+      {bot ? (
+        <DisclosureSection title={<>{t("Agent override")}</>}>
+          {agentField}
+        </DisclosureSection>
+      ) : (
+        agentField
+      )}
       <Label className="flex items-center gap-2">
         <Switch checked={receive} onCheckedChange={setReceive} />
-        {t("Receive events")}
+        {t(bot ? "Receive messages" : "Receive events")}
       </Label>
-      <BatchingFields value={batching} onChange={setBatching} />
-      {definition && (
+      {bot ? (
+        <>
+          <MessagingFields
+            value={policy}
+            defaults={account.provider_policy}
+            onChange={setPolicy}
+          />
+          <DisclosureSection title={<>{t("Input batching")}</>}>
+            <BatchingFields value={batching} onChange={setBatching} />
+          </DisclosureSection>
+        </>
+      ) : (
+        <BatchingFields value={batching} onChange={setBatching} />
+      )}
+      {definition && !bot && (
         <DisclosureSection title={<>{t("Provider reception policy")}</>}>
           <SchemaFields
             schema={definition.reception_policy_schema}
@@ -384,7 +493,9 @@ function TargetForm({
       <FormActions
         pending={save.isPending}
         onCancel={close}
-        label={t(basis ? "Save changes" : "Add target")}
+        label={t(
+          basis ? "Save changes" : bot ? "Add conversation" : "Add target",
+        )}
       />
     </form>
   );

@@ -120,13 +120,7 @@ class AgentQueries:
                     AgentRecord.workspace_id == workspace_id,
                     AgentRecord.system_purpose.is_(None),
                 )
-                query = query.where(
-                    *label_predicates(
-                        AgentRecord.labels,
-                        labels or {},
-                        dialect=session.bind.dialect.name,
-                    )
-                )
+                query = query.where(*label_predicates(AgentRecord.labels, labels or {}))
                 if authorization.visible_agent_ids is not None:
                     query = query.where(AgentRecord.id.in_(authorization.visible_agent_ids))
                 if enabled is not None:

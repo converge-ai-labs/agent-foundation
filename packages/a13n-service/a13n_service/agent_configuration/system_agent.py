@@ -32,7 +32,7 @@ class SystemConfigurationAgent:
         self._sessions, self._definition, self._clock = sessions, definition, clock
 
     async def ensure(self, *, actor: AuthenticatedActor, session_id: str) -> Agent:
-        async with transaction(self._sessions, sqlite_immediate=True) as session:
+        async with transaction(self._sessions) as session:
             # Workspace locking serializes first creation before the identity exists.
             await session.scalar(
                 select(WorkspaceRecord).where(WorkspaceRecord.id == actor.workspace_id).with_for_update()

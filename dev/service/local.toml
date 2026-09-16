@@ -18,7 +18,6 @@ concurrency = 8
 [environments.local_providers."a13n.direct-local"]
 
 [database]
-backend = "postgresql"
 url = "postgresql+psycopg://a13n_service_dev:local-only-password@127.0.0.1:15432/a13n_service_dev"
 pool_size = 60
 max_overflow = 20
@@ -31,10 +30,10 @@ max_connections = 256
 
 [objects]
 backend = "local"
-local_root = "../../var/service/objects"
+local_root = "../../var/dev/service/objects"
 
 [filesystem]
-root = "../../var/service/files"
+root = "../../var/dev/service/files"
 
 [iam]
 public_origin = "http://127.0.0.1:5173"

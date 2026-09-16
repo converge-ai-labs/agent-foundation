@@ -1,0 +1,607 @@
+import {
+  FileTextIcon,
+  FolderSimpleIcon,
+  ListBulletsIcon,
+} from "@phosphor-icons/react";
+import { Button, ChoiceField, FormField, Input } from "a13n-ui";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useTranslation } from "react-i18next";
+import { Link, useSearchParams } from "react-router";
+import { useClient } from "../../auth/context";
+import { useWorkspace } from "../../layout/workspace";
+import { data, type Schema } from "../../shared/api";
+import { Pagination, useCursor } from "../../shared/collection";
+import { Empty, ErrorNotice, Loading, StateBadge } from "../../shared/feedback";
+import { MarkdownContent } from "../../shared/markdown";
+import { Confirm } from "../../shared/form";
+import styles from "./bots.module.css";
+import { MemorySettings, GroupMemorySettings } from "./memory-settings";
+import { MemoryComposer } from "./memory-compose";
+import { MemoryPublications } from "./memory-publications";
+import { MemoryOperations } from "./memory-operations";
+import { refreshMemory } from "./memory-actions";
+import { MemorySearch } from "./memory-search";
+import { MemoryProvenance } from "./memory-provenance";
+import { MemoryPolicies } from "./memory-policies";
+
+export function BotMemory({
+  account,
+  reload,
+}: {
+  account: Schema["Account"];
+  reload: () => Promise<void>;
+}) {
+  const { can } = useWorkspace(),
+    { t } = useTranslation();
+  // Do not mount queries at all for a non-administrator, including direct route navigation.
+  if (!can("bot_memory.read"))
+    return (
+      <Empty
+        title={t("Administrator access required")}
+        description={t(
+          "Only workspace administrators can view and manage conversation memory.",
+        )}
+      />
+    );
+  return (
+    <>
+      <div className={styles.memoryActions}>
+        <MemorySettings account={account} reload={reload} />
+        {account.memory && (
+          <>
+            <GroupMemorySettings account={account} />
+            <MemoryPolicies account={account} />
+          </>
+        )}
+      </div>
+      {account.memory ? (
+        <MemoryBrowser
+          account={account}
+          providerId={account.memory.provider_id}
+        />
+      ) : (
+        <Empty
+          title={t("Memory is not configured")}
+          description={t(
+            "Select a Memory Provider for this bot before enabling group memory.",
+          )}
+        />
+      )}
+    </>
+  );
+}
+
+export function BotGroupMemory({
+  account,
+  target,
+}: {
+  account: Schema["Account"];
+  target: Schema["AccountTarget"];
+}) {
+  const { can, basePath } = useWorkspace(),
+    { t } = useTranslation();
+  if (!can("bot_memory.read"))
+    return (
+      <Empty
+        title={t("Administrator access required")}
+        description={t(
+          "Only workspace administrators can view and manage conversation memory.",
+        )}
+      />
+    );
+  if (!account.memory)
+    return (
+      <>
+        <Empty
+          title={t("Memory is not configured")}
+          description={t(
+            "Select a Memory Provider for this bot before enabling group memory.",
+          )}
+        />
+        <Link to={`${basePath}/bots/${account.id}/memory`}>
+          {t("Bot memory settings")}
+        </Link>
+      </>
+    );
+  return (
+    <GroupMemoryScope
+      key={`${target.id}:${account.memory.provider_id}`}
+      account={account}
+      target={target}
+      providerId={account.memory.provider_id}
+    />
+  );
+}
+
+function GroupMemoryScope({
+  account,
+  target,
+  providerId,
+}: {
+  account: Schema["Account"];
+  target: Schema["AccountTarget"];
+  providerId: string;
+}) {
+  const client = useClient(),
+    { t } = useTranslation();
+  const query = useQuery({
+    queryKey: [
+      "bot-memory-scopes",
+      account.id,
+      providerId,
+      "target",
+      target.id,
+    ],
+    queryFn: ({ signal }) =>
+      client.http
+        .GET("/api/v1/application-accounts/{account_id}/memory-scopes", {
+          params: {
+            path: { account_id: account.id },
+            query: { provider_id: providerId, target_id: target.id, limit: 1 },
+          },
+          signal,
+        })
+        .then(data),
+  });
+  const scope = query.data?.items[0];
+  return (
+    <>
+      <div className={styles.memoryActions}>
+        <GroupMemorySettings account={account} target={target} />
+      </div>
+      <ErrorNotice error={query.error} retry={() => void query.refetch()} />
+      {query.isPending ? (
+        <Loading variant="detail" />
+      ) : query.error ? null : scope ? (
+        <MemoryBrowser
+          account={account}
+          providerId={providerId}
+          fixedScope={scope}
+        />
+      ) : (
+        <Empty
+          title={t("Group memory is not configured")}
+          description={t(
+            "Configure this conversation to give it its own memory index.",
+          )}
+        />
+      )}
+    </>
+  );
+}
+
+function MemoryBrowser({
+  account,
+  providerId,
+  fixedScope,
+}: {
+  account: Schema["Account"];
+  providerId: string;
+  fixedScope?: Schema["Scope"];
+}) {
+  const client = useClient(),
+    { t } = useTranslation(),
+    [search, setSearch] = useSearchParams(),
+    page = useCursor(),
+    { can } = useWorkspace();
+  const scopeId = fixedScope?.id ?? search.get("memory_scope") ?? "";
+  const scopes = useQuery({
+    enabled: !fixedScope,
+    queryKey: ["bot-memory-scopes", account.id, providerId, page.cursor],
+    queryFn: ({ signal }) =>
+      client.http
+        .GET("/api/v1/application-accounts/{account_id}/memory-scopes", {
+          params: {
+            path: { account_id: account.id },
+            query: { provider_id: providerId, cursor: page.cursor },
+          },
+          signal,
+        })
+        .then(data),
+  });
+  const items = fixedScope ? [fixedScope] : scopes.data?.items;
+  const selected = items?.find((scope) => scope.id === scopeId);
+  return (
+    <div className={styles.memorySection}>
+      <div className={styles.memoryHeading}>
+        <div>
+          <h2>{t("Conversation memory")}</h2>
+          <p>{t("Browse the index, then open only the documents you need.")}</p>
+        </div>
+        {scopeId && (
+          <div className={styles.memoryActions}>
+            {can("bot_memory.create") && (
+              <MemoryComposer
+                account={account}
+                scopeId={scopeId}
+                mode="create"
+                onCreated={(id) => {
+                  const next = new URLSearchParams(search);
+                  next.set("memory_doc", id);
+                  setSearch(next);
+                }}
+              />
+            )}
+            {can("bot_memory.share") && (
+              <>
+                <MemoryPublications account={account} scopeId={scopeId} />
+                <MemoryOperations account={account} scopeId={scopeId} />
+              </>
+            )}
+          </div>
+        )}
+      </div>
+      <div className={styles.memoryBrowser}>
+        <aside className={styles.scopePane} aria-label={t("Memory scopes")}>
+          <h3>{account.provider_key === "slack" ? "Slack" : t("Feishu")}</h3>
+          <small>{t("Local and explicitly shared memory")}</small>
+          <ErrorNotice
+            error={scopes.error}
+            retry={() => void scopes.refetch()}
+          />
+          {!fixedScope && scopes.isPending ? (
+            <Loading />
+          ) : (
+            items?.map((scope) => (
+              <button
+                type="button"
+                key={scope.id}
+                className={styles.scopeItem}
+                aria-pressed={scope.id === scopeId}
+                onClick={() => {
+                  if (fixedScope) return;
+                  const next = new URLSearchParams(search);
+                  next.set("memory_scope", scope.id);
+                  next.delete("memory_doc");
+                  setSearch(next);
+                }}
+              >
+                <FolderSimpleIcon aria-hidden="true" />
+                <span>{scope.name}</span>
+              </button>
+            ))
+          )}
+          {!scopes.isPending && !scopes.error && !items?.length && (
+            <p>{t("No memory scopes configured.")}</p>
+          )}
+          {!fixedScope && (
+            <Pagination page={page} next={scopes.data?.next_cursor} />
+          )}
+        </aside>
+        {scopeId ? (
+          <ScopeDocuments
+            key={`${scopeId}:${providerId}`}
+            account={account}
+            scopeId={scopeId}
+            scopeName={selected?.name ?? t("Selected conversation")}
+          />
+        ) : (
+          <div className={styles.unselected}>
+            <Empty
+              title={t("Choose a conversation")}
+              description={t("Each channel or group has its own memory index.")}
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ScopeDocuments({
+  account,
+  scopeId,
+  scopeName,
+}: {
+  account: Schema["Account"];
+  scopeId: string;
+  scopeName: string;
+}) {
+  const client = useClient(),
+    cache = useQueryClient(),
+    { can } = useWorkspace(),
+    { t } = useTranslation(),
+    [search, setSearch] = useSearchParams();
+  const page = useCursor(),
+    documentId = search.get("memory_doc") ?? "",
+    date = search.get("memory_date") ?? "";
+  const kind =
+    search.get("memory_kind") === "daily"
+      ? "daily"
+      : search.get("memory_kind") === "long_term"
+        ? "long_term"
+        : undefined;
+  const searching = !!search.get("memory_query");
+  const path = { account_id: account.id, scope_id: scopeId };
+  const listing = useQuery({
+    enabled: !searching,
+    queryKey: [
+      "bot-memory-documents",
+      account.id,
+      scopeId,
+      date,
+      kind,
+      page.cursor,
+    ],
+    queryFn: ({ signal }) =>
+      client.http
+        .GET(
+          "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents",
+          {
+            params: {
+              path,
+              query: {
+                activity_date: date || undefined,
+                kind,
+                cursor: page.cursor,
+              },
+            },
+            signal,
+          },
+        )
+        .then(data),
+  });
+  const index = useQuery({
+    queryKey: ["bot-memory-index", account.id, scopeId],
+    enabled: !documentId,
+    queryFn: ({ signal }) =>
+      client.http
+        .GET(
+          "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/index",
+          {
+            params: { path },
+            signal,
+          },
+        )
+        .then(data),
+  });
+  const document = useQuery({
+    queryKey: ["bot-memory-document", account.id, scopeId, documentId],
+    enabled: !!documentId,
+    queryFn: ({ signal }) =>
+      client.http
+        .GET(
+          "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/{document_id}",
+          {
+            params: { path: { ...path, document_id: documentId } },
+            signal,
+          },
+        )
+        .then(data),
+  });
+  function select(id: string) {
+    const next = new URLSearchParams(search);
+    if (id) next.set("memory_doc", id);
+    else next.delete("memory_doc");
+    setSearch(next);
+  }
+  function filter(key: string, value: string) {
+    const next = new URLSearchParams(search);
+    if (value) next.set(key, value);
+    else next.delete(key);
+    page.reset();
+    setSearch(next);
+  }
+  const current =
+    document.isFetching || document.error ? undefined : document.data;
+  return (
+    <>
+      <section
+        className={styles.documentPane}
+        aria-label={t("Memory documents")}
+      >
+        <h3>{scopeName}</h3>
+        <button
+          className={styles.documentItem}
+          type="button"
+          aria-pressed={!documentId}
+          onClick={() => select("")}
+        >
+          <ListBulletsIcon aria-hidden="true" />
+          <span>
+            <strong>MEMORY.md</strong>
+            <small>{t("Memory index")}</small>
+          </span>
+        </button>
+        <MemorySearch
+          accountId={account.id}
+          scopeId={scopeId}
+          onSelect={select}
+        />
+        {!searching && (
+          <>
+            <details
+              className={styles.filterDisclosure}
+              open={date || kind ? true : undefined}
+            >
+              <summary>{t("Filter documents")}</summary>
+              <div className={styles.documentFilters}>
+                <FormField label={t("Activity date")}>
+                  <Input
+                    type="date"
+                    value={date}
+                    onChange={(event) =>
+                      filter("memory_date", event.target.value)
+                    }
+                  />
+                </FormField>
+                <ChoiceField
+                  label={t("Kind")}
+                  value={kind ?? "all"}
+                  onValueChange={(value) =>
+                    filter("memory_kind", value === "all" ? "" : value)
+                  }
+                  options={[
+                    { value: "all", label: t("All kinds") },
+                    { value: "daily", label: t("Daily") },
+                    { value: "long_term", label: t("Long-term") },
+                  ]}
+                />
+              </div>
+            </details>
+            <ErrorNotice
+              error={listing.error}
+              retry={() => void listing.refetch()}
+            />
+            {listing.isPending || listing.isFetching ? (
+              <Loading />
+            ) : (
+              !listing.error &&
+              listing.data?.items.map((item) => (
+                <button
+                  type="button"
+                  key={item.id}
+                  className={styles.documentItem}
+                  aria-pressed={documentId === item.id}
+                  onClick={() => select(item.id)}
+                >
+                  <FileTextIcon aria-hidden="true" />
+                  <span>
+                    <strong>{item.title}</strong>
+                    <small>
+                      {item.activity_date} ·{" "}
+                      {t(
+                        item.shared ? "Shared with this group" : "Local memory",
+                      )}
+                    </small>
+                  </span>
+                </button>
+              ))
+            )}
+            {!listing.isPending &&
+              !listing.error &&
+              !listing.data?.items.length && (
+                <p>{t("No documents match this view.")}</p>
+              )}
+            <Pagination page={page} next={listing.data?.next_cursor} />
+          </>
+        )}
+      </section>
+      <section className={styles.contentPane} aria-label={t("Memory details")}>
+        {!documentId ? (
+          <>
+            <header>
+              <div>
+                <h3>MEMORY.md</h3>
+                <small>
+                  {t("Derived navigation · document bodies load on demand")}
+                </small>
+              </div>
+            </header>
+            <ErrorNotice
+              error={index.error}
+              retry={() => void index.refetch()}
+            />
+            {index.isPending || index.isFetching ? (
+              <Loading />
+            ) : (
+              !index.error &&
+              index.data && (
+                <div className={styles.index}>
+                  <h2>{scopeName}</h2>
+                  <p>{t("Read these documents for more detail.")}</p>
+                  {index.data.entries.map((item) => (
+                    <div key={item.id}>
+                      <button type="button" onClick={() => select(item.id)}>
+                        {item.title}
+                      </button>
+                      <p>{item.description}</p>
+                    </div>
+                  ))}
+                  {index.data.next_cursor && (
+                    <p>
+                      {t(
+                        "This index is partial. Browse document pages for more.",
+                      )}
+                    </p>
+                  )}
+                  {!index.data.entries.length && (
+                    <p>{t("No memory documents are currently available.")}</p>
+                  )}
+                </div>
+              )
+            )}
+          </>
+        ) : (
+          <>
+            <header>
+              <div>
+                <Button variant="ghost" size="sm" onClick={() => select("")}>
+                  {t("Back to index")}
+                </Button>
+                <h3>{current?.title ?? t("Memory document")}</h3>
+              </div>
+              {current && !current.shared && (
+                <div className={styles.memoryActions}>
+                  {can("bot_memory.create") && (
+                    <MemoryComposer
+                      account={account}
+                      scopeId={scopeId}
+                      mode="correction"
+                      source={current}
+                      onCreated={select}
+                    />
+                  )}
+                  {can("bot_memory.share") && (
+                    <MemoryComposer
+                      account={account}
+                      scopeId={scopeId}
+                      mode="publish"
+                      source={current}
+                    />
+                  )}
+                </div>
+              )}
+              {current && !current.shared && can("bot_memory.delete") && (
+                <Confirm
+                  title={t("Delete memory")}
+                  subject={current.title}
+                  trigger={t("Delete")}
+                  danger
+                  description={t(
+                    "Delete this memory and withdraw all published copies. Previously delivered messages are not erased.",
+                  )}
+                  action={async () => {
+                    await client.http.DELETE(
+                      "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/{document_id}",
+                      {
+                        params: { path: { ...path, document_id: current.id } },
+                      },
+                    );
+                  }}
+                  onSuccess={() => {
+                    select("");
+                    void refreshMemory(cache, account.id);
+                  }}
+                />
+              )}
+            </header>
+            <ErrorNotice
+              error={document.error}
+              retry={() => void document.refetch()}
+            />
+            {document.isPending || document.isFetching ? (
+              <Loading />
+            ) : (
+              current && (
+                <>
+                  <div className={styles.metadata}>
+                    <StateBadge state={current.shared ? "shared" : "active"} />
+                    <span>
+                      {current.activity_date} · {current.timezone}
+                    </span>
+                    <span>
+                      {t("Version")} {current.version}
+                    </span>
+                  </div>
+                  <MemoryProvenance document={current} onOpen={select} />
+                  <MarkdownContent text={current.text} />
+                </>
+              )
+            )}
+          </>
+        )}
+      </section>
+    </>
+  );
+}

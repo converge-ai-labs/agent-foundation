@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator
 from datetime import UTC, datetime
-from pathlib import Path
 
 import pytest
 from a13n_service.agents.application import AgentManagement
@@ -21,7 +20,7 @@ from a13n_service.models.providers import built_in_provider_registry
 from a13n_service.models.runtime import AcceptedModelSelector
 from a13n_service.secrets.models import SecretRecord
 from a13n_service.storage import transaction
-from a13n_service.storage.config import SQLiteConfig
+from a13n_service.storage.config import PostgreSQLConfig
 from a13n_service.storage.relational import create_session_factory, create_sql_engine
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -111,10 +110,8 @@ async def create_current_revision(
 
 
 @pytest.fixture
-async def agent_sessions(
-    service_sqlite_database: Path,
-) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
-    engine = create_sql_engine(SQLiteConfig(path=service_sqlite_database))
+async def agent_sessions(service_database: PostgreSQLConfig) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    engine = create_sql_engine(service_database)
     sessions = create_session_factory(engine)
     async with transaction(sessions) as session:
         session.add(OrganizationRecord(id=ORG_ID, key="test", name="Test", created_at=NOW, updated_at=NOW))

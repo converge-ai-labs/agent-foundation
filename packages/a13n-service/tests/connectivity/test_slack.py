@@ -270,3 +270,27 @@ def _normalized_event(*, mentioned: bool) -> InboundEvent:
         data={},
         ordering_key="1.0:Ev01",
     )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("event_kind", ["app_mention", "message"])
+async def test_slack_channel_type_is_optional_only_for_app_mentions(event_kind):
+    # Slack's documented app_mention payload has no channel_type. Ordinary
+    # message deliveries still need it to distinguish channel traffic from DMs.
+    payload = json.loads(_event_payload())
+    payload["event"]["type"] = event_kind
+    del payload["event"]["channel_type"]
+    decision = await SlackIngressAdapter().authenticate_and_normalize(
+        _signed_request(json.dumps(payload).encode()),
+        account_id="ing_test",
+        account_config=_config(),
+        credentials={"signing_secret": _SIGNING_SECRET, "bot_token": _BOT_TOKEN},
+        received_at=NOW,
+    )
+    if event_kind == "app_mention":
+        assert isinstance(decision, ProviderEventDecision)
+        assert decision.event.context["conversation_kind"] == "channel"
+        assert decision.event.context["channel_id"] == "C123"
+        assert decision.event.context["root_thread_ts"] == "1788422400.000100"
+    else:
+        assert isinstance(decision, ProviderCompleteDecision)

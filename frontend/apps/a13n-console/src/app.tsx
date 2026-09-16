@@ -29,6 +29,11 @@ const ConfigurationStart = lazy(() =>
   })),
 );
 
+const MemoriesPage = lazy(() =>
+  import("./features/memory/page").then((module) => ({
+    default: module.MemoriesPage,
+  })),
+);
 const ModelsPage = lazy(() =>
   import("./features/models/page").then((module) => ({
     default: module.ModelsPage,
@@ -82,6 +87,26 @@ const EnvironmentsPage = lazy(() =>
 const ConnectionsPage = lazy(() =>
   import("./features/connections/page").then((module) => ({
     default: module.ConnectionsPage,
+  })),
+);
+const BotsPage = lazy(() =>
+  import("./features/bots/page").then((module) => ({
+    default: module.BotsPage,
+  })),
+);
+const BotConnect = lazy(() =>
+  import("./features/bots/connect").then((module) => ({
+    default: module.BotConnect,
+  })),
+);
+const BotDetail = lazy(() =>
+  import("./features/bots/page").then((module) => ({
+    default: module.BotDetail,
+  })),
+);
+const BotGroupDetail = lazy(() =>
+  import("./features/bots/group").then((module) => ({
+    default: module.BotGroupDetail,
   })),
 );
 const ApplicationAccountsPage = lazy(() =>
@@ -255,6 +280,16 @@ function AppContent() {
                         path="traces/:traceId"
                         element={<TraceDetailPage />}
                       />
+                      <Route path="bots" element={<BotsPage />} />
+                      <Route path="bots/connect" element={<BotConnect />} />
+                      <Route
+                        path="bots/:accountId/channels/:targetId/:groupTab?"
+                        element={<BotGroupDetail />}
+                      />
+                      <Route
+                        path="bots/:accountId/:botTab?"
+                        element={<BotDetail />}
+                      />
                       <Route
                         path="application-accounts"
                         element={<ApplicationAccountsPage />}
@@ -278,6 +313,7 @@ function AppContent() {
                         element={<SkillDetail />}
                       />
                       <Route path="models" element={<ModelsPage />} />
+                      <Route path="memories" element={<MemoriesPage />} />
                       <Route path="settings" element={<WorkspaceSettings />} />
                       <Route path="usage" element={<ComingSoon />} />
                       <Route path="schedules" element={<ComingSoon />} />

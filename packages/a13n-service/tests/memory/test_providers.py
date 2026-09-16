@@ -40,6 +40,7 @@ async def test_provider_schema_encryption_etags_and_immutable_target(memory_sess
     definitions = await service.type_definitions(actor=actor())
     assert [item.type for item in definitions.items] == ["a13n.mem0-oss"]
     assert definitions.items[0].credential_schema["writeOnly"] is True
+    assert definitions.items[0].supports_documents is True
     first = await service.create(actor=actor(), workspace_id=WORKSPACE_ID, request=request())
     assert first.configuration == {"base_url": "http://unopened.invalid"}
     assert first.credential_configured

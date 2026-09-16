@@ -12,11 +12,11 @@ import anyio
 from aiobotocore.config import AioConfig
 from aiobotocore.httpxsession import HttpxSession
 from aiobotocore.session import get_session
-from anyio import CapacityLimiter, to_thread
+from anyio import CapacityLimiter
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from .config import LocalObjectConfig, S3ObjectConfig, SQLiteConfig, StorageSettings
+from .config import LocalObjectConfig, S3ObjectConfig, StorageSettings
 from .filesystem import prepare_root
 from .object_store import LocalObjectStore, ObjectStore, S3ObjectStore
 from .redis import check_redis, open_redis
@@ -46,7 +46,6 @@ async def open_storage(settings: StorageSettings) -> AsyncGenerator[StorageResou
 
     async with AsyncExitStack() as stack:
         try:
-            await _prepare_sqlite_parent(settings)
             engine = create_sql_engine(settings.database)
             stack.push_async_callback(
                 _dispose_engine,
@@ -79,18 +78,7 @@ async def open_storage(settings: StorageSettings) -> AsyncGenerator[StorageResou
         yield StorageResources(engine, sessions, redis, objects, files_root, file_limiter)
 
 
-async def _prepare_sqlite_parent(settings: StorageSettings) -> None:
-    if not isinstance(settings.database, SQLiteConfig) or str(settings.database.path) == ":memory:":
-        return
-    parent = settings.database.path.absolute().parent
-    await to_thread.run_sync(lambda: parent.mkdir(parents=True, exist_ok=True, mode=0o700))
-
-
-async def _open_objects(
-    stack: AsyncExitStack,
-    settings: StorageSettings,
-    file_limiter: CapacityLimiter,
-) -> ObjectStore:
+async def _open_objects(stack: AsyncExitStack, settings: StorageSettings, file_limiter: CapacityLimiter) -> ObjectStore:
     config = settings.objects
     if isinstance(config, LocalObjectConfig):
         return await LocalObjectStore.create(

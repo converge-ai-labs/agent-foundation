@@ -14,6 +14,7 @@ from pydantic import JsonValue, ValidationError
 
 from . import decoding
 from .domain import (
+    OBSERVATION_METADATA_PREFIX,
     Content,
     InstrumentationScope,
     ModelIdentity,
@@ -66,7 +67,14 @@ _FULL_COLUMNS = (
 class LogfireTraceQueryProvider:
     """One bounded SQL page with a stable timestamp/identity keyset."""
 
-    def __init__(self, client: httpx2.AsyncClient, *, base_url: str, read_token: str, history_from: datetime) -> None:
+    def __init__(
+        self,
+        client: httpx2.AsyncClient,
+        *,
+        base_url: str,
+        read_token: str,
+        history_from: datetime,
+    ) -> None:
         self._client = client
         self._base_url = validate_logfire_base_url(base_url)
         if not read_token or history_from.tzinfo is None:
@@ -87,10 +95,17 @@ class LogfireTraceQueryProvider:
 
     async def list_traces(self, query: ProviderTraceQuery) -> TraceCollection:
         filters = _root_filters(query.organization_id, query.workspace_id)
-        for name in ("thread_id", "run_id", "run_attempt_id"):
-            value = {"thread_id": query.thread_id, "run_id": query.run_id, "run_attempt_id": query.run_attempt_id}[name]
+        for name in ("session_id", "thread_id", "run_id", "run_attempt_id"):
+            value = {
+                "session_id": query.session_id,
+                "thread_id": query.thread_id,
+                "run_id": query.run_id,
+                "run_attempt_id": query.run_attempt_id,
+            }[name]
             if value is not None:
                 filters.append(_attribute_equals(_CORRELATION[name], value))
+        for key, value in query.metadata:
+            filters.append(_attribute_equals(f"{OBSERVATION_METADATA_PREFIX}{key}", value))
         if query.query is not None:
             if query.search_in not in self.capabilities.search_in:
                 raise TraceQueryProviderError("filter_unsupported")
@@ -105,7 +120,12 @@ class LogfireTraceQueryProvider:
                 + ")"
             )
         rows, cursor = await self._page(
-            filters, query.from_started_at, query.to_started_at, query.view, query.limit, query.cursor
+            filters,
+            query.from_started_at,
+            query.to_started_at,
+            query.view,
+            query.limit,
+            query.cursor,
         )
         return TraceCollection(items=tuple(_trace(row, query.view) for row in rows), next_cursor=cursor)
 
@@ -138,7 +158,10 @@ class LogfireTraceQueryProvider:
         )
         if any(row.get("trace_id") != query.trace_id for row in rows):
             raise TraceQueryProviderError("malformed")
-        return ObservationCollection(items=tuple(_observation(row, query.view) for row in rows), next_cursor=cursor)
+        return ObservationCollection(
+            items=tuple(_observation(row, query.view) for row in rows),
+            next_cursor=cursor,
+        )
 
     async def _page(
         self,
@@ -177,7 +200,10 @@ class LogfireTraceQueryProvider:
             async with self._client.stream(
                 "POST",
                 f"{self._base_url}/v2/query",
-                headers={"Authorization": f"Bearer {self._read_token}", "Accept": "application/json"},
+                headers={
+                    "Authorization": f"Bearer {self._read_token}",
+                    "Accept": "application/json",
+                },
                 json={
                     "sql": sql,
                     "min_timestamp": decoding.format_datetime(start),
@@ -381,22 +407,26 @@ def _observation(row: Mapping[str, Any], view: TraceView) -> Observation:
             status=_status(row.get("otel_status_code")),
             level=decoding.optional_text(row.get("level"), "level"),
             status_message=row.get("otel_status_message"),
-            model=ModelIdentity(requested=requested, response=response)
-            if requested is not None or response is not None
-            else None,
+            model=(
+                ModelIdentity(requested=requested, response=response)
+                if requested is not None or response is not None
+                else None
+            ),
             usage=decoding.usage(usage) if usage else None,
             cost_usd=decoding.decimal(attrs.get("gen_ai.usage.cost")),
             input=_content(attrs, "input") if view is TraceView.full else None,
             output=_content(attrs, "output") if view is TraceView.full else None,
             attributes=attributes,
             resource_attributes=_attributes(row.get("otel_resource_attributes")),
-            scope=InstrumentationScope(
-                name=row.get("otel_scope_name"),
-                version=row.get("otel_scope_version"),
-                attributes=_attributes(row.get("otel_scope_attributes")),
-            )
-            if view is TraceView.full
-            else None,
+            scope=(
+                InstrumentationScope(
+                    name=row.get("otel_scope_name"),
+                    version=row.get("otel_scope_version"),
+                    attributes=_attributes(row.get("otel_scope_attributes")),
+                )
+                if view is TraceView.full
+                else None
+            ),
             events=_events(row.get("otel_events")),
             links=_links(row.get("otel_links")),
         )
@@ -434,7 +464,8 @@ def _content(attributes: Mapping[str, JsonValue], direction: str) -> Content | N
     ):
         if key in attributes:
             return Content(
-                media_type=decoding.optional_text(media_type, "media_type", max_bytes=256), value=attributes[key]
+                media_type=decoding.optional_text(media_type, "media_type", max_bytes=256),
+                value=attributes[key],
             )
     return None
 

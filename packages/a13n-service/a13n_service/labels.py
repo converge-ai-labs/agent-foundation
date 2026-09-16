@@ -9,11 +9,11 @@ from collections.abc import Mapping
 from typing import Annotated
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter
-from sqlalchemy import JSON, ColumnElement, cast, func
+from sqlalchemy import ColumnElement, cast
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import InstrumentedAttribute
 
-LABELS_SQL_TYPE = JSON().with_variant(JSONB(), "postgresql")
+LABELS_SQL_TYPE = JSONB()
 
 LABEL_KEY_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$"
 LabelKey = Annotated[
@@ -101,16 +101,11 @@ LabelFilterValues = Annotated[
 
 
 def label_predicates(
-    column: ColumnElement[dict[str, str]] | InstrumentedAttribute[dict[str, str]],
-    labels: Mapping[str, str],
-    *,
-    dialect: str,
+    column: ColumnElement[dict[str, str]] | InstrumentedAttribute[dict[str, str]], labels: Mapping[str, str]
 ) -> tuple[ColumnElement[bool], ...]:
-    """Build exact containment predicates for the supported SQL dialects."""
+    """Build exact JSONB containment predicates for label filters."""
 
     canonical = validate_labels(labels)
     if not canonical:
         return ()
-    if dialect == "postgresql":
-        return (column.op("@>")(cast(canonical, JSONB)),)
-    return tuple(func.json_extract(column, f'$."{key}"') == value for key, value in canonical.items())
+    return (column.op("@>")(cast(canonical, JSONB)),)

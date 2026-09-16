@@ -41,16 +41,16 @@ pytestmark = pytest.mark.anyio
 
 @pytest.mark.parametrize("preparation", ["on_run", "on_use"])
 async def test_workers_complete_shared_environment_skill_preparation_on_first_attempt(
-    postgres_interaction_sessions, interaction_object_store, tmp_path, monkeypatch, preparation, caplog
+    interaction_sessions, interaction_object_store, tmp_path, monkeypatch, preparation, caplog
 ):
     # Concurrent Environment leases require PostgreSQL row locks, as in lifecycle tests.
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-    await recipe(postgres_interaction_sessions, workspace, preparation)
+    await recipe(interaction_sessions, workspace, preparation)
     package = _package("deploy", "Deploy safely.", (("scripts/deploy.sh", b"#!/bin/sh\n"),))
     packages = SkillPackageStore(interaction_object_store)
     await packages.publish(organization_id=ORGANIZATION_ID, workspace_id=WORKSPACE_ID, package=package)
-    async with transaction(postgres_interaction_sessions) as session:
+    async with transaction(interaction_sessions) as session:
         _add_skill(session, DEPLOY_SKILL_ID, DEPLOY_REVISION_ID, "Deploy", package)
     lock = SkillRevisionLock(
         skill_id=DEPLOY_SKILL_ID,
@@ -66,10 +66,8 @@ async def test_workers_complete_shared_environment_skill_preparation_on_first_at
         }
     )
     monkeypatch.setattr(acceptance, "effective_agent_config", lambda: config)
-    states, first, _ = await acceptance._accept_root(
-        postgres_interaction_sessions, interaction_object_store, max_attempts=1
-    )
-    async with short_session(postgres_interaction_sessions) as session:
+    states, first, _ = await acceptance._accept_root(interaction_sessions, interaction_object_store, max_attempts=1)
+    async with short_session(interaction_sessions) as session:
         environment_id = (await session.get(RunRecord, first.id)).environment_id
     assert environment_id is not None
     second = first.model_copy(
@@ -89,7 +87,7 @@ async def test_workers_complete_shared_environment_skill_preparation_on_first_at
         thread_id=second.thread_id,
     )
     await RunAcceptanceService(
-        postgres_interaction_sessions,
+        interaction_sessions,
         states,
         RunPayloadStore(interaction_object_store),
         InlineHookValidator(EndpointPolicy()),
@@ -166,7 +164,7 @@ async def test_workers_complete_shared_environment_skill_preparation_on_first_at
     model_factory.build.return_value = FunctionModel(stream_function=respond)
     settings = Settings(worker={"concurrency": 2, "poll_interval_seconds": 0.01})
     async with worker_helpers.worker_runtime(
-        postgres_interaction_sessions,
+        interaction_sessions,
         interaction_object_store,
         tmp_path,
         monkeypatch,
@@ -178,7 +176,7 @@ async def test_workers_complete_shared_environment_skill_preparation_on_first_at
             async with create_task_group() as tasks:
                 tasks.start_soon(loop.run)
                 while True:
-                    async with short_session(postgres_interaction_sessions) as session:
+                    async with short_session(interaction_sessions) as session:
                         runs = (
                             await session.scalars(select(RunRecord).where(RunRecord.id.in_((first.id, second.id))))
                         ).all()
@@ -198,7 +196,7 @@ async def test_workers_complete_shared_environment_skill_preparation_on_first_at
     assert arrivals[0][0] is not arrivals[1][0]
     assert arrivals[0][1] != arrivals[1][1]
     assert arrivals[0][2] == arrivals[1][2]
-    async with short_session(postgres_interaction_sessions) as session:
+    async with short_session(interaction_sessions) as session:
         runs = (await session.scalars(select(RunRecord).where(RunRecord.id.in_((first.id, second.id))))).all()
         assert {run.environment_id for run in runs} == {environment_id}
         attempts = (

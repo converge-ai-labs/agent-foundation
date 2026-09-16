@@ -17,9 +17,9 @@ from .test_connector_service import create_connection, create_connector
 
 @pytest.mark.anyio
 async def test_connector_snapshot_readers_overlap_while_provider_and_account_edits_wait(
-    postgres_connectivity_sessions, credential_protector
+    connectivity_sessions, credential_protector
 ):
-    sessions = postgres_connectivity_sessions
+    sessions = connectivity_sessions
     registry = fake_registry(FakeConnectorBackend())
     providers = ConnectorProviderService(sessions, registry, credential_protector, clock=lambda: NOW)
     connections = ConnectorConnectionService(

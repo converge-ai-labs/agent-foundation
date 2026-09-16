@@ -87,6 +87,20 @@ Missing or invalid external configuration fails without falling back to Docker. 
 
 Infrastructure ownership is separate from the system under test: manual Docker/ENOSPC Environment journeys still create their own sandbox containers in either mode. Those journeys are outside the 34-case smoke selection. External mode keeps fault databases, buckets, TCP proxies, workspace directories and Service process groups isolated; sharing servers does not imply sharing a fault lab.
 
+## Bot Memory end-to-end coverage
+
+`bots/test_memory_execution.py` starts separate Control, Connectivity and Worker processes with disposable PostgreSQL, Redis and S3 storage. It creates the Bot, target, execution identity, Memory Provider and immutable document through Native HTTP APIs, then submits a signed Slack `app_mention` or an encrypted Feishu message event. Native platform requests, including Feishu tenant-token acquisition, use an owned TLS peer with fictional credentials; no external installation or messages are involved. This checks integration and wire handling, not external platform certification or model quality.
+
+The deterministic model reads the actual `MEMORY.md` reference, calls `memory_read`, and replies with the body returned by the tool. A random proof stored only in native Mem0 must be absent from the initial model context and present in the native reply. The journey also checks invalid-signature rejection without acceptance, duplicate delivery, platform-specific thread placement and the persisted reply receipt. A second private conversation on the same Bot and Provider holds an independent random proof; neither its document reference nor body may enter the first conversation's model context. The journey then publishes a separately approved body to that conversation and verifies that its Run reads only the publication. Deleting the private source must withdraw the copy: a fresh recipient Run receives no index entry, cannot read its explicitly supplied stale reference, and sends a denial without either body. The journey cleans up its documents through Native APIs.
+
+`bots/test_retained_execution.py` exercises actual inline and asynchronous child Agents. Each child receives the authorized index and returns evidence obtained from native memory; asynchronous execution creates and completes its own Thread/Run. The Retry journey injects a model authorization failure, changes both the target Agent and Account Memory Provider, and manually retries the failed Run through the public API. It verifies retained document access and the new Run's native reply receipt while the old setup-test observation correctly stays stale. No expected memory body is injected into the model fixture.
+
+Provide an explicitly configured **test-owned** Mem0 OSS endpoint through `TEST_MEM0_OSS_URL` and `TEST_MEM0_OSS_API_KEY`; without both, the case skips. The test does not configure or reset that server. See the [local Mem0 guide](../mem0/README.md) for native setup.
+
+```sh
+uv run --locked python -m pytest dev/live_tests/bots --live-management -n 0
+```
+
 ## Model Management end-to-end coverage
 
 The model suite uses real Control and Worker processes, Native HTTP APIs, migrated PostgreSQL, Redis and S3-compatible storage. An owned loopback upstream records actual SDK requests and supplies independently authored Chat Completions, Responses, Anthropic Messages and Gemini GenerateContent wire responses. This deterministic suite checks Service integration and native SDK serialization; it does not establish compatibility with every cloud account or model. Only selected credential/header hashes are recorded, never their values.

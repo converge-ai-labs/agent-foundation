@@ -26,8 +26,8 @@ RESOURCES = [("sessions", SESSION_ID, SessionRecord), ("threads", THREAD_ID, Thr
 
 
 @pytest.fixture
-async def label_client(relational_interaction_sessions, process_runtime_factory, tmp_path):
-    sessions = relational_interaction_sessions
+async def label_client(interaction_sessions, process_runtime_factory, tmp_path):
+    sessions = interaction_sessions
     await seed_run_and_secret(sessions)
     await seed_hook_actor_access(sessions)
     app = FastAPI()
@@ -51,9 +51,9 @@ async def label_client(relational_interaction_sessions, process_runtime_factory,
 
 @pytest.mark.parametrize("collection,resource_id,model", RESOURCES)
 async def test_label_http_replacement_preserves_execution_and_audits_once(
-    label_client, relational_interaction_sessions, collection, resource_id, model
+    label_client, interaction_sessions, collection, resource_id, model
 ):
-    client, sessions = label_client, relational_interaction_sessions
+    client, sessions = label_client, interaction_sessions
     path = f"/api/v1/{collection}/{resource_id}/labels"
     read = await client.get(path)
     assert read.status_code == 200, read.text
@@ -91,10 +91,10 @@ async def test_label_http_replacement_preserves_execution_and_audits_once(
     assert clear.status_code == 200 and clear.json() == {"labels": {}}
 
 
-async def test_runtime_update_does_not_stale_label_etag(label_client, relational_interaction_sessions):
+async def test_runtime_update_does_not_stale_label_etag(label_client, interaction_sessions):
     path = f"/api/v1/runs/{RUN_ID}/labels"
     old = await label_client.get(path)
-    async with transaction(relational_interaction_sessions) as database:
+    async with transaction(interaction_sessions) as database:
         row = await database.get(RunRecord, RUN_ID)
         row.version += 1
         row.updated_at += timedelta(seconds=1)
@@ -103,8 +103,8 @@ async def test_runtime_update_does_not_stale_label_etag(label_client, relational
 
 
 @pytest.mark.parametrize("role", ["viewer", "runner"])
-async def test_read_role_cannot_mutate_any_interaction_labels(label_client, relational_interaction_sessions, role):
-    async with transaction(relational_interaction_sessions) as database:
+async def test_read_role_cannot_mutate_any_interaction_labels(label_client, interaction_sessions, role):
+    async with transaction(interaction_sessions) as database:
         binding = await database.get(RoleBindingRecord, "rb_hookws717171717")
         binding.role_key = role
     for collection, identity, _ in RESOURCES:
@@ -132,10 +132,7 @@ async def test_filter_uses_own_labels_and_rejects_conflicts(label_client):
     assert invalid.status_code == 400, invalid.text
 
 
-async def test_concurrent_postgres_edit_has_one_winner(label_client, relational_interaction_sessions):
-    async with relational_interaction_sessions() as database:
-        if database.bind.dialect.name != "postgresql":
-            pytest.skip("SQLite does not provide row-level SELECT FOR UPDATE")
+async def test_concurrent_postgres_edit_has_one_winner(label_client):
     path = f"/api/v1/runs/{RUN_ID}/labels"
     read = await label_client.get(path)
     responses = await asyncio.gather(

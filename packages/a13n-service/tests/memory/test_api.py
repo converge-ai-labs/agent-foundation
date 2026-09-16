@@ -87,7 +87,7 @@ async def provider_path(client, *, name="Memory"):
 
 @pytest.mark.parametrize("provider", ["oss", "platform"])
 async def test_full_native_api_lifecycle_and_scope_isolation(
-    memory_sessions, service_sqlite_database, tmp_path, monkeypatch, provider
+    memory_sessions, service_database, tmp_path, monkeypatch, provider
 ):
     monkeypatch.setenv("MEM0_TELEMETRY", "false")
     records, calls = {}, []
@@ -112,7 +112,7 @@ async def test_full_native_api_lifecycle_and_scope_isolation(
         return actor()
 
     app = create_app(
-        settings(tmp_path, service_sqlite_database),
+        settings(tmp_path, service_database),
         components=Components(
             request_authenticator=authenticate,
             memory_backend_catalog=MemoryBackendCatalog((BorrowedMemoryPlugin(backend),)),
@@ -122,6 +122,11 @@ async def test_full_native_api_lifecycle_and_scope_isolation(
         async with httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url="http://testserver") as client:
             path = await provider_path(client)
             params = {"scope": "user"}
+            before = len(calls)
+            access = await client.get(path.removesuffix("/memories") + "/memory-access", params=params)
+            assert access.status_code == 200, access.text
+            assert access.json() == {"can_write": True}
+            assert len(calls) == before
             created = await client.post(path, params=params, json={"text": "  Exact text, not extracted.  "})
             assert created.status_code == 201, created.text
             memory_id = created.json()["id"]
@@ -180,6 +185,9 @@ async def test_full_native_api_lifecycle_and_scope_isolation(
                 binding = await session.get(RoleBindingRecord, "rb_ws1234567890abcde")
                 binding.role_key = "viewer"
             before = len(calls)
+            access = await client.get(path.removesuffix("/memories") + "/memory-access", params=params)
+            assert access.status_code == 200, access.text
+            assert access.json() == {"can_write": False}
             assert (await client.post(path, params=params, json={"text": "denied"})).status_code == 404
             assert len(calls) == before
 
@@ -205,7 +213,7 @@ def test_namespace_covers_organization_workspace_subject_and_kind():
 
 
 async def test_oss_default_loads_1000_for_client_paging_without_completeness_claim(
-    memory_sessions, service_sqlite_database, tmp_path
+    memory_sessions, service_database, tmp_path
 ):
     from a13n_service.collection_cursors import encode_collection_cursor
 
@@ -224,7 +232,7 @@ async def test_oss_default_loads_1000_for_client_paging_without_completeness_cla
 
     async with httpx2.AsyncClient(base_url="http://mem0/", transport=httpx2.MockTransport(handle)) as remote:
         app = create_app(
-            settings(tmp_path, service_sqlite_database),
+            settings(tmp_path, service_database),
             components=Components(
                 request_authenticator=authenticate,
                 memory_backend_catalog=MemoryBackendCatalog((BorrowedMemoryPlugin(Mem0OSSBackend(remote)),)),

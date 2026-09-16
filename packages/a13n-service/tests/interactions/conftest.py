@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -16,15 +17,15 @@ from a13n_service.agents.invocation import merge_agent_run_override
 from a13n_service.agents.model_characteristics import compose_model_characteristics
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.agents.toolsets import default_toolsets
-from a13n_service.database.metadata import service_metadata
 from a13n_service.digests import digest_request
 from a13n_service.iam.models import OrganizationRecord, WorkspaceRecord
 from a13n_service.interactions.state import HostContinuationState, RunCheckpoint
 from a13n_service.models.domain import ModelDeclarations, ModelExecutionSnapshot
 from a13n_service.storage import transaction
-from a13n_service.storage.config import PostgreSQLConfig, SQLiteConfig
+from a13n_service.storage.config import PostgreSQLConfig
 from a13n_service.storage.object_store import LocalObjectStore
 from a13n_service.storage.relational import create_session_factory, create_sql_engine
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 RUN_ID = "run_1234567890abcdef"
@@ -147,39 +148,27 @@ async def interaction_object_store(tmp_path: Path):
     return await LocalObjectStore.create(tmp_path / "interaction-objects")
 
 
+@asynccontextmanager
+async def sealed_row_rewrite(session: AsyncSession) -> AsyncIterator[None]:
+    """Suspend terminal-row guards while a fixture shapes historical state."""
+    await session.execute(text("ALTER TABLE runs DISABLE TRIGGER reject_sealed_run_update"))
+    await session.execute(text("ALTER TABLE run_attempts DISABLE TRIGGER reject_terminal_run_attempt_update"))
+    try:
+        yield
+    finally:
+        await session.execute(text("ALTER TABLE runs ENABLE TRIGGER reject_sealed_run_update"))
+        await session.execute(text("ALTER TABLE run_attempts ENABLE TRIGGER reject_terminal_run_attempt_update"))
+
+
 @pytest.fixture
-async def interaction_sessions(
-    service_sqlite_database: Path,
-) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
-    engine = create_sql_engine(SQLiteConfig(path=service_sqlite_database))
+async def interaction_sessions(service_database: PostgreSQLConfig) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
+    engine = create_sql_engine(service_database)
     sessions = create_session_factory(engine)
     await _seed_interaction_database(sessions)
     try:
         yield sessions
     finally:
         await engine.dispose()
-
-
-@pytest.fixture
-async def postgres_interaction_sessions(
-    pg_url: str,
-) -> AsyncIterator[async_sessionmaker[AsyncSession]]:
-    engine = create_sql_engine(PostgreSQLConfig(url=pg_url))
-    async with engine.begin() as connection:
-        await connection.run_sync(service_metadata().create_all)
-    sessions = create_session_factory(engine)
-    await _seed_interaction_database(sessions)
-    try:
-        yield sessions
-    finally:
-        async with engine.begin() as connection:
-            await connection.run_sync(service_metadata().drop_all)
-        await engine.dispose()
-
-
-@pytest.fixture(params=["interaction_sessions", "postgres_interaction_sessions"])
-def relational_interaction_sessions(request):
-    return request.getfixturevalue(request.param)
 
 
 async def _seed_interaction_database(sessions: async_sessionmaker[AsyncSession]) -> None:

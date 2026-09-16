@@ -74,7 +74,6 @@ def upgrade() -> None:
         ],
         unique=False,
         postgresql_where=sa.text("deleted_at IS NULL"),
-        sqlite_where=sa.text("deleted_at IS NULL"),
     )
     op.create_index(
         "ix_assets_active_source_kind_listing",
@@ -88,7 +87,6 @@ def upgrade() -> None:
         ],
         unique=False,
         postgresql_where=sa.text("deleted_at IS NULL"),
-        sqlite_where=sa.text("deleted_at IS NULL"),
     )
     op.create_index(
         "ix_assets_active_workspace_listing",
@@ -96,7 +94,6 @@ def upgrade() -> None:
         ["organization_id", "workspace_id", sa.literal_column("created_at DESC"), sa.literal_column("id DESC")],
         unique=False,
         postgresql_where=sa.text("deleted_at IS NULL"),
-        sqlite_where=sa.text("deleted_at IS NULL"),
     )
     op.create_index(
         "ix_assets_tombstone_retention",
@@ -104,7 +101,6 @@ def upgrade() -> None:
         ["deleted_at", "id"],
         unique=False,
         postgresql_where=sa.text("deleted_at IS NOT NULL"),
-        sqlite_where=sa.text("deleted_at IS NOT NULL"),
     )
     op.create_index(
         "uq_assets_run_invocation",
@@ -112,7 +108,6 @@ def upgrade() -> None:
         ["source_run_attempt_id", "source_invocation_id"],
         unique=True,
         postgresql_where=sa.text("source_kind = 'run_output'"),
-        sqlite_where=sa.text("source_kind = 'run_output'"),
     )
     op.create_table(
         "skills",
@@ -121,12 +116,7 @@ def upgrade() -> None:
         sa.Column("workspace_id", sa.String(length=72), nullable=False),
         sa.Column("key", sa.String(length=64), nullable=False),
         sa.Column("name", sa.String(length=256), nullable=False),
-        sa.Column(
-            "labels",
-            sa.JSON().with_variant(postgresql.JSONB(astext_type=sa.Text()), "postgresql"),
-            server_default=sa.text("'{}'"),
-            nullable=False,
-        ),
+        sa.Column("labels", postgresql.JSONB(astext_type=sa.Text()), server_default=sa.text("'{}'"), nullable=False),
         sa.Column("version", sa.BigInteger(), nullable=False),
         sa.Column("current_revision_id", sa.String(length=72), nullable=False),
         sa.Column("created_by_type", sa.String(length=32), nullable=False),
@@ -169,7 +159,6 @@ def upgrade() -> None:
         ["workspace_id", "key"],
         unique=True,
         postgresql_where=sa.text("deleted_at IS NULL"),
-        sqlite_where=sa.text("deleted_at IS NULL"),
     )
     op.create_table(
         "skill_revisions",
@@ -248,43 +237,23 @@ def downgrade() -> None:
     op.drop_index("ix_skill_revisions_listing", table_name="skill_revisions")
     op.drop_index("ix_skill_revisions_digest", table_name="skill_revisions")
     op.drop_table("skill_revisions")
-    op.drop_index(
-        "uq_skills_workspace_key_active",
-        table_name="skills",
-        postgresql_where=sa.text("deleted_at IS NULL"),
-        sqlite_where=sa.text("deleted_at IS NULL"),
-    )
+    op.drop_index("uq_skills_workspace_key_active", table_name="skills", postgresql_where=sa.text("deleted_at IS NULL"))
     op.drop_index("ix_skills_listing", table_name="skills")
     op.drop_index("ix_skills_labels", table_name="skills", postgresql_using="gin")
     op.drop_table("skills")
     op.drop_index(
-        "uq_assets_run_invocation",
-        table_name="assets",
-        postgresql_where=sa.text("source_kind = 'run_output'"),
-        sqlite_where=sa.text("source_kind = 'run_output'"),
+        "uq_assets_run_invocation", table_name="assets", postgresql_where=sa.text("source_kind = 'run_output'")
     )
     op.drop_index(
-        "ix_assets_tombstone_retention",
-        table_name="assets",
-        postgresql_where=sa.text("deleted_at IS NOT NULL"),
-        sqlite_where=sa.text("deleted_at IS NOT NULL"),
+        "ix_assets_tombstone_retention", table_name="assets", postgresql_where=sa.text("deleted_at IS NOT NULL")
     )
     op.drop_index(
-        "ix_assets_active_workspace_listing",
-        table_name="assets",
-        postgresql_where=sa.text("deleted_at IS NULL"),
-        sqlite_where=sa.text("deleted_at IS NULL"),
+        "ix_assets_active_workspace_listing", table_name="assets", postgresql_where=sa.text("deleted_at IS NULL")
     )
     op.drop_index(
-        "ix_assets_active_source_kind_listing",
-        table_name="assets",
-        postgresql_where=sa.text("deleted_at IS NULL"),
-        sqlite_where=sa.text("deleted_at IS NULL"),
+        "ix_assets_active_source_kind_listing", table_name="assets", postgresql_where=sa.text("deleted_at IS NULL")
     )
     op.drop_index(
-        "ix_assets_active_run_attempt_listing",
-        table_name="assets",
-        postgresql_where=sa.text("deleted_at IS NULL"),
-        sqlite_where=sa.text("deleted_at IS NULL"),
+        "ix_assets_active_run_attempt_listing", table_name="assets", postgresql_where=sa.text("deleted_at IS NULL")
     )
     op.drop_table("assets")

@@ -40,6 +40,14 @@ pub struct CreateAccountRequest {
     )]
     pub input_batching: Option<Option<Box<models::InputBatchingPolicy>>>,
 
+    #[serde(
+        rename = "memory",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub memory: Option<Option<Box<models::MemorySettings>>>,
+
     #[serde(rename = "name")]
     pub name: String,
 
@@ -62,6 +70,9 @@ pub struct CreateAccountRequest {
 
     #[serde(rename = "receive_enabled", skip_serializing_if = "Option::is_none")]
     pub receive_enabled: Option<bool>,
+
+    #[serde(rename = "reception_scope", skip_serializing_if = "Option::is_none")]
+    pub reception_scope: Option<models::ReceptionScope>,
 }
 
 impl CreateAccountRequest {
@@ -77,12 +88,14 @@ impl CreateAccountRequest {
             default_agent_id: None,
             execution_service_account_id: None,
             input_batching: None,
+            memory: None,
             name,
             provider_config,
             provider_config_version,
             provider_key,
             provider_policy: None,
             receive_enabled: None,
+            reception_scope: None,
         }
     }
 }

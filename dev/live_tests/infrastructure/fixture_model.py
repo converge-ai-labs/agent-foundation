@@ -27,6 +27,11 @@ CASE_ID = r"^[a-f0-9]{32}$"
 SCENARIOS = (
     {
         "basic",
+        "bot_memory",
+        "bot_memory_revoked",
+        "bot_memory_retry",
+        "bot_memory_parent",
+        "bot_memory_child",
         "protocol_text",
         "remember",
         "tools",
@@ -117,6 +122,10 @@ def fixture_router(root: Path, authenticate, *, long_session=None) -> APIRouter:
         texts = [_message_text(message) for message in messages if isinstance(message, dict)]
         matches = [match for text in texts for match in re.findall(r"^LIVE_TEST (\{[^\n]+\})$", text, re.MULTILINE)]
         if not matches:
+            from ..bots.model import event_cases
+
+            matches = event_cases(texts)
+        if not matches:
             raise HTTPException(400, "Expected a LIVE_TEST scenario in the model context")
         case = Case.model_validate_json(matches[-1])
         path = case_path(case.case_id)
@@ -136,6 +145,16 @@ def fixture_router(root: Path, authenticate, *, long_session=None) -> APIRouter:
 
             return await completion(case, path, body, long_session)
         tool_messages = [message for message in body["messages"] if message.get("role") == "tool"]
+        if case.scenario in {
+            "bot_memory",
+            "bot_memory_revoked",
+            "bot_memory_retry",
+            "bot_memory_parent",
+            "bot_memory_child",
+        }:
+            from ..bots.model import completion as bot_completion
+
+            return await bot_completion(case, path, body)
         if case.scenario in run_fault_model.SCENARIOS:
             return await run_fault_model.completion(case, path, body)
         if case.scenario in management_model.SCENARIOS:

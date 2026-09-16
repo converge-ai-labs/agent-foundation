@@ -13,7 +13,6 @@ from sqlalchemy import (
     DateTime,
     ForeignKeyConstraint,
     Index,
-    Integer,
     String,
     UniqueConstraint,
     text,
@@ -106,15 +105,10 @@ class LifecycleEventRecord(Base):
             "projection_next_attempt_at",
             "seq",
             postgresql_where=text("projection_state IN ('pending', 'projecting', 'retry_wait')"),
-            sqlite_where=text("projection_state IN ('pending', 'projecting', 'retry_wait')"),
         ),
     )
 
-    seq: Mapped[int] = mapped_column(
-        BigInteger().with_variant(Integer, "sqlite"),
-        primary_key=True,
-        autoincrement=True,
-    )
+    seq: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
     id: Mapped[str] = mapped_column(String(72), nullable=False)
     organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     entity_type: Mapped[str] = mapped_column(String(32), nullable=False)

@@ -40,6 +40,13 @@ class MemoryScope(BaseModel):
         return self
 
 
+class MemoryAccess(BaseModel):
+    """Current subject permissions; each content operation authorizes again."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    can_write: bool
+
+
 class MemoryWrite(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     text: MemoryText
@@ -131,6 +138,7 @@ class MemoryProviderDefinition(BaseModel):
     display_name: str
     configuration_schema: dict[str, object]
     credential_schema: dict[str, object]
+    supports_documents: bool = False
 
 
 class MemoryProviderDefinitionCollection(BaseModel):

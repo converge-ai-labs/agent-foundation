@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 
 from sqlalchemy import (
-    JSON,
     BigInteger,
     Boolean,
     CheckConstraint,
@@ -25,8 +24,6 @@ from a13n_service.iam.domain import PrincipalRef, PrincipalType
 from a13n_service.temporal import assume_utc, optional_assume_utc
 
 from .domain import CreateHookSubscriptionRequest, HookSubscription, HookSubscriptionRevision, WebhookDestinationConfig
-
-_HOOK_NAMES_TYPE = JSON().with_variant(JSONB(), "postgresql")
 
 
 class HookSubscriptionRecord(Base):
@@ -69,7 +66,6 @@ class HookSubscriptionRecord(Base):
             "workspace_id",
             "id",
             postgresql_where=text("enabled AND deleted_at IS NULL AND expired_at IS NULL"),
-            sqlite_where=text("enabled = 1 AND deleted_at IS NULL AND expired_at IS NULL"),
         ),
         Index("ix_hook_subscriptions_workspace_updated", "organization_id", "workspace_id", "updated_at", "id"),
     )
@@ -140,7 +136,7 @@ class HookSubscriptionRevisionRecord(Base):
         CheckConstraint(
             "jsonb_typeof(hook_names) = 'array' AND jsonb_array_length(hook_names) BETWEEN 1 AND 128",
             name="hook_names_bounded",
-        ).ddl_if(dialect="postgresql"),
+        ),
         CheckConstraint("version >= 1", name="version_positive"),
         CheckConstraint("signature_profile = 'hmac_sha256_v1'", name="signature_profile_valid"),
         CheckConstraint("length(endpoint_url) BETWEEN 1 AND 8192", name="endpoint_url_bounded"),
@@ -161,7 +157,6 @@ class HookSubscriptionRevisionRecord(Base):
             "session_id",
             "id",
             postgresql_where=text("session_id IS NOT NULL"),
-            sqlite_where=text("session_id IS NOT NULL"),
         ),
         Index(
             "ix_hook_subscription_revisions_thread",
@@ -169,7 +164,6 @@ class HookSubscriptionRevisionRecord(Base):
             "thread_id",
             "id",
             postgresql_where=text("thread_id IS NOT NULL"),
-            sqlite_where=text("thread_id IS NOT NULL"),
         ),
         Index(
             "ix_hook_subscription_revisions_run",
@@ -177,7 +171,6 @@ class HookSubscriptionRevisionRecord(Base):
             "run_id",
             "id",
             postgresql_where=text("run_id IS NOT NULL"),
-            sqlite_where=text("run_id IS NOT NULL"),
         ),
         Index("ix_hook_subscription_revisions_head", "hook_subscription_id", "version", "id"),
     )
@@ -187,7 +180,7 @@ class HookSubscriptionRevisionRecord(Base):
     workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
     hook_subscription_id: Mapped[str] = mapped_column(String(72), nullable=False)
     version: Mapped[int] = mapped_column(BigInteger, nullable=False)
-    hook_names: Mapped[list[str]] = mapped_column(_HOOK_NAMES_TYPE, nullable=False)
+    hook_names: Mapped[list[str]] = mapped_column(JSONB(), nullable=False)
     session_id: Mapped[str | None] = mapped_column(String(72))
     thread_id: Mapped[str | None] = mapped_column(String(72))
     run_id: Mapped[str | None] = mapped_column(String(72))

@@ -260,6 +260,7 @@ class NewRunPolicy:
             trigger_type=origin.trigger_type,
             native_tool_contexts=origin.native_tool_contexts,
             configuration_context=configuration_context,
+            bot_memory=origin.bot_memory,
             **frozen_run_fields(invocation),
             priority=self.priority,
             queue_name=self.queue_name,

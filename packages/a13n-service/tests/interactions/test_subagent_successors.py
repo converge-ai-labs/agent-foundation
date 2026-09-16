@@ -298,10 +298,9 @@ async def test_automatic_successor_rejects_payload_forged_after_publication(
 
 
 async def test_concurrent_postgresql_successor_reconciliation_accepts_one_run(
-    postgres_interaction_sessions: async_sessionmaker[AsyncSession],
-    interaction_object_store: ObjectStore,
+    interaction_sessions: async_sessionmaker[AsyncSession], interaction_object_store: ObjectStore
 ) -> None:
-    sessions = postgres_interaction_sessions
+    sessions = interaction_sessions
     states, parent, authority, child_run_id = await _accept_child(sessions, interaction_object_store)
     await _seal_parent(
         sessions,

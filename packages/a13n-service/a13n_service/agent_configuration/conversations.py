@@ -64,7 +64,7 @@ class ConfigurationConversations:
         idempotency_key: str,
     ) -> ConfigurationSessionView:
         identity = request_identity(idempotency_key, request)
-        async with transaction(self._sessions, sqlite_immediate=True) as session:
+        async with transaction(self._sessions) as session:
             try:
                 await authorize_target(session, actor=actor, target_agent_id=request.target_agent_id)
             except AuthorizationError as error:
@@ -166,7 +166,7 @@ class ConfigurationConversations:
         idempotency_key: str,
     ) -> ConfigurationThreadView:
         identity = request_identity(idempotency_key, request)
-        async with transaction(self._sessions, sqlite_immediate=True) as session:
+        async with transaction(self._sessions) as session:
             try:
                 conversation = await authorize_session(session, actor=actor, session_id=session_id, lock=True)
             except AuthorizationError as error:

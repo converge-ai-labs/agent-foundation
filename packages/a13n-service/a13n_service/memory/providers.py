@@ -67,6 +67,7 @@ class MemoryProviderService:
                 MemoryProviderDefinition(
                     type=key,
                     display_name=plugin.display_name,
+                    supports_documents=plugin.supports_documents,
                     configuration_schema=plugin.configuration_model.model_json_schema(),
                     credential_schema={**plugin.credential_model.model_json_schema(), "writeOnly": True},
                 )
@@ -384,13 +385,10 @@ def _account_position(position: dict[str, object]) -> tuple[str, str]:
 def _name_conflict(error: IntegrityError) -> None:
     # Only the two owning-scope name constraints map to a reconciliation conflict.
     if any(
-        is_unique_conflict(error, constraint=constraint, sqlite_columns=columns)
-        for constraint, columns in (
-            ("uq_memory_providers_workspace_name", "memory_providers.workspace_id, memory_providers.normalized_name"),
-            (
-                "uq_memory_providers_organization_normalized_name",
-                "memory_providers.organization_id, memory_providers.normalized_name",
-            ),
+        is_unique_conflict(error, constraint=constraint)
+        for constraint in (
+            "uq_memory_providers_workspace_name",
+            "uq_memory_providers_organization_normalized_name",
         )
     ):
         raise MemoryProviderError(

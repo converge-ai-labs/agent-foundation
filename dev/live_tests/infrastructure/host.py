@@ -107,6 +107,10 @@ def local_app(config: dict, role: str):
         from ..harness_integration.long_session_host import install_compaction
 
         install_compaction()
+    if config.get("bot_memory") and role == "control" and not config.get("run_faults", {}).get("identity_management"):
+        from ..iam.run_fault_identity import install_management_identity
+
+        install_management_identity()
     settings = settings_for(config, role)
     if settings.objects.backend is not ObjectBackend.s3:
         raise RuntimeError(
@@ -168,6 +172,10 @@ def local_app(config: dict, role: str):
             connector_provider_registry=connector_host.registry if connector_host else None,
         ),
     )
+    if config.get("bot_memory") and role in {"control", "worker"}:
+        from ..bots.host import BotHost
+
+        BotHost(config).install(app)
     if connector_host is not None:
         connector_host.install(app)
     if reverse_envd is not None:

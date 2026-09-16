@@ -93,7 +93,7 @@ class ConfigurationApplication:
         if_match: str,
     ) -> ConfigurationApplicationReceipt:
         identity = request_identity(idempotency_key, request)
-        async with transaction(self._sessions, sqlite_immediate=True) as session:
+        async with transaction(self._sessions) as session:
             _, record = await load_owned_draft(session, actor=actor, draft_id=draft_id, write=True, lock=True)
             retained = await application_replay(
                 session, actor=actor, record=record, request=request, identity=identity, now=self._clock()
@@ -115,7 +115,7 @@ class ConfigurationApplication:
             )
         except Exception as error:
             raise resolution_error(error) from error
-        async with transaction(self._sessions, sqlite_immediate=True) as session:
+        async with transaction(self._sessions) as session:
             conversation, record = await load_owned_draft(
                 session, actor=actor, draft_id=draft_id, write=True, lock=True
             )

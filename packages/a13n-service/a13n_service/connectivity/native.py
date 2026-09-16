@@ -13,9 +13,11 @@ from pydantic_ai.capabilities import MCP
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.endpoint_policy import EndpointPolicy
+from a13n_service.interactions.attempts import AttemptContext
 from a13n_service.secrets import SecretProtector
 from a13n_service.storage import short_session
 
+from .bots.replies import BotReplyObserver
 from .connectors.management import decode_credentials
 from .domain import JsonObject
 from .native_actions import NativeAction
@@ -35,6 +37,8 @@ async def native_capability(
     guard: Callable[[], Awaitable[None]],
     endpoints: EndpointPolicy,
     http: httpx2.AsyncClient,
+    *,
+    attempt: AttemptContext | None = None,
 ) -> MCP[AgentContext] | None:
     if not context.allowed_actions:
         return None
@@ -59,9 +63,10 @@ async def native_capability(
             configuration = dict(account.provider_config_json)
             credential = account.credential_snapshot()
             generation = account.credential_generation
-        return configuration, decode_credentials(credential.decrypt(protector)), generation
+            version = account.version
+        return configuration, decode_credentials(credential.decrypt(protector)), generation, version
 
-    configuration, credentials, generation = await source()
+    configuration, credentials, generation, _ = await source()
     actions = _actions(context, configuration, credentials, http, endpoints)
     definitions = tuple(item.definition for item in actions.values())
 
@@ -69,7 +74,7 @@ async def native_capability(
         nonlocal actions, generation, configuration
         if name not in context.allowed_actions:
             raise ValueError("native_action_not_authorized")
-        current_configuration, credentials, current_generation = await source()
+        current_configuration, credentials, current_generation, current_version = await source()
         if current_generation != generation or current_configuration != configuration:
             configuration = current_configuration
             actions = _actions(context, configuration, credentials, http, endpoints)
@@ -78,7 +83,22 @@ async def native_capability(
         if selected is None:
             raise ValueError("native_action_unavailable")
         await guard()
-        result = await selected.call(arguments)
+        if attempt is not None and isinstance(context, InboundRunContext) and name in {"slack.reply", "lark.reply"}:
+            if selected.call_observed is None:
+                raise ValueError("native_reply_observation_unavailable")
+            result = await selected.call_observed(
+                arguments,
+                BotReplyObserver(
+                    sessions,
+                    attempt=attempt,
+                    context=context,
+                    workspace_id=scope.workspace_id,
+                    account_version=current_version,
+                    credential_generation=current_generation,
+                ),
+            )
+        else:
+            result = await selected.call(arguments)
         # Native providers own this outcome envelope; arbitrary MCP results do not.
         if isinstance(result, dict) and result.get("kind") == "outcome_unknown":
             record_tool_outcome_unknown()

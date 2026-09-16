@@ -15,6 +15,8 @@ Read the relevant contribution and engineering sections before changing that sur
 
 Write repository content in English, as required by [CONTRIBUTING.md](CONTRIBUTING.md#repository-language).
 
+For local Service work, use the stable Make targets and discover checkout-specific ports with `make dev-status`; [dev/service/README.md](dev/service/README.md) owns lifecycle and data boundaries.
+
 ## Scope and Authorization
 
 When drafting or updating Issue and PR bodies, follow [Writing Issues and Pull Requests](CONTRIBUTING.md#writing-issues-and-pull-requests). This writing guidance is mandatory for agents and discretionary for human contributors.
