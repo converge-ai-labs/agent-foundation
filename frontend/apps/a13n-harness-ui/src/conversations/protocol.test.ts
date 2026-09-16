@@ -476,3 +476,68 @@ it("projects skills before creation and validates references on submit and activ
     }),
   );
 });
+
+it("the App resumes an unanswered question after all viewers disconnect, with one shared deadline", async () => {
+  const created = await result(
+    transport.client.POST("/api/threads", {
+      body: { title: "Timed clarification" },
+    }),
+  );
+  const thread = created.thread_id;
+  const receipt = await result(
+    transport.client.POST("/api/threads/{thread_id}/submit", {
+      params: { path: { thread_id: thread } },
+      body: { parts: ["ask a timed question"] },
+    }),
+  );
+  await vi.waitFor(
+    async () => {
+      const operation = await result(
+        transport.client.GET("/api/operations/{receipt_id}", {
+          params: { path: { receipt_id: receipt.receipt_id } },
+        }),
+      );
+      expect(operation.status).toBe("suspended");
+    },
+    { timeout: 10000 },
+  );
+  const viewer = createTransport("test-only-key", () => {});
+  const one = await result(
+    viewer.client.GET("/api/threads/{thread_id}/decisions", {
+      params: { path: { thread_id: thread } },
+    }),
+  );
+  const two = await result(
+    transport.client.GET("/api/threads/{thread_id}/decisions", {
+      params: { path: { thread_id: thread } },
+    }),
+  );
+  expect(one?.expires_at).toBeTruthy();
+  expect(one?.expires_at).toBe(two?.expires_at);
+  expect(one?.requests[0].kind).toBe("question");
+  viewer.close();
+  // No response POST, focus subscription or open decision form keeps this alive.
+  await vi.waitFor(
+    async () => {
+      const history = await result(
+        transport.client.GET("/api/threads/{thread_id}/transcript", {
+          params: { path: { thread_id: thread } },
+        }),
+      );
+      const text = history.entries
+        .flatMap((entry) => entry.parts.map((part) => part.text ?? ""))
+        .join("\n");
+      expect(text).toContain("Continued:");
+      expect(text).toContain("timed out");
+      expect(text).toContain("No answer or approval was provided");
+    },
+    { timeout: 10000 },
+  );
+  expect(
+    await result(
+      transport.client.GET("/api/threads/{thread_id}/decisions", {
+        params: { path: { thread_id: thread } },
+      }),
+    ),
+  ).toBeNull();
+});

@@ -7,6 +7,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Literal
 
+from a13n_harness_ui.interaction_timeout import INTERACTION_TIMEOUT_MESSAGE, QUESTION_TIMEOUT_MESSAGE
 from a13n_harness_ui.surfaces import (
     ApprovalDecision,
     ApprovalRequestView,
@@ -18,12 +19,6 @@ from a13n_harness_ui.surfaces import (
 )
 
 from .selection import Choice, Selection, resolve_choice
-
-QUESTION_TIMEOUT_MESSAGE = (
-    "The user did not respond before this clarification timed out. "
-    "Do not wait for or repeat the same question. Continue with reasonable assumptions where possible. "
-    "No answer or approval was provided."
-)
 
 
 @dataclass(slots=True)
@@ -54,7 +49,7 @@ class DecisionInteraction:
         message = (
             QUESTION_TIMEOUT_MESSAGE
             if isinstance(request, StructuredQuestionRequestView)
-            else "The user did not respond before this interaction timed out. No approval or result was supplied."
+            else INTERACTION_TIMEOUT_MESSAGE
         )
         self.responses.append(
             ApprovalDecision(request_id=request.request_id, approved=False, denial_message=message)

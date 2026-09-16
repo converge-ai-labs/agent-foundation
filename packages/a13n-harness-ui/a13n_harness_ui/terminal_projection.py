@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 from collections import OrderedDict
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -436,7 +437,13 @@ class TerminalProjectionService:
                     metadata=_json_mapping(requests.metadata.get(request.tool_call_id)),
                 )
             )
-        return DecisionBatchView(continuation_id=continuation_id, requests=tuple(projected))
+        expires_at = await self._root_runs.interaction_expiry(thread_id, continuation_id)
+        return DecisionBatchView(
+            continuation_id=continuation_id,
+            requests=tuple(projected),
+            expires_at=expires_at,
+            server_time=datetime.now(UTC) if expires_at is not None else None,
+        )
 
     async def selectors(self, environments: tuple[EnvironmentProfileSummary, ...]) -> ThreadSelectorCatalog:
         source = await self._required_configuration()

@@ -1939,6 +1939,10 @@ export interface components {
             continuation_id: string;
             /** Requests */
             requests: components["schemas"]["DecisionRequestView"][];
+            /** Expires At */
+            expires_at?: string | null;
+            /** Server Time */
+            server_time?: string | null;
         };
         DecisionRequestView: components["schemas"]["StructuredQuestionRequestView"] | components["schemas"]["ApprovalRequestView"] | components["schemas"]["ExternalRequestView"];
         /** DeferredRequestView */

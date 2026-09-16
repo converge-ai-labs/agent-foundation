@@ -16,8 +16,8 @@ from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from a13n_harness_ui.webui import create_webui
-from pydantic_ai.messages import ModelRequest, UserPromptPart
-from pydantic_ai.models.function import FunctionModel
+from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
+from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
 
 async def main() -> None:
@@ -68,7 +68,12 @@ async def main() -> None:
         configuration.parent.mkdir()
         setup = "--setup" in sys.argv
         if not setup:
-            configuration.write_text('schema_version: "1"\ndefaults:\n  agent: agent-fixture\n', encoding="utf-8")
+            timeout = 30 if "--slow" in sys.argv else 2
+            configuration.write_text(
+                'schema_version: "1"\ndefaults:\n  agent: agent-fixture\n'
+                f"tools:\n  interaction_timeout_seconds: {timeout}\n",
+                encoding="utf-8",
+            )
         sources = (
             {}
             if setup
@@ -101,6 +106,44 @@ async def main() -> None:
                 yield "```mermaid\nflowchart LR\n    A[Local input] --> B[Live output]\n    B --> C[Saved history]\n"
                 await asyncio.sleep(1)
                 yield "```\n\nAll checks are ready for human review."
+                return
+            if any(
+                "ask a timed question" in str(part.content)
+                for message in messages
+                if isinstance(message, ModelRequest)
+                for part in message.parts
+                if isinstance(part, UserPromptPart)
+            ):
+                replies = [
+                    part
+                    for message in messages
+                    if isinstance(message, ModelRequest)
+                    for part in message.parts
+                    if isinstance(part, ToolReturnPart) and part.tool_name == "ask_user_question"
+                ]
+                if replies:
+                    yield f"Continued: {replies[-1].content}"
+                else:
+                    yield {
+                        0: DeltaToolCall(
+                            name="ask_user_question",
+                            tool_call_id="timed-question",
+                            json_args=json.dumps(
+                                {
+                                    "questions": [
+                                        {
+                                            "header": "Direction",
+                                            "question": "Which direction should we take?",
+                                            "options": [
+                                                {"label": "Left", "description": "Explore the first approach"},
+                                                {"label": "Right", "description": "Explore the second approach"},
+                                            ],
+                                        }
+                                    ]
+                                }
+                            ),
+                        )
+                    }
                 return
             yield "Protocol "
             if any(

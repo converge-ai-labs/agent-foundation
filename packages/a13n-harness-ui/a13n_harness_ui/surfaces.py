@@ -751,6 +751,8 @@ type DecisionRequestView = Annotated[
 class DecisionBatchView(SurfaceModel):
     continuation_id: str = Field(pattern=r"^[0-9a-f]{64}$")
     requests: tuple[DecisionRequestView, ...] = Field(min_length=1, max_length=256)
+    expires_at: datetime | None = None
+    server_time: datetime | None = None
 
 
 class QuestionResponse(SurfaceModel):
