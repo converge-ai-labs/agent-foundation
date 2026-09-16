@@ -60,7 +60,7 @@ async def test_owned_tls_peer_is_trusted_by_lab_environment_only(tmp_path, monke
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("advertised_name", ["live_echo", "mcp_5534dcadf444ea40_live_echo_6dd03da008c5745e"])
+@pytest.mark.parametrize("advertised_name", ["live_echo", "conn_fixture_live_echo"])
 async def test_script_uses_observed_results_and_resets_for_new_continuation(tmp_path, advertised_name):
     first = {"case_id": "a" * 32, "scenario": "management", "token": "b" * 32}
     second = {**first, "case_id": "c" * 32}

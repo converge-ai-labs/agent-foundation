@@ -362,23 +362,6 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
-  "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/{document_id}/publications": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Publish Document */
-    post: operations["post_application_accounts_account_id_memory_scopes_scope_id_documents_document_id_publications"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
   "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/index": {
     parameters: {
       query?: never;
@@ -441,110 +424,6 @@ export interface paths {
     put?: never;
     /** Reconcile Operation */
     post: operations["post_application_accounts_account_id_memory_scopes_scope_id_operations_document_id_reconcile"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Publications */
-    get: operations["get_application_accounts_account_id_memory_scopes_scope_id_publications"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Publication */
-    get: operations["get_application_accounts_account_id_memory_scopes_scope_id_publications_document_id"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}/audience": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Publication Audience */
-    get: operations["get_application_accounts_account_id_memory_scopes_scope_id_publications_document_id_audience"];
-    put?: never;
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    /** Change Audience */
-    patch: operations["patch_application_accounts_account_id_memory_scopes_scope_id_publications_document_id_audience"];
-    trace?: never;
-  };
-  "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}/withdraw": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    put?: never;
-    /** Withdraw Publication */
-    post: operations["post_application_accounts_account_id_memory_scopes_scope_id_publications_document_id_withdraw"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/application-accounts/{account_id}/memory-sharing-policies": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /** Policies */
-    get: operations["get_application_accounts_account_id_memory_sharing_policies"];
-    put?: never;
-    /** New Policy */
-    post: operations["post_application_accounts_account_id_memory_sharing_policies"];
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/api/v1/application-accounts/{account_id}/memory-sharing-policies/{policy_id}": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    get?: never;
-    /** Replace Policy */
-    put: operations["put_application_accounts_account_id_memory_sharing_policies_policy_id"];
-    post?: never;
     delete?: never;
     options?: never;
     head?: never;
@@ -5783,6 +5662,12 @@ export interface components {
        * @default true
        */
       use_memory?: boolean;
+      /**
+       * Visibility
+       * @default group
+       * @enum {string}
+       */
+      visibility?: "group" | "installation";
     };
     /** Connection */
     Connection: {
@@ -6656,11 +6541,6 @@ export interface components {
        * @enum {string}
        */
       kind: "daily" | "long_term";
-      /**
-       * More Access Reasons
-       * @default false
-       */
-      more_access_reasons?: boolean;
       /** Owner Name */
       owner_name?: string | null;
       /** Path */
@@ -6699,11 +6579,7 @@ export interface components {
        * Kind
        * @enum {string}
        */
-      kind: "owner" | "publication" | "policy";
-      /** Policy Id */
-      policy_id?: string | null;
-      /** Policy Name */
-      policy_name?: string | null;
+      kind: "owner" | "installation";
     };
     /** DocumentCollection */
     DocumentCollection: {
@@ -8633,34 +8509,6 @@ export interface components {
        */
       max_output_bytes?: number;
     };
-    /** PublicationAccess */
-    PublicationAccess: {
-      /** Recipient Scope Ids */
-      recipient_scope_ids: string[];
-      /** Version */
-      version: number;
-    };
-    /** PublicationAudience */
-    PublicationAudience: {
-      /** Expected Version */
-      expected_version: number;
-      /** Recipient Scope Ids */
-      recipient_scope_ids: string[];
-    };
-    /** PublishDocument */
-    PublishDocument: {
-      /**
-       * Description
-       * @default
-       */
-      description?: string;
-      /** Recipient Scope Ids */
-      recipient_scope_ids: string[];
-      /** Text */
-      text: string;
-      /** Title */
-      title: string;
-    };
     /** QueuedSubmission */
     QueuedSubmission: {
       authority_principal: components["schemas"]["PrincipalRef"];
@@ -8850,37 +8698,6 @@ export interface components {
       /** Expected Version */
       expected_version: number;
       memory: components["schemas"]["MemorySettings"] | null;
-    };
-    /** ReplaceSharingPolicy */
-    ReplaceSharingPolicy: {
-      /**
-       * Enabled
-       * @default true
-       */
-      enabled?: boolean;
-      /**
-       * Enroll Future Groups
-       * @default false
-       */
-      enroll_future_groups?: boolean;
-      /** Expected Version */
-      expected_version: number;
-      /**
-       * Include History
-       * @default false
-       */
-      include_history?: boolean;
-      /**
-       * Kinds
-       * @default [
-       *       "long_term"
-       *     ]
-       */
-      kinds?: ("daily" | "long_term")[];
-      /** Name */
-      name: string;
-      /** Scope Ids */
-      scope_ids: string[];
     };
     /** ReplaceTargetRequest */
     ReplaceTargetRequest: {
@@ -9414,6 +9231,12 @@ export interface components {
       use_memory?: boolean;
       /** Version */
       version: number;
+      /**
+       * Visibility
+       * @default group
+       * @enum {string}
+       */
+      visibility?: "group" | "installation";
     };
     /** ScopeCollection */
     ScopeCollection: {
@@ -9593,97 +9416,6 @@ export interface components {
        * @enum {string}
        */
       role: "member" | "viewer" | "runner" | "builder" | "admin";
-    };
-    /** SharingParticipant */
-    SharingParticipant: {
-      /**
-       * Joined At
-       * Format: date-time
-       */
-      joined_at: string;
-      /** Scope Id */
-      scope_id: string;
-    };
-    /** SharingPolicy */
-    SharingPolicy: {
-      /**
-       * Created At
-       * Format: date-time
-       */
-      created_at: string;
-      /**
-       * Enabled
-       * @default true
-       */
-      enabled?: boolean;
-      /**
-       * Enroll Future Groups
-       * @default false
-       */
-      enroll_future_groups?: boolean;
-      /**
-       * Future Since
-       * Format: date-time
-       */
-      future_since: string;
-      /** Id */
-      id: string;
-      /**
-       * Include History
-       * @default false
-       */
-      include_history?: boolean;
-      /**
-       * Kinds
-       * @default [
-       *       "long_term"
-       *     ]
-       */
-      kinds?: ("daily" | "long_term")[];
-      /** Name */
-      name: string;
-      /** Participants */
-      participants: components["schemas"]["SharingParticipant"][];
-      /** Scope Ids */
-      scope_ids: string[];
-      /** Version */
-      version: number;
-    };
-    /** SharingPolicyCollection */
-    SharingPolicyCollection: {
-      /** Items */
-      items: components["schemas"]["SharingPolicy"][];
-      /** Next Cursor */
-      next_cursor?: string | null;
-    };
-    /** SharingPolicyInput */
-    SharingPolicyInput: {
-      /**
-       * Enabled
-       * @default true
-       */
-      enabled?: boolean;
-      /**
-       * Enroll Future Groups
-       * @default false
-       */
-      enroll_future_groups?: boolean;
-      /**
-       * Include History
-       * @default false
-       */
-      include_history?: boolean;
-      /**
-       * Kinds
-       * @default [
-       *       "long_term"
-       *     ]
-       */
-      kinds?: ("daily" | "long_term")[];
-      /** Name */
-      name: string;
-      /** Scope Ids */
-      scope_ids: string[];
     };
     /** Skill */
     Skill: {
@@ -11218,11 +10950,6 @@ export interface components {
       /** Signing Secret Id */
       signing_secret_id: string;
     };
-    /** WithdrawPublication */
-    WithdrawPublication: {
-      /** Expected Version */
-      expected_version: number;
-    };
     /** Workspace */
     Workspace: {
       /**
@@ -12556,58 +12283,6 @@ export interface operations {
       };
     };
   };
-  post_application_accounts_account_id_memory_scopes_scope_id_documents_document_id_publications: {
-    parameters: {
-      query?: never;
-      header: {
-        "Idempotency-Key": string;
-      };
-      path: {
-        account_id: string;
-        scope_id: string;
-        document_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["PublishDocument"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Document"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
   get_application_accounts_account_id_memory_scopes_scope_id_index: {
     parameters: {
       query?: {
@@ -12770,387 +12445,6 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["DocumentEntry"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  get_application_accounts_account_id_memory_scopes_scope_id_publications: {
-    parameters: {
-      query?: {
-        source_id?: string | null;
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        account_id: string;
-        scope_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["DocumentCollection"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  get_application_accounts_account_id_memory_scopes_scope_id_publications_document_id: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        account_id: string;
-        scope_id: string;
-        document_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["Document"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  get_application_accounts_account_id_memory_scopes_scope_id_publications_document_id_audience: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        account_id: string;
-        scope_id: string;
-        document_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["PublicationAccess"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  patch_application_accounts_account_id_memory_scopes_scope_id_publications_document_id_audience: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        account_id: string;
-        scope_id: string;
-        document_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["PublicationAudience"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  post_application_accounts_account_id_memory_scopes_scope_id_publications_document_id_withdraw: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        account_id: string;
-        scope_id: string;
-        document_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["WithdrawPublication"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      204: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content?: never;
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  get_application_accounts_account_id_memory_sharing_policies: {
-    parameters: {
-      query?: {
-        limit?: number;
-        cursor?: string | null;
-      };
-      header?: never;
-      path: {
-        account_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody?: never;
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SharingPolicyCollection"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  post_application_accounts_account_id_memory_sharing_policies: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        account_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["SharingPolicyInput"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      201: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SharingPolicy"];
-        };
-      };
-      /** @description Invalid request. */
-      400: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-      /** @description Service error. */
-      default: {
-        headers: {
-          "Retry-After"?: string;
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["ErrorResponse"];
-        };
-      };
-    };
-  };
-  put_application_accounts_account_id_memory_sharing_policies_policy_id: {
-    parameters: {
-      query?: never;
-      header?: never;
-      path: {
-        account_id: string;
-        policy_id: string;
-      };
-      cookie?: never;
-    };
-    requestBody: {
-      content: {
-        "application/json": components["schemas"]["ReplaceSharingPolicy"];
-      };
-    };
-    responses: {
-      /** @description Successful Response */
-      200: {
-        headers: {
-          "X-Request-ID"?: string;
-          [name: string]: unknown;
-        };
-        content: {
-          "application/json": components["schemas"]["SharingPolicy"];
         };
       };
       /** @description Invalid request. */

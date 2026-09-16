@@ -14,10 +14,8 @@ from a13n_service.iam.authorization import PrincipalPermissions
 from a13n_service.iam.resource_scope import visible_workspace
 from a13n_service.storage import short_session
 
-from .selection_domain import (
-    ConnectionRunSelection,
-    ConnectionToolSelection,
-)
+from .naming import connection_model_aliases
+from .selection_domain import ConnectionRunSelection, ConnectionToolSelection
 
 
 class ConnectivitySelectionError(RuntimeError):
@@ -136,6 +134,7 @@ class ConnectivitySelectionResolver:
         )
         rows = (await session.scalars(query.with_for_update(read=True) if lock else query)).all()
         by_id = {connection.id: connection for connection in rows}
+        aliases = connection_model_aliases(tuple((connection.id, connection.name) for connection in rows))
         provider_ids = {
             connection.connector_provider_id for connection in rows if isinstance(connection, ConnectorConnectionRecord)
         }
@@ -171,6 +170,9 @@ class ConnectivitySelectionResolver:
             selections.append(
                 ConnectionRunSelection(
                     connection_id=connection.id,
+                    model_alias=selection.model_alias
+                    if isinstance(selection, ConnectionRunSelection)
+                    else aliases[connection.id],
                     kind="connector" if isinstance(connection, ConnectorConnectionRecord) else "mcp",
                     connector_provider_id=provider_id,
                     authorization_generation=connection.authorization_generation,

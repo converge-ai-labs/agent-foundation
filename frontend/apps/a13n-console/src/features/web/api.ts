@@ -10,32 +10,6 @@ export function webProviderApi(client: Client, scope: WebProviderScope) {
     organization_id = scope.id,
     workspace_id = scope.id;
   return {
-    references: (provider_id: string, signal: AbortSignal, cursor?: string) =>
-      org
-        ? client.http
-            .GET(
-              "/api/v1/organizations/{organization}/web-providers/{provider_id}/references",
-              {
-                params: {
-                  path: { organization: organization_id, provider_id },
-                  query: { cursor, limit: 30 },
-                },
-                signal,
-              },
-            )
-            .then(data)
-        : client.http
-            .GET(
-              "/api/v1/workspaces/{workspace}/web-providers/{provider_id}/references",
-              {
-                params: {
-                  path: { workspace: workspace_id, provider_id },
-                  query: { cursor, limit: 30 },
-                },
-                signal,
-              },
-            )
-            .then(data),
     providers: (signal: AbortSignal, cursor?: string) =>
       org
         ? client.http
@@ -116,26 +90,6 @@ export function webProviderApi(client: Client, scope: WebProviderScope) {
                   header: { "If-Match": etag },
                 },
                 body,
-              },
-            )
-            .then(data),
-    testProvider: (provider_id: string) =>
-      org
-        ? client.http
-            .POST(
-              "/api/v1/organizations/{organization}/web-providers/{provider_id}/test",
-              {
-                params: {
-                  path: { organization: organization_id, provider_id },
-                },
-              },
-            )
-            .then(data)
-        : client.http
-            .POST(
-              "/api/v1/workspaces/{workspace}/web-providers/{provider_id}/test",
-              {
-                params: { path: { workspace: workspace_id, provider_id } },
               },
             )
             .then(data),

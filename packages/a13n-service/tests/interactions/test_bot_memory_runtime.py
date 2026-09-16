@@ -254,6 +254,7 @@ async def test_forged_group_binding_and_unconfigured_group_cannot_expand_memory(
         values = {column.key: getattr(original, column.key) for column in ScopeRecord.__table__.columns}
         values.update(id="mscope_othergroup123456", external_conversation_id="C-other")
         session.add(ScopeRecord(**values))
+
         account = await session.get(AccountRecord, ACCOUNT)
         disabled = await select_binding(session, account, "C-not-configured")
     assert disabled is not None and disabled.scope_id is None and not disabled.use_memory
@@ -349,16 +350,39 @@ async def test_credential_rotation_after_platform_check_blocks_body_dispatch(
 async def test_shared_source_group_is_verified_before_its_body_or_index_is_returned(
     runtime_memory, platform_state, interaction_sessions
 ):
-    from a13n_service.bots.memory.domain import SharingPolicyInput
-    from a13n_service.bots.memory.sharing import save_policy
 
     memory, service, run, context, _document, calls, binding, verifier = runtime_memory
     other_id = "mscope_sharedsource12345"
     async with transaction(interaction_sessions) as session:
         original = await session.get(ScopeRecord, SCOPE)
         values = {column.key: getattr(original, column.key) for column in ScopeRecord.__table__.columns}
-        values.update(id=other_id, external_conversation_id="C-source", name="Source")
+        values.update(
+            id=other_id,
+            external_conversation_id="C-source",
+            name="Source",
+            settings_json=ScopeSettings(visibility="installation").model_dump(),
+        )
         session.add(ScopeRecord(**values))
+        from a13n_service.connectivity.accounts.target_models import AccountTargetRecord
+
+        for external_id in ("C-engineering", "C-source"):
+            session.add(
+                AccountTargetRecord(
+                    id=f"atgt_{external_id}",
+                    account_id=ACCOUNT,
+                    organization_id=ORGANIZATION_ID,
+                    workspace_id=WORKSPACE_ID,
+                    target_kind="conversation",
+                    external_target_id=external_id,
+                    version=1,
+                    receive_enabled=True,
+                    created_by_type="user",
+                    created_by_id=hook_actor().principal.principal_id,
+                    created_at=NOW,
+                    updated_at=NOW,
+                )
+            )
+
         role = await session.scalar(
             select(RoleBindingRecord).where(
                 RoleBindingRecord.workspace_id == WORKSPACE_ID,
@@ -376,12 +400,6 @@ async def test_shared_source_group_is_verified_before_its_body_or_index_is_retur
         CreateDocument(text="Shared source evidence", title="Shared release"),
         "shared-seed",
     )
-    await save_policy(
-        service,
-        hook_actor(),
-        ACCOUNT,
-        SharingPolicyInput(name="Explicit collaboration", scope_ids=(SCOPE, other_id), include_history=True),
-    )
     async with transaction(interaction_sessions) as session:
         row = await session.get(RoleBindingRecord, role.id)
         row.role_key = original_role
@@ -398,6 +416,20 @@ async def test_shared_source_group_is_verified_before_its_body_or_index_is_retur
         await capability.document_store.read(source.id)
     assert len(calls) == before
     assert platform_state["calls"].count("/api/conversations.info") >= 8
+    platform_state["members"]["C-source"] = True
+
+    async def revoke_during_read():
+        async with transaction(interaction_sessions) as session:
+            source_scope = await session.get(ScopeRecord, other_id)
+            source_scope.settings_json = {**source_scope.settings_json, "visibility": "group"}
+            source_scope.version += 1
+
+    platform_state["before_body"] = revoke_during_read
+    with pytest.raises(ApplicationError) as revoked:
+        await capability.document_store.read(source.id)
+    assert revoked.value.code == "memory_not_found"
+    platform_state["before_body"] = None
+    assert source.id not in (await capability.document_store.index()).text
 
 
 async def test_credential_rotation_during_body_read_prevents_return(

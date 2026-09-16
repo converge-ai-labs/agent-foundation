@@ -17,13 +17,10 @@ import { MarkdownContent } from "../../shared/markdown";
 import { Confirm } from "../../shared/form";
 import styles from "./bots.module.css";
 import { GroupMemorySettings, MemorySettings } from "./memory-settings";
-import { MemoryComposer } from "./memory-compose";
-import { MemoryPublications } from "./memory-publications";
 import { GroupMemoryActions } from "./memory-toolbar";
 import { refreshMemory } from "./memory-actions";
 import { MemorySearch } from "./memory-search";
 import { MemoryProvenance } from "./memory-provenance";
-import { MemoryPolicies } from "./memory-policies";
 
 export function BotMemory({ account }: { account: BotAccount }) {
   const { can } = useWorkspace(),
@@ -202,12 +199,11 @@ function MemoryBrowser({
           <h2>{t("Conversation memory")}</h2>
           <p>{t("Browse the index, then open only the documents you need.")}</p>
         </div>
-        {!fixedScope && <MemoryPolicies account={account} />}
       </div>
       <div className={styles.memoryBrowser}>
         <aside className={styles.scopePane} aria-label={t("Memory scopes")}>
           <h3>{account.provider_key === "slack" ? "Slack" : t("Feishu")}</h3>
-          <small>{t("Local and explicitly shared memory")}</small>
+          <small>{t("Each group controls who can read its memory")}</small>
           <ErrorNotice
             error={scopes.error}
             retry={() => void scopes.refetch()}
@@ -370,16 +366,17 @@ function ScopeDocuments({
         aria-label={t("Memory documents")}
       >
         <header className={styles.groupMemoryHeading}>
-          <h3>{scopeName}</h3>
+          <div>
+            <h3>{scopeName}</h3>
+            <small>
+              {t(
+                scope?.visibility === "installation"
+                  ? "Visible to all connected groups"
+                  : "Only this group",
+              )}
+            </small>
+          </div>
           <div className={styles.groupMemoryActions}>
-            {can("bot_memory.create") && (
-              <MemoryComposer
-                account={account}
-                scopeId={scopeId}
-                mode="create"
-                onCreated={select}
-              />
-            )}
             <GroupMemoryActions
               account={account}
               scopeId={scopeId}
@@ -528,27 +525,6 @@ function ScopeDocuments({
                 </Button>
                 <h3>{current?.title ?? t("Memory document")}</h3>
               </div>
-              {current && !current.shared && (
-                <div className={styles.memoryActions}>
-                  {can("bot_memory.create") && (
-                    <MemoryComposer
-                      account={account}
-                      scopeId={scopeId}
-                      mode="correction"
-                      source={current}
-                      onCreated={select}
-                    />
-                  )}
-                  {can("bot_memory.share") && (
-                    <MemoryComposer
-                      account={account}
-                      scopeId={scopeId}
-                      mode="publish"
-                      source={current}
-                    />
-                  )}
-                </div>
-              )}
               {current && !current.shared && can("bot_memory.delete") && (
                 <Confirm
                   title={t("Delete memory")}
@@ -556,7 +532,7 @@ function ScopeDocuments({
                   trigger={t("Delete")}
                   danger
                   description={t(
-                    "Delete this memory and withdraw all published copies. Previously delivered messages are not erased.",
+                    "Delete this memory for this group and every group that can read it. Previously delivered messages are not erased.",
                   )}
                   action={async () => {
                     await client.http.DELETE(

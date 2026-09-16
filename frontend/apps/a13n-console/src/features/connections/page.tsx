@@ -18,6 +18,7 @@ import { ConnectionDetails } from "./editor";
 import { ManageProvidersLink } from "../providers/manage-link";
 import { connectorApi } from "../connectors/api";
 import { NewConnection } from "./new";
+import { MCPConnectionIcon } from "./mcp-icon";
 
 export function ConnectionsPage() {
   const client = useClient(),
@@ -135,7 +136,7 @@ export function ConnectionsPage() {
                     row.source.kind === "connector" ? (
                       <BrandIcon alias={row.source.connector_key} />
                     ) : (
-                      <BrandIcon endpoint={row.source.endpoint_url} />
+                      <MCPConnectionIcon endpoint={row.source.endpoint_url} />
                     )
                   }
                 />

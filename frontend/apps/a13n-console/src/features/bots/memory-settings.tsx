@@ -1,3 +1,4 @@
+import { refreshMemory } from "./memory-actions";
 import type { BotAccount } from "./account";
 import type { MemoryDialogControl } from "./memory-actions";
 import {
@@ -365,6 +366,9 @@ function GroupForm({
     [read, setRead] = useState(true),
     [write, setWrite] = useState(true);
   const [timezone, setTimezone] = useState(account.memory?.timezone ?? "UTC");
+  const [visibility, setVisibility] = useState<"group" | "installation">(
+    "group",
+  );
   const [loaded, setLoaded] = useState(false);
   const [expectedVersion, setExpectedVersion] = useState<number | undefined>();
   const choices = useQuery({
@@ -431,6 +435,7 @@ function GroupForm({
   if ((target || initialScope) && choices.data && !loaded) {
     setLoaded(true);
     setEnabled(scope?.enabled ?? true);
+    setVisibility(scope?.visibility ?? "group");
     setRead(scope?.use_memory ?? true);
     setWrite(scope?.save_on_request ?? true);
     setTimezone(scope?.timezone ?? account.memory?.timezone ?? "UTC");
@@ -446,15 +451,14 @@ function GroupForm({
             external_conversation_id: group,
             expected_version: expectedVersion,
             enabled,
+            visibility,
             use_memory: read,
             save_on_request: write,
             timezone,
           },
         })
         .then(data);
-      await cache.invalidateQueries({
-        queryKey: ["bot-memory-scopes", account.id],
-      });
+      await refreshMemory(cache, account.id);
       close();
     },
   });
@@ -492,6 +496,7 @@ function GroupForm({
             );
             setExpectedVersion(selected?.version);
             setEnabled(selected?.enabled ?? true);
+            setVisibility(selected?.visibility ?? "group");
             setRead(selected?.use_memory ?? true);
             setWrite(selected?.save_on_request ?? true);
             setTimezone(
@@ -512,6 +517,37 @@ function GroupForm({
         <Switch checked={write} onCheckedChange={setWrite} />
         {t("Allow explicit save and forget requests")}
       </Label>
+      <ChoiceField
+        label={t("Who can read this group's memory?")}
+        value={visibility}
+        onValueChange={(value) =>
+          setVisibility(value as "group" | "installation")
+        }
+        options={[
+          { value: "group", label: t("Only this group") },
+          {
+            value: "installation",
+            label: t("All connected groups"),
+            disabled: !scope || !["public", "private"].includes(scope.audience),
+          },
+        ]}
+      />
+      <p>
+        {t(
+          visibility === "installation"
+            ? "All existing and future memory in this group can be read by other groups connected to this bot in the same Slack workspace or Feishu tenant. Their private memory stays private."
+            : "Other groups cannot read this group's memory. This group can still read memory that other groups make visible.",
+        )}
+      </p>
+      {visibility !== (scope?.visibility ?? "group") && (
+        <p role="status">
+          {t(
+            visibility === "group"
+              ? "Saving immediately stops future reads from other groups. Messages already sent to chats are not removed."
+              : "This includes historical memory and groups connected to this bot later. No chat message or memory copy is created.",
+          )}
+        </p>
+      )}
       <FormField label={t("Time zone")}>
         <Input
           value={timezone}
@@ -521,7 +557,7 @@ function GroupForm({
       </FormField>
       <p>
         {t(
-          "The platform must verify this conversation before the bot can use its memory. These settings do not grant sharing access.",
+          "Only verified group conversations can open their memory to other groups. Direct conversations stay private.",
         )}
       </p>
       {group && (

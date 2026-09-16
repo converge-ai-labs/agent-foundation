@@ -37,9 +37,8 @@ from .domain import (
     ScopeSettings,
     SearchDocuments,
 )
-from .enrollment import initialize_sharing
-from .models import DocumentRecord, ScopeRecord, SharingPolicyRecord
-from .queries import matching_policies, visible_documents
+from .models import DocumentRecord, ScopeRecord
+from .queries import visible_documents
 from .settings import read_settings
 
 
@@ -204,9 +203,14 @@ class BotMemoryService:
                     scope.audience = observed.audience
                 else:
                     scope.audience = "unknown"
+            if body.visibility == "installation" and scope.audience not in ("public", "private"):
+                raise failure(
+                    "memory_visibility_unavailable",
+                    "Verify a group conversation before opening its memory to other groups.",
+                    ErrorCategory.conflict,
+                )
             await self._provider(session, scope)
             await session.flush()
-            await initialize_sharing(session, actor, scope)
             await audit(
                 session,
                 actor,
@@ -217,6 +221,7 @@ class BotMemoryService:
                 details={
                     "version": scope.version,
                     "enabled": body.enabled,
+                    "visibility": body.visibility,
                     "use_memory": body.use_memory,
                     "save_on_request": body.save_on_request,
                 },
@@ -337,23 +342,13 @@ class BotMemoryService:
                 continue
             return MemoryIndex(text=text, entries=entries[:count], next_cursor=next_cursor)
 
-    async def get(
-        self, authority: Authority, account_id: str, scope_id: str, document_id: str, *, publication: bool = False
-    ) -> Document:
-        if publication and not isinstance(authority, AuthenticatedActor):
-            raise failure(
-                "memory_sharing_forbidden", "Publication management requires an administrator.", ErrorCategory.forbidden
-            )
+    async def get(self, authority: Authority, account_id: str, scope_id: str, document_id: str) -> Document:
         async with short_session(self.sessions) as session:
             scope = await self._scope(session, authority, account_id, scope_id)
             row = await session.scalar(
                 select(DocumentRecord).where(
                     DocumentRecord.id == document_id,
-                    (DocumentRecord.scope_id == scope_id)
-                    & (DocumentRecord.publication_source_id.is_not(None))
-                    & (DocumentRecord.state == "active")
-                    if publication
-                    else visibility(authority, scope),
+                    visibility(authority, scope),
                 )
             )
             if row is None or row.native_id is None:
@@ -379,11 +374,7 @@ class BotMemoryService:
             row = await session.scalar(
                 select(DocumentRecord).where(
                     DocumentRecord.id == document_id,
-                    (DocumentRecord.scope_id == scope_id)
-                    & (DocumentRecord.publication_source_id.is_not(None))
-                    & (DocumentRecord.state == "active")
-                    if publication
-                    else visibility(authority, scope),
+                    visibility(authority, scope),
                 )
             )
             if row is None:
@@ -392,38 +383,13 @@ class BotMemoryService:
                 shared=row.scope_id != scope.id or row.publication_source_id is not None,
                 expose_source=row.scope_id == scope.id,
             )
-            # Explanations are bounded management metadata, never extra authority
-            # or model context. Reuse the same policy predicate after revalidation.
             reasons: tuple[DocumentAccessReason, ...] = ()
             owner_name = None
-            more_reasons = False
             if isinstance(authority, AuthenticatedActor):
                 owner = await session.get(ScopeRecord, row.scope_id)
                 owner_name = owner.name if owner is not None else None
-                if row.scope_id == scope.id:
-                    reasons = (DocumentAccessReason(kind="owner"),)
-                elif row.publication_source_id is not None:
-                    reasons = (DocumentAccessReason(kind="publication"),)
-                else:
-                    policies = list(
-                        await session.scalars(
-                            matching_policies(scope)
-                            .where(DocumentRecord.id == row.id)
-                            .order_by(SharingPolicyRecord.id)
-                            .limit(21)
-                        )
-                    )
-                    reasons = tuple(
-                        DocumentAccessReason(kind="policy", policy_id=p.id, policy_name=p.name) for p in policies[:20]
-                    )
-                    more_reasons = len(policies) > 20
-            return Document(
-                **entry.model_dump(),
-                text=record.text,
-                owner_name=owner_name,
-                access_reasons=reasons,
-                more_access_reasons=more_reasons,
-            )
+                reasons = (DocumentAccessReason(kind="owner" if row.scope_id == scope.id else "installation"),)
+            return Document(**entry.model_dump(), text=record.text, owner_name=owner_name, access_reasons=reasons)
 
     async def search(
         self, authority: Authority, account_id: str, scope_id: str, body: SearchDocuments

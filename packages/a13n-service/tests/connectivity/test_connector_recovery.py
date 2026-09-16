@@ -239,6 +239,7 @@ async def test_authority_change_after_discovery_blocks_action(
     capability = await runtime._connector(
         ConnectionRunSelection(
             kind="connector",
+            model_alias="conn_github",
             authorization_generation=(
                 await management(connections).get(actor=actor(), connection_id=connection.id)
             ).authorization_generation,

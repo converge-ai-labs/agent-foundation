@@ -8,6 +8,7 @@ import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { allPages, data, type Schema } from "../../shared/api";
 import { connectorApi } from "../connectors/api";
+import { useMCPServers } from "../mcp/catalog";
 
 export function useConnectionDirectory(search: string) {
   const client = useClient(),
@@ -24,19 +25,7 @@ export function useConnectionDirectory(search: string) {
         ),
       ),
   });
-  const mcpServers = useQuery({
-    queryKey: ["mcp-servers", search],
-    enabled: can("connection.manage"),
-    queryFn: ({ signal }) =>
-      allPages((cursor) =>
-        client.http
-          .GET("/api/v1/mcp-servers", {
-            params: { query: { query: search, limit: 200, cursor } },
-            signal,
-          })
-          .then(data),
-      ),
-  });
+  const mcpServers = useMCPServers(search, can("connection.manage"));
   const active =
     providers.data?.filter((provider) => provider.status === "active") ?? [];
   const key = (provider: Schema["ConnectorProvider"]) => [
