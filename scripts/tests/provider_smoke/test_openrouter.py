@@ -59,14 +59,18 @@ def smoke(monkeypatch):
     return args, calls, run
 
 
-@pytest.mark.parametrize("command", ["discover", "describe"])
-def test_preview_uses_remote_discovery_or_local_settings(smoke, capsys, command):
+@pytest.mark.parametrize("command", ["test", "describe"])
+def test_preview_uses_connection_probe_or_local_settings(smoke, capsys, command):
     args, calls, run = smoke
     args.command = command
     run()
-    assert [call.method for call in calls] == (["GET"] if command == "discover" else [])
+    assert [call.method for call in calls] == (["GET"] if command == "test" else [])
     output = capsys.readouterr().out
-    assert "vendor/model" in output
+    if command == "test":
+        assert "Connection probe succeeded" in output
+        assert "vendor/model" not in output
+    else:
+        assert "vendor/model" in output
     assert "dummy-key" not in output
     if command == "describe":
         assert "Available settings:" in output and "max_tokens" in output
