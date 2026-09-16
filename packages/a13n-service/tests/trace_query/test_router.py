@@ -8,7 +8,13 @@ from a13n_service.api import install_api_conventions
 from a13n_service.application_errors import ErrorCategory
 from a13n_service.iam import AuthenticatedActor, PrincipalRef, PrincipalType
 from a13n_service.iam.http.resource_dependencies import resolve_workspace
-from a13n_service.trace_query import Trace, TraceCollection, TraceQueryError, TraceQueryService, TraceView
+from a13n_service.trace_query import (
+    Trace,
+    TraceCollection,
+    TraceQueryError,
+    TraceQueryService,
+    TraceView,
+)
 from a13n_service.trace_query.router import router
 from fastapi import FastAPI, Request
 
@@ -36,7 +42,11 @@ class StubTraceQueryService:
 
     async def get(self, **arguments: object) -> Trace:
         self.get_arguments = arguments
-        raise TraceQueryError("trace_not_found", "The Trace was not found.", category=ErrorCategory.not_found)
+        raise TraceQueryError(
+            "trace_not_found",
+            "The Trace was not found.",
+            category=ErrorCategory.not_found,
+        )
 
 
 def application(service: object, process_runtime_factory) -> FastAPI:
@@ -64,7 +74,9 @@ async def test_list_route_parses_the_native_contract(process_runtime_factory) ->
                 "to": "2026-09-02T00:00:00Z",
                 "query": "hello",
                 "search_in": "input",
+                "session_id": "session-1",
                 "thread_id": "thread-1",
+                "metadata": ["scenario=review", "synthetic=true"],
             },
         )
 
@@ -73,11 +85,18 @@ async def test_list_route_parses_the_native_contract(process_runtime_factory) ->
     assert service.list_arguments is not None
     assert service.list_arguments["from_started_at"] == datetime(2026, 9, 1, tzinfo=UTC)
     assert service.list_arguments["to_started_at"] == datetime(2026, 9, 2, tzinfo=UTC)
+    assert service.list_arguments["session_id"] == "session-1"
     assert service.list_arguments["thread_id"] == "thread-1"
+    assert service.list_arguments["metadata"] == [
+        "scenario=review",
+        "synthetic=true",
+    ]
 
 
 @pytest.mark.anyio
-async def test_disabled_query_uses_the_shared_safe_error_envelope(process_runtime_factory) -> None:
+async def test_disabled_query_uses_the_shared_safe_error_envelope(
+    process_runtime_factory,
+) -> None:
     service = TraceQueryService(provider_key="none", provider=None, authorizer=None)
     transport = httpx2.ASGITransport(app=application(service, process_runtime_factory))
 
@@ -99,7 +118,9 @@ async def test_disabled_query_uses_the_shared_safe_error_envelope(process_runtim
 
 
 @pytest.mark.anyio
-async def test_route_validation_uses_400_and_detail_defaults_to_full(process_runtime_factory) -> None:
+async def test_route_validation_uses_400_and_detail_defaults_to_full(
+    process_runtime_factory,
+) -> None:
     service = StubTraceQueryService()
     app = application(service, process_runtime_factory)
     transport = httpx2.ASGITransport(app=app)

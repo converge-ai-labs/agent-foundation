@@ -2,7 +2,6 @@
 # make dev / make setup never starts Mem0 unless you explicitly enable it here.
 # For private values, copy to local.private.toml and pass MEM0_CONFIG=that/path.
 enabled = false
-port = 18888
 api_key = "local-mem0-api-key" # Public fixture key only; never commit a real key.
 
 # Real embeddings use MEM0_OSS_EMBEDDING_{BASE_URL,MODEL,API_KEY,DIMENSIONS}

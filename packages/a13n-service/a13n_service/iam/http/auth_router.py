@@ -25,8 +25,8 @@ from .dependencies import Actor, Pagination, identity, private_response
 router = APIRouter(prefix="/api/v1", tags=["identity"], dependencies=[Depends(private_response)])
 
 
-def login_response(response: Response, result: Login) -> LoginResult:
-    response.set_cookie(SESSION_COOKIE, result.token, httponly=True, secure=True, samesite="lax", path="/")
+def login_response(response: Response, result: Login, cookie_name: str = SESSION_COOKIE) -> LoginResult:
+    response.set_cookie(cookie_name, result.token, httponly=True, secure=True, samesite="lax", path="/")
     response.headers["Cache-Control"] = "no-store"
     return LoginResult(user=result.user, session=result.session, csrf_token=csrf_token(result.token))
 
@@ -38,7 +38,7 @@ async def login(request: Request, response: Response, body: LoginRequest) -> Log
     result = await runtime.sessions.login(
         str(body.email), body.password.get_secret_value(), request_id=request.state.request_id
     )
-    return login_response(response, result)
+    return login_response(response, result, runtime.configuration.session_cookie_name)
 
 
 @router.post("/invitations/{invitation_id}/accept")
@@ -48,22 +48,30 @@ async def accept_invitation(
     runtime = identity(request)
     require_origin(request, runtime.configuration)
     result = await runtime.invitations.accept(invitation_id, body, request_id=request.state.request_id)
-    return login_response(response, result)
+    return login_response(response, result, runtime.configuration.session_cookie_name)
 
 
 @router.get("/auth/csrf")
 async def browser_proof(request: Request, response: Response, actor: Actor) -> dict[str, str]:
     if actor.auth_method != "session":
         raise identity_error("browser_session_required", "A browser session is required.", ErrorCategory.forbidden)
-    await identity(request).sessions.me(actor)
+    runtime = identity(request)
+    await runtime.sessions.me(actor)
     response.headers["Cache-Control"] = "no-store"
-    return {"csrf_token": csrf_token(request.cookies.get(SESSION_COOKIE, ""))}
+    return {"csrf_token": csrf_token(request.cookies.get(runtime.configuration.session_cookie_name, ""))}
 
 
 @router.post("/auth/logout", status_code=204)
 async def logout(request: Request, response: Response, actor: Actor) -> None:
-    await identity(request).sessions.revoke(actor, actor.credential_id)
-    response.delete_cookie(SESSION_COOKIE, path="/", secure=True, httponly=True, samesite="lax")
+    runtime = identity(request)
+    await runtime.sessions.revoke(actor, actor.credential_id)
+    response.delete_cookie(
+        runtime.configuration.session_cookie_name,
+        path="/",
+        secure=True,
+        httponly=True,
+        samesite="lax",
+    )
     response.headers["Cache-Control"] = "no-store"
 
 

@@ -5,6 +5,7 @@ import { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { ResourceTable } from "../../shared/collection";
+import { ResourceReference } from "../../shared/resource-reference";
 import { Empty, ErrorNotice, Loading } from "../../shared/feedback";
 import type { Schema } from "../../shared/api";
 import { memoryApi, memoryKey, type MemoryTarget } from "./api";
@@ -137,7 +138,7 @@ export function MemoryContents({
       >
         <div className="flex flex-wrap items-end gap-2">
           <FormField
-            className="min-w-0 flex-1"
+            className="min-w-0 flex-1 sm:max-w-sm"
             label={t("Semantic search")}
             hideLabel
           >
@@ -265,13 +266,11 @@ export function MemoryContents({
                   label: t("Memory"),
                   tone: "primary",
                   render: (item) => (
-                    <div className="min-w-0 max-w-3xl">
-                      <p className="line-clamp-3 whitespace-pre-wrap break-words">
+                    <div className="flex min-w-0 max-w-3xl items-start gap-2">
+                      <p className="line-clamp-3 min-w-0 whitespace-pre-wrap break-words">
                         {item.memory}
                       </p>
-                      <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
-                        {item.id}
-                      </p>
+                      <ResourceReference id={item.id} />
                     </div>
                   ),
                 },

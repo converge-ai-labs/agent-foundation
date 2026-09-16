@@ -246,7 +246,7 @@ def _normalize_event(
     received_at: datetime,
 ) -> InboundEvent | None:
     event_kind = event.get("type")
-    conversation_kind = event.get("channel_type")
+    conversation_kind = event.get("channel_type", "channel" if event_kind == "app_mention" else None)
     channel_id = event.get("channel")
     message_ts = event.get("ts")
     user_id = event.get("user")

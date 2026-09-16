@@ -38,6 +38,37 @@ def request():
     )
 
 
+async def test_bot_account_filter_pages_only_messaging_accounts(account_service, connectivity_sessions):
+    records = []
+    for index in range(3):
+        record = await account_service.create_account(
+            actor=actor(),
+            workspace_id=WORKSPACE_ID,
+            idempotency_key=f"filter-{index}",
+            request=request().model_copy(
+                update={
+                    "name": f"Filter {index}",
+                    "provider_config": {"installation_id": f"filter-{index}"},
+                }
+            ),
+        )
+        records.append(record)
+    async with transaction(connectivity_sessions) as session:
+        for index, provider in enumerate(("slack", "lark")):
+            row = await session.get(AccountRecord, records[index].id)
+            row.provider_key = provider
+    first = await account_service.list_accounts(
+        actor=actor(), workspace_id=WORKSPACE_ID, limit=1, cursor=None, bots_only=True
+    )
+    second = await account_service.list_accounts(
+        actor=actor(), workspace_id=WORKSPACE_ID, limit=1, cursor=first.next_cursor, bots_only=True
+    )
+    assert {first.items[0].id, second.items[0].id} == {records[0].id, records[1].id}
+    assert second.next_cursor is None
+    with pytest.raises(NativeError):
+        await account_service.list_accounts(actor=actor(), workspace_id=WORKSPACE_ID, limit=1, cursor=first.next_cursor)
+
+
 async def test_account_credentials_identity_and_idempotency(account_service):
     value = await account_service.create_account(
         actor=actor(), workspace_id=WORKSPACE_ID, idempotency_key="create-account", request=request()
@@ -368,3 +399,31 @@ async def test_account_provider_metadata_is_registered_and_workspace_authorized(
     with pytest.raises(NativeError) as denied:
         await account_service.provider_types(actor=actor(), workspace_id="ws_missing1234567890")
     assert denied.value.code == "resource_not_found"
+
+
+async def test_reception_scope_persists_and_requires_version(account_service):
+    from a13n_service.connectivity.accounts.reception import ReceptionScope
+
+    created = await account_service.create_account(
+        actor=actor(),
+        workspace_id=WORKSPACE_ID,
+        idempotency_key="scoped",
+        request=request().model_copy(update={"reception_scope": ReceptionScope.configured_targets}),
+    )
+    assert created.reception_scope == ReceptionScope.configured_targets
+    assert (
+        await account_service.get_account(actor=actor(), account_id=created.id)
+    ).reception_scope == created.reception_scope
+    changed = await account_service.update_account(
+        actor=actor(),
+        account_id=created.id,
+        request=UpdateAccountRequest(expected_version=created.version, reception_scope="all_accessible"),
+    )
+    assert changed.reception_scope == ReceptionScope.all_accessible
+    with pytest.raises(NativeError) as stale:
+        await account_service.update_account(
+            actor=actor(),
+            account_id=created.id,
+            request=UpdateAccountRequest(expected_version=created.version, reception_scope="configured_targets"),
+        )
+    assert stale.value.code == "version_conflict"

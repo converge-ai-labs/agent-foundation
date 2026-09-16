@@ -1,9 +1,13 @@
 """Provider-neutral memory contracts shared by embedded and hosted applications."""
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from enum import StrEnum
 from math import isfinite
+from types import MappingProxyType
+
+from pydantic import JsonValue, TypeAdapter
 
 
 class MemoryScope(StrEnum):
@@ -12,15 +16,23 @@ class MemoryScope(StrEnum):
     USER = "user"
 
 
+class MemoryDocumentScope(StrEnum):
+    CONVERSATION = "conversation"
+
+
 @dataclass(frozen=True, slots=True)
 class MemorySubject:
     """A host-resolved namespace, never a model-supplied native filter."""
 
-    scope: MemoryScope
+    scope: MemoryScope | MemoryDocumentScope
     value: str
 
     def __post_init__(self) -> None:
-        if not isinstance(self.scope, MemoryScope) or not isinstance(self.value, str) or not self.value.strip():
+        if (
+            not isinstance(self.scope, MemoryScope | MemoryDocumentScope)
+            or not isinstance(self.value, str)
+            or not self.value.strip()
+        ):
             raise ValueError("Memory subjects require a scope and a nonempty trusted identifier")
 
 
@@ -30,11 +42,14 @@ class MemoryRecord:
     text: str
     subjects: tuple[MemorySubject, ...]
     score: float | None = None
+    metadata: Mapping[str, JsonValue] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not isinstance(self.id, str) or not self.id or not isinstance(self.text, str) or not self.text.strip():
             raise ValueError("Memory records require an identifier and nonempty text")
         self.text.encode("utf-8")
+        metadata = TypeAdapter(dict[str, JsonValue]).validate_python(dict(self.metadata))
+        object.__setattr__(self, "metadata", MappingProxyType(metadata))
         if not self.subjects or any(not isinstance(item, MemorySubject) for item in self.subjects):
             raise ValueError("Memory records require trusted subjects")
         if self.score is not None and (
@@ -107,3 +122,21 @@ class MemoryBackend(ABC):
 
     @abstractmethod
     async def delete(self, memory_id: str, *, subject: MemorySubject) -> None: ...
+
+
+class MemoryDocumentBackend(MemoryBackend):
+    """Opt-in document operations; legacy six-operation backends remain valid.
+
+    Metadata and record keys are host-controlled, never arbitrary model filters.
+    Implementations verify persisted metadata together with exact text and subject.
+    """
+
+    @abstractmethod
+    async def add_document(
+        self, text: str, *, subject: MemorySubject, metadata: Mapping[str, JsonValue]
+    ) -> MemoryRecord: ...
+
+    @abstractmethod
+    async def search_documents(
+        self, query: str, *, subject: MemorySubject, record_keys: tuple[str, ...], limit: int
+    ) -> tuple[MemoryRecord, ...]: ...

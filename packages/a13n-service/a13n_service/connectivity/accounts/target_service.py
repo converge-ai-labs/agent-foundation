@@ -23,6 +23,7 @@ from a13n_service.connectivity.native_management import (
 )
 from a13n_service.iam import AuthenticatedActor, WorkspaceAction
 from a13n_service.ids import new_object_id
+from a13n_service.memory.bots.lifecycle import invalidate_conversation
 from a13n_service.storage import transaction
 from a13n_service.temporal import Clock, utc_now
 
@@ -201,6 +202,8 @@ class AccountTargetService:
             await authorize(session, actor, account.workspace_id, WorkspaceAction.account_target_manage)
             record = await require_target(session, account_id, target_id, lock=True)
             require_version(record.version, expected_version)
+            if record.target_kind == "conversation":
+                await invalidate_conversation(session, account_id, record.external_target_id)
             session.add(
                 audit(
                     actor,

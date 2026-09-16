@@ -185,7 +185,7 @@ Changing a password with the current password preserves the current browser sess
 | `expires_at` | Fixed deployment-configurable expiry; default seven days after creation |
 | `revoked_at` | Explicit revocation time; null while unrevoked                          |
 
-The plaintext token appears only in an `HttpOnly`, `Secure` cookie. Sessions do not use a long-lived self-contained JWT, sliding renewal, a remember-me mode, or a durable current-Workspace field. Browser closure does not itself revoke a session. Every request rechecks User status, session validity, selected resource scope, and current RoleBindings.
+The plaintext token appears only in an `HttpOnly`, `Secure` cookie. `iam.session_cookie_name` selects the cookie name, defaulting to `a13n_session`; login, invitation acceptance, authentication, CSRF verification, logout, and OpenAPI use the same configured name. Deployments keep this name stable: changing it prevents existing browser cookies from authenticating but does not revoke the stored sessions. Distinct names prevent same-host cookie collisions, not cross-deployment security isolation. Sessions do not use a long-lived self-contained JWT, sliding renewal, a remember-me mode, or a durable current-Workspace field. Browser closure does not itself revoke a session. Every request rechecks User status, session validity, selected resource scope, and current RoleBindings.
 
 ### `invitations` and `invitation_grants`
 
@@ -473,6 +473,14 @@ Web Provider search or scrape use derives from the accepted operation selection,
 Memory subjects and namespace isolation follow [Long-Term Memory](42-memory.md). Workspace Viewer includes `memory.read` and safe Provider metadata action `memory_provider.read`; Runner adds `memory.write`. Builder adds `memory_provider.manage` for Provider creation and owning-scope metadata/credential mutations. Organization-owned Providers are visible in child Workspaces but mutable only through their Organization boundary. Provider administration never grants content access, and a configured Agent invocation does not require Provider administration. Direct Agent Viewer and Runner include the corresponding actions only for the selected Agent and its current Threads, never an implicit Workspace-wide User scope. Memory operations during execution additionally require current Attempt authority and invocation eligibility.
 
 An Agent-scoped Runner or Builder binding authorizes only that Agent and its Runs. It does not grant management authority over an Account, AccountTarget, ConnectorProvider, Connection, or Connection, and it cannot use one outside the accepted Agent capability surface.
+
+### Bot Memory Management
+
+Bot memory management is restricted to human Users with effective Workspace Admin authority, including Organization Admin inheritance under the existing role model. Viewer, Runner, Builder, direct Agent grants, and Service Account execution authority do not grant access to the Bot Memory management surface. The restriction is enforced server-side for indexes, directory metadata, search, bodies, provenance, creation, deletion, publication, and sharing policies; hiding Console controls alone is insufficient. Ordinary `memory.read` and `memory.write` do not bypass it for Bot-owned documents. Saved Bot documents have no update permission, including for administrators.
+
+Administrators are trusted to manage retained memory from the Workspace's connected groups, including private groups. This release does not require linking their a13n User to a Slack/Feishu identity or checking their personal group membership, and offers no delegated non-admin Bot memory management. The Console must make this trust boundary clear when enabling Bot memory.
+
+Bot runtime operations remain separately authorized by the execution Service Account, current Attempt and invocation authority, retained conversation binding, and effective memory/sharing policy. Group participants need not be a13n administrators to receive authorized Bot responses. Neither Console administrator authority nor ordinary Agent memory grants widen the runtime conversation boundary. [Long-Term Memory](42-memory.md#bot-memory-management-authority) owns dispatch and content isolation.
 
 ## Authorization Contract
 

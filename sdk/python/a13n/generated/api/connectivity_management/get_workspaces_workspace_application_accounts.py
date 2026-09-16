@@ -15,6 +15,7 @@ def build_request(
     *,
     limit: int | Unset = UNSET,
     cursor: str | Unset | None = UNSET,
+    bots_only: bool | Unset = UNSET,
 ) -> dict[str, Any]:
 
     params: dict[str, Any] = {}
@@ -27,6 +28,8 @@ def build_request(
     else:
         json_cursor = cursor
     params["cursor"] = json_cursor
+
+    params["bots_only"] = bots_only
 
     params = {k: v for k, v in params.items() if v is not UNSET and v is not None}
 
@@ -76,6 +79,7 @@ def sync_detailed(
     client: AuthenticatedClient,
     limit: int | Unset = UNSET,
     cursor: str | Unset | None = UNSET,
+    bots_only: bool | Unset = UNSET,
 ) -> Response[AccountCollection | ErrorResponse]:
     """List Accounts
 
@@ -83,6 +87,7 @@ def sync_detailed(
         workspace (str):
         limit (int | Unset):
         cursor (None | str | Unset):
+        bots_only (bool | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -96,6 +101,7 @@ def sync_detailed(
         workspace=workspace,
         limit=limit,
         cursor=cursor,
+        bots_only=bots_only,
     )
 
     response = client.get_httpx_client().request(
@@ -111,6 +117,7 @@ def sync(
     client: AuthenticatedClient,
     limit: int | Unset = UNSET,
     cursor: str | Unset | None = UNSET,
+    bots_only: bool | Unset = UNSET,
 ) -> AccountCollection | ErrorResponse | None:
     """List Accounts
 
@@ -118,6 +125,7 @@ def sync(
         workspace (str):
         limit (int | Unset):
         cursor (None | str | Unset):
+        bots_only (bool | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -132,6 +140,7 @@ def sync(
         client=client,
         limit=limit,
         cursor=cursor,
+        bots_only=bots_only,
     ).parsed
 
 
@@ -141,6 +150,7 @@ async def asyncio_detailed(
     client: AuthenticatedClient,
     limit: int | Unset = UNSET,
     cursor: str | Unset | None = UNSET,
+    bots_only: bool | Unset = UNSET,
 ) -> Response[AccountCollection | ErrorResponse]:
     """List Accounts
 
@@ -148,6 +158,7 @@ async def asyncio_detailed(
         workspace (str):
         limit (int | Unset):
         cursor (None | str | Unset):
+        bots_only (bool | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -161,6 +172,7 @@ async def asyncio_detailed(
         workspace=workspace,
         limit=limit,
         cursor=cursor,
+        bots_only=bots_only,
     )
 
     response = await client.get_async_httpx_client().request(**kwargs)
@@ -174,6 +186,7 @@ async def asyncio(
     client: AuthenticatedClient,
     limit: int | Unset = UNSET,
     cursor: str | Unset | None = UNSET,
+    bots_only: bool | Unset = UNSET,
 ) -> AccountCollection | ErrorResponse | None:
     """List Accounts
 
@@ -181,6 +194,7 @@ async def asyncio(
         workspace (str):
         limit (int | Unset):
         cursor (None | str | Unset):
+        bots_only (bool | Unset):
 
     Raises:
         errors.UnexpectedStatus: If the server returns an undocumented status code and Client.raise_on_unexpected_status is True.
@@ -196,5 +210,6 @@ async def asyncio(
             client=client,
             limit=limit,
             cursor=cursor,
+            bots_only=bots_only,
         )
     ).parsed

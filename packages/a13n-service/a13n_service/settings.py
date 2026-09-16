@@ -89,6 +89,7 @@ class Settings(Section):
     def identity_configuration(self) -> IdentityConfiguration:
         return IdentityConfiguration(
             public_origin=self.iam.public_origin,
+            session_cookie_name=self.iam.session_cookie_name,
             initial_admin_email=self.iam.initial_admin_email,
             session_days=self.iam.session_days,
             invitation_days=self.iam.invitation_days,

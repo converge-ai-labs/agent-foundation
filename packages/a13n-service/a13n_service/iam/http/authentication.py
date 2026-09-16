@@ -38,7 +38,7 @@ def require_origin(request: HTTPConnection, configuration: IdentityConfiguration
 
 def require_csrf(request: HTTPConnection, configuration: IdentityConfiguration) -> None:
     require_origin(request, configuration)
-    token = request.cookies.get(SESSION_COOKIE, "")
+    token = request.cookies.get(configuration.session_cookie_name, "")
     proof = request.headers.get(CSRF_HEADER, "")
     if not token or len(token) > 128 or not hmac.compare_digest(proof.encode(), csrf_token(token).encode()):
         raise identity_error("csrf_rejected", "A valid browser proof is required.", ErrorCategory.forbidden)
@@ -73,7 +73,7 @@ class DatabaseAuthenticator:
 
     async def _authenticate(self, request: HTTPConnection) -> AuthenticatedActor:
         authorization = request.headers.get("authorization")
-        cookie = request.cookies.get(SESSION_COOKIE)
+        cookie = request.cookies.get(self.configuration.session_cookie_name)
         if (authorization is None) == (cookie is None):
             raise AuthenticationError("exactly one credential required")
         async with short_session(self._sessions) as session:

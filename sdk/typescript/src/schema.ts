@@ -69,6 +69,193 @@ export interface paths {
     patch: operations["patch_application_accounts_account_id"];
     trace?: never;
   };
+  "/api/v1/application-accounts/{account_id}/bot/activate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Activate Bot */
+    post: operations["post_application_accounts_account_id_bot_activate"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/application-accounts/{account_id}/bot/checks": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Check Bot */
+    post: operations["post_application_accounts_account_id_bot_checks"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/application-accounts/{account_id}/bot/checks/latest": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Latest Bot Check */
+    get: operations["get_application_accounts_account_id_bot_checks_latest"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/application-accounts/{account_id}/bot/conversations": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Discover Bot Conversations */
+    get: operations["get_application_accounts_account_id_bot_conversations"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/application-accounts/{account_id}/bot/replies": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Bot Reply Observations */
+    get: operations["get_application_accounts_account_id_bot_replies"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/application-accounts/{account_id}/bot/setup": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Bot Setup */
+    get: operations["get_application_accounts_account_id_bot_setup"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/application-accounts/{account_id}/bot/summary": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Bot Summary */
+    get: operations["get_application_accounts_account_id_bot_summary"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/application-accounts/{account_id}/bot/tests": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Create Bot Setup Test */
+    post: operations["post_application_accounts_account_id_bot_tests"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/application-accounts/{account_id}/bot/tests/latest": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Latest Bot Setup Test */
+    get: operations["get_application_accounts_account_id_bot_tests_latest"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/application-accounts/{account_id}/bot/tests/{test_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get Bot Setup Test */
+    get: operations["get_application_accounts_account_id_bot_tests_test_id"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/application-accounts/{account_id}/bot/threads": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List Bot Conversation Threads */
+    get: operations["get_application_accounts_account_id_bot_threads"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/application-accounts/{account_id}/credentials": {
     parameters: {
       query?: never;
@@ -79,6 +266,266 @@ export interface paths {
     get?: never;
     /** Replace Account Credentials */
     put: operations["put_application_accounts_account_id_credentials"];
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/application-accounts/{account_id}/memory-scopes": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Scopes */
+    get: operations["get_application_accounts_account_id_memory_scopes"];
+    put?: never;
+    /** Configure */
+    post: operations["post_application_accounts_account_id_memory_scopes"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Documents */
+    get: operations["get_application_accounts_account_id_memory_scopes_scope_id_documents"];
+    put?: never;
+    /** Add */
+    post: operations["post_application_accounts_account_id_memory_scopes_scope_id_documents"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/search": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Search */
+    post: operations["post_application_accounts_account_id_memory_scopes_scope_id_documents_search"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/{document_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get */
+    get: operations["get_application_accounts_account_id_memory_scopes_scope_id_documents_document_id"];
+    put?: never;
+    post?: never;
+    /** Remove */
+    delete: operations["delete_application_accounts_account_id_memory_scopes_scope_id_documents_document_id"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/{document_id}/publications": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Publish Document */
+    post: operations["post_application_accounts_account_id_memory_scopes_scope_id_documents_document_id_publications"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/index": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Index */
+    get: operations["get_application_accounts_account_id_memory_scopes_scope_id_index"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/operations": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Operations */
+    get: operations["get_application_accounts_account_id_memory_scopes_scope_id_operations"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/operations/{document_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Operation Status */
+    get: operations["get_application_accounts_account_id_memory_scopes_scope_id_operations_document_id"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/operations/{document_id}/reconcile": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Reconcile Operation */
+    post: operations["post_application_accounts_account_id_memory_scopes_scope_id_operations_document_id_reconcile"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Publications */
+    get: operations["get_application_accounts_account_id_memory_scopes_scope_id_publications"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Publication */
+    get: operations["get_application_accounts_account_id_memory_scopes_scope_id_publications_document_id"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}/audience": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Publication Audience */
+    get: operations["get_application_accounts_account_id_memory_scopes_scope_id_publications_document_id_audience"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /** Change Audience */
+    patch: operations["patch_application_accounts_account_id_memory_scopes_scope_id_publications_document_id_audience"];
+    trace?: never;
+  };
+  "/api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}/withdraw": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Withdraw Publication */
+    post: operations["post_application_accounts_account_id_memory_scopes_scope_id_publications_document_id_withdraw"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/application-accounts/{account_id}/memory-sharing-policies": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Policies */
+    get: operations["get_application_accounts_account_id_memory_sharing_policies"];
+    put?: never;
+    /** New Policy */
+    post: operations["post_application_accounts_account_id_memory_sharing_policies"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/api/v1/application-accounts/{account_id}/memory-sharing-policies/{policy_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /** Replace Policy */
+    put: operations["put_application_accounts_account_id_memory_sharing_policies_policy_id"];
     post?: never;
     delete?: never;
     options?: never;
@@ -2710,6 +3157,23 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/api/v1/workspaces/{workspace}/bots": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Bot Collection */
+    get: operations["get_workspaces_workspace_bots"];
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/api/v1/workspaces/{workspace}/connections": {
     parameters: {
       query?: never;
@@ -3580,6 +4044,7 @@ export interface components {
       /** Id */
       id: string;
       input_batching?: components["schemas"]["InputBatchingPolicy"] | null;
+      memory?: components["schemas"]["MemorySettings"] | null;
       /** Name */
       name: string;
       /** Organization Id */
@@ -3601,6 +4066,8 @@ export interface components {
        * @default false
        */
       receive_enabled?: boolean;
+      /** @default all_accessible */
+      reception_scope?: components["schemas"]["ReceptionScope"];
       status: components["schemas"]["AccountStatus"];
       /**
        * Updated At
@@ -3698,6 +4165,22 @@ export interface components {
       version: number;
       /** Workspace Id */
       workspace_id: string;
+    };
+    /** ActivateBotRequest */
+    ActivateBotRequest: {
+      /** Agent Id */
+      agent_id: string;
+      /** Conversation Id */
+      conversation_id: string;
+      /** Execution Service Account Id */
+      execution_service_account_id: string;
+      /** Expected Version */
+      expected_version: number;
+      policy: components["schemas"]["MessagingPolicy"];
+      /** Target Id */
+      target_id: string;
+      /** Target Version */
+      target_version: number;
     };
     /**
      * ActivityMessage
@@ -4390,6 +4873,211 @@ export interface components {
     } & {
       [key: string]: unknown;
     };
+    /** BotCheck */
+    BotCheck: {
+      /** Account Id */
+      account_id: string;
+      /**
+       * Checked At
+       * Format: date-time
+       */
+      checked_at: string;
+      conversation?: components["schemas"]["ConversationInfo"] | null;
+      /** Conversation Id */
+      conversation_id?: string | null;
+      /** Credential Generation */
+      credential_generation: number;
+      /** Error Code */
+      error_code?: string | null;
+      installation?: components["schemas"]["InstallationInfo"] | null;
+    };
+    /** BotCheckHistory */
+    BotCheckHistory: {
+      latest: components["schemas"]["BotCheck"] | null;
+    };
+    /** BotCheckRequest */
+    BotCheckRequest: {
+      /** Conversation Id */
+      conversation_id?: string | null;
+      /** Expected Version */
+      expected_version: number;
+    };
+    /** BotCollection */
+    BotCollection: {
+      /** Items */
+      items: components["schemas"]["BotSummary"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
+    /** BotReplyCollection */
+    BotReplyCollection: {
+      /** Items */
+      items: components["schemas"]["BotReplyObservation"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
+    /** BotReplyObservation */
+    BotReplyObservation: {
+      /** Account Version */
+      account_version: number;
+      /** Credential Generation */
+      credential_generation: number;
+      /** Error Code */
+      error_code: string | null;
+      /** Finished At */
+      finished_at: string | null;
+      /** Id */
+      id: string;
+      /**
+       * Provider Key
+       * @enum {string}
+       */
+      provider_key: "slack" | "lark";
+      /** Receipt */
+      receipt:
+        | components["schemas"]["SlackReplyReceipt"]
+        | components["schemas"]["LarkReplyReceipt"]
+        | null;
+      /** Run Attempt Id */
+      run_attempt_id: string;
+      /** Run Id */
+      run_id: string;
+      /**
+       * Started At
+       * Format: date-time
+       */
+      started_at: string;
+      /**
+       * Status
+       * @enum {string}
+       */
+      status: "dispatching" | "succeeded" | "rejected" | "outcome_unknown";
+      /** Target Id */
+      target_id: string | null;
+      /** Test Id */
+      test_id: string | null;
+    };
+    /** BotSetup */
+    BotSetup: {
+      /** Account Id */
+      account_id: string;
+      /** Event Path */
+      event_path: string;
+      /** Event Url */
+      event_url: string | null;
+    };
+    /** BotSummary */
+    BotSummary: {
+      account: components["schemas"]["Account"];
+      /** Checked At */
+      checked_at: string | null;
+      /** Configured Target Count */
+      configured_target_count: number;
+      /** External Organization Id */
+      external_organization_id: string | null;
+      /** External Organization Name */
+      external_organization_name: string | null;
+      /**
+       * Setup Condition
+       * @enum {string}
+       */
+      setup_condition:
+        | "disabled"
+        | "needs_verification"
+        | "check_failed"
+        | "reception_off"
+        | "receiving";
+      /** Test Observed At */
+      test_observed_at: string | null;
+      /** Test Stage */
+      test_stage:
+        | (
+            | "waiting"
+            | "expired"
+            | "stale"
+            | "received"
+            | "rejected"
+            | "accepted"
+            | "reply_confirmed"
+          )
+        | null;
+    };
+    /** BotTest */
+    BotTest: {
+      /** Accepted At */
+      accepted_at: string | null;
+      /** Account Id */
+      account_id: string;
+      /** Account Version */
+      account_version: number;
+      /** Admission Id */
+      admission_id: string | null;
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /** Credential Generation */
+      credential_generation: number;
+      /** Event Received At */
+      event_received_at: string | null;
+      /**
+       * Expires At
+       * Format: date-time
+       */
+      expires_at: string;
+      /** External Target Id */
+      external_target_id: string;
+      /** Id */
+      id: string;
+      /** Rejection Code */
+      rejection_code: string | null;
+      reply?: components["schemas"]["BotReplyObservation"] | null;
+      /** Run Id */
+      run_id: string | null;
+      /** Session Id */
+      session_id?: string | null;
+      /** Stale */
+      stale: boolean;
+      /** Steer Id */
+      steer_id: string | null;
+      /** Target Id */
+      target_id: string;
+      /** Target Version */
+      target_version: number;
+      /** Thread Id */
+      thread_id?: string | null;
+    };
+    /** BotTestHistory */
+    BotTestHistory: {
+      latest: components["schemas"]["BotTest"] | null;
+    };
+    /** BotThread */
+    BotThread: {
+      /** Agent Id */
+      agent_id: string;
+      /** Binding Id */
+      binding_id: string;
+      /** Run Id */
+      run_id: string;
+      run_status: components["schemas"]["RunStatus"];
+      /** Session Id */
+      session_id: string;
+      /** Thread Id */
+      thread_id: string;
+      /**
+       * Updated At
+       * Format: date-time
+       */
+      updated_at: string;
+    };
+    /** BotThreadCollection */
+    BotThreadCollection: {
+      /** Items */
+      items: components["schemas"]["BotThread"][];
+      /** Next Cursor */
+      next_cursor: string | null;
+    };
     /** ChangePasswordRequest */
     ChangePasswordRequest: {
       /**
@@ -4545,6 +5233,33 @@ export interface components {
       client: components["schemas"]["MCPOAuthClientInput"] | null;
       /** Expected Version */
       expected_version: number;
+    };
+    /** ConfigureScope */
+    ConfigureScope: {
+      /**
+       * Enabled
+       * @default true
+       */
+      enabled?: boolean;
+      /** Expected Version */
+      expected_version?: number | null;
+      /** External Conversation Id */
+      external_conversation_id: string;
+      /**
+       * Save On Request
+       * @default true
+       */
+      save_on_request?: boolean;
+      /**
+       * Timezone
+       * @default UTC
+       */
+      timezone?: string;
+      /**
+       * Use Memory
+       * @default true
+       */
+      use_memory?: boolean;
     };
     /** Connection */
     Connection: {
@@ -4877,6 +5592,40 @@ export interface components {
         [key: string]: string;
       };
     };
+    /** ConversationCandidate */
+    ConversationCandidate: {
+      /** Id */
+      id: string;
+      /** Name */
+      name: string;
+    };
+    /** ConversationInfo */
+    ConversationInfo: {
+      /**
+       * Audience
+       * @enum {string}
+       */
+      audience: "public" | "private" | "direct" | "unknown";
+      /** External */
+      external: boolean | null;
+      /** Id */
+      id: string;
+      /** Is Active */
+      is_active: boolean | null;
+      /** Is Member */
+      is_member: boolean | null;
+      /** Name */
+      name: string;
+      /** Organization Id */
+      organization_id?: string | null;
+    };
+    /** ConversationPage */
+    ConversationPage: {
+      /** Cursor */
+      cursor?: string | null;
+      /** Items */
+      items: components["schemas"]["ConversationCandidate"][];
+    };
     /** CreateAccountRequest */
     CreateAccountRequest: {
       /** Credentials */
@@ -4888,6 +5637,7 @@ export interface components {
       /** Execution Service Account Id */
       execution_service_account_id?: string | null;
       input_batching?: components["schemas"]["InputBatchingPolicy"] | null;
+      memory?: components["schemas"]["MemorySettings"] | null;
       /** Name */
       name: string;
       /** Provider Config */
@@ -4907,6 +5657,8 @@ export interface components {
        * @default false
        */
       receive_enabled?: boolean;
+      /** @default all_accessible */
+      reception_scope?: components["schemas"]["ReceptionScope"];
     };
     /** CreateAgentRequest */
     CreateAgentRequest: {
@@ -4956,6 +5708,15 @@ export interface components {
       /** State */
       state?: string | null;
     };
+    /** CreateBotTest */
+    CreateBotTest: {
+      /** Expected Version */
+      expected_version: number;
+      /** Target Id */
+      target_id: string;
+      /** Target Version */
+      target_version: number;
+    };
     /** CreateConnectionRequest */
     CreateConnectionRequest: {
       /** Name */
@@ -4979,6 +5740,28 @@ export interface components {
       name: string;
       /** Type */
       type: string;
+    };
+    /** CreateDocument */
+    CreateDocument: {
+      /** Activity Date */
+      activity_date?: string | null;
+      /** Correction Of */
+      correction_of?: string | null;
+      /**
+       * Description
+       * @default
+       */
+      description?: string;
+      /**
+       * Kind
+       * @default long_term
+       * @enum {string}
+       */
+      kind?: "daily" | "long_term";
+      /** Text */
+      text: string;
+      /** Title */
+      title: string;
     };
     /** CreateHookSubscriptionRequest */
     CreateHookSubscriptionRequest: {
@@ -5300,6 +6083,131 @@ export interface components {
       role: "developer";
     } & {
       [key: string]: unknown;
+    };
+    /** Document */
+    Document: {
+      /**
+       * Access Reasons
+       * @default []
+       */
+      access_reasons?: components["schemas"]["DocumentAccessReason"][];
+      /**
+       * Activity Date
+       * Format: date
+       */
+      activity_date: string;
+      /** Correction Of */
+      correction_of?: string | null;
+      /** Description */
+      description: string;
+      /** Id */
+      id: string;
+      /**
+       * Kind
+       * @enum {string}
+       */
+      kind: "daily" | "long_term";
+      /**
+       * More Access Reasons
+       * @default false
+       */
+      more_access_reasons?: boolean;
+      /** Owner Name */
+      owner_name?: string | null;
+      /** Path */
+      path: string;
+      /** Publication Source Id */
+      publication_source_id?: string | null;
+      /** Saved At */
+      saved_at: string | null;
+      /** Scope Id */
+      scope_id: string;
+      /**
+       * Shared
+       * @default false
+       */
+      shared?: boolean;
+      /**
+       * State
+       * @enum {string}
+       */
+      state: "pending" | "active" | "unconfirmed" | "deleting" | "deleted";
+      /** Text */
+      text: string;
+      /** Timezone */
+      timezone: string;
+      /** Title */
+      title: string;
+      /**
+       * Version
+       * @default 1
+       */
+      version?: number;
+    };
+    /** DocumentAccessReason */
+    DocumentAccessReason: {
+      /**
+       * Kind
+       * @enum {string}
+       */
+      kind: "owner" | "publication" | "policy";
+      /** Policy Id */
+      policy_id?: string | null;
+      /** Policy Name */
+      policy_name?: string | null;
+    };
+    /** DocumentCollection */
+    DocumentCollection: {
+      /** Items */
+      items: components["schemas"]["DocumentEntry"][];
+      /** Next Cursor */
+      next_cursor?: string | null;
+    };
+    /** DocumentEntry */
+    DocumentEntry: {
+      /**
+       * Activity Date
+       * Format: date
+       */
+      activity_date: string;
+      /** Correction Of */
+      correction_of?: string | null;
+      /** Description */
+      description: string;
+      /** Id */
+      id: string;
+      /**
+       * Kind
+       * @enum {string}
+       */
+      kind: "daily" | "long_term";
+      /** Path */
+      path: string;
+      /** Publication Source Id */
+      publication_source_id?: string | null;
+      /** Saved At */
+      saved_at: string | null;
+      /** Scope Id */
+      scope_id: string;
+      /**
+       * Shared
+       * @default false
+       */
+      shared?: boolean;
+      /**
+       * State
+       * @enum {string}
+       */
+      state: "pending" | "active" | "unconfirmed" | "deleting" | "deleted";
+      /** Timezone */
+      timezone: string;
+      /** Title */
+      title: string;
+      /**
+       * Version
+       * @default 1
+       */
+      version?: number;
     };
     /**
      * DocumentInputContent
@@ -5889,6 +6797,23 @@ export interface components {
       /** Skills */
       skills?: components["schemas"]["SkillSelection"][] | null;
     };
+    /** InstallationInfo */
+    InstallationInfo: {
+      /** App Id */
+      app_id: string;
+      /** Bot Id */
+      bot_id: string;
+      /** Bot Name */
+      bot_name: string;
+      /** Enabled */
+      enabled: boolean;
+      /** Enterprise Id */
+      enterprise_id?: string | null;
+      /** Organization Id */
+      organization_id: string;
+      /** Organization Name */
+      organization_name: string;
+    };
     /** InstrumentationScope */
     InstrumentationScope: {
       /** Attributes */
@@ -6033,6 +6958,17 @@ export interface components {
       labels: {
         [key: string]: string;
       };
+    };
+    /** LarkReplyReceipt */
+    LarkReplyReceipt: {
+      /** Message Id */
+      message_id: string;
+      /** Request Id */
+      request_id: string;
+      /** Root Id */
+      root_id?: string | null;
+      /** Thread Id */
+      thread_id?: string | null;
     };
     /** LaunchAuthorizationRequest */
     LaunchAuthorizationRequest: {
@@ -6357,6 +7293,21 @@ export interface components {
       /** @description Native pagination when available. Null means a bounded result, not a complete collection. */
       pagination?: components["schemas"]["MemoryPagination"] | null;
     };
+    /** MemoryIndex */
+    MemoryIndex: {
+      /** Entries */
+      entries: components["schemas"]["DocumentEntry"][];
+      /** Next Cursor */
+      next_cursor?: string | null;
+      /**
+       * Path
+       * @default MEMORY.md
+       * @constant
+       */
+      path?: "MEMORY.md";
+      /** Text */
+      text: string;
+    };
     /**
      * MemoryPagination
      * @description Native traversal; a null cursor means the final page of that traversal.
@@ -6417,6 +7368,11 @@ export interface components {
       };
       /** Display Name */
       display_name: string;
+      /**
+       * Supports Documents
+       * @default false
+       */
+      supports_documents?: boolean;
       /** Type */
       type: string;
     };
@@ -6496,10 +7452,43 @@ export interface components {
        */
       toolset?: boolean;
     };
+    /** MemorySettings */
+    MemorySettings: {
+      /** Provider Id */
+      provider_id: string;
+      /**
+       * Save On Request
+       * @default true
+       */
+      save_on_request?: boolean;
+      /**
+       * Timezone
+       * @default UTC
+       */
+      timezone?: string;
+      /**
+       * Use Memory
+       * @default true
+       */
+      use_memory?: boolean;
+    };
     /** MemoryWrite */
     MemoryWrite: {
       /** Text */
       text: string;
+    };
+    /** MessagingPolicy */
+    MessagingPolicy: {
+      /**
+       * Interaction Mode
+       * @enum {string}
+       */
+      interaction_mode: "mention" | "discussion" | "chat";
+      /**
+       * Reply Mode
+       * @enum {string}
+       */
+      reply_mode: "auto" | "thread" | "main";
     };
     /** Model */
     Model: {
@@ -7175,6 +8164,34 @@ export interface components {
        */
       max_output_bytes?: number;
     };
+    /** PublicationAccess */
+    PublicationAccess: {
+      /** Recipient Scope Ids */
+      recipient_scope_ids: string[];
+      /** Version */
+      version: number;
+    };
+    /** PublicationAudience */
+    PublicationAudience: {
+      /** Expected Version */
+      expected_version: number;
+      /** Recipient Scope Ids */
+      recipient_scope_ids: string[];
+    };
+    /** PublishDocument */
+    PublishDocument: {
+      /**
+       * Description
+       * @default
+       */
+      description?: string;
+      /** Recipient Scope Ids */
+      recipient_scope_ids: string[];
+      /** Text */
+      text: string;
+      /** Title */
+      title: string;
+    };
     /** QueuedSubmission */
     QueuedSubmission: {
       authority_principal: components["schemas"]["PrincipalRef"];
@@ -7269,6 +8286,11 @@ export interface components {
       /** Session Uri */
       session_uri?: string | null;
     };
+    /**
+     * ReceptionScope
+     * @enum {string}
+     */
+    ReceptionScope: "all_accessible" | "configured_targets";
     /** RegisterEnvironmentRequest */
     RegisterEnvironmentRequest: {
       /** @default full */
@@ -7335,6 +8357,37 @@ export interface components {
       credential: {
         [key: string]: components["schemas"]["JsonValue"];
       } | null;
+    };
+    /** ReplaceSharingPolicy */
+    ReplaceSharingPolicy: {
+      /**
+       * Enabled
+       * @default true
+       */
+      enabled?: boolean;
+      /**
+       * Enroll Future Groups
+       * @default false
+       */
+      enroll_future_groups?: boolean;
+      /** Expected Version */
+      expected_version: number;
+      /**
+       * Include History
+       * @default false
+       */
+      include_history?: boolean;
+      /**
+       * Kinds
+       * @default [
+       *       "long_term"
+       *     ]
+       */
+      kinds?: ("daily" | "long_term")[];
+      /** Name */
+      name: string;
+      /** Scope Ids */
+      scope_ids: string[];
     };
     /** ReplaceTargetRequest */
     ReplaceTargetRequest: {
@@ -7813,6 +8866,68 @@ export interface components {
        */
       retry_hint?: "none" | "new_run" | "dependency_change";
     };
+    /** Scope */
+    Scope: {
+      /** Account Id */
+      account_id: string;
+      /**
+       * Audience
+       * @enum {string}
+       */
+      audience: "public" | "private" | "direct" | "unknown";
+      /**
+       * Enabled
+       * @default true
+       */
+      enabled?: boolean;
+      /** External Conversation Id */
+      external_conversation_id: string;
+      /** Id */
+      id: string;
+      /** Name */
+      name: string;
+      /** Provider Id */
+      provider_id: string;
+      /**
+       * Save On Request
+       * @default true
+       */
+      save_on_request?: boolean;
+      /**
+       * Timezone
+       * @default UTC
+       */
+      timezone?: string;
+      /**
+       * Use Memory
+       * @default true
+       */
+      use_memory?: boolean;
+      /** Version */
+      version: number;
+    };
+    /** ScopeCollection */
+    ScopeCollection: {
+      /** Items */
+      items: components["schemas"]["Scope"][];
+      /** Next Cursor */
+      next_cursor?: string | null;
+    };
+    /** SearchDocuments */
+    SearchDocuments: {
+      /**
+       * Include Shared
+       * @default true
+       */
+      include_shared?: boolean;
+      /**
+       * Limit
+       * @default 20
+       */
+      limit?: number;
+      /** Query */
+      query: string;
+    };
     /**
      * SearchIn
      * @enum {string}
@@ -7945,6 +9060,97 @@ export interface components {
        * @enum {string}
        */
       role: "member" | "viewer" | "runner" | "builder" | "admin";
+    };
+    /** SharingParticipant */
+    SharingParticipant: {
+      /**
+       * Joined At
+       * Format: date-time
+       */
+      joined_at: string;
+      /** Scope Id */
+      scope_id: string;
+    };
+    /** SharingPolicy */
+    SharingPolicy: {
+      /**
+       * Created At
+       * Format: date-time
+       */
+      created_at: string;
+      /**
+       * Enabled
+       * @default true
+       */
+      enabled?: boolean;
+      /**
+       * Enroll Future Groups
+       * @default false
+       */
+      enroll_future_groups?: boolean;
+      /**
+       * Future Since
+       * Format: date-time
+       */
+      future_since: string;
+      /** Id */
+      id: string;
+      /**
+       * Include History
+       * @default false
+       */
+      include_history?: boolean;
+      /**
+       * Kinds
+       * @default [
+       *       "long_term"
+       *     ]
+       */
+      kinds?: ("daily" | "long_term")[];
+      /** Name */
+      name: string;
+      /** Participants */
+      participants: components["schemas"]["SharingParticipant"][];
+      /** Scope Ids */
+      scope_ids: string[];
+      /** Version */
+      version: number;
+    };
+    /** SharingPolicyCollection */
+    SharingPolicyCollection: {
+      /** Items */
+      items: components["schemas"]["SharingPolicy"][];
+      /** Next Cursor */
+      next_cursor?: string | null;
+    };
+    /** SharingPolicyInput */
+    SharingPolicyInput: {
+      /**
+       * Enabled
+       * @default true
+       */
+      enabled?: boolean;
+      /**
+       * Enroll Future Groups
+       * @default false
+       */
+      enroll_future_groups?: boolean;
+      /**
+       * Include History
+       * @default false
+       */
+      include_history?: boolean;
+      /**
+       * Kinds
+       * @default [
+       *       "long_term"
+       *     ]
+       */
+      kinds?: ("daily" | "long_term")[];
+      /** Name */
+      name: string;
+      /** Scope Ids */
+      scope_ids: string[];
     };
     /** Skill */
     Skill: {
@@ -8144,6 +9350,17 @@ export interface components {
       upload_id: string;
       /** Workspace Id */
       workspace_id: string;
+    };
+    /** SlackReplyReceipt */
+    SlackReplyReceipt: {
+      /** Channel Id */
+      channel_id: string;
+      /** Message Ts */
+      message_ts: string;
+      /** Request Id */
+      request_id: string;
+      /** Root Thread Ts */
+      root_thread_ts: string;
     };
     /** StartRunRequest */
     StartRunRequest: {
@@ -8817,6 +10034,7 @@ export interface components {
       /** Expected Version */
       expected_version: number;
       input_batching?: components["schemas"]["InputBatchingPolicy"] | null;
+      memory?: components["schemas"]["MemorySettings"] | null;
       /** Name */
       name?: string | null;
       /** Provider Config */
@@ -8829,6 +10047,7 @@ export interface components {
       } | null;
       /** Receive Enabled */
       receive_enabled?: boolean | null;
+      reception_scope?: components["schemas"]["ReceptionScope"] | null;
     };
     /** UpdateAgentRequest */
     UpdateAgentRequest: {
@@ -9330,6 +10549,11 @@ export interface components {
       /** Signing Secret Id */
       signing_secret_id: string;
     };
+    /** WithdrawPublication */
+    WithdrawPublication: {
+      /** Expected Version */
+      expected_version: number;
+    };
     /** Workspace */
     Workspace: {
       /**
@@ -9671,6 +10895,518 @@ export interface operations {
       };
     };
   };
+  post_application_accounts_account_id_bot_activate: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        account_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ActivateBotRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Account"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_application_accounts_account_id_bot_checks: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        account_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["BotCheckRequest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BotCheck"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_application_accounts_account_id_bot_checks_latest: {
+    parameters: {
+      query?: {
+        conversation_id?: string | null;
+      };
+      header?: never;
+      path: {
+        account_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BotCheckHistory"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_application_accounts_account_id_bot_conversations: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path: {
+        account_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ConversationPage"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_application_accounts_account_id_bot_replies: {
+    parameters: {
+      query: {
+        run_id: string;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path: {
+        account_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BotReplyCollection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_application_accounts_account_id_bot_setup: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        account_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BotSetup"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_application_accounts_account_id_bot_summary: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        account_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BotSummary"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_application_accounts_account_id_bot_tests: {
+    parameters: {
+      query?: never;
+      header: {
+        "Idempotency-Key": string;
+      };
+      path: {
+        account_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateBotTest"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BotTest"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_application_accounts_account_id_bot_tests_latest: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        account_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BotTestHistory"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_application_accounts_account_id_bot_tests_test_id: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        account_id: string;
+        test_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BotTestHistory"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_application_accounts_account_id_bot_threads: {
+    parameters: {
+      query?: {
+        target_id?: string | null;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path: {
+        account_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BotThreadCollection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
   put_application_accounts_account_id_credentials: {
     parameters: {
       query?: never;
@@ -9696,6 +11432,964 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["Account"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_application_accounts_account_id_memory_scopes: {
+    parameters: {
+      query: {
+        provider_id: string;
+        limit?: number;
+        cursor?: string | null;
+        target_id?: string | null;
+      };
+      header?: never;
+      path: {
+        account_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ScopeCollection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_application_accounts_account_id_memory_scopes: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        account_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ConfigureScope"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Scope"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_application_accounts_account_id_memory_scopes_scope_id_documents: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+        activity_date?: string | null;
+        kind?: ("daily" | "long_term") | null;
+        include_shared?: boolean;
+      };
+      header?: never;
+      path: {
+        account_id: string;
+        scope_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DocumentCollection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_application_accounts_account_id_memory_scopes_scope_id_documents: {
+    parameters: {
+      query?: never;
+      header: {
+        "Idempotency-Key": string;
+      };
+      path: {
+        account_id: string;
+        scope_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["CreateDocument"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Document"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_application_accounts_account_id_memory_scopes_scope_id_documents_search: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        account_id: string;
+        scope_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SearchDocuments"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DocumentCollection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_application_accounts_account_id_memory_scopes_scope_id_documents_document_id: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        account_id: string;
+        scope_id: string;
+        document_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Document"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  delete_application_accounts_account_id_memory_scopes_scope_id_documents_document_id: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        account_id: string;
+        scope_id: string;
+        document_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_application_accounts_account_id_memory_scopes_scope_id_documents_document_id_publications: {
+    parameters: {
+      query?: never;
+      header: {
+        "Idempotency-Key": string;
+      };
+      path: {
+        account_id: string;
+        scope_id: string;
+        document_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PublishDocument"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Document"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_application_accounts_account_id_memory_scopes_scope_id_index: {
+    parameters: {
+      query?: {
+        cursor?: string | null;
+      };
+      header?: never;
+      path: {
+        account_id: string;
+        scope_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["MemoryIndex"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_application_accounts_account_id_memory_scopes_scope_id_operations: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path: {
+        account_id: string;
+        scope_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DocumentCollection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_application_accounts_account_id_memory_scopes_scope_id_operations_document_id: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        account_id: string;
+        scope_id: string;
+        document_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DocumentEntry"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_application_accounts_account_id_memory_scopes_scope_id_operations_document_id_reconcile: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        account_id: string;
+        scope_id: string;
+        document_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DocumentEntry"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_application_accounts_account_id_memory_scopes_scope_id_publications: {
+    parameters: {
+      query?: {
+        source_id?: string | null;
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path: {
+        account_id: string;
+        scope_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["DocumentCollection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_application_accounts_account_id_memory_scopes_scope_id_publications_document_id: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        account_id: string;
+        scope_id: string;
+        document_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["Document"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_application_accounts_account_id_memory_scopes_scope_id_publications_document_id_audience: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        account_id: string;
+        scope_id: string;
+        document_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["PublicationAccess"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  patch_application_accounts_account_id_memory_scopes_scope_id_publications_document_id_audience: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        account_id: string;
+        scope_id: string;
+        document_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PublicationAudience"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_application_accounts_account_id_memory_scopes_scope_id_publications_document_id_withdraw: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        account_id: string;
+        scope_id: string;
+        document_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["WithdrawPublication"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      204: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content?: never;
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_application_accounts_account_id_memory_sharing_policies: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+      };
+      header?: never;
+      path: {
+        account_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SharingPolicyCollection"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  post_application_accounts_account_id_memory_sharing_policies: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        account_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SharingPolicyInput"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      201: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SharingPolicy"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  put_application_accounts_account_id_memory_sharing_policies_policy_id: {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        account_id: string;
+        policy_id: string;
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ReplaceSharingPolicy"];
+      };
+    };
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SharingPolicy"];
         };
       };
       /** @description Invalid request. */
@@ -19166,6 +21860,7 @@ export interface operations {
       query?: {
         limit?: number;
         cursor?: string | null;
+        bots_only?: boolean;
       };
       header?: never;
       path: {
@@ -19335,6 +22030,64 @@ export interface operations {
         };
         content: {
           "application/json": components["schemas"]["Asset"];
+        };
+      };
+      /** @description Invalid request. */
+      400: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+      /** @description Service error. */
+      default: {
+        headers: {
+          "Retry-After"?: string;
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ErrorResponse"];
+        };
+      };
+    };
+  };
+  get_workspaces_workspace_bots: {
+    parameters: {
+      query?: {
+        limit?: number;
+        cursor?: string | null;
+        platform?: ("slack" | "lark") | null;
+        condition?:
+          | (
+              | "disabled"
+              | "needs_verification"
+              | "check_failed"
+              | "reception_off"
+              | "receiving"
+            )
+          | null;
+        search?: string | null;
+      };
+      header?: never;
+      path: {
+        workspace: string;
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Successful Response */
+      200: {
+        headers: {
+          "X-Request-ID"?: string;
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["BotCollection"];
         };
       };
       /** @description Invalid request. */
@@ -22365,9 +25118,11 @@ export interface operations {
         cursor?: string | null;
         query?: string | null;
         search_in?: components["schemas"]["SearchIn"] | null;
+        session_id?: string | null;
         thread_id?: string | null;
         run_id?: string | null;
         run_attempt_id?: string | null;
+        metadata?: string[] | null;
         view?: components["schemas"]["TraceView"];
       };
       header?: never;

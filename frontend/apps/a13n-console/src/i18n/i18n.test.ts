@@ -47,3 +47,13 @@ test("literal translation keys exist in the catalogs", () => {
   }
   expect([...keys].filter((key) => !(key in en)).sort()).toEqual([]);
 });
+
+test("distinguishes Session, Thread and Run in Chinese product labels", async () => {
+  await i18n.changeLanguage("zh-CN");
+  expect(i18n.t("Session")).toBe("会话");
+  expect(i18n.t("Thread")).toBe("对话");
+  expect(i18n.t("Run")).toBe("运行");
+  expect(i18n.t("Thread memories")).toBe("对话记忆");
+  expect(i18n.t("Thread ID")).toBe("对话 ID");
+  expect(i18n.t("{{count}} threads", { count: 2 })).toBe("2 个对话");
+});

@@ -1,5 +1,4 @@
 import { ArrowSquareOutIcon } from "@phosphor-icons/react";
-import { useQuery } from "@tanstack/react-query";
 import {
   ChoiceField,
   DisclosureSection,
@@ -11,12 +10,11 @@ import {
 } from "a13n-ui";
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
-import { allPages, type Schema } from "../../shared/api";
+import type { Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 import { providersPath } from "../providers/navigation";
-import { memoryProviderApi } from "./providers-api";
+import { useMemoryProviders } from "./availability";
 import { memoriesPath } from "./api";
 
 export function AgentMemorySelection({
@@ -33,22 +31,10 @@ export function AgentMemorySelection({
   savedProviderId?: string;
 }) {
   const { t } = useTranslation(),
-    { workspace, can, basePath } = useWorkspace(),
-    client = useClient();
+    { workspace, can, basePath } = useWorkspace();
   const id = useId();
   const [advanced, setAdvanced] = useState(false);
-  const providers = useQuery({
-    queryKey: ["memory-providers", "workspace", workspace.id, "choices"],
-    refetchOnWindowFocus: "always",
-    enabled: can("memory_provider.read"),
-    queryFn: ({ signal }) =>
-      allPages((cursor) =>
-        memoryProviderApi(client, {
-          kind: "workspace",
-          id: workspace.id,
-        }).providers(signal, cursor),
-      ),
-  });
+  const { providers } = useMemoryProviders();
   const selected = providers.data?.find(
     (item) => item.id === value?.provider_id,
   );

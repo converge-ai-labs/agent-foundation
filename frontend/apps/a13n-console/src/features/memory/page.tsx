@@ -11,7 +11,7 @@ import { Empty, ErrorNotice, Page } from "../../shared/feedback";
 import { providersPath } from "../providers/navigation";
 import { memoryKey, type MemoryTarget } from "./api";
 import { MemoryContents } from "./contents";
-import { memoryProviderApi } from "./providers-api";
+import { useMemoryProviders } from "./availability";
 
 export function MemoriesPage() {
   const [params, setParams] = useSearchParams();
@@ -41,18 +41,7 @@ function MemoryPageSelection({
   const [scope, setScope] = useState<MemoryTarget["scope"]>(initialScope);
   const [subject, setSubject] = useState(params.get("subject") ?? "");
   const [editing, setEditing] = useState(false);
-  const providers = useQuery({
-    queryKey: ["memory-providers", "workspace", workspace.id, "choices"],
-    enabled: can("memory_provider.read"),
-    refetchOnWindowFocus: "always",
-    queryFn: ({ signal }) =>
-      allPages((cursor) =>
-        memoryProviderApi(client, {
-          kind: "workspace",
-          id: workspace.id,
-        }).providers(signal, cursor),
-      ),
-  });
+  const { providers } = useMemoryProviders();
   const agents = useQuery({
     queryKey: ["agents", workspace.id, "memory-subjects"],
     enabled: scope === "agent",
@@ -101,7 +90,7 @@ function MemoryPageSelection({
       }
     >
       <form
-        className="mb-6 rounded-lg border bg-card p-4"
+        className="mb-6 rounded-lg bg-muted p-4"
         onSubmit={(event) => {
           event.preventDefault();
           if (

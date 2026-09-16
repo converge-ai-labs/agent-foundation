@@ -14,7 +14,10 @@ import httpx2
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, TypeAdapter, ValidationError
 
 from a13n_service.connectivity.adapters import JsonObject
+from a13n_service.connectivity.bots.observations import ConversationInfo, ConversationPage, InstallationInfo
 from a13n_service.connectivity.http import ConnectivityHttpError, bounded_response_body, retry_after_seconds
+
+from . import inspection
 
 _RESPONSE_MAX_BYTES = 1024 * 1024
 _MEMBER_CACHE_MAX_ENTRIES = 512
@@ -174,21 +177,27 @@ class SlackNativeClient:
         message_ts = response.get("ts")
         message = response.get("message")
         returned_root = message.get("thread_ts") if isinstance(message, dict) else None
-        if not isinstance(channel, str) or not isinstance(message_ts, str):
+        if not isinstance(channel, str) or channel != payload["channel"] or not isinstance(message_ts, str):
+            return SlackReplyOutcomeUnknown(request_id=request_id)
+        expected_root = payload.get("thread_ts", message_ts)
+        if returned_root is not None and returned_root != expected_root:
             return SlackReplyOutcomeUnknown(request_id=request_id)
         root = (
             returned_root
             if isinstance(returned_root, str)
             else (str(payload["thread_ts"]) if "thread_ts" in payload else message_ts)
         )
-        return SlackReplySucceeded(
-            receipt=SlackReplyReceipt(
-                channel_id=channel,
-                message_ts=message_ts,
-                root_thread_ts=root,
-                request_id=request_id,
+        try:
+            return SlackReplySucceeded(
+                receipt=SlackReplyReceipt(
+                    channel_id=channel,
+                    message_ts=message_ts,
+                    root_thread_ts=root,
+                    request_id=request_id,
+                )
             )
-        )
+        except ValidationError:
+            return SlackReplyOutcomeUnknown(request_id=request_id)
 
     async def list_members(
         self,
@@ -256,15 +265,47 @@ class SlackNativeClient:
         cursor = _next_cursor(response)
         return SlackMessagePage(items=items, cursor=cursor, has_more=cursor is not None)
 
-    async def _request(self, operation: str, payload: JsonObject, *, bot_token: str) -> JsonObject:
+    async def inspect_installation(self, *, bot_token: str) -> InstallationInfo:
+        auth = await self._request("auth.test", {}, bot_token=bot_token)
+        bot_id = auth.get("bot_id")
+        if not isinstance(bot_id, str) or not 1 <= len(bot_id) <= 256:
+            raise SlackNativeActionError("invalid_provider_response")
+        bot = await self._request("bots.info", {"bot": bot_id}, bot_token=bot_token, method="GET")
+        return inspection.installation(auth, bot)
+
+    async def inspect_conversation(self, channel_id: str, *, bot_token: str) -> ConversationInfo:
+        if not 1 <= len(channel_id) <= 512:
+            raise SlackNativeActionError("invalid_arguments")
+        response = await self._request("conversations.info", {"channel": channel_id}, bot_token=bot_token, method="GET")
+        return inspection.conversation(response, expected_id=channel_id)
+
+    async def list_conversations(
+        self, *, bot_token: str, limit: int = 100, cursor: str | None = None
+    ) -> ConversationPage:
+        if not 1 <= limit <= 100 or (cursor is not None and not 1 <= len(cursor) <= 2048):
+            raise SlackNativeActionError("invalid_arguments")
+        payload: JsonObject = {
+            "limit": str(limit),
+            "types": "public_channel,private_channel",
+            "exclude_archived": "true",
+        }
+        if cursor is not None:
+            payload["cursor"] = cursor
+        response = await self._request("users.conversations", payload, bot_token=bot_token, method="GET")
+        return inspection.conversations(response, limit=limit)
+
+    async def _request(
+        self, operation: str, payload: JsonObject, *, bot_token: str, method: Literal["GET", "POST"] = "POST"
+    ) -> JsonObject:
         if not bot_token or len(bot_token) > 4096:
             raise SlackNativeActionError("credential_unavailable")
         try:
             async with self._http_client.stream(
-                "POST",
+                method,
                 f"{self._api_origin}/api/{operation}",
                 headers={"authorization": f"Bearer {bot_token}", "content-type": "application/json"},
-                json=payload,
+                json=payload if method == "POST" else None,
+                params={key: str(value) for key, value in payload.items()} if method == "GET" else None,
                 follow_redirects=False,
             ) as response:
                 retry_after = retry_after_seconds(response.headers.get("retry-after"))

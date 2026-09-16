@@ -1,7 +1,7 @@
 import { Button, ChoiceField } from "a13n-ui";
 
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import {
   Link,
   Navigate,
@@ -16,7 +16,7 @@ import {
   ArrowSquareOutIcon,
   CaretRightIcon,
   ChatIcon,
-  PlusIcon,
+  InfoIcon,
   TreeStructureIcon,
 } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
@@ -30,12 +30,14 @@ import { useIdempotency } from "../../shared/idempotency";
 import { conversationQueries, invalidateConversation, runPath } from "./api";
 import { Composer } from "./composer";
 import styles from "./conversations.module.css";
+import { RunInspector } from "./inspector";
 import { SessionMap } from "./session-map";
 import { SessionIdentity } from "./identity";
 import { useConversationNotifications } from "./notifications";
-import { OptionsComposer, RunOptions, useRunOptions } from "./options";
+import { RunOptions, useRunOptions } from "./options";
 import { ThreadQueue } from "./queue";
 import { memoriesPath } from "../memory/api";
+import { useMemoryProviders } from "../memory/availability";
 
 export function ConversationsPage() {
   const { sessionId } = useParams();
@@ -143,72 +145,165 @@ export function NewConversation() {
   );
 }
 
+const PANEL_WIDTH_KEY = "a13n-session-panel-width";
+const PANEL_MIN = 280;
+const PANEL_MAX = 720;
+
 export function SessionLayout() {
   const { t } = useTranslation(),
-    { sessionId = "", threadId } = useParams(),
-    { workspace, can, basePath } = useWorkspace(),
+    { sessionId = "", threadId, runId } = useParams(),
+    { workspace, basePath } = useWorkspace(),
     client = useClient(),
     queries = conversationQueries(client, workspace.id);
   const threads = useQuery(queries.threads(sessionId));
+  const { visible: memoryVisible } = useMemoryProviders();
   const [mapOpen, setMapOpen] = useState(false);
+  const [inspectorOpen, setInspectorOpen] = useState(false);
   const mapTrigger = useRef<HTMLButtonElement>(null);
+  const inspectorTrigger = useRef<HTMLButtonElement>(null);
+  const body = useRef<HTMLDivElement>(null);
+  const [panelWidth, setPanelWidth] = useState(() => {
+    const stored = Number(localStorage.getItem(PANEL_WIDTH_KEY));
+    return stored >= PANEL_MIN ? Math.min(stored, PANEL_MAX) : 360;
+  });
+  const whichPanel: "inspector" | "map" | null =
+    inspectorOpen && runId ? "inspector" : mapOpen ? "map" : null;
+  const [renderedPanel, setRenderedPanel] = useState<
+    "inspector" | "map" | null
+  >(null);
+  useEffect(() => {
+    if (whichPanel) {
+      setRenderedPanel(whichPanel);
+      return;
+    }
+    if (!renderedPanel) return;
+    const timer = setTimeout(() => setRenderedPanel(null), 200);
+    return () => clearTimeout(timer);
+  }, [whichPanel, renderedPanel]);
+  const panelOpen = whichPanel !== null;
   const first = threads.data?.[0];
+  function resizeTo(width: number) {
+    const max = Math.min(
+      PANEL_MAX,
+      Math.floor((body.current?.clientWidth ?? 1200) * 0.55),
+    );
+    const next = Math.round(Math.min(Math.max(width, PANEL_MIN), max));
+    setPanelWidth(next);
+    return next;
+  }
+  function startResize(event: React.PointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const handle = event.currentTarget,
+      startX = event.clientX,
+      startWidth = panelWidth;
+    let latest = startWidth;
+    const select = document.body.style.userSelect;
+    handle.dataset.dragging = "";
+    if (body.current) body.current.dataset.resizing = "";
+    document.body.style.userSelect = "none";
+    const move = (e: PointerEvent) => {
+      latest = resizeTo(startWidth + (startX - e.clientX));
+    };
+    const up = () => {
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", up);
+      delete handle.dataset.dragging;
+      if (body.current) delete body.current.dataset.resizing;
+      document.body.style.userSelect = select;
+      localStorage.setItem(PANEL_WIDTH_KEY, String(latest));
+    };
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", up);
+  }
+  function resizeKeys(event: React.KeyboardEvent<HTMLDivElement>) {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const step = event.shiftKey ? 64 : 16;
+    const next = resizeTo(
+      panelWidth + (event.key === "ArrowLeft" ? step : -step),
+    );
+    localStorage.setItem(PANEL_WIDTH_KEY, String(next));
+  }
   return (
-    <div className={styles.sessionDetail}>
-      <header className={styles.sessionHeader}>
-        <div className={styles.sessionBreadcrumb}>
-          <Link className={styles.backToSessions} to={`${basePath}/sessions`}>
-            {t("Sessions")}
-          </Link>
-          <CaretRightIcon size={12} aria-hidden="true" />
-          <CopyableId value={sessionId} />
-        </div>
-        <SessionIdentity />
-        <div className={styles.sessionControls}>
-          {threadId &&
-            threads.data?.some(
-              (thread) =>
-                thread.id === threadId && thread.session_id === sessionId,
-            ) && (
-              <a
-                className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground hover:text-foreground"
-                href={memoriesPath(basePath, {
-                  scope: "thread",
-                  subject_id: threadId,
-                })}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                {t("Thread memories")}
-                <ArrowSquareOutIcon size={14} aria-hidden="true" />
-              </a>
-            )}
-          <Button
-            ref={mapTrigger}
-            variant={mapOpen ? "secondary" : "outline"}
-            size="sm"
-            aria-expanded={mapOpen}
-            aria-controls={mapOpen ? "session-map" : undefined}
-            disabled={threads.isPending || (!threads.data && threads.isError)}
-            onClick={() => setMapOpen((value) => !value)}
-          >
-            <TreeStructureIcon size={16} />
-            {t("Session map")}
-          </Button>
-          {can("agent.invoke") && (
-            <Link
-              className={styles.newThread}
-              aria-label={t("New thread")}
-              to={`${basePath}/sessions/new?session=${sessionId}`}
-            >
-              <PlusIcon size={14} />
-              <span>{t("New thread")}</span>
+    <div
+      ref={body}
+      className={styles.sessionDetail}
+      data-panel-open={panelOpen || undefined}
+      style={{ "--panel-width": `${panelWidth}px` } as CSSProperties}
+    >
+      <div className={styles.sessionMain}>
+        <header className={styles.sessionHeader}>
+          <div className={styles.sessionBreadcrumb}>
+            <Link className={styles.backToSessions} to={`${basePath}/sessions`}>
+              {t("Sessions")}
             </Link>
-          )}
-        </div>
-      </header>
-      <ErrorNotice error={threads.error} retry={() => void threads.refetch()} />
-      <div className={styles.sessionBody} data-map-open={mapOpen || undefined}>
+            <CaretRightIcon size={12} aria-hidden="true" />
+            <CopyableId value={sessionId} />
+          </div>
+          <SessionIdentity />
+          <div className={styles.sessionControls}>
+            {memoryVisible &&
+              threadId &&
+              threads.data?.some(
+                (thread) =>
+                  thread.id === threadId && thread.session_id === sessionId,
+              ) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  render={
+                    <a
+                      href={memoriesPath(basePath, {
+                        scope: "thread",
+                        subject_id: threadId,
+                      })}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    />
+                  }
+                >
+                  <ArrowSquareOutIcon size={16} aria-hidden="true" />
+                  {t("Thread memories")}
+                </Button>
+              )}
+            <Button
+              ref={mapTrigger}
+              variant={mapOpen ? "secondary" : "outline"}
+              size="sm"
+              aria-expanded={mapOpen}
+              aria-controls={mapOpen ? "session-map" : undefined}
+              disabled={threads.isPending || (!threads.data && threads.isError)}
+              onClick={() => {
+                setMapOpen((value) => !value);
+                setInspectorOpen(false);
+              }}
+            >
+              <TreeStructureIcon size={16} />
+              {t("Session map")}
+            </Button>
+            <Button
+              ref={inspectorTrigger}
+              variant={inspectorOpen ? "secondary" : "outline"}
+              size="sm"
+              aria-expanded={inspectorOpen && !!runId}
+              aria-controls={
+                inspectorOpen && runId ? "run-inspector" : undefined
+              }
+              disabled={!runId}
+              onClick={() => {
+                setInspectorOpen((value) => !value);
+                setMapOpen(false);
+              }}
+            >
+              <InfoIcon size={16} />
+              {t("Run details")}
+            </Button>
+          </div>
+        </header>
+        <ErrorNotice
+          error={threads.error}
+          retry={() => void threads.refetch()}
+        />
         <div
           className={`${styles.sessionContent} a13n-scrollbar`}
           data-session-stage
@@ -222,20 +317,49 @@ export function SessionLayout() {
           ) : (
             <Empty
               title={t("No threads yet")}
-              description={t("Start a thread to work with an agent.")}
+              description={t(
+                "Threads created by the host application appear here.",
+              )}
             />
           )}
         </div>
-        {mapOpen && (
-          <SessionMap
-            threads={threads.data ?? []}
-            onClose={() => {
-              setMapOpen(false);
-              mapTrigger.current?.focus();
-            }}
-          />
-        )}
       </div>
+      {renderedPanel && (
+        <div className={styles.panelSlot}>
+          {panelOpen && (
+            <div
+              className={styles.panelResizer}
+              role="separator"
+              aria-orientation="vertical"
+              aria-label={t("Resize panel")}
+              aria-valuenow={panelWidth}
+              aria-valuemin={PANEL_MIN}
+              aria-valuemax={PANEL_MAX}
+              tabIndex={0}
+              onPointerDown={startResize}
+              onKeyDown={resizeKeys}
+            />
+          )}
+          {renderedPanel === "inspector" && runId && (
+            <RunInspector
+              runId={runId}
+              onClose={() => {
+                setInspectorOpen(false);
+                inspectorTrigger.current?.focus();
+              }}
+            />
+          )}
+          {renderedPanel === "map" && (
+            <SessionMap
+              threads={threads.data ?? []}
+              onClose={() => {
+                setMapOpen(false);
+                mapTrigger.current?.focus();
+              }}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -243,12 +367,10 @@ export function SessionLayout() {
 export function ThreadLayout() {
   const { t } = useTranslation(),
     { sessionId = "", threadId = "", runId } = useParams(),
-    { workspace, can, basePath } = useWorkspace(),
+    { workspace } = useWorkspace(),
     client = useClient(),
     queries = conversationQueries(client, workspace.id);
   const thread = useQuery(queries.thread(threadId));
-  const navigate = useNavigate(),
-    cache = useQueryClient();
   const selected =
     runId ?? thread.data?.current_run_id ?? thread.data?.head_run_id;
   if (thread.data && thread.data.session_id !== sessionId)
@@ -280,33 +402,6 @@ export function ThreadLayout() {
               title={t("No runs yet")}
               description={t("This thread has not started a run.")}
             />
-            {can("run.continue") && (
-              <OptionsComposer
-                label={t("Start run")}
-                submit={async (intent, key) => {
-                  if (!intent.agent_id)
-                    throw new Error(t("Choose an agent in Run options."));
-                  const receipt = data(
-                    await client.http.POST("/api/v1/threads/{thread_id}/runs", {
-                      params: {
-                        path: { thread_id: threadId },
-                        header: commandHeaders(workspace.id, key),
-                      },
-                      body: {
-                        ...intent,
-                        expected_thread_version: thread.data!.version,
-                      },
-                    }),
-                  );
-                  void invalidateConversation(cache, workspace.id, {
-                    sessionId,
-                    threadId,
-                    runId: receipt.run?.run_id,
-                  });
-                  if (receipt.run) navigate(runPath(basePath, receipt.run));
-                }}
-              />
-            )}
             <ThreadQueue thread={thread.data} canConsume />
           </>
         )

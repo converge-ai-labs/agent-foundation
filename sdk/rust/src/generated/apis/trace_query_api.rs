@@ -125,9 +125,11 @@ pub async fn get_workspaces_workspace_traces(
     cursor: Option<&str>,
     query: Option<&str>,
     search_in: Option<&str>,
+    session_id: Option<&str>,
     thread_id: Option<&str>,
     run_id: Option<&str>,
     run_attempt_id: Option<&str>,
+    metadata: Option<Vec<String>>,
     view: Option<&str>,
 ) -> Result<Response<models::TraceCollection>, Error<GetWorkspacesWorkspaceTracesError>> {
     // add a prefix to parameters to efficiently prevent name collisions
@@ -138,9 +140,11 @@ pub async fn get_workspaces_workspace_traces(
     let p_query_cursor = cursor;
     let p_query_query = query;
     let p_query_search_in = search_in;
+    let p_query_session_id = session_id;
     let p_query_thread_id = thread_id;
     let p_query_run_id = run_id;
     let p_query_run_attempt_id = run_attempt_id;
+    let p_query_metadata = metadata;
     let p_query_view = view;
 
     let uri_str = format!(
@@ -168,6 +172,9 @@ pub async fn get_workspaces_workspace_traces(
     if let Some(ref param_value) = p_query_search_in {
         req_builder = req_builder.query(&[("search_in", &param_value.to_string())]);
     }
+    if let Some(ref param_value) = p_query_session_id {
+        req_builder = req_builder.query(&[("session_id", &param_value.to_string())]);
+    }
     if let Some(ref param_value) = p_query_thread_id {
         req_builder = req_builder.query(&[("thread_id", &param_value.to_string())]);
     }
@@ -176,6 +183,25 @@ pub async fn get_workspaces_workspace_traces(
     }
     if let Some(ref param_value) = p_query_run_attempt_id {
         req_builder = req_builder.query(&[("run_attempt_id", &param_value.to_string())]);
+    }
+    if let Some(ref param_value) = p_query_metadata {
+        req_builder = match "multi" {
+            "multi" => req_builder.query(
+                &param_value
+                    .into_iter()
+                    .map(|p| ("metadata".to_owned(), p.to_string()))
+                    .collect::<Vec<(std::string::String, std::string::String)>>(),
+            ),
+            _ => req_builder.query(&[(
+                "metadata",
+                &param_value
+                    .into_iter()
+                    .map(|p| p.to_string())
+                    .collect::<Vec<String>>()
+                    .join(",")
+                    .to_string(),
+            )]),
+        };
     }
     if let Some(ref param_value) = p_query_view {
         req_builder = req_builder.query(&[("view", &param_value.to_string())]);

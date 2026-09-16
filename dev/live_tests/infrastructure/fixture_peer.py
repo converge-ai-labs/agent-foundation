@@ -57,6 +57,10 @@ def peer_app(config):
     app.include_router(
         connectivity_router(Path(config["workspace_root"]), {**config, "control_url": config["peer_url"]})
     )
+    if config.get("bot_memory"):
+        from ..bots.peer import router
+
+        app.include_router(router(Path(config["workspace_root"])))
     if "run_faults" in config:
         from .fixture_model import fixture_router
         from .host import bearer_authenticator

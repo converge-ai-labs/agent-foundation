@@ -30,10 +30,10 @@ max_connections = 256
 
 [objects]
 backend = "local"
-local_root = "../../var/service/objects"
+local_root = "../../var/dev/service/objects"
 
 [filesystem]
-root = "../../var/service/files"
+root = "../../var/dev/service/files"
 
 [iam]
 public_origin = "http://127.0.0.1:5173"

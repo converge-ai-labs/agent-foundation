@@ -64,6 +64,22 @@ def require_eligible(record: MemoryProviderRecord, catalog: MemoryBackendCatalog
         )
 
 
+def require_document_support(provider_type: str, catalog: MemoryBackendCatalog | None) -> None:
+    plugin = catalog.get(provider_type) if catalog is not None else None
+    if plugin is None:
+        raise MemoryProviderError(
+            "memory_provider_unavailable",
+            "Memory Provider implementation is unavailable.",
+            category=ErrorCategory.unavailable,
+        )
+    if not plugin.supports_documents:
+        raise MemoryProviderError(
+            "memory_documents_unsupported",
+            "This Memory Provider does not support Bot documents.",
+            category=ErrorCategory.conflict,
+        )
+
+
 def require_etag(record: MemoryProviderRecord, if_match: str) -> None:
     current = resource_etag(record.id, record.updated_at)
     if not etag_matches(if_match, current):

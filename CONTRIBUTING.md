@@ -43,6 +43,8 @@ Local Service development uses the explicit, public test configuration in `dev/s
 
 The repository selects Python 3.13 through `.python-version`. Python packages are uv workspace members under `packages/`; Rust crates under `crates/` are validated by the same top-level merge gate.
 
+For concurrent Service worktrees, the development resolver assigns stable checkout-specific loopback ports and isolated stores while reusing one machine-owned Langfuse stack. Use `make dev-status` to discover URLs; do not assume committed template ports. The [local Service guide](dev/service/README.md) owns lifecycle and recovery details.
+
 ## Engineering Standards
 
 Apply [Code Quality and Design](DEVELOPMENT.md#code-quality-and-design) when implementing or reviewing features, bug fixes, and refactoring across repository languages and components. Read additional engineering rules for the boundaries affected by the change. For deployable services, these include:
@@ -72,13 +74,14 @@ Use the Makefile as the stable development interface:
 | ----------------------------- | ------------------------------------------------------------------ |
 | `make help`                   | List available commands                                            |
 | `make install`                | Synchronize locked workspace, application, and SDK dependencies    |
-| `make setup`                  | Prepare local PostgreSQL, Redis, Langfuse and Service schema       |
+| `make setup`                  | Prepare this checkout's stores, shared Langfuse and Service schema |
 | `make dev`                    | Upgrade the schema and run a13n Service and Console                |
 | `make service-dev`            | Run only local Service and the scripted development model          |
 | `make dev-reset STATE=empty`  | Rebuild owned Service storage with no business data                |
 | `make dev-reset STATE=seeded` | Rebuild owned Service storage with fictional resources and history |
 | `make dev-state-check`        | Validate state tools with disposable local infrastructure          |
-| `make dev-down`               | Stop local Service and Langfuse infrastructure; preserve data      |
+| `make dev-status`             | Report this checkout's identity, ports and listener state as JSON  |
+| `make dev-down`               | Stop this checkout's infrastructure; preserve data and Langfuse    |
 | `make env-init`               | Initialize missing Harness development `.env` files                |
 | `make cli`                    | Run Harness UI with Git-ignored config/data in `var/harness-ui/`   |
 | `make webui`                  | Build browser assets and start WebUI with a generated login link   |
@@ -86,9 +89,9 @@ Use the Makefile as the stable development interface:
 | `make webui-landing`          | Try WebUI first-run setup in temporary state; Ctrl+C cleans up     |
 | `make harness-dev`            | Run SDK observation scenarios with `dev/harness/.env`              |
 | `make harness-ui-smoke`       | Run a scripted real-App observation smoke test                     |
-| `make langfuse-up`            | Start the isolated local Langfuse trace backend                    |
-| `make langfuse-down`          | Stop local Langfuse while preserving its data                      |
-| `make langfuse-reset`         | Stop local Langfuse and remove its data volumes                    |
+| `make langfuse-up`            | Start the machine-shared local Langfuse trace backend              |
+| `make langfuse-down`          | Stop shared Langfuse while preserving all local trace data         |
+| `make langfuse-reset`         | Explicitly remove all machine-shared local Langfuse data           |
 | `make format`                 | Apply repository formatting hooks                                  |
 | `make lint`                   | Run non-mutating repository lint checks                            |
 | `make deps-check`             | Check each Python package's dependency declarations with deptry    |

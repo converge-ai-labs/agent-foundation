@@ -7,7 +7,12 @@ from datetime import UTC, datetime
 import httpx2
 import pytest
 from a13n_service.settings import Settings
-from a13n_service.trace_query.domain import ProviderTraceQuery, ProviderTraceRead, SearchIn, TraceView
+from a13n_service.trace_query.domain import (
+    ProviderTraceQuery,
+    ProviderTraceRead,
+    SearchIn,
+    TraceView,
+)
 from a13n_service.trace_query.errors import TraceQueryProviderError
 from a13n_service.trace_query.logfire import LogfireTraceQueryProvider, _observation
 
@@ -54,14 +59,22 @@ def row(**updates):
                 "attributes": {"exception.message": "failed"},
             }
         ],
-        "otel_links": [{"context": {"trace_id": "other-trace", "span_id": "other-span"}, "attributes": {}}],
+        "otel_links": [
+            {
+                "context": {"trace_id": "other-trace", "span_id": "other-span"},
+                "attributes": {},
+            }
+        ],
         **updates,
     }
 
 
 def provider(client):
     return LogfireTraceQueryProvider(
-        client, base_url="https://logfire.example", read_token="test-read-token", history_from=START
+        client,
+        base_url="https://logfire.example",
+        read_token="test-read-token",
+        history_from=START,
     )
 
 
@@ -83,7 +96,10 @@ def test_mapping_preserves_explicit_status_and_reported_values():
     assert observation.type == "agent"
     assert observation.model.requested == "alias"
     assert observation.model.response == "version"
-    assert observation.usage == {"gen_ai.usage.input_tokens": 0, "gen_ai.usage.output_tokens": 5}
+    assert observation.usage == {
+        "gen_ai.usage.input_tokens": 0,
+        "gen_ai.usage.output_tokens": 5,
+    }
     assert observation.cost_usd == 0
     assert observation.input.value is None
     assert observation.resource_attributes == {"service.name": "service"}
@@ -97,7 +113,10 @@ def test_mapping_preserves_explicit_status_and_reported_values():
     assert compact.links[0].attributes is None
 
 
-@pytest.mark.parametrize("value,expected", [(None, None), (0, "unset"), (1, "ok"), (2, "error"), ("ERROR", "error")])
+@pytest.mark.parametrize(
+    "value,expected",
+    [(None, None), (0, "unset"), (1, "ok"), (2, "error"), ("ERROR", "error")],
+)
 def test_status_is_not_inferred_from_level_or_end(value, expected):
     assert _observation(row(otel_status_code=value, level="error"), TraceView.full).status == expected
 
@@ -117,7 +136,11 @@ async def test_scoped_sql_literal_search_and_precise_keyset():
         assert request.headers["authorization"] == "Bearer test-read-token"
         assert request.url.path == "/v2/query"
         return httpx2.Response(
-            200, json={"schema": {"fields": []}, "data": [row(), row(span_id="root-0")] if len(requests) == 1 else []}
+            200,
+            json={
+                "schema": {"fields": []},
+                "data": [row(), row(span_id="root-0")] if len(requests) == 1 else [],
+            },
         )
 
     async with httpx2.AsyncClient(transport=httpx2.MockTransport(handle)) as client:
@@ -130,6 +153,7 @@ async def test_scoped_sql_literal_search_and_precise_keyset():
             limit=1,
             query="x' OR true --",
             search_in=SearchIn.input_output,
+            metadata=(("scenario", "rev'iew"),),
         )
         first = await adapter.list_traces(query)
         assert first.next_cursor is not None
@@ -143,6 +167,7 @@ async def test_scoped_sql_literal_search_and_precise_keyset():
     assert "x'' OR true --" in sql
     assert "attributes->>'gen_ai.input.messages'" in sql
     assert "attributes->>'a13n.output'" in sql
+    assert "attributes->>'a13n.observation.metadata.scenario' = 'rev''iew'" in sql
     assert "ORDER BY start_timestamp DESC, trace_id DESC, span_id DESC LIMIT 2" in sql
     assert "start_timestamp = '2026-09-01T01:00:00.123456789Z'" in requests[1]["sql"]
     assert requests[0]["min_timestamp"] == "2026-09-01T00:00:00Z"
@@ -157,9 +182,9 @@ async def test_exact_root_and_children_do_not_require_repeated_correlations():
         return httpx2.Response(
             200,
             json={
-                "data": [row()]
-                if len(requests) == 1
-                else [row(span_id="child", parent_span_id="root-1", attributes={})]
+                "data": (
+                    [row()] if len(requests) == 1 else [row(span_id="child", parent_span_id="root-1", attributes={})]
+                )
             },
         )
 
@@ -183,7 +208,13 @@ async def test_ambiguous_root_is_rejected():
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    "status,failure", [(400, "unavailable"), (401, "unavailable"), (404, "version_unsupported"), (500, "unavailable")]
+    "status,failure",
+    [
+        (400, "unavailable"),
+        (401, "unavailable"),
+        (404, "version_unsupported"),
+        (500, "unavailable"),
+    ],
 )
 async def test_safe_provider_errors(status, failure):
     async with httpx2.AsyncClient(
@@ -250,7 +281,19 @@ def test_native_harness_categories_and_message_containers(operation, category):
 
 
 @pytest.mark.parametrize("key", ["input.value", "a13n.input", "gen_ai.input.messages"])
-@pytest.mark.parametrize("value", ["plain text", "null", "123", '"quoted"', '{"text":1}', None, [], {"text": "hello"}])
+@pytest.mark.parametrize(
+    "value",
+    [
+        "plain text",
+        "null",
+        "123",
+        '"quoted"',
+        '{"text":1}',
+        None,
+        [],
+        {"text": "hello"},
+    ],
+)
 def test_logfire_content_is_already_decoded_and_present_null_is_not_missing(key, value):
     attributes = {key: value, "input.mime_type": "application/json"}
     item = _observation(row(attributes=attributes), TraceView.full)
@@ -271,7 +314,10 @@ def test_native_events_preserve_sequence_and_reject_invalid_entries(serialized):
     item = _observation(row(otel_events=json.dumps(events) if serialized else events), TraceView.full)
     assert len(item.events) == 2 and item.events[0] == item.events[1]
     with pytest.raises(TraceQueryProviderError, match="malformed"):
-        _observation(row(otel_events=[{**event, "event_timestamp": "not-a-timestamp"}]), TraceView.full)
+        _observation(
+            row(otel_events=[{**event, "event_timestamp": "not-a-timestamp"}]),
+            TraceView.full,
+        )
 
 
 @pytest.mark.anyio

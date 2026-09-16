@@ -32,6 +32,7 @@ from a13n_harness.memory import (
     MemorySubject,
     MemoryWriteUnconfirmed,
 )
+from a13n_harness.memory_documents import MemoryDocumentStore
 from a13n_harness.model_context import (
     AbstractModelContextCapability,
     ModelContextBlock,
@@ -159,7 +160,10 @@ class MemoryCapability(AbstractModelContextCapability):
     def __init__(
         self,
         *,
-        backend: MemoryBackend,
+        backend: MemoryBackend | None = None,
+        document_store: MemoryDocumentStore | None = None,
+        document_read: bool = True,
+        document_write: bool = True,
         scope_ids: Mapping[MemoryScope, str] | None = None,
         scope: MemoryScope | None = None,
         toolset: bool = True,
@@ -169,8 +173,19 @@ class MemoryCapability(AbstractModelContextCapability):
         recall_timeout: float = 2.0,
         recall_required: bool = False,
     ) -> None:
-        if not isinstance(backend, MemoryBackend):
+        if (backend is None) == (document_store is None):
+            raise TypeError("Supply exactly one Memory backend or document store")
+        if backend is not None and not isinstance(backend, MemoryBackend):
             raise TypeError("backend must be a MemoryBackend")
+        if document_store is not None and not isinstance(document_store, MemoryDocumentStore):
+            raise TypeError("document_store must be a MemoryDocumentStore")
+        if type(document_read) is not bool or type(document_write) is not bool:
+            raise TypeError("Document access options must be booleans")
+        if document_store is not None and (scope_ids is not None or scope is not None):
+            raise ValueError("The host document store owns its scope")
+        self.document_store = document_store
+        self.document_read = document_read
+        self.document_write = document_write
         if scope_ids is not None and (
             not scope_ids
             or any(
@@ -208,17 +223,31 @@ class MemoryCapability(AbstractModelContextCapability):
         self.recall_required = recall_required
 
     async def for_run(self, ctx: RunContext[AgentContext]) -> AbstractCapability[AgentContext]:
+        from .memory_documents import DocumentMemoryRunCapability
+
         existing = ctx.deps._run_capability(MEMORY_CAPABILITY_ID)
         if existing is not None:
-            if not isinstance(existing, _MemoryRunCapability):
+            if not isinstance(existing, (_MemoryRunCapability, DocumentMemoryRunCapability)):
                 raise DefinitionError(
                     "Memory has an incompatible logical-run replacement.",
                     code="capability_type_mismatch",
                 )
             return existing
 
+        if self.document_store is not None:
+            document_replacement = DocumentMemoryRunCapability(
+                self.document_store,
+                context=ctx.deps,
+                read=self.document_read,
+                write=self.document_write,
+                toolset=self.toolset,
+            )
+            ctx.deps._record_run_capability(MEMORY_CAPABILITY_ID, document_replacement)
+            return document_replacement
+
         scopes = _resolve_scopes(ctx.deps, self.scope, self.scope_ids)
         backend = self.backend
+        assert backend is not None
         recall_block: str | None = None
         if self.auto_recall:
             binding = _MemoryBinding(backend=backend, scopes=scopes, fixed_scope=self.scope)

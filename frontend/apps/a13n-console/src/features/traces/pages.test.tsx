@@ -104,7 +104,7 @@ const descriptor = {
   history_from: null,
 };
 
-it("uses advertised search targets and preserves empty-page continuation", async () => {
+it("searches identifiers automatically and preserves empty-page continuation", async () => {
   const user = userEvent.setup();
   http.GET.mockImplementation(async (path, options) =>
     path.endsWith("observations")
@@ -120,30 +120,115 @@ it("uses advertised search targets and preserves empty-page continuation", async
   mount(<TracesPage />);
   await screen.findByText("No traces in this range");
   await user.click(screen.getByRole("button", { name: "Next" }));
-  await screen.findByRole("link", { name: /root/ });
-  await user.type(
-    screen.getByRole("textbox", { name: "Search content" }),
-    "needle",
-  );
-  await user.click(screen.getByRole("button", { name: "Apply filters" }));
+  await screen.findByRole("link", { name: /root/ }, { timeout: 3000 });
+  const search = screen.getByRole("searchbox", { name: "Search by ID" });
+  await user.type(search, "thread_abc");
   await waitFor(() =>
     expect(http.GET).toHaveBeenLastCalledWith(
       expect.stringContaining("/traces"),
       expect.objectContaining({
         params: expect.objectContaining({
           query: expect.objectContaining({
-            query: "needle",
-            search_in: "input",
+            thread_id: "thread_abc",
+            run_id: undefined,
+            session_id: undefined,
             cursor: undefined,
           }),
         }),
       }),
     ),
   );
-  await user.click(screen.getByRole("button", { name: "More filters" }));
-  await user.click(screen.getByRole("combobox", { name: "Search in" }));
-  expect(await screen.findByRole("option", { name: "Output" })).toBeTruthy();
-  expect(screen.queryByRole("option", { name: "Input and output" })).toBeNull();
+  await user.clear(search);
+  await user.type(search, "sess_123");
+  await waitFor(() =>
+    expect(http.GET).toHaveBeenLastCalledWith(
+      expect.stringContaining("/traces"),
+      expect.objectContaining({
+        params: expect.objectContaining({
+          query: expect.objectContaining({
+            session_id: "sess_123",
+            thread_id: undefined,
+            run_id: undefined,
+          }),
+        }),
+      }),
+    ),
+  );
+  await user.clear(search);
+  await user.type(search, "run_xyz");
+  await waitFor(() =>
+    expect(http.GET).toHaveBeenLastCalledWith(
+      expect.stringContaining("/traces"),
+      expect.objectContaining({
+        params: expect.objectContaining({
+          query: expect.objectContaining({
+            thread_id: undefined,
+            run_id: "run_xyz",
+          }),
+        }),
+      }),
+    ),
+  );
+});
+
+it("applies metadata key=value filters from the popover", async () => {
+  const user = userEvent.setup();
+  http.GET.mockImplementation(async (path, options) =>
+    path.endsWith("observations")
+      ? response({ items: [], next_cursor: null })
+      : response(
+          path.endsWith("trace-query")
+            ? descriptor
+            : { items: [trace()], next_cursor: null },
+        ),
+  );
+  mount(<TracesPage />);
+  await screen.findByRole("link", { name: /root/ }, { timeout: 3000 });
+  await user.click(screen.getByRole("button", { name: "Metadata" }));
+  await user.type(
+    screen.getByRole("textbox", { name: "Metadata key 1" }),
+    "scenario",
+  );
+  await user.type(
+    screen.getByRole("textbox", { name: "Metadata value 1" }),
+    "review",
+  );
+  await user.click(screen.getByRole("button", { name: "Add filter" }));
+  await user.type(
+    screen.getByRole("textbox", { name: "Metadata key 2" }),
+    "synthetic",
+  );
+  await user.type(
+    screen.getByRole("textbox", { name: "Metadata value 2" }),
+    "true",
+  );
+  await waitFor(() =>
+    expect(http.GET).toHaveBeenCalledWith(
+      expect.stringContaining("/traces"),
+      expect.objectContaining({
+        params: expect.objectContaining({
+          query: expect.objectContaining({
+            limit: 25,
+            metadata: ["scenario=review", "synthetic=true"],
+          }),
+        }),
+      }),
+    ),
+  );
+  await user.click(screen.getByRole("button", { name: "Remove filter 1" }));
+  await waitFor(() =>
+    expect(http.GET).toHaveBeenCalledWith(
+      expect.stringContaining("/traces"),
+      expect.objectContaining({
+        params: expect.objectContaining({
+          query: expect.objectContaining({
+            limit: 25,
+            metadata: ["synthetic=true"],
+          }),
+        }),
+      }),
+    ),
+  );
 });
 
 it("does not call the backend data routes when query is disabled", async () => {
@@ -546,7 +631,7 @@ it("immediately hides revoked content without waiting for unrelated cost reads o
   ).toHaveLength(4);
 });
 
-it("sorts aggregate costs rather than root costs and keeps the order after pagination and view changes", async () => {
+it("sorts aggregate costs rather than root costs and keeps the order after pagination", async () => {
   const user = userEvent.setup();
   const makeTrace = (id: string, cost: string | null) => ({
     ...trace(),
@@ -577,7 +662,7 @@ it("sorts aggregate costs rather than root costs and keeps the order after pagin
       next_cursor: next ? null : "next",
     });
   });
-  const cache = mount(<TracesPage />);
+  mount(<TracesPage />);
   await screen.findByText("$11");
   const names = () =>
     screen
@@ -596,20 +681,6 @@ it("sorts aggregate costs rather than root costs and keeps the order after pagin
       .getByRole("columnheader", { name: "Cost" })
       .getAttribute("aria-sort"),
   ).toBe("ascending");
-  await user.click(screen.getByRole("combobox", { name: "Content" }));
-  await user.click(await screen.findByRole("option", { name: "Compact" }));
-  await screen.findByRole("link", { name: "high-root" });
-  await waitFor(() => expect(cache.isFetching()).toBe(0));
-  expect(names()).toEqual(["high-root", "low-root", "unknown"]);
-  expect(screen.queryByRole("columnheader", { name: "Input" })).toBeNull();
-  expect(http.GET).toHaveBeenCalledWith(
-    expect.stringContaining("/traces"),
-    expect.objectContaining({
-      params: expect.objectContaining({
-        query: expect.objectContaining({ view: "compact", cursor: undefined }),
-      }),
-    }),
-  );
 });
 
 it("opens the root content tab from preview links without substituting child output", async () => {

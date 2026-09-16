@@ -11,7 +11,7 @@ HARNESS_ENV ?= dev/harness/.env
 HARNESS_UI_ENV ?= dev/harness-ui/.env
 STATE ?=
 MEM0_CONFIG ?= dev/mem0/local.toml
-SERVICE_DEV = uv run --locked python -m dev.service --config "$(SERVICE_CONFIG)" --mem0-config "$(MEM0_CONFIG)"
+SERVICE_DEV = python3 -m dev.service --config "$(SERVICE_CONFIG)" --mem0-config "$(MEM0_CONFIG)"
 CHECK_JOBS ?= 4
 CHECK_TARGETS := \
 	lint \
@@ -96,12 +96,12 @@ examples-check: examples-lock-check examples-format-check examples-typecheck ## 
 examples-check-all: examples-check examples-test examples-smoke examples-build ## Run the complete examples gate
 
 .PHONY: setup
-setup: sync ## Prepare local PostgreSQL, Redis, Langfuse and the Service schema
+setup: ## Prepare this checkout's stores, shared Langfuse and Service schema
 	@$(SERVICE_DEV) setup
 
 .PHONY: dev
-dev: setup frontend-sync sdk-typescript-build ## Upgrade the schema and run a13n Service and Console
-	@bash scripts/dev.sh "$(SERVICE_CONFIG)"
+dev: ## Prepare and run this checkout's Service, scripted model and Console
+	@$(SERVICE_DEV) dev
 
 # Initialize only missing files; templates changing must never replace private settings.
 # Resolve the template beside the selected file, including explicit path overrides.
@@ -146,7 +146,7 @@ harness-dev: harness-env ## Run SDK observation scenarios; initialize .env if mi
 harness-ui-smoke: harness-ui-env ## Exercise HarnessUiApp with a scripted model; initialize .env if missing
 	@uv run --locked --env-file "$(HARNESS_UI_ENV)" python -m dev.harness-ui.smoke
 
-.PHONY: dev-down
+.PHONY: dev-down dev-status
 .PHONY: live-test-init live-test-setup live-test-control live-test-worker live-test live-test-local live-test-check live-test-auth-control live-test-round-two live-test-management
 LIVE_TEST_RUN = uv run --locked $(if $(wildcard .env),--env-file .env,)
 
@@ -232,29 +232,32 @@ live-test-check: sync ## Validate live-test support without contacting services
 	@uv run --locked python -m pytest dev/live_tests -q
 
 .PHONY: mem0-up mem0-down mem0-logs
-mem0-up: sync ## Start and verify the local Mem0 OSS server using SERVICE_CONFIG
+mem0-up: ## Start and verify this checkout's local Mem0 OSS server
 	@$(SERVICE_DEV) mem0 up
 
-mem0-down: sync ## Stop local Mem0 OSS while preserving memories
+mem0-down: ## Stop this checkout's local Mem0 OSS while preserving memories
 	@$(SERVICE_DEV) mem0 down
 
-mem0-logs: sync ## Inspect local Mem0 OSS startup and provider errors
+mem0-logs: ## Inspect this checkout's local Mem0 OSS startup and provider errors
 	@$(SERVICE_DEV) mem0 logs
 
-dev-down: ## Stop local Service, Mem0 OSS and Langfuse infrastructure, preserving all data
-	@$(SERVICE_DEV) stop
+dev-status: ## Print this checkout's local instance and listeners as JSON without changing state
+	@python3 -m dev.service --config "$(SERVICE_CONFIG)" --mem0-config "$(MEM0_CONFIG)" status
+
+dev-down: ## Stop this checkout's Service and Mem0 infrastructure, preserving data and shared Langfuse
+	@$(SERVICE_DEV) down
 
 .PHONY: langfuse-up langfuse-down langfuse-test langfuse-reset
-langfuse-up: sync ## Start and authenticate local Langfuse using SERVICE_CONFIG
+langfuse-up: ## Start and authenticate machine-shared local Langfuse
 	@$(SERVICE_DEV) langfuse up
 
-langfuse-down: sync ## Stop local Langfuse while preserving its data
+langfuse-down: ## Stop machine-shared local Langfuse while preserving its data
 	@$(SERVICE_DEV) langfuse down
 
-langfuse-test: sync ## Verify Service OTLP write and Trace Query against local Langfuse v4
+langfuse-test: ## Verify Service OTLP write and Trace Query against shared local Langfuse v4
 	@$(SERVICE_DEV) langfuse test
 
-langfuse-reset: sync ## Stop local Langfuse and remove only its data
+langfuse-reset: ## Stop shared local Langfuse and remove all shared local trace data
 	@$(SERVICE_DEV) langfuse reset
 
 .PHONY: a13n-harness-ui-skills
@@ -746,10 +749,10 @@ help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*##"} /^[a-zA-Z0-9_-]+:.*##/ {printf "  %-38s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 .PHONY: service-dev dev-reset dev-state-check
-service-dev: setup ## Run only local Service and its scripted model, preserving data
-	@$(SERVICE_DEV) serve
+service-dev: ## Prepare and run only this checkout's Service and scripted model
+	@$(SERVICE_DEV) service-dev
 
-dev-reset: sync ## Reset owned local Service stores (STATE=empty or STATE=seeded)
+dev-reset: ## Reset this checkout's Service stores (STATE=empty or STATE=seeded)
 	@$(SERVICE_DEV) reset "$(STATE)"
 
 dev-state-check: sync ## Validate local state tools and seed journeys in disposable storage

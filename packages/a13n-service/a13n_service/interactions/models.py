@@ -446,6 +446,7 @@ class RunRecord(Base):
     model_execution_observation_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     connection_selections_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     native_tool_contexts_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    bot_memory_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     priority: Mapped[int] = mapped_column(Integer, nullable=False)
     queue_name: Mapped[str] = mapped_column(String(256), nullable=False)
     available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -526,6 +527,7 @@ class RunRecord(Base):
             ),
             "connection_selections": _JSON_OBJECTS_ADAPTER.validate_python(self.connection_selections_json),
             "native_tool_contexts": _JSON_OBJECTS_ADAPTER.validate_python(self.native_tool_contexts_json),
+            "bot_memory": self.bot_memory_json,
             "priority": self.priority,
             "queue_name": self.queue_name,
             "available_at": assume_utc(self.available_at),

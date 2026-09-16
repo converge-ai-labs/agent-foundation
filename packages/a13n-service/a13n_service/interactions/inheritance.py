@@ -3,6 +3,7 @@
 from typing import TypedDict
 
 from a13n_service.iam import PrincipalRef
+from a13n_service.memory.bots.binding import BotMemoryBinding
 from a13n_service.models.domain import ModelExecutionObservation
 
 from .domain import JsonObject, Run
@@ -16,6 +17,7 @@ class InheritedRunFields(TypedDict):
     model_execution_observation: ModelExecutionObservation
     connection_selections: tuple[JsonObject, ...]
     native_tool_contexts: tuple[JsonObject, ...]
+    bot_memory: BotMemoryBinding | None
 
 
 def inherited_run_fields(source: Run) -> InheritedRunFields:
@@ -28,4 +30,5 @@ def inherited_run_fields(source: Run) -> InheritedRunFields:
         model_execution_observation=source.model_execution_observation,
         connection_selections=source.connection_selections,
         native_tool_contexts=source.native_tool_contexts,
+        bot_memory=source.bot_memory,
     )

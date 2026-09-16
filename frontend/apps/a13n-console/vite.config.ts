@@ -16,6 +16,10 @@ export default defineConfig({
         changeOrigin: false,
         ws: true,
       },
+      "/connectivity": {
+        target: serviceUrl,
+        changeOrigin: false,
+      },
       "/connection-authorizations": {
         target: serviceUrl,
         changeOrigin: false,

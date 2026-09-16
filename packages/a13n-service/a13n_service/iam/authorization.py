@@ -83,6 +83,10 @@ class WorkspaceAction(StrEnum):
     a2a_push_configuration_manage = "a2a_push_configuration.manage"
     application_account_read = "application_account.read"
     application_account_manage = "application_account.manage"
+    bot_memory_read = "bot_memory.read"
+    bot_memory_create = "bot_memory.create"
+    bot_memory_delete = "bot_memory.delete"
+    bot_memory_share = "bot_memory.share"
     application_account_use = "application_account.use"
     account_target_read = "account_target.read"
     account_target_manage = "account_target.manage"
@@ -201,6 +205,10 @@ _ADMIN_ACTIONS = (
             WorkspaceAction.service_account_manage,
             WorkspaceAction.api_key_manage,
             WorkspaceAction.security_audit_read,
+            WorkspaceAction.bot_memory_read,
+            WorkspaceAction.bot_memory_create,
+            WorkspaceAction.bot_memory_delete,
+            WorkspaceAction.bot_memory_share,
         }
     )
 )

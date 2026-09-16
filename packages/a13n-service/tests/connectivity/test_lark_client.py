@@ -326,3 +326,87 @@ async def test_lark_native_response_and_binding_representations_are_bounded() ->
     assert "oc_chat" not in representation
     assert "om_message" not in representation
     assert "omt_thread" not in representation
+
+
+@pytest.mark.anyio
+async def test_lark_inspection_resolves_token_tenant_and_top_level_bot() -> None:
+    seen: list[str] = []
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        seen.append(request.url.path)
+        if request.url.path.endswith("/internal"):
+            return _token_response()
+        assert request.method == "GET"
+        if request.url.path == "/open-apis/bot/v3/info":
+            return httpx2.Response(
+                200, json={"code": 0, "bot": {"open_id": "ou_bot", "app_name": "Helper", "activate_status": 2}}
+            )
+        assert request.url.path == "/open-apis/tenant/v2/tenant/query"
+        return httpx2.Response(200, json={"code": 0, "data": {"tenant": {"tenant_key": "tenant1", "name": "Acme"}}})
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http_client:
+        native, _ = _client(http_client, _AllowEndpoint())
+        identity = await native.inspect_installation()
+    assert (identity.app_id, identity.organization_id, identity.bot_id) == ("cli_app", "tenant1", "ou_bot")
+    assert identity.enabled
+    assert len(seen) == 3
+    assert _APP_SECRET not in repr(identity)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("member", [True, False, None])
+async def test_lark_inspection_checks_membership_separately(member: bool | None) -> None:
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        if request.url.path.endswith("/internal"):
+            return _token_response()
+        assert request.method == "GET"
+        if request.url.path.endswith("/members/is_in_chat"):
+            return httpx2.Response(200, json={"code": 0, "data": {} if member is None else {"is_in_chat": member}})
+        assert request.url.path == "/open-apis/im/v1/chats/oc_chat"
+        return httpx2.Response(
+            200,
+            json={
+                "code": 0,
+                "data": {
+                    "name": "Engineering",
+                    "chat_mode": "topic",
+                    "chat_type": "private",
+                    "tenant_key": "tenant1",
+                    "external": False,
+                },
+            },
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http_client:
+        native, _ = _client(http_client, _AllowEndpoint())
+        observation = await native.inspect_conversation("oc_chat")
+    assert observation.audience == "private"
+    assert observation.is_member is member
+    assert observation.organization_id == "tenant1"
+
+
+@pytest.mark.anyio
+async def test_lark_discovery_propagates_page_token_without_claiming_access() -> None:
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        if request.url.path.endswith("/internal"):
+            return _token_response()
+        assert request.url.path == "/open-apis/im/v1/chats"
+        assert request.url.params["page_token"] == "next"
+        assert request.url.params["page_size"] == "2"
+        return httpx2.Response(
+            200,
+            json={
+                "code": 0,
+                "data": {
+                    "items": [{"chat_id": "oc_chat", "name": "Engineering"}],
+                    "has_more": True,
+                    "page_token": "after",
+                },
+            },
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http_client:
+        native, _ = _client(http_client, _AllowEndpoint())
+        page = await native.list_conversations(limit=2, cursor="next")
+    assert page.cursor == "after"
+    assert page.items[0].model_dump() == {"id": "oc_chat", "name": "Engineering"}

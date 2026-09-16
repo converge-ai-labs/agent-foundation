@@ -55,26 +55,122 @@
   overflow-wrap: anywhere;
 }
 .inspectorLineage {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
-  min-width: 0;
+  gap: 2px 8px;
+  padding: 7px 0;
+  border-bottom: 1px solid var(--a13n-border-soft);
+}
+.inspectorLineage:last-child {
+  border-bottom: 0;
 }
 .inspectorLineage a {
   color: var(--a13n-text);
   text-decoration: none;
   font-size: 13px;
 }
+.inspectorLineage a:hover {
+  text-decoration: underline;
+}
 .inspectorLineage small {
-  display: block;
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   color: var(--a13n-secondary);
   font-size: 11px;
-  margin-top: 4px;
-}
-.inspectorLineage > span:last-child {
-  margin-left: auto;
   min-width: 0;
-  max-width: 220px;
+}
+.panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  border-left: 1px solid var(--a13n-border-soft);
+  background: var(--a13n-canvas);
+}
+.heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 20px 20px 8px;
+}
+.heading > svg {
+  color: var(--a13n-secondary);
+}
+.heading h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.2px;
+}
+.heading > button {
+  margin-left: auto;
+  color: var(--a13n-secondary);
+}
+.scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 20px 24px;
+  overscroll-behavior: contain;
+}
+.inspectorBody section > h3 {
+  margin: 0 0 8px;
+}
+.empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--a13n-secondary);
+}
+.attempt {
+  display: grid;
+  gap: 10px;
+}
+.eventList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.eventList li + li {
+  border-top: 1px solid var(--a13n-border-soft);
+}
+.eventRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 4px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+}
+.eventRow:hover {
+  background: var(--a13n-surface);
+}
+.eventRow code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+}
+.eventRow > span {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--a13n-secondary);
+  font-size: 11px;
+}
+.eventPager {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
 }
 @media (max-width: 600px) {
   .metadata {
@@ -83,11 +179,5 @@
   }
   .metadata dd {
     margin-bottom: 10px;
-  }
-  .inspectorLineage {
-    flex-wrap: wrap;
-  }
-  .inspectorLineage > span:last-child {
-    margin-left: 0;
   }
 }

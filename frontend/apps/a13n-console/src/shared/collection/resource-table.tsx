@@ -15,6 +15,9 @@ export interface ResourceColumn<T> {
   label: string;
   align?: "left" | "right";
   tone?: "primary" | "secondary" | "muted";
+  header?: ReactNode;
+  ariaSort?: "ascending" | "descending" | "none";
+  dataColumn?: string;
   render: (item: T) => ReactNode;
 }
 export function ResourceTable<T extends { id: string }>({
@@ -23,16 +26,18 @@ export function ResourceTable<T extends { id: string }>({
   caption,
   onRowActivate,
   canActivateRow,
+  className,
 }: {
   items: readonly T[];
   columns: readonly ResourceColumn<T>[];
   caption?: string;
   onRowActivate?: (item: T, element: HTMLElement) => void;
   canActivateRow?: (item: T) => boolean;
+  className?: string;
 }) {
   const { t } = useTranslation();
   return (
-    <Table className={styles.table}>
+    <Table className={`${styles.table} ${className ?? ""}`}>
       <TableCaption className="sr-only">
         {caption ?? t("Resources")}
       </TableCaption>
@@ -43,8 +48,10 @@ export function ResourceTable<T extends { id: string }>({
               key={column.label}
               scope="col"
               className={column.align === "right" ? "text-right" : undefined}
+              aria-sort={column.ariaSort}
+              data-column={column.dataColumn}
             >
-              {column.label}
+              {column.header ?? column.label}
             </TableHead>
           ))}
         </TableRow>

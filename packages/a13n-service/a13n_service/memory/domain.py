@@ -138,6 +138,7 @@ class MemoryProviderDefinition(BaseModel):
     display_name: str
     configuration_schema: dict[str, object]
     credential_schema: dict[str, object]
+    supports_documents: bool = False
 
 
 class MemoryProviderDefinitionCollection(BaseModel):

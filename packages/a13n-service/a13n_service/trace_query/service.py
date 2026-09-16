@@ -100,18 +100,21 @@ class TraceQueryService:
         cursor: str | None = None,
         query: str | None = None,
         search_in: SearchIn | None = None,
+        session_id: str | None = None,
         thread_id: str | None = None,
         run_id: str | None = None,
         run_attempt_id: str | None = None,
+        metadata: Sequence[str] = (),
         view: TraceView = TraceView.compact,
     ) -> TraceCollection:
         provider, authorizer = self._require_available()
         _validate_limit(limit)
         if (query is None) != (search_in is None) or (query is not None and not _valid_text(query, 512)):
             raise _invalid("query and search_in must be supplied together with a bounded search value.")
-        for value in (thread_id, run_id, run_attempt_id):
+        for value in (session_id, thread_id, run_id, run_attempt_id):
             if value is not None and not _valid_text(value, 1024):
                 raise _invalid("A Trace Query correlation filter is invalid.")
+        metadata_pairs = _metadata_pairs(metadata)
         if query is not None and search_in not in provider.capabilities.search_in:
             raise _provider_error(TraceQueryProviderError("filter_unsupported"))
         scope = await authorizer.resolve_scope(actor=actor, workspace_id=workspace_id)
@@ -124,16 +127,21 @@ class TraceQueryService:
             {
                 "query": query,
                 "search_in": search_in,
+                "session_id": session_id,
                 "thread_id": thread_id,
                 "run_id": run_id,
                 "run_attempt_id": run_attempt_id,
+                "metadata": [f"{key}={value}" for key, value in metadata_pairs],
             },
         )
         decoded = _decode(cursor, binding)
         if decoded is not None:
             start, end = decoded.from_started_at, decoded.to_started_at
             if from_started_at is not None or to_started_at is not None:
-                if _range(from_started_at, to_started_at, self._clock()) != (start, end):
+                if _range(from_started_at, to_started_at, self._clock()) != (
+                    start,
+                    end,
+                ):
                     raise _invalid_cursor()
             # Revalidate even decoded ranges: cursors are not authority.
             _range(start, end, self._clock())
@@ -151,9 +159,11 @@ class TraceQueryService:
             cursor=decoded.provider_cursor if decoded else None,
             query=query,
             search_in=search_in,
+            session_id=session_id,
             thread_id=thread_id,
             run_id=run_id,
             run_attempt_id=run_attempt_id,
+            metadata=metadata_pairs,
         )
         page = await _read(provider.list_traces(provider_query))
         try:
@@ -164,6 +174,7 @@ class TraceQueryService:
                 item
                 for item in page.items
                 if _matches(item, scope)
+                and (session_id is None or item.correlation.session_id == session_id)
                 and (thread_id is None or item.correlation.thread_id == thread_id)
                 and (run_id is None or item.correlation.run_id == run_id)
                 and (run_attempt_id is None or item.correlation.run_attempt_id == run_attempt_id)
@@ -243,10 +254,20 @@ class TraceQueryService:
         await _authorize_exact(authorizer, actor, scope, trace)
         return ObservationCollection(
             items=tuple(project_observation(item, view) for item in page.items),
-            next_cursor=_encode(page.next_cursor, binding, query.history_from or _HISTORY_ORIGIN, query.to_started_at),
+            next_cursor=_encode(
+                page.next_cursor,
+                binding,
+                query.history_from or _HISTORY_ORIGIN,
+                query.to_started_at,
+            ),
         )
 
-    async def _root(self, provider: TraceQueryProvider, query: ProviderTraceRead, scope: TraceQueryScope) -> Trace:
+    async def _root(
+        self,
+        provider: TraceQueryProvider,
+        query: ProviderTraceRead,
+        scope: TraceQueryScope,
+    ) -> Trace:
         trace = await _read(provider.get_trace(query))
         if trace is None:
             raise _not_found()
@@ -293,9 +314,9 @@ class TraceQueryService:
             "collection": collection,
             "view": view.value,
             "limit": limit,
-            "history_from": provider.capabilities.history_from.isoformat()
-            if provider.capabilities.history_from
-            else None,
+            "history_from": (
+                provider.capabilities.history_from.isoformat() if provider.capabilities.history_from else None
+            ),
             **filters,
         }
 
@@ -322,7 +343,10 @@ async def _read[T](operation: Awaitable[T]) -> T:
 
 
 async def _authorize_exact(
-    authorizer: TraceAccessAuthorizer, actor: AuthenticatedActor, scope: TraceQueryScope, trace: Trace
+    authorizer: TraceAccessAuthorizer,
+    actor: AuthenticatedActor,
+    scope: TraceQueryScope,
+    trace: Trace,
 ) -> None:
     authorized = await authorizer.authorize_run_attempts(actor=actor, scope=scope, correlations=(trace.correlation,))
     if not _authorized(trace, authorized):
@@ -351,12 +375,32 @@ def _decode(cursor: str | None, binding: dict[str, object]):
 def _encode(cursor: str | None, binding: dict[str, object], start: datetime, end: datetime) -> str | None:
     try:
         return (
-            encode_trace_cursor(provider_cursor=cursor, scope=binding, from_started_at=start, to_started_at=end)
+            encode_trace_cursor(
+                provider_cursor=cursor,
+                scope=binding,
+                from_started_at=start,
+                to_started_at=end,
+            )
             if cursor is not None
             else None
         )
     except TraceCursorError as error:
         raise _provider_error(TraceQueryProviderError("malformed")) from error
+
+
+def _metadata_pairs(entries: Sequence[str]) -> tuple[tuple[str, str], ...]:
+    if len(entries) > 8:
+        raise _invalid("At most eight Trace Query metadata filters are allowed.")
+    pairs: dict[str, str] = {}
+    for entry in entries:
+        key, separator, value = entry.partition("=")
+        key = key.strip()
+        if not separator or not _valid_text(key, 256) or not _valid_text(value, 1024):
+            raise _invalid("A Trace Query metadata filter is invalid.")
+        if key in pairs:
+            raise _invalid("Trace Query metadata keys must be unique.")
+        pairs[key] = value
+    return tuple(sorted(pairs.items()))
 
 
 def _validate_limit(limit: int) -> None:
@@ -496,7 +540,9 @@ def _invalid(message: str) -> TraceQueryError:
 
 def _invalid_cursor() -> TraceQueryError:
     return TraceQueryError(
-        "invalid_cursor", "The collection cursor is invalid.", category=ErrorCategory.invalid_request
+        "invalid_cursor",
+        "The collection cursor is invalid.",
+        category=ErrorCategory.invalid_request,
     )
 
 
@@ -516,7 +562,9 @@ def _provider_error(error: TraceQueryProviderError) -> TraceQueryError:
             category=ErrorCategory.invalid_request,
         )
     return TraceQueryError(
-        "trace_query_unavailable", "Trace Query is temporarily unavailable.", category=ErrorCategory.unavailable
+        "trace_query_unavailable",
+        "Trace Query is temporarily unavailable.",
+        category=ErrorCategory.unavailable,
     )
 
 

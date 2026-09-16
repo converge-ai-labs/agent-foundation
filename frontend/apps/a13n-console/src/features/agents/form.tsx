@@ -27,6 +27,7 @@ import { jsonObject } from "../../shared/validation";
 import styles from "./agents.module.css";
 import { AgentSearchSelection } from "../web/selection";
 import { AgentMemorySelection } from "../memory/selection";
+import { useMemoryProviders } from "../memory/availability";
 import { AgentAvatar } from "./avatar";
 import { AgentCapabilities } from "./capabilities";
 import { useAgentChoices } from "./choices";
@@ -102,6 +103,7 @@ export function AgentForm({
     [validation, setValidation] = useState<Error>();
   const [search, setSearch] = useState(searchSelection(initial));
   const [memory, setMemory] = useState(initial.memory);
+  const { visible: memoryVisible } = useMemoryProviders();
   const [skills, setSkills] = useState(initial.skills ?? []),
     [connections, setConnections] = useState(initial.connection_tools ?? []);
   const choices = useAgentChoices();
@@ -359,20 +361,22 @@ export function AgentForm({
                 onChange={setSearch}
               />
             </EditorSection>
-            <EditorSection
-              title={t("Memory")}
-              description={t(
-                "Remember useful information across runs, with explicit control over what is stored.",
-              )}
-            >
-              <AgentMemorySelection
-                agentId={agentId}
-                savedProviderId={providedInitial.memory?.provider_id}
-                readOnly={readonly}
-                value={memory}
-                onChange={setMemory}
-              />
-            </EditorSection>
+            {(memoryVisible || memory || initial.memory) && (
+              <EditorSection
+                title={t("Memory")}
+                description={t(
+                  "Remember useful information across runs, with explicit control over what is stored.",
+                )}
+              >
+                <AgentMemorySelection
+                  agentId={agentId}
+                  savedProviderId={providedInitial.memory?.provider_id}
+                  readOnly={readonly}
+                  value={memory}
+                  onChange={setMemory}
+                />
+              </EditorSection>
+            )}
             <EditorSection
               title={t("Advanced configuration")}
               description={t(

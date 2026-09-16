@@ -10,6 +10,7 @@ class IdentityConfiguration(BaseModel):
     model_config = ConfigDict(frozen=True, hide_input_in_errors=True)
 
     public_origin: str = Field(min_length=1, max_length=2048)
+    session_cookie_name: str = Field(default="a13n_session", min_length=1, max_length=128, pattern=r"^[A-Za-z0-9_-]+$")
     initial_admin_email: EmailStr | None = None
     session_days: int = Field(default=7, ge=1, le=90)
     invitation_days: int = Field(default=7, ge=1, le=30)

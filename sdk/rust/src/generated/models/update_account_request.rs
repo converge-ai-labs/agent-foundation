@@ -41,6 +41,14 @@ pub struct UpdateAccountRequest {
     pub input_batching: Option<Option<Box<models::InputBatchingPolicy>>>,
 
     #[serde(
+        rename = "memory",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub memory: Option<Option<Box<models::MemorySettings>>>,
+
+    #[serde(
         rename = "name",
         default,
         with = "::serde_with::rust::double_option",
@@ -71,6 +79,14 @@ pub struct UpdateAccountRequest {
         skip_serializing_if = "Option::is_none"
     )]
     pub receive_enabled: Option<Option<bool>>,
+
+    #[serde(
+        rename = "reception_scope",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub reception_scope: Option<Option<models::ReceptionScope>>,
 }
 
 impl UpdateAccountRequest {
@@ -80,10 +96,12 @@ impl UpdateAccountRequest {
             execution_service_account_id: None,
             expected_version,
             input_batching: None,
+            memory: None,
             name: None,
             provider_config: None,
             provider_policy: None,
             receive_enabled: None,
+            reception_scope: None,
         }
     }
 }

@@ -1,4 +1,4 @@
-import { Button, ChoiceField, DisclosureSection, ModalFrame } from "a13n-ui";
+import { Button, ChoiceField, DisclosureSection } from "a13n-ui";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -6,7 +6,7 @@ import { Link, useNavigate } from "react-router";
 
 import { ArrowDownIcon, ArrowUpIcon, PlayIcon } from "@phosphor-icons/react";
 import { useTranslation } from "react-i18next";
-import { useAuth, useClient } from "../../auth/context";
+import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
 import { commandHeaders, data, type Schema } from "../../shared/api";
 import {
@@ -21,7 +21,6 @@ import { useIdempotency } from "../../shared/idempotency";
 import { conversationQueries, invalidateConversation, runPath } from "./api";
 import styles from "./conversations.module.css";
 import { InputContent } from "./items";
-import { OptionsComposer } from "./options";
 
 export function ThreadQueue({
   thread,
@@ -32,7 +31,6 @@ export function ThreadQueue({
 }) {
   const { t } = useTranslation(),
     client = useClient(),
-    auth = useAuth(),
     { workspace, can, basePath } = useWorkspace(),
     cache = useQueryClient(),
     navigate = useNavigate();
@@ -224,13 +222,6 @@ export function ThreadQueue({
                     </Button>
                   </>
                 )}
-                {state === "queued" &&
-                  can("queued_submission.update") &&
-                  item.authority_principal.principal_type === "user" &&
-                  item.authority_principal.principal_id ===
-                    auth.data?.user.value.id && (
-                    <QueueEditor item={item} refresh={refresh} />
-                  )}
                 {state === "queued" && can("queued_submission.delete") && (
                   <Confirm
                     subject={item.queued_submission_id}
@@ -268,58 +259,5 @@ export function ThreadQueue({
         )}
       </div>
     </DisclosureSection>
-  );
-}
-function QueueEditor({
-  item,
-  refresh,
-}: {
-  item: Schema["QueuedSubmission"];
-  refresh: () => void;
-}) {
-  const { t } = useTranslation(),
-    client = useClient(),
-    { workspace, basePath } = useWorkspace(),
-    [open, setOpen] = useState(false);
-  return (
-    <ModalFrame
-      onOpenChange={setOpen}
-      trigger={
-        <Button size="sm" variant="outline" type="button">
-          {t("Edit")}
-        </Button>
-      }
-      size={"md"}
-      title={t("Edit queued message")}
-      description={t(
-        "Edit the message before it runs. Its agent configuration and permissions stay the same.",
-      )}
-      closeLabel={t("Close")}
-      open={open}
-    >
-      <OptionsComposer
-        key={`${item.queued_submission_id}:${item.version}`}
-        initial={item.submission}
-        label={t("Save queued message")}
-        submit={async (submission, key) => {
-          data(
-            await client.http.PATCH(
-              "/api/v1/queued-submissions/{queued_submission_id}",
-              {
-                params: {
-                  path: {
-                    queued_submission_id: item.queued_submission_id,
-                  },
-                  header: commandHeaders(workspace.id, key),
-                },
-                body: { expected_version: item.version, submission },
-              },
-            ),
-          );
-          refresh();
-          setOpen(false);
-        }}
-      />
-    </ModalFrame>
   );
 }

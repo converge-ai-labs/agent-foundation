@@ -355,22 +355,22 @@ func (e BinaryContentType) Valid() bool {
 
 // Defines values for BinaryContentDelivery.
 const (
-	Auto            BinaryContentDelivery = "auto"
-	EnvironmentPath BinaryContentDelivery = "environment_path"
-	ModelContent    BinaryContentDelivery = "model_content"
-	ModelUrl        BinaryContentDelivery = "model_url"
+	BinaryContentDeliveryAuto            BinaryContentDelivery = "auto"
+	BinaryContentDeliveryEnvironmentPath BinaryContentDelivery = "environment_path"
+	BinaryContentDeliveryModelContent    BinaryContentDelivery = "model_content"
+	BinaryContentDeliveryModelUrl        BinaryContentDelivery = "model_url"
 )
 
 // Valid indicates whether the value is a known member of the BinaryContentDelivery enum.
 func (e BinaryContentDelivery) Valid() bool {
 	switch e {
-	case Auto:
+	case BinaryContentDeliveryAuto:
 		return true
-	case EnvironmentPath:
+	case BinaryContentDeliveryEnvironmentPath:
 		return true
-	case ModelContent:
+	case BinaryContentDeliveryModelContent:
 		return true
-	case ModelUrl:
+	case BinaryContentDeliveryModelUrl:
 		return true
 	default:
 		return false
@@ -386,6 +386,108 @@ const (
 func (e BinaryInputContentType) Valid() bool {
 	switch e {
 	case BinaryInputContentTypeBinary:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BotReplyObservationProviderKey.
+const (
+	BotReplyObservationProviderKeyLark  BotReplyObservationProviderKey = "lark"
+	BotReplyObservationProviderKeySlack BotReplyObservationProviderKey = "slack"
+)
+
+// Valid indicates whether the value is a known member of the BotReplyObservationProviderKey enum.
+func (e BotReplyObservationProviderKey) Valid() bool {
+	switch e {
+	case BotReplyObservationProviderKeyLark:
+		return true
+	case BotReplyObservationProviderKeySlack:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BotReplyObservationStatus.
+const (
+	BotReplyObservationStatusDispatching    BotReplyObservationStatus = "dispatching"
+	BotReplyObservationStatusOutcomeUnknown BotReplyObservationStatus = "outcome_unknown"
+	BotReplyObservationStatusRejected       BotReplyObservationStatus = "rejected"
+	BotReplyObservationStatusSucceeded      BotReplyObservationStatus = "succeeded"
+)
+
+// Valid indicates whether the value is a known member of the BotReplyObservationStatus enum.
+func (e BotReplyObservationStatus) Valid() bool {
+	switch e {
+	case BotReplyObservationStatusDispatching:
+		return true
+	case BotReplyObservationStatusOutcomeUnknown:
+		return true
+	case BotReplyObservationStatusRejected:
+		return true
+	case BotReplyObservationStatusSucceeded:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BotSummarySetupCondition.
+const (
+	BotSummarySetupConditionCheckFailed       BotSummarySetupCondition = "check_failed"
+	BotSummarySetupConditionDisabled          BotSummarySetupCondition = "disabled"
+	BotSummarySetupConditionNeedsVerification BotSummarySetupCondition = "needs_verification"
+	BotSummarySetupConditionReceiving         BotSummarySetupCondition = "receiving"
+	BotSummarySetupConditionReceptionOff      BotSummarySetupCondition = "reception_off"
+)
+
+// Valid indicates whether the value is a known member of the BotSummarySetupCondition enum.
+func (e BotSummarySetupCondition) Valid() bool {
+	switch e {
+	case BotSummarySetupConditionCheckFailed:
+		return true
+	case BotSummarySetupConditionDisabled:
+		return true
+	case BotSummarySetupConditionNeedsVerification:
+		return true
+	case BotSummarySetupConditionReceiving:
+		return true
+	case BotSummarySetupConditionReceptionOff:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for BotSummaryTestStage.
+const (
+	BotSummaryTestStageAccepted       BotSummaryTestStage = "accepted"
+	BotSummaryTestStageExpired        BotSummaryTestStage = "expired"
+	BotSummaryTestStageReceived       BotSummaryTestStage = "received"
+	BotSummaryTestStageRejected       BotSummaryTestStage = "rejected"
+	BotSummaryTestStageReplyConfirmed BotSummaryTestStage = "reply_confirmed"
+	BotSummaryTestStageStale          BotSummaryTestStage = "stale"
+	BotSummaryTestStageWaiting        BotSummaryTestStage = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the BotSummaryTestStage enum.
+func (e BotSummaryTestStage) Valid() bool {
+	switch e {
+	case BotSummaryTestStageAccepted:
+		return true
+	case BotSummaryTestStageExpired:
+		return true
+	case BotSummaryTestStageReceived:
+		return true
+	case BotSummaryTestStageRejected:
+		return true
+	case BotSummaryTestStageReplyConfirmed:
+		return true
+	case BotSummaryTestStageStale:
+		return true
+	case BotSummaryTestStageWaiting:
 		return true
 	default:
 		return false
@@ -665,6 +767,30 @@ func (e ConnectorSourceKind) Valid() bool {
 	}
 }
 
+// Defines values for ConversationInfoAudience.
+const (
+	ConversationInfoAudienceDirect  ConversationInfoAudience = "direct"
+	ConversationInfoAudiencePrivate ConversationInfoAudience = "private"
+	ConversationInfoAudiencePublic  ConversationInfoAudience = "public"
+	ConversationInfoAudienceUnknown ConversationInfoAudience = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the ConversationInfoAudience enum.
+func (e ConversationInfoAudience) Valid() bool {
+	switch e {
+	case ConversationInfoAudienceDirect:
+		return true
+	case ConversationInfoAudiencePrivate:
+		return true
+	case ConversationInfoAudiencePublic:
+		return true
+	case ConversationInfoAudienceUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CreateAuthorizationRequestMethod.
 const (
 	CreateAuthorizationRequestMethodBrowser           CreateAuthorizationRequestMethod = "browser"
@@ -680,6 +806,24 @@ func (e CreateAuthorizationRequestMethod) Valid() bool {
 	case CreateAuthorizationRequestMethodClientCredentials:
 		return true
 	case CreateAuthorizationRequestMethodCredentials:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreateDocumentKind.
+const (
+	CreateDocumentKindDaily    CreateDocumentKind = "daily"
+	CreateDocumentKindLongTerm CreateDocumentKind = "long_term"
+)
+
+// Valid indicates whether the value is a known member of the CreateDocumentKind enum.
+func (e CreateDocumentKind) Valid() bool {
+	switch e {
+	case CreateDocumentKindDaily:
+		return true
+	case CreateDocumentKindLongTerm:
 		return true
 	default:
 		return false
@@ -797,15 +941,126 @@ func (e DeveloperMessageRole) Valid() bool {
 	}
 }
 
+// Defines values for DocumentKind.
+const (
+	DocumentKindDaily    DocumentKind = "daily"
+	DocumentKindLongTerm DocumentKind = "long_term"
+)
+
+// Valid indicates whether the value is a known member of the DocumentKind enum.
+func (e DocumentKind) Valid() bool {
+	switch e {
+	case DocumentKindDaily:
+		return true
+	case DocumentKindLongTerm:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DocumentState.
+const (
+	DocumentStateActive      DocumentState = "active"
+	DocumentStateDeleted     DocumentState = "deleted"
+	DocumentStateDeleting    DocumentState = "deleting"
+	DocumentStatePending     DocumentState = "pending"
+	DocumentStateUnconfirmed DocumentState = "unconfirmed"
+)
+
+// Valid indicates whether the value is a known member of the DocumentState enum.
+func (e DocumentState) Valid() bool {
+	switch e {
+	case DocumentStateActive:
+		return true
+	case DocumentStateDeleted:
+		return true
+	case DocumentStateDeleting:
+		return true
+	case DocumentStatePending:
+		return true
+	case DocumentStateUnconfirmed:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DocumentAccessReasonKind.
+const (
+	Owner       DocumentAccessReasonKind = "owner"
+	Policy      DocumentAccessReasonKind = "policy"
+	Publication DocumentAccessReasonKind = "publication"
+)
+
+// Valid indicates whether the value is a known member of the DocumentAccessReasonKind enum.
+func (e DocumentAccessReasonKind) Valid() bool {
+	switch e {
+	case Owner:
+		return true
+	case Policy:
+		return true
+	case Publication:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DocumentEntryKind.
+const (
+	DocumentEntryKindDaily    DocumentEntryKind = "daily"
+	DocumentEntryKindLongTerm DocumentEntryKind = "long_term"
+)
+
+// Valid indicates whether the value is a known member of the DocumentEntryKind enum.
+func (e DocumentEntryKind) Valid() bool {
+	switch e {
+	case DocumentEntryKindDaily:
+		return true
+	case DocumentEntryKindLongTerm:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DocumentEntryState.
+const (
+	DocumentEntryStateActive      DocumentEntryState = "active"
+	DocumentEntryStateDeleted     DocumentEntryState = "deleted"
+	DocumentEntryStateDeleting    DocumentEntryState = "deleting"
+	DocumentEntryStatePending     DocumentEntryState = "pending"
+	DocumentEntryStateUnconfirmed DocumentEntryState = "unconfirmed"
+)
+
+// Valid indicates whether the value is a known member of the DocumentEntryState enum.
+func (e DocumentEntryState) Valid() bool {
+	switch e {
+	case DocumentEntryStateActive:
+		return true
+	case DocumentEntryStateDeleted:
+		return true
+	case DocumentEntryStateDeleting:
+		return true
+	case DocumentEntryStatePending:
+		return true
+	case DocumentEntryStateUnconfirmed:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DocumentInputContentType.
 const (
-	Document DocumentInputContentType = "document"
+	DocumentInputContentTypeDocument DocumentInputContentType = "document"
 )
 
 // Valid indicates whether the value is a known member of the DocumentInputContentType enum.
 func (e DocumentInputContentType) Valid() bool {
 	switch e {
-	case Document:
+	case DocumentInputContentTypeDocument:
 		return true
 	default:
 		return false
@@ -1574,6 +1829,21 @@ func (e MCPSourceKind) Valid() bool {
 	}
 }
 
+// Defines values for MemoryIndexPath.
+const (
+	MEMORYMd MemoryIndexPath = "MEMORY.md"
+)
+
+// Valid indicates whether the value is a known member of the MemoryIndexPath enum.
+func (e MemoryIndexPath) Valid() bool {
+	switch e {
+	case MEMORYMd:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for MemoryScope.
 const (
 	MemoryScopeAgent  MemoryScope = "agent"
@@ -1589,6 +1859,48 @@ func (e MemoryScope) Valid() bool {
 	case MemoryScopeThread:
 		return true
 	case MemoryScopeUser:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MessagingPolicyInteractionMode.
+const (
+	Chat       MessagingPolicyInteractionMode = "chat"
+	Discussion MessagingPolicyInteractionMode = "discussion"
+	Mention    MessagingPolicyInteractionMode = "mention"
+)
+
+// Valid indicates whether the value is a known member of the MessagingPolicyInteractionMode enum.
+func (e MessagingPolicyInteractionMode) Valid() bool {
+	switch e {
+	case Chat:
+		return true
+	case Discussion:
+		return true
+	case Mention:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MessagingPolicyReplyMode.
+const (
+	MessagingPolicyReplyModeAuto   MessagingPolicyReplyMode = "auto"
+	MessagingPolicyReplyModeMain   MessagingPolicyReplyMode = "main"
+	MessagingPolicyReplyModeThread MessagingPolicyReplyMode = "thread"
+)
+
+// Valid indicates whether the value is a known member of the MessagingPolicyReplyMode enum.
+func (e MessagingPolicyReplyMode) Valid() bool {
+	switch e {
+	case MessagingPolicyReplyModeAuto:
+		return true
+	case MessagingPolicyReplyModeMain:
+		return true
+	case MessagingPolicyReplyModeThread:
 		return true
 	default:
 		return false
@@ -1898,6 +2210,24 @@ func (e ReasoningMessageRole) Valid() bool {
 	}
 }
 
+// Defines values for ReceptionScope.
+const (
+	AllAccessible     ReceptionScope = "all_accessible"
+	ConfiguredTargets ReceptionScope = "configured_targets"
+)
+
+// Valid indicates whether the value is a known member of the ReceptionScope enum.
+func (e ReceptionScope) Valid() bool {
+	switch e {
+	case AllAccessible:
+		return true
+	case ConfiguredTargets:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RejectPendingResolutionAction.
 const (
 	Reject RejectPendingResolutionAction = "reject"
@@ -1907,6 +2237,24 @@ const (
 func (e RejectPendingResolutionAction) Valid() bool {
 	switch e {
 	case Reject:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ReplaceSharingPolicyKinds.
+const (
+	ReplaceSharingPolicyKindsDaily    ReplaceSharingPolicyKinds = "daily"
+	ReplaceSharingPolicyKindsLongTerm ReplaceSharingPolicyKinds = "long_term"
+)
+
+// Valid indicates whether the value is a known member of the ReplaceSharingPolicyKinds enum.
+func (e ReplaceSharingPolicyKinds) Valid() bool {
+	switch e {
+	case ReplaceSharingPolicyKindsDaily:
+		return true
+	case ReplaceSharingPolicyKindsLongTerm:
 		return true
 	default:
 		return false
@@ -2114,6 +2462,30 @@ func (e SafeFailureRetryHint) Valid() bool {
 	}
 }
 
+// Defines values for ScopeAudience.
+const (
+	ScopeAudienceDirect  ScopeAudience = "direct"
+	ScopeAudiencePrivate ScopeAudience = "private"
+	ScopeAudiencePublic  ScopeAudience = "public"
+	ScopeAudienceUnknown ScopeAudience = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the ScopeAudience enum.
+func (e ScopeAudience) Valid() bool {
+	switch e {
+	case ScopeAudienceDirect:
+		return true
+	case ScopeAudiencePrivate:
+		return true
+	case ScopeAudiencePublic:
+		return true
+	case ScopeAudienceUnknown:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SearchIn.
 const (
 	Input       SearchIn = "input"
@@ -2156,6 +2528,42 @@ func (e SetRoleRequestRole) Valid() bool {
 	case SetRoleRequestRoleRunner:
 		return true
 	case SetRoleRequestRoleViewer:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SharingPolicyKinds.
+const (
+	SharingPolicyKindsDaily    SharingPolicyKinds = "daily"
+	SharingPolicyKindsLongTerm SharingPolicyKinds = "long_term"
+)
+
+// Valid indicates whether the value is a known member of the SharingPolicyKinds enum.
+func (e SharingPolicyKinds) Valid() bool {
+	switch e {
+	case SharingPolicyKindsDaily:
+		return true
+	case SharingPolicyKindsLongTerm:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SharingPolicyInputKinds.
+const (
+	SharingPolicyInputKindsDaily    SharingPolicyInputKinds = "daily"
+	SharingPolicyInputKindsLongTerm SharingPolicyInputKinds = "long_term"
+)
+
+// Valid indicates whether the value is a known member of the SharingPolicyInputKinds enum.
+func (e SharingPolicyInputKinds) Valid() bool {
+	switch e {
+	case SharingPolicyInputKindsDaily:
+		return true
+	case SharingPolicyInputKindsLongTerm:
 		return true
 	default:
 		return false
@@ -2855,6 +3263,24 @@ func (e ZipUploadSkillSourceKind) Valid() bool {
 	}
 }
 
+// Defines values for GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsParamsKind.
+const (
+	GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsParamsKindDaily    GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsParamsKind = "daily"
+	GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsParamsKindLongTerm GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsParamsKind = "long_term"
+)
+
+// Valid indicates whether the value is a known member of the GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsParamsKind enum.
+func (e GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsParamsKind) Valid() bool {
+	switch e {
+	case GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsParamsKindDaily:
+		return true
+	case GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsParamsKindLongTerm:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PostApplicationAccountsAccountIdActionParamsAction.
 const (
 	PostApplicationAccountsAccountIdActionParamsActionDisable PostApplicationAccountsAccountIdActionParamsAction = "disable"
@@ -2909,6 +3335,51 @@ func (e PostWorkspacesWorkspaceAgentsAgentActionParamsAction) Valid() bool {
 	case PostWorkspacesWorkspaceAgentsAgentActionParamsActionEnable:
 		return true
 	case PostWorkspacesWorkspaceAgentsAgentActionParamsActionUnarchive:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetWorkspacesWorkspaceBotsParamsPlatform.
+const (
+	GetWorkspacesWorkspaceBotsParamsPlatformLark  GetWorkspacesWorkspaceBotsParamsPlatform = "lark"
+	GetWorkspacesWorkspaceBotsParamsPlatformSlack GetWorkspacesWorkspaceBotsParamsPlatform = "slack"
+)
+
+// Valid indicates whether the value is a known member of the GetWorkspacesWorkspaceBotsParamsPlatform enum.
+func (e GetWorkspacesWorkspaceBotsParamsPlatform) Valid() bool {
+	switch e {
+	case GetWorkspacesWorkspaceBotsParamsPlatformLark:
+		return true
+	case GetWorkspacesWorkspaceBotsParamsPlatformSlack:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetWorkspacesWorkspaceBotsParamsCondition.
+const (
+	GetWorkspacesWorkspaceBotsParamsConditionCheckFailed       GetWorkspacesWorkspaceBotsParamsCondition = "check_failed"
+	GetWorkspacesWorkspaceBotsParamsConditionDisabled          GetWorkspacesWorkspaceBotsParamsCondition = "disabled"
+	GetWorkspacesWorkspaceBotsParamsConditionNeedsVerification GetWorkspacesWorkspaceBotsParamsCondition = "needs_verification"
+	GetWorkspacesWorkspaceBotsParamsConditionReceiving         GetWorkspacesWorkspaceBotsParamsCondition = "receiving"
+	GetWorkspacesWorkspaceBotsParamsConditionReceptionOff      GetWorkspacesWorkspaceBotsParamsCondition = "reception_off"
+)
+
+// Valid indicates whether the value is a known member of the GetWorkspacesWorkspaceBotsParamsCondition enum.
+func (e GetWorkspacesWorkspaceBotsParamsCondition) Valid() bool {
+	switch e {
+	case GetWorkspacesWorkspaceBotsParamsConditionCheckFailed:
+		return true
+	case GetWorkspacesWorkspaceBotsParamsConditionDisabled:
+		return true
+	case GetWorkspacesWorkspaceBotsParamsConditionNeedsVerification:
+		return true
+	case GetWorkspacesWorkspaceBotsParamsConditionReceiving:
+		return true
+	case GetWorkspacesWorkspaceBotsParamsConditionReceptionOff:
 		return true
 	default:
 		return false
@@ -2975,6 +3446,7 @@ type Account struct {
 	ExecutionServiceAccountId nullable.Nullable[string]               `json:"execution_service_account_id,omitempty"`
 	Id                        string                                  `json:"id"`
 	InputBatching             nullable.Nullable[InputBatchingPolicy]  `json:"input_batching,omitempty"`
+	Memory                    nullable.Nullable[MemorySettings]       `json:"memory,omitempty"`
 	Name                      string                                  `json:"name"`
 	OrganizationId            string                                  `json:"organization_id"`
 	ProviderConfig            map[string]JsonValue                    `json:"provider_config"`
@@ -2982,6 +3454,7 @@ type Account struct {
 	ProviderKey               string                                  `json:"provider_key"`
 	ProviderPolicy            nullable.Nullable[map[string]JsonValue] `json:"provider_policy,omitempty"`
 	ReceiveEnabled            *bool                                   `json:"receive_enabled,omitempty"`
+	ReceptionScope            *ReceptionScope                         `json:"reception_scope,omitempty"`
 	Status                    AccountStatus                           `json:"status"`
 	UpdatedAt                 time.Time                               `json:"updated_at"`
 	Version                   int                                     `json:"version"`
@@ -3041,6 +3514,17 @@ type AccountTarget struct {
 
 // AccountTargetTargetKind defines model for AccountTarget.TargetKind.
 type AccountTargetTargetKind string
+
+// ActivateBotRequest defines model for ActivateBotRequest.
+type ActivateBotRequest struct {
+	AgentId                   string          `json:"agent_id"`
+	ConversationId            string          `json:"conversation_id"`
+	ExecutionServiceAccountId string          `json:"execution_service_account_id"`
+	ExpectedVersion           int             `json:"expected_version"`
+	Policy                    MessagingPolicy `json:"policy"`
+	TargetId                  string          `json:"target_id"`
+	TargetVersion             int             `json:"target_version"`
+}
 
 // ActivityMessage An activity progress message emitted between chat messages.
 type ActivityMessage struct {
@@ -3447,6 +3931,138 @@ type BinaryInputContent struct {
 // BinaryInputContentType defines model for BinaryInputContent.Type.
 type BinaryInputContentType string
 
+// BotCheck defines model for BotCheck.
+type BotCheck struct {
+	AccountId            string                              `json:"account_id"`
+	CheckedAt            time.Time                           `json:"checked_at"`
+	Conversation         nullable.Nullable[ConversationInfo] `json:"conversation,omitempty"`
+	ConversationId       nullable.Nullable[string]           `json:"conversation_id,omitempty"`
+	CredentialGeneration int                                 `json:"credential_generation"`
+	ErrorCode            nullable.Nullable[string]           `json:"error_code,omitempty"`
+	Installation         nullable.Nullable[InstallationInfo] `json:"installation,omitempty"`
+}
+
+// BotCheckHistory defines model for BotCheckHistory.
+type BotCheckHistory struct {
+	Latest nullable.Nullable[BotCheck] `json:"latest"`
+}
+
+// BotCheckRequest defines model for BotCheckRequest.
+type BotCheckRequest struct {
+	ConversationId  nullable.Nullable[string] `json:"conversation_id,omitempty"`
+	ExpectedVersion int                       `json:"expected_version"`
+}
+
+// BotCollection defines model for BotCollection.
+type BotCollection struct {
+	Items      []BotSummary              `json:"items"`
+	NextCursor nullable.Nullable[string] `json:"next_cursor"`
+}
+
+// BotReplyCollection defines model for BotReplyCollection.
+type BotReplyCollection struct {
+	Items      []BotReplyObservation     `json:"items"`
+	NextCursor nullable.Nullable[string] `json:"next_cursor"`
+}
+
+// BotReplyObservation defines model for BotReplyObservation.
+type BotReplyObservation struct {
+	AccountVersion       int                                            `json:"account_version"`
+	CredentialGeneration int                                            `json:"credential_generation"`
+	ErrorCode            nullable.Nullable[string]                      `json:"error_code"`
+	FinishedAt           nullable.Nullable[time.Time]                   `json:"finished_at"`
+	Id                   string                                         `json:"id"`
+	ProviderKey          BotReplyObservationProviderKey                 `json:"provider_key"`
+	Receipt              nullable.Nullable[BotReplyObservation_Receipt] `json:"receipt"`
+	RunAttemptId         string                                         `json:"run_attempt_id"`
+	RunId                string                                         `json:"run_id"`
+	StartedAt            time.Time                                      `json:"started_at"`
+	Status               BotReplyObservationStatus                      `json:"status"`
+	TargetId             nullable.Nullable[string]                      `json:"target_id"`
+	TestId               nullable.Nullable[string]                      `json:"test_id"`
+}
+
+// BotReplyObservationProviderKey defines model for BotReplyObservation.ProviderKey.
+type BotReplyObservationProviderKey string
+
+// BotReplyObservation_Receipt defines model for BotReplyObservation.Receipt.
+type BotReplyObservation_Receipt struct {
+	union json.RawMessage
+}
+
+// BotReplyObservationStatus defines model for BotReplyObservation.Status.
+type BotReplyObservationStatus string
+
+// BotSetup defines model for BotSetup.
+type BotSetup struct {
+	AccountId string                    `json:"account_id"`
+	EventPath string                    `json:"event_path"`
+	EventUrl  nullable.Nullable[string] `json:"event_url"`
+}
+
+// BotSummary defines model for BotSummary.
+type BotSummary struct {
+	Account                  Account                                `json:"account"`
+	CheckedAt                nullable.Nullable[time.Time]           `json:"checked_at"`
+	ConfiguredTargetCount    int                                    `json:"configured_target_count"`
+	ExternalOrganizationId   nullable.Nullable[string]              `json:"external_organization_id"`
+	ExternalOrganizationName nullable.Nullable[string]              `json:"external_organization_name"`
+	SetupCondition           BotSummarySetupCondition               `json:"setup_condition"`
+	TestObservedAt           nullable.Nullable[time.Time]           `json:"test_observed_at"`
+	TestStage                nullable.Nullable[BotSummaryTestStage] `json:"test_stage"`
+}
+
+// BotSummarySetupCondition defines model for BotSummary.SetupCondition.
+type BotSummarySetupCondition string
+
+// BotSummaryTestStage defines model for BotSummary.TestStage.
+type BotSummaryTestStage string
+
+// BotTest defines model for BotTest.
+type BotTest struct {
+	AcceptedAt           nullable.Nullable[time.Time]           `json:"accepted_at"`
+	AccountId            string                                 `json:"account_id"`
+	AccountVersion       int                                    `json:"account_version"`
+	AdmissionId          nullable.Nullable[string]              `json:"admission_id"`
+	CreatedAt            time.Time                              `json:"created_at"`
+	CredentialGeneration int                                    `json:"credential_generation"`
+	EventReceivedAt      nullable.Nullable[time.Time]           `json:"event_received_at"`
+	ExpiresAt            time.Time                              `json:"expires_at"`
+	ExternalTargetId     string                                 `json:"external_target_id"`
+	Id                   string                                 `json:"id"`
+	RejectionCode        nullable.Nullable[string]              `json:"rejection_code"`
+	Reply                nullable.Nullable[BotReplyObservation] `json:"reply,omitempty"`
+	RunId                nullable.Nullable[string]              `json:"run_id"`
+	SessionId            nullable.Nullable[string]              `json:"session_id,omitempty"`
+	Stale                bool                                   `json:"stale"`
+	SteerId              nullable.Nullable[string]              `json:"steer_id"`
+	TargetId             string                                 `json:"target_id"`
+	TargetVersion        int                                    `json:"target_version"`
+	ThreadId             nullable.Nullable[string]              `json:"thread_id,omitempty"`
+}
+
+// BotTestHistory defines model for BotTestHistory.
+type BotTestHistory struct {
+	Latest nullable.Nullable[BotTest] `json:"latest"`
+}
+
+// BotThread defines model for BotThread.
+type BotThread struct {
+	AgentId   string    `json:"agent_id"`
+	BindingId string    `json:"binding_id"`
+	RunId     string    `json:"run_id"`
+	RunStatus RunStatus `json:"run_status"`
+	SessionId string    `json:"session_id"`
+	ThreadId  string    `json:"thread_id"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
+// BotThreadCollection defines model for BotThreadCollection.
+type BotThreadCollection struct {
+	Items      []BotThread               `json:"items"`
+	NextCursor nullable.Nullable[string] `json:"next_cursor"`
+}
+
 // ChangePasswordRequest defines model for ChangePasswordRequest.
 type ChangePasswordRequest struct {
 	CurrentPassword *string `json:"current_password,omitempty"`
@@ -3554,6 +4170,16 @@ type CompletePendingResolutionAction string
 type ConfigureMCPOAuthClientRequest struct {
 	Client          nullable.Nullable[MCPOAuthClientInput] `json:"client"`
 	ExpectedVersion int                                    `json:"expected_version"`
+}
+
+// ConfigureScope defines model for ConfigureScope.
+type ConfigureScope struct {
+	Enabled                *bool                  `json:"enabled,omitempty"`
+	ExpectedVersion        nullable.Nullable[int] `json:"expected_version,omitempty"`
+	ExternalConversationId string                 `json:"external_conversation_id"`
+	SaveOnRequest          *bool                  `json:"save_on_request,omitempty"`
+	Timezone               *string                `json:"timezone,omitempty"`
+	UseMemory              *bool                  `json:"use_memory,omitempty"`
 }
 
 // Connection defines model for Connection.
@@ -3774,18 +4400,46 @@ type ContinueRunRequest struct {
 	Labels *map[string]interface{} `json:"labels,omitempty"`
 }
 
+// ConversationCandidate defines model for ConversationCandidate.
+type ConversationCandidate struct {
+	Id   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// ConversationInfo defines model for ConversationInfo.
+type ConversationInfo struct {
+	Audience       ConversationInfoAudience  `json:"audience"`
+	External       nullable.Nullable[bool]   `json:"external"`
+	Id             string                    `json:"id"`
+	IsActive       nullable.Nullable[bool]   `json:"is_active"`
+	IsMember       nullable.Nullable[bool]   `json:"is_member"`
+	Name           string                    `json:"name"`
+	OrganizationId nullable.Nullable[string] `json:"organization_id,omitempty"`
+}
+
+// ConversationInfoAudience defines model for ConversationInfo.Audience.
+type ConversationInfoAudience string
+
+// ConversationPage defines model for ConversationPage.
+type ConversationPage struct {
+	Cursor nullable.Nullable[string] `json:"cursor,omitempty"`
+	Items  []ConversationCandidate   `json:"items"`
+}
+
 // CreateAccountRequest defines model for CreateAccountRequest.
 type CreateAccountRequest struct {
 	Credentials               *map[string]string                      `json:"credentials,omitempty"`
 	DefaultAgentId            nullable.Nullable[string]               `json:"default_agent_id,omitempty"`
 	ExecutionServiceAccountId nullable.Nullable[string]               `json:"execution_service_account_id,omitempty"`
 	InputBatching             nullable.Nullable[InputBatchingPolicy]  `json:"input_batching,omitempty"`
+	Memory                    nullable.Nullable[MemorySettings]       `json:"memory,omitempty"`
 	Name                      string                                  `json:"name"`
 	ProviderConfig            map[string]JsonValue                    `json:"provider_config"`
 	ProviderConfigVersion     string                                  `json:"provider_config_version"`
 	ProviderKey               string                                  `json:"provider_key"`
 	ProviderPolicy            nullable.Nullable[map[string]JsonValue] `json:"provider_policy,omitempty"`
 	ReceiveEnabled            *bool                                   `json:"receive_enabled,omitempty"`
+	ReceptionScope            *ReceptionScope                         `json:"reception_scope,omitempty"`
 }
 
 // CreateAgentRequest defines model for CreateAgentRequest.
@@ -3819,6 +4473,13 @@ type CreateAuthorizationRequest struct {
 // CreateAuthorizationRequestMethod defines model for CreateAuthorizationRequest.Method.
 type CreateAuthorizationRequestMethod string
 
+// CreateBotTest defines model for CreateBotTest.
+type CreateBotTest struct {
+	ExpectedVersion int    `json:"expected_version"`
+	TargetId        string `json:"target_id"`
+	TargetVersion   int    `json:"target_version"`
+}
+
 // CreateConnectionRequest defines model for CreateConnectionRequest.
 type CreateConnectionRequest struct {
 	Name   string                         `json:"name"`
@@ -3837,6 +4498,19 @@ type CreateConnectorProviderRequest struct {
 	Name          string               `json:"name"`
 	Type          string               `json:"type"`
 }
+
+// CreateDocument defines model for CreateDocument.
+type CreateDocument struct {
+	ActivityDate nullable.Nullable[openapi_types.Date] `json:"activity_date,omitempty"`
+	CorrectionOf nullable.Nullable[string]             `json:"correction_of,omitempty"`
+	Description  *string                               `json:"description,omitempty"`
+	Kind         *CreateDocumentKind                   `json:"kind,omitempty"`
+	Text         string                                `json:"text"`
+	Title        string                                `json:"title"`
+}
+
+// CreateDocumentKind defines model for CreateDocument.Kind.
+type CreateDocumentKind string
 
 // CreateHookSubscriptionRequest defines model for CreateHookSubscriptionRequest.
 type CreateHookSubscriptionRequest struct {
@@ -4039,6 +4713,74 @@ type DeveloperMessage struct {
 
 // DeveloperMessageRole defines model for DeveloperMessage.Role.
 type DeveloperMessageRole string
+
+// Document defines model for Document.
+type Document struct {
+	AccessReasons       *[]DocumentAccessReason      `json:"access_reasons,omitempty"`
+	ActivityDate        openapi_types.Date           `json:"activity_date"`
+	CorrectionOf        nullable.Nullable[string]    `json:"correction_of,omitempty"`
+	Description         string                       `json:"description"`
+	Id                  string                       `json:"id"`
+	Kind                DocumentKind                 `json:"kind"`
+	MoreAccessReasons   *bool                        `json:"more_access_reasons,omitempty"`
+	OwnerName           nullable.Nullable[string]    `json:"owner_name,omitempty"`
+	Path                string                       `json:"path"`
+	PublicationSourceId nullable.Nullable[string]    `json:"publication_source_id,omitempty"`
+	SavedAt             nullable.Nullable[time.Time] `json:"saved_at"`
+	ScopeId             string                       `json:"scope_id"`
+	Shared              *bool                        `json:"shared,omitempty"`
+	State               DocumentState                `json:"state"`
+	Text                string                       `json:"text"`
+	Timezone            string                       `json:"timezone"`
+	Title               string                       `json:"title"`
+	Version             *int                         `json:"version,omitempty"`
+}
+
+// DocumentKind defines model for Document.Kind.
+type DocumentKind string
+
+// DocumentState defines model for Document.State.
+type DocumentState string
+
+// DocumentAccessReason defines model for DocumentAccessReason.
+type DocumentAccessReason struct {
+	Kind       DocumentAccessReasonKind  `json:"kind"`
+	PolicyId   nullable.Nullable[string] `json:"policy_id,omitempty"`
+	PolicyName nullable.Nullable[string] `json:"policy_name,omitempty"`
+}
+
+// DocumentAccessReasonKind defines model for DocumentAccessReason.Kind.
+type DocumentAccessReasonKind string
+
+// DocumentCollection defines model for DocumentCollection.
+type DocumentCollection struct {
+	Items      []DocumentEntry           `json:"items"`
+	NextCursor nullable.Nullable[string] `json:"next_cursor,omitempty"`
+}
+
+// DocumentEntry defines model for DocumentEntry.
+type DocumentEntry struct {
+	ActivityDate        openapi_types.Date           `json:"activity_date"`
+	CorrectionOf        nullable.Nullable[string]    `json:"correction_of,omitempty"`
+	Description         string                       `json:"description"`
+	Id                  string                       `json:"id"`
+	Kind                DocumentEntryKind            `json:"kind"`
+	Path                string                       `json:"path"`
+	PublicationSourceId nullable.Nullable[string]    `json:"publication_source_id,omitempty"`
+	SavedAt             nullable.Nullable[time.Time] `json:"saved_at"`
+	ScopeId             string                       `json:"scope_id"`
+	Shared              *bool                        `json:"shared,omitempty"`
+	State               DocumentEntryState           `json:"state"`
+	Timezone            string                       `json:"timezone"`
+	Title               string                       `json:"title"`
+	Version             *int                         `json:"version,omitempty"`
+}
+
+// DocumentEntryKind defines model for DocumentEntry.Kind.
+type DocumentEntryKind string
+
+// DocumentEntryState defines model for DocumentEntry.State.
+type DocumentEntryState string
 
 // DocumentInputContent A document input content fragment.
 type DocumentInputContent struct {
@@ -4410,6 +5152,17 @@ type InputOverride struct {
 	Skills          nullable.Nullable[[]SkillSelection]          `json:"skills,omitempty"`
 }
 
+// InstallationInfo defines model for InstallationInfo.
+type InstallationInfo struct {
+	AppId            string                    `json:"app_id"`
+	BotId            string                    `json:"bot_id"`
+	BotName          string                    `json:"bot_name"`
+	Enabled          bool                      `json:"enabled"`
+	EnterpriseId     nullable.Nullable[string] `json:"enterprise_id,omitempty"`
+	OrganizationId   string                    `json:"organization_id"`
+	OrganizationName string                    `json:"organization_name"`
+}
+
 // InstrumentationScope defines model for InstrumentationScope.
 type InstrumentationScope struct {
 	Attributes nullable.Nullable[map[string]JsonValue] `json:"attributes"`
@@ -4504,6 +5257,14 @@ type JsonValue = interface{}
 // LabelsBody Complete replacement body for a resource label map.
 type LabelsBody struct {
 	Labels map[string]interface{} `json:"labels"`
+}
+
+// LarkReplyReceipt defines model for LarkReplyReceipt.
+type LarkReplyReceipt struct {
+	MessageId string                    `json:"message_id"`
+	RequestId string                    `json:"request_id"`
+	RootId    nullable.Nullable[string] `json:"root_id,omitempty"`
+	ThreadId  nullable.Nullable[string] `json:"thread_id,omitempty"`
 }
 
 // LaunchAuthorizationRequest defines model for LaunchAuthorizationRequest.
@@ -4723,6 +5484,17 @@ type MemoryCollection struct {
 	Pagination nullable.Nullable[MemoryPagination] `json:"pagination,omitempty"`
 }
 
+// MemoryIndex defines model for MemoryIndex.
+type MemoryIndex struct {
+	Entries    []DocumentEntry           `json:"entries"`
+	NextCursor nullable.Nullable[string] `json:"next_cursor,omitempty"`
+	Path       *MemoryIndexPath          `json:"path,omitempty"`
+	Text       string                    `json:"text"`
+}
+
+// MemoryIndexPath defines model for MemoryIndex.Path.
+type MemoryIndexPath string
+
 // MemoryPagination Native traversal; a null cursor means the final page of that traversal.
 type MemoryPagination struct {
 	NextCursor nullable.Nullable[string] `json:"next_cursor"`
@@ -4755,6 +5527,7 @@ type MemoryProviderDefinition struct {
 	ConfigurationSchema map[string]interface{} `json:"configuration_schema"`
 	CredentialSchema    map[string]interface{} `json:"credential_schema"`
 	DisplayName         string                 `json:"display_name"`
+	SupportsDocuments   *bool                  `json:"supports_documents,omitempty"`
 	Type                string                 `json:"type"`
 }
 
@@ -4799,10 +5572,30 @@ type MemorySelection struct {
 	Toolset         *bool                          `json:"toolset,omitempty"`
 }
 
+// MemorySettings defines model for MemorySettings.
+type MemorySettings struct {
+	ProviderId    string  `json:"provider_id"`
+	SaveOnRequest *bool   `json:"save_on_request,omitempty"`
+	Timezone      *string `json:"timezone,omitempty"`
+	UseMemory     *bool   `json:"use_memory,omitempty"`
+}
+
 // MemoryWrite defines model for MemoryWrite.
 type MemoryWrite struct {
 	Text string `json:"text"`
 }
+
+// MessagingPolicy defines model for MessagingPolicy.
+type MessagingPolicy struct {
+	InteractionMode MessagingPolicyInteractionMode `json:"interaction_mode"`
+	ReplyMode       MessagingPolicyReplyMode       `json:"reply_mode"`
+}
+
+// MessagingPolicyInteractionMode defines model for MessagingPolicy.InteractionMode.
+type MessagingPolicyInteractionMode string
+
+// MessagingPolicyReplyMode defines model for MessagingPolicy.ReplyMode.
+type MessagingPolicyReplyMode string
 
 // Model defines model for Model.
 type Model struct {
@@ -5229,6 +6022,26 @@ type ProtocolLimits struct {
 	MaxOutputBytes *int `json:"max_output_bytes,omitempty"`
 }
 
+// PublicationAccess defines model for PublicationAccess.
+type PublicationAccess struct {
+	RecipientScopeIds []string `json:"recipient_scope_ids"`
+	Version           int      `json:"version"`
+}
+
+// PublicationAudience defines model for PublicationAudience.
+type PublicationAudience struct {
+	ExpectedVersion   int      `json:"expected_version"`
+	RecipientScopeIds []string `json:"recipient_scope_ids"`
+}
+
+// PublishDocument defines model for PublishDocument.
+type PublishDocument struct {
+	Description       *string  `json:"description,omitempty"`
+	RecipientScopeIds []string `json:"recipient_scope_ids"`
+	Text              string   `json:"text"`
+	Title             string   `json:"title"`
+}
+
 // QueuedSubmission defines model for QueuedSubmission.
 type QueuedSubmission struct {
 	AuthorityPrincipal     PrincipalRef                               `json:"authority_principal"`
@@ -5296,6 +6109,9 @@ type ReceiveAuthorizationRequest struct {
 	SessionUri   nullable.Nullable[string] `json:"session_uri,omitempty"`
 }
 
+// ReceptionScope defines model for ReceptionScope.
+type ReceptionScope string
+
 // RegisterEnvironmentRequest defines model for RegisterEnvironmentRequest.
 type RegisterEnvironmentRequest struct {
 	Access                     *EnvironmentAccess                  `json:"access,omitempty"`
@@ -5339,6 +6155,20 @@ type ReplaceConnectorProviderCredentialsRequest struct {
 type ReplaceCredentialRequest struct {
 	Credential nullable.Nullable[map[string]JsonValue] `json:"credential"`
 }
+
+// ReplaceSharingPolicy defines model for ReplaceSharingPolicy.
+type ReplaceSharingPolicy struct {
+	Enabled            *bool                        `json:"enabled,omitempty"`
+	EnrollFutureGroups *bool                        `json:"enroll_future_groups,omitempty"`
+	ExpectedVersion    int                          `json:"expected_version"`
+	IncludeHistory     *bool                        `json:"include_history,omitempty"`
+	Kinds              *[]ReplaceSharingPolicyKinds `json:"kinds,omitempty"`
+	Name               string                       `json:"name"`
+	ScopeIds           []string                     `json:"scope_ids"`
+}
+
+// ReplaceSharingPolicyKinds defines model for ReplaceSharingPolicy.Kinds.
+type ReplaceSharingPolicyKinds string
 
 // ReplaceTargetRequest defines model for ReplaceTargetRequest.
 type ReplaceTargetRequest struct {
@@ -5631,6 +6461,37 @@ type SafeFailure struct {
 // SafeFailureRetryHint defines model for SafeFailure.RetryHint.
 type SafeFailureRetryHint string
 
+// Scope defines model for Scope.
+type Scope struct {
+	AccountId              string        `json:"account_id"`
+	Audience               ScopeAudience `json:"audience"`
+	Enabled                *bool         `json:"enabled,omitempty"`
+	ExternalConversationId string        `json:"external_conversation_id"`
+	Id                     string        `json:"id"`
+	Name                   string        `json:"name"`
+	ProviderId             string        `json:"provider_id"`
+	SaveOnRequest          *bool         `json:"save_on_request,omitempty"`
+	Timezone               *string       `json:"timezone,omitempty"`
+	UseMemory              *bool         `json:"use_memory,omitempty"`
+	Version                int           `json:"version"`
+}
+
+// ScopeAudience defines model for Scope.Audience.
+type ScopeAudience string
+
+// ScopeCollection defines model for ScopeCollection.
+type ScopeCollection struct {
+	Items      []Scope                   `json:"items"`
+	NextCursor nullable.Nullable[string] `json:"next_cursor,omitempty"`
+}
+
+// SearchDocuments defines model for SearchDocuments.
+type SearchDocuments struct {
+	IncludeShared *bool  `json:"include_shared,omitempty"`
+	Limit         *int   `json:"limit,omitempty"`
+	Query         string `json:"query"`
+}
+
 // SearchIn defines model for SearchIn.
 type SearchIn string
 
@@ -5707,6 +6568,49 @@ type SetRoleRequest struct {
 
 // SetRoleRequestRole defines model for SetRoleRequest.Role.
 type SetRoleRequestRole string
+
+// SharingParticipant defines model for SharingParticipant.
+type SharingParticipant struct {
+	JoinedAt time.Time `json:"joined_at"`
+	ScopeId  string    `json:"scope_id"`
+}
+
+// SharingPolicy defines model for SharingPolicy.
+type SharingPolicy struct {
+	CreatedAt          time.Time             `json:"created_at"`
+	Enabled            *bool                 `json:"enabled,omitempty"`
+	EnrollFutureGroups *bool                 `json:"enroll_future_groups,omitempty"`
+	FutureSince        time.Time             `json:"future_since"`
+	Id                 string                `json:"id"`
+	IncludeHistory     *bool                 `json:"include_history,omitempty"`
+	Kinds              *[]SharingPolicyKinds `json:"kinds,omitempty"`
+	Name               string                `json:"name"`
+	Participants       []SharingParticipant  `json:"participants"`
+	ScopeIds           []string              `json:"scope_ids"`
+	Version            int                   `json:"version"`
+}
+
+// SharingPolicyKinds defines model for SharingPolicy.Kinds.
+type SharingPolicyKinds string
+
+// SharingPolicyCollection defines model for SharingPolicyCollection.
+type SharingPolicyCollection struct {
+	Items      []SharingPolicy           `json:"items"`
+	NextCursor nullable.Nullable[string] `json:"next_cursor,omitempty"`
+}
+
+// SharingPolicyInput defines model for SharingPolicyInput.
+type SharingPolicyInput struct {
+	Enabled            *bool                      `json:"enabled,omitempty"`
+	EnrollFutureGroups *bool                      `json:"enroll_future_groups,omitempty"`
+	IncludeHistory     *bool                      `json:"include_history,omitempty"`
+	Kinds              *[]SharingPolicyInputKinds `json:"kinds,omitempty"`
+	Name               string                     `json:"name"`
+	ScopeIds           []string                   `json:"scope_ids"`
+}
+
+// SharingPolicyInputKinds defines model for SharingPolicyInput.Kinds.
+type SharingPolicyInputKinds string
 
 // Skill defines model for Skill.
 type Skill struct {
@@ -5838,6 +6742,14 @@ type SkillUploadReceipt struct {
 	Manifest             SkillPackageManifest      `json:"manifest"`
 	UploadId             string                    `json:"upload_id"`
 	WorkspaceId          string                    `json:"workspace_id"`
+}
+
+// SlackReplyReceipt defines model for SlackReplyReceipt.
+type SlackReplyReceipt struct {
+	ChannelId    string `json:"channel_id"`
+	MessageTs    string `json:"message_ts"`
+	RequestId    string `json:"request_id"`
+	RootThreadTs string `json:"root_thread_ts"`
 }
 
 // StartRunRequest defines model for StartRunRequest.
@@ -6300,10 +7212,12 @@ type UpdateAccountRequest struct {
 	ExecutionServiceAccountId nullable.Nullable[string]               `json:"execution_service_account_id,omitempty"`
 	ExpectedVersion           int                                     `json:"expected_version"`
 	InputBatching             nullable.Nullable[InputBatchingPolicy]  `json:"input_batching,omitempty"`
+	Memory                    nullable.Nullable[MemorySettings]       `json:"memory,omitempty"`
 	Name                      nullable.Nullable[string]               `json:"name,omitempty"`
 	ProviderConfig            nullable.Nullable[map[string]JsonValue] `json:"provider_config,omitempty"`
 	ProviderPolicy            nullable.Nullable[map[string]JsonValue] `json:"provider_policy,omitempty"`
 	ReceiveEnabled            nullable.Nullable[bool]                 `json:"receive_enabled,omitempty"`
+	ReceptionScope            nullable.Nullable[ReceptionScope]       `json:"reception_scope,omitempty"`
 }
 
 // UpdateAgentRequest defines model for UpdateAgentRequest.
@@ -6670,6 +7584,11 @@ type WebhookDestinationConfig struct {
 // WebhookDestinationConfigSignatureProfile defines model for WebhookDestinationConfig.SignatureProfile.
 type WebhookDestinationConfigSignatureProfile string
 
+// WithdrawPublication defines model for WithdrawPublication.
+type WithdrawPublication struct {
+	ExpectedVersion int `json:"expected_version"`
+}
+
 // Workspace defines model for Workspace.
 type Workspace struct {
 	CreatedAt      time.Time                 `json:"created_at"`
@@ -6721,9 +7640,93 @@ type DeleteApplicationAccountsAccountIdParams struct {
 	ExpectedVersion int `form:"expected_version" json:"expected_version"`
 }
 
+// GetApplicationAccountsAccountIdBotChecksLatestParams defines parameters for GetApplicationAccountsAccountIdBotChecksLatest.
+type GetApplicationAccountsAccountIdBotChecksLatestParams struct {
+	ConversationId *string `form:"conversation_id,omitempty" json:"conversation_id,omitempty"`
+}
+
+// GetApplicationAccountsAccountIdBotConversationsParams defines parameters for GetApplicationAccountsAccountIdBotConversations.
+type GetApplicationAccountsAccountIdBotConversationsParams struct {
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// GetApplicationAccountsAccountIdBotRepliesParams defines parameters for GetApplicationAccountsAccountIdBotReplies.
+type GetApplicationAccountsAccountIdBotRepliesParams struct {
+	RunId  string  `form:"run_id" json:"run_id"`
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// PostApplicationAccountsAccountIdBotTestsParams defines parameters for PostApplicationAccountsAccountIdBotTests.
+type PostApplicationAccountsAccountIdBotTestsParams struct {
+	IdempotencyKey string `json:"Idempotency-Key"`
+}
+
+// GetApplicationAccountsAccountIdBotThreadsParams defines parameters for GetApplicationAccountsAccountIdBotThreads.
+type GetApplicationAccountsAccountIdBotThreadsParams struct {
+	TargetId *string `form:"target_id,omitempty" json:"target_id,omitempty"`
+	Limit    *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor   *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
 // PutApplicationAccountsAccountIdCredentialsParams defines parameters for PutApplicationAccountsAccountIdCredentials.
 type PutApplicationAccountsAccountIdCredentialsParams struct {
 	IdempotencyKey string `json:"Idempotency-Key"`
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesParams defines parameters for GetApplicationAccountsAccountIdMemoryScopes.
+type GetApplicationAccountsAccountIdMemoryScopesParams struct {
+	ProviderId string  `form:"provider_id" json:"provider_id"`
+	Limit      *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor     *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	TargetId   *string `form:"target_id,omitempty" json:"target_id,omitempty"`
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsParams defines parameters for GetApplicationAccountsAccountIdMemoryScopesScopeIdDocuments.
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsParams struct {
+	Limit         *int                                                                   `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor        *string                                                                `form:"cursor,omitempty" json:"cursor,omitempty"`
+	ActivityDate  *openapi_types.Date                                                    `form:"activity_date,omitempty" json:"activity_date,omitempty"`
+	Kind          *GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsParamsKind `form:"kind,omitempty" json:"kind,omitempty"`
+	IncludeShared *bool                                                                  `form:"include_shared,omitempty" json:"include_shared,omitempty"`
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsParamsKind defines parameters for GetApplicationAccountsAccountIdMemoryScopesScopeIdDocuments.
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsParamsKind string
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsParams defines parameters for PostApplicationAccountsAccountIdMemoryScopesScopeIdDocuments.
+type PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsParams struct {
+	IdempotencyKey string `json:"Idempotency-Key"`
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsParams defines parameters for PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublications.
+type PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsParams struct {
+	IdempotencyKey string `json:"Idempotency-Key"`
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexParams defines parameters for GetApplicationAccountsAccountIdMemoryScopesScopeIdIndex.
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexParams struct {
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsParams defines parameters for GetApplicationAccountsAccountIdMemoryScopesScopeIdOperations.
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsParams struct {
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsParams defines parameters for GetApplicationAccountsAccountIdMemoryScopesScopeIdPublications.
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsParams struct {
+	SourceId *string `form:"source_id,omitempty" json:"source_id,omitempty"`
+	Limit    *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor   *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// GetApplicationAccountsAccountIdMemorySharingPoliciesParams defines parameters for GetApplicationAccountsAccountIdMemorySharingPolicies.
+type GetApplicationAccountsAccountIdMemorySharingPoliciesParams struct {
+	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
 }
 
 // GetApplicationAccountsAccountIdTargetsParams defines parameters for GetApplicationAccountsAccountIdTargets.
@@ -7291,8 +8294,9 @@ type GetWorkspacesWorkspaceApiKeysParams struct {
 
 // GetWorkspacesWorkspaceApplicationAccountsParams defines parameters for GetWorkspacesWorkspaceApplicationAccounts.
 type GetWorkspacesWorkspaceApplicationAccountsParams struct {
-	Limit  *int    `form:"limit,omitempty" json:"limit,omitempty"`
-	Cursor *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Limit    *int    `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor   *string `form:"cursor,omitempty" json:"cursor,omitempty"`
+	BotsOnly *bool   `form:"bots_only,omitempty" json:"bots_only,omitempty"`
 }
 
 // PostWorkspacesWorkspaceApplicationAccountsParams defines parameters for PostWorkspacesWorkspaceApplicationAccounts.
@@ -7314,6 +8318,21 @@ type PostWorkspacesWorkspaceAssetsParams struct {
 	MediaType      *string `form:"media_type,omitempty" json:"media_type,omitempty"`
 	IdempotencyKey string  `json:"Idempotency-Key"`
 }
+
+// GetWorkspacesWorkspaceBotsParams defines parameters for GetWorkspacesWorkspaceBots.
+type GetWorkspacesWorkspaceBotsParams struct {
+	Limit     *int                                       `form:"limit,omitempty" json:"limit,omitempty"`
+	Cursor    *string                                    `form:"cursor,omitempty" json:"cursor,omitempty"`
+	Platform  *GetWorkspacesWorkspaceBotsParamsPlatform  `form:"platform,omitempty" json:"platform,omitempty"`
+	Condition *GetWorkspacesWorkspaceBotsParamsCondition `form:"condition,omitempty" json:"condition,omitempty"`
+	Search    *string                                    `form:"search,omitempty" json:"search,omitempty"`
+}
+
+// GetWorkspacesWorkspaceBotsParamsPlatform defines parameters for GetWorkspacesWorkspaceBots.
+type GetWorkspacesWorkspaceBotsParamsPlatform string
+
+// GetWorkspacesWorkspaceBotsParamsCondition defines parameters for GetWorkspacesWorkspaceBots.
+type GetWorkspacesWorkspaceBotsParamsCondition string
 
 // GetWorkspacesWorkspaceConnectionsParams defines parameters for GetWorkspacesWorkspaceConnections.
 type GetWorkspacesWorkspaceConnectionsParams struct {
@@ -7589,9 +8608,11 @@ type GetWorkspacesWorkspaceTracesParams struct {
 	Cursor       *string    `form:"cursor,omitempty" json:"cursor,omitempty"`
 	Query        *string    `form:"query,omitempty" json:"query,omitempty"`
 	SearchIn     *SearchIn  `form:"search_in,omitempty" json:"search_in,omitempty"`
+	SessionId    *string    `form:"session_id,omitempty" json:"session_id,omitempty"`
 	ThreadId     *string    `form:"thread_id,omitempty" json:"thread_id,omitempty"`
 	RunId        *string    `form:"run_id,omitempty" json:"run_id,omitempty"`
 	RunAttemptId *string    `form:"run_attempt_id,omitempty" json:"run_attempt_id,omitempty"`
+	Metadata     *[]string  `form:"metadata,omitempty" json:"metadata,omitempty"`
 	View         *TraceView `form:"view,omitempty" json:"view,omitempty"`
 }
 
@@ -7629,8 +8650,41 @@ type GetWorkspacesWorkspaceWebProvidersProviderIdReferencesParams struct {
 // PatchApplicationAccountsAccountIdJSONRequestBody defines body for PatchApplicationAccountsAccountId for application/json ContentType.
 type PatchApplicationAccountsAccountIdJSONRequestBody = UpdateAccountRequest
 
+// PostApplicationAccountsAccountIdBotActivateJSONRequestBody defines body for PostApplicationAccountsAccountIdBotActivate for application/json ContentType.
+type PostApplicationAccountsAccountIdBotActivateJSONRequestBody = ActivateBotRequest
+
+// PostApplicationAccountsAccountIdBotChecksJSONRequestBody defines body for PostApplicationAccountsAccountIdBotChecks for application/json ContentType.
+type PostApplicationAccountsAccountIdBotChecksJSONRequestBody = BotCheckRequest
+
+// PostApplicationAccountsAccountIdBotTestsJSONRequestBody defines body for PostApplicationAccountsAccountIdBotTests for application/json ContentType.
+type PostApplicationAccountsAccountIdBotTestsJSONRequestBody = CreateBotTest
+
 // PutApplicationAccountsAccountIdCredentialsJSONRequestBody defines body for PutApplicationAccountsAccountIdCredentials for application/json ContentType.
 type PutApplicationAccountsAccountIdCredentialsJSONRequestBody = ReplaceAccountCredentialsRequest
+
+// PostApplicationAccountsAccountIdMemoryScopesJSONRequestBody defines body for PostApplicationAccountsAccountIdMemoryScopes for application/json ContentType.
+type PostApplicationAccountsAccountIdMemoryScopesJSONRequestBody = ConfigureScope
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsJSONRequestBody defines body for PostApplicationAccountsAccountIdMemoryScopesScopeIdDocuments for application/json ContentType.
+type PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsJSONRequestBody = CreateDocument
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchJSONRequestBody defines body for PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearch for application/json ContentType.
+type PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchJSONRequestBody = SearchDocuments
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsJSONRequestBody defines body for PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublications for application/json ContentType.
+type PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsJSONRequestBody = PublishDocument
+
+// PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceJSONRequestBody defines body for PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience for application/json ContentType.
+type PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceJSONRequestBody = PublicationAudience
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawJSONRequestBody defines body for PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdraw for application/json ContentType.
+type PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawJSONRequestBody = WithdrawPublication
+
+// PostApplicationAccountsAccountIdMemorySharingPoliciesJSONRequestBody defines body for PostApplicationAccountsAccountIdMemorySharingPolicies for application/json ContentType.
+type PostApplicationAccountsAccountIdMemorySharingPoliciesJSONRequestBody = SharingPolicyInput
+
+// PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdJSONRequestBody defines body for PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyId for application/json ContentType.
+type PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdJSONRequestBody = ReplaceSharingPolicy
 
 // PostApplicationAccountsAccountIdTargetsJSONRequestBody defines body for PostApplicationAccountsAccountIdTargets for application/json ContentType.
 type PostApplicationAccountsAccountIdTargetsJSONRequestBody = TargetConfig
@@ -10858,6 +11912,68 @@ func (t *BinaryContent_Source) UnmarshalJSON(b []byte) error {
 	return err
 }
 
+// AsSlackReplyReceipt returns the union data inside the BotReplyObservation_Receipt as a SlackReplyReceipt
+func (t BotReplyObservation_Receipt) AsSlackReplyReceipt() (SlackReplyReceipt, error) {
+	var body SlackReplyReceipt
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromSlackReplyReceipt overwrites any union data inside the BotReplyObservation_Receipt as the provided SlackReplyReceipt
+func (t *BotReplyObservation_Receipt) FromSlackReplyReceipt(v SlackReplyReceipt) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeSlackReplyReceipt performs a merge with any union data inside the BotReplyObservation_Receipt, using the provided SlackReplyReceipt
+func (t *BotReplyObservation_Receipt) MergeSlackReplyReceipt(v SlackReplyReceipt) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsLarkReplyReceipt returns the union data inside the BotReplyObservation_Receipt as a LarkReplyReceipt
+func (t BotReplyObservation_Receipt) AsLarkReplyReceipt() (LarkReplyReceipt, error) {
+	var body LarkReplyReceipt
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromLarkReplyReceipt overwrites any union data inside the BotReplyObservation_Receipt as the provided LarkReplyReceipt
+func (t *BotReplyObservation_Receipt) FromLarkReplyReceipt(v LarkReplyReceipt) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeLarkReplyReceipt performs a merge with any union data inside the BotReplyObservation_Receipt, using the provided LarkReplyReceipt
+func (t *BotReplyObservation_Receipt) MergeLarkReplyReceipt(v LarkReplyReceipt) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t BotReplyObservation_Receipt) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *BotReplyObservation_Receipt) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
 // AsConnectorSource returns the union data inside the Connection_Source as a ConnectorSource
 func (t Connection_Source) AsConnectorSource() (ConnectorSource, error) {
 	var body ConnectorSource
@@ -12850,6 +13966,88 @@ type ClientInterface interface {
 	// Corresponds with PATCH /api/v1/application-accounts/{account_id} (the `PatchApplicationAccountsAccountId` operationId).
 	PatchApplicationAccountsAccountId(ctx context.Context, accountId string, body PatchApplicationAccountsAccountIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// PostApplicationAccountsAccountIdBotActivateWithBody Activate Bot
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/bot/activate (the `PostApplicationAccountsAccountIdBotActivate` operationId).
+	PostApplicationAccountsAccountIdBotActivateWithBody(ctx context.Context, accountId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostApplicationAccountsAccountIdBotActivate Activate Bot
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/bot/activate (the `PostApplicationAccountsAccountIdBotActivate` operationId).
+	PostApplicationAccountsAccountIdBotActivate(ctx context.Context, accountId string, body PostApplicationAccountsAccountIdBotActivateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostApplicationAccountsAccountIdBotChecksWithBody Check Bot
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/bot/checks (the `PostApplicationAccountsAccountIdBotChecks` operationId).
+	PostApplicationAccountsAccountIdBotChecksWithBody(ctx context.Context, accountId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostApplicationAccountsAccountIdBotChecks Check Bot
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/bot/checks (the `PostApplicationAccountsAccountIdBotChecks` operationId).
+	PostApplicationAccountsAccountIdBotChecks(ctx context.Context, accountId string, body PostApplicationAccountsAccountIdBotChecksJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApplicationAccountsAccountIdBotChecksLatest Latest Bot Check
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/checks/latest (the `GetApplicationAccountsAccountIdBotChecksLatest` operationId).
+	GetApplicationAccountsAccountIdBotChecksLatest(ctx context.Context, accountId string, params *GetApplicationAccountsAccountIdBotChecksLatestParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApplicationAccountsAccountIdBotConversations Discover Bot Conversations
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/conversations (the `GetApplicationAccountsAccountIdBotConversations` operationId).
+	GetApplicationAccountsAccountIdBotConversations(ctx context.Context, accountId string, params *GetApplicationAccountsAccountIdBotConversationsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApplicationAccountsAccountIdBotReplies List Bot Reply Observations
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/replies (the `GetApplicationAccountsAccountIdBotReplies` operationId).
+	GetApplicationAccountsAccountIdBotReplies(ctx context.Context, accountId string, params *GetApplicationAccountsAccountIdBotRepliesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApplicationAccountsAccountIdBotSetup Bot Setup
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/setup (the `GetApplicationAccountsAccountIdBotSetup` operationId).
+	GetApplicationAccountsAccountIdBotSetup(ctx context.Context, accountId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApplicationAccountsAccountIdBotSummary Bot Summary
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/summary (the `GetApplicationAccountsAccountIdBotSummary` operationId).
+	GetApplicationAccountsAccountIdBotSummary(ctx context.Context, accountId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostApplicationAccountsAccountIdBotTestsWithBody Create Bot Setup Test
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/bot/tests (the `PostApplicationAccountsAccountIdBotTests` operationId).
+	PostApplicationAccountsAccountIdBotTestsWithBody(ctx context.Context, accountId string, params *PostApplicationAccountsAccountIdBotTestsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostApplicationAccountsAccountIdBotTests Create Bot Setup Test
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/bot/tests (the `PostApplicationAccountsAccountIdBotTests` operationId).
+	PostApplicationAccountsAccountIdBotTests(ctx context.Context, accountId string, params *PostApplicationAccountsAccountIdBotTestsParams, body PostApplicationAccountsAccountIdBotTestsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApplicationAccountsAccountIdBotTestsLatest Latest Bot Setup Test
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/tests/latest (the `GetApplicationAccountsAccountIdBotTestsLatest` operationId).
+	GetApplicationAccountsAccountIdBotTestsLatest(ctx context.Context, accountId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApplicationAccountsAccountIdBotTestsTestId Get Bot Setup Test
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/tests/{test_id} (the `GetApplicationAccountsAccountIdBotTestsTestId` operationId).
+	GetApplicationAccountsAccountIdBotTestsTestId(ctx context.Context, accountId string, testId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApplicationAccountsAccountIdBotThreads List Bot Conversation Threads
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/threads (the `GetApplicationAccountsAccountIdBotThreads` operationId).
+	GetApplicationAccountsAccountIdBotThreads(ctx context.Context, accountId string, params *GetApplicationAccountsAccountIdBotThreadsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// PutApplicationAccountsAccountIdCredentialsWithBody Replace Account Credentials
 	//
 	// Takes any type of body and a specified content type.
@@ -12863,6 +14061,178 @@ type ClientInterface interface {
 	//
 	// Corresponds with PUT /api/v1/application-accounts/{account_id}/credentials (the `PutApplicationAccountsAccountIdCredentials` operationId).
 	PutApplicationAccountsAccountIdCredentials(ctx context.Context, accountId string, params *PutApplicationAccountsAccountIdCredentialsParams, body PutApplicationAccountsAccountIdCredentialsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApplicationAccountsAccountIdMemoryScopes Scopes
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes (the `GetApplicationAccountsAccountIdMemoryScopes` operationId).
+	GetApplicationAccountsAccountIdMemoryScopes(ctx context.Context, accountId string, params *GetApplicationAccountsAccountIdMemoryScopesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostApplicationAccountsAccountIdMemoryScopesWithBody Configure
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes (the `PostApplicationAccountsAccountIdMemoryScopes` operationId).
+	PostApplicationAccountsAccountIdMemoryScopesWithBody(ctx context.Context, accountId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostApplicationAccountsAccountIdMemoryScopes Configure
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes (the `PostApplicationAccountsAccountIdMemoryScopes` operationId).
+	PostApplicationAccountsAccountIdMemoryScopes(ctx context.Context, accountId string, body PostApplicationAccountsAccountIdMemoryScopesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApplicationAccountsAccountIdMemoryScopesScopeIdDocuments Documents
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdDocuments` operationId).
+	GetApplicationAccountsAccountIdMemoryScopesScopeIdDocuments(ctx context.Context, accountId string, scopeId string, params *GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsWithBody Add
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdDocuments` operationId).
+	PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsWithBody(ctx context.Context, accountId string, scopeId string, params *PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocuments Add
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdDocuments` operationId).
+	PostApplicationAccountsAccountIdMemoryScopesScopeIdDocuments(ctx context.Context, accountId string, scopeId string, params *PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsParams, body PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchWithBody Search
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/search (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearch` operationId).
+	PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchWithBody(ctx context.Context, accountId string, scopeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearch Search
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/search (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearch` operationId).
+	PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearch(ctx context.Context, accountId string, scopeId string, body PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentId Remove
+	//
+	// Corresponds with DELETE /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/{document_id} (the `DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentId` operationId).
+	DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentId(ctx context.Context, accountId string, scopeId string, documentId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentId Get
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/{document_id} (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentId` operationId).
+	GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentId(ctx context.Context, accountId string, scopeId string, documentId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsWithBody Publish Document
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/{document_id}/publications (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublications` operationId).
+	PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsWithBody(ctx context.Context, accountId string, scopeId string, documentId string, params *PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublications Publish Document
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/{document_id}/publications (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublications` operationId).
+	PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublications(ctx context.Context, accountId string, scopeId string, documentId string, params *PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsParams, body PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApplicationAccountsAccountIdMemoryScopesScopeIdIndex Index
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/index (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdIndex` operationId).
+	GetApplicationAccountsAccountIdMemoryScopesScopeIdIndex(ctx context.Context, accountId string, scopeId string, params *GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApplicationAccountsAccountIdMemoryScopesScopeIdOperations Operations
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/operations (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdOperations` operationId).
+	GetApplicationAccountsAccountIdMemoryScopesScopeIdOperations(ctx context.Context, accountId string, scopeId string, params *GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentId Operation Status
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/operations/{document_id} (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentId` operationId).
+	GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentId(ctx context.Context, accountId string, scopeId string, documentId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcile Reconcile Operation
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/operations/{document_id}/reconcile (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcile` operationId).
+	PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcile(ctx context.Context, accountId string, scopeId string, documentId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApplicationAccountsAccountIdMemoryScopesScopeIdPublications Publications
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdPublications` operationId).
+	GetApplicationAccountsAccountIdMemoryScopesScopeIdPublications(ctx context.Context, accountId string, scopeId string, params *GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentId Publication
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id} (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentId` operationId).
+	GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentId(ctx context.Context, accountId string, scopeId string, documentId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience Publication Audience
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}/audience (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience` operationId).
+	GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience(ctx context.Context, accountId string, scopeId string, documentId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceWithBody Change Audience
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PATCH /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}/audience (the `PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience` operationId).
+	PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceWithBody(ctx context.Context, accountId string, scopeId string, documentId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience Change Audience
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PATCH /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}/audience (the `PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience` operationId).
+	PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience(ctx context.Context, accountId string, scopeId string, documentId string, body PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawWithBody Withdraw Publication
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}/withdraw (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdraw` operationId).
+	PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawWithBody(ctx context.Context, accountId string, scopeId string, documentId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdraw Withdraw Publication
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}/withdraw (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdraw` operationId).
+	PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdraw(ctx context.Context, accountId string, scopeId string, documentId string, body PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetApplicationAccountsAccountIdMemorySharingPolicies Policies
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-sharing-policies (the `GetApplicationAccountsAccountIdMemorySharingPolicies` operationId).
+	GetApplicationAccountsAccountIdMemorySharingPolicies(ctx context.Context, accountId string, params *GetApplicationAccountsAccountIdMemorySharingPoliciesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostApplicationAccountsAccountIdMemorySharingPoliciesWithBody New Policy
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-sharing-policies (the `PostApplicationAccountsAccountIdMemorySharingPolicies` operationId).
+	PostApplicationAccountsAccountIdMemorySharingPoliciesWithBody(ctx context.Context, accountId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PostApplicationAccountsAccountIdMemorySharingPolicies New Policy
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-sharing-policies (the `PostApplicationAccountsAccountIdMemorySharingPolicies` operationId).
+	PostApplicationAccountsAccountIdMemorySharingPolicies(ctx context.Context, accountId string, body PostApplicationAccountsAccountIdMemorySharingPoliciesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdWithBody Replace Policy
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with PUT /api/v1/application-accounts/{account_id}/memory-sharing-policies/{policy_id} (the `PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyId` operationId).
+	PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdWithBody(ctx context.Context, accountId string, policyId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyId Replace Policy
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with PUT /api/v1/application-accounts/{account_id}/memory-sharing-policies/{policy_id} (the `PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyId` operationId).
+	PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyId(ctx context.Context, accountId string, policyId string, body PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetApplicationAccountsAccountIdTargets List Targets
 	//
@@ -14677,6 +16047,11 @@ type ClientInterface interface {
 	// Corresponds with POST /api/v1/workspaces/{workspace}/assets (the `PostWorkspacesWorkspaceAssets` operationId).
 	PostWorkspacesWorkspaceAssetsWithBody(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceAssetsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetWorkspacesWorkspaceBots Bot Collection
+	//
+	// Corresponds with GET /api/v1/workspaces/{workspace}/bots (the `GetWorkspacesWorkspaceBots` operationId).
+	GetWorkspacesWorkspaceBots(ctx context.Context, workspace string, params *GetWorkspacesWorkspaceBotsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// GetWorkspacesWorkspaceConnections List Connections
 	//
 	// Corresponds with GET /api/v1/workspaces/{workspace}/connections (the `GetWorkspacesWorkspaceConnections` operationId).
@@ -15389,6 +16764,228 @@ func (c *Client) PatchApplicationAccountsAccountId(ctx context.Context, accountI
 	return c.Client.Do(req)
 }
 
+// PostApplicationAccountsAccountIdBotActivateWithBody Activate Bot
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/bot/activate (the `PostApplicationAccountsAccountIdBotActivate` operationId).
+func (c *Client) PostApplicationAccountsAccountIdBotActivateWithBody(ctx context.Context, accountId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApplicationAccountsAccountIdBotActivateRequestWithBody(c.Server, accountId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostApplicationAccountsAccountIdBotActivate Activate Bot
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/bot/activate (the `PostApplicationAccountsAccountIdBotActivate` operationId).
+func (c *Client) PostApplicationAccountsAccountIdBotActivate(ctx context.Context, accountId string, body PostApplicationAccountsAccountIdBotActivateJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApplicationAccountsAccountIdBotActivateRequest(c.Server, accountId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostApplicationAccountsAccountIdBotChecksWithBody Check Bot
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/bot/checks (the `PostApplicationAccountsAccountIdBotChecks` operationId).
+func (c *Client) PostApplicationAccountsAccountIdBotChecksWithBody(ctx context.Context, accountId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApplicationAccountsAccountIdBotChecksRequestWithBody(c.Server, accountId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostApplicationAccountsAccountIdBotChecks Check Bot
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/bot/checks (the `PostApplicationAccountsAccountIdBotChecks` operationId).
+func (c *Client) PostApplicationAccountsAccountIdBotChecks(ctx context.Context, accountId string, body PostApplicationAccountsAccountIdBotChecksJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApplicationAccountsAccountIdBotChecksRequest(c.Server, accountId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetApplicationAccountsAccountIdBotChecksLatest Latest Bot Check
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/checks/latest (the `GetApplicationAccountsAccountIdBotChecksLatest` operationId).
+func (c *Client) GetApplicationAccountsAccountIdBotChecksLatest(ctx context.Context, accountId string, params *GetApplicationAccountsAccountIdBotChecksLatestParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApplicationAccountsAccountIdBotChecksLatestRequest(c.Server, accountId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetApplicationAccountsAccountIdBotConversations Discover Bot Conversations
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/conversations (the `GetApplicationAccountsAccountIdBotConversations` operationId).
+func (c *Client) GetApplicationAccountsAccountIdBotConversations(ctx context.Context, accountId string, params *GetApplicationAccountsAccountIdBotConversationsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApplicationAccountsAccountIdBotConversationsRequest(c.Server, accountId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetApplicationAccountsAccountIdBotReplies List Bot Reply Observations
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/replies (the `GetApplicationAccountsAccountIdBotReplies` operationId).
+func (c *Client) GetApplicationAccountsAccountIdBotReplies(ctx context.Context, accountId string, params *GetApplicationAccountsAccountIdBotRepliesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApplicationAccountsAccountIdBotRepliesRequest(c.Server, accountId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetApplicationAccountsAccountIdBotSetup Bot Setup
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/setup (the `GetApplicationAccountsAccountIdBotSetup` operationId).
+func (c *Client) GetApplicationAccountsAccountIdBotSetup(ctx context.Context, accountId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApplicationAccountsAccountIdBotSetupRequest(c.Server, accountId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetApplicationAccountsAccountIdBotSummary Bot Summary
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/summary (the `GetApplicationAccountsAccountIdBotSummary` operationId).
+func (c *Client) GetApplicationAccountsAccountIdBotSummary(ctx context.Context, accountId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApplicationAccountsAccountIdBotSummaryRequest(c.Server, accountId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostApplicationAccountsAccountIdBotTestsWithBody Create Bot Setup Test
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/bot/tests (the `PostApplicationAccountsAccountIdBotTests` operationId).
+func (c *Client) PostApplicationAccountsAccountIdBotTestsWithBody(ctx context.Context, accountId string, params *PostApplicationAccountsAccountIdBotTestsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApplicationAccountsAccountIdBotTestsRequestWithBody(c.Server, accountId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostApplicationAccountsAccountIdBotTests Create Bot Setup Test
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/bot/tests (the `PostApplicationAccountsAccountIdBotTests` operationId).
+func (c *Client) PostApplicationAccountsAccountIdBotTests(ctx context.Context, accountId string, params *PostApplicationAccountsAccountIdBotTestsParams, body PostApplicationAccountsAccountIdBotTestsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApplicationAccountsAccountIdBotTestsRequest(c.Server, accountId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetApplicationAccountsAccountIdBotTestsLatest Latest Bot Setup Test
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/tests/latest (the `GetApplicationAccountsAccountIdBotTestsLatest` operationId).
+func (c *Client) GetApplicationAccountsAccountIdBotTestsLatest(ctx context.Context, accountId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApplicationAccountsAccountIdBotTestsLatestRequest(c.Server, accountId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetApplicationAccountsAccountIdBotTestsTestId Get Bot Setup Test
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/tests/{test_id} (the `GetApplicationAccountsAccountIdBotTestsTestId` operationId).
+func (c *Client) GetApplicationAccountsAccountIdBotTestsTestId(ctx context.Context, accountId string, testId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApplicationAccountsAccountIdBotTestsTestIdRequest(c.Server, accountId, testId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetApplicationAccountsAccountIdBotThreads List Bot Conversation Threads
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/threads (the `GetApplicationAccountsAccountIdBotThreads` operationId).
+func (c *Client) GetApplicationAccountsAccountIdBotThreads(ctx context.Context, accountId string, params *GetApplicationAccountsAccountIdBotThreadsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApplicationAccountsAccountIdBotThreadsRequest(c.Server, accountId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // PutApplicationAccountsAccountIdCredentialsWithBody Replace Account Credentials
 //
 // Takes any type of body and a specified content type.
@@ -15413,6 +17010,458 @@ func (c *Client) PutApplicationAccountsAccountIdCredentialsWithBody(ctx context.
 // Corresponds with PUT /api/v1/application-accounts/{account_id}/credentials (the `PutApplicationAccountsAccountIdCredentials` operationId).
 func (c *Client) PutApplicationAccountsAccountIdCredentials(ctx context.Context, accountId string, params *PutApplicationAccountsAccountIdCredentialsParams, body PutApplicationAccountsAccountIdCredentialsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewPutApplicationAccountsAccountIdCredentialsRequest(c.Server, accountId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetApplicationAccountsAccountIdMemoryScopes Scopes
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes (the `GetApplicationAccountsAccountIdMemoryScopes` operationId).
+func (c *Client) GetApplicationAccountsAccountIdMemoryScopes(ctx context.Context, accountId string, params *GetApplicationAccountsAccountIdMemoryScopesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApplicationAccountsAccountIdMemoryScopesRequest(c.Server, accountId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesWithBody Configure
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes (the `PostApplicationAccountsAccountIdMemoryScopes` operationId).
+func (c *Client) PostApplicationAccountsAccountIdMemoryScopesWithBody(ctx context.Context, accountId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApplicationAccountsAccountIdMemoryScopesRequestWithBody(c.Server, accountId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostApplicationAccountsAccountIdMemoryScopes Configure
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes (the `PostApplicationAccountsAccountIdMemoryScopes` operationId).
+func (c *Client) PostApplicationAccountsAccountIdMemoryScopes(ctx context.Context, accountId string, body PostApplicationAccountsAccountIdMemoryScopesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApplicationAccountsAccountIdMemoryScopesRequest(c.Server, accountId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdDocuments Documents
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdDocuments` operationId).
+func (c *Client) GetApplicationAccountsAccountIdMemoryScopesScopeIdDocuments(ctx context.Context, accountId string, scopeId string, params *GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsRequest(c.Server, accountId, scopeId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsWithBody Add
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdDocuments` operationId).
+func (c *Client) PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsWithBody(ctx context.Context, accountId string, scopeId string, params *PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsRequestWithBody(c.Server, accountId, scopeId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocuments Add
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdDocuments` operationId).
+func (c *Client) PostApplicationAccountsAccountIdMemoryScopesScopeIdDocuments(ctx context.Context, accountId string, scopeId string, params *PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsParams, body PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsRequest(c.Server, accountId, scopeId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchWithBody Search
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/search (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearch` operationId).
+func (c *Client) PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchWithBody(ctx context.Context, accountId string, scopeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchRequestWithBody(c.Server, accountId, scopeId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearch Search
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/search (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearch` operationId).
+func (c *Client) PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearch(ctx context.Context, accountId string, scopeId string, body PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchRequest(c.Server, accountId, scopeId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentId Remove
+//
+// Corresponds with DELETE /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/{document_id} (the `DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentId` operationId).
+func (c *Client) DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentId(ctx context.Context, accountId string, scopeId string, documentId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdRequest(c.Server, accountId, scopeId, documentId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentId Get
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/{document_id} (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentId` operationId).
+func (c *Client) GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentId(ctx context.Context, accountId string, scopeId string, documentId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdRequest(c.Server, accountId, scopeId, documentId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsWithBody Publish Document
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/{document_id}/publications (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublications` operationId).
+func (c *Client) PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsWithBody(ctx context.Context, accountId string, scopeId string, documentId string, params *PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsRequestWithBody(c.Server, accountId, scopeId, documentId, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublications Publish Document
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/{document_id}/publications (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublications` operationId).
+func (c *Client) PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublications(ctx context.Context, accountId string, scopeId string, documentId string, params *PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsParams, body PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsRequest(c.Server, accountId, scopeId, documentId, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdIndex Index
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/index (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdIndex` operationId).
+func (c *Client) GetApplicationAccountsAccountIdMemoryScopesScopeIdIndex(ctx context.Context, accountId string, scopeId string, params *GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApplicationAccountsAccountIdMemoryScopesScopeIdIndexRequest(c.Server, accountId, scopeId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdOperations Operations
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/operations (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdOperations` operationId).
+func (c *Client) GetApplicationAccountsAccountIdMemoryScopesScopeIdOperations(ctx context.Context, accountId string, scopeId string, params *GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsRequest(c.Server, accountId, scopeId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentId Operation Status
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/operations/{document_id} (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentId` operationId).
+func (c *Client) GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentId(ctx context.Context, accountId string, scopeId string, documentId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdRequest(c.Server, accountId, scopeId, documentId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcile Reconcile Operation
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/operations/{document_id}/reconcile (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcile` operationId).
+func (c *Client) PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcile(ctx context.Context, accountId string, scopeId string, documentId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileRequest(c.Server, accountId, scopeId, documentId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdPublications Publications
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdPublications` operationId).
+func (c *Client) GetApplicationAccountsAccountIdMemoryScopesScopeIdPublications(ctx context.Context, accountId string, scopeId string, params *GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsRequest(c.Server, accountId, scopeId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentId Publication
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id} (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentId` operationId).
+func (c *Client) GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentId(ctx context.Context, accountId string, scopeId string, documentId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdRequest(c.Server, accountId, scopeId, documentId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience Publication Audience
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}/audience (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience` operationId).
+func (c *Client) GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience(ctx context.Context, accountId string, scopeId string, documentId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceRequest(c.Server, accountId, scopeId, documentId)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceWithBody Change Audience
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PATCH /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}/audience (the `PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience` operationId).
+func (c *Client) PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceWithBody(ctx context.Context, accountId string, scopeId string, documentId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceRequestWithBody(c.Server, accountId, scopeId, documentId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience Change Audience
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PATCH /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}/audience (the `PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience` operationId).
+func (c *Client) PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience(ctx context.Context, accountId string, scopeId string, documentId string, body PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceRequest(c.Server, accountId, scopeId, documentId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawWithBody Withdraw Publication
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}/withdraw (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdraw` operationId).
+func (c *Client) PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawWithBody(ctx context.Context, accountId string, scopeId string, documentId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawRequestWithBody(c.Server, accountId, scopeId, documentId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdraw Withdraw Publication
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}/withdraw (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdraw` operationId).
+func (c *Client) PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdraw(ctx context.Context, accountId string, scopeId string, documentId string, body PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawRequest(c.Server, accountId, scopeId, documentId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetApplicationAccountsAccountIdMemorySharingPolicies Policies
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-sharing-policies (the `GetApplicationAccountsAccountIdMemorySharingPolicies` operationId).
+func (c *Client) GetApplicationAccountsAccountIdMemorySharingPolicies(ctx context.Context, accountId string, params *GetApplicationAccountsAccountIdMemorySharingPoliciesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetApplicationAccountsAccountIdMemorySharingPoliciesRequest(c.Server, accountId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostApplicationAccountsAccountIdMemorySharingPoliciesWithBody New Policy
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-sharing-policies (the `PostApplicationAccountsAccountIdMemorySharingPolicies` operationId).
+func (c *Client) PostApplicationAccountsAccountIdMemorySharingPoliciesWithBody(ctx context.Context, accountId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApplicationAccountsAccountIdMemorySharingPoliciesRequestWithBody(c.Server, accountId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PostApplicationAccountsAccountIdMemorySharingPolicies New Policy
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-sharing-policies (the `PostApplicationAccountsAccountIdMemorySharingPolicies` operationId).
+func (c *Client) PostApplicationAccountsAccountIdMemorySharingPolicies(ctx context.Context, accountId string, body PostApplicationAccountsAccountIdMemorySharingPoliciesJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPostApplicationAccountsAccountIdMemorySharingPoliciesRequest(c.Server, accountId, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdWithBody Replace Policy
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with PUT /api/v1/application-accounts/{account_id}/memory-sharing-policies/{policy_id} (the `PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyId` operationId).
+func (c *Client) PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdWithBody(ctx context.Context, accountId string, policyId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdRequestWithBody(c.Server, accountId, policyId, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyId Replace Policy
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with PUT /api/v1/application-accounts/{account_id}/memory-sharing-policies/{policy_id} (the `PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyId` operationId).
+func (c *Client) PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyId(ctx context.Context, accountId string, policyId string, body PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdRequest(c.Server, accountId, policyId, body)
 	if err != nil {
 		return nil, err
 	}
@@ -20166,6 +22215,21 @@ func (c *Client) PostWorkspacesWorkspaceAssetsWithBody(ctx context.Context, work
 	return c.Client.Do(req)
 }
 
+// GetWorkspacesWorkspaceBots Bot Collection
+//
+// Corresponds with GET /api/v1/workspaces/{workspace}/bots (the `GetWorkspacesWorkspaceBots` operationId).
+func (c *Client) GetWorkspacesWorkspaceBots(ctx context.Context, workspace string, params *GetWorkspacesWorkspaceBotsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetWorkspacesWorkspaceBotsRequest(c.Server, workspace, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // GetWorkspacesWorkspaceConnections List Connections
 //
 // Corresponds with GET /api/v1/workspaces/{workspace}/connections (the `GetWorkspacesWorkspaceConnections` operationId).
@@ -21988,6 +24052,603 @@ func NewPatchApplicationAccountsAccountIdRequestWithBody(server string, accountI
 	return req, nil
 }
 
+// NewPostApplicationAccountsAccountIdBotActivateRequest calls the generic PostApplicationAccountsAccountIdBotActivate builder with application/json body
+func NewPostApplicationAccountsAccountIdBotActivateRequest(server string, accountId string, body PostApplicationAccountsAccountIdBotActivateJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostApplicationAccountsAccountIdBotActivateRequestWithBody(server, accountId, "application/json", bodyReader)
+}
+
+// NewPostApplicationAccountsAccountIdBotActivateRequestWithBody constructs an http.Request for the PostApplicationAccountsAccountIdBotActivate method, with any body, and a specified content type
+func NewPostApplicationAccountsAccountIdBotActivateRequestWithBody(server string, accountId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/bot/activate", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPostApplicationAccountsAccountIdBotChecksRequest calls the generic PostApplicationAccountsAccountIdBotChecks builder with application/json body
+func NewPostApplicationAccountsAccountIdBotChecksRequest(server string, accountId string, body PostApplicationAccountsAccountIdBotChecksJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostApplicationAccountsAccountIdBotChecksRequestWithBody(server, accountId, "application/json", bodyReader)
+}
+
+// NewPostApplicationAccountsAccountIdBotChecksRequestWithBody constructs an http.Request for the PostApplicationAccountsAccountIdBotChecks method, with any body, and a specified content type
+func NewPostApplicationAccountsAccountIdBotChecksRequestWithBody(server string, accountId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/bot/checks", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetApplicationAccountsAccountIdBotChecksLatestRequest constructs an http.Request for the GetApplicationAccountsAccountIdBotChecksLatest method
+func NewGetApplicationAccountsAccountIdBotChecksLatestRequest(server string, accountId string, params *GetApplicationAccountsAccountIdBotChecksLatestParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/bot/checks/latest", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.ConversationId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "conversation_id", *params.ConversationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApplicationAccountsAccountIdBotConversationsRequest constructs an http.Request for the GetApplicationAccountsAccountIdBotConversations method
+func NewGetApplicationAccountsAccountIdBotConversationsRequest(server string, accountId string, params *GetApplicationAccountsAccountIdBotConversationsParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/bot/conversations", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApplicationAccountsAccountIdBotRepliesRequest constructs an http.Request for the GetApplicationAccountsAccountIdBotReplies method
+func NewGetApplicationAccountsAccountIdBotRepliesRequest(server string, accountId string, params *GetApplicationAccountsAccountIdBotRepliesParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/bot/replies", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "run_id", params.RunId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApplicationAccountsAccountIdBotSetupRequest constructs an http.Request for the GetApplicationAccountsAccountIdBotSetup method
+func NewGetApplicationAccountsAccountIdBotSetupRequest(server string, accountId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/bot/setup", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApplicationAccountsAccountIdBotSummaryRequest constructs an http.Request for the GetApplicationAccountsAccountIdBotSummary method
+func NewGetApplicationAccountsAccountIdBotSummaryRequest(server string, accountId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/bot/summary", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostApplicationAccountsAccountIdBotTestsRequest calls the generic PostApplicationAccountsAccountIdBotTests builder with application/json body
+func NewPostApplicationAccountsAccountIdBotTestsRequest(server string, accountId string, params *PostApplicationAccountsAccountIdBotTestsParams, body PostApplicationAccountsAccountIdBotTestsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostApplicationAccountsAccountIdBotTestsRequestWithBody(server, accountId, params, "application/json", bodyReader)
+}
+
+// NewPostApplicationAccountsAccountIdBotTestsRequestWithBody constructs an http.Request for the PostApplicationAccountsAccountIdBotTests method, with any body, and a specified content type
+func NewPostApplicationAccountsAccountIdBotTestsRequestWithBody(server string, accountId string, params *PostApplicationAccountsAccountIdBotTestsParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/bot/tests", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+	}
+
+	return req, nil
+}
+
+// NewGetApplicationAccountsAccountIdBotTestsLatestRequest constructs an http.Request for the GetApplicationAccountsAccountIdBotTestsLatest method
+func NewGetApplicationAccountsAccountIdBotTestsLatestRequest(server string, accountId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/bot/tests/latest", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApplicationAccountsAccountIdBotTestsTestIdRequest constructs an http.Request for the GetApplicationAccountsAccountIdBotTestsTestId method
+func NewGetApplicationAccountsAccountIdBotTestsTestIdRequest(server string, accountId string, testId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "test_id", testId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/bot/tests/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApplicationAccountsAccountIdBotThreadsRequest constructs an http.Request for the GetApplicationAccountsAccountIdBotThreads method
+func NewGetApplicationAccountsAccountIdBotThreadsRequest(server string, accountId string, params *GetApplicationAccountsAccountIdBotThreadsParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/bot/threads", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.TargetId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "target_id", *params.TargetId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewPutApplicationAccountsAccountIdCredentialsRequest calls the generic PutApplicationAccountsAccountIdCredentials builder with application/json body
 func NewPutApplicationAccountsAccountIdCredentialsRequest(server string, accountId string, params *PutApplicationAccountsAccountIdCredentialsParams, body PutApplicationAccountsAccountIdCredentialsJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -22044,6 +24705,1281 @@ func NewPutApplicationAccountsAccountIdCredentialsRequestWithBody(server string,
 		req.Header.Set("Idempotency-Key", headerParam0)
 
 	}
+
+	return req, nil
+}
+
+// NewGetApplicationAccountsAccountIdMemoryScopesRequest constructs an http.Request for the GetApplicationAccountsAccountIdMemoryScopes method
+func NewGetApplicationAccountsAccountIdMemoryScopesRequest(server string, accountId string, params *GetApplicationAccountsAccountIdMemoryScopesParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/memory-scopes", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if queryFrag, err := runtime.StyleParamWithOptions("form", true, "provider_id", params.ProviderId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+			return nil, err
+		} else {
+			for _, qp := range strings.Split(queryFrag, "&") {
+				rawQueryFragments = append(rawQueryFragments, qp)
+			}
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.TargetId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "target_id", *params.TargetId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostApplicationAccountsAccountIdMemoryScopesRequest calls the generic PostApplicationAccountsAccountIdMemoryScopes builder with application/json body
+func NewPostApplicationAccountsAccountIdMemoryScopesRequest(server string, accountId string, body PostApplicationAccountsAccountIdMemoryScopesJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostApplicationAccountsAccountIdMemoryScopesRequestWithBody(server, accountId, "application/json", bodyReader)
+}
+
+// NewPostApplicationAccountsAccountIdMemoryScopesRequestWithBody constructs an http.Request for the PostApplicationAccountsAccountIdMemoryScopes method, with any body, and a specified content type
+func NewPostApplicationAccountsAccountIdMemoryScopesRequestWithBody(server string, accountId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/memory-scopes", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsRequest constructs an http.Request for the GetApplicationAccountsAccountIdMemoryScopesScopeIdDocuments method
+func NewGetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsRequest(server string, accountId string, scopeId string, params *GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "scope_id", scopeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/memory-scopes/%s/documents", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.ActivityDate != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "activity_date", *params.ActivityDate, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Kind != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "kind", *params.Kind, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.IncludeShared != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "include_shared", *params.IncludeShared, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsRequest calls the generic PostApplicationAccountsAccountIdMemoryScopesScopeIdDocuments builder with application/json body
+func NewPostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsRequest(server string, accountId string, scopeId string, params *PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsParams, body PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsRequestWithBody(server, accountId, scopeId, params, "application/json", bodyReader)
+}
+
+// NewPostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsRequestWithBody constructs an http.Request for the PostApplicationAccountsAccountIdMemoryScopesScopeIdDocuments method, with any body, and a specified content type
+func NewPostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsRequestWithBody(server string, accountId string, scopeId string, params *PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "scope_id", scopeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/memory-scopes/%s/documents", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+	}
+
+	return req, nil
+}
+
+// NewPostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchRequest calls the generic PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearch builder with application/json body
+func NewPostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchRequest(server string, accountId string, scopeId string, body PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchRequestWithBody(server, accountId, scopeId, "application/json", bodyReader)
+}
+
+// NewPostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchRequestWithBody constructs an http.Request for the PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearch method, with any body, and a specified content type
+func NewPostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchRequestWithBody(server string, accountId string, scopeId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "scope_id", scopeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/memory-scopes/%s/documents/search", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewDeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdRequest constructs an http.Request for the DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentId method
+func NewDeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdRequest(server string, accountId string, scopeId string, documentId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "scope_id", scopeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "document_id", documentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/memory-scopes/%s/documents/%s", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdRequest constructs an http.Request for the GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentId method
+func NewGetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdRequest(server string, accountId string, scopeId string, documentId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "scope_id", scopeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "document_id", documentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/memory-scopes/%s/documents/%s", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsRequest calls the generic PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublications builder with application/json body
+func NewPostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsRequest(server string, accountId string, scopeId string, documentId string, params *PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsParams, body PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsRequestWithBody(server, accountId, scopeId, documentId, params, "application/json", bodyReader)
+}
+
+// NewPostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsRequestWithBody constructs an http.Request for the PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublications method, with any body, and a specified content type
+func NewPostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsRequestWithBody(server string, accountId string, scopeId string, documentId string, params *PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "scope_id", scopeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "document_id", documentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/memory-scopes/%s/documents/%s/publications", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		var headerParam0 string
+
+		headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+		if err != nil {
+			return nil, err
+		}
+
+		req.Header.Set("Idempotency-Key", headerParam0)
+
+	}
+
+	return req, nil
+}
+
+// NewGetApplicationAccountsAccountIdMemoryScopesScopeIdIndexRequest constructs an http.Request for the GetApplicationAccountsAccountIdMemoryScopesScopeIdIndex method
+func NewGetApplicationAccountsAccountIdMemoryScopesScopeIdIndexRequest(server string, accountId string, scopeId string, params *GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "scope_id", scopeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/memory-scopes/%s/index", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsRequest constructs an http.Request for the GetApplicationAccountsAccountIdMemoryScopesScopeIdOperations method
+func NewGetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsRequest(server string, accountId string, scopeId string, params *GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "scope_id", scopeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/memory-scopes/%s/operations", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdRequest constructs an http.Request for the GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentId method
+func NewGetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdRequest(server string, accountId string, scopeId string, documentId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "scope_id", scopeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "document_id", documentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/memory-scopes/%s/operations/%s", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileRequest constructs an http.Request for the PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcile method
+func NewPostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileRequest(server string, accountId string, scopeId string, documentId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "scope_id", scopeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "document_id", documentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/memory-scopes/%s/operations/%s/reconcile", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsRequest constructs an http.Request for the GetApplicationAccountsAccountIdMemoryScopesScopeIdPublications method
+func NewGetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsRequest(server string, accountId string, scopeId string, params *GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "scope_id", scopeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/memory-scopes/%s/publications", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.SourceId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "source_id", *params.SourceId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdRequest constructs an http.Request for the GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentId method
+func NewGetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdRequest(server string, accountId string, scopeId string, documentId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "scope_id", scopeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "document_id", documentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/memory-scopes/%s/publications/%s", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceRequest constructs an http.Request for the GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience method
+func NewGetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceRequest(server string, accountId string, scopeId string, documentId string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "scope_id", scopeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "document_id", documentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/memory-scopes/%s/publications/%s/audience", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceRequest calls the generic PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience builder with application/json body
+func NewPatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceRequest(server string, accountId string, scopeId string, documentId string, body PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceRequestWithBody(server, accountId, scopeId, documentId, "application/json", bodyReader)
+}
+
+// NewPatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceRequestWithBody constructs an http.Request for the PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience method, with any body, and a specified content type
+func NewPatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceRequestWithBody(server string, accountId string, scopeId string, documentId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "scope_id", scopeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "document_id", documentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/memory-scopes/%s/publications/%s/audience", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawRequest calls the generic PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdraw builder with application/json body
+func NewPostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawRequest(server string, accountId string, scopeId string, documentId string, body PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawRequestWithBody(server, accountId, scopeId, documentId, "application/json", bodyReader)
+}
+
+// NewPostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawRequestWithBody constructs an http.Request for the PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdraw method, with any body, and a specified content type
+func NewPostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawRequestWithBody(server string, accountId string, scopeId string, documentId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "scope_id", scopeId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam2 string
+
+	pathParam2, err = runtime.StyleParamWithOptions("simple", false, "document_id", documentId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/memory-scopes/%s/publications/%s/withdraw", pathParam0, pathParam1, pathParam2)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewGetApplicationAccountsAccountIdMemorySharingPoliciesRequest constructs an http.Request for the GetApplicationAccountsAccountIdMemorySharingPolicies method
+func NewGetApplicationAccountsAccountIdMemorySharingPoliciesRequest(server string, accountId string, params *GetApplicationAccountsAccountIdMemorySharingPoliciesParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/memory-sharing-policies", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewPostApplicationAccountsAccountIdMemorySharingPoliciesRequest calls the generic PostApplicationAccountsAccountIdMemorySharingPolicies builder with application/json body
+func NewPostApplicationAccountsAccountIdMemorySharingPoliciesRequest(server string, accountId string, body PostApplicationAccountsAccountIdMemorySharingPoliciesJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPostApplicationAccountsAccountIdMemorySharingPoliciesRequestWithBody(server, accountId, "application/json", bodyReader)
+}
+
+// NewPostApplicationAccountsAccountIdMemorySharingPoliciesRequestWithBody constructs an http.Request for the PostApplicationAccountsAccountIdMemorySharingPolicies method, with any body, and a specified content type
+func NewPostApplicationAccountsAccountIdMemorySharingPoliciesRequestWithBody(server string, accountId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/memory-sharing-policies", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewPutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdRequest calls the generic PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyId builder with application/json body
+func NewPutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdRequest(server string, accountId string, policyId string, body PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewPutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdRequestWithBody(server, accountId, policyId, "application/json", bodyReader)
+}
+
+// NewPutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdRequestWithBody constructs an http.Request for the PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyId method, with any body, and a specified content type
+func NewPutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdRequestWithBody(server string, accountId string, policyId string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "account_id", accountId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	var pathParam1 string
+
+	pathParam1, err = runtime.StyleParamWithOptions("simple", false, "policy_id", policyId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/application-accounts/%s/memory-sharing-policies/%s", pathParam0, pathParam1)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -32693,6 +36629,18 @@ func NewGetWorkspacesWorkspaceApplicationAccountsRequest(server string, workspac
 
 		}
 
+		if params.BotsOnly != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "bots_only", *params.BotsOnly, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if encoded := queryValues.Encode(); encoded != "" {
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
@@ -32943,6 +36891,115 @@ func NewPostWorkspacesWorkspaceAssetsRequestWithBody(server string, workspace st
 
 		req.Header.Set("Idempotency-Key", headerParam0)
 
+	}
+
+	return req, nil
+}
+
+// NewGetWorkspacesWorkspaceBotsRequest constructs an http.Request for the GetWorkspacesWorkspaceBots method
+func NewGetWorkspacesWorkspaceBotsRequest(server string, workspace string, params *GetWorkspacesWorkspaceBotsParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "workspace", workspace, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/workspaces/%s/bots", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Limit != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Platform != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "platform", *params.Platform, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Condition != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "condition", *params.Condition, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Search != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "search", *params.Search, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
 	}
 
 	return req, nil
@@ -37128,6 +41185,18 @@ func NewGetWorkspacesWorkspaceTracesRequest(server string, workspace string, par
 
 		}
 
+		if params.SessionId != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "session_id", *params.SessionId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if params.ThreadId != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "thread_id", *params.ThreadId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
@@ -37155,6 +41224,18 @@ func NewGetWorkspacesWorkspaceTracesRequest(server string, workspace string, par
 		if params.RunAttemptId != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "run_attempt_id", *params.RunAttemptId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Metadata != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "metadata", *params.Metadata, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -37816,6 +41897,104 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with PATCH /api/v1/application-accounts/{account_id} (the `PatchApplicationAccountsAccountId` operationId).
 	PatchApplicationAccountsAccountIdWithResponse(ctx context.Context, accountId string, body PatchApplicationAccountsAccountIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchApplicationAccountsAccountIdResponse, error)
 
+	// PostApplicationAccountsAccountIdBotActivateWithBodyWithResponse Activate Bot
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/bot/activate (the `PostApplicationAccountsAccountIdBotActivate` operationId).
+	PostApplicationAccountsAccountIdBotActivateWithBodyWithResponse(ctx context.Context, accountId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdBotActivateResponse, error)
+
+	// PostApplicationAccountsAccountIdBotActivateWithResponse Activate Bot
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/bot/activate (the `PostApplicationAccountsAccountIdBotActivate` operationId).
+	PostApplicationAccountsAccountIdBotActivateWithResponse(ctx context.Context, accountId string, body PostApplicationAccountsAccountIdBotActivateJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdBotActivateResponse, error)
+
+	// PostApplicationAccountsAccountIdBotChecksWithBodyWithResponse Check Bot
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/bot/checks (the `PostApplicationAccountsAccountIdBotChecks` operationId).
+	PostApplicationAccountsAccountIdBotChecksWithBodyWithResponse(ctx context.Context, accountId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdBotChecksResponse, error)
+
+	// PostApplicationAccountsAccountIdBotChecksWithResponse Check Bot
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/bot/checks (the `PostApplicationAccountsAccountIdBotChecks` operationId).
+	PostApplicationAccountsAccountIdBotChecksWithResponse(ctx context.Context, accountId string, body PostApplicationAccountsAccountIdBotChecksJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdBotChecksResponse, error)
+
+	// GetApplicationAccountsAccountIdBotChecksLatestWithResponse Latest Bot Check
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/checks/latest (the `GetApplicationAccountsAccountIdBotChecksLatest` operationId).
+	GetApplicationAccountsAccountIdBotChecksLatestWithResponse(ctx context.Context, accountId string, params *GetApplicationAccountsAccountIdBotChecksLatestParams, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdBotChecksLatestResponse, error)
+
+	// GetApplicationAccountsAccountIdBotConversationsWithResponse Discover Bot Conversations
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/conversations (the `GetApplicationAccountsAccountIdBotConversations` operationId).
+	GetApplicationAccountsAccountIdBotConversationsWithResponse(ctx context.Context, accountId string, params *GetApplicationAccountsAccountIdBotConversationsParams, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdBotConversationsResponse, error)
+
+	// GetApplicationAccountsAccountIdBotRepliesWithResponse List Bot Reply Observations
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/replies (the `GetApplicationAccountsAccountIdBotReplies` operationId).
+	GetApplicationAccountsAccountIdBotRepliesWithResponse(ctx context.Context, accountId string, params *GetApplicationAccountsAccountIdBotRepliesParams, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdBotRepliesResponse, error)
+
+	// GetApplicationAccountsAccountIdBotSetupWithResponse Bot Setup
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/setup (the `GetApplicationAccountsAccountIdBotSetup` operationId).
+	GetApplicationAccountsAccountIdBotSetupWithResponse(ctx context.Context, accountId string, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdBotSetupResponse, error)
+
+	// GetApplicationAccountsAccountIdBotSummaryWithResponse Bot Summary
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/summary (the `GetApplicationAccountsAccountIdBotSummary` operationId).
+	GetApplicationAccountsAccountIdBotSummaryWithResponse(ctx context.Context, accountId string, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdBotSummaryResponse, error)
+
+	// PostApplicationAccountsAccountIdBotTestsWithBodyWithResponse Create Bot Setup Test
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/bot/tests (the `PostApplicationAccountsAccountIdBotTests` operationId).
+	PostApplicationAccountsAccountIdBotTestsWithBodyWithResponse(ctx context.Context, accountId string, params *PostApplicationAccountsAccountIdBotTestsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdBotTestsResponse, error)
+
+	// PostApplicationAccountsAccountIdBotTestsWithResponse Create Bot Setup Test
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/bot/tests (the `PostApplicationAccountsAccountIdBotTests` operationId).
+	PostApplicationAccountsAccountIdBotTestsWithResponse(ctx context.Context, accountId string, params *PostApplicationAccountsAccountIdBotTestsParams, body PostApplicationAccountsAccountIdBotTestsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdBotTestsResponse, error)
+
+	// GetApplicationAccountsAccountIdBotTestsLatestWithResponse Latest Bot Setup Test
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/tests/latest (the `GetApplicationAccountsAccountIdBotTestsLatest` operationId).
+	GetApplicationAccountsAccountIdBotTestsLatestWithResponse(ctx context.Context, accountId string, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdBotTestsLatestResponse, error)
+
+	// GetApplicationAccountsAccountIdBotTestsTestIdWithResponse Get Bot Setup Test
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/tests/{test_id} (the `GetApplicationAccountsAccountIdBotTestsTestId` operationId).
+	GetApplicationAccountsAccountIdBotTestsTestIdWithResponse(ctx context.Context, accountId string, testId string, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdBotTestsTestIdResponse, error)
+
+	// GetApplicationAccountsAccountIdBotThreadsWithResponse List Bot Conversation Threads
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/threads (the `GetApplicationAccountsAccountIdBotThreads` operationId).
+	GetApplicationAccountsAccountIdBotThreadsWithResponse(ctx context.Context, accountId string, params *GetApplicationAccountsAccountIdBotThreadsParams, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdBotThreadsResponse, error)
+
 	// PutApplicationAccountsAccountIdCredentialsWithBodyWithResponse Replace Account Credentials
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
@@ -37829,6 +42008,202 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with PUT /api/v1/application-accounts/{account_id}/credentials (the `PutApplicationAccountsAccountIdCredentials` operationId).
 	PutApplicationAccountsAccountIdCredentialsWithResponse(ctx context.Context, accountId string, params *PutApplicationAccountsAccountIdCredentialsParams, body PutApplicationAccountsAccountIdCredentialsJSONRequestBody, reqEditors ...RequestEditorFn) (*PutApplicationAccountsAccountIdCredentialsResponse, error)
+
+	// GetApplicationAccountsAccountIdMemoryScopesWithResponse Scopes
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes (the `GetApplicationAccountsAccountIdMemoryScopes` operationId).
+	GetApplicationAccountsAccountIdMemoryScopesWithResponse(ctx context.Context, accountId string, params *GetApplicationAccountsAccountIdMemoryScopesParams, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdMemoryScopesResponse, error)
+
+	// PostApplicationAccountsAccountIdMemoryScopesWithBodyWithResponse Configure
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes (the `PostApplicationAccountsAccountIdMemoryScopes` operationId).
+	PostApplicationAccountsAccountIdMemoryScopesWithBodyWithResponse(ctx context.Context, accountId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdMemoryScopesResponse, error)
+
+	// PostApplicationAccountsAccountIdMemoryScopesWithResponse Configure
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes (the `PostApplicationAccountsAccountIdMemoryScopes` operationId).
+	PostApplicationAccountsAccountIdMemoryScopesWithResponse(ctx context.Context, accountId string, body PostApplicationAccountsAccountIdMemoryScopesJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdMemoryScopesResponse, error)
+
+	// GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsWithResponse Documents
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdDocuments` operationId).
+	GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsWithResponse(ctx context.Context, accountId string, scopeId string, params *GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsParams, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse, error)
+
+	// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsWithBodyWithResponse Add
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdDocuments` operationId).
+	PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsWithBodyWithResponse(ctx context.Context, accountId string, scopeId string, params *PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse, error)
+
+	// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsWithResponse Add
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdDocuments` operationId).
+	PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsWithResponse(ctx context.Context, accountId string, scopeId string, params *PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsParams, body PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse, error)
+
+	// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchWithBodyWithResponse Search
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/search (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearch` operationId).
+	PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchWithBodyWithResponse(ctx context.Context, accountId string, scopeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchResponse, error)
+
+	// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchWithResponse Search
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/search (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearch` operationId).
+	PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchWithResponse(ctx context.Context, accountId string, scopeId string, body PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchResponse, error)
+
+	// DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdWithResponse Remove
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with DELETE /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/{document_id} (the `DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentId` operationId).
+	DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdWithResponse(ctx context.Context, accountId string, scopeId string, documentId string, reqEditors ...RequestEditorFn) (*DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse, error)
+
+	// GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdWithResponse Get
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/{document_id} (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentId` operationId).
+	GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdWithResponse(ctx context.Context, accountId string, scopeId string, documentId string, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse, error)
+
+	// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsWithBodyWithResponse Publish Document
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/{document_id}/publications (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublications` operationId).
+	PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsWithBodyWithResponse(ctx context.Context, accountId string, scopeId string, documentId string, params *PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsResponse, error)
+
+	// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsWithResponse Publish Document
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/{document_id}/publications (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublications` operationId).
+	PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsWithResponse(ctx context.Context, accountId string, scopeId string, documentId string, params *PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsParams, body PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsResponse, error)
+
+	// GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexWithResponse Index
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/index (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdIndex` operationId).
+	GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexWithResponse(ctx context.Context, accountId string, scopeId string, params *GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexParams, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexResponse, error)
+
+	// GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsWithResponse Operations
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/operations (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdOperations` operationId).
+	GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsWithResponse(ctx context.Context, accountId string, scopeId string, params *GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsParams, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsResponse, error)
+
+	// GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdWithResponse Operation Status
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/operations/{document_id} (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentId` operationId).
+	GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdWithResponse(ctx context.Context, accountId string, scopeId string, documentId string, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdResponse, error)
+
+	// PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileWithResponse Reconcile Operation
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/operations/{document_id}/reconcile (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcile` operationId).
+	PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileWithResponse(ctx context.Context, accountId string, scopeId string, documentId string, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileResponse, error)
+
+	// GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsWithResponse Publications
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdPublications` operationId).
+	GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsWithResponse(ctx context.Context, accountId string, scopeId string, params *GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsParams, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsResponse, error)
+
+	// GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithResponse Publication
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id} (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentId` operationId).
+	GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithResponse(ctx context.Context, accountId string, scopeId string, documentId string, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdResponse, error)
+
+	// GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceWithResponse Publication Audience
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}/audience (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience` operationId).
+	GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceWithResponse(ctx context.Context, accountId string, scopeId string, documentId string, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse, error)
+
+	// PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceWithBodyWithResponse Change Audience
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}/audience (the `PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience` operationId).
+	PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceWithBodyWithResponse(ctx context.Context, accountId string, scopeId string, documentId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse, error)
+
+	// PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceWithResponse Change Audience
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PATCH /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}/audience (the `PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience` operationId).
+	PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceWithResponse(ctx context.Context, accountId string, scopeId string, documentId string, body PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse, error)
+
+	// PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawWithBodyWithResponse Withdraw Publication
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}/withdraw (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdraw` operationId).
+	PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawWithBodyWithResponse(ctx context.Context, accountId string, scopeId string, documentId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawResponse, error)
+
+	// PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawWithResponse Withdraw Publication
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}/withdraw (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdraw` operationId).
+	PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawWithResponse(ctx context.Context, accountId string, scopeId string, documentId string, body PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawResponse, error)
+
+	// GetApplicationAccountsAccountIdMemorySharingPoliciesWithResponse Policies
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-sharing-policies (the `GetApplicationAccountsAccountIdMemorySharingPolicies` operationId).
+	GetApplicationAccountsAccountIdMemorySharingPoliciesWithResponse(ctx context.Context, accountId string, params *GetApplicationAccountsAccountIdMemorySharingPoliciesParams, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdMemorySharingPoliciesResponse, error)
+
+	// PostApplicationAccountsAccountIdMemorySharingPoliciesWithBodyWithResponse New Policy
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-sharing-policies (the `PostApplicationAccountsAccountIdMemorySharingPolicies` operationId).
+	PostApplicationAccountsAccountIdMemorySharingPoliciesWithBodyWithResponse(ctx context.Context, accountId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdMemorySharingPoliciesResponse, error)
+
+	// PostApplicationAccountsAccountIdMemorySharingPoliciesWithResponse New Policy
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-sharing-policies (the `PostApplicationAccountsAccountIdMemorySharingPolicies` operationId).
+	PostApplicationAccountsAccountIdMemorySharingPoliciesWithResponse(ctx context.Context, accountId string, body PostApplicationAccountsAccountIdMemorySharingPoliciesJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdMemorySharingPoliciesResponse, error)
+
+	// PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdWithBodyWithResponse Replace Policy
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/v1/application-accounts/{account_id}/memory-sharing-policies/{policy_id} (the `PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyId` operationId).
+	PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdWithBodyWithResponse(ctx context.Context, accountId string, policyId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdResponse, error)
+
+	// PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdWithResponse Replace Policy
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with PUT /api/v1/application-accounts/{account_id}/memory-sharing-policies/{policy_id} (the `PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyId` operationId).
+	PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdWithResponse(ctx context.Context, accountId string, policyId string, body PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdResponse, error)
 
 	// GetApplicationAccountsAccountIdTargetsWithResponse List Targets
 	//
@@ -39881,6 +44256,13 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /api/v1/workspaces/{workspace}/assets (the `PostWorkspacesWorkspaceAssets` operationId).
 	PostWorkspacesWorkspaceAssetsWithBodyWithResponse(ctx context.Context, workspace string, params *PostWorkspacesWorkspaceAssetsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostWorkspacesWorkspaceAssetsResponse, error)
 
+	// GetWorkspacesWorkspaceBotsWithResponse Bot Collection
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/workspaces/{workspace}/bots (the `GetWorkspacesWorkspaceBots` operationId).
+	GetWorkspacesWorkspaceBotsWithResponse(ctx context.Context, workspace string, params *GetWorkspacesWorkspaceBotsParams, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceBotsResponse, error)
+
 	// GetWorkspacesWorkspaceConnectionsWithResponse List Connections
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -41023,6 +45405,853 @@ func (r PatchApplicationAccountsAccountIdResponse) ContentType() string {
 	return ""
 }
 
+// PostApplicationAccountsAccountIdBotActivateResponse200Headers the declared response headers of an HTTP 200 response for PostApplicationAccountsAccountIdBotActivate
+type PostApplicationAccountsAccountIdBotActivateResponse200Headers struct {
+	XRequestID *string
+}
+
+// PostApplicationAccountsAccountIdBotActivateResponse400Headers the declared response headers of an HTTP 400 response for PostApplicationAccountsAccountIdBotActivate
+type PostApplicationAccountsAccountIdBotActivateResponse400Headers struct {
+	XRequestID *string
+}
+
+// PostApplicationAccountsAccountIdBotActivateResponseDefaultHeaders the declared response headers of an HTTP default response for PostApplicationAccountsAccountIdBotActivate
+type PostApplicationAccountsAccountIdBotActivateResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PostApplicationAccountsAccountIdBotActivateResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Account
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PostApplicationAccountsAccountIdBotActivateResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PostApplicationAccountsAccountIdBotActivateResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PostApplicationAccountsAccountIdBotActivateResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PostApplicationAccountsAccountIdBotActivateResponse) GetJSON200() *Account {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PostApplicationAccountsAccountIdBotActivateResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PostApplicationAccountsAccountIdBotActivateResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PostApplicationAccountsAccountIdBotActivateResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostApplicationAccountsAccountIdBotActivateResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostApplicationAccountsAccountIdBotActivateResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostApplicationAccountsAccountIdBotActivateResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PostApplicationAccountsAccountIdBotChecksResponse200Headers the declared response headers of an HTTP 200 response for PostApplicationAccountsAccountIdBotChecks
+type PostApplicationAccountsAccountIdBotChecksResponse200Headers struct {
+	XRequestID *string
+}
+
+// PostApplicationAccountsAccountIdBotChecksResponse400Headers the declared response headers of an HTTP 400 response for PostApplicationAccountsAccountIdBotChecks
+type PostApplicationAccountsAccountIdBotChecksResponse400Headers struct {
+	XRequestID *string
+}
+
+// PostApplicationAccountsAccountIdBotChecksResponseDefaultHeaders the declared response headers of an HTTP default response for PostApplicationAccountsAccountIdBotChecks
+type PostApplicationAccountsAccountIdBotChecksResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PostApplicationAccountsAccountIdBotChecksResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *BotCheck
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PostApplicationAccountsAccountIdBotChecksResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PostApplicationAccountsAccountIdBotChecksResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PostApplicationAccountsAccountIdBotChecksResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PostApplicationAccountsAccountIdBotChecksResponse) GetJSON200() *BotCheck {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PostApplicationAccountsAccountIdBotChecksResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PostApplicationAccountsAccountIdBotChecksResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PostApplicationAccountsAccountIdBotChecksResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostApplicationAccountsAccountIdBotChecksResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostApplicationAccountsAccountIdBotChecksResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostApplicationAccountsAccountIdBotChecksResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetApplicationAccountsAccountIdBotChecksLatestResponse200Headers the declared response headers of an HTTP 200 response for GetApplicationAccountsAccountIdBotChecksLatest
+type GetApplicationAccountsAccountIdBotChecksLatestResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdBotChecksLatestResponse400Headers the declared response headers of an HTTP 400 response for GetApplicationAccountsAccountIdBotChecksLatest
+type GetApplicationAccountsAccountIdBotChecksLatestResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdBotChecksLatestResponseDefaultHeaders the declared response headers of an HTTP default response for GetApplicationAccountsAccountIdBotChecksLatest
+type GetApplicationAccountsAccountIdBotChecksLatestResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetApplicationAccountsAccountIdBotChecksLatestResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *BotCheckHistory
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetApplicationAccountsAccountIdBotChecksLatestResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetApplicationAccountsAccountIdBotChecksLatestResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetApplicationAccountsAccountIdBotChecksLatestResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetApplicationAccountsAccountIdBotChecksLatestResponse) GetJSON200() *BotCheckHistory {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetApplicationAccountsAccountIdBotChecksLatestResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetApplicationAccountsAccountIdBotChecksLatestResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetApplicationAccountsAccountIdBotChecksLatestResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApplicationAccountsAccountIdBotChecksLatestResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApplicationAccountsAccountIdBotChecksLatestResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApplicationAccountsAccountIdBotChecksLatestResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetApplicationAccountsAccountIdBotConversationsResponse200Headers the declared response headers of an HTTP 200 response for GetApplicationAccountsAccountIdBotConversations
+type GetApplicationAccountsAccountIdBotConversationsResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdBotConversationsResponse400Headers the declared response headers of an HTTP 400 response for GetApplicationAccountsAccountIdBotConversations
+type GetApplicationAccountsAccountIdBotConversationsResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdBotConversationsResponseDefaultHeaders the declared response headers of an HTTP default response for GetApplicationAccountsAccountIdBotConversations
+type GetApplicationAccountsAccountIdBotConversationsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetApplicationAccountsAccountIdBotConversationsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ConversationPage
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetApplicationAccountsAccountIdBotConversationsResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetApplicationAccountsAccountIdBotConversationsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetApplicationAccountsAccountIdBotConversationsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetApplicationAccountsAccountIdBotConversationsResponse) GetJSON200() *ConversationPage {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetApplicationAccountsAccountIdBotConversationsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetApplicationAccountsAccountIdBotConversationsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetApplicationAccountsAccountIdBotConversationsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApplicationAccountsAccountIdBotConversationsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApplicationAccountsAccountIdBotConversationsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApplicationAccountsAccountIdBotConversationsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetApplicationAccountsAccountIdBotRepliesResponse200Headers the declared response headers of an HTTP 200 response for GetApplicationAccountsAccountIdBotReplies
+type GetApplicationAccountsAccountIdBotRepliesResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdBotRepliesResponse400Headers the declared response headers of an HTTP 400 response for GetApplicationAccountsAccountIdBotReplies
+type GetApplicationAccountsAccountIdBotRepliesResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdBotRepliesResponseDefaultHeaders the declared response headers of an HTTP default response for GetApplicationAccountsAccountIdBotReplies
+type GetApplicationAccountsAccountIdBotRepliesResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetApplicationAccountsAccountIdBotRepliesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *BotReplyCollection
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetApplicationAccountsAccountIdBotRepliesResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetApplicationAccountsAccountIdBotRepliesResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetApplicationAccountsAccountIdBotRepliesResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetApplicationAccountsAccountIdBotRepliesResponse) GetJSON200() *BotReplyCollection {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetApplicationAccountsAccountIdBotRepliesResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetApplicationAccountsAccountIdBotRepliesResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetApplicationAccountsAccountIdBotRepliesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApplicationAccountsAccountIdBotRepliesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApplicationAccountsAccountIdBotRepliesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApplicationAccountsAccountIdBotRepliesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetApplicationAccountsAccountIdBotSetupResponse200Headers the declared response headers of an HTTP 200 response for GetApplicationAccountsAccountIdBotSetup
+type GetApplicationAccountsAccountIdBotSetupResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdBotSetupResponse400Headers the declared response headers of an HTTP 400 response for GetApplicationAccountsAccountIdBotSetup
+type GetApplicationAccountsAccountIdBotSetupResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdBotSetupResponseDefaultHeaders the declared response headers of an HTTP default response for GetApplicationAccountsAccountIdBotSetup
+type GetApplicationAccountsAccountIdBotSetupResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetApplicationAccountsAccountIdBotSetupResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *BotSetup
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetApplicationAccountsAccountIdBotSetupResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetApplicationAccountsAccountIdBotSetupResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetApplicationAccountsAccountIdBotSetupResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetApplicationAccountsAccountIdBotSetupResponse) GetJSON200() *BotSetup {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetApplicationAccountsAccountIdBotSetupResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetApplicationAccountsAccountIdBotSetupResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetApplicationAccountsAccountIdBotSetupResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApplicationAccountsAccountIdBotSetupResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApplicationAccountsAccountIdBotSetupResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApplicationAccountsAccountIdBotSetupResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetApplicationAccountsAccountIdBotSummaryResponse200Headers the declared response headers of an HTTP 200 response for GetApplicationAccountsAccountIdBotSummary
+type GetApplicationAccountsAccountIdBotSummaryResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdBotSummaryResponse400Headers the declared response headers of an HTTP 400 response for GetApplicationAccountsAccountIdBotSummary
+type GetApplicationAccountsAccountIdBotSummaryResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdBotSummaryResponseDefaultHeaders the declared response headers of an HTTP default response for GetApplicationAccountsAccountIdBotSummary
+type GetApplicationAccountsAccountIdBotSummaryResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetApplicationAccountsAccountIdBotSummaryResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *BotSummary
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetApplicationAccountsAccountIdBotSummaryResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetApplicationAccountsAccountIdBotSummaryResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetApplicationAccountsAccountIdBotSummaryResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetApplicationAccountsAccountIdBotSummaryResponse) GetJSON200() *BotSummary {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetApplicationAccountsAccountIdBotSummaryResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetApplicationAccountsAccountIdBotSummaryResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetApplicationAccountsAccountIdBotSummaryResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApplicationAccountsAccountIdBotSummaryResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApplicationAccountsAccountIdBotSummaryResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApplicationAccountsAccountIdBotSummaryResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PostApplicationAccountsAccountIdBotTestsResponse200Headers the declared response headers of an HTTP 200 response for PostApplicationAccountsAccountIdBotTests
+type PostApplicationAccountsAccountIdBotTestsResponse200Headers struct {
+	XRequestID *string
+}
+
+// PostApplicationAccountsAccountIdBotTestsResponse400Headers the declared response headers of an HTTP 400 response for PostApplicationAccountsAccountIdBotTests
+type PostApplicationAccountsAccountIdBotTestsResponse400Headers struct {
+	XRequestID *string
+}
+
+// PostApplicationAccountsAccountIdBotTestsResponseDefaultHeaders the declared response headers of an HTTP default response for PostApplicationAccountsAccountIdBotTests
+type PostApplicationAccountsAccountIdBotTestsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PostApplicationAccountsAccountIdBotTestsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *BotTest
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PostApplicationAccountsAccountIdBotTestsResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PostApplicationAccountsAccountIdBotTestsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PostApplicationAccountsAccountIdBotTestsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PostApplicationAccountsAccountIdBotTestsResponse) GetJSON200() *BotTest {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PostApplicationAccountsAccountIdBotTestsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PostApplicationAccountsAccountIdBotTestsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PostApplicationAccountsAccountIdBotTestsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostApplicationAccountsAccountIdBotTestsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostApplicationAccountsAccountIdBotTestsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostApplicationAccountsAccountIdBotTestsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetApplicationAccountsAccountIdBotTestsLatestResponse200Headers the declared response headers of an HTTP 200 response for GetApplicationAccountsAccountIdBotTestsLatest
+type GetApplicationAccountsAccountIdBotTestsLatestResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdBotTestsLatestResponse400Headers the declared response headers of an HTTP 400 response for GetApplicationAccountsAccountIdBotTestsLatest
+type GetApplicationAccountsAccountIdBotTestsLatestResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdBotTestsLatestResponseDefaultHeaders the declared response headers of an HTTP default response for GetApplicationAccountsAccountIdBotTestsLatest
+type GetApplicationAccountsAccountIdBotTestsLatestResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetApplicationAccountsAccountIdBotTestsLatestResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *BotTestHistory
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetApplicationAccountsAccountIdBotTestsLatestResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetApplicationAccountsAccountIdBotTestsLatestResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetApplicationAccountsAccountIdBotTestsLatestResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetApplicationAccountsAccountIdBotTestsLatestResponse) GetJSON200() *BotTestHistory {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetApplicationAccountsAccountIdBotTestsLatestResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetApplicationAccountsAccountIdBotTestsLatestResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetApplicationAccountsAccountIdBotTestsLatestResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApplicationAccountsAccountIdBotTestsLatestResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApplicationAccountsAccountIdBotTestsLatestResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApplicationAccountsAccountIdBotTestsLatestResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetApplicationAccountsAccountIdBotTestsTestIdResponse200Headers the declared response headers of an HTTP 200 response for GetApplicationAccountsAccountIdBotTestsTestId
+type GetApplicationAccountsAccountIdBotTestsTestIdResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdBotTestsTestIdResponse400Headers the declared response headers of an HTTP 400 response for GetApplicationAccountsAccountIdBotTestsTestId
+type GetApplicationAccountsAccountIdBotTestsTestIdResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdBotTestsTestIdResponseDefaultHeaders the declared response headers of an HTTP default response for GetApplicationAccountsAccountIdBotTestsTestId
+type GetApplicationAccountsAccountIdBotTestsTestIdResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetApplicationAccountsAccountIdBotTestsTestIdResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *BotTestHistory
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetApplicationAccountsAccountIdBotTestsTestIdResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetApplicationAccountsAccountIdBotTestsTestIdResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetApplicationAccountsAccountIdBotTestsTestIdResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetApplicationAccountsAccountIdBotTestsTestIdResponse) GetJSON200() *BotTestHistory {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetApplicationAccountsAccountIdBotTestsTestIdResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetApplicationAccountsAccountIdBotTestsTestIdResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetApplicationAccountsAccountIdBotTestsTestIdResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApplicationAccountsAccountIdBotTestsTestIdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApplicationAccountsAccountIdBotTestsTestIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApplicationAccountsAccountIdBotTestsTestIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetApplicationAccountsAccountIdBotThreadsResponse200Headers the declared response headers of an HTTP 200 response for GetApplicationAccountsAccountIdBotThreads
+type GetApplicationAccountsAccountIdBotThreadsResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdBotThreadsResponse400Headers the declared response headers of an HTTP 400 response for GetApplicationAccountsAccountIdBotThreads
+type GetApplicationAccountsAccountIdBotThreadsResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdBotThreadsResponseDefaultHeaders the declared response headers of an HTTP default response for GetApplicationAccountsAccountIdBotThreads
+type GetApplicationAccountsAccountIdBotThreadsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetApplicationAccountsAccountIdBotThreadsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *BotThreadCollection
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetApplicationAccountsAccountIdBotThreadsResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetApplicationAccountsAccountIdBotThreadsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetApplicationAccountsAccountIdBotThreadsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetApplicationAccountsAccountIdBotThreadsResponse) GetJSON200() *BotThreadCollection {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetApplicationAccountsAccountIdBotThreadsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetApplicationAccountsAccountIdBotThreadsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetApplicationAccountsAccountIdBotThreadsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApplicationAccountsAccountIdBotThreadsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApplicationAccountsAccountIdBotThreadsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApplicationAccountsAccountIdBotThreadsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // PutApplicationAccountsAccountIdCredentialsResponse200Headers the declared response headers of an HTTP 200 response for PutApplicationAccountsAccountIdCredentials
 type PutApplicationAccountsAccountIdCredentialsResponse200Headers struct {
 	XRequestID *string
@@ -41094,6 +46323,1525 @@ func (r PutApplicationAccountsAccountIdCredentialsResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r PutApplicationAccountsAccountIdCredentialsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesResponse200Headers the declared response headers of an HTTP 200 response for GetApplicationAccountsAccountIdMemoryScopes
+type GetApplicationAccountsAccountIdMemoryScopesResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesResponse400Headers the declared response headers of an HTTP 400 response for GetApplicationAccountsAccountIdMemoryScopes
+type GetApplicationAccountsAccountIdMemoryScopesResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesResponseDefaultHeaders the declared response headers of an HTTP default response for GetApplicationAccountsAccountIdMemoryScopes
+type GetApplicationAccountsAccountIdMemoryScopesResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetApplicationAccountsAccountIdMemoryScopesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ScopeCollection
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetApplicationAccountsAccountIdMemoryScopesResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetApplicationAccountsAccountIdMemoryScopesResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetApplicationAccountsAccountIdMemoryScopesResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetApplicationAccountsAccountIdMemoryScopesResponse) GetJSON200() *ScopeCollection {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetApplicationAccountsAccountIdMemoryScopesResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetApplicationAccountsAccountIdMemoryScopesResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetApplicationAccountsAccountIdMemoryScopesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApplicationAccountsAccountIdMemoryScopesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApplicationAccountsAccountIdMemoryScopesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApplicationAccountsAccountIdMemoryScopesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesResponse200Headers the declared response headers of an HTTP 200 response for PostApplicationAccountsAccountIdMemoryScopes
+type PostApplicationAccountsAccountIdMemoryScopesResponse200Headers struct {
+	XRequestID *string
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesResponse400Headers the declared response headers of an HTTP 400 response for PostApplicationAccountsAccountIdMemoryScopes
+type PostApplicationAccountsAccountIdMemoryScopesResponse400Headers struct {
+	XRequestID *string
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesResponseDefaultHeaders the declared response headers of an HTTP default response for PostApplicationAccountsAccountIdMemoryScopes
+type PostApplicationAccountsAccountIdMemoryScopesResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PostApplicationAccountsAccountIdMemoryScopesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Scope
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PostApplicationAccountsAccountIdMemoryScopesResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PostApplicationAccountsAccountIdMemoryScopesResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PostApplicationAccountsAccountIdMemoryScopesResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PostApplicationAccountsAccountIdMemoryScopesResponse) GetJSON200() *Scope {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PostApplicationAccountsAccountIdMemoryScopesResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PostApplicationAccountsAccountIdMemoryScopesResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PostApplicationAccountsAccountIdMemoryScopesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostApplicationAccountsAccountIdMemoryScopesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostApplicationAccountsAccountIdMemoryScopesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostApplicationAccountsAccountIdMemoryScopesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse200Headers the declared response headers of an HTTP 200 response for GetApplicationAccountsAccountIdMemoryScopesScopeIdDocuments
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse400Headers the declared response headers of an HTTP 400 response for GetApplicationAccountsAccountIdMemoryScopesScopeIdDocuments
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponseDefaultHeaders the declared response headers of an HTTP default response for GetApplicationAccountsAccountIdMemoryScopesScopeIdDocuments
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *DocumentCollection
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse) GetJSON200() *DocumentCollection {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse201Headers the declared response headers of an HTTP 201 response for PostApplicationAccountsAccountIdMemoryScopesScopeIdDocuments
+type PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse201Headers struct {
+	XRequestID *string
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse400Headers the declared response headers of an HTTP 400 response for PostApplicationAccountsAccountIdMemoryScopesScopeIdDocuments
+type PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse400Headers struct {
+	XRequestID *string
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponseDefaultHeaders the declared response headers of an HTTP default response for PostApplicationAccountsAccountIdMemoryScopesScopeIdDocuments
+type PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *Document
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers201 the parsed response headers for an HTTP 201 response
+	Headers201 *PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse201Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponseDefaultHeaders
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse) GetJSON201() *Document {
+	return r.JSON201
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchResponse200Headers the declared response headers of an HTTP 200 response for PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearch
+type PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchResponse200Headers struct {
+	XRequestID *string
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchResponse400Headers the declared response headers of an HTTP 400 response for PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearch
+type PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchResponse400Headers struct {
+	XRequestID *string
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchResponseDefaultHeaders the declared response headers of an HTTP default response for PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearch
+type PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *DocumentCollection
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchResponse) GetJSON200() *DocumentCollection {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse204Headers the declared response headers of an HTTP 204 response for DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentId
+type DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse204Headers struct {
+	XRequestID *string
+}
+
+// DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse400Headers the declared response headers of an HTTP 400 response for DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentId
+type DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse400Headers struct {
+	XRequestID *string
+}
+
+// DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponseDefaultHeaders the declared response headers of an HTTP default response for DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentId
+type DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers204 the parsed response headers for an HTTP 204 response
+	Headers204 *DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse204Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponseDefaultHeaders
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse200Headers the declared response headers of an HTTP 200 response for GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentId
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse400Headers the declared response headers of an HTTP 400 response for GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentId
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponseDefaultHeaders the declared response headers of an HTTP default response for GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentId
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Document
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse) GetJSON200() *Document {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsResponse201Headers the declared response headers of an HTTP 201 response for PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublications
+type PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsResponse201Headers struct {
+	XRequestID *string
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsResponse400Headers the declared response headers of an HTTP 400 response for PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublications
+type PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsResponse400Headers struct {
+	XRequestID *string
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsResponseDefaultHeaders the declared response headers of an HTTP default response for PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublications
+type PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *Document
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers201 the parsed response headers for an HTTP 201 response
+	Headers201 *PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsResponse201Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsResponseDefaultHeaders
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsResponse) GetJSON201() *Document {
+	return r.JSON201
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexResponse200Headers the declared response headers of an HTTP 200 response for GetApplicationAccountsAccountIdMemoryScopesScopeIdIndex
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexResponse400Headers the declared response headers of an HTTP 400 response for GetApplicationAccountsAccountIdMemoryScopesScopeIdIndex
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexResponseDefaultHeaders the declared response headers of an HTTP default response for GetApplicationAccountsAccountIdMemoryScopesScopeIdIndex
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *MemoryIndex
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexResponse) GetJSON200() *MemoryIndex {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsResponse200Headers the declared response headers of an HTTP 200 response for GetApplicationAccountsAccountIdMemoryScopesScopeIdOperations
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsResponse400Headers the declared response headers of an HTTP 400 response for GetApplicationAccountsAccountIdMemoryScopesScopeIdOperations
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsResponseDefaultHeaders the declared response headers of an HTTP default response for GetApplicationAccountsAccountIdMemoryScopesScopeIdOperations
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *DocumentCollection
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsResponse) GetJSON200() *DocumentCollection {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdResponse200Headers the declared response headers of an HTTP 200 response for GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentId
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdResponse400Headers the declared response headers of an HTTP 400 response for GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentId
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdResponseDefaultHeaders the declared response headers of an HTTP default response for GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentId
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *DocumentEntry
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdResponse) GetJSON200() *DocumentEntry {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileResponse200Headers the declared response headers of an HTTP 200 response for PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcile
+type PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileResponse200Headers struct {
+	XRequestID *string
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileResponse400Headers the declared response headers of an HTTP 400 response for PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcile
+type PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileResponse400Headers struct {
+	XRequestID *string
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileResponseDefaultHeaders the declared response headers of an HTTP default response for PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcile
+type PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *DocumentEntry
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileResponse) GetJSON200() *DocumentEntry {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsResponse200Headers the declared response headers of an HTTP 200 response for GetApplicationAccountsAccountIdMemoryScopesScopeIdPublications
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsResponse400Headers the declared response headers of an HTTP 400 response for GetApplicationAccountsAccountIdMemoryScopesScopeIdPublications
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsResponseDefaultHeaders the declared response headers of an HTTP default response for GetApplicationAccountsAccountIdMemoryScopesScopeIdPublications
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *DocumentCollection
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsResponse) GetJSON200() *DocumentCollection {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdResponse200Headers the declared response headers of an HTTP 200 response for GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentId
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdResponse400Headers the declared response headers of an HTTP 400 response for GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentId
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdResponseDefaultHeaders the declared response headers of an HTTP default response for GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentId
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Document
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdResponse) GetJSON200() *Document {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse200Headers the declared response headers of an HTTP 200 response for GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse400Headers the declared response headers of an HTTP 400 response for GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponseDefaultHeaders the declared response headers of an HTTP default response for GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *PublicationAccess
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse) GetJSON200() *PublicationAccess {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse204Headers the declared response headers of an HTTP 204 response for PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience
+type PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse204Headers struct {
+	XRequestID *string
+}
+
+// PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse400Headers the declared response headers of an HTTP 400 response for PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience
+type PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse400Headers struct {
+	XRequestID *string
+}
+
+// PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponseDefaultHeaders the declared response headers of an HTTP default response for PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience
+type PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers204 the parsed response headers for an HTTP 204 response
+	Headers204 *PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse204Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponseDefaultHeaders
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawResponse204Headers the declared response headers of an HTTP 204 response for PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdraw
+type PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawResponse204Headers struct {
+	XRequestID *string
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawResponse400Headers the declared response headers of an HTTP 400 response for PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdraw
+type PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawResponse400Headers struct {
+	XRequestID *string
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawResponseDefaultHeaders the declared response headers of an HTTP default response for PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdraw
+type PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers204 the parsed response headers for an HTTP 204 response
+	Headers204 *PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawResponse204Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawResponseDefaultHeaders
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// GetApplicationAccountsAccountIdMemorySharingPoliciesResponse200Headers the declared response headers of an HTTP 200 response for GetApplicationAccountsAccountIdMemorySharingPolicies
+type GetApplicationAccountsAccountIdMemorySharingPoliciesResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdMemorySharingPoliciesResponse400Headers the declared response headers of an HTTP 400 response for GetApplicationAccountsAccountIdMemorySharingPolicies
+type GetApplicationAccountsAccountIdMemorySharingPoliciesResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetApplicationAccountsAccountIdMemorySharingPoliciesResponseDefaultHeaders the declared response headers of an HTTP default response for GetApplicationAccountsAccountIdMemorySharingPolicies
+type GetApplicationAccountsAccountIdMemorySharingPoliciesResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetApplicationAccountsAccountIdMemorySharingPoliciesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SharingPolicyCollection
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetApplicationAccountsAccountIdMemorySharingPoliciesResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetApplicationAccountsAccountIdMemorySharingPoliciesResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetApplicationAccountsAccountIdMemorySharingPoliciesResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetApplicationAccountsAccountIdMemorySharingPoliciesResponse) GetJSON200() *SharingPolicyCollection {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetApplicationAccountsAccountIdMemorySharingPoliciesResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetApplicationAccountsAccountIdMemorySharingPoliciesResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetApplicationAccountsAccountIdMemorySharingPoliciesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetApplicationAccountsAccountIdMemorySharingPoliciesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetApplicationAccountsAccountIdMemorySharingPoliciesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetApplicationAccountsAccountIdMemorySharingPoliciesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PostApplicationAccountsAccountIdMemorySharingPoliciesResponse201Headers the declared response headers of an HTTP 201 response for PostApplicationAccountsAccountIdMemorySharingPolicies
+type PostApplicationAccountsAccountIdMemorySharingPoliciesResponse201Headers struct {
+	XRequestID *string
+}
+
+// PostApplicationAccountsAccountIdMemorySharingPoliciesResponse400Headers the declared response headers of an HTTP 400 response for PostApplicationAccountsAccountIdMemorySharingPolicies
+type PostApplicationAccountsAccountIdMemorySharingPoliciesResponse400Headers struct {
+	XRequestID *string
+}
+
+// PostApplicationAccountsAccountIdMemorySharingPoliciesResponseDefaultHeaders the declared response headers of an HTTP default response for PostApplicationAccountsAccountIdMemorySharingPolicies
+type PostApplicationAccountsAccountIdMemorySharingPoliciesResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PostApplicationAccountsAccountIdMemorySharingPoliciesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *SharingPolicy
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers201 the parsed response headers for an HTTP 201 response
+	Headers201 *PostApplicationAccountsAccountIdMemorySharingPoliciesResponse201Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PostApplicationAccountsAccountIdMemorySharingPoliciesResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PostApplicationAccountsAccountIdMemorySharingPoliciesResponseDefaultHeaders
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r PostApplicationAccountsAccountIdMemorySharingPoliciesResponse) GetJSON201() *SharingPolicy {
+	return r.JSON201
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PostApplicationAccountsAccountIdMemorySharingPoliciesResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PostApplicationAccountsAccountIdMemorySharingPoliciesResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PostApplicationAccountsAccountIdMemorySharingPoliciesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PostApplicationAccountsAccountIdMemorySharingPoliciesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PostApplicationAccountsAccountIdMemorySharingPoliciesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PostApplicationAccountsAccountIdMemorySharingPoliciesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdResponse200Headers the declared response headers of an HTTP 200 response for PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyId
+type PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdResponse200Headers struct {
+	XRequestID *string
+}
+
+// PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdResponse400Headers the declared response headers of an HTTP 400 response for PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyId
+type PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdResponse400Headers struct {
+	XRequestID *string
+}
+
+// PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdResponseDefaultHeaders the declared response headers of an HTTP default response for PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyId
+type PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SharingPolicy
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdResponse) GetJSON200() *SharingPolicy {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -56829,6 +63577,83 @@ func (r PostWorkspacesWorkspaceAssetsResponse) ContentType() string {
 	return ""
 }
 
+// GetWorkspacesWorkspaceBotsResponse200Headers the declared response headers of an HTTP 200 response for GetWorkspacesWorkspaceBots
+type GetWorkspacesWorkspaceBotsResponse200Headers struct {
+	XRequestID *string
+}
+
+// GetWorkspacesWorkspaceBotsResponse400Headers the declared response headers of an HTTP 400 response for GetWorkspacesWorkspaceBots
+type GetWorkspacesWorkspaceBotsResponse400Headers struct {
+	XRequestID *string
+}
+
+// GetWorkspacesWorkspaceBotsResponseDefaultHeaders the declared response headers of an HTTP default response for GetWorkspacesWorkspaceBots
+type GetWorkspacesWorkspaceBotsResponseDefaultHeaders struct {
+	RetryAfter *string
+	XRequestID *string
+}
+
+type GetWorkspacesWorkspaceBotsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *BotCollection
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *ErrorResponse
+	// Headers200 the parsed response headers for an HTTP 200 response
+	Headers200 *GetWorkspacesWorkspaceBotsResponse200Headers
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *GetWorkspacesWorkspaceBotsResponse400Headers
+	// HeadersDefault the parsed response headers for an HTTP default response
+	HeadersDefault *GetWorkspacesWorkspaceBotsResponseDefaultHeaders
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetWorkspacesWorkspaceBotsResponse) GetJSON200() *BotCollection {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetWorkspacesWorkspaceBotsResponse) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetWorkspacesWorkspaceBotsResponse) GetJSONDefault() *ErrorResponse {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetWorkspacesWorkspaceBotsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetWorkspacesWorkspaceBotsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetWorkspacesWorkspaceBotsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetWorkspacesWorkspaceBotsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // GetWorkspacesWorkspaceConnectionsResponse200Headers the declared response headers of an HTTP 200 response for GetWorkspacesWorkspaceConnections
 type GetWorkspacesWorkspaceConnectionsResponse200Headers struct {
 	XRequestID *string
@@ -62379,6 +69204,188 @@ func (c *ClientWithResponses) PatchApplicationAccountsAccountIdWithResponse(ctx 
 	return ParsePatchApplicationAccountsAccountIdResponse(rsp)
 }
 
+// PostApplicationAccountsAccountIdBotActivateWithBodyWithResponse Activate Bot
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/bot/activate (the `PostApplicationAccountsAccountIdBotActivate` operationId).
+func (c *ClientWithResponses) PostApplicationAccountsAccountIdBotActivateWithBodyWithResponse(ctx context.Context, accountId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdBotActivateResponse, error) {
+	rsp, err := c.PostApplicationAccountsAccountIdBotActivateWithBody(ctx, accountId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApplicationAccountsAccountIdBotActivateResponse(rsp)
+}
+
+// PostApplicationAccountsAccountIdBotActivateWithResponse Activate Bot
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/bot/activate (the `PostApplicationAccountsAccountIdBotActivate` operationId).
+func (c *ClientWithResponses) PostApplicationAccountsAccountIdBotActivateWithResponse(ctx context.Context, accountId string, body PostApplicationAccountsAccountIdBotActivateJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdBotActivateResponse, error) {
+	rsp, err := c.PostApplicationAccountsAccountIdBotActivate(ctx, accountId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApplicationAccountsAccountIdBotActivateResponse(rsp)
+}
+
+// PostApplicationAccountsAccountIdBotChecksWithBodyWithResponse Check Bot
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/bot/checks (the `PostApplicationAccountsAccountIdBotChecks` operationId).
+func (c *ClientWithResponses) PostApplicationAccountsAccountIdBotChecksWithBodyWithResponse(ctx context.Context, accountId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdBotChecksResponse, error) {
+	rsp, err := c.PostApplicationAccountsAccountIdBotChecksWithBody(ctx, accountId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApplicationAccountsAccountIdBotChecksResponse(rsp)
+}
+
+// PostApplicationAccountsAccountIdBotChecksWithResponse Check Bot
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/bot/checks (the `PostApplicationAccountsAccountIdBotChecks` operationId).
+func (c *ClientWithResponses) PostApplicationAccountsAccountIdBotChecksWithResponse(ctx context.Context, accountId string, body PostApplicationAccountsAccountIdBotChecksJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdBotChecksResponse, error) {
+	rsp, err := c.PostApplicationAccountsAccountIdBotChecks(ctx, accountId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApplicationAccountsAccountIdBotChecksResponse(rsp)
+}
+
+// GetApplicationAccountsAccountIdBotChecksLatestWithResponse Latest Bot Check
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/checks/latest (the `GetApplicationAccountsAccountIdBotChecksLatest` operationId).
+func (c *ClientWithResponses) GetApplicationAccountsAccountIdBotChecksLatestWithResponse(ctx context.Context, accountId string, params *GetApplicationAccountsAccountIdBotChecksLatestParams, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdBotChecksLatestResponse, error) {
+	rsp, err := c.GetApplicationAccountsAccountIdBotChecksLatest(ctx, accountId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApplicationAccountsAccountIdBotChecksLatestResponse(rsp)
+}
+
+// GetApplicationAccountsAccountIdBotConversationsWithResponse Discover Bot Conversations
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/conversations (the `GetApplicationAccountsAccountIdBotConversations` operationId).
+func (c *ClientWithResponses) GetApplicationAccountsAccountIdBotConversationsWithResponse(ctx context.Context, accountId string, params *GetApplicationAccountsAccountIdBotConversationsParams, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdBotConversationsResponse, error) {
+	rsp, err := c.GetApplicationAccountsAccountIdBotConversations(ctx, accountId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApplicationAccountsAccountIdBotConversationsResponse(rsp)
+}
+
+// GetApplicationAccountsAccountIdBotRepliesWithResponse List Bot Reply Observations
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/replies (the `GetApplicationAccountsAccountIdBotReplies` operationId).
+func (c *ClientWithResponses) GetApplicationAccountsAccountIdBotRepliesWithResponse(ctx context.Context, accountId string, params *GetApplicationAccountsAccountIdBotRepliesParams, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdBotRepliesResponse, error) {
+	rsp, err := c.GetApplicationAccountsAccountIdBotReplies(ctx, accountId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApplicationAccountsAccountIdBotRepliesResponse(rsp)
+}
+
+// GetApplicationAccountsAccountIdBotSetupWithResponse Bot Setup
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/setup (the `GetApplicationAccountsAccountIdBotSetup` operationId).
+func (c *ClientWithResponses) GetApplicationAccountsAccountIdBotSetupWithResponse(ctx context.Context, accountId string, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdBotSetupResponse, error) {
+	rsp, err := c.GetApplicationAccountsAccountIdBotSetup(ctx, accountId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApplicationAccountsAccountIdBotSetupResponse(rsp)
+}
+
+// GetApplicationAccountsAccountIdBotSummaryWithResponse Bot Summary
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/summary (the `GetApplicationAccountsAccountIdBotSummary` operationId).
+func (c *ClientWithResponses) GetApplicationAccountsAccountIdBotSummaryWithResponse(ctx context.Context, accountId string, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdBotSummaryResponse, error) {
+	rsp, err := c.GetApplicationAccountsAccountIdBotSummary(ctx, accountId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApplicationAccountsAccountIdBotSummaryResponse(rsp)
+}
+
+// PostApplicationAccountsAccountIdBotTestsWithBodyWithResponse Create Bot Setup Test
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/bot/tests (the `PostApplicationAccountsAccountIdBotTests` operationId).
+func (c *ClientWithResponses) PostApplicationAccountsAccountIdBotTestsWithBodyWithResponse(ctx context.Context, accountId string, params *PostApplicationAccountsAccountIdBotTestsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdBotTestsResponse, error) {
+	rsp, err := c.PostApplicationAccountsAccountIdBotTestsWithBody(ctx, accountId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApplicationAccountsAccountIdBotTestsResponse(rsp)
+}
+
+// PostApplicationAccountsAccountIdBotTestsWithResponse Create Bot Setup Test
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/bot/tests (the `PostApplicationAccountsAccountIdBotTests` operationId).
+func (c *ClientWithResponses) PostApplicationAccountsAccountIdBotTestsWithResponse(ctx context.Context, accountId string, params *PostApplicationAccountsAccountIdBotTestsParams, body PostApplicationAccountsAccountIdBotTestsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdBotTestsResponse, error) {
+	rsp, err := c.PostApplicationAccountsAccountIdBotTests(ctx, accountId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApplicationAccountsAccountIdBotTestsResponse(rsp)
+}
+
+// GetApplicationAccountsAccountIdBotTestsLatestWithResponse Latest Bot Setup Test
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/tests/latest (the `GetApplicationAccountsAccountIdBotTestsLatest` operationId).
+func (c *ClientWithResponses) GetApplicationAccountsAccountIdBotTestsLatestWithResponse(ctx context.Context, accountId string, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdBotTestsLatestResponse, error) {
+	rsp, err := c.GetApplicationAccountsAccountIdBotTestsLatest(ctx, accountId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApplicationAccountsAccountIdBotTestsLatestResponse(rsp)
+}
+
+// GetApplicationAccountsAccountIdBotTestsTestIdWithResponse Get Bot Setup Test
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/tests/{test_id} (the `GetApplicationAccountsAccountIdBotTestsTestId` operationId).
+func (c *ClientWithResponses) GetApplicationAccountsAccountIdBotTestsTestIdWithResponse(ctx context.Context, accountId string, testId string, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdBotTestsTestIdResponse, error) {
+	rsp, err := c.GetApplicationAccountsAccountIdBotTestsTestId(ctx, accountId, testId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApplicationAccountsAccountIdBotTestsTestIdResponse(rsp)
+}
+
+// GetApplicationAccountsAccountIdBotThreadsWithResponse List Bot Conversation Threads
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/bot/threads (the `GetApplicationAccountsAccountIdBotThreads` operationId).
+func (c *ClientWithResponses) GetApplicationAccountsAccountIdBotThreadsWithResponse(ctx context.Context, accountId string, params *GetApplicationAccountsAccountIdBotThreadsParams, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdBotThreadsResponse, error) {
+	rsp, err := c.GetApplicationAccountsAccountIdBotThreads(ctx, accountId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApplicationAccountsAccountIdBotThreadsResponse(rsp)
+}
+
 // PutApplicationAccountsAccountIdCredentialsWithBodyWithResponse Replace Account Credentials
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
@@ -62403,6 +69410,370 @@ func (c *ClientWithResponses) PutApplicationAccountsAccountIdCredentialsWithResp
 		return nil, err
 	}
 	return ParsePutApplicationAccountsAccountIdCredentialsResponse(rsp)
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesWithResponse Scopes
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes (the `GetApplicationAccountsAccountIdMemoryScopes` operationId).
+func (c *ClientWithResponses) GetApplicationAccountsAccountIdMemoryScopesWithResponse(ctx context.Context, accountId string, params *GetApplicationAccountsAccountIdMemoryScopesParams, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdMemoryScopesResponse, error) {
+	rsp, err := c.GetApplicationAccountsAccountIdMemoryScopes(ctx, accountId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApplicationAccountsAccountIdMemoryScopesResponse(rsp)
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesWithBodyWithResponse Configure
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes (the `PostApplicationAccountsAccountIdMemoryScopes` operationId).
+func (c *ClientWithResponses) PostApplicationAccountsAccountIdMemoryScopesWithBodyWithResponse(ctx context.Context, accountId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdMemoryScopesResponse, error) {
+	rsp, err := c.PostApplicationAccountsAccountIdMemoryScopesWithBody(ctx, accountId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApplicationAccountsAccountIdMemoryScopesResponse(rsp)
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesWithResponse Configure
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes (the `PostApplicationAccountsAccountIdMemoryScopes` operationId).
+func (c *ClientWithResponses) PostApplicationAccountsAccountIdMemoryScopesWithResponse(ctx context.Context, accountId string, body PostApplicationAccountsAccountIdMemoryScopesJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdMemoryScopesResponse, error) {
+	rsp, err := c.PostApplicationAccountsAccountIdMemoryScopes(ctx, accountId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApplicationAccountsAccountIdMemoryScopesResponse(rsp)
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsWithResponse Documents
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdDocuments` operationId).
+func (c *ClientWithResponses) GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsWithResponse(ctx context.Context, accountId string, scopeId string, params *GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsParams, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse, error) {
+	rsp, err := c.GetApplicationAccountsAccountIdMemoryScopesScopeIdDocuments(ctx, accountId, scopeId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse(rsp)
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsWithBodyWithResponse Add
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdDocuments` operationId).
+func (c *ClientWithResponses) PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsWithBodyWithResponse(ctx context.Context, accountId string, scopeId string, params *PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse, error) {
+	rsp, err := c.PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsWithBody(ctx, accountId, scopeId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse(rsp)
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsWithResponse Add
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdDocuments` operationId).
+func (c *ClientWithResponses) PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsWithResponse(ctx context.Context, accountId string, scopeId string, params *PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsParams, body PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse, error) {
+	rsp, err := c.PostApplicationAccountsAccountIdMemoryScopesScopeIdDocuments(ctx, accountId, scopeId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse(rsp)
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchWithBodyWithResponse Search
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/search (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearch` operationId).
+func (c *ClientWithResponses) PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchWithBodyWithResponse(ctx context.Context, accountId string, scopeId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchResponse, error) {
+	rsp, err := c.PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchWithBody(ctx, accountId, scopeId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchResponse(rsp)
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchWithResponse Search
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/search (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearch` operationId).
+func (c *ClientWithResponses) PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchWithResponse(ctx context.Context, accountId string, scopeId string, body PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchResponse, error) {
+	rsp, err := c.PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearch(ctx, accountId, scopeId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchResponse(rsp)
+}
+
+// DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdWithResponse Remove
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with DELETE /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/{document_id} (the `DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentId` operationId).
+func (c *ClientWithResponses) DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdWithResponse(ctx context.Context, accountId string, scopeId string, documentId string, reqEditors ...RequestEditorFn) (*DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse, error) {
+	rsp, err := c.DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentId(ctx, accountId, scopeId, documentId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse(rsp)
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdWithResponse Get
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/{document_id} (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentId` operationId).
+func (c *ClientWithResponses) GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdWithResponse(ctx context.Context, accountId string, scopeId string, documentId string, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse, error) {
+	rsp, err := c.GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentId(ctx, accountId, scopeId, documentId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse(rsp)
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsWithBodyWithResponse Publish Document
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/{document_id}/publications (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublications` operationId).
+func (c *ClientWithResponses) PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsWithBodyWithResponse(ctx context.Context, accountId string, scopeId string, documentId string, params *PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsResponse, error) {
+	rsp, err := c.PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsWithBody(ctx, accountId, scopeId, documentId, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsResponse(rsp)
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsWithResponse Publish Document
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/documents/{document_id}/publications (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublications` operationId).
+func (c *ClientWithResponses) PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsWithResponse(ctx context.Context, accountId string, scopeId string, documentId string, params *PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsParams, body PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsResponse, error) {
+	rsp, err := c.PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublications(ctx, accountId, scopeId, documentId, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsResponse(rsp)
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexWithResponse Index
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/index (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdIndex` operationId).
+func (c *ClientWithResponses) GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexWithResponse(ctx context.Context, accountId string, scopeId string, params *GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexParams, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexResponse, error) {
+	rsp, err := c.GetApplicationAccountsAccountIdMemoryScopesScopeIdIndex(ctx, accountId, scopeId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApplicationAccountsAccountIdMemoryScopesScopeIdIndexResponse(rsp)
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsWithResponse Operations
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/operations (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdOperations` operationId).
+func (c *ClientWithResponses) GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsWithResponse(ctx context.Context, accountId string, scopeId string, params *GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsParams, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsResponse, error) {
+	rsp, err := c.GetApplicationAccountsAccountIdMemoryScopesScopeIdOperations(ctx, accountId, scopeId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsResponse(rsp)
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdWithResponse Operation Status
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/operations/{document_id} (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentId` operationId).
+func (c *ClientWithResponses) GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdWithResponse(ctx context.Context, accountId string, scopeId string, documentId string, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdResponse, error) {
+	rsp, err := c.GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentId(ctx, accountId, scopeId, documentId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdResponse(rsp)
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileWithResponse Reconcile Operation
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/operations/{document_id}/reconcile (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcile` operationId).
+func (c *ClientWithResponses) PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileWithResponse(ctx context.Context, accountId string, scopeId string, documentId string, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileResponse, error) {
+	rsp, err := c.PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcile(ctx, accountId, scopeId, documentId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileResponse(rsp)
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsWithResponse Publications
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdPublications` operationId).
+func (c *ClientWithResponses) GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsWithResponse(ctx context.Context, accountId string, scopeId string, params *GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsParams, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsResponse, error) {
+	rsp, err := c.GetApplicationAccountsAccountIdMemoryScopesScopeIdPublications(ctx, accountId, scopeId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsResponse(rsp)
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithResponse Publication
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id} (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentId` operationId).
+func (c *ClientWithResponses) GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithResponse(ctx context.Context, accountId string, scopeId string, documentId string, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdResponse, error) {
+	rsp, err := c.GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentId(ctx, accountId, scopeId, documentId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdResponse(rsp)
+}
+
+// GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceWithResponse Publication Audience
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}/audience (the `GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience` operationId).
+func (c *ClientWithResponses) GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceWithResponse(ctx context.Context, accountId string, scopeId string, documentId string, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse, error) {
+	rsp, err := c.GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience(ctx, accountId, scopeId, documentId, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse(rsp)
+}
+
+// PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceWithBodyWithResponse Change Audience
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}/audience (the `PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience` operationId).
+func (c *ClientWithResponses) PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceWithBodyWithResponse(ctx context.Context, accountId string, scopeId string, documentId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse, error) {
+	rsp, err := c.PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceWithBody(ctx, accountId, scopeId, documentId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse(rsp)
+}
+
+// PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceWithResponse Change Audience
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PATCH /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}/audience (the `PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience` operationId).
+func (c *ClientWithResponses) PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceWithResponse(ctx context.Context, accountId string, scopeId string, documentId string, body PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceJSONRequestBody, reqEditors ...RequestEditorFn) (*PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse, error) {
+	rsp, err := c.PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudience(ctx, accountId, scopeId, documentId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse(rsp)
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawWithBodyWithResponse Withdraw Publication
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}/withdraw (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdraw` operationId).
+func (c *ClientWithResponses) PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawWithBodyWithResponse(ctx context.Context, accountId string, scopeId string, documentId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawResponse, error) {
+	rsp, err := c.PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawWithBody(ctx, accountId, scopeId, documentId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawResponse(rsp)
+}
+
+// PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawWithResponse Withdraw Publication
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-scopes/{scope_id}/publications/{document_id}/withdraw (the `PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdraw` operationId).
+func (c *ClientWithResponses) PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawWithResponse(ctx context.Context, accountId string, scopeId string, documentId string, body PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawResponse, error) {
+	rsp, err := c.PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdraw(ctx, accountId, scopeId, documentId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawResponse(rsp)
+}
+
+// GetApplicationAccountsAccountIdMemorySharingPoliciesWithResponse Policies
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/application-accounts/{account_id}/memory-sharing-policies (the `GetApplicationAccountsAccountIdMemorySharingPolicies` operationId).
+func (c *ClientWithResponses) GetApplicationAccountsAccountIdMemorySharingPoliciesWithResponse(ctx context.Context, accountId string, params *GetApplicationAccountsAccountIdMemorySharingPoliciesParams, reqEditors ...RequestEditorFn) (*GetApplicationAccountsAccountIdMemorySharingPoliciesResponse, error) {
+	rsp, err := c.GetApplicationAccountsAccountIdMemorySharingPolicies(ctx, accountId, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetApplicationAccountsAccountIdMemorySharingPoliciesResponse(rsp)
+}
+
+// PostApplicationAccountsAccountIdMemorySharingPoliciesWithBodyWithResponse New Policy
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-sharing-policies (the `PostApplicationAccountsAccountIdMemorySharingPolicies` operationId).
+func (c *ClientWithResponses) PostApplicationAccountsAccountIdMemorySharingPoliciesWithBodyWithResponse(ctx context.Context, accountId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdMemorySharingPoliciesResponse, error) {
+	rsp, err := c.PostApplicationAccountsAccountIdMemorySharingPoliciesWithBody(ctx, accountId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApplicationAccountsAccountIdMemorySharingPoliciesResponse(rsp)
+}
+
+// PostApplicationAccountsAccountIdMemorySharingPoliciesWithResponse New Policy
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/application-accounts/{account_id}/memory-sharing-policies (the `PostApplicationAccountsAccountIdMemorySharingPolicies` operationId).
+func (c *ClientWithResponses) PostApplicationAccountsAccountIdMemorySharingPoliciesWithResponse(ctx context.Context, accountId string, body PostApplicationAccountsAccountIdMemorySharingPoliciesJSONRequestBody, reqEditors ...RequestEditorFn) (*PostApplicationAccountsAccountIdMemorySharingPoliciesResponse, error) {
+	rsp, err := c.PostApplicationAccountsAccountIdMemorySharingPolicies(ctx, accountId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePostApplicationAccountsAccountIdMemorySharingPoliciesResponse(rsp)
+}
+
+// PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdWithBodyWithResponse Replace Policy
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/v1/application-accounts/{account_id}/memory-sharing-policies/{policy_id} (the `PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyId` operationId).
+func (c *ClientWithResponses) PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdWithBodyWithResponse(ctx context.Context, accountId string, policyId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdResponse, error) {
+	rsp, err := c.PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdWithBody(ctx, accountId, policyId, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdResponse(rsp)
+}
+
+// PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdWithResponse Replace Policy
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with PUT /api/v1/application-accounts/{account_id}/memory-sharing-policies/{policy_id} (the `PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyId` operationId).
+func (c *ClientWithResponses) PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdWithResponse(ctx context.Context, accountId string, policyId string, body PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdJSONRequestBody, reqEditors ...RequestEditorFn) (*PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdResponse, error) {
+	rsp, err := c.PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyId(ctx, accountId, policyId, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdResponse(rsp)
 }
 
 // GetApplicationAccountsAccountIdTargetsWithResponse List Targets
@@ -66214,6 +73585,19 @@ func (c *ClientWithResponses) PostWorkspacesWorkspaceAssetsWithBodyWithResponse(
 	return ParsePostWorkspacesWorkspaceAssetsResponse(rsp)
 }
 
+// GetWorkspacesWorkspaceBotsWithResponse Bot Collection
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/workspaces/{workspace}/bots (the `GetWorkspacesWorkspaceBots` operationId).
+func (c *ClientWithResponses) GetWorkspacesWorkspaceBotsWithResponse(ctx context.Context, workspace string, params *GetWorkspacesWorkspaceBotsParams, reqEditors ...RequestEditorFn) (*GetWorkspacesWorkspaceBotsResponse, error) {
+	rsp, err := c.GetWorkspacesWorkspaceBots(ctx, workspace, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetWorkspacesWorkspaceBotsResponse(rsp)
+}
+
 // GetWorkspacesWorkspaceConnectionsWithResponse List Connections
 //
 // Returns a wrapper object for the known response body format(s).
@@ -67964,6 +75348,886 @@ func ParsePatchApplicationAccountsAccountIdResponse(rsp *http.Response) (*PatchA
 	return response, nil
 }
 
+// ParsePostApplicationAccountsAccountIdBotActivateResponse parses an HTTP response from a PostApplicationAccountsAccountIdBotActivateWithResponse call
+func ParsePostApplicationAccountsAccountIdBotActivateResponse(rsp *http.Response) (*PostApplicationAccountsAccountIdBotActivateResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostApplicationAccountsAccountIdBotActivateResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Account
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PostApplicationAccountsAccountIdBotActivateResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PostApplicationAccountsAccountIdBotActivateResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PostApplicationAccountsAccountIdBotActivateResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePostApplicationAccountsAccountIdBotChecksResponse parses an HTTP response from a PostApplicationAccountsAccountIdBotChecksWithResponse call
+func ParsePostApplicationAccountsAccountIdBotChecksResponse(rsp *http.Response) (*PostApplicationAccountsAccountIdBotChecksResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostApplicationAccountsAccountIdBotChecksResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BotCheck
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PostApplicationAccountsAccountIdBotChecksResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PostApplicationAccountsAccountIdBotChecksResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PostApplicationAccountsAccountIdBotChecksResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetApplicationAccountsAccountIdBotChecksLatestResponse parses an HTTP response from a GetApplicationAccountsAccountIdBotChecksLatestWithResponse call
+func ParseGetApplicationAccountsAccountIdBotChecksLatestResponse(rsp *http.Response) (*GetApplicationAccountsAccountIdBotChecksLatestResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApplicationAccountsAccountIdBotChecksLatestResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BotCheckHistory
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetApplicationAccountsAccountIdBotChecksLatestResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetApplicationAccountsAccountIdBotChecksLatestResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetApplicationAccountsAccountIdBotChecksLatestResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetApplicationAccountsAccountIdBotConversationsResponse parses an HTTP response from a GetApplicationAccountsAccountIdBotConversationsWithResponse call
+func ParseGetApplicationAccountsAccountIdBotConversationsResponse(rsp *http.Response) (*GetApplicationAccountsAccountIdBotConversationsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApplicationAccountsAccountIdBotConversationsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ConversationPage
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetApplicationAccountsAccountIdBotConversationsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetApplicationAccountsAccountIdBotConversationsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetApplicationAccountsAccountIdBotConversationsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetApplicationAccountsAccountIdBotRepliesResponse parses an HTTP response from a GetApplicationAccountsAccountIdBotRepliesWithResponse call
+func ParseGetApplicationAccountsAccountIdBotRepliesResponse(rsp *http.Response) (*GetApplicationAccountsAccountIdBotRepliesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApplicationAccountsAccountIdBotRepliesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BotReplyCollection
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetApplicationAccountsAccountIdBotRepliesResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetApplicationAccountsAccountIdBotRepliesResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetApplicationAccountsAccountIdBotRepliesResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetApplicationAccountsAccountIdBotSetupResponse parses an HTTP response from a GetApplicationAccountsAccountIdBotSetupWithResponse call
+func ParseGetApplicationAccountsAccountIdBotSetupResponse(rsp *http.Response) (*GetApplicationAccountsAccountIdBotSetupResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApplicationAccountsAccountIdBotSetupResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BotSetup
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetApplicationAccountsAccountIdBotSetupResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetApplicationAccountsAccountIdBotSetupResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetApplicationAccountsAccountIdBotSetupResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetApplicationAccountsAccountIdBotSummaryResponse parses an HTTP response from a GetApplicationAccountsAccountIdBotSummaryWithResponse call
+func ParseGetApplicationAccountsAccountIdBotSummaryResponse(rsp *http.Response) (*GetApplicationAccountsAccountIdBotSummaryResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApplicationAccountsAccountIdBotSummaryResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BotSummary
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetApplicationAccountsAccountIdBotSummaryResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetApplicationAccountsAccountIdBotSummaryResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetApplicationAccountsAccountIdBotSummaryResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePostApplicationAccountsAccountIdBotTestsResponse parses an HTTP response from a PostApplicationAccountsAccountIdBotTestsWithResponse call
+func ParsePostApplicationAccountsAccountIdBotTestsResponse(rsp *http.Response) (*PostApplicationAccountsAccountIdBotTestsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostApplicationAccountsAccountIdBotTestsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BotTest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PostApplicationAccountsAccountIdBotTestsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PostApplicationAccountsAccountIdBotTestsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PostApplicationAccountsAccountIdBotTestsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetApplicationAccountsAccountIdBotTestsLatestResponse parses an HTTP response from a GetApplicationAccountsAccountIdBotTestsLatestWithResponse call
+func ParseGetApplicationAccountsAccountIdBotTestsLatestResponse(rsp *http.Response) (*GetApplicationAccountsAccountIdBotTestsLatestResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApplicationAccountsAccountIdBotTestsLatestResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BotTestHistory
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetApplicationAccountsAccountIdBotTestsLatestResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetApplicationAccountsAccountIdBotTestsLatestResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetApplicationAccountsAccountIdBotTestsLatestResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetApplicationAccountsAccountIdBotTestsTestIdResponse parses an HTTP response from a GetApplicationAccountsAccountIdBotTestsTestIdWithResponse call
+func ParseGetApplicationAccountsAccountIdBotTestsTestIdResponse(rsp *http.Response) (*GetApplicationAccountsAccountIdBotTestsTestIdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApplicationAccountsAccountIdBotTestsTestIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BotTestHistory
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetApplicationAccountsAccountIdBotTestsTestIdResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetApplicationAccountsAccountIdBotTestsTestIdResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetApplicationAccountsAccountIdBotTestsTestIdResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetApplicationAccountsAccountIdBotThreadsResponse parses an HTTP response from a GetApplicationAccountsAccountIdBotThreadsWithResponse call
+func ParseGetApplicationAccountsAccountIdBotThreadsResponse(rsp *http.Response) (*GetApplicationAccountsAccountIdBotThreadsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApplicationAccountsAccountIdBotThreadsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BotThreadCollection
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetApplicationAccountsAccountIdBotThreadsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetApplicationAccountsAccountIdBotThreadsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetApplicationAccountsAccountIdBotThreadsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
 // ParsePutApplicationAccountsAccountIdCredentialsResponse parses an HTTP response from a PutApplicationAccountsAccountIdCredentialsWithResponse call
 func ParsePutApplicationAccountsAccountIdCredentialsResponse(rsp *http.Response) (*PutApplicationAccountsAccountIdCredentialsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -68024,6 +76288,1594 @@ func ParsePutApplicationAccountsAccountIdCredentialsResponse(rsp *http.Response)
 		response.Headers400 = &headers
 	case true:
 		var headers PutApplicationAccountsAccountIdCredentialsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetApplicationAccountsAccountIdMemoryScopesResponse parses an HTTP response from a GetApplicationAccountsAccountIdMemoryScopesWithResponse call
+func ParseGetApplicationAccountsAccountIdMemoryScopesResponse(rsp *http.Response) (*GetApplicationAccountsAccountIdMemoryScopesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApplicationAccountsAccountIdMemoryScopesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ScopeCollection
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetApplicationAccountsAccountIdMemoryScopesResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetApplicationAccountsAccountIdMemoryScopesResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetApplicationAccountsAccountIdMemoryScopesResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePostApplicationAccountsAccountIdMemoryScopesResponse parses an HTTP response from a PostApplicationAccountsAccountIdMemoryScopesWithResponse call
+func ParsePostApplicationAccountsAccountIdMemoryScopesResponse(rsp *http.Response) (*PostApplicationAccountsAccountIdMemoryScopesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostApplicationAccountsAccountIdMemoryScopesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Scope
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PostApplicationAccountsAccountIdMemoryScopesResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PostApplicationAccountsAccountIdMemoryScopesResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PostApplicationAccountsAccountIdMemoryScopesResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse parses an HTTP response from a GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsWithResponse call
+func ParseGetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse(rsp *http.Response) (*GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DocumentCollection
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse parses an HTTP response from a PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsWithResponse call
+func ParsePostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse(rsp *http.Response) (*PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest Document
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 201:
+		var headers PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse201Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers201 = &headers
+	case rsp.StatusCode == 400:
+		var headers PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchResponse parses an HTTP response from a PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchWithResponse call
+func ParsePostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchResponse(rsp *http.Response) (*PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DocumentCollection
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsSearchResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseDeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse parses an HTTP response from a DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdWithResponse call
+func ParseDeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse(rsp *http.Response) (*DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		var headers DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse204Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers204 = &headers
+	case rsp.StatusCode == 400:
+		var headers DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers DeleteApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse parses an HTTP response from a GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdWithResponse call
+func ParseGetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse(rsp *http.Response) (*GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Document
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsResponse parses an HTTP response from a PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsWithResponse call
+func ParsePostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsResponse(rsp *http.Response) (*PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest Document
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 201:
+		var headers PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsResponse201Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers201 = &headers
+	case rsp.StatusCode == 400:
+		var headers PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PostApplicationAccountsAccountIdMemoryScopesScopeIdDocumentsDocumentIdPublicationsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetApplicationAccountsAccountIdMemoryScopesScopeIdIndexResponse parses an HTTP response from a GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexWithResponse call
+func ParseGetApplicationAccountsAccountIdMemoryScopesScopeIdIndexResponse(rsp *http.Response) (*GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest MemoryIndex
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetApplicationAccountsAccountIdMemoryScopesScopeIdIndexResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsResponse parses an HTTP response from a GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsWithResponse call
+func ParseGetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsResponse(rsp *http.Response) (*GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DocumentCollection
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdResponse parses an HTTP response from a GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdWithResponse call
+func ParseGetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdResponse(rsp *http.Response) (*GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DocumentEntry
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileResponse parses an HTTP response from a PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileWithResponse call
+func ParsePostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileResponse(rsp *http.Response) (*PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DocumentEntry
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PostApplicationAccountsAccountIdMemoryScopesScopeIdOperationsDocumentIdReconcileResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsResponse parses an HTTP response from a GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsWithResponse call
+func ParseGetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsResponse(rsp *http.Response) (*GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest DocumentCollection
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdResponse parses an HTTP response from a GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithResponse call
+func ParseGetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdResponse(rsp *http.Response) (*GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Document
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse parses an HTTP response from a GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceWithResponse call
+func ParseGetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse(rsp *http.Response) (*GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest PublicationAccess
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse parses an HTTP response from a PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceWithResponse call
+func ParsePatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse(rsp *http.Response) (*PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		var headers PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse204Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers204 = &headers
+	case rsp.StatusCode == 400:
+		var headers PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PatchApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdAudienceResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawResponse parses an HTTP response from a PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawWithResponse call
+func ParsePostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawResponse(rsp *http.Response) (*PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		var headers PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawResponse204Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers204 = &headers
+	case rsp.StatusCode == 400:
+		var headers PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PostApplicationAccountsAccountIdMemoryScopesScopeIdPublicationsDocumentIdWithdrawResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetApplicationAccountsAccountIdMemorySharingPoliciesResponse parses an HTTP response from a GetApplicationAccountsAccountIdMemorySharingPoliciesWithResponse call
+func ParseGetApplicationAccountsAccountIdMemorySharingPoliciesResponse(rsp *http.Response) (*GetApplicationAccountsAccountIdMemorySharingPoliciesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetApplicationAccountsAccountIdMemorySharingPoliciesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SharingPolicyCollection
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetApplicationAccountsAccountIdMemorySharingPoliciesResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetApplicationAccountsAccountIdMemorySharingPoliciesResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetApplicationAccountsAccountIdMemorySharingPoliciesResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePostApplicationAccountsAccountIdMemorySharingPoliciesResponse parses an HTTP response from a PostApplicationAccountsAccountIdMemorySharingPoliciesWithResponse call
+func ParsePostApplicationAccountsAccountIdMemorySharingPoliciesResponse(rsp *http.Response) (*PostApplicationAccountsAccountIdMemorySharingPoliciesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PostApplicationAccountsAccountIdMemorySharingPoliciesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest SharingPolicy
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 201:
+		var headers PostApplicationAccountsAccountIdMemorySharingPoliciesResponse201Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers201 = &headers
+	case rsp.StatusCode == 400:
+		var headers PostApplicationAccountsAccountIdMemorySharingPoliciesResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PostApplicationAccountsAccountIdMemorySharingPoliciesResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParsePutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdResponse parses an HTTP response from a PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdWithResponse call
+func ParsePutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdResponse(rsp *http.Response) (*PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SharingPolicy
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers PutApplicationAccountsAccountIdMemorySharingPoliciesPolicyIdResponseDefaultHeaders
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
@@ -84425,6 +94277,86 @@ func ParsePostWorkspacesWorkspaceAssetsResponse(rsp *http.Response) (*PostWorksp
 		response.Headers400 = &headers
 	case true:
 		var headers PostWorkspacesWorkspaceAssetsResponseDefaultHeaders
+		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.RetryAfter = &value
+		}
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.HeadersDefault = &headers
+	}
+
+	return response, nil
+}
+
+// ParseGetWorkspacesWorkspaceBotsResponse parses an HTTP response from a GetWorkspacesWorkspaceBotsWithResponse call
+func ParseGetWorkspacesWorkspaceBotsResponse(rsp *http.Response) (*GetWorkspacesWorkspaceBotsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetWorkspacesWorkspaceBotsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BotCollection
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 200:
+		var headers GetWorkspacesWorkspaceBotsResponse200Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers200 = &headers
+	case rsp.StatusCode == 400:
+		var headers GetWorkspacesWorkspaceBotsResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = &value
+		}
+		response.Headers400 = &headers
+	case true:
+		var headers GetWorkspacesWorkspaceBotsResponseDefaultHeaders
 		if values := rsp.Header.Values("Retry-After"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "Retry-After", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""}); err != nil {
