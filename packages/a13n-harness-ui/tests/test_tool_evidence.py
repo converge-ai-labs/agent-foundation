@@ -50,7 +50,7 @@ def test_applied_evidence_round_trips_without_changing_model_facing_result_or_ot
     assert applied_edit(ToolReturnPart("edit", {}, "old-history")) is None
 
 
-def test_edit_retention_is_bounded_and_does_not_associate_other_runs_or_call_ids() -> None:
+def test_edit_retention_is_complete_and_does_not_associate_other_runs_or_call_ids() -> None:
     collector = ToolEvidenceCollector(run_id="run-one")
     collector.observe(envelope(edit_event(), run_id="run-other"))
     unrelated = ToolReturnPart("edit", {}, "call-one")
@@ -67,13 +67,13 @@ def test_edit_retention_is_bounded_and_does_not_associate_other_runs_or_call_ids
         collector.observe(envelope(FunctionToolResultEvent(part)))
         evidence = applied_edit(part)
         assert evidence is not None
-        assert evidence.omitted is (index >= 7)  # the earlier unmatched event also consumed retained space
-        if evidence.omitted:
-            assert evidence.before is None and evidence.after is None
+        assert not evidence.omitted
+        assert evidence.before == "x" * 32768 and evidence.after == "y" * 32768
     collector.observe(envelope(edit_event("large", before="x" * 65537)))
     large = ToolReturnPart("edit", {}, "large")
     collector.observe(envelope(FunctionToolResultEvent(large)))
-    assert applied_edit(large).omitted
+    assert not applied_edit(large).omitted
+    assert applied_edit(large).before == "x" * 65537
 
 
 def test_provider_native_calls_and_returns_use_existing_transcript_tool_shapes() -> None:
@@ -118,7 +118,8 @@ async def test_real_file_edit_evidence_survives_completed_run_and_app_restart(
         + "capabilities:\n  - capability: dynamic_environment\n    configuration: {files_enabled: true}\n"
     )
     path = tmp_path / "workspace" / "sample.txt"
-    path.write_text("original\n")
+    padding = "unchanged content\n" * 5000
+    path.write_text(padding + "original\n")
     steps = 0
 
     async def resolve(self, context, model_id):
@@ -150,12 +151,12 @@ async def test_real_file_edit_evidence_survives_completed_run_and_app_restart(
         outcome = await app.wait_root_operation(receipt.receipt_id)
         assert outcome.status == "completed", outcome.model_dump_json()
         page = await app.get_thread_transcript(thread_id=thread.thread_id)
-        assert path.read_text() == "changed\n", page.model_dump_json()
+        assert path.read_text() == padding + "changed\n", page.model_dump_json()
         results = [part for entry in page.entries for part in entry.parts if part.kind == "tool_result"]
         assert len(results) == 1
         assert results[0].applied_edit is not None, page.model_dump_json()
-        assert results[0].applied_edit.before == "original\n"
-        assert results[0].applied_edit.after == "changed\n"
+        assert results[0].applied_edit.before == padding + "original\n"
+        assert results[0].applied_edit.after == padding + "changed\n"
         assert "before" not in results[0].value
     path.write_text("subsequent user change\n")
     async with open_harness_ui_app(
@@ -163,4 +164,4 @@ async def test_real_file_edit_evidence_survives_completed_run_and_app_restart(
     ) as app:
         page = await app.get_thread_transcript(thread_id=thread.thread_id)
         saved = next(part for entry in page.entries for part in entry.parts if part.applied_edit is not None)
-        assert saved.applied_edit.before == "original\n" and saved.applied_edit.after == "changed\n"
+        assert saved.applied_edit.before == padding + "original\n" and saved.applied_edit.after == padding + "changed\n"

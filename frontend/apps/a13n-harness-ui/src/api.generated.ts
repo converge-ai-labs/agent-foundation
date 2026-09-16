@@ -1357,7 +1357,7 @@ export interface components {
         };
         /**
          * AppliedEditView
-         * @description Observed edit content, or an explicit omission when retention bounds were reached.
+         * @description Observed edit content; nullable fields retain compatibility with older omitted previews.
          */
         AppliedEditView: {
             /** File Path */

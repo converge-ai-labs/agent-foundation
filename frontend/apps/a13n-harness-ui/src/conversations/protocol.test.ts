@@ -3,7 +3,7 @@ import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { createTransport, result, type Transport } from "../transport/client";
 import { ThreadDraft, values } from "./draft";
-import { submitDraft } from "./composer";
+import { submitDraft, submitContinuation } from "./composer";
 import { FocusDisplay, watchThread } from "./stream";
 
 let app: Awaited<ReturnType<typeof startApp>>;
@@ -500,3 +500,71 @@ it("the App resumes an unanswered question after all viewers disconnect, with on
     ),
   ).toBeNull();
 });
+
+it("continues a failed operation as a new turn without consuming the shared draft", async () => {
+  const failedApp = await startApp("--fail");
+  vi.stubGlobal("window", { location: { origin: failedApp.origin } });
+  const client = createTransport("test-only-key", () => {});
+  const draft = new ThreadDraft();
+  let connection: ReturnType<ThreadDraft["connect"]> | undefined;
+  try {
+    const created = await result(
+      client.client.POST("/api/threads", { body: { title: "Retry" } }),
+    );
+    const threadId = created.thread_id;
+    const first = await result(
+      client.client.POST("/api/threads/{thread_id}/submit", {
+        params: { path: { thread_id: threadId } },
+        body: { parts: ["Start the task"] },
+      }),
+    );
+    await vi.waitFor(
+      async () => {
+        const operation = await result(
+          client.client.GET("/api/operations/{receipt_id}", {
+            params: { path: { receipt_id: first.receipt_id } },
+          }),
+        );
+        expect(operation.status).toBe("failed");
+      },
+      { timeout: 10000 },
+    );
+    connection = draft.connect(client, threadId, () => {});
+    await until(() => draft.synchronized);
+    draft.doc.getText("text").insert(0, "Keep this next question");
+    await until(() => draft.synchronized);
+    await submitContinuation(draft, client, threadId);
+    expect(draft.submission.kind).toBe("accepted");
+    if (draft.submission.kind !== "accepted")
+      throw new Error("Continuation was not admitted");
+    const receipt = draft.submission.receipt;
+    expect(receipt).not.toBe(first.receipt_id);
+    await vi.waitFor(
+      async () => {
+        const operation = await result(
+          client.client.GET("/api/operations/{receipt_id}", {
+            params: { path: { receipt_id: receipt } },
+          }),
+        );
+        expect(operation.status).toBe("completed");
+      },
+      { timeout: 10000 },
+    );
+    expect(values(draft.doc).prompt).toBe("Keep this next question");
+    const history = await result(
+      client.client.GET("/api/threads/{thread_id}/transcript", {
+        params: { path: { thread_id: threadId } },
+      }),
+    );
+    const text = history.entries
+      .flatMap((entry) => entry.parts.map((part) => part.text ?? ""))
+      .join("\n");
+    expect(text).toContain("Continue completing the previous task.");
+    expect(text).not.toContain("Keep this next question");
+  } finally {
+    connection?.close();
+    client.close();
+    await failedApp.close();
+    vi.stubGlobal("window", { location: { origin: app.origin } });
+  }
+}, 40000);

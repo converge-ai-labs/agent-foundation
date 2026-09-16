@@ -107,14 +107,14 @@ async def test_http_shows_six_active_roots_plus_five_recent_without_progress_reo
             ordinary = (await api.get("/api/threads/activity", params={"limit": 5})).json()
             assert ordinary["active_rows"] == []
             assert len(ordinary["rows"]) == 5
-            # Completing the oldest active root changes its section, not its recency.
+            # Completing the oldest active root also advances its durable navigation recency.
             saved_touch = first["active_rows"][-1]["thread"]["touched_at"]
             release[0].set()
             assert (await settled(api, receipts[0]))["status"] == "completed"
             after = (await api.get("/api/threads/activity", params=params)).json()
             assert [r["thread"]["thread_id"] for r in after["active_rows"]] == running[:0:-1]
             assert after["rows"][0]["thread"]["thread_id"] == running[0]
-            assert after["rows"][0]["thread"]["touched_at"] == saved_touch
+            assert after["rows"][0]["thread"]["touched_at"] > saved_touch
             # Explicit touch is persistent but does not submit work or mutate history.
             touched = await api.post(f"/api/threads/{idle[0]}/touch")
             assert touched.status_code == 200
@@ -124,15 +124,17 @@ async def test_http_shows_six_active_roots_plus_five_recent_without_progress_reo
             assert refreshed["rows"][0]["thread"]["thread_id"] == idle[0]
             assert [r["thread"]["thread_id"] for r in refreshed["active_rows"]] == running[:0:-1]
             assert (await api.post("/api/threads/missing/touch")).status_code >= 400
-            for event in release:
-                event.set()
-            for receipt in receipts:
-                assert (await settled(api, receipt))["status"] == "completed"
+            for index in range(1, len(receipts)):
+                release[index].set()
+                assert (await settled(api, receipts[index]))["status"] == "completed"
+            finished = (await api.get("/api/threads/activity", params={"include_active": "true", "limit": 20})).json()
+            expected = [*running[:0:-1], idle[0], running[0]]
+            assert [r["thread"]["thread_id"] for r in finished["rows"]][:7] == expected
     async with listener(tmp_path, configuration_path=configuration) as (http, _):
         async with httpx.AsyncClient(base_url=http, headers=HEADERS, trust_env=False) as api:
             refreshed = (await api.get("/api/threads/activity", params={"include_active": "true", "limit": 20})).json()
             assert refreshed["active_rows"] == []
-            assert [r["thread"]["thread_id"] for r in refreshed["rows"]][:7] == [idle[0], *running[::-1]]
+            assert [r["thread"]["thread_id"] for r in refreshed["rows"]][:7] == expected
 
 
 async def test_create_returns_durable_thread_identity_when_navigation_write_fails(tmp_path, monkeypatch):

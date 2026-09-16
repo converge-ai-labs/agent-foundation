@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Decoration, EditorView, GutterMarker, gutter } from "@codemirror/view";
 import { EditorState } from "@codemirror/state";
+import { Button } from "a13n-ui";
 import type { Schema } from "../transport/client";
 import { SourceEditor } from "../configuration/editor";
 import { CaptureContext } from "./capture";
@@ -33,14 +34,22 @@ export function PatchEditor({
   value,
   threadId,
   disabled,
+  openLine,
 }: {
   value: Schema<"GitDiff">;
   threadId?: string;
   disabled: boolean;
+  openLine?: (line: number) => void;
 }) {
   const text = value.text ?? "";
   const [range, setRange] = useState<LineRange>();
   const lines = useMemo(() => patchLines(text), [text]);
+  const hunks = useMemo(
+    () =>
+      lines.flatMap((line, index) => (line.kind === "hunk" ? [index + 1] : [])),
+    [lines],
+  );
+  const [hunk, setHunk] = useState(-1);
   const extensions = useMemo(() => {
     const doc = EditorState.create({ doc: text }).doc;
     return [
@@ -108,10 +117,37 @@ export function PatchEditor({
           −{lines.filter((line) => line.kind === "deletion").length}
         </span>
         <small>Old / new lines</small>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={hunk <= 0}
+          onClick={() => setHunk(hunk - 1)}
+        >
+          Previous change
+        </Button>
+        <Button
+          size="sm"
+          variant="ghost"
+          disabled={hunk >= hunks.length - 1}
+          onClick={() => setHunk(hunk + 1)}
+        >
+          Next change
+        </Button>
+        {range && openLine && lines[range.start_line - 1]?.newLine != null && (
+          <Button
+            size="sm"
+            variant="ghost"
+            disabled={disabled}
+            onClick={() => openLine(lines[range.start_line - 1]!.newLine!)}
+          >
+            Open selected line
+          </Button>
+        )}
       </div>
       <div className={`${styles.editor} ${styles.patchEditor}`}>
         <SourceEditor
           value={text}
+          line={hunks[hunk]}
           language="plain"
           fill
           readOnly

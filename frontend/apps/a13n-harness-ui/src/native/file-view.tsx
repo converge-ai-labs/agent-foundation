@@ -21,17 +21,22 @@ export function FileView({
   threadId,
   refresh,
   open,
+  line,
+  onBufferChange,
 }: {
   path: string;
   threadId?: string;
   refresh: () => void;
   open: (path: string) => void;
+  line?: number;
+  onBufferChange?: () => void;
 }) {
   const { client, fetch } = useTransport();
   const buffers = useContext(FileBuffers);
   const [, render] = useReducer((value: number) => value + 1, 0);
   const [error, setError] = useState<unknown>(null);
   const [message, setMessage] = useState("");
+  const [wrap, setWrap] = useState(false);
   const [selection, setSelection] = useState<LineRange>();
   const read = useQuery({
     queryKey: ["native", "text", path],
@@ -71,7 +76,15 @@ export function FileView({
     );
   const symlink = buffer.base.resolved_path !== path;
   const save = async () => {
-    if (buffer.saving || buffer.uncertain || buffer.conflict || symlink) return;
+    if (
+      !buffer.dirty ||
+      buffer.saving ||
+      buffer.uncertain ||
+      buffer.conflict ||
+      symlink ||
+      read.error
+    )
+      return;
     const submitted = buffer.value;
     buffer.saving = true;
     render();
@@ -107,6 +120,7 @@ export function FileView({
     } finally {
       buffer.saving = false;
       render();
+      onBufferChange?.();
       refresh();
     }
   };
@@ -225,6 +239,7 @@ export function FileView({
               <SourceEditor
                 value={buffer.observed.text}
                 language="plain"
+                filename={path}
                 readOnly
                 label="Latest disk text"
               />
@@ -299,11 +314,32 @@ export function FileView({
           line-ending style; opening or capturing does not change its bytes.
         </p>
       )}
+      {editable && (
+        <div className={styles.actions}>
+          <Button
+            size="sm"
+            variant="ghost"
+            aria-pressed={wrap}
+            onClick={() => setWrap(!wrap)}
+          >
+            Wrap lines
+          </Button>
+          <small>⌘/Ctrl+G: go to line · ⌘/Ctrl+S: save</small>
+        </div>
+      )}
       {editable ? (
         <div className={styles.editor}>
           <SourceEditor
             value={buffer.value}
             language="plain"
+            filename={path}
+            line={line}
+            wrap={wrap}
+            position={buffer.position}
+            onPosition={(position) => {
+              buffer.position = position;
+            }}
+            onSave={() => void save()}
             label={`File text: ${path}`}
             fill
             readOnly={symlink}
@@ -311,6 +347,7 @@ export function FileView({
             onChange={(value) => {
               buffer.value = value;
               render();
+              onBufferChange?.();
             }}
           />
         </div>

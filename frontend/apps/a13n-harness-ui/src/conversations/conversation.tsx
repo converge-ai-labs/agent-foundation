@@ -15,7 +15,7 @@ import { useSelectors, useTransport } from "../transport/context";
 import { ErrorNotice, TextField } from "../shell/ui";
 import type { Profile } from "../shell/presence";
 import { readPreference, writePreference } from "../shell/preferences";
-import { Composer, useDraft } from "./composer";
+import { Composer, submitContinuation, useDraft } from "./composer";
 import { ComposerStatus } from "./composer-status";
 import { ThreadRunChoices } from "./thread-run-choices";
 import { Decisions } from "./decisions";
@@ -500,6 +500,28 @@ function Conversation({
               threadId={threadId}
               receipt={receipt}
               display={display}
+              retry={
+                thread?.archived
+                  ? undefined
+                  : () => {
+                      void submitContinuation(
+                        draft,
+                        transport,
+                        threadId,
+                      ).finally(reconcile);
+                    }
+              }
+              retryDisabled={
+                !detail.data?.available_actions?.includes("run") ||
+                thread?.root_activity.state !== "inactive" ||
+                agentSelection.isPending ||
+                agentSelection.isError ||
+                detail.isError ||
+                draft.submission.kind === "pending" ||
+                draft.submission.kind === "unknown" ||
+                (draft.submission.kind === "accepted" &&
+                  draft.submission.receipt !== receipt)
+              }
             />
             <RecoveryNotice recovery={display.recovery} />
             {!!detail.data?.deferred_requests?.length && (

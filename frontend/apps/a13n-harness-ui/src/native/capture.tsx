@@ -1,4 +1,4 @@
-import { useContext, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "a13n-ui";
 import { ComposerDrafts } from "../conversations/composer";
@@ -8,6 +8,8 @@ import { useTransport } from "../transport/context";
 import { ErrorNotice, TextField } from "../shell/ui";
 import { lineRange, supportsLineRanges, type LineRange } from "./buffer";
 import styles from "./native.module.css";
+
+export const ReturnToChat = createContext<() => void>(() => {});
 
 export type CaptureSource =
   { file: Schema<"FileText"> } | { diff: Schema<"GitDiff"> };
@@ -53,6 +55,9 @@ export function CaptureContext({
   selection?: LineRange;
 }) {
   const transport = useTransport();
+  const returnToChat = useContext(ReturnToChat);
+  const currentThread = useRef(threadId);
+  currentThread.current = threadId;
   const drafts = useContext(ComposerDrafts);
   const queries = useQueryClient();
   const [range, setRange] = useState(false);
@@ -61,6 +66,10 @@ export function CaptureContext({
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<unknown>(null);
   const [message, setMessage] = useState("");
+  useEffect(() => {
+    setMessage("");
+    setError(null);
+  }, [threadId]);
   const text =
     "diff" in source
       ? source.diff.presentation === "text"
@@ -90,7 +99,11 @@ export function CaptureContext({
         source,
         selectedLines ?? (range ? lineRange(start, end) : undefined),
       );
-      if (draft.draftId !== incarnation || draft.replacement)
+      if (
+        !draft.synchronized ||
+        draft.draftId !== incarnation ||
+        draft.replacement
+      )
         throw new Error(
           "The shared draft was replaced during capture. Rejoin before adding context again.",
         );
@@ -104,11 +117,10 @@ export function CaptureContext({
         attachment,
       );
       draft.addAttachment(attachment.attachment_id);
-      setMessage(
-        "Added to the conversation. Return to Chat to review it before sending.",
-      );
+      if (currentThread.current === threadId)
+        setMessage("Added to the conversation. Review it before sending.");
     } catch (failure) {
-      setError(failure);
+      if (currentThread.current === threadId) setError(failure);
     } finally {
       setPending(false);
     }
@@ -117,7 +129,7 @@ export function CaptureContext({
     <section className={styles.capture} aria-label="Capture reviewed context">
       <div className={styles.actions}>
         <Button
-          variant="outline"
+          variant={selection ? "ghost" : "outline"}
           size="sm"
           disabled={!threadId || disabled || pending}
           onClick={() => void capture()}
@@ -137,7 +149,7 @@ export function CaptureContext({
         )}
         {rangesSupported && selection && (
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
             disabled={!threadId || disabled || pending}
             onClick={() => void capture(selection)}
@@ -176,7 +188,14 @@ export function CaptureContext({
           Save and refresh your file before capturing its reviewed disk content.
         </small>
       )}
-      {message && <p role="status">{message}</p>}
+      {message && (
+        <div className={styles.actions}>
+          <p role="status">{message}</p>
+          <Button size="sm" variant="ghost" onClick={returnToChat}>
+            Return to conversation
+          </Button>
+        </div>
+      )}
       <ErrorNotice error={error} />
     </section>
   );

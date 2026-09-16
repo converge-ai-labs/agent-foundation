@@ -84,13 +84,7 @@ function CodeContent({
 }
 
 export function editPatch(edit: AppliedEdit) {
-  if (
-    [edit.before, edit.after].some(
-      (value) => value.length > 512 * 1024 || value.split("\n").length > 10001,
-    )
-  )
-    return;
-  return structuredPatch(
+  const patch = structuredPatch(
     edit.file_path,
     edit.file_path,
     edit.before,
@@ -99,6 +93,34 @@ export function editPatch(edit: AppliedEdit) {
     undefined,
     { context: 3, maxEditLength: 2000, timeout: 100 },
   );
+  if (patch) return patch;
+  // Keep the computation bounded without omitting evidence: when minimal diff
+  // calculation exceeds its budget, show a complete replacement in linear time.
+  const replacement = (text: string, prefix: string) => {
+    if (!text) return { count: 0, lines: [] };
+    const lines = text.split("\n");
+    if (text.endsWith("\n")) lines.pop();
+    return {
+      count: lines.length,
+      lines: [
+        ...lines.map((line) => `${prefix}${line}`),
+        ...(text.endsWith("\n") ? [] : ["\\ No newline at end of file"]),
+      ],
+    };
+  };
+  const before = replacement(edit.before, "-");
+  const after = replacement(edit.after, "+");
+  return {
+    hunks: [
+      {
+        oldStart: before.count ? 1 : 0,
+        oldLines: before.count,
+        newStart: after.count ? 1 : 0,
+        newLines: after.count,
+        lines: [...before.lines, ...after.lines],
+      },
+    ],
+  };
 }
 const EditDiff = memo(function EditDiff({
   edit,
@@ -109,7 +131,6 @@ const EditDiff = memo(function EditDiff({
 }) {
   const title = applied ? "Applied edit" : "Requested replacement";
   const patch = useMemo(() => editPatch(edit), [edit]);
-  const [full, setFull] = useState(false);
   const lines = patch?.hunks.flatMap((hunk) => [
     `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`,
     ...hunk.lines,
@@ -147,7 +168,7 @@ const EditDiff = memo(function EditDiff({
         <p>No content change.</p>
       ) : (
         <pre>
-          {(full ? lines : lines.slice(0, 100)).map((line, i) => (
+          {lines.map((line, i) => (
             <span
               key={i}
               className={
@@ -160,15 +181,10 @@ const EditDiff = memo(function EditDiff({
                       : styles.context
               }
             >
-              <SyntaxCode source={line || " "} language={"diff"} />
+              {line || " "}
             </span>
           ))}
         </pre>
-      )}
-      {lines && lines.length > 100 && (
-        <Button size="sm" variant="ghost" onClick={() => setFull(!full)}>
-          {full ? "Show fewer lines" : `Show all ${lines.length} lines`}
-        </Button>
       )}
       <DisclosureSection title="Recorded content">
         <CodeContent
@@ -204,8 +220,8 @@ function ToolDetails({ tool }: { tool: ToolView }) {
       <CollaborationDetails tool={tool} />
       {tool.editOmitted && (
         <p role="status">
-          Applied edit content was not retained because the saved preview limit
-          was reached. Current Host content is not a historical diff.
+          This older record did not retain the applied edit content. Current
+          Host content is not a historical diff.
         </p>
       )}
       {tool.edit && tool.name !== "write" && <EditDiff edit={tool.edit} />}

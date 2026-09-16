@@ -1,7 +1,39 @@
 import { useEffect, useRef } from "react";
 import { basicSetup, EditorView } from "codemirror";
-import { Annotation, EditorState, type Extension } from "@codemirror/state";
+import {
+  Annotation,
+  Compartment,
+  EditorState,
+  type Extension,
+} from "@codemirror/state";
+import { keymap } from "@codemirror/view";
+import { gotoLine } from "@codemirror/search";
+import { javascript } from "@codemirror/lang-javascript";
+import { python } from "@codemirror/lang-python";
+import { json } from "@codemirror/lang-json";
+import { markdown } from "@codemirror/lang-markdown";
 import { yaml } from "@codemirror/lang-yaml";
+
+export type EditorPosition = {
+  anchor: number;
+  head: number;
+  top: number;
+  left: number;
+};
+
+function fileLanguage(path: string): Extension {
+  const extension = path.split(".").at(-1)?.toLowerCase();
+  if (["js", "jsx", "mjs", "cjs", "ts", "tsx"].includes(extension ?? ""))
+    return javascript({
+      typescript: extension === "ts" || extension === "tsx",
+      jsx: extension === "jsx" || extension === "tsx",
+    });
+  if (extension === "py" || extension === "pyi") return python();
+  if (extension === "json") return json();
+  if (extension === "md" || extension === "markdown") return markdown();
+  if (extension === "yaml" || extension === "yml") return yaml();
+  return [];
+}
 
 const externalValue = Annotation.define<boolean>();
 
@@ -15,6 +47,11 @@ export function SourceEditor({
   fill = false,
   extensions,
   wrap = true,
+  filename,
+  line,
+  position,
+  onPosition,
+  onSave,
 }: {
   value: string;
   onChange?: (value: string) => void;
@@ -24,12 +61,22 @@ export function SourceEditor({
   fill?: boolean;
   extensions?: Extension;
   wrap?: boolean;
+  filename?: string;
+  line?: number;
+  position?: EditorPosition;
+  onPosition?: (position: EditorPosition) => void;
+  onSave?: () => void;
   onSelection?: (
     range: { start_line: number; end_line: number } | undefined,
   ) => void;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const editor = useRef<EditorView | null>(null);
+  const wrapMode = useRef(new Compartment());
+  const save = useRef(onSave);
+  save.current = onSave;
+  const remember = useRef(onPosition);
+  remember.current = onPosition;
   const change = useRef(onChange);
   change.current = onChange;
   const newline = useRef("\n");
@@ -43,8 +90,19 @@ export function SourceEditor({
       doc: value,
       extensions: [
         basicSetup,
-        ...(language === "yaml" ? [yaml()] : []),
-        ...(wrap ? [EditorView.lineWrapping] : []),
+        filename ? fileLanguage(filename) : language === "yaml" ? yaml() : [],
+        wrapMode.current.of(wrap ? EditorView.lineWrapping : []),
+        keymap.of([
+          {
+            key: "Mod-s",
+            run: () => {
+              if (!save.current) return false;
+              save.current();
+              return true;
+            },
+          },
+          { key: "Mod-g", run: gotoLine },
+        ]),
         EditorView.editable.of(!readOnly),
         EditorState.readOnly.of(readOnly),
         EditorView.contentAttributes.of({ "aria-label": label }),
@@ -105,13 +163,55 @@ export function SourceEditor({
       ],
     });
     editor.current = view;
+    if (position) {
+      view.dispatch({
+        selection: {
+          anchor: Math.min(position.anchor, view.state.doc.length),
+          head: Math.min(position.head, view.state.doc.length),
+        },
+        effects: EditorView.scrollIntoView(
+          Math.min(position.head, view.state.doc.length),
+        ),
+      });
+      view.requestMeasure({
+        read: () => position,
+        write: (saved) => {
+          view.scrollDOM.scrollTop = saved.top;
+          view.scrollDOM.scrollLeft = saved.left;
+        },
+      });
+    }
     return () => {
+      remember.current?.({
+        anchor: view.state.selection.main.anchor,
+        head: view.state.selection.main.head,
+        top: view.scrollDOM.scrollTop,
+        left: view.scrollDOM.scrollLeft,
+      });
       view.destroy();
       editor.current = null;
     };
     // External values are synchronized below without replacing editor state on typing.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [label, readOnly, language, fill, extensions, wrap]);
+  }, [label, readOnly, language, filename, fill, extensions]);
+  useEffect(() => {
+    editor.current?.dispatch({
+      effects: wrapMode.current.reconfigure(
+        wrap ? EditorView.lineWrapping : [],
+      ),
+    });
+  }, [wrap]);
+  useEffect(() => {
+    const view = editor.current;
+    if (!view || line === undefined) return;
+    const target = view.state.doc.line(
+      Math.max(1, Math.min(line, view.state.doc.lines)),
+    ).from;
+    view.dispatch({
+      selection: { anchor: target },
+      effects: EditorView.scrollIntoView(target, { y: "center" }),
+    });
+  }, [line]);
   useEffect(() => {
     const view = editor.current;
     if (view && !view.state.toText(value).eq(view.state.doc))

@@ -523,6 +523,13 @@ class RootRunCoordinator:
                         code="root_operation_failed", message=f"Unexpected {type(exc).__name__}.\n{feedback}"
                     )
         with CancelScope(shield=True):
+            # Completion is navigation-worthy, unlike streamed progress. Persist it
+            # before releasing waiters/publishing the terminal view, outside the lock.
+            if self._touch_thread is not None:
+                try:
+                    await self._touch_thread(operation.receipt.thread_id)
+                except Exception:
+                    get_logger(__name__).exception("Could not touch completed Thread: %s", operation.receipt.thread_id)
             async with self._lock:
                 if cancelled:
                     operation.status = RootOperationStatus.cancelled

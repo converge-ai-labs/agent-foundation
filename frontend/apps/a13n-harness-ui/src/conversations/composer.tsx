@@ -46,11 +46,14 @@ function beginInput(
   draft: ThreadDraft,
   action: "send" | "steer",
   attachments: Map<string, Schema<"ThreadAttachment">>,
+  preset?: string,
 ): LocalInput {
-  const text = draft.doc.getText("text").toString();
+  const text = preset ?? draft.doc.getText("text").toString();
   const parts: OrderedInputPart[] = [];
   let offset = 0;
-  for (const selection of attachmentSelections(draft.doc)) {
+  for (const selection of preset === undefined
+    ? attachmentSelections(draft.doc)
+    : []) {
     const start = selection.from ?? text.length;
     if (start > offset) parts.push(text.slice(offset, start));
     offset = selection.to ?? text.length;
@@ -138,19 +141,31 @@ export async function submitDraft(
   attachments = new Map<string, Schema<"ThreadAttachment">>(),
   loadSkills?: LoadSkills,
   signal?: AbortSignal,
+  preset?: string,
+  prepare?: () => Promise<void>,
 ) {
   if (
     draft.submission.kind === "pending" ||
     draft.submission.kind === "unknown"
   )
     return;
-  const input = localInput ?? beginInput(draft, action, attachments);
-  let captured: DraftCapture;
+  // Own the shared submission state before any asynchronous preparation so
+  // Retry and ordinary Send/Steer cannot race while synchronization or skills load.
+  draft.submission = { kind: "pending", action };
+  const input = localInput ?? beginInput(draft, action, attachments, preset);
+  draft.notify();
+  let captured: DraftCapture | undefined;
+  let parts: OrderedInputPart[];
   let references: Schema<"SkillReference">[] = [];
   try {
-    captured = draft.capture();
-    if (loadSkills && /(?:^|\s)\$\S+/.test(captured.input.prompt))
-      references = skillReferences(captured.parts, await loadSkills());
+    if (prepare) await prepare();
+    signal?.throwIfAborted();
+    if (preset === undefined) {
+      captured = draft.capture();
+      parts = captured.parts;
+      if (loadSkills && /(?:^|\s)\$\S+/.test(captured.input.prompt))
+        references = skillReferences(parts, await loadSkills());
+    } else parts = [preset];
     signal?.throwIfAborted();
   } catch (error) {
     input.state = "rejected";
@@ -158,10 +173,11 @@ export async function submitDraft(
       kind: "rejected",
       message: error instanceof Error ? error.message : "Cannot capture input.",
     };
+    captured?.doc.destroy();
     draft.notify();
     return;
   }
-  input.parts = previewInput(input.id, captured.parts, attachments);
+  input.parts = previewInput(input.id, parts, attachments);
   input.state = "pending";
   draft.submission = { kind: "pending", action };
   draft.notify();
@@ -172,7 +188,7 @@ export async function submitDraft(
         transport.client.POST("/api/threads/{thread_id}/submit", {
           params: { path: { thread_id: threadId } },
           body: {
-            parts: captured.parts,
+            parts,
             source_id: input.id,
             ...(references.length ? { skill_references: references } : {}),
             ...(modelId ? { model_id: modelId } : {}),
@@ -192,7 +208,7 @@ export async function submitDraft(
         transport.client.POST("/api/operations/{receipt_id}/steer", {
           params: { path: { receipt_id: receipt } },
           body: {
-            parts: captured.parts,
+            parts,
             source_id: input.id,
             ...(references.length ? { skill_references: references } : {}),
           },
@@ -210,7 +226,7 @@ export async function submitDraft(
       acceptedReceipt = receipt;
     }
     input.state = "accepted";
-    draft.clear(captured);
+    if (captured) draft.clear(captured);
     draft.submission = {
       kind: "accepted",
       action,
@@ -236,9 +252,30 @@ export async function submitDraft(
       };
     }
   } finally {
-    captured.doc.destroy();
+    captured?.doc.destroy();
     draft.notify();
   }
+  return true;
+}
+
+export function submitContinuation(
+  draft: ThreadDraft,
+  transport: Transport,
+  threadId: string,
+) {
+  return submitDraft(
+    draft,
+    transport,
+    threadId,
+    "send",
+    undefined,
+    draft.modelId,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    "Continue completing the previous task.",
+  );
 }
 
 export function Composer({
@@ -444,7 +481,12 @@ export function Composer({
         !activity.available_actions?.includes("steer"))
     )
       return;
-    if (preparation.current) return;
+    if (
+      preparation.current ||
+      draft.submission.kind === "pending" ||
+      draft.submission.kind === "unknown"
+    )
+      return;
     const controller = new AbortController();
     preparation.current = controller;
     const attachmentMetadata = () =>
@@ -459,27 +501,13 @@ export function Composer({
           return item && id ? [[id, item] as const] : [];
         }),
       );
-    const localInput = beginInput(draft, action, attachmentMetadata());
+    const metadata = attachmentMetadata();
+    const localInput = beginInput(draft, action, metadata);
     try {
       setPreparing(true);
       onPreparing?.(true);
       setError("");
-      if (prepareThread) {
-        await prepareThread();
-        controller.signal.throwIfAborted();
-        await Promise.all(
-          attachmentSelections(draft.doc).flatMap(({ key }) => {
-            const item = draft.uploads.get(key);
-            return item?.status === "staged" ? [uploadOne(key, item.file)] : [];
-          }),
-        );
-      }
-      // Typing need not toggle the button while each edit awaits its echo.
-      // Explicit Send/Steer still waits for the complete shared snapshot.
-      if (!draft.synchronized)
-        await waitForSynchronization(draft, controller.signal);
-      controller.signal.throwIfAborted();
-      await submitDraft(
+      const submitted = await submitDraft(
         draft,
         transport,
         threadId,
@@ -487,12 +515,36 @@ export function Composer({
         activity.receipt_id ?? undefined,
         modelId,
         localInput,
-        attachmentMetadata(),
+        metadata,
         loadSkills,
         controller.signal,
+        undefined,
+        prepareThread || !draft.synchronized
+          ? async () => {
+              if (prepareThread) {
+                await prepareThread();
+                controller.signal.throwIfAborted();
+                await Promise.all(
+                  attachmentSelections(draft.doc).flatMap(({ key }) => {
+                    const item = draft.uploads.get(key);
+                    return item?.status === "staged"
+                      ? [uploadOne(key, item.file)]
+                      : [];
+                  }),
+                );
+              }
+              // Explicit Send/Steer waits for the complete shared snapshot while
+              // retaining ownership against other submission entry points.
+              if (!draft.synchronized)
+                await waitForSynchronization(draft, controller.signal);
+              controller.signal.throwIfAborted();
+              for (const [id, attachment] of attachmentMetadata())
+                metadata.set(id, attachment);
+            }
+          : undefined,
       );
       reconcile();
-      if (!controller.signal.aborted) await onSubmitted?.();
+      if (submitted && !controller.signal.aborted) await onSubmitted?.();
     } catch (failure) {
       // A failed follow-up observation cannot undo an admission receipt.
       if (localInput.state === "preparing") {

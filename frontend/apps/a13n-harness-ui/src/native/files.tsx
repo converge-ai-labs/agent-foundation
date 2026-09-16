@@ -25,9 +25,11 @@ export function Files({
   open,
   refresh,
   roots,
+  openTerminal,
 }: {
   directory: string;
   roots?: string[];
+  openTerminal?: (directory: string) => void;
   path: string;
   open: (path: string) => void;
   refresh: () => void;
@@ -37,6 +39,14 @@ export function Files({
   const buffers = useContext(FileBuffers);
   const [operation, setOperation] = useState<Operation | null>(null);
   const [hideIgnored, setHideIgnored] = useState(false);
+  const [filter, setFilter] = useState("");
+  const [copyError, setCopyError] = useState(false);
+  const copyPath = (path: string) => {
+    void navigator.clipboard.writeText(path).then(
+      () => setCopyError(false),
+      () => setCopyError(true),
+    );
+  };
   const git = useGitStatus(directory, true);
   const listing = useInfiniteQuery({
     queryKey: ["native", "directory", directory],
@@ -114,6 +124,43 @@ export function Files({
               </label>
             )}
           </div>
+          <TextField
+            label="Filter loaded files in this directory"
+            value={filter}
+            onChange={setFilter}
+          />
+          {listing.hasNextPage && (
+            <small>
+              Filtering loaded entries only. Load more files to include the rest
+              of this directory.
+            </small>
+          )}
+          {copyError && (
+            <small role="status">
+              Copy unavailable. Select the file path to copy it.
+            </small>
+          )}
+          <details className={styles.entryActions}>
+            <summary>Folder actions</summary>
+            <div>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => copyPath(directory)}
+              >
+                Copy folder path
+              </Button>
+              {openTerminal && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => openTerminal(directory)}
+                >
+                  Open terminal here
+                </Button>
+              )}
+            </div>
+          </details>
           <ErrorNotice
             error={listing.error}
             retry={() =>
@@ -144,88 +191,122 @@ export function Files({
               </small>
             )}
           <div className={styles.fileList} aria-label="Directory entries">
-            {entries.map((entry) => {
-              const change = repo
-                ? git.entries.find(
-                    (item) =>
-                      gitPath(repo.root, item.path.replace(/\/$/, "")) ===
-                      entry.path,
-                  )
-                : undefined;
-              if (
-                hideIgnored &&
-                !git.status.error &&
-                change?.kind === "ignored"
+            {entries
+              .filter((entry) =>
+                basename(entry.path)
+                  .toLowerCase()
+                  .includes(filter.toLowerCase()),
               )
-                return null;
-              const Icon =
-                entry.kind === "directory"
-                  ? Folder
-                  : entry.kind === "symlink"
-                    ? LinkIcon
-                    : File;
-              return (
-                <div
-                  key={entry.path}
-                  className={`${styles.fileRow} ${entry.path === path ? styles.selected : ""}`}
-                >
-                  <button
-                    type="button"
-                    className={styles.fileLink}
-                    onClick={() => open(entry.path)}
+              .map((entry) => {
+                const change = repo
+                  ? git.entries.find(
+                      (item) =>
+                        gitPath(repo.root, item.path.replace(/\/$/, "")) ===
+                        entry.path,
+                    )
+                  : undefined;
+                if (
+                  hideIgnored &&
+                  !git.status.error &&
+                  change?.kind === "ignored"
+                )
+                  return null;
+                const Icon =
+                  entry.kind === "directory"
+                    ? Folder
+                    : entry.kind === "symlink"
+                      ? LinkIcon
+                      : File;
+                return (
+                  <div
+                    key={entry.path}
+                    className={`${styles.fileRow} ${entry.path === path ? styles.selected : ""}`}
                   >
-                    <Icon size={16} />
-                    <span>{basename(entry.path)}</span>
-                    <small>
-                      {change
-                        ? `${change.index_status}${change.worktree_status}`
-                        : entry.kind === "file"
-                          ? `${entry.size.toLocaleString()} B`
-                          : entry.kind}
-                    </small>
-                    {entry.kind === "directory" && (
-                      <CaretRight size={14} aria-hidden="true" />
-                    )}
-                  </button>
-                  <details className={styles.entryActions}>
-                    <summary aria-label={`Actions for ${basename(entry.path)}`}>
-                      <DotsThree size={20} />
-                    </summary>
-                    <div>
+                    <button
+                      type="button"
+                      className={styles.fileLink}
+                      title={entry.path}
+                      onClick={() => open(entry.path)}
+                    >
+                      <Icon size={16} />
+                      <span>{basename(entry.path)}</span>
                       <small>
-                        {entry.kind}
-                        {entry.link_target ? ` → ${entry.link_target}` : ""}
+                        {change
+                          ? `${change.index_status}${change.worktree_status}`
+                          : entry.kind === "file"
+                            ? `${entry.size.toLocaleString()} B`
+                            : entry.kind}
                       </small>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setOperation({ kind: "move", entry })}
+                      {entry.kind === "directory" && (
+                        <CaretRight size={14} aria-hidden="true" />
+                      )}
+                    </button>
+                    <details className={styles.entryActions}>
+                      <summary
+                        aria-label={`Actions for ${basename(entry.path)}`}
                       >
-                        Rename or move
-                      </Button>
-                      {entry.kind === "file" && (
+                        <DotsThree size={20} />
+                      </summary>
+                      <div>
+                        <small>
+                          {entry.kind}
+                          {entry.link_target ? ` → ${entry.link_target}` : ""}
+                        </small>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => copyPath(entry.path)}
+                        >
+                          Copy path
+                        </Button>
+                        {openTerminal && entry.kind === "directory" && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => openTerminal(entry.path)}
+                          >
+                            Open terminal here
+                          </Button>
+                        )}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setOperation({ kind: "move", entry })}
+                        >
+                          Rename or move
+                        </Button>
+                        {entry.kind === "file" && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() =>
+                              setOperation({ kind: "replace", entry })
+                            }
+                          >
+                            Replace from upload
+                          </Button>
+                        )}
                         <Button
                           size="sm"
                           variant="ghost"
                           onClick={() =>
-                            setOperation({ kind: "replace", entry })
+                            setOperation({ kind: "delete", entry })
                           }
                         >
-                          Replace from upload
+                          Delete
                         </Button>
-                      )}
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => setOperation({ kind: "delete", entry })}
-                      >
-                        Delete
-                      </Button>
-                    </div>
-                  </details>
-                </div>
-              );
-            })}
+                      </div>
+                    </details>
+                  </div>
+                );
+              })}
+            {filter &&
+              entries.length > 0 &&
+              !entries.some((entry) =>
+                basename(entry.path)
+                  .toLowerCase()
+                  .includes(filter.toLowerCase()),
+              ) && <p className={styles.empty}>No matching loaded files.</p>}
             {!entries.length && listing.isSuccess && !listing.error && (
               <p className={styles.empty}>This directory is empty.</p>
             )}

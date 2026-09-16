@@ -10,7 +10,13 @@ import {
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import * as Y from "yjs";
-import { Composer, ComposerDrafts, useDraft, submitDraft } from "./composer";
+import {
+  Composer,
+  ComposerDrafts,
+  useDraft,
+  submitDraft,
+  submitContinuation,
+} from "./composer";
 import { ConversationTranscript } from "./transcript";
 import { ThreadDraft, encode, values } from "./draft";
 import { TransportContext } from "../transport/context";
@@ -375,63 +381,77 @@ it("uses one action for empty Stop and authored Steer, without turning the keybo
   query.clear();
 });
 
-it("keeps Send enabled during ordinary edit echoes but waits for synchronization before capturing once", async () => {
-  const draft = new ThreadDraft();
-  vi.spyOn(draft, "connect").mockReturnValue({
-    presence: () => {},
-    close: () => {},
-  });
-  const acknowledge = () =>
-    draft.receive({
-      draft_id: "draft-one",
-      participant_id: "person",
-      participants: {},
-      update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+it.each([false, true])(
+  "owns submission while waiting for synchronization (cancelled: %s)",
+  async (cancelled) => {
+    const draft = new ThreadDraft();
+    vi.spyOn(draft, "connect").mockReturnValue({
+      presence: () => {},
+      close: () => {},
     });
-  acknowledge();
-  const post = vi.fn().mockResolvedValue({
-    data: { receipt_id: "receipt-one", thread_id: "thread-one" },
-  });
-  const transport = { client: { POST: post } } as unknown as Transport;
-  const query = new QueryClient();
-  const view = render(
-    <QueryClientProvider client={query}>
-      <TransportContext value={transport}>
-        <ComposerDrafts value={new Map([["thread-one", draft]])}>
-          <Composer
-            threadId="thread-one"
-            activity={{ state: "inactive" } as Schema<"RootActivityView">}
-            canRun
-            profile={{ display_name: "Alice", color: "#000000" }}
-            unauthorized={() => {}}
-            reconcile={() => {}}
-          />
-        </ComposerDrafts>
-      </TransportContext>
-    </QueryClientProvider>,
-  );
-  act(() => draft.doc.getText("text").insert(0, "hello"));
-  const button = screen.getByRole("button", {
-    name: "Send",
-  }) as HTMLButtonElement;
-  expect(draft.synchronized).toBe(false);
-  expect(button.disabled).toBe(false);
-  act(acknowledge);
-  act(() => draft.doc.getText("text").insert(5, " again"));
-  expect(button.disabled).toBe(false);
-  fireEvent.click(button);
-  expect(post).not.toHaveBeenCalled();
-  expect(
-    (screen.getByRole("button", { name: "Preparing" }) as HTMLButtonElement)
-      .disabled,
-  ).toBe(true);
-  act(acknowledge);
-  await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
-  expect(post.mock.calls[0][1].body.parts).toEqual(["hello again"]);
-  await waitFor(() => expect(values(draft.doc).prompt).toBe(""));
-  view.unmount();
-  query.clear();
-});
+    const acknowledge = () =>
+      draft.receive({
+        draft_id: "draft-one",
+        participant_id: "person",
+        participants: {},
+        update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+      });
+    acknowledge();
+    const post = vi.fn().mockResolvedValue({
+      data: { receipt_id: "receipt-one", thread_id: "thread-one" },
+    });
+    const transport = { client: { POST: post } } as unknown as Transport;
+    const query = new QueryClient();
+    const view = render(
+      <QueryClientProvider client={query}>
+        <TransportContext value={transport}>
+          <ComposerDrafts value={new Map([["thread-one", draft]])}>
+            <Composer
+              threadId="thread-one"
+              activity={{ state: "inactive" } as Schema<"RootActivityView">}
+              canRun
+              profile={{ display_name: "Alice", color: "#000000" }}
+              unauthorized={() => {}}
+              reconcile={() => {}}
+            />
+          </ComposerDrafts>
+        </TransportContext>
+      </QueryClientProvider>,
+    );
+    act(() => draft.doc.getText("text").insert(0, "hello"));
+    const button = screen.getByRole("button", {
+      name: "Send",
+    }) as HTMLButtonElement;
+    expect(draft.synchronized).toBe(false);
+    expect(button.disabled).toBe(false);
+    act(acknowledge);
+    act(() => draft.doc.getText("text").insert(5, " again"));
+    expect(button.disabled).toBe(false);
+    fireEvent.click(button);
+    await act(() => submitContinuation(draft, transport, "thread-one"));
+    expect(draft.submission.kind).toBe("pending");
+    expect(post).not.toHaveBeenCalled();
+    if (cancelled) {
+      view.unmount();
+      await waitFor(() => expect(draft.submission.kind).toBe("rejected"));
+      acknowledge();
+      expect(post).not.toHaveBeenCalled();
+      expect(values(draft.doc).prompt).toBe("hello again");
+      query.clear();
+      return;
+    }
+    expect(
+      (screen.getByRole("button", { name: "Submitting" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    act(acknowledge);
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(post.mock.calls[0][1].body.parts).toEqual(["hello again"]);
+    await waitFor(() => expect(values(draft.doc).prompt).toBe(""));
+    view.unmount();
+    query.clear();
+  },
+);
 
 it("uses distinct source identities for consecutive steering of one receipt and keeps previews out of shared state", async () => {
   const draft = new ThreadDraft();
@@ -551,4 +571,91 @@ it("does not submit after navigation cancels a pending skill catalog read", asyn
   );
   expect(POST).not.toHaveBeenCalled();
   expect(values(draft.doc).prompt).toBe("$review");
+});
+
+it("retries with an ordinary continuation without consuming the shared draft or attachments", async () => {
+  const draft = new ThreadDraft();
+  draft.doc.getText("text").insert(0, "Keep my next question");
+  draft.addAttachment("attachment-kept");
+  const before = values(draft.doc);
+  let resolve!: (value: unknown) => void;
+  const post = vi.fn().mockReturnValue(
+    new Promise((done) => {
+      resolve = done;
+    }),
+  );
+  const transport = { client: { POST: post } } as unknown as Transport;
+  const pending = submitContinuation(draft, transport, "thread-one");
+  await submitContinuation(draft, transport, "thread-one");
+  expect(post).toHaveBeenCalledTimes(1);
+  expect(post).toHaveBeenCalledWith("/api/threads/{thread_id}/submit", {
+    params: { path: { thread_id: "thread-one" } },
+    body: {
+      parts: ["Continue completing the previous task."],
+      source_id: expect.any(String),
+    },
+  });
+  resolve({ data: { receipt_id: "receipt-new", thread_id: "thread-one" } });
+  await pending;
+  expect(values(draft.doc)).toEqual(before);
+  expect(draft.submission).toEqual({
+    kind: "accepted",
+    action: "send",
+    receipt: "receipt-new",
+  });
+  expect(draft.localInputs).toHaveLength(1);
+  expect(draft.localInputs[0].state).toBe("accepted");
+});
+
+it("excludes Retry while skills load and retains uncertain acknowledgement ownership", async () => {
+  const draft = new ThreadDraft();
+  draft.doc.getText("text").insert(0, "$review");
+  draft.receive({
+    draft_id: "draft-one",
+    participant_id: "participant-one",
+    participants: {},
+    update_base64: encode(Y.encodeStateAsUpdate(draft.doc)),
+  });
+  let resolve!: (catalog: Schema<"SkillCatalogView">) => void;
+  const catalog = new Promise<Schema<"SkillCatalogView">>((done) => {
+    resolve = done;
+  });
+  const post = vi.fn().mockRejectedValue(new Error("Response lost"));
+  const transport = { client: { POST: post } } as unknown as Transport;
+  const pending = submitDraft(
+    draft,
+    transport,
+    "thread-one",
+    "send",
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    () => catalog,
+  );
+  expect(draft.submission.kind).toBe("pending");
+  await submitContinuation(draft, transport, "thread-one");
+  expect(post).not.toHaveBeenCalled();
+  resolve({ catalog_id: "a".repeat(64), context_kind: "idle", items: [] });
+  await pending;
+  expect(draft.submission.kind).toBe("unknown");
+  await submitContinuation(draft, transport, "thread-one");
+  await submitDraft(draft, transport, "thread-one", "send");
+  expect(post).toHaveBeenCalledTimes(1);
+  expect(post.mock.calls[0][1].body.parts).toEqual(["$review"]);
+  expect(draft.localInputs).toHaveLength(1);
+  expect(draft.submission.kind).toBe("unknown");
+  expect(values(draft.doc).prompt).toBe("$review");
+});
+
+it("does not repeat a continuation after an uncertain acknowledgement", async () => {
+  const draft = new ThreadDraft();
+  draft.doc.getText("text").insert(0, "Untouched");
+  const post = vi.fn().mockRejectedValue(new Error("Response lost"));
+  const transport = { client: { POST: post } } as unknown as Transport;
+  await submitContinuation(draft, transport, "thread-one");
+  expect(draft.submission.kind).toBe("unknown");
+  await submitContinuation(draft, transport, "thread-one");
+  expect(post).toHaveBeenCalledTimes(1);
+  expect(values(draft.doc).prompt).toBe("Untouched");
 });

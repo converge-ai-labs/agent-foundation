@@ -1,4 +1,4 @@
-"""Bounded applied-edit evidence retained with the existing tool-return history."""
+"""Applied-edit evidence retained with the existing tool-return history."""
 
 from __future__ import annotations
 
@@ -10,8 +10,6 @@ from pydantic_ai.messages import FunctionToolResultEvent, ToolReturnPart
 from a13n_harness_ui.surfaces import AppliedEditView
 
 _METADATA_KEY = "a13n.harness-ui.applied_edit"
-_MAX_EDIT_BYTES = 64 * 1024
-_MAX_RUN_BYTES = 512 * 1024
 
 
 class ToolEvidenceCollector:
@@ -20,23 +18,17 @@ class ToolEvidenceCollector:
     def __init__(self, *, run_id: str) -> None:
         self.run_id = run_id
         self._pending: dict[str, AppliedEditView] = {}
-        self._retained_bytes = 0
 
     def observe(self, item: object) -> None:
         if not isinstance(item, HarnessEvent) or item.run_id != self.run_id:
             return
         event = item.event
         if isinstance(event, FileEditAppliedEvent) and event.tool_call_id:
-            size = len(event.before.encode("utf-8")) + len(event.after.encode("utf-8"))
-            omitted = size > _MAX_EDIT_BYTES or self._retained_bytes + size > _MAX_RUN_BYTES
             self._pending[event.tool_call_id] = AppliedEditView(
                 file_path=event.file_path,
-                before=None if omitted else event.before,
-                after=None if omitted else event.after,
-                omitted=omitted,
+                before=event.before,
+                after=event.after,
             )
-            if not omitted:
-                self._retained_bytes += size
         elif isinstance(event, FunctionToolResultEvent) and isinstance(event.part, ToolReturnPart):
             part = event.part
             edit = self._pending.pop(part.tool_call_id, None)

@@ -4525,8 +4525,7 @@
           "before": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 65536
+                "type": "string"
               },
               {
                 "type": "null"
@@ -4537,8 +4536,7 @@
           "after": {
             "anyOf": [
               {
-                "type": "string",
-                "maxLength": 65536
+                "type": "string"
               },
               {
                 "type": "null"
@@ -4558,7 +4556,7 @@
           "file_path"
         ],
         "title": "AppliedEditView",
-        "description": "Observed edit content, or an explicit omission when retention bounds were reached."
+        "description": "Observed edit content; nullable fields retain compatibility with older omitted previews."
       },
       "ApprovalRequestView": {
         "properties": {

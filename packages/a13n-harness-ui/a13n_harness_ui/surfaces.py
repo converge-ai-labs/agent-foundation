@@ -178,11 +178,11 @@ class ThreadDetail(SurfaceModel):
 
 
 class AppliedEditView(SurfaceModel):
-    """Observed edit content, or an explicit omission when retention bounds were reached."""
+    """Observed edit content; nullable fields retain compatibility with older omitted previews."""
 
     file_path: str
-    before: str | None = Field(default=None, max_length=64 * 1024)
-    after: str | None = Field(default=None, max_length=64 * 1024)
+    before: str | None = None
+    after: str | None = None
     omitted: bool = False
 
 

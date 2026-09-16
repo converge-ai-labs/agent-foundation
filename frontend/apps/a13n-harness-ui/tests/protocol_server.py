@@ -16,6 +16,7 @@ from a13n_harness_ui.app import open_harness_ui_app
 from a13n_harness_ui.model_runtime import HarnessUiModelResolver
 from a13n_harness_ui.settings import HarnessUiSettings, StorageSettings
 from a13n_harness_ui.webui import create_webui
+from pydantic_ai.exceptions import UsageLimitExceeded
 from pydantic_ai.messages import ModelRequest, ToolReturnPart, UserPromptPart
 from pydantic_ai.models.function import DeltaToolCall, FunctionModel
 
@@ -93,6 +94,14 @@ async def main() -> None:
         async def model(messages, info):
             nonlocal attempts
             attempts += 1
+            if "--fail" in sys.argv and not any(
+                "Continue completing the previous task." in str(part.content)
+                for message in messages
+                if isinstance(message, ModelRequest)
+                for part in message.parts
+                if isinstance(part, UserPromptPart)
+            ):
+                raise UsageLimitExceeded("Isolated fixture failure")
             if "--retry" in sys.argv and attempts == 1:
                 import httpx2
 
