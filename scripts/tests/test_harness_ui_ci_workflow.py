@@ -107,9 +107,14 @@ def test_linux_keeps_full_tests_and_distribution_checks() -> None:
     assert "--filter '!a13n-harness-ui-webui' -r run test" in frontend
     assert "--filter '!a13n-harness-ui-webui' -r run build" in frontend
     distribution = {step["name"]: step for step in jobs["distribution"]["steps"]}
-    webui = distribution["Check and build WebUI assets"]["run"]
-    for script in ("check", "test", "build"):
-        assert webui.count(f"--filter a13n-harness-ui-webui run {script}") == 1
+    webui = "\n".join(step.get("run", "") for step in jobs["distribution"]["steps"])
+    for script, name in (("check", "Check WebUI"), ("test", "Test WebUI"), ("build", "Build WebUI assets")):
+        command = f"--filter a13n-harness-ui-webui run {script}"
+        assert webui.count(command) == 1
+        assert command in distribution[name]["run"]
+        assert "if" not in distribution[name]
+    assert "/usr/bin/time -p" in distribution["Test WebUI"]["run"]
+    assert jobs["distribution"]["runs-on"] == "ubuntu-24.04-8core"
     assert webui.index("run check") < webui.index("run test") < webui.index("run build")
     assert not any("playwright" in step.get("run", "").lower() for step in jobs["distribution"]["steps"])
     assert "scripts/tests/test_harness_ui_ci_workflow.py" in distribution["Test distribution tooling"]["run"]
