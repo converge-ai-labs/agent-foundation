@@ -733,15 +733,21 @@ it("edits project defaults directly while preserving unknown project fields", as
   expect(saved).toContain("/test");
 });
 
-it("generates a visible collaboration name, remembers it across visits, and lets the user save a nonempty replacement", async () => {
+it("persists generated and edited collaboration names across visits and rejects empty replacements", async () => {
   localStorage.setItem("a13n-harness-ui.api-key", "test-key");
-  const component = render(<BrowserApp />);
-  const profile = await screen.findByRole("button", {
+  let component = render(<BrowserApp />);
+  await screen.findByRole("button", {
     name: /^Your collaboration name: Guest /,
   });
   const generated = localStorage.getItem("a13n-harness-ui.display-name");
   expect(generated).toMatch(/^Guest [a-f0-9]{6}$/);
-  fireEvent.click(profile);
+  component.unmount();
+  component = render(<BrowserApp />);
+  fireEvent.click(
+    await screen.findByRole("button", {
+      name: `Your collaboration name: ${generated}`,
+    }),
+  );
   const input = await screen.findByLabelText("Your display name");
   fireEvent.change(input, { target: { value: "   " } });
   expect(
@@ -755,18 +761,6 @@ it("generates a visible collaboration name, remembers it across visits, and lets
   component.unmount();
   render(<BrowserApp />);
   await screen.findByRole("button", { name: "Your collaboration name: Alex" });
-});
-
-it("keeps a generated collaboration name stable when the workbench is reopened", async () => {
-  localStorage.setItem("a13n-harness-ui.api-key", "test-key");
-  const component = render(<BrowserApp />);
-  const first = await screen.findByRole("button", {
-    name: /^Your collaboration name: Guest /,
-  });
-  const label = first.getAttribute("aria-label")!;
-  component.unmount();
-  render(<BrowserApp />);
-  await screen.findByRole("button", { name: label });
 });
 
 it("configures Sidekick in General without changing defaults or starting conversations", async () => {

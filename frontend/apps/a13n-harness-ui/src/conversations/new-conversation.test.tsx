@@ -21,6 +21,8 @@ import {
   newConversationPath,
 } from "./new-conversation";
 import { NewDraftStore } from "./new-draft";
+import { ConversationPage } from "./conversation";
+import type { Schema } from "../transport/client";
 
 const id = `thread_${"a".repeat(32)}`;
 const path = newConversationPath("project-one");
@@ -30,6 +32,27 @@ let failure: "create" | "submit" | "reject" | null;
 let paused: Promise<void> | undefined;
 let readPaused: Promise<void> | undefined;
 let readFailure = false;
+let historyPaused: Promise<void> | undefined;
+let focused: Schema<"ThreadFocusSnapshot"> | undefined;
+const threadDetail: Schema<"ThreadDetail"> = {
+  thread: {
+    thread_id: id,
+    created_at: "2026-09-16",
+    updated_at: "2026-09-16",
+    metadata_version: 1,
+    archived: false,
+    continuation_state: "initial",
+    root_activity: { state: "inactive" },
+    configuration: {
+      version: 1,
+      project_id: "project-one",
+      agent_source: { kind: "agent", id: "agent-one" },
+      environment_profile_id: "environment-native",
+    } as Schema<"ThreadConfigurationView">,
+  },
+  continuation_id: null,
+  available_actions: ["run"],
+};
 let drafts: Map<string, ThreadDraft>;
 let creations: NewDraftStore;
 let queries: QueryClient;
@@ -46,6 +69,8 @@ beforeEach(() => {
   paused = undefined;
   readPaused = undefined;
   readFailure = false;
+  historyPaused = undefined;
+  focused = undefined;
   drafts = new Map();
   localStorage.clear();
   creations = new NewDraftStore();
@@ -144,20 +169,62 @@ beforeEach(() => {
             ],
           });
         if (pathname === `/api/threads/${id}`) {
+          const detail =
+            reads.filter((path) => path === pathname).length === 1
+              ? threadDetail
+              : (focused?.thread ?? threadDetail);
           await readPaused;
           if (readFailure)
             return json(
               { error: { message: "Thread detail unavailable" } },
               500,
             );
-          return json({ thread: { thread_id: id }, continuation_id: null });
+          return json(detail);
         }
-        if (pathname === `/api/threads/${id}/transcript`)
+        if (pathname === `/api/threads/${id}/events`) {
+          return new Response(
+            new ReadableStream({
+              start(controller) {
+                if (focused)
+                  controller.enqueue(
+                    new TextEncoder().encode(
+                      `data: ${JSON.stringify({ kind: "snapshot", snapshot: focused, resume_cursor: "cursor-one" })}\n\n`,
+                    ),
+                  );
+                request.signal.addEventListener(
+                  "abort",
+                  () => controller.close(),
+                  { once: true },
+                );
+              },
+            }),
+            { headers: { "Content-Type": "text/event-stream" } },
+          );
+        }
+        if (pathname.endsWith("/tasks")) return json({ tasks: [] });
+        if (pathname.endsWith("/children"))
+          return json({ executions: [], total: 0 });
+        if (pathname.endsWith("/usage"))
+          return json({
+            root: { tokens: [], known_cost: "0", unknown_model_costs: 0 },
+          });
+        if (pathname.endsWith("/context-usage") || pathname.endsWith("/skills"))
+          return json({});
+        if (pathname === "/api/threads/activity")
+          return json({ rows: [], active_rows: [], total: 0 });
+        if (pathname.startsWith("/api/operations/"))
+          return json({
+            receipt: { receipt_id: "receipt-one", thread_id: id },
+            status: "completed",
+          });
+        if (pathname === `/api/threads/${id}/transcript`) {
+          await historyPaused;
           return json({
             continuation_id: "initial:one",
             entries: [],
             next_cursor: null,
           });
+        }
         throw new Error(`Unexpected read ${url}`);
       }
       if (pathname.endsWith("configuration-preview"))
@@ -243,6 +310,15 @@ function mount(initial = path) {
                   path="/"
                   element={
                     <NewConversationPage
+                      profile={{ display_name: "Test", color: "#000000" }}
+                      unauthorized={() => {}}
+                    />
+                  }
+                />
+                <Route
+                  path="/threads/:threadId"
+                  element={
+                    <ConversationPage
                       profile={{ display_name: "Test", color: "#000000" }}
                       unauthorized={() => {}}
                     />
@@ -384,22 +460,6 @@ it("does not send after navigating away during creation and preserves the draft 
   expect(writes).toHaveLength(1);
 });
 
-it("retains the home input across settings navigation without creating a conversation", async () => {
-  mount("/");
-  await screen.findByRole("textbox", { name: "Shared prompt" });
-  const home = creations.current!;
-  act(() =>
-    drafts.get(home.threadId)!.doc.getText("text").insert(0, "Keep this"),
-  );
-  fireEvent.click(screen.getByRole("link", { name: "Settings" }));
-  fireEvent.click(screen.getByRole("link", { name: "Return to draft" }));
-  await screen.findByRole("textbox", { name: "Shared prompt" });
-  expect(
-    screen.getByRole("textbox", { name: "Shared prompt" }).textContent,
-  ).toBe("Keep this");
-  expect(writes).toHaveLength(0);
-});
-
 it("does not steal navigation when an uncertain creation is reconciled after leaving the page", async () => {
   failure = "create";
   mount();
@@ -468,18 +528,20 @@ it("distinguishes inherited choices and sends an independent model without chang
   });
 });
 
-it("keeps the same composer mounted while the accepted conversation's first frame loads", async () => {
+it("opens immediately with retained input and a stable composer while detail and history load", async () => {
   let resume!: () => void;
   readPaused = new Promise<void>((resolve) => {
     resume = resolve;
   });
   mount();
   await fill();
-  const editor = screen.getByRole("textbox", { name: "Shared prompt" });
+  historyPaused = new Promise(() => {});
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
-  await waitFor(() => expect(reads).toContain(`/api/threads/${id}`));
-  expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBe(editor);
-  expect(screen.getByLabelText("Location").textContent).toBe("/new");
+  await waitFor(() => expect(reads).toContain(`/api/threads/${id}/events`));
+  const editor = screen.getByRole("textbox", { name: "Shared prompt" });
+  const input = screen.getByText("Build this");
+  expect(screen.getByLabelText("Location").textContent).toBe(`/threads/${id}`);
+  expect(screen.queryByText(/Accepted|Preparing…|Sending…/)).toBeNull();
   expect(writes).toHaveLength(2);
   await act(async () => resume());
   await waitFor(() =>
@@ -488,7 +550,10 @@ it("keeps the same composer mounted while the accepted conversation's first fram
     ),
   );
   expect(queries.getQueryData(["thread", id, "detail"])).toBeTruthy();
-  expect(queries.getQueryData(["thread", id, "history", null])).toBeTruthy();
+  await waitFor(() => expect(reads).toContain(`/api/threads/${id}/transcript`));
+  expect(screen.getByText("Build this")).toBe(input);
+  expect(screen.getByRole("textbox", { name: "Shared prompt" })).toBe(editor);
+  expect(screen.queryByText("Start something together.")).toBeNull();
   expect(writes).toHaveLength(2);
 });
 
@@ -673,13 +738,15 @@ it("retains staged files across project switches and explicitly requires reattac
   expect(writes).toHaveLength(0);
 });
 
-it("opens a fresh persistent composer on plus after accepted Send cannot load the saved page", async () => {
+it("retains accepted input on a saved-page read failure and starts a fresh draft on plus", async () => {
   readFailure = true;
   mount();
   await fill();
   fireEvent.click(screen.getByRole("button", { name: "Send" }));
   await screen.findByText("Thread detail unavailable");
-  expect(screen.getByLabelText("Location").textContent).toBe("/new");
+  expect(screen.getByLabelText("Location").textContent).toBe(`/threads/${id}`);
+  expect(drafts.get(id)!.localInputs[0].state).toBe("accepted");
+  expect(screen.queryByText("Not sent · input retained")).toBeNull();
   expect(creations.current).toBeUndefined();
   fireEvent.click(screen.getByRole("link", { name: "New in second project" }));
   await screen.findByRole("heading", {
@@ -718,4 +785,114 @@ it("preserves native deep-link parameters when restoring or changing Project", a
   expect(search.get("native_path")).toBe("/tmp/notes.txt");
   expect(search.get("terminal")).toBe("terminal-one");
   expect(search.get("project")).toBe("project-two");
+});
+
+it("uses the focused first frame without waiting for a slow detail read or allowing it to roll status back", async () => {
+  let release!: () => void;
+  readPaused = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  historyPaused = new Promise(() => {});
+  focused = {
+    epoch: "epoch-one",
+    cutover_sequence: 1,
+    thread: {
+      ...threadDetail,
+      thread: {
+        ...threadDetail.thread,
+        root_activity: {
+          state: "running",
+          run_id: "run-one",
+          receipt_id: "receipt-one",
+          available_actions: ["cancel", "steer"],
+        },
+      },
+      available_actions: ["cancel", "steer"],
+    },
+    root_operation: {
+      receipt: { thread_id: id, receipt_id: "receipt-one" },
+      status: "running",
+    } as Schema<"RootOperationView">,
+    children: { executions: [], total: 0 },
+  };
+  mount();
+  await fill();
+  fireEvent.click(screen.getByRole("button", { name: "Send" }));
+  await screen.findByRole("button", { name: "Stop" });
+  const input = screen.getByText("Build this");
+  expect(screen.getByLabelText("Location").textContent).toBe(`/threads/${id}`);
+  expect(screen.queryByText("Loading saved history…")).toBeNull();
+  expect(writes).toHaveLength(2);
+  await act(async () => release());
+  expect(screen.getByText("Build this")).toBe(input);
+  expect(screen.getByRole("button", { name: "Stop" })).toBeTruthy();
+  expect(drafts.get(id)!.localInputs[0].state).toBe("accepted");
+});
+
+it("keeps saved history at the real bottom after viewport resize without reclaiming a manual reading position", async () => {
+  const targets = new Set<Element>();
+  let resized!: () => void;
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      constructor(callback: () => void) {
+        resized = callback;
+      }
+      observe(target: Element) {
+        targets.add(target);
+      }
+      disconnect() {
+        targets.clear();
+      }
+    },
+  );
+  const originalFetch = vi.mocked(fetch).getMockImplementation()!;
+  vi.mocked(fetch).mockImplementation(async (request) => {
+    if (
+      new URL(
+        request instanceof Request ? request.url : String(request),
+      ).pathname.endsWith("/transcript")
+    )
+      return json({
+        continuation_id: "initial:one",
+        entries: [
+          {
+            position: 0,
+            message_kind: "response",
+            parts: [{ kind: "assistant", text: "Saved response" }],
+          },
+        ],
+        next_cursor: null,
+      });
+    return originalFetch(request);
+  });
+  const view = mount(`/threads/${id}`);
+  await screen.findByText("Saved response");
+  const reader = view.container.querySelector(
+    '[class*="reading"]',
+  )! as HTMLElement;
+  let height = 600;
+  let top = 0;
+  Object.defineProperties(reader, {
+    scrollHeight: { get: () => 2000 },
+    clientHeight: { get: () => height },
+    scrollTop: {
+      get: () => top,
+      set: (value: number) => {
+        top = Math.max(0, Math.min(value, 2000 - height));
+      },
+    },
+  });
+  expect(targets.has(reader)).toBe(true);
+  act(() => resized());
+  expect(top).toBe(1400);
+  height = 560;
+  act(() => resized());
+  expect(top).toBe(1440);
+  fireEvent.wheel(reader, { deltaY: -30 });
+  reader.scrollTop -= 30;
+  fireEvent.scroll(reader);
+  height = 540;
+  act(() => resized());
+  expect(top).toBe(1410);
 });

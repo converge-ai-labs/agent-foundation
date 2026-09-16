@@ -23,13 +23,14 @@ import { ConversationDetails } from "./details";
 import { WorkInspector } from "./work-inspector";
 import { RootFailureNotice } from "./failure-notice";
 import { refreshThread } from "./refresh";
-import { refreshThreadLists, useHistory, useThread } from "./queries";
-import { FocusDisplay, showFocusedOutput, watchThread } from "./stream";
 import {
-  ConversationTranscript,
-  RecoveryNotice,
-  SteerNotice,
-} from "./transcript";
+  refreshThreadLists,
+  seedThreadSnapshot,
+  useHistory,
+  useThread,
+} from "./queries";
+import { FocusDisplay, showFocusedOutput, watchThread } from "./stream";
+import { ConversationTranscript, RecoveryNotice } from "./transcript";
 import { inputSource } from "./local-input";
 import styles from "./conversation.module.css";
 
@@ -104,6 +105,7 @@ function Conversation({
   );
   const [display] = useState(() => new FocusDisplay());
   const [connection, setConnection] = useState("Connecting");
+  const [reconnections, setReconnections] = useState(0);
   const [revision, setRevision] = useState(0);
   const rename = dialog === "rename";
   const setRename = (open: boolean) => {
@@ -193,8 +195,12 @@ function Conversation({
             setRevision((value) => value + 1);
           }, 50);
       },
-      setConnection,
+      (state) => {
+        setConnection(state);
+        if (state === "Reconnecting") setReconnections((count) => count + 1);
+      },
       (reason) => refreshThread(queries, threadId, reason),
+      (snapshot) => seedThreadSnapshot(queries, threadId, snapshot),
     );
     return () => {
       close();
@@ -309,13 +315,15 @@ function Conversation({
   useEffect(() => {
     const element = reader.current;
     const content = element?.firstElementChild;
-    if (!content || typeof ResizeObserver === "undefined") return;
+    if (!element || !content || typeof ResizeObserver === "undefined") return;
     const observer = new ResizeObserver(() => {
-      if (follow.current && !olderAnchor.current) scrollToLatest();
+      // Both late content and a growing composer can move the actual bottom.
+      if (follow.current && !olderAnchor.current) scrollToLatest(true);
     });
+    observer.observe(element);
     observer.observe(content);
     return () => observer.disconnect();
-  }, [!!detail.data, scrollToLatest]);
+  }, [scrollToLatest]);
   useEffect(() => {
     const element = reader.current;
     // Also retry the top-edge observation after an in-flight refetch settles.
@@ -351,9 +359,9 @@ function Conversation({
           JSON.stringify({ top: element.scrollTop, follow: follow.current }),
         );
     };
-  }, [threadId, !!detail.data]);
+  }, [threadId]);
   useEffect(() => {
-    if (detail.data && !detail.data.thread.archived)
+    if (detail.data && !detail.data.thread?.archived)
       writePreference("last-thread", threadId);
   }, [threadId, detail.data]);
   const metadata = useMutation({
@@ -373,16 +381,8 @@ function Conversation({
     },
     onError: reconcile,
   });
-  if (!detail.data)
-    return (
-      <div>
-        <ErrorNotice error={detail.error} retry={() => void detail.refetch()} />
-        {!detail.error && <p role="status">Loading conversation…</p>}
-        <Link to="/">Return to workbench</Link>
-      </div>
-    );
-  const thread = detail.data.thread;
-  if (thread.parent_thread_id)
+  const thread = detail.data?.thread;
+  if (thread?.parent_thread_id)
     return (
       <div>
         <h1>Child conversation</h1>
@@ -398,13 +398,18 @@ function Conversation({
   return (
     <>
       <div className={styles.page}>
-        {connection !== "Live" && connection !== "Connecting" && (
+        {(reconnections > 0 ||
+          (connection !== "Live" && connection !== "Connecting")) && (
           <div className={styles.activityBar}>
-            <small role="status">{connection}</small>
+            <small role="status">
+              {reconnections > 0
+                ? `${connection === "Live" ? "Live connection restored" : "Reconnecting live updates…"} · ${reconnections} ${reconnections === 1 ? "retry" : "retries"}`
+                : connection}
+            </small>
           </div>
         )}
 
-        {thread.archived && (
+        {thread?.archived && (
           <div className={styles.warning}>
             <p>This conversation is archived. Its history remains available.</p>
             <Button
@@ -439,12 +444,14 @@ function Conversation({
           }}
           onScroll={() => {
             const element = reader.current!;
-            if (scrollFrame.current === null)
+            // Layout-driven scroll events must not detach an active follower.
+            // After a user gesture, resume only at the actual bottom.
+            if (scrollFrame.current === null && !follow.current)
               follow.current =
                 element.scrollHeight -
                   element.scrollTop -
-                  element.clientHeight <
-                64;
+                  element.clientHeight <=
+                1;
             if (follow.current) setNewOutput(false);
             if (
               element.scrollTop < 160 &&
@@ -495,16 +502,16 @@ function Conversation({
               display={display}
             />
             <RecoveryNotice recovery={display.recovery} />
-            <SteerNotice draft={draft} />
-            {!!detail.data.deferred_requests?.length && (
+            {!!detail.data?.deferred_requests?.length && (
               <Decisions
                 threadId={threadId}
-                continuation={detail.data.continuation_id}
+                continuation={detail.data?.continuation_id}
                 reconcile={reconcile}
               />
             )}
             {!entries.length &&
-              thread.root_activity.state === "inactive" &&
+              !draft.localInputs.length &&
+              thread?.root_activity.state === "inactive" &&
               !showLive &&
               !history.isPending &&
               !history.error && (
@@ -518,9 +525,10 @@ function Conversation({
               )}
           </div>
         </div>
-        {history.isPending && !history.data && (
-          <p role="status">Loading saved history…</p>
-        )}
+        {history.isPending &&
+          !history.data &&
+          !draft.localInputs.length &&
+          !showLive && <p role="status">Loading saved history…</p>}
         {newOutput && (
           <Button
             className={styles.newOutput}
@@ -535,18 +543,20 @@ function Conversation({
             New output
           </Button>
         )}
-        <WorkInspector
-          threadId={threadId}
-          continuation={detail.data.continuation_id}
-          display={display}
-          live={showLive}
-          connected={connection === "Live"}
-          reconcile={reconcile}
-        />
-        {!thread.archived && (
+        {detail.data && (
+          <WorkInspector
+            threadId={threadId}
+            continuation={detail.data?.continuation_id}
+            display={display}
+            live={showLive}
+            connected={connection === "Live"}
+            reconcile={reconcile}
+          />
+        )}
+        {!thread?.archived && (
           <ErrorNotice error={agentSelection.error || selectors.error} />
         )}
-        {!thread.archived && (agentSelection.isError || detail.isError) && (
+        {!thread?.archived && (agentSelection.isError || detail.isError) && (
           <Button
             variant="ghost"
             disabled={detail.isFetching}
@@ -558,24 +568,25 @@ function Conversation({
             Refresh agent selection before sending
           </Button>
         )}
-        {!thread.archived && (
+        {!thread?.archived && (
           <Composer
             autoFocus={search.get("compose") === "1"}
             threadId={threadId}
-            activity={thread.root_activity}
+            activity={thread?.root_activity ?? { state: "inactive" }}
             canRun={
               !agentSelection.isPending &&
               !agentSelection.isError &&
               !detail.isError &&
-              (detail.data.available_actions?.includes("run") ?? false)
+              (detail.data?.available_actions?.includes("run") ?? false)
             }
             modelId={draft.modelId}
             controls={
               <ThreadRunChoices
                 catalog={selectors.data}
-                agentId={thread.configuration.agent_source.id}
+                agentId={thread?.configuration.agent_source.id ?? ""}
                 modelId={draft.modelId}
                 disabled={
+                  !thread ||
                   agentSelection.isPending ||
                   detail.isFetching ||
                   draft.submission.kind === "pending" ||
@@ -593,7 +604,7 @@ function Conversation({
             reconcile={reconcile}
           />
         )}
-        {!thread.archived && (
+        {thread && !thread.archived && (
           <ComposerStatus
             threadId={threadId}
             receipt={receipt}
@@ -653,7 +664,11 @@ function Conversation({
               onChange={(value) => setTitle(value.slice(0, 512))}
             />
             <ErrorNotice error={metadata.error} />
-            <Button type="submit" loading={metadata.isPending}>
+            <Button
+              type="submit"
+              loading={metadata.isPending}
+              disabled={!thread}
+            >
               Save title
             </Button>
           </form>
@@ -668,11 +683,11 @@ function Conversation({
           <ConversationDetails
             threadId={threadId}
             receipt={receipt}
-            continuation={detail.data.continuation_id}
+            continuation={detail.data?.continuation_id}
             reconcile={reconcile}
           />
-          {!thread.archived &&
-            detail.data.available_actions?.includes("archive") && (
+          {!thread?.archived &&
+            detail.data?.available_actions?.includes("archive") && (
               <Button
                 variant="outline"
                 loading={metadata.isPending}

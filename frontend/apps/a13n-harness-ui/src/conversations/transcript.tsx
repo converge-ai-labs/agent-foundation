@@ -1,7 +1,5 @@
-import { memo, useEffect, useMemo, useState } from "react";
-import { Button } from "a13n-ui";
-import { ArrowClockwise, X } from "@phosphor-icons/react";
-import type { ThreadDraft } from "./draft";
+import { memo, useMemo, useState } from "react";
+import { ArrowClockwise } from "@phosphor-icons/react";
 import { ToolActivity } from "./tool-call";
 import {
   activityKind,
@@ -376,13 +374,7 @@ export function RecoveryNotice({
 }: {
   recovery: FocusDisplay["recovery"];
 }) {
-  const [dismissed, setDismissed] = useState<string>();
-  useEffect(() => {
-    if (recovery?.state !== "resumed") return;
-    const timer = setTimeout(() => setDismissed(recovery.id), 3000);
-    return () => clearTimeout(timer);
-  }, [recovery?.id, recovery?.state]);
-  if (!recovery || dismissed === recovery.id) return null;
+  if (!recovery) return null;
   return (
     <div
       role="status"
@@ -392,8 +384,11 @@ export function RecoveryNotice({
       <ArrowClockwise aria-hidden="true" />
       <span>
         {recovery.state === "retrying"
-          ? "Reconnecting and continuing…"
-          : "Connection restored · continuing"}
+          ? "Reconnecting to model…"
+          : recovery.state === "resumed"
+            ? "Model connection restored"
+            : "Model reconnection ended"}
+        {` · ${recovery.retries} ${recovery.retries === 1 ? "retry" : "retries"}`}
       </span>
     </div>
   );
@@ -405,35 +400,6 @@ function GapNotice() {
       Some live content is unavailable. Saved history and execution details
       remain authoritative.
     </p>
-  );
-}
-
-export function SteerNotice({ draft }: { draft: ThreadDraft }) {
-  const submission = draft.submission;
-  const [dismissed, setDismissed] = useState<typeof submission>();
-  useEffect(() => {
-    if (submission.kind !== "accepted" || submission.action !== "steer") return;
-    const timer = setTimeout(() => setDismissed(submission), 5000);
-    return () => clearTimeout(timer);
-  }, [submission]);
-  if (
-    submission.kind !== "accepted" ||
-    submission.action !== "steer" ||
-    dismissed === submission
-  )
-    return null;
-  return (
-    <div role="status" className={styles.steerNotice}>
-      <span>{submission.message}</span>
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        aria-label="Dismiss steer notification"
-        onClick={() => setDismissed(submission)}
-      >
-        <X />
-      </Button>
-    </div>
   );
 }
 

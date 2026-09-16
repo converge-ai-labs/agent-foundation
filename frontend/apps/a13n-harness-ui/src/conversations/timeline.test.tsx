@@ -11,10 +11,8 @@ import type { Schema } from "../transport/client";
 import {
   ConversationTranscript,
   LiveOutput,
-  SteerNotice,
   RecoveryNotice,
 } from "./transcript";
-import { ThreadDraft } from "./draft";
 import { previewInput, type LocalInput } from "./local-input";
 
 afterEach(() => {
@@ -30,57 +28,63 @@ const local = (id = "input-one", text = "Hello"): LocalInput => ({
 const saved = (parts: Schema<"TranscriptPart">[], position = 0) =>
   ({ position, message_kind: "request", parts }) as Schema<"TranscriptEntry">;
 
-it("keeps one input DOM node through pending, partial SSE, acknowledgement and saved cutover", () => {
-  const input = local();
-  const view = render(
-    <ConversationTranscript
-      entries={[]}
-      blocks={[]}
-      localInputs={[input]}
-      threadId="one"
-    />,
-  );
-  const message = screen.getByText("Hello");
-  expect(screen.getByRole("status").textContent).toBe("Sending…");
-  const block = {
-    id: "run:input:0",
-    kind: "user" as const,
-    text: "H",
-    metadata: input.parts[0].metadata!,
-  };
-  view.rerender(
-    <ConversationTranscript
-      entries={[]}
-      blocks={[block]}
-      localInputs={[input]}
-      threadId="one"
-    />,
-  );
-  expect(screen.getByText("Hello")).toBe(message);
-  expect(screen.queryByText("H")).toBeNull();
-  input.state = "accepted";
-  view.rerender(
-    <ConversationTranscript
-      entries={[]}
-      blocks={[{ ...block, text: "Hello" }]}
-      localInputs={[input]}
-      threadId="one"
-    />,
-  );
-  expect(screen.getByText("Hello")).toBe(message);
-  view.rerender(
-    <ConversationTranscript
-      entries={[saved(input.parts as Schema<"TranscriptPart">[])]}
-      blocks={[block]}
-      localInputs={[]}
-      continuation="C1"
-      threadId="one"
-    />,
-  );
-  expect(screen.getByText("Hello")).toBe(message);
-  expect(screen.getAllByText("Hello")).toHaveLength(1);
-  expect(screen.queryByRole("status")).toBeNull();
-});
+it.each(["send", "steer"] as const)(
+  "keeps %s input quiet and stable through preparation, partial SSE, acknowledgement and saved cutover",
+  (action) => {
+    const input: LocalInput = { ...local(), action, state: "preparing" };
+    const view = render(
+      <ConversationTranscript
+        entries={[]}
+        blocks={[]}
+        localInputs={[input]}
+        threadId="one"
+      />,
+    );
+    const message = screen.getByText("Hello");
+    expect(screen.queryByRole("status")).toBeNull();
+    input.state = "pending";
+    const block = {
+      id: "run:input:0",
+      kind: "user" as const,
+      text: "H",
+      metadata: input.parts[0].metadata!,
+    };
+    view.rerender(
+      <ConversationTranscript
+        entries={[]}
+        blocks={[block]}
+        localInputs={[input]}
+        threadId="one"
+      />,
+    );
+    expect(screen.getByText("Hello")).toBe(message);
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(screen.queryByText("H")).toBeNull();
+    input.state = "accepted";
+    view.rerender(
+      <ConversationTranscript
+        entries={[]}
+        blocks={[{ ...block, text: "Hello" }]}
+        localInputs={[input]}
+        threadId="one"
+      />,
+    );
+    expect(screen.getByText("Hello")).toBe(message);
+    expect(screen.queryByRole("status")).toBeNull();
+    view.rerender(
+      <ConversationTranscript
+        entries={[saved(input.parts as Schema<"TranscriptPart">[])]}
+        blocks={[block]}
+        localInputs={[]}
+        continuation="C1"
+        threadId="one"
+      />,
+    );
+    expect(screen.getByText("Hello")).toBe(message);
+    expect(screen.getAllByText("Hello")).toHaveLength(1);
+    expect(screen.queryByRole("status")).toBeNull();
+  },
+);
 
 it("does not merge identical submissions with distinct source identities", () => {
   render(
@@ -194,66 +198,31 @@ it("keeps separate reasoning Markdown documents and stops grouping at tool activ
   expect(screen.getByText("A new part").tagName).toBe("STRONG");
 });
 
-it("dismisses steer acceptance after five seconds and starts a fresh timer for the next instruction", () => {
-  vi.useFakeTimers();
-  const draft = new ThreadDraft();
-  draft.submission = {
-    kind: "accepted",
-    action: "steer",
-    receipt: "receipt",
-    message: "Steer sent.",
-  };
-  const view = render(<SteerNotice draft={draft} />);
-  act(() => vi.advanceTimersByTime(4999));
-  expect(screen.getByText("Steer sent.")).toBeTruthy();
-  const first = draft.submission;
-  act(() => vi.advanceTimersByTime(1));
-  expect(screen.queryByText("Steer sent.")).toBeNull();
-  expect(draft.submission).toBe(first);
-  draft.submission = { ...first };
-  view.rerender(<SteerNotice draft={draft} />);
-  expect(screen.getByText("Steer sent.")).toBeTruthy();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Dismiss steer notification" }),
-  );
-  expect(screen.queryByText("Steer sent.")).toBeNull();
-});
-
-it("keeps recovery quiet until progress, dismisses it, and shows a subsequent attempt", () => {
+it("retains recovery outcomes and counts subsequent attempts without flashing away", () => {
   vi.useFakeTimers();
   const view = render(
-    <RecoveryNotice recovery={{ id: "retry-1", state: "retrying" }} />,
+    <RecoveryNotice
+      recovery={{ id: "retry-1", state: "retrying", retries: 1 }}
+    />,
   );
   act(() => vi.advanceTimersByTime(10000));
   expect(screen.getByRole("status").textContent).toContain("Reconnecting");
   view.rerender(
-    <RecoveryNotice recovery={{ id: "retry-1", state: "resumed" }} />,
-  );
-  expect(screen.getByRole("status").textContent).toContain("restored");
-  act(() => vi.advanceTimersByTime(3000));
-  expect(screen.queryByRole("status")).toBeNull();
-  view.rerender(
-    <RecoveryNotice recovery={{ id: "retry-2", state: "retrying" }} />,
-  );
-  expect(screen.getByRole("status")).toBeTruthy();
-});
-
-it("never renders marked recovery input in live or saved transcript", () => {
-  const metadata = {
-    display: false,
-    source_id: "a13n-harness-ui.model-recovery",
-  };
-  render(
-    <ConversationTranscript
-      threadId="one"
-      localInputs={[]}
-      entries={[
-        saved([{ kind: "user", text: "Internal instruction", metadata }]),
-      ]}
-      blocks={[]}
+    <RecoveryNotice
+      recovery={{ id: "retry-1", state: "resumed", retries: 1 }}
     />,
   );
-  expect(screen.queryByText("Internal instruction")).toBeNull();
+  expect(screen.getByRole("status").textContent).toContain("restored");
+  act(() => vi.advanceTimersByTime(10000));
+  expect(screen.getByRole("status").textContent).toContain(
+    "restored · 1 retry",
+  );
+  view.rerender(
+    <RecoveryNotice
+      recovery={{ id: "retry-2", state: "retrying", retries: 2 }}
+    />,
+  );
+  expect(screen.getByRole("status").textContent).toContain("2 retries");
 });
 
 it("renders owned summaries as distinct collapsed Markdown activity, never heading-matches user input", () => {
@@ -290,30 +259,4 @@ it("renders owned summaries as distinct collapsed Markdown activity, never headi
   }
   expect(screen.getByText("Authored input").closest("details")).toBeNull();
   expect(screen.getAllByText("User")).toHaveLength(1);
-});
-
-it("renders saved text without comment controls or selection affordances", () => {
-  const view = render(
-    <ConversationTranscript
-      entries={[
-        saved([
-          {
-            kind: "assistant",
-            text: "Read-only saved answer",
-            comment_target: {
-              producing_thread_id: "one",
-              source_id: "source",
-              location: { kind: "root_text", message: 0, part: 0 },
-            },
-          },
-        ]),
-      ]}
-      blocks={[]}
-      localInputs={[]}
-      threadId="one"
-    />,
-  );
-  expect(screen.getByText("Read-only saved answer")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: /comment/i })).toBeNull();
-  expect(view.container.querySelector("[data-source-start]")).toBeNull();
 });

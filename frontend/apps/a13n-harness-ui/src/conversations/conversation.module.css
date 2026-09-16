@@ -131,10 +131,6 @@
 .groupThreads {
   margin-inline-start: 22px;
 }
-.pinnedThread {
-  border-bottom: 1px solid var(--a13n-border);
-  margin-bottom: 4px;
-}
 .srOnly {
   position: absolute;
   width: 1px;
@@ -435,22 +431,13 @@
 .composer:focus-within {
   border-color: var(--ring);
 }
+.moreConversations {
+  font-weight: 400;
+}
 .composerConnection {
   margin: 4px 4px 0;
   font-size: 12px;
   color: var(--a13n-secondary);
-}
-.steerNotice {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 8px;
-  color: var(--a13n-text-supporting);
-  font-size: 12px;
-  line-height: 1.5;
-}
-.steerNotice > span {
-  flex: 1;
 }
 .sendButton {
   flex-shrink: 0;
@@ -1162,21 +1149,8 @@
 .recoveryNotice > svg {
   flex-shrink: 0;
 }
-.recoveryNotice[data-state="resumed"] {
-  animation: dismissRecovery 3s ease-out forwards;
-}
-@keyframes dismissRecovery {
-  0%,
-  80% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-  }
-}
 @media (prefers-reduced-motion: reduce) {
-  .threadRunning,
-  .recoveryNotice[data-state="resumed"] {
+  .threadRunning {
     animation: none;
   }
 }

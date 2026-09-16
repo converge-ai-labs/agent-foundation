@@ -1,14 +1,14 @@
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
-import { startNativeApp } from "../../tests/app-fixture";
+import { startApp } from "../../tests/app-fixture";
 import { createTransport, result, type Transport } from "../transport/client";
 import { TerminalConnection } from "./terminal-connection";
 import { FileBuffer, joinPath } from "./buffer";
 
-let app: Awaited<ReturnType<typeof startNativeApp>>;
+let app: Awaited<ReturnType<typeof startApp>>;
 let transport: Transport;
 const connections: TerminalConnection[] = [];
 beforeAll(async () => {
-  app = await startNativeApp();
+  app = await startApp("--native");
   vi.stubGlobal("window", { location: { origin: app.origin } });
   transport = createTransport("test-only-key", () => {});
 }, 40000);

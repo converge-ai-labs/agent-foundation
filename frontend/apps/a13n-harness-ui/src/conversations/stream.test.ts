@@ -196,7 +196,7 @@ it("honors display metadata, canonical reasoning events and tool result identity
   ]);
 });
 
-it("reboots on the next root Run and retains its authoritative unsaved base", async () => {
+it("reboots through a root Run and checkpoint race while retaining its authoritative unsaved base", async () => {
   vi.useFakeTimers();
   const display = new FocusDisplay();
   const first = snapshot(0);
@@ -219,28 +219,31 @@ it("reboots on the next root Run and retains its authoritative unsaved base", as
     .fn()
     .mockResolvedValueOnce(
       response([first, { kind: "ready", resume_cursor: "C0-ready" }, next]),
-    )
-    .mockResolvedValueOnce(
-      response([
-        second,
-        {
-          kind: "root_stream",
-          run_id: "run-two",
-          events: [
-            {
-              index: 0,
-              event_type: "TEXT_MESSAGE_CONTENT",
-              payload: {
-                message_id: "unsaved",
-                delta: "Retained failed output",
-              },
-              payload_omitted: false,
-            },
-          ],
-        },
-        { kind: "ready", resume_cursor: "C1-ready" },
-      ]),
     );
+  fetch.mockResolvedValueOnce(
+    response([{ kind: "reset", reason: "live_snapshot_changed" }]),
+  );
+  fetch.mockResolvedValueOnce(
+    response([
+      second,
+      {
+        kind: "root_stream",
+        run_id: "run-two",
+        events: [
+          {
+            index: 0,
+            event_type: "TEXT_MESSAGE_CONTENT",
+            payload: {
+              message_id: "unsaved",
+              delta: "Retained failed output",
+            },
+            payload_omitted: false,
+          },
+        ],
+      },
+      { kind: "ready", resume_cursor: "C1-ready" },
+    ]),
+  );
   const close = watchThread(
     { fetch } as unknown as Transport,
     "thread-one",
@@ -250,12 +253,11 @@ it("reboots on the next root Run and retains its authoritative unsaved base", as
     vi.fn(),
   );
   try {
-    await vi.advanceTimersByTimeAsync(1);
-    expect(fetch).toHaveBeenCalledTimes(2);
-    expect(fetch.mock.calls.map((call) => call[0])).toEqual([
-      "/api/threads/thread-one/events",
-      "/api/threads/thread-one/events",
-    ]);
+    await vi.advanceTimersByTimeAsync(10);
+    expect(fetch).toHaveBeenCalledTimes(3);
+    expect(fetch.mock.calls.map((call) => call[0])).toEqual(
+      Array(3).fill("/api/threads/thread-one/events"),
+    );
     expect(display.runId).toBe("run-two");
     expect(display.baseContinuation).toBe("C1");
     expect(display.snapshot!.thread.thread.root_activity.state).toBe(
@@ -995,7 +997,7 @@ it("hides recovery instructions and waits for visible progress before marking re
   emit("TEXT_MESSAGE_CONTENT", { message_id: "answer", delta: "Continuing" });
   expect(display.recovery?.state).toBe("resumed");
   emit("RUN_FINISHED", {});
-  expect(display.recovery).toBeUndefined();
+  expect(display.recovery).toMatchObject({ state: "resumed", retries: 1 });
 });
 
 it("does not resume an interrupted replacement using the old cursor", async () => {
@@ -1186,4 +1188,48 @@ it("folds root replay and child shell observations into the shared process inspe
   expect(display.processes.background[1].exitCode).toBe(2);
   display.reset();
   expect(display.processes.background).toEqual([]);
+});
+
+it("backs off repeated snapshot races after one immediate retry while retaining visible output", async () => {
+  vi.useFakeTimers();
+  const display = new FocusDisplay();
+  display.accept(snapshot(0));
+  display.accept({ kind: "ready", resume_cursor: "ready" });
+  display.blocks.set("kept", {
+    id: "kept",
+    kind: "assistant",
+    text: "Keep this output",
+  });
+  const fetch = vi
+    .fn()
+    .mockImplementation(
+      async () =>
+        new Response(
+          `data: ${JSON.stringify({ kind: "reset", reason: "live_snapshot_changed" })}\n\n`,
+        ),
+    );
+  const connection = vi.fn();
+  const close = watchThread(
+    { fetch } as unknown as Transport,
+    "thread-one",
+    display,
+    vi.fn(),
+    connection,
+    vi.fn(),
+  );
+  try {
+    await vi.advanceTimersByTimeAsync(10);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(connection).toHaveBeenLastCalledWith("Reconnecting");
+    expect(display.blocks.get("kept")?.text).toBe("Keep this output");
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fetch).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fetch).toHaveBeenCalledTimes(3);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(fetch).toHaveBeenCalledTimes(4);
+  } finally {
+    close();
+    vi.useRealTimers();
+  }
 });

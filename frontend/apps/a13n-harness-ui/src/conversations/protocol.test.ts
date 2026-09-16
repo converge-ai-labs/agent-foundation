@@ -1,6 +1,4 @@
-import { spawn } from "node:child_process";
-import { createInterface } from "node:readline";
-import { once } from "node:events";
+import { startApp } from "../../tests/app-fixture";
 import { afterAll, beforeAll, expect, it, vi } from "vitest";
 import * as Y from "yjs";
 import { createTransport, result, type Transport } from "../transport/client";
@@ -8,44 +6,11 @@ import { ThreadDraft, values } from "./draft";
 import { submitDraft } from "./composer";
 import { FocusDisplay, watchThread } from "./stream";
 
-let server: ReturnType<typeof spawn>;
+let app: Awaited<ReturnType<typeof startApp>>;
 let transport: Transport;
-let stderr = "";
 beforeAll(async () => {
-  server = spawn(
-    "uv",
-    [
-      "run",
-      "--locked",
-      "--package",
-      "a13n-harness-ui",
-      "--no-default-groups",
-      "python",
-      "tests/protocol_server.py",
-    ],
-    { stdio: ["pipe", "pipe", "pipe"] },
-  );
-  server.stderr!.on("data", (chunk) => {
-    stderr += chunk;
-  });
-  const lines = createInterface({ input: server.stdout! });
-  const origin = await new Promise<string>((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error(`Protocol listener timed out: ${stderr}`)),
-      30000,
-    );
-    server.once("exit", (code) => {
-      clearTimeout(timer);
-      reject(new Error(`Protocol listener exited (${code}): ${stderr}`));
-    });
-    lines.on("line", (line) => {
-      if (line.startsWith("{")) {
-        clearTimeout(timer);
-        resolve(JSON.parse(line).origin);
-      }
-    });
-  });
-  vi.stubGlobal("window", { location: { origin } });
+  app = await startApp();
+  vi.stubGlobal("window", { location: { origin: app.origin } });
   transport = createTransport("test-only-key", () => {
     throw new Error("Unexpected authentication failure");
   });
@@ -55,13 +20,7 @@ beforeAll(async () => {
 }, 40000);
 afterAll(async () => {
   transport?.close();
-  if (server?.exitCode === null) {
-    const exited = once(server, "exit");
-    server.stdin!.end("stop\n");
-    const kill = setTimeout(() => server.kill("SIGKILL"), 15000);
-    await exited;
-    clearTimeout(kill);
-  }
+  await app?.close();
   vi.unstubAllGlobals();
 }, 20000);
 async function until(predicate: () => boolean) {

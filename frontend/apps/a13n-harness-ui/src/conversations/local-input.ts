@@ -40,16 +40,28 @@ export function previewInput(
   }));
 }
 
+// A private display fallback, never a metadata write or evidence of saved input.
+export function conversationTitle(
+  thread: Schema<"ThreadSummary"> | undefined,
+  localInputs: readonly LocalInput[] = [],
+) {
+  const first = localInputs.find(
+    (input) => input.action === "send" && input.state !== "rejected",
+  );
+  return (
+    thread?.title ||
+    thread?.excerpt?.first_input ||
+    first?.parts
+      .map((part) => part.text ?? "")
+      .join(" ")
+      .trim()
+      .slice(0, 160) ||
+    "Untitled conversation"
+  );
+}
+
 export function inputStatus(input?: LocalInput) {
   switch (input?.state) {
-    case "preparing":
-      return "Preparing…";
-    case "pending":
-      return "Sending…";
-    case "accepted":
-      return input.action === "steer"
-        ? "Accepted · waiting for application"
-        : "Accepted · preparing execution";
     case "rejected":
       return "Not sent · input retained";
     case "unknown":
