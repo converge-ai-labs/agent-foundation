@@ -1,3 +1,4 @@
+import { useContext } from "react";
 import { NavLink, useNavigate, useLocation } from "react-router";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button, Menu, MenuTrigger, MenuPopup, MenuItem } from "a13n-ui";
@@ -17,7 +18,7 @@ import { result, type Schema } from "../transport/client";
 import { useTransport } from "../transport/context";
 import { ErrorNotice } from "../shell/ui";
 import { refreshThreadLists } from "./queries";
-import { newConversationPath } from "./new-conversation";
+import { NewConversationDrafts, newConversationPath } from "./new-conversation";
 import {
   ParticipantAvatars,
   threadParticipants,
@@ -65,6 +66,7 @@ export function ThreadRow({
   const location = useLocation();
   const transport = useTransport();
   const queries = useQueryClient();
+  const newDrafts = useContext(NewConversationDrafts);
   const archive = useMutation({
     mutationFn: () =>
       result(
@@ -77,6 +79,7 @@ export function ThreadRow({
         }),
       ),
     onSuccess: () => {
+      if (!row.thread.archived) newDrafts.detachArchived(row.thread.thread_id);
       if (
         !row.thread.archived &&
         location.pathname ===

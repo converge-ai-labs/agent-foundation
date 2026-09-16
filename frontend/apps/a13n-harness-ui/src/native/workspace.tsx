@@ -58,7 +58,7 @@ export function NativeWorkspace({
   const thread = useThread(threadId ?? "");
   const isNew =
     location.pathname === "/" ||
-    !!matchPath("/new/:draftId", location.pathname);
+    !!matchPath("/new/:draftId?", location.pathname);
   const isWorkspace = location.pathname === "/" || !!threadId || isNew;
   const projectLoading = !!threadId && (thread.isPending || projects.isPending);
   const resolvedProject = projects.data?.find(

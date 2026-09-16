@@ -8,10 +8,8 @@ import { DraftContext, type SourceDraft } from "./configuration/sources";
 import { Workbench } from "./shell/workbench";
 import { NotificationsProvider } from "./shell/notifications";
 import { ComposerDrafts } from "./conversations/composer";
-import {
-  NewConversationDrafts,
-  type NewDraft,
-} from "./conversations/new-conversation";
+import { NewConversationDrafts } from "./conversations/new-conversation";
+import { NewDraftStore } from "./conversations/new-draft";
 import { ChildControlsProvider } from "./conversations/child-controls";
 import { FileBuffers, type FileBuffer } from "./native/buffer";
 import type { ThreadDraft } from "./conversations/draft";
@@ -58,7 +56,13 @@ export function BrowserApp() {
   const [connecting, setConnecting] = useState(true);
   const drafts = useRef(new Map<string, SourceDraft>());
   const composers = useRef(new Map<string, ThreadDraft>());
-  const [newConversations] = useState(() => new Map<string, NewDraft>());
+  const [newConversations] = useState(() => {
+    const store = new NewDraftStore();
+    // Restore before any route mounts, including a saved Thread whose first
+    // submission was interrupted by a reload.
+    store.get(composers.current);
+    return store;
+  });
   const files = useRef(new Map<string, FileBuffer>());
   const [queries] = useState(
     () =>

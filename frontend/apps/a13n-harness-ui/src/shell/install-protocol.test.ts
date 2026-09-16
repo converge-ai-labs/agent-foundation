@@ -109,7 +109,14 @@ it("serves public install metadata and correctly sized PNGs without changing API
 });
 
 it("keeps root metadata links valid on deep links and keeps hashed assets immutable", async () => {
-  for (const path of ["/", "/settings", "/threads/thread-fixture"]) {
+  for (const path of [
+    "/",
+    "/new",
+    "/new?project=project-one",
+    "/new/thread_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "/settings",
+    "/threads/thread-fixture",
+  ]) {
     const response = await fetch(`${origin}${path}`);
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-cache");

@@ -362,8 +362,8 @@ it("opens a local blank conversation in the selected project without a creation 
     await screen.findByRole("button", { name: "New conversation in Two" }),
   );
   expect(screen.queryByRole("dialog")).toBeNull();
-  expect(screen.getByLabelText("Current route").textContent).toMatch(
-    /^\/new\/thread_[a-f0-9]{32}\?project=project-two$/,
+  expect(screen.getByLabelText("Current route").textContent).toBe(
+    "/new?project=project-two",
   );
   expect(writes).toHaveLength(0);
 });
