@@ -70,6 +70,21 @@ class SessionRecord(Base):
             ondelete="CASCADE",
         ),
         UniqueConstraint("organization_id", "id", name="uq_sessions_organization_id"),
+        ForeignKeyConstraint(
+            ("configuration_draft_id", "organization_id", "id"),
+            ("configuration_drafts.id", "configuration_drafts.organization_id", "configuration_drafts.session_id"),
+            name="fk_sessions_configuration_draft",
+            ondelete="RESTRICT",
+            deferrable=True,
+            initially="DEFERRED",
+            use_alter=True,
+        ),
+        CheckConstraint(
+            "(configuration_owner_user_id IS NULL AND configuration_draft_id IS NULL) OR "
+            "(configuration_owner_user_id IS NOT NULL AND configuration_draft_id IS NOT NULL)",
+            name="configuration_scope_valid",
+        ),
+        Index("ix_sessions_configuration_owner", "workspace_id", "configuration_owner_user_id", "updated_at", "id"),
         Index("ix_sessions_workspace_created", "organization_id", "workspace_id", "created_at", "id"),
         Index("ix_sessions_workspace_updated", "organization_id", "workspace_id", "updated_at", "id"),
         Index("ix_sessions_labels", "labels", postgresql_using="gin", postgresql_ops={"labels": "jsonb_path_ops"}),
@@ -78,6 +93,8 @@ class SessionRecord(Base):
     id: Mapped[str] = mapped_column(String(72), primary_key=True)
     organization_id: Mapped[str] = mapped_column(String(72), nullable=False)
     workspace_id: Mapped[str] = mapped_column(String(72), nullable=False)
+    configuration_owner_user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"))
+    configuration_draft_id: Mapped[str | None] = mapped_column(String(72))
     labels: Mapped[dict[str, str]] = mapped_column(
         LABELS_SQL_TYPE, nullable=False, default=dict, server_default=text("'{}'")
     )
@@ -209,7 +226,25 @@ class ThreadRecord(Base):
 
 class RunRecord(Base):
     __tablename__ = "runs"
+    configuration_context: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True))
+    configuration_draft_id: Mapped[str | None] = mapped_column(String(72))
     __table_args__ = (
+        ForeignKeyConstraint(
+            ("configuration_draft_id", "organization_id", "session_id"),
+            (
+                "configuration_drafts.id",
+                "configuration_drafts.organization_id",
+                "configuration_drafts.session_id",
+            ),
+            name="fk_runs_configuration_draft_same_session",
+            ondelete="RESTRICT",
+            use_alter=True,
+        ),
+        CheckConstraint(
+            "(configuration_draft_id IS NULL AND configuration_context IS NULL AND agent_revision_id IS NOT NULL) OR "
+            "(configuration_draft_id IS NOT NULL AND configuration_context IS NOT NULL AND agent_revision_id IS NULL)",
+            name="configuration_binding_consistent",
+        ),
         CheckConstraint(
             "(environment_id IS NULL AND environment_access IS NULL AND environment_use_started_at IS NULL) OR (environment_id IS NOT NULL AND environment_access IN ('read_only','read_write','full'))",
             name="environment_selection_valid",
@@ -439,13 +474,14 @@ class RunRecord(Base):
     delegation_id: Mapped[str | None] = mapped_column(String(256))
     parent_tool_call_id: Mapped[str | None] = mapped_column(String(256))
     agent_id: Mapped[str] = mapped_column(String(72), ForeignKey("agents.id", ondelete="RESTRICT"), nullable=False)
-    agent_revision_id: Mapped[str] = mapped_column(
-        String(72), ForeignKey("agent_revisions.id", ondelete="RESTRICT"), nullable=False
+    agent_revision_id: Mapped[str | None] = mapped_column(
+        String(72), ForeignKey("agent_revisions.id", ondelete="RESTRICT")
     )
     effective_agent_config_digest: Mapped[str] = mapped_column(String(64), nullable=False)
     model_execution_observation_json: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     connection_selections_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
     native_tool_contexts_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    bot_memory_json: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     priority: Mapped[int] = mapped_column(Integer, nullable=False)
     queue_name: Mapped[str] = mapped_column(String(256), nullable=False)
     available_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -496,6 +532,7 @@ class RunRecord(Base):
 
     def to_resource(self) -> Run:
         values: dict[str, Any] = {
+            "configuration_context": self.configuration_context,
             "id": self.id,
             "version": self.version,
             "organization_id": self.organization_id,
@@ -526,6 +563,7 @@ class RunRecord(Base):
             ),
             "connection_selections": _JSON_OBJECTS_ADAPTER.validate_python(self.connection_selections_json),
             "native_tool_contexts": _JSON_OBJECTS_ADAPTER.validate_python(self.native_tool_contexts_json),
+            "bot_memory": self.bot_memory_json,
             "priority": self.priority,
             "queue_name": self.queue_name,
             "available_at": assume_utc(self.available_at),

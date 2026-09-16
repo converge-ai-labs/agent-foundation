@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Literal, TypeVar, cast
 
 from attrs import define as _attrs_define
 
@@ -25,7 +25,7 @@ class Agent:
         archived_at (datetime.datetime | None):
         created_at (datetime.datetime):
         created_by (PrincipalRef | SystemActorRef):
-        current_revision_id (str):
+        current_revision_id (None | str):
         description (None | str):
         duplicated_from_agent_id (None | str):
         duplicated_from_revision_id (None | str):
@@ -42,12 +42,13 @@ class Agent:
         default_environment_template_id (None | str | Unset):
         image_url (None | str | Unset):
         labels (AgentLabels | Unset):
+        system_purpose (Literal['configuration_assistant'] | None | Unset):
     """
 
     archived_at: datetime.datetime | None
     created_at: datetime.datetime
     created_by: PrincipalRef | SystemActorRef
-    current_revision_id: str
+    current_revision_id: str | None
     description: str | None
     duplicated_from_agent_id: str | None
     duplicated_from_revision_id: str | None
@@ -64,6 +65,7 @@ class Agent:
     default_environment_template_id: str | Unset | None = UNSET
     image_url: str | Unset | None = UNSET
     labels: AgentLabels | Unset = UNSET
+    system_purpose: Literal["configuration_assistant"] | Unset | None = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.principal_ref import PrincipalRef
@@ -82,6 +84,7 @@ class Agent:
         else:
             created_by = self.created_by.to_dict()
 
+        current_revision_id: str | None
         current_revision_id = self.current_revision_id
 
         description: str | None
@@ -133,6 +136,12 @@ class Agent:
         if not isinstance(self.labels, Unset):
             labels = self.labels.to_dict()
 
+        system_purpose: Literal["configuration_assistant"] | Unset | None
+        if isinstance(self.system_purpose, Unset):
+            system_purpose = UNSET
+        else:
+            system_purpose = self.system_purpose
+
         field_dict: dict[str, Any] = {}
 
         field_dict.update(
@@ -162,6 +171,8 @@ class Agent:
             field_dict["image_url"] = image_url
         if labels is not UNSET:
             field_dict["labels"] = labels
+        if system_purpose is not UNSET:
+            field_dict["system_purpose"] = system_purpose
 
         return field_dict
 
@@ -207,7 +218,12 @@ class Agent:
 
         created_by = _parse_created_by(d.pop("created_by"))
 
-        current_revision_id = d.pop("current_revision_id")
+        def _parse_current_revision_id(data: object) -> str | None:
+            if data is None:
+                return data
+            return cast(str | None, data)
+
+        current_revision_id = _parse_current_revision_id(d.pop("current_revision_id"))
 
         def _parse_description(data: object) -> str | None:
             if data is None:
@@ -292,6 +308,21 @@ class Agent:
         else:
             labels = AgentLabels.from_dict(_labels)
 
+        def _parse_system_purpose(data: object) -> Literal["configuration_assistant"] | Unset | None:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            system_purpose_type_0 = cast(Literal["configuration_assistant"], data)
+            if system_purpose_type_0 != "configuration_assistant":
+                raise ValueError(
+                    f"system_purpose_type_0 must match const 'configuration_assistant', got '{system_purpose_type_0}'"
+                )
+            return system_purpose_type_0
+            return cast(Literal["configuration_assistant"] | Unset | None, data)
+
+        system_purpose = _parse_system_purpose(d.pop("system_purpose", UNSET))
+
         agent = cls(
             archived_at=archived_at,
             created_at=created_at,
@@ -313,6 +344,7 @@ class Agent:
             default_environment_template_id=default_environment_template_id,
             image_url=image_url,
             labels=labels,
+            system_purpose=system_purpose,
         )
 
         return agent

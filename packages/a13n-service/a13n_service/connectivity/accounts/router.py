@@ -83,12 +83,14 @@ async def list_accounts(
     workspace_id: WorkspaceId,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     cursor: Annotated[str | None, Query(max_length=2048)] = None,
+    bots_only: bool = False,
 ) -> AccountCollection:
     return await _service(request).list_accounts(
         actor=actor,
         workspace_id=workspace_id,
         limit=limit,
         cursor=cursor,
+        bots_only=bots_only,
     )
 
 

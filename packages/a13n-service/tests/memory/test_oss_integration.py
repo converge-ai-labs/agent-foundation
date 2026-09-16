@@ -137,3 +137,155 @@ async def test_real_oss_bounds_1005_records_without_inventing_pagination():
             async with asyncio.TaskGroup() as group:
                 for memory_id in ids:
                     group.create_task(delete(memory_id))
+
+
+async def test_real_oss_bot_documents_preserve_metadata_and_filter_authorized_keys():
+    from a13n_harness.memory import MemoryDocumentScope, MemoryRecordNotFound
+
+    prefix = uuid4().hex
+    first = MemorySubject(MemoryDocumentScope.CONVERSATION, f"bot-document-a-{prefix}")
+    second = MemorySubject(MemoryDocumentScope.CONVERSATION, f"bot-document-b-{prefix}")
+    body = f"  # Release checklist\n\nShip the blue release {prefix}.\n\nOwner: engineering.  "
+    metadata = {"record_key": f"doc-{prefix}", "source_date": "2026-09-16", "document_type": "long_term"}
+    created = []
+    async with open_mem0_oss(
+        base_url=os.environ["TEST_MEM0_OSS_URL"], api_key=os.environ["TEST_MEM0_OSS_API_KEY"]
+    ) as backend:
+        try:
+            document = await backend.add_document(body, subject=first, metadata=metadata)
+            created.append((document.id, first))
+            hidden = await backend.add_document(
+                body, subject=first, metadata={**metadata, "record_key": f"hidden-{prefix}"}
+            )
+            created.append((hidden.id, first))
+            other = await backend.add_document(body, subject=second, metadata=metadata)
+            created.append((other.id, second))
+            assert document.text == body
+            assert dict(document.metadata) == {**metadata, "a13n_scope": "conversation"}
+            assert (await backend.get(document.id, subject=first)).text == body
+            with pytest.raises(MemoryRecordNotFound):
+                await backend.get(document.id, subject=second)
+            found = await backend.search_documents(body, subject=first, record_keys=(metadata["record_key"],), limit=10)
+            assert [record.id for record in found] == [document.id]
+            assert not await backend.search_documents(body, subject=first, record_keys=(f"absent-{prefix}",), limit=10)
+            await backend.delete(document.id, subject=first)
+            created.remove((document.id, first))
+            with pytest.raises(MemoryRecordNotFound):
+                await backend.get(document.id, subject=first)
+            assert (await backend.get(hidden.id, subject=first)).id == hidden.id
+            assert (await backend.get(other.id, subject=second)).id == other.id
+        finally:
+            for memory_id, subject in created:
+                await backend.delete(memory_id, subject=subject)
+
+
+async def test_service_bot_document_directory_with_real_oss(memory_sessions, service_database, tmp_path):
+    from a13n_service.iam.models import RoleBindingRecord
+    from a13n_service.storage import transaction
+    from sqlalchemy import select
+
+    # The shared model fixture is a Builder; Bot management intentionally requires Admin.
+    async with transaction(memory_sessions) as session:
+        binding = await session.scalar(
+            select(RoleBindingRecord).where(
+                RoleBindingRecord.workspace_id == WORKSPACE_ID,
+                RoleBindingRecord.principal_id == USER_ID,
+                RoleBindingRecord.resource_type == "workspace",
+            )
+        )
+        assert binding is not None
+        binding.role_key = "admin"
+
+    async def authenticate(_request):
+        return actor()
+
+    app = create_app(settings(tmp_path, service_database), components=Components(request_authenticator=authenticate))
+    async with app.router.lifespan_context(app):
+        async with httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url="http://testserver") as client:
+            provider = await client.post(
+                f"/api/v1/workspaces/{WORKSPACE_ID}/memory-providers",
+                json={
+                    "type": "a13n.mem0-oss",
+                    "name": "Bot document OSS",
+                    "configuration": {"base_url": os.environ["TEST_MEM0_OSS_URL"]},
+                    "credential": {"api_key": os.environ["TEST_MEM0_OSS_API_KEY"]},
+                },
+            )
+            assert provider.status_code == 201, provider.text
+            account = await client.post(
+                f"/api/v1/workspaces/{WORKSPACE_ID}/application-accounts",
+                headers={"Idempotency-Key": "native-oss-bot"},
+                json={
+                    "name": "Native OSS bot",
+                    "provider_key": "slack",
+                    "provider_config_version": "slack_http_v1",
+                    "provider_config": {"api_app_id": "A_TEST", "team_id": "T_TEST", "bot_user_id": "U_TEST"},
+                    "credentials": {"bot_token": "fictional-test-token", "signing_secret": "fictional-test-signing"},
+                    "receive_enabled": False,
+                    "reception_scope": "configured_targets",
+                    "memory": {"provider_id": provider.json()["id"]},
+                },
+            )
+            assert account.status_code == 201, account.text
+            base = f"/api/v1/application-accounts/{account.json()['id']}"
+            scopes = []
+            for name in ("C_ENGINEERING", "C_SUPPORT"):
+                target = await client.post(
+                    base + "/targets",
+                    headers={"Idempotency-Key": name},
+                    json={"target_kind": "conversation", "external_target_id": name, "receive_enabled": False},
+                )
+                assert target.status_code == 201, target.text
+                scope = await client.post(
+                    base + "/memory-scopes", json={"external_conversation_id": name, "timezone": "UTC"}
+                )
+                assert scope.status_code == 200, scope.text
+                scopes.append(scope.json()["id"])
+            path = f"{base}/memory-scopes/{scopes[0]}"
+            body = {
+                "title": "Release record",
+                "description": "Approved release facts",
+                "text": f"  Storage payload {uuid4()}\n\nThe release passed its checks.  ",
+                "kind": "daily",
+                "activity_date": "2026-09-16",
+            }
+            created_ids = []
+            try:
+                created = await client.post(path + "/documents", headers={"Idempotency-Key": "exact-body"}, json=body)
+                assert created.status_code == 201, created.text
+                document = created.json()
+                created_ids.append(document["id"])
+                assert document["text"] == body["text"]
+                replay = await client.post(path + "/documents", headers={"Idempotency-Key": "exact-body"}, json=body)
+                assert replay.status_code == 201 and replay.json()["id"] == document["id"]
+                index = await client.get(path + "/index")
+                assert index.status_code == 200, index.text
+                assert index.json()["path"] == "MEMORY.md"
+                assert [entry["id"] for entry in index.json()["entries"]] == [document["id"]]
+                assert body["text"] not in index.json()["text"]
+                listing = await client.get(path + "/documents", params={"activity_date": "2026-09-16", "kind": "daily"})
+                assert listing.status_code == 200 and len(listing.json()["items"]) == 1
+                wrong_date = await client.get(path + "/documents", params={"activity_date": "2026-09-15"})
+                assert wrong_date.status_code == 200 and wrong_date.json()["items"] == []
+                fetched = await client.get(path + "/documents/" + document["id"])
+                assert fetched.status_code == 200 and fetched.json()["text"] == body["text"]
+                found = await client.post(path + "/documents/search", json={"query": body["text"]})
+                assert found.status_code == 200, found.text
+                assert [entry["id"] for entry in found.json()["items"]] == [document["id"]]
+                hidden = await client.get(f"{base}/memory-scopes/{scopes[1]}/documents/{document['id']}")
+                assert hidden.status_code == 404, hidden.text
+                rejected = await client.put(path + "/documents/" + document["id"], json={"text": "rewritten"})
+                # Unregistered mutations use Service's /api catch-all, not a document update route.
+                assert rejected.status_code == 404
+                unchanged = await client.get(path + "/documents/" + document["id"])
+                assert unchanged.status_code == 200 and unchanged.json()["text"] == body["text"]
+                deleted = await client.delete(path + "/documents/" + document["id"])
+                assert deleted.status_code == 204, deleted.text
+                created_ids.remove(document["id"])
+                absent = await client.get(path + "/documents/" + document["id"])
+                assert absent.status_code == 404
+                assert (await client.get(path + "/index")).json()["entries"] == []
+            finally:
+                for document_id in created_ids:
+                    response = await client.delete(path + "/documents/" + document_id)
+                    assert response.status_code == 204, response.text

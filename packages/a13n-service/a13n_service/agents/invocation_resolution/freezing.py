@@ -71,13 +71,20 @@ class AgentInvocationFreezer:
         prepared: PreparedAgentInvocation,
     ) -> FrozenAgentInvocation:
         try:
-            await authorize_agent(
-                session,
-                actor=prepared.actor,
-                workspace_id=prepared.workspace_id,
-                agent_id=prepared.agent_id,
-                action=WorkspaceAction.agent_invoke,
-            )
+            if prepared.configuration_context is not None:
+                from a13n_service.agent_configuration.authorization import authorize_invocation
+
+                await authorize_invocation(
+                    session, actor=prepared.actor, agent_id=prepared.agent_id, context=prepared.configuration_context
+                )
+            else:
+                await authorize_agent(
+                    session,
+                    actor=prepared.actor,
+                    workspace_id=prepared.workspace_id,
+                    agent_id=prepared.agent_id,
+                    action=WorkspaceAction.agent_invoke,
+                )
             agent = await load_agent_record(
                 session,
                 organization_id=prepared.organization_id,
@@ -99,16 +106,21 @@ class AgentInvocationFreezer:
                 and agent.current_revision_id != prepared.agent_revision_id
             ):
                 raise current_revision_conflict(agent.current_revision_id)
-            revision_record = await load_revision_record(
-                session,
-                organization_id=prepared.organization_id,
-                workspace_id=prepared.workspace_id,
-                agent_id=prepared.agent_id,
-                revision_id=prepared.agent_revision_id,
-                for_update=True,
-            )
-            if revision_record.content_digest != prepared.revision_content_digest:
-                raise agent_revision_not_executable("revision_changed")
+            if prepared.agent_revision_id is None:
+                # This source is reachable only through protected configuration admission.
+                authored = prepared.merged
+            else:
+                revision_record = await load_revision_record(
+                    session,
+                    organization_id=prepared.organization_id,
+                    workspace_id=prepared.workspace_id,
+                    agent_id=prepared.agent_id,
+                    revision_id=prepared.agent_revision_id,
+                    for_update=True,
+                )
+                if revision_record.content_digest != prepared.revision_content_digest:
+                    raise agent_revision_not_executable("revision_changed")
+                authored = AgentConfig.model_validate(revision_record.config)
             await authorize_workspace(
                 session,
                 actor=prepared.actor,
@@ -124,7 +136,6 @@ class AgentInvocationFreezer:
                 )
             except ModelError as error:
                 raise map_model_error(error) from error
-            authored = AgentConfig.model_validate(revision_record.config)
             memory = prepared.merged.memory
             if memory is not None:
                 if authored.memory is None or authored.memory.provider_id != memory.provider_id:
@@ -182,6 +193,7 @@ class AgentInvocationFreezer:
         for item in prepared.subagents:
             child = item.invocation
             frozen_child = await self.freeze_in_transaction(session, prepared=child)
+            assert child.agent_revision_id is not None and child.revision_content_digest is not None
             child_configs[child.agent_revision_id] = ChildAgentExecution(
                 agent_id=child.agent_id,
                 revision_content_digest=child.revision_content_digest,

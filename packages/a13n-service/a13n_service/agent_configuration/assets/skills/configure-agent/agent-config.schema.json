@@ -1,0 +1,1339 @@
+{
+  "$defs": {
+    "A2ASkillProjection": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ],
+      "title": "A2ASkillProjection",
+      "type": "object"
+    },
+    "AgentModel": {
+      "additionalProperties": false,
+      "properties": {
+        "model_key": {
+          "title": "Model Key",
+          "type": "string"
+        },
+        "settings": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Settings",
+          "type": "object"
+        },
+        "characteristics": {
+          "$ref": "#/$defs/AgentModelCharacteristics"
+        }
+      },
+      "required": [
+        "model_key"
+      ],
+      "title": "AgentModel",
+      "type": "object"
+    },
+    "AgentModelCharacteristics": {
+      "additionalProperties": false,
+      "description": "Agent-owned context policy layered over Model declarations.",
+      "properties": {
+        "context_window_tokens": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Context Window Tokens"
+        },
+        "proactive_context_management_threshold": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 0.65,
+          "title": "Proactive Context Management Threshold"
+        },
+        "compact_threshold": {
+          "default": 0.9,
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Compact Threshold",
+          "type": "number"
+        }
+      },
+      "title": "AgentModelCharacteristics",
+      "type": "object"
+    },
+    "AgentReviewer": {
+      "additionalProperties": false,
+      "description": "Reviewer selected by immutable managed Model ID, never a provider route.",
+      "properties": {
+        "risk_threshold": {
+          "$ref": "#/$defs/ToolRiskLevel",
+          "default": "extra_high"
+        },
+        "on_flagged": {
+          "default": "deny",
+          "enum": [
+            "deny",
+            "approval_required"
+          ],
+          "title": "On Flagged",
+          "type": "string"
+        },
+        "rules": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ToolReviewRule"
+          },
+          "maxProperties": 1024,
+          "title": "Rules",
+          "type": "object"
+        },
+        "model": {
+          "maxLength": 72,
+          "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+          "title": "Model",
+          "type": "string"
+        },
+        "instruction": {
+          "anyOf": [
+            {
+              "maxLength": 32768,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Instruction"
+        },
+        "shell_instruction": {
+          "anyOf": [
+            {
+              "maxLength": 32768,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Shell Instruction"
+        },
+        "model_settings": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model Settings"
+        },
+        "timeout_seconds": {
+          "default": 120,
+          "exclusiveMinimum": 0,
+          "maximum": 120,
+          "title": "Timeout Seconds",
+          "type": "number"
+        },
+        "on_error": {
+          "default": "approval_required",
+          "enum": [
+            "deny",
+            "approval_required",
+            "allow"
+          ],
+          "title": "On Error",
+          "type": "string"
+        }
+      },
+      "required": [
+        "model"
+      ],
+      "title": "AgentReviewer",
+      "type": "object"
+    },
+    "ChildEnvironmentPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "mode": {
+          "default": "none",
+          "enum": [
+            "none",
+            "shared",
+            "dedicated"
+          ],
+          "title": "Mode",
+          "type": "string"
+        },
+        "template_revision_id": {
+          "anyOf": [
+            {
+              "maxLength": 72,
+              "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Template Revision Id"
+        }
+      },
+      "title": "ChildEnvironmentPolicy",
+      "type": "object"
+    },
+    "ClientToolDefinition": {
+      "additionalProperties": false,
+      "description": "Portable model guidance for one externally executed client tool.",
+      "properties": {
+        "name": {
+          "maxLength": 256,
+          "minLength": 1,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "maxLength": 16384,
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "parameters_json_schema": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Parameters Json Schema",
+          "type": "object"
+        },
+        "instruction": {
+          "anyOf": [
+            {
+              "maxLength": 16384,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Instruction"
+        },
+        "metadata": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Metadata",
+          "type": "object"
+        },
+        "permission": {
+          "default": "inherit",
+          "enum": [
+            "inherit",
+            "allow",
+            "deny"
+          ],
+          "title": "Permission",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "description",
+        "parameters_json_schema"
+      ],
+      "title": "ClientToolDefinition",
+      "type": "object"
+    },
+    "ClientToolPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "required": {
+          "default": false,
+          "title": "Required",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "ClientToolPolicy",
+      "type": "object"
+    },
+    "ConnectionToolSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "connection_id": {
+          "maxLength": 72,
+          "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+          "title": "Connection Id",
+          "type": "string"
+        },
+        "tools": {
+          "anyOf": [
+            {
+              "items": {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              "maxItems": 2048,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tools"
+        },
+        "defer_loading": {
+          "default": false,
+          "title": "Defer Loading",
+          "type": "boolean"
+        },
+        "permission": {
+          "$ref": "#/$defs/ToolPermissionSetting",
+          "default": "inherit"
+        },
+        "permissions": {
+          "additionalProperties": {
+            "$ref": "#/$defs/ToolPermissionSetting"
+          },
+          "maxProperties": 2048,
+          "propertyNames": {
+            "maxLength": 128,
+            "minLength": 1
+          },
+          "title": "Permissions",
+          "type": "object"
+        }
+      },
+      "required": [
+        "connection_id"
+      ],
+      "title": "ConnectionToolSelection",
+      "type": "object"
+    },
+    "DelegationContextPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "include_task": {
+          "default": true,
+          "title": "Include Task",
+          "type": "boolean"
+        },
+        "history": {
+          "default": "none",
+          "enum": [
+            "none",
+            "summary",
+            "selected"
+          ],
+          "title": "History",
+          "type": "string"
+        },
+        "task_state": {
+          "default": "shared",
+          "enum": [
+            "shared",
+            "isolated"
+          ],
+          "title": "Task State",
+          "type": "string"
+        }
+      },
+      "title": "DelegationContextPolicy",
+      "type": "object"
+    },
+    "ExtendedAgentCardPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        }
+      },
+      "title": "ExtendedAgentCardPolicy",
+      "type": "object"
+    },
+    "InputAdapterConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "adapter_key": {
+          "pattern": "^[a-z][a-z0-9_.-]{1,127}$",
+          "title": "Adapter Key",
+          "type": "string"
+        },
+        "config": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Config",
+          "type": "object"
+        }
+      },
+      "required": [
+        "adapter_key"
+      ],
+      "title": "InputAdapterConfig",
+      "type": "object"
+    },
+    "JsonValue": {},
+    "MemoryScope": {
+      "enum": [
+        "thread",
+        "agent",
+        "user"
+      ],
+      "title": "MemoryScope",
+      "type": "string"
+    },
+    "MemorySelection": {
+      "additionalProperties": false,
+      "description": "Opt-in Agent behavior; backend credentials and subject IDs are host-owned.",
+      "properties": {
+        "provider_id": {
+          "maxLength": 72,
+          "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+          "title": "Provider Id",
+          "type": "string"
+        },
+        "scope": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/MemoryScope"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "auto_recall": {
+          "default": true,
+          "title": "Auto Recall",
+          "type": "boolean"
+        },
+        "toolset": {
+          "default": true,
+          "title": "Toolset",
+          "type": "boolean"
+        },
+        "recall_limit": {
+          "default": 5,
+          "maximum": 100,
+          "minimum": 1,
+          "title": "Recall Limit",
+          "type": "integer"
+        },
+        "recall_threshold": {
+          "anyOf": [
+            {
+              "maximum": 1,
+              "minimum": 0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Recall Threshold"
+        },
+        "recall_timeout": {
+          "default": 2,
+          "exclusiveMinimum": 0,
+          "maximum": 300,
+          "title": "Recall Timeout",
+          "type": "number"
+        },
+        "recall_required": {
+          "default": false,
+          "title": "Recall Required",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "provider_id"
+      ],
+      "title": "MemorySelection",
+      "type": "object"
+    },
+    "OutputSpec": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Name"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "schema": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Schema"
+        },
+        "resources": {
+          "maxProperties": 128,
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$": {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "type": "object"
+            }
+          },
+          "title": "Resources",
+          "type": "object"
+        },
+        "variants": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/OutputVariant"
+              },
+              "maxItems": 32,
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Variants"
+        }
+      },
+      "title": "OutputSpec",
+      "type": "object"
+    },
+    "OutputVariant": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "schema": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Schema",
+          "type": "object"
+        },
+        "resources": {
+          "maxProperties": 128,
+          "patternProperties": {
+            "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$": {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "type": "object"
+            }
+          },
+          "title": "Resources",
+          "type": "object"
+        }
+      },
+      "required": [
+        "name",
+        "schema"
+      ],
+      "title": "OutputVariant",
+      "type": "object"
+    },
+    "PluginSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "instance_name": {
+          "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$",
+          "title": "Instance Name",
+          "type": "string"
+        },
+        "plugin_key": {
+          "pattern": "^[a-z][a-z0-9_.-]{1,127}$",
+          "title": "Plugin Key",
+          "type": "string"
+        },
+        "config": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Config",
+          "type": "object"
+        }
+      },
+      "required": [
+        "instance_name",
+        "plugin_key"
+      ],
+      "title": "PluginSelection",
+      "type": "object"
+    },
+    "ProtocolConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "1",
+          "default": "1",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "public_name": {
+          "title": "Public Name",
+          "type": "string"
+        },
+        "public_description": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Public Description"
+        },
+        "output_modes": {
+          "default": [
+            "text"
+          ],
+          "items": {
+            "maxLength": 128,
+            "minLength": 1,
+            "type": "string"
+          },
+          "title": "Output Modes",
+          "type": "array"
+        },
+        "input_data_schema": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input Data Schema"
+        },
+        "state_schema": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "State Schema"
+        },
+        "context_schema": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Context Schema"
+        },
+        "client_tools": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/ClientToolPolicy"
+          },
+          "maxItems": 128,
+          "title": "Client Tools",
+          "type": "array"
+        },
+        "event_visibility": {
+          "default": [],
+          "items": {
+            "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$",
+            "type": "string"
+          },
+          "maxItems": 128,
+          "title": "Event Visibility",
+          "type": "array"
+        },
+        "a2a_skills": {
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/A2ASkillProjection"
+          },
+          "maxItems": 128,
+          "title": "A2A Skills",
+          "type": "array"
+        },
+        "extended_agent_card": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ExtendedAgentCardPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "limits": {
+          "$ref": "#/$defs/ProtocolLimits"
+        }
+      },
+      "required": [
+        "public_name"
+      ],
+      "title": "ProtocolConfig",
+      "type": "object"
+    },
+    "ProtocolLimits": {
+      "additionalProperties": false,
+      "properties": {
+        "max_input_bytes": {
+          "default": 1048576,
+          "maximum": 67108864,
+          "minimum": 1,
+          "title": "Max Input Bytes",
+          "type": "integer"
+        },
+        "max_output_bytes": {
+          "default": 16777216,
+          "maximum": 268435456,
+          "minimum": 1,
+          "title": "Max Output Bytes",
+          "type": "integer"
+        },
+        "max_event_bytes": {
+          "default": 1048576,
+          "maximum": 16777216,
+          "minimum": 1,
+          "title": "Max Event Bytes",
+          "type": "integer"
+        }
+      },
+      "title": "ProtocolLimits",
+      "type": "object"
+    },
+    "RetryConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "tools": {
+          "default": 0,
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Tools",
+          "type": "integer"
+        },
+        "output": {
+          "default": 0,
+          "maximum": 100,
+          "minimum": 0,
+          "title": "Output",
+          "type": "integer"
+        }
+      },
+      "title": "RetryConfig",
+      "type": "object"
+    },
+    "SecretRequirement": {
+      "additionalProperties": false,
+      "properties": {
+        "key": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[a-z0-9](?:[a-z0-9._-]{0,126}[a-z0-9])?$",
+          "title": "Key",
+          "type": "string"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "required": {
+          "default": true,
+          "title": "Required",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "key"
+      ],
+      "title": "SecretRequirement",
+      "type": "object"
+    },
+    "SkillSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "skill_key": {
+          "maxLength": 64,
+          "minLength": 1,
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$",
+          "title": "Skill Key",
+          "type": "string"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        }
+      },
+      "required": [
+        "skill_key"
+      ],
+      "title": "SkillSelection",
+      "type": "object"
+    },
+    "SubagentSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "agent_id": {
+          "maxLength": 72,
+          "pattern": "^[a-z][a-z0-9]{1,7}_[a-z0-9]{16,64}$",
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        },
+        "description": {
+          "anyOf": [
+            {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Description"
+        },
+        "context": {
+          "$ref": "#/$defs/DelegationContextPolicy"
+        },
+        "usage_limits": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/UsageLimits"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "environment": {
+          "$ref": "#/$defs/ChildEnvironmentPolicy"
+        }
+      },
+      "required": [
+        "agent_id"
+      ],
+      "title": "SubagentSelection",
+      "type": "object"
+    },
+    "ToolPermissionMode": {
+      "enum": [
+        "allow",
+        "deny",
+        "ask",
+        "review"
+      ],
+      "type": "string"
+    },
+    "ToolPermissionSetting": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ToolPermissionMode"
+        },
+        {
+          "const": "inherit",
+          "type": "string"
+        }
+      ]
+    },
+    "ToolReviewRule": {
+      "additionalProperties": false,
+      "description": "A matching rule overrides the supplied fields of the global policy.",
+      "properties": {
+        "risk_threshold": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ToolRiskLevel"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "on_flagged": {
+          "anyOf": [
+            {
+              "enum": [
+                "deny",
+                "approval_required"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "On Flagged"
+        }
+      },
+      "title": "ToolReviewRule",
+      "type": "object"
+    },
+    "ToolRiskLevel": {
+      "enum": [
+        "low",
+        "medium",
+        "high",
+        "extra_high"
+      ],
+      "title": "ToolRiskLevel",
+      "type": "string"
+    },
+    "ToolSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "permission": {
+          "$ref": "#/$defs/ToolPermissionSetting",
+          "default": "inherit"
+        },
+        "config": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Config",
+          "type": "object"
+        }
+      },
+      "title": "ToolSelection",
+      "type": "object"
+    },
+    "ToolsetSelection": {
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "config": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Config",
+          "type": "object"
+        },
+        "tools": {
+          "maxProperties": 64,
+          "patternProperties": {
+            "^[a-z][a-z0-9_]{0,63}$": {
+              "$ref": "#/$defs/ToolSelection"
+            }
+          },
+          "title": "Tools",
+          "type": "object"
+        }
+      },
+      "title": "ToolsetSelection",
+      "type": "object"
+    },
+    "UsageLimits": {
+      "description": "Limits on model usage.\n\nThe request count is tracked by pydantic_ai, and the request limit is checked before each request to the model.\nToken counts are provided in responses from the model, and the token limits are checked after each response.\n\nEach of the limits can be set to `None` to disable that limit.",
+      "properties": {
+        "cost_limit": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "pattern": "^(?!^[-+.]*$)[+-]?0*\\d*\\.?\\d*$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Cost Limit"
+        },
+        "request_limit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": 50,
+          "title": "Request Limit"
+        },
+        "tool_calls_limit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Tool Calls Limit"
+        },
+        "input_tokens_limit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Input Tokens Limit"
+        },
+        "output_tokens_limit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Tokens Limit"
+        },
+        "total_tokens_limit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Total Tokens Limit"
+        },
+        "per_request_input_tokens_limit": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Per Request Input Tokens Limit"
+        },
+        "count_tokens_before_request": {
+          "default": false,
+          "title": "Count Tokens Before Request",
+          "type": "boolean"
+        }
+      },
+      "title": "UsageLimits",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "toolsets": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ToolsetSelection"
+      },
+      "propertyNames": {
+        "enum": [
+          "files",
+          "shell",
+          "web",
+          "assets"
+        ]
+      },
+      "title": "Toolsets",
+      "type": "object"
+    },
+    "memory": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/MemorySelection"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "reviewer": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/AgentReviewer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "subagent_mode": {
+      "default": "inline",
+      "enum": [
+        "inline",
+        "async"
+      ],
+      "title": "Subagent Mode",
+      "type": "string"
+    },
+    "model": {
+      "$ref": "#/$defs/AgentModel"
+    },
+    "instructions": {
+      "default": "",
+      "maxLength": 262144,
+      "title": "Instructions",
+      "type": "string"
+    },
+    "input_adapter": {
+      "$ref": "#/$defs/InputAdapterConfig"
+    },
+    "plugins": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/PluginSelection"
+      },
+      "maxItems": 128,
+      "title": "Plugins",
+      "type": "array"
+    },
+    "skills": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/SkillSelection"
+      },
+      "maxItems": 512,
+      "title": "Skills",
+      "type": "array"
+    },
+    "connection_tools": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ConnectionToolSelection"
+      },
+      "maxItems": 128,
+      "title": "Connection Tools",
+      "type": "array"
+    },
+    "subagents": {
+      "maxProperties": 128,
+      "patternProperties": {
+        "^[A-Za-z_][A-Za-z0-9_.:-]{0,127}$": {
+          "$ref": "#/$defs/SubagentSelection"
+        }
+      },
+      "title": "Subagents",
+      "type": "object"
+    },
+    "client_tools": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/ClientToolDefinition"
+      },
+      "maxItems": 128,
+      "title": "Client Tools",
+      "type": "array"
+    },
+    "output_spec": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/OutputSpec"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "retries": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/RetryConfig"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "secret_requirements": {
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/SecretRequirement"
+      },
+      "maxItems": 128,
+      "title": "Secret Requirements",
+      "type": "array"
+    },
+    "protocol": {
+      "$ref": "#/$defs/ProtocolConfig"
+    }
+  },
+  "required": [
+    "model",
+    "input_adapter",
+    "protocol"
+  ],
+  "title": "AgentConfig",
+  "type": "object"
+}

@@ -23,10 +23,12 @@ def service_metadata() -> MetaData:
 
     # The distribution descriptor imports every service-owned domain explicitly.
     # Deliberately avoid module scanning or plugin discovery.
+    from a13n_service.agent_configuration import models as configuration_models
     from a13n_service.agents import models as agent_models
     from a13n_service.assets import models as asset_models
     from a13n_service.connectivity.accounts import models as account_models
     from a13n_service.connectivity.accounts import target_models
+    from a13n_service.connectivity.bots import models as bot_models
     from a13n_service.connectivity.connectors import models as connector_models
     from a13n_service.connectivity.ingress import admission_models as ingress_admission_models
     from a13n_service.connectivity.mcp import models as mcp_models
@@ -39,6 +41,7 @@ def service_metadata() -> MetaData:
     from a13n_service.interactions import models as interaction_models
     from a13n_service.lifecycle import models as lifecycle_models
     from a13n_service.memory import models as memory_models
+    from a13n_service.memory.bots import models as bot_memory_models
     from a13n_service.models import models as model_models
     from a13n_service.object_retention import models as object_retention_models
     from a13n_service.secrets import models as secret_models
@@ -48,8 +51,10 @@ def service_metadata() -> MetaData:
 
     del (
         agent_models,
+        configuration_models,
         asset_models,
         account_models,
+        bot_models,
         connector_models,
         durable_operations_models,
         environment_models,
@@ -63,6 +68,7 @@ def service_metadata() -> MetaData:
         lifecycle_models,
         mcp_models,
         memory_models,
+        bot_memory_models,
         model_models,
         object_retention_models,
         web_models,

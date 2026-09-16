@@ -80,6 +80,7 @@ async def worker_runtime(
     invocations=None,
     observability=None,
     environment_catalog=None,
+    configuration_resolver=None,
 ):
     resources = Mock(spec=ExecutionResources)
     resources.native_model_factory = model_factory
@@ -107,6 +108,7 @@ async def worker_runtime(
             else build_agent_resources(Components(), shared, resources.model_provider_registry).invocations,
             plugin_catalog=plugin_catalog if plugin_catalog is not None else HarnessPluginFactoryCatalog(()),
             observability=observability,
+            configuration_resolver=configuration_resolver,
         )
         assert runtime.execution_loop is not None
         assert any(component.run == runtime.execution_loop.run for component in background)

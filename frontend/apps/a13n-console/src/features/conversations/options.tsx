@@ -19,45 +19,10 @@ import { useWorkspace } from "../../layout/workspace";
 import { allPages, data, type Schema } from "../../shared/api";
 import { ErrorNotice } from "../../shared/feedback";
 import { TextAreaField } from "../../shared/form";
-import { useIdempotency } from "../../shared/idempotency";
 import { jsonObject, runOverride } from "../../shared/validation";
-import { Composer } from "./composer";
 import styles from "./conversations.module.css";
 
 type Options = Omit<Schema["ThreadRunSubmissionIntent-Input"], "input">;
-export function OptionsComposer({
-  initial,
-  submit,
-  label,
-  disabled,
-  commandBasis,
-}: {
-  initial?: Schema["ThreadRunSubmissionIntent-Input"];
-  submit: (
-    intent: Schema["ThreadRunSubmissionIntent-Input"],
-    key: string,
-  ) => Promise<unknown>;
-  label?: string;
-  disabled?: boolean;
-  commandBasis?: unknown;
-}) {
-  const options = useRunOptions(initial),
-    idempotency = useIdempotency();
-  return (
-    <Composer
-      initial={initial?.input}
-      disabled={disabled}
-      label={label}
-      submit={async (input) => {
-        const intent = { ...options.build(), input };
-        await submit(intent, idempotency.forBody([commandBasis, intent]));
-        idempotency.reset();
-      }}
-    >
-      <RunOptions options={options} />
-    </Composer>
-  );
-}
 export function useRunOptions(initial: Options = {}) {
   const [original] = useState(initial),
     [agent, setAgent] = useState(initial.agent_id ?? ""),

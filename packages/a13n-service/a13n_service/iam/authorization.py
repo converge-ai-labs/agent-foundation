@@ -83,6 +83,10 @@ class WorkspaceAction(StrEnum):
     a2a_push_configuration_manage = "a2a_push_configuration.manage"
     application_account_read = "application_account.read"
     application_account_manage = "application_account.manage"
+    bot_memory_read = "bot_memory.read"
+    bot_memory_create = "bot_memory.create"
+    bot_memory_delete = "bot_memory.delete"
+    bot_memory_share = "bot_memory.share"
     application_account_use = "application_account.use"
     account_target_read = "account_target.read"
     account_target_manage = "account_target.manage"
@@ -201,6 +205,10 @@ _ADMIN_ACTIONS = (
             WorkspaceAction.service_account_manage,
             WorkspaceAction.api_key_manage,
             WorkspaceAction.security_audit_read,
+            WorkspaceAction.bot_memory_read,
+            WorkspaceAction.bot_memory_create,
+            WorkspaceAction.bot_memory_delete,
+            WorkspaceAction.bot_memory_share,
         }
     )
 )
@@ -405,6 +413,15 @@ async def authorize_agent_skill_binding(
     return context.authorized
 
 
+async def require_ordinary_agent(session: AsyncSession, *, agent_id: str) -> None:
+    """Role grants never reveal or authorize a system-purpose Agent."""
+    from a13n_service.agents.models import AgentRecord
+
+    purpose = await session.scalar(select(AgentRecord.system_purpose).where(AgentRecord.id == agent_id))
+    if purpose is not None:
+        raise AuthorizationError("agent_not_found", concealed=True)
+
+
 async def authorize_agent(
     session: AsyncSession,
     *,
@@ -416,6 +433,7 @@ async def authorize_agent(
 ) -> AuthorizedWorkspace:
     """Authorize one stable Agent through Workspace or direct Agent roles."""
 
+    await require_ordinary_agent(session, agent_id=agent_id)
     if snapshot is not None:
         authorized = await _authorize_actor_snapshot(session, actor=actor, workspace_id=workspace_id, snapshot=snapshot)
         if action not in snapshot.for_agent(agent_id):
@@ -468,6 +486,7 @@ async def authorize_persisted_agent_principal_actions(
 ) -> None:
     """Reauthorize durable Principal actions without inventing a request credential."""
 
+    await require_ordinary_agent(session, agent_id=agent_id)
     if not actions:
         raise ValueError("persisted Principal authorization requires at least one action")
 

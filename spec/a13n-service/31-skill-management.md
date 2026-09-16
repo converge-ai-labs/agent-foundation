@@ -22,7 +22,7 @@ Service follows the shared [Managed Skill Package Contract](../managed-skill-pac
 | AgentRevision bindings and Run effective configuration            | [Agent Management](28-agent-management.md)                                      |
 | Entered Environment and write authority                           | [Environment Management](29-environment-management.md)                          |
 
-Service accepts package content through staged ZIP and explicit GitHub import.
+Service accepts managed package content through staged ZIP and explicit GitHub import. The [configuration assistant's deployment-bundled Skill](43-agent-configuration-assistant.md#deployment-bundled-skill) is a separate Host-owned immutable content source: it creates no managed Skill/Revision and appears only under that purpose's confined read-only mount. It neither changes managed Skill locks/materialization nor enables arbitrary host-directory discovery.
 
 ## Resource Model
 

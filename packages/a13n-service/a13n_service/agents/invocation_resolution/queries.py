@@ -83,6 +83,8 @@ async def select_child_revision_id(
     workspace_id: str,
     version: int | None,
 ) -> str:
+    if child.current_revision_id is None:
+        raise agent_revision_not_executable("subagent_revision_unavailable")
     if version is None:
         return child.current_revision_id
     revision_id = await session.scalar(

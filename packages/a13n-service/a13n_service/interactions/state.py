@@ -112,7 +112,7 @@ class RunCheckpoint(StrictModel):
     last_checkpoint_run_attempt_id: ObjectId | None = None
     last_checkpoint_fence: int = Field(ge=0)
     agent_id: ObjectId
-    agent_revision_id: ObjectId
+    agent_revision_id: ObjectId | None
     effective_agent_config: EffectiveAgentConfig
     prepared_plugins: PreparedAgentPlugins | None = None
     protocol_context: ProtocolInputContext | None = Field(default=None, exclude_if=lambda value: value is None)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select, true
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ErrorCategory
@@ -14,6 +14,7 @@ from a13n_service.iam import (
     WorkspaceAction,
     authorize_agent_scoped_collection,
 )
+from a13n_service.interactions.access import configuration_visibility
 from a13n_service.interactions.models import RunAttemptRecord, RunRecord, SessionRecord
 from a13n_service.storage import short_session
 
@@ -89,9 +90,22 @@ class RunTraceAccessAuthorizer:
                     SessionRecord.workspace_id == scope.workspace_id,
                 )
             )
-            for access in (trace_access, run_access):
-                if access.visible_agent_ids is not None:
-                    query = query.where(RunRecord.agent_id.in_(access.visible_agent_ids))
+            for access, action in ((trace_access, WorkspaceAction.trace_read), (run_access, WorkspaceAction.run_read)):
+                ordinary = (
+                    true() if access.visible_agent_ids is None else RunRecord.agent_id.in_(access.visible_agent_ids)
+                )
+                query = query.where(
+                    or_(
+                        and_(SessionRecord.configuration_owner_user_id.is_(None), ordinary),
+                        await configuration_visibility(
+                            database,
+                            actor=actor,
+                            organization_id=scope.organization_id,
+                            workspace_id=scope.workspace_id,
+                            action=action,
+                        ),
+                    )
+                )
             authorized = {}
             for row in await database.execute(query):
                 expected = TraceCorrelation(

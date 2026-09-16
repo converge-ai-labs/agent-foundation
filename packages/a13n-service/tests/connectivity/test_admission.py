@@ -224,3 +224,41 @@ async def test_postgresql_concurrent_capacity_never_acknowledges_overflow(connec
     assert sorted(response.status_code for response in responses) == [202, 503]
     async with sessions() as session:
         assert await session.scalar(select(func.count()).select_from(IngressAdmissionRecord)) == 1
+
+
+async def test_configured_targets_reject_unlisted_groups_before_binding(
+    ingress_event_service, connectivity_sessions, target_service
+):
+    from a13n_service.connectivity.accounts.targets import TargetConfig
+
+    from .conftest import actor
+
+    async with transaction(connectivity_sessions) as session:
+        account = await session.get(AccountRecord, ACCOUNT_ID)
+        account.reception_scope = "configured_targets"
+    await target_service.create(
+        actor=actor(),
+        account_id=ACCOUNT_ID,
+        idempotency_key="pilot",
+        request=TargetConfig(target_kind="conversation", external_target_id="support"),
+    )
+    await ingress_event_service.receive(account_id=ACCOUNT_ID, request=_request("outside", channel="private"))
+    async with connectivity_sessions() as session:
+        assert await session.scalar(select(func.count()).select_from(IngressBatchRecord)) == 0
+        assert await session.scalar(select(func.count()).select_from(AgentThreadBindingRecord)) == 0
+    await ingress_event_service.receive(account_id=ACCOUNT_ID, request=_request("pilot", channel="support"))
+    async with connectivity_sessions() as session:
+        assert await session.scalar(select(func.count()).select_from(IngressBatchRecord)) == 1
+
+
+async def test_reception_scope_change_preserves_acknowledged_batch(ingress_event_service, connectivity_sessions):
+    await ingress_event_service.receive(account_id=ACCOUNT_ID, request=_request("accepted"))
+    async with transaction(connectivity_sessions) as session:
+        account = await session.get(AccountRecord, ACCOUNT_ID)
+        account.reception_scope = "configured_targets"
+    await ingress_event_service.receive(account_id=ACCOUNT_ID, request=_request("unlisted"))
+    acceptor = RetryAcceptor()
+    assert await reconciler(connectivity_sessions, acceptor).run_once()
+    assert len(acceptor.batches) == 1
+    async with connectivity_sessions() as session:
+        assert await session.scalar(select(func.count()).select_from(IngressBatchRecord)) == 1

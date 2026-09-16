@@ -39,6 +39,11 @@ class LarkTenantTokenProvider:
         self._refresh_at = 0.0
         self._expires_at = 0.0
 
+    @property
+    def app_id(self) -> str:
+        """Application identity used to mint this provider's tenant token."""
+        return self._app_id
+
     async def token(self) -> str:
         if self._token is not None and self._clock() < self._refresh_at:
             return self._token

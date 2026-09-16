@@ -10,7 +10,9 @@ import httpx2
 from a13n_environment import EnvironmentProviderCatalog
 from a13n_harness.plugin_factories import HarnessPluginFactoryCatalog
 
+from a13n_service.agent_configuration.drafts import ConfigurationDrafts
 from a13n_service.agents.invocation_resolution import AgentInvocationResolver
+from a13n_service.agents.resolution import AgentResolver
 from a13n_service.assets.catalog import AssetCatalog
 from a13n_service.assets.objects import AssetObjectStore
 from a13n_service.assets.publication import AssetPublisher
@@ -59,6 +61,7 @@ async def build_worker_runtime(
     plugin_catalog: HarnessPluginFactoryCatalog,
     invocations: AgentInvocationResolver,
     observability: ObservabilityRuntime | None = None,
+    configuration_resolver: AgentResolver | None = None,
 ) -> tuple[WorkerRuntime, tuple[BackgroundTask, ...]]:
     """Construct the components owned by a Worker-capable role."""
 
@@ -174,6 +177,9 @@ async def build_worker_runtime(
             observability=observability,
             queue_drain=queue_drain,
             web_registry=WebProviderRegistry(selected_provider_catalogs.web),
+            configuration_drafts=None
+            if configuration_resolver is None
+            else ConfigurationDrafts(shared.storage.sessions, configuration_resolver),
         ),
         build_id=settings.service.build_version,
         queue_name=settings.gateway.run_queue_name,

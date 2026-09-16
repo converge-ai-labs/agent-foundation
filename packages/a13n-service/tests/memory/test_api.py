@@ -122,6 +122,11 @@ async def test_full_native_api_lifecycle_and_scope_isolation(
         async with httpx2.AsyncClient(transport=httpx2.ASGITransport(app=app), base_url="http://testserver") as client:
             path = await provider_path(client)
             params = {"scope": "user"}
+            before = len(calls)
+            access = await client.get(path.removesuffix("/memories") + "/memory-access", params=params)
+            assert access.status_code == 200, access.text
+            assert access.json() == {"can_write": True}
+            assert len(calls) == before
             created = await client.post(path, params=params, json={"text": "  Exact text, not extracted.  "})
             assert created.status_code == 201, created.text
             memory_id = created.json()["id"]
@@ -180,6 +185,9 @@ async def test_full_native_api_lifecycle_and_scope_isolation(
                 binding = await session.get(RoleBindingRecord, "rb_ws1234567890abcde")
                 binding.role_key = "viewer"
             before = len(calls)
+            access = await client.get(path.removesuffix("/memories") + "/memory-access", params=params)
+            assert access.status_code == 200, access.text
+            assert access.json() == {"can_write": False}
             assert (await client.post(path, params=params, json={"text": "denied"})).status_code == 404
             assert len(calls) == before
 

@@ -218,6 +218,7 @@ def _declarations(value: Mapping[str, Any], *, provider_facts: bool) -> ModelDec
     if not isinstance(structured_output, bool):
         structured_output = None
     return ModelDeclarations(
+        supports_tools=value.get("tool_call") if isinstance(value.get("tool_call"), bool) else None,
         thinking_efforts=_efforts(value) if provider_facts else (),
         capabilities=capabilities,
         context_window_tokens=context_window_tokens,

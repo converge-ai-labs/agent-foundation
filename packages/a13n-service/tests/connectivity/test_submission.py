@@ -7,6 +7,7 @@ import pytest
 from a13n_service.agents.models import AgentRecord, AgentRevisionRecord
 from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.accounts.target_models import AccountTargetRecord
+from a13n_service.connectivity.bots.models import BotTestRecord
 from a13n_service.connectivity.ingress.admission_models import AgentThreadBindingRecord, IngressBatchRecord
 from a13n_service.connectivity.ingress.submission import IngressInputAcceptor
 from a13n_service.iam.models import RoleBindingRecord, ServiceAccountRecord
@@ -26,7 +27,9 @@ ACCOUNT = "acct_aaaaaaaaaaaaaaaa"
 EXECUTOR = "sa_aaaaaaaaaaaaaaaa"
 
 
-async def _exercise(sessions, objects, protector, *, waiting=False, stale_claim=False, before_accept=None):
+async def _exercise(
+    sessions, objects, protector, *, waiting=False, stale_claim=False, before_accept=None, setup_tests=False
+):
     await _seed_interaction_database(sessions)
     async with transaction(sessions) as session:
         session.add(
@@ -126,6 +129,8 @@ async def _exercise(sessions, objects, protector, *, waiting=False, stale_claim=
     if before_accept is not None:
         await before_accept(prepared, acceptor, delivery)
         return
+    if setup_tests:
+        await _track_test(sessions, prepared.batch_id, "first")
     outcome = await acceptor.accept_ingress_batch(prepared)
     assert outcome.kind == "accepted", outcome
     async with sessions() as session:
@@ -140,6 +145,9 @@ async def _exercise(sessions, objects, protector, *, waiting=False, stale_claim=
         assert run.native_tool_contexts_json[0]["account_id"] == ACCOUNT
         assert run.authority_principal_id == EXECUTOR
         run_id = run.id
+        if setup_tests:
+            probe = await session.get(BotTestRecord, "btest_first")
+            assert probe.run_id == run.id and probe.steer_id is None and probe.accepted_at == NOW
         thread_id = run.thread_id
     async with transaction(sessions) as session:
         account = await session.get(AccountRecord, ACCOUNT)
@@ -149,6 +157,10 @@ async def _exercise(sessions, objects, protector, *, waiting=False, stale_claim=
         await _wait_run(sessions, objects, run_id=run_id)
     now[0] += timedelta(milliseconds=100)
     await delivery.receive(account_id=ACCOUNT, request=_request("steer"))
+    if setup_tests:
+        async with sessions() as session:
+            batch_id = await session.scalar(select(IngressBatchRecord.id).where(IngressBatchRecord.sequence == 2))
+        await _track_test(sessions, batch_id, "second")
     assert await worker.run_once()
     async with sessions() as session:
         assert await session.scalar(select(func.count()).select_from(RunRecord)) == 1
@@ -157,6 +169,9 @@ async def _exercise(sessions, objects, protector, *, waiting=False, stale_claim=
         assert entry.source_waiting_run_id == (run_id if waiting else None)
         second = await session.scalar(select(IngressBatchRecord).where(IngressBatchRecord.sequence == 2))
         assert second.status == "accepted" and second.result_id == entry.id
+        if setup_tests:
+            probe = await session.get(BotTestRecord, "btest_second")
+            assert probe.run_id == run_id and probe.steer_id == entry.id and probe.accepted_at == now[0]
     assert preparation.calls == 1
     assert selected_agents == [AGENT_ID]
     if waiting:
@@ -251,3 +266,30 @@ async def test_admitted_batch_retains_reception_but_checks_execution(
                 assert await session.scalar(select(func.count()).select_from(RunRecord)) == 0
 
     await _exercise(sessions, connectivity_objects, credential_protector, before_accept=check_admitted)
+
+
+async def _track_test(sessions, batch_id, suffix):
+    async with transaction(sessions) as session:
+        session.add(
+            BotTestRecord(
+                id=f"btest_{suffix}",
+                organization_id=ORGANIZATION_ID,
+                workspace_id=WORKSPACE_ID,
+                account_id=ACCOUNT,
+                account_version=1,
+                credential_generation=1,
+                target_id="tgt_probe",
+                target_version=1,
+                external_target_id="support",
+                created_at=NOW,
+                expires_at=NOW + timedelta(minutes=15),
+                event_received_at=NOW,
+                batch_id=batch_id,
+            )
+        )
+
+
+async def test_setup_probe_acceptance_is_atomic_with_real_run_and_steer(
+    connectivity_sessions, connectivity_objects, credential_protector
+):
+    await _exercise(connectivity_sessions, connectivity_objects, credential_protector, setup_tests=True)

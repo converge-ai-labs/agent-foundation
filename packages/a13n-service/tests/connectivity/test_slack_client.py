@@ -246,3 +246,110 @@ async def test_slack_response_and_secret_representations_are_bounded() -> None:
     assert "C123" not in repr(_binding())
     assert "123.456" not in repr(_binding())
     assert "hello" not in repr(SlackForcedReplyArguments(text="hello"))
+
+
+@pytest.mark.anyio
+async def test_slack_inspection_binds_bot_user_app_and_team_without_posting() -> None:
+    seen: list[httpx2.Request] = []
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        seen.append(request)
+        if request.url.path.endswith("auth.test"):
+            return httpx2.Response(
+                200, json={"ok": True, "team_id": "T1", "team": "Acme", "user_id": "U1", "bot_id": "B1"}
+            )
+        assert request.method == "GET"
+        assert request.url.params["bot"] == "B1"
+        return httpx2.Response(
+            200,
+            json={"ok": True, "bot": {"id": "B1", "user_id": "U1", "app_id": "A1", "name": "Helper", "deleted": False}},
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http_client:
+        identity = await SlackNativeClient(http_client).inspect_installation(bot_token=_BOT_TOKEN)
+    assert (identity.app_id, identity.organization_id, identity.bot_id) == ("A1", "T1", "U1")
+    assert identity.enabled
+    assert len(seen) == 2
+    assert _BOT_TOKEN not in repr(identity)
+
+
+@pytest.mark.anyio
+async def test_slack_inspection_rejects_different_bot_user() -> None:
+    replies = iter(
+        (
+            {"ok": True, "team_id": "T1", "team": "Acme", "user_id": "U1", "bot_id": "B1"},
+            {"ok": True, "bot": {"id": "B1", "user_id": "U2", "app_id": "A1", "name": "Helper", "deleted": False}},
+        )
+    )
+    async with httpx2.AsyncClient(
+        transport=httpx2.MockTransport(lambda _: httpx2.Response(200, json=next(replies)))
+    ) as http_client:
+        with pytest.raises(SlackNativeActionError, match="invalid_provider_response"):
+            await SlackNativeClient(http_client).inspect_installation(bot_token=_BOT_TOKEN)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("member", [True, False, None])
+async def test_slack_conversation_inspection_preserves_membership_uncertainty(member: bool | None) -> None:
+    channel = {
+        "id": "C1",
+        "name": "engineering",
+        "is_private": True,
+        "is_im": False,
+        "is_mpim": False,
+        "is_archived": False,
+        "is_ext_shared": False,
+    }
+    if member is not None:
+        channel["is_member"] = member
+
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        assert request.method == "GET"
+        assert request.url.params["channel"] == "C1"
+        return httpx2.Response(200, json={"ok": True, "channel": channel})
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http_client:
+        observation = await SlackNativeClient(http_client).inspect_conversation("C1", bot_token=_BOT_TOKEN)
+    assert observation.is_member is member
+    assert observation.audience == "private"
+    assert observation.is_active is True
+
+
+@pytest.mark.anyio
+async def test_slack_discovery_is_paginated_and_does_not_claim_membership() -> None:
+    def respond(request: httpx2.Request) -> httpx2.Response:
+        assert request.url.path == "/api/users.conversations"
+        assert request.url.params["cursor"] == "next-page"
+        assert request.url.params["limit"] == "2"
+        return httpx2.Response(
+            200,
+            json={
+                "ok": True,
+                "channels": [{"id": "C1", "name": "engineering"}],
+                "response_metadata": {"next_cursor": "after"},
+            },
+        )
+
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(respond)) as http_client:
+        page = await SlackNativeClient(http_client).list_conversations(
+            bot_token=_BOT_TOKEN, limit=2, cursor="next-page"
+        )
+    assert page.cursor == "after"
+    assert page.items[0].model_dump() == {"id": "C1", "name": "engineering"}
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"ok": True, "channel": "C-other", "ts": "2.0"},
+        {"ok": True, "channel": "C1", "ts": ""},
+        {"ok": True, "channel": "C1", "ts": "2.0", "message": {"thread_ts": "different-root"}},
+    ],
+)
+async def test_reply_does_not_confirm_a_malformed_or_mismatched_receipt(payload):
+    async with httpx2.AsyncClient(transport=httpx2.MockTransport(lambda _: httpx2.Response(200, json=payload))) as http:
+        outcome = await SlackNativeClient(http).reply(
+            _binding(), SlackAutoReplyArguments(text="hello"), bot_token=_BOT_TOKEN, request_id="req_receipt"
+        )
+    assert outcome == SlackReplyOutcomeUnknown(request_id="req_receipt")

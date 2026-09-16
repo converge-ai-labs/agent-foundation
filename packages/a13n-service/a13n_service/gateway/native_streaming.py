@@ -11,7 +11,8 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from a13n_service.application_errors import ApplicationError, ErrorCategory
-from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction, authorize_agent
+from a13n_service.iam import AuthenticatedActor, AuthorizationError, WorkspaceAction
+from a13n_service.interactions.access import authorize_interaction
 from a13n_service.lifecycle import LifecycleEntityType
 from a13n_service.lifecycle.reconciliation import load_owning_run
 from a13n_service.run_stream import (
@@ -190,11 +191,12 @@ class NativeRunStreamService:
             if run is None:
                 raise _resource_not_found()
             try:
-                await authorize_agent(
+                await authorize_interaction(
                     database,
                     actor=actor,
                     workspace_id=workspace_id,
                     agent_id=run.agent_id,
+                    session_id=run.session_id,
                     action=WorkspaceAction.run_read,
                 )
             except AuthorizationError as error:

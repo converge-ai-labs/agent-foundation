@@ -18,7 +18,7 @@ The command invalidates the old link. It cannot reopen completed initialization.
 
 ## Browser sessions
 
-Open [Console](console.md) at its `/login` page to sign in. `/api/v1/auth/login` is a JSON endpoint, not a browser page. Applications may POST `{ "email": "...", "password": "..." }` to that URL. Successful login and invitation acceptance set an `HttpOnly`, `Secure`, `SameSite=Lax` cookie and return safe User/session metadata plus `csrf_token`. Session expiry defaults to seven days and is configured by `A13N_SERVICE_IAM_SESSION_DAYS`.
+Open [Console](console.md) at its `/login` page to sign in. `/api/v1/auth/login` is a JSON endpoint, not a browser page. Applications may POST `{ "email": "...", "password": "..." }` to that URL. Successful login and invitation acceptance set an `HttpOnly`, `Secure`, `SameSite=Lax` cookie and return safe User/session metadata plus `csrf_token`. Session expiry defaults to seven days and is configured by `A13N_SERVICE_IAM_SESSION_DAYS`. The cookie name is configured by `iam.session_cookie_name` / `A13N_SERVICE_IAM_SESSION_COOKIE_NAME` and defaults to `a13n_session`; use a stable, deployment-specific name when multiple loopback deployments must coexist in one browser profile.
 
 Browser mutations require an `Origin` matching the configured public origin. Authenticated mutations also require `X-A13N-CSRF-Token`; retrieve it from the login response or `GET /api/v1/auth/csrf`. Send cookies with same-origin requests. Never send a bearer credential together with a session cookie.
 

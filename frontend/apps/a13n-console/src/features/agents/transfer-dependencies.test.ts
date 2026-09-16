@@ -1,7 +1,10 @@
 import { createClient } from "@converge.ai/a13n";
 import { expect, it, vi } from "vitest";
 import { initialConfig } from "./configuration";
-import { inspectAgentDependencies } from "./transfer-dependencies";
+import {
+  agentDependencies,
+  inspectAgentDependencies,
+} from "./transfer-dependencies";
 
 function clientFor(read: (url: URL) => object) {
   const fetch = vi.fn<typeof globalThis.fetch>(
@@ -181,4 +184,59 @@ it("checks search and scrape against the shared Web Provider catalog", async () 
       new URL(new Request(request).url).pathname.endsWith("/web-providers"),
     ),
   ).toHaveLength(1);
+});
+
+it("checks and remaps memory providers without replacing behavior options", async () => {
+  const { client } = clientFor((url) =>
+    url.pathname.endsWith("/models")
+      ? {
+          items: [
+            {
+              id: "mdl_local",
+              key: "research",
+              name: "Research",
+              enabled: true,
+            },
+          ],
+        }
+      : {
+          items: [
+            {
+              id: "memprov_ready",
+              name: "Team",
+              type: "custom.memory",
+              enabled: true,
+              credential_configured: true,
+            },
+            {
+              id: "memprov_disabled",
+              name: "Old",
+              type: "custom.memory",
+              enabled: false,
+              credential_configured: true,
+            },
+          ],
+        },
+  );
+  const config = {
+    ...initialConfig("Research"),
+    model: { model_key: "research" },
+    memory: {
+      provider_id: "memprov_missing",
+      scope: "agent" as const,
+      auto_recall: false,
+      recall_limit: 7,
+    },
+  };
+  const checks = await inspectAgentDependencies(client, "ws_target", config);
+  const memory = checks.find((item) => item.path === "memory.provider_id");
+  expect(memory?.available).toBe(false);
+  expect(memory?.options.map((item) => item.value)).toEqual(["memprov_ready"]);
+  const replaced = agentDependencies(config)
+    .find((item) => item.kind === "memory")!
+    .replace("memprov_ready");
+  expect(replaced.memory).toEqual({
+    ...config.memory,
+    provider_id: "memprov_ready",
+  });
 });

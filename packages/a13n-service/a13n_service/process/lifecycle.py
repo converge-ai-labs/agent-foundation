@@ -8,25 +8,29 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import replace
 from functools import partial
 
+import httpx2
 from a13n_harness.memory_plugins import MemoryBackendCatalog
 from a13n_harness.plugin_factories import build_harness_plugin_factory_catalog
 from anyio import create_task_group, to_thread
 from pydantic_ai import prices
 
+from a13n_service.connectivity.http import cookie_free_jar
 from a13n_service.connectivity.ingress.submission import IngressInputAcceptor
 from a13n_service.endpoint_policy import EndpointPolicy
 from a13n_service.gateway.a2a_push import append_matching_a2a_push_outbox
 from a13n_service.hooks import InlineHookValidator
 from a13n_service.hooks.persistence import write_hook_lifecycle
 from a13n_service.interactions.lifecycle import LifecycleWriter
+from a13n_service.memory.bots.verification import BotMemoryVerifier
 from a13n_service.memory.composition import build_memory_service
 from a13n_service.models.providers import ProviderRegistry
 from a13n_service.object_retention.publication import PublicationObjectStore
 from a13n_service.observability import build_observability_runtime
-from a13n_service.process.agents import build_agent_resources
+from a13n_service.process.agents import build_agent_resolver, build_agent_resources
 from a13n_service.process.background import BackgroundTask, run_critical_component, shutdown_background_components
 from a13n_service.process.components import Components
 from a13n_service.process.connectivity import build_connectivity_runtime
+from a13n_service.process.connectivity_clients import connectivity_http_timeout
 from a13n_service.process.control import build_control_runtime
 from a13n_service.process.control.asset import build_asset_bundle
 from a13n_service.process.environment import build_environment_catalog
@@ -84,6 +88,20 @@ async def open_process_runtime(
                 if components.memory_backend_catalog is not None
                 else MemoryBackendCatalog(provider_catalogs.memory)
             )
+            bot_verifier = None
+            if owns_control(settings.service.role) or owns_worker(settings.service.role):
+                memory_http = await stack.enter_async_context(
+                    httpx2.AsyncClient(
+                        cookies=cookie_free_jar(), follow_redirects=False, timeout=connectivity_http_timeout(settings)
+                    )
+                )
+                bot_verifier = BotMemoryVerifier(
+                    storage.sessions,
+                    memory_http,
+                    settings.connectivity_endpoint_policy(),
+                    protector,
+                    timeout_seconds=settings.connectivity.total_timeout_seconds,
+                )
             shared = SharedRuntime(
                 storage=storage,
                 lifecycle=LifecycleWriter(
@@ -97,6 +115,7 @@ async def open_process_runtime(
                     storage.sessions,
                     protector,
                     memory_catalog,
+                    bot_verifier=bot_verifier,
                 )
                 if owns_control(settings.service.role) or owns_worker(settings.service.role)
                 else None,
@@ -143,6 +162,7 @@ async def open_process_runtime(
                     provider_catalogs=provider_catalogs,
                     plugin_catalog=plugin_catalog,
                     invocations=agent_resources.invocations,
+                    configuration_resolver=build_agent_resolver(components, shared, agent_resources),
                     observability=observability,
                 )
             control = None
@@ -186,6 +206,7 @@ async def open_process_runtime(
                 input_acceptor=input_acceptor,
                 control_plane=owns_control(settings.service.role),
                 data_plane=owns_connectivity_data(settings.service.role),
+                memory_catalog=memory_catalog,
             )
             runtime = ProcessRuntime(
                 settings=settings,

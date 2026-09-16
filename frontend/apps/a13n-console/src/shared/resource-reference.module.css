@@ -37,16 +37,16 @@
 
 .popup {
   display: grid;
-  width: min(264px, calc(100vw - 24px));
+  width: min(340px, calc(100vw - 24px));
 }
 
 .row {
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
+  grid-template-columns: 72px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   min-height: 30px;
-  padding: 2px 0 2px 6px;
+  padding: 2px 0 2px 8px;
 }
 
 .row + .row {
@@ -55,10 +55,11 @@
 
 .label {
   color: var(--a13n-secondary);
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
+  white-space: nowrap;
 }
 
 .row code {

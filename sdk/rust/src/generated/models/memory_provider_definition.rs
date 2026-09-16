@@ -22,6 +22,9 @@ pub struct MemoryProviderDefinition {
     #[serde(rename = "display_name")]
     pub display_name: String,
 
+    #[serde(rename = "supports_documents", skip_serializing_if = "Option::is_none")]
+    pub supports_documents: Option<bool>,
+
     #[serde(rename = "type")]
     pub r#type: String,
 }
@@ -37,6 +40,7 @@ impl MemoryProviderDefinition {
             configuration_schema,
             credential_schema,
             display_name,
+            supports_documents: None,
             r#type,
         }
     }

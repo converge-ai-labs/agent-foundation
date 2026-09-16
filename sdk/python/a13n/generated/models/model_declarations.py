@@ -26,6 +26,7 @@ class ModelDeclarations:
         max_output_tokens (int | None | Unset):
         pricing (ModelPricing | None | Unset):
         structured_output (bool | None | Unset):
+        supports_tools (bool | None | Unset):
         thinking_efforts (list[ModelDeclarationsThinkingEffortsItem] | Unset):
     """
 
@@ -34,6 +35,7 @@ class ModelDeclarations:
     max_output_tokens: int | Unset | None = UNSET
     pricing: ModelPricing | Unset | None = UNSET
     structured_output: bool | Unset | None = UNSET
+    supports_tools: bool | Unset | None = UNSET
     thinking_efforts: list[ModelDeclarationsThinkingEffortsItem] | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
@@ -72,6 +74,12 @@ class ModelDeclarations:
         else:
             structured_output = self.structured_output
 
+        supports_tools: bool | Unset | None
+        if isinstance(self.supports_tools, Unset):
+            supports_tools = UNSET
+        else:
+            supports_tools = self.supports_tools
+
         thinking_efforts: list[str] | Unset = UNSET
         if not isinstance(self.thinking_efforts, Unset):
             thinking_efforts = []
@@ -92,6 +100,8 @@ class ModelDeclarations:
             field_dict["pricing"] = pricing
         if structured_output is not UNSET:
             field_dict["structured_output"] = structured_output
+        if supports_tools is not UNSET:
+            field_dict["supports_tools"] = supports_tools
         if thinking_efforts is not UNSET:
             field_dict["thinking_efforts"] = thinking_efforts
 
@@ -155,6 +165,15 @@ class ModelDeclarations:
 
         structured_output = _parse_structured_output(d.pop("structured_output", UNSET))
 
+        def _parse_supports_tools(data: object) -> bool | Unset | None:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            return cast(bool | Unset | None, data)
+
+        supports_tools = _parse_supports_tools(d.pop("supports_tools", UNSET))
+
         _thinking_efforts = d.pop("thinking_efforts", UNSET)
         thinking_efforts: list[ModelDeclarationsThinkingEffortsItem] | Unset = UNSET
         if _thinking_efforts is not UNSET:
@@ -170,6 +189,7 @@ class ModelDeclarations:
             max_output_tokens=max_output_tokens,
             pricing=pricing,
             structured_output=structured_output,
+            supports_tools=supports_tools,
             thinking_efforts=thinking_efforts,
         )
 

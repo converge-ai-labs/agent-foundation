@@ -30,7 +30,9 @@ async def read_lark_response(response: httpx2.Response, *, max_bytes: int) -> Js
     except (UnicodeDecodeError, json.JSONDecodeError, ValidationError) as error:
         raise LarkApiError("invalid_provider_response") from error
     code = value.get("code")
-    if type(code) is not int or code != 0:
+    if type(code) is not int:
+        raise LarkApiError("invalid_provider_response")
+    if code != 0:
         if code in {99991400, 99991401}:
             raise LarkApiError("rate_limited", retry_after_seconds=retry_after)
         raise LarkApiError("provider_rejected")

@@ -22,8 +22,11 @@ pub struct Agent {
     #[serde(rename = "created_by")]
     pub created_by: Box<models::ActorRef>,
 
-    #[serde(rename = "current_revision_id")]
-    pub current_revision_id: String,
+    #[serde(
+        rename = "current_revision_id",
+        deserialize_with = "Option::deserialize"
+    )]
+    pub current_revision_id: Option<String>,
 
     #[serde(
         rename = "default_environment_template_id",
@@ -77,6 +80,14 @@ pub struct Agent {
     #[serde(rename = "source")]
     pub source: models::AgentSource,
 
+    #[serde(
+        rename = "system_purpose",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub system_purpose: Option<Option<SystemPurpose>>,
+
     #[serde(rename = "updated_at")]
     pub updated_at: chrono::DateTime<chrono::FixedOffset>,
 
@@ -95,7 +106,7 @@ impl Agent {
         archived_at: Option<chrono::DateTime<chrono::FixedOffset>>,
         created_at: chrono::DateTime<chrono::FixedOffset>,
         created_by: models::ActorRef,
-        current_revision_id: String,
+        current_revision_id: Option<String>,
         description: Option<String>,
         duplicated_from_agent_id: Option<String>,
         duplicated_from_revision_id: Option<String>,
@@ -127,10 +138,23 @@ impl Agent {
             name,
             organization_id,
             source,
+            system_purpose: None,
             updated_at,
             updated_by: Box::new(updated_by),
             version,
             workspace_id,
         }
+    }
+}
+///
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
+pub enum SystemPurpose {
+    #[serde(rename = "configuration_assistant")]
+    ConfigurationAssistant,
+}
+
+impl Default for SystemPurpose {
+    fn default() -> SystemPurpose {
+        Self::ConfigurationAssistant
     }
 }

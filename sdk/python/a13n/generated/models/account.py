@@ -7,12 +7,14 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 from attrs import define as _attrs_define
 
 from ..models.account_status import AccountStatus
+from ..models.reception_scope import ReceptionScope
 from ..types import UNSET, Unset
 
 if TYPE_CHECKING:
     from ..models.account_provider_config import AccountProviderConfig
     from ..models.account_provider_policy_type_0 import AccountProviderPolicyType0
     from ..models.input_batching_policy import InputBatchingPolicy
+    from ..models.memory_settings import MemorySettings
     from ..models.principal_ref import PrincipalRef
 
 
@@ -40,8 +42,10 @@ class Account:
         default_agent_id (None | str | Unset):
         execution_service_account_id (None | str | Unset):
         input_batching (InputBatchingPolicy | None | Unset):
+        memory (MemorySettings | None | Unset):
         provider_policy (AccountProviderPolicyType0 | None | Unset):
         receive_enabled (bool | Unset):
+        reception_scope (ReceptionScope | Unset):
     """
 
     created_at: datetime.datetime
@@ -61,12 +65,15 @@ class Account:
     default_agent_id: str | Unset | None = UNSET
     execution_service_account_id: str | Unset | None = UNSET
     input_batching: InputBatchingPolicy | Unset | None = UNSET
+    memory: MemorySettings | Unset | None = UNSET
     provider_policy: AccountProviderPolicyType0 | Unset | None = UNSET
     receive_enabled: bool | Unset = UNSET
+    reception_scope: ReceptionScope | Unset = UNSET
 
     def to_dict(self) -> dict[str, Any]:
         from ..models.account_provider_policy_type_0 import AccountProviderPolicyType0
         from ..models.input_batching_policy import InputBatchingPolicy
+        from ..models.memory_settings import MemorySettings
 
         created_at = self.created_at.isoformat()
 
@@ -116,6 +123,14 @@ class Account:
         else:
             input_batching = self.input_batching
 
+        memory: dict[str, Any] | Unset | None
+        if isinstance(self.memory, Unset):
+            memory = UNSET
+        elif isinstance(self.memory, MemorySettings):
+            memory = self.memory.to_dict()
+        else:
+            memory = self.memory
+
         provider_policy: dict[str, Any] | Unset | None
         if isinstance(self.provider_policy, Unset):
             provider_policy = UNSET
@@ -125,6 +140,10 @@ class Account:
             provider_policy = self.provider_policy
 
         receive_enabled = self.receive_enabled
+
+        reception_scope: str | Unset = UNSET
+        if not isinstance(self.reception_scope, Unset):
+            reception_scope = self.reception_scope.value
 
         field_dict: dict[str, Any] = {}
 
@@ -152,10 +171,14 @@ class Account:
             field_dict["execution_service_account_id"] = execution_service_account_id
         if input_batching is not UNSET:
             field_dict["input_batching"] = input_batching
+        if memory is not UNSET:
+            field_dict["memory"] = memory
         if provider_policy is not UNSET:
             field_dict["provider_policy"] = provider_policy
         if receive_enabled is not UNSET:
             field_dict["receive_enabled"] = receive_enabled
+        if reception_scope is not UNSET:
+            field_dict["reception_scope"] = reception_scope
 
         return field_dict
 
@@ -164,6 +187,7 @@ class Account:
         from ..models.account_provider_config import AccountProviderConfig
         from ..models.account_provider_policy_type_0 import AccountProviderPolicyType0
         from ..models.input_batching_policy import InputBatchingPolicy
+        from ..models.memory_settings import MemorySettings
         from ..models.principal_ref import PrincipalRef
 
         d = dict(src_dict)
@@ -230,6 +254,23 @@ class Account:
 
         input_batching = _parse_input_batching(d.pop("input_batching", UNSET))
 
+        def _parse_memory(data: object) -> MemorySettings | Unset | None:
+            if data is None:
+                return data
+            if isinstance(data, Unset):
+                return data
+            try:
+                if not isinstance(data, dict):
+                    raise TypeError()
+                memory_type_0 = MemorySettings.from_dict(data)
+
+                return memory_type_0
+            except (TypeError, ValueError, AttributeError, KeyError):
+                pass
+            return cast(MemorySettings | Unset | None, data)
+
+        memory = _parse_memory(d.pop("memory", UNSET))
+
         def _parse_provider_policy(data: object) -> AccountProviderPolicyType0 | Unset | None:
             if data is None:
                 return data
@@ -249,6 +290,13 @@ class Account:
 
         receive_enabled = d.pop("receive_enabled", UNSET)
 
+        _reception_scope = d.pop("reception_scope", UNSET)
+        reception_scope: ReceptionScope | Unset
+        if isinstance(_reception_scope, Unset):
+            reception_scope = UNSET
+        else:
+            reception_scope = ReceptionScope(_reception_scope)
+
         account = cls(
             created_at=created_at,
             created_by=created_by,
@@ -267,8 +315,10 @@ class Account:
             default_agent_id=default_agent_id,
             execution_service_account_id=execution_service_account_id,
             input_batching=input_batching,
+            memory=memory,
             provider_policy=provider_policy,
             receive_enabled=receive_enabled,
+            reception_scope=reception_scope,
         )
 
         return account

@@ -9,6 +9,7 @@ import type { AgentSearchValue } from "../web/selection";
 export type AgentConfig = Schema["AgentConfig-Input"];
 const commonFields = new Set([
   "toolsets",
+  "memory",
   "model",
   "instructions",
   "skills",
@@ -37,7 +38,12 @@ export function buildConfig(
   original: AgentConfig,
   common: Pick<
     AgentConfig,
-    "model" | "instructions" | "skills" | "connection_tools" | "toolsets"
+    | "model"
+    | "instructions"
+    | "skills"
+    | "connection_tools"
+    | "toolsets"
+    | "memory"
   >,
   advanced: string,
 ): AgentConfig {

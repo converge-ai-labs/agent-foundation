@@ -51,10 +51,12 @@ RUN apt-get update \
     && useradd --uid 10001 --gid app --create-home app
 
 WORKDIR /app
-COPY --from=builder --chown=app:app /app /app
-COPY --chown=app:app scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
-COPY --chown=app:app deploy/containers/a13n-service/service.toml /app/service.toml
+COPY --from=builder --chown=root:root /app /app
+COPY --chown=root:root scripts/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY --chown=root:root deploy/containers/a13n-service/service.toml /app/service.toml
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh \
+    && chmod -R go-w /app \
+    && chmod -R a-w /app/packages/a13n-service/a13n_service/agent_configuration/assets \
     && mkdir -p /app/var/files /app/var/objects \
     && chown -R app:app /app/var
 

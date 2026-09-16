@@ -49,6 +49,14 @@ pub struct ModelDeclarations {
     )]
     pub structured_output: Option<Option<bool>>,
 
+    #[serde(
+        rename = "supports_tools",
+        default,
+        with = "::serde_with::rust::double_option",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub supports_tools: Option<Option<bool>>,
+
     #[serde(rename = "thinking_efforts", skip_serializing_if = "Option::is_none")]
     pub thinking_efforts: Option<Vec<ThinkingEfforts>>,
 }
@@ -62,6 +70,7 @@ impl ModelDeclarations {
             max_output_tokens: None,
             pricing: None,
             structured_output: None,
+            supports_tools: None,
             thinking_efforts: None,
         }
     }

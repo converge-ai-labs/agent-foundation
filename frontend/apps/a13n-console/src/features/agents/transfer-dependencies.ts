@@ -9,7 +9,8 @@ type DependencyKind =
   | "connection"
   | "agent"
   | "environment"
-  | "web";
+  | "web"
+  | "memory";
 export interface AgentDependency {
   path: string;
   kind: DependencyKind;
@@ -109,6 +110,17 @@ export function agentDependencies(config: AgentConfig): AgentDependency[] {
         }),
       });
   }
+  const memory = config.memory;
+  if (memory)
+    refs.push({
+      path: "memory.provider_id",
+      kind: "memory",
+      value: memory.provider_id,
+      replace: (value) => ({
+        ...config,
+        memory: { ...memory, provider_id: value },
+      }),
+    });
   const web = config.toolsets?.web;
   for (const operation of ["search", "scrape"] as const) {
     const tool = web?.tools?.[operation];
@@ -238,6 +250,24 @@ export async function inspectAgentDependencies(
           .map((item) => ({
             value: item.current_revision_id,
             label: `${item.name} · v${item.version}`,
+            id: item.id,
+          }));
+      }
+      case "memory": {
+        const items = await allPages((cursor) =>
+          client.http
+            .GET("/api/v1/workspaces/{workspace}/memory-providers", {
+              params: { path, query: { cursor, limit: 100 } },
+              headers,
+              signal,
+            })
+            .then(data),
+        );
+        return items
+          .filter((item) => item.enabled && item.credential_configured)
+          .map((item) => ({
+            value: item.id,
+            label: `${item.name} · ${item.type}`,
             id: item.id,
           }));
       }

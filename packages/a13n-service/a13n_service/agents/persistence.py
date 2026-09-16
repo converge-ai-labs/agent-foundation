@@ -82,7 +82,7 @@ async def load_agent(
             AgentRecord.workspace_id == workspace_id,
         )
     )
-    if record is None:
+    if record is None or record.system_purpose is not None:
         raise agent_not_found()
     return record.to_resource()
 
@@ -102,7 +102,7 @@ async def lock_agent(
         )
         .with_for_update()
     )
-    if record is None:
+    if record is None or record.system_purpose is not None:
         raise agent_not_found()
     return record
 

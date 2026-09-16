@@ -55,6 +55,7 @@ class AgentQueries:
             result = await session.scalar(
                 select(AgentRecord.id).where(
                     AgentRecord.workspace_id == workspace_id,
+                    AgentRecord.system_purpose.is_(None),
                     column == reference,
                 )
             )
@@ -117,6 +118,7 @@ class AgentQueries:
                 query = select(AgentRecord).where(
                     AgentRecord.organization_id == workspace.organization_id,
                     AgentRecord.workspace_id == workspace_id,
+                    AgentRecord.system_purpose.is_(None),
                 )
                 query = query.where(*label_predicates(AgentRecord.labels, labels or {}))
                 if authorization.visible_agent_ids is not None:

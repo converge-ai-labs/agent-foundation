@@ -51,3 +51,44 @@ test("schema validation reports the invalid advanced field", () => {
     ),
   ).toThrow(/retries\/tools/);
 });
+
+test("memory is a dedicated revision field preserving explicit false, zero and disable", () => {
+  const original = {
+    ...initialConfig("Support"),
+    model: { model_key: "support" },
+    memory: {
+      provider_id: "memprov_0123456789abcdef",
+      scope: "agent" as const,
+      auto_recall: false,
+      recall_threshold: 0,
+      toolset: false,
+    },
+  };
+  expect(JSON.parse(advancedConfig(original))).not.toHaveProperty("memory");
+  const updated = buildConfig(
+    original,
+    { model: original.model, memory: original.memory },
+    advancedConfig(original),
+  );
+  expect(updated.memory).toEqual(original.memory);
+  expect(
+    buildConfig(
+      original,
+      { model: original.model, memory: null },
+      advancedConfig(original),
+    ).memory,
+  ).toBeNull();
+  expect(() =>
+    buildConfig(original, { model: original.model }, '{"memory": null}'),
+  ).toThrow(/dedicated field/);
+  expect(() =>
+    buildConfig(
+      original,
+      {
+        model: original.model,
+        memory: { ...original.memory, recall_timeout: 0 },
+      },
+      advancedConfig(original),
+    ),
+  ).toThrow(/recall_timeout/);
+});

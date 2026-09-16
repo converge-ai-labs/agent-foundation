@@ -22,9 +22,11 @@ def build_request(
     cursor: str | Unset | None = UNSET,
     query: str | Unset | None = UNSET,
     search_in: SearchIn | Unset | None = UNSET,
+    session_id: str | Unset | None = UNSET,
     thread_id: str | Unset | None = UNSET,
     run_id: str | Unset | None = UNSET,
     run_attempt_id: str | Unset | None = UNSET,
+    metadata: list[str] | Unset | None = UNSET,
     view: TraceView | Unset = UNSET,
 ) -> dict[str, Any]:
 
@@ -73,6 +75,13 @@ def build_request(
         json_search_in = search_in
     params["search_in"] = json_search_in
 
+    json_session_id: str | Unset | None
+    if isinstance(session_id, Unset):
+        json_session_id = UNSET
+    else:
+        json_session_id = session_id
+    params["session_id"] = json_session_id
+
     json_thread_id: str | Unset | None
     if isinstance(thread_id, Unset):
         json_thread_id = UNSET
@@ -93,6 +102,16 @@ def build_request(
     else:
         json_run_attempt_id = run_attempt_id
     params["run_attempt_id"] = json_run_attempt_id
+
+    json_metadata: list[str] | Unset | None
+    if isinstance(metadata, Unset):
+        json_metadata = UNSET
+    elif isinstance(metadata, list):
+        json_metadata = metadata
+
+    else:
+        json_metadata = metadata
+    params["metadata"] = json_metadata
 
     json_view: str | Unset = UNSET
     if not isinstance(view, Unset):
@@ -152,9 +171,11 @@ def sync_detailed(
     cursor: str | Unset | None = UNSET,
     query: str | Unset | None = UNSET,
     search_in: SearchIn | Unset | None = UNSET,
+    session_id: str | Unset | None = UNSET,
     thread_id: str | Unset | None = UNSET,
     run_id: str | Unset | None = UNSET,
     run_attempt_id: str | Unset | None = UNSET,
+    metadata: list[str] | Unset | None = UNSET,
     view: TraceView | Unset = UNSET,
 ) -> Response[ErrorResponse | TraceCollection]:
     """List Traces
@@ -167,9 +188,11 @@ def sync_detailed(
         cursor (None | str | Unset):
         query (None | str | Unset):
         search_in (None | SearchIn | Unset):
+        session_id (None | str | Unset):
         thread_id (None | str | Unset):
         run_id (None | str | Unset):
         run_attempt_id (None | str | Unset):
+        metadata (list[str] | None | Unset):
         view (TraceView | Unset):
 
     Raises:
@@ -188,9 +211,11 @@ def sync_detailed(
         cursor=cursor,
         query=query,
         search_in=search_in,
+        session_id=session_id,
         thread_id=thread_id,
         run_id=run_id,
         run_attempt_id=run_attempt_id,
+        metadata=metadata,
         view=view,
     )
 
@@ -211,9 +236,11 @@ def sync(
     cursor: str | Unset | None = UNSET,
     query: str | Unset | None = UNSET,
     search_in: SearchIn | Unset | None = UNSET,
+    session_id: str | Unset | None = UNSET,
     thread_id: str | Unset | None = UNSET,
     run_id: str | Unset | None = UNSET,
     run_attempt_id: str | Unset | None = UNSET,
+    metadata: list[str] | Unset | None = UNSET,
     view: TraceView | Unset = UNSET,
 ) -> ErrorResponse | TraceCollection | None:
     """List Traces
@@ -226,9 +253,11 @@ def sync(
         cursor (None | str | Unset):
         query (None | str | Unset):
         search_in (None | SearchIn | Unset):
+        session_id (None | str | Unset):
         thread_id (None | str | Unset):
         run_id (None | str | Unset):
         run_attempt_id (None | str | Unset):
+        metadata (list[str] | None | Unset):
         view (TraceView | Unset):
 
     Raises:
@@ -248,9 +277,11 @@ def sync(
         cursor=cursor,
         query=query,
         search_in=search_in,
+        session_id=session_id,
         thread_id=thread_id,
         run_id=run_id,
         run_attempt_id=run_attempt_id,
+        metadata=metadata,
         view=view,
     ).parsed
 
@@ -265,9 +296,11 @@ async def asyncio_detailed(
     cursor: str | Unset | None = UNSET,
     query: str | Unset | None = UNSET,
     search_in: SearchIn | Unset | None = UNSET,
+    session_id: str | Unset | None = UNSET,
     thread_id: str | Unset | None = UNSET,
     run_id: str | Unset | None = UNSET,
     run_attempt_id: str | Unset | None = UNSET,
+    metadata: list[str] | Unset | None = UNSET,
     view: TraceView | Unset = UNSET,
 ) -> Response[ErrorResponse | TraceCollection]:
     """List Traces
@@ -280,9 +313,11 @@ async def asyncio_detailed(
         cursor (None | str | Unset):
         query (None | str | Unset):
         search_in (None | SearchIn | Unset):
+        session_id (None | str | Unset):
         thread_id (None | str | Unset):
         run_id (None | str | Unset):
         run_attempt_id (None | str | Unset):
+        metadata (list[str] | None | Unset):
         view (TraceView | Unset):
 
     Raises:
@@ -301,9 +336,11 @@ async def asyncio_detailed(
         cursor=cursor,
         query=query,
         search_in=search_in,
+        session_id=session_id,
         thread_id=thread_id,
         run_id=run_id,
         run_attempt_id=run_attempt_id,
+        metadata=metadata,
         view=view,
     )
 
@@ -322,9 +359,11 @@ async def asyncio(
     cursor: str | Unset | None = UNSET,
     query: str | Unset | None = UNSET,
     search_in: SearchIn | Unset | None = UNSET,
+    session_id: str | Unset | None = UNSET,
     thread_id: str | Unset | None = UNSET,
     run_id: str | Unset | None = UNSET,
     run_attempt_id: str | Unset | None = UNSET,
+    metadata: list[str] | Unset | None = UNSET,
     view: TraceView | Unset = UNSET,
 ) -> ErrorResponse | TraceCollection | None:
     """List Traces
@@ -337,9 +376,11 @@ async def asyncio(
         cursor (None | str | Unset):
         query (None | str | Unset):
         search_in (None | SearchIn | Unset):
+        session_id (None | str | Unset):
         thread_id (None | str | Unset):
         run_id (None | str | Unset):
         run_attempt_id (None | str | Unset):
+        metadata (list[str] | None | Unset):
         view (TraceView | Unset):
 
     Raises:
@@ -360,9 +401,11 @@ async def asyncio(
             cursor=cursor,
             query=query,
             search_in=search_in,
+            session_id=session_id,
             thread_id=thread_id,
             run_id=run_id,
             run_attempt_id=run_attempt_id,
+            metadata=metadata,
             view=view,
         )
     ).parsed

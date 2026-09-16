@@ -47,6 +47,8 @@ async def resolve_routing(
             AccountTargetRecord.external_target_id == identifier,
         )
     )
+    if target is None and account.reception_scope == "configured_targets":
+        return IrrelevantRouting("target_not_configured")
     if target is not None and not target.receive_enabled:
         return IrrelevantRouting("target_receiving_disabled")
     try:

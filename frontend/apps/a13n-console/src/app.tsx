@@ -18,6 +18,22 @@ import { Shell } from "./layout/shell";
 import { WorkspaceProvider } from "./layout/workspace";
 import { Empty, ErrorPage, Loading, Page } from "./shared/feedback";
 
+const ConfigurationPage = lazy(() =>
+  import("./features/configuration-assistant/page").then((module) => ({
+    default: module.ConfigurationPage,
+  })),
+);
+const ConfigurationStart = lazy(() =>
+  import("./features/configuration-assistant/start").then((module) => ({
+    default: module.ConfigurationStart,
+  })),
+);
+
+const MemoriesPage = lazy(() =>
+  import("./features/memory/page").then((module) => ({
+    default: module.MemoriesPage,
+  })),
+);
 const ModelsPage = lazy(() =>
   import("./features/models/page").then((module) => ({
     default: module.ModelsPage,
@@ -71,6 +87,26 @@ const EnvironmentsPage = lazy(() =>
 const ConnectionsPage = lazy(() =>
   import("./features/connections/page").then((module) => ({
     default: module.ConnectionsPage,
+  })),
+);
+const BotsPage = lazy(() =>
+  import("./features/bots/page").then((module) => ({
+    default: module.BotsPage,
+  })),
+);
+const BotConnect = lazy(() =>
+  import("./features/bots/connect").then((module) => ({
+    default: module.BotConnect,
+  })),
+);
+const BotDetail = lazy(() =>
+  import("./features/bots/page").then((module) => ({
+    default: module.BotDetail,
+  })),
+);
+const BotGroupDetail = lazy(() =>
+  import("./features/bots/group").then((module) => ({
+    default: module.BotGroupDetail,
   })),
 );
 const ApplicationAccountsPage = lazy(() =>
@@ -214,6 +250,14 @@ function AppContent() {
                       element={<WorkspaceShell />}
                     >
                       <Route index element={<Navigate to="agents" replace />} />
+                      <Route
+                        path="configuration/new"
+                        element={<ConfigurationStart />}
+                      />
+                      <Route
+                        path="configuration-threads/:threadId"
+                        element={<ConfigurationPage />}
+                      />
                       <Route path="agents" element={<Agents />} />
                       <Route path="agents/new" element={<CreateAgent />} />
                       <Route
@@ -235,6 +279,16 @@ function AppContent() {
                       <Route
                         path="traces/:traceId"
                         element={<TraceDetailPage />}
+                      />
+                      <Route path="bots" element={<BotsPage />} />
+                      <Route path="bots/connect" element={<BotConnect />} />
+                      <Route
+                        path="bots/:accountId/channels/:targetId/:groupTab?"
+                        element={<BotGroupDetail />}
+                      />
+                      <Route
+                        path="bots/:accountId/:botTab?"
+                        element={<BotDetail />}
                       />
                       <Route
                         path="application-accounts"
@@ -259,6 +313,7 @@ function AppContent() {
                         element={<SkillDetail />}
                       />
                       <Route path="models" element={<ModelsPage />} />
+                      <Route path="memories" element={<MemoriesPage />} />
                       <Route path="settings" element={<WorkspaceSettings />} />
                       <Route path="usage" element={<ComingSoon />} />
                       <Route path="schedules" element={<ComingSoon />} />

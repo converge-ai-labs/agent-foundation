@@ -10,6 +10,8 @@ Set `SERVICE_URL` to the server origin, `WORKSPACE` to the allowed Workspace ID/
 
 ## Create an Agent
 
+For conversational authoring in Console, use the [configuration assistant](configuration-assistant.md). It saves a reviewable draft and applies it only through a separate user command.
+
 Save the following as `agent.json`, replacing `primary` with an existing configured Model key:
 
 ```json

@@ -52,6 +52,8 @@ def run_record(value: Run) -> RunRecord:
     input_inline = "input" in value.model_fields_set
     output_inline = "output" in value.model_fields_set
     return RunRecord(
+        configuration_context=_optional_json(value.configuration_context),
+        configuration_draft_id=None if value.configuration_context is None else value.configuration_context.draft_id,
         id=value.id,
         version=value.version,
         organization_id=value.organization_id,
@@ -78,6 +80,7 @@ def run_record(value: Run) -> RunRecord:
         model_execution_observation_json=_json(value.model_execution_observation),
         connection_selections_json=list(value.connection_selections),
         native_tool_contexts_json=list(value.native_tool_contexts),
+        bot_memory_json=value.bot_memory.model_dump(mode="json") if value.bot_memory else None,
         priority=value.priority,
         queue_name=value.queue_name,
         available_at=value.available_at,

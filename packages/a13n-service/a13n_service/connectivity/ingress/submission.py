@@ -11,6 +11,7 @@ from a13n_service.application_errors import ErrorCategory
 from a13n_service.connectivity.accounts.models import AccountRecord
 from a13n_service.connectivity.accounts.reception import InputOverride
 from a13n_service.connectivity.accounts.target_models import AccountTargetRecord
+from a13n_service.connectivity.bots.setup_tests import record_test_acceptance
 from a13n_service.connectivity.native_context import InboundRunContext
 from a13n_service.iam import (
     AuthenticatedActor,
@@ -27,6 +28,8 @@ from a13n_service.interactions.control_domain import RunAcceptanceReceipt, Steer
 from a13n_service.interactions.errors import InteractionCommandError
 from a13n_service.interactions.models import RunRecord, ThreadRecord
 from a13n_service.interactions.origin import SubmissionOrigin
+from a13n_service.memory.bots.binding import BotMemoryBinding
+from a13n_service.memory.bots.selection import select_binding
 from a13n_service.storage import short_session
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
@@ -52,6 +55,7 @@ class _Selection:
     thread_version: int | None
     run_id: str | None
     steer: bool
+    bot_memory: BotMemoryBinding | None
 
 
 class IngressInputAcceptor:
@@ -79,10 +83,11 @@ class IngressInputAcceptor:
 
             async def commit(session: AsyncSession, receipt: RunAcceptanceReceipt | SteerReceipt) -> None:
                 current = await self._selection(session, batch, lock=True)
-                if (current.account_version, current.target_id, current.target_version) != (
+                if (current.account_version, current.target_id, current.target_version, current.bot_memory) != (
                     selection.account_version,
                     selection.target_id,
                     selection.target_version,
+                    selection.bot_memory,
                 ):
                     raise _LostClaim()
                 binding = await session.scalar(
@@ -118,6 +123,13 @@ class IngressInputAcceptor:
                 stored.updated_at = now
                 stored.claim_owner = None
                 stored.claim_expires_at = None
+                await record_test_acceptance(
+                    session,
+                    batch_id=batch.batch_id,
+                    run_id=receipt.run_id,
+                    steer_id=receipt.steer_id if isinstance(receipt, SteerReceipt) else None,
+                    now=now,
+                )
 
             key = batch.batch_id
             if selection.steer:
@@ -132,6 +144,7 @@ class IngressInputAcceptor:
                 return AcceptedInputOutcome(receipt_kind="steer", receipt_id=receipt.steer_id)
             origin = SubmissionOrigin(
                 trigger_type="inbound",
+                bot_memory=selection.bot_memory,
                 native_tool_contexts=(
                     InboundRunContext.from_batch(batch, execution_principal=selection.actor.principal).model_dump(
                         mode="json"
@@ -259,6 +272,7 @@ class IngressInputAcceptor:
             thread.version if thread else None,
             run_id,
             steer,
+            await select_binding(session, account, batch.configuration.external_target_id, lock=lock),
         )
 
 

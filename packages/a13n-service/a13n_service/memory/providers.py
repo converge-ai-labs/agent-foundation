@@ -67,6 +67,7 @@ class MemoryProviderService:
                 MemoryProviderDefinition(
                     type=key,
                     display_name=plugin.display_name,
+                    supports_documents=plugin.supports_documents,
                     configuration_schema=plugin.configuration_model.model_json_schema(),
                     credential_schema={**plugin.credential_model.model_json_schema(), "writeOnly": True},
                 )

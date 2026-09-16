@@ -1,6 +1,7 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Button, DisclosureSection } from "a13n-ui";
 import { useState } from "react";
+import { Link } from "react-router";
 import { useTranslation } from "react-i18next";
 import { useClient } from "../../auth/context";
 import { useWorkspace } from "../../layout/workspace";
@@ -19,7 +20,7 @@ import styles from "../../shared/shared.module.css";
 export function AgentVersions({ agent }: { agent: Schema["Agent"] }) {
   const client = useClient(),
     { t } = useTranslation(),
-    { workspace, can } = useWorkspace(),
+    { workspace, can, basePath } = useWorkspace(),
     cache = useQueryClient(),
     page = useCursor(),
     idempotency = useIdempotency();
@@ -116,6 +117,13 @@ export function AgentVersions({ agent }: { agent: Schema["Agent"] }) {
       <Pagination page={page} next={query.data.next_cursor} />
       {selected && (
         <section>
+          {can("agent.revision.create") && (
+            <Link
+              to={`${basePath}/configuration/new?agent=${agent.id}&revision=${selected.id}`}
+            >
+              {t("Configure from this version")}
+            </Link>
+          )}
           <h3>
             {t("Version")} {selected.version}
           </h3>

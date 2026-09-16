@@ -7,10 +7,12 @@ from contextlib import AsyncExitStack
 from dataclasses import dataclass
 
 import httpx2
+from a13n_harness.memory_plugins import MemoryBackendCatalog
 
 from a13n_service.connectivity.accounts.service import AccountService
 from a13n_service.connectivity.accounts.target_service import AccountTargetService
 from a13n_service.connectivity.adapters import IngressAdapter
+from a13n_service.connectivity.bots.service import BotService
 from a13n_service.connectivity.composition import AdapterRegistry
 from a13n_service.connectivity.connections.authorization import AuthorizationService
 from a13n_service.connectivity.connections.checks import ConnectionChecks
@@ -78,6 +80,7 @@ async def build_connectivity_runtime(
     input_acceptor: InputAcceptor | None,
     control_plane: bool,
     data_plane: bool,
+    memory_catalog: MemoryBackendCatalog | None = None,
 ) -> tuple[ConnectivityRuntime | None, tuple[BackgroundTask, ...]]:
     """Construct only the Connectivity capabilities owned by this role."""
 
@@ -94,6 +97,7 @@ async def build_connectivity_runtime(
             provider_catalogs,
             secret_protector,
             stack,
+            memory_catalog,
         )
         if control_plane
         else (None, ())
@@ -120,6 +124,7 @@ async def _build_control_runtime(
     provider_catalogs: ProviderCatalogs,
     secret_protector: SecretProtector,
     stack: AsyncExitStack,
+    memory_catalog: MemoryBackendCatalog | None,
 ) -> tuple[ConnectivityControlRuntime, tuple[BackgroundTask, ...]]:
     public_origin = settings.validated_connectivity_public_origin() if settings.connectivity.public_origin else None
     endpoint_policy = settings.connectivity_endpoint_policy()
@@ -163,15 +168,26 @@ async def _build_control_runtime(
         mcp_http_client,
         mcp_servers,
     )
+    accounts = AccountService(
+        storage.sessions,
+        ingress_adapters,
+        secret_protector,
+        memory_catalog=memory_catalog,
+        batch_max_events=settings.connectivity.batch_max_events,
+        batch_max_wait_seconds=settings.connectivity.batch_max_wait_seconds,
+    )
     runtime = ConnectivityControlRuntime(
         public_origin=public_origin,
-        accounts=AccountService(
+        bots=BotService(
             storage.sessions,
-            ingress_adapters,
+            mcp_http_client,
+            endpoint_policy,
             secret_protector,
-            batch_max_events=settings.connectivity.batch_max_events,
-            batch_max_wait_seconds=settings.connectivity.batch_max_wait_seconds,
+            public_origin=public_origin,
+            accounts=accounts,
+            timeout_seconds=settings.connectivity.total_timeout_seconds,
         ),
+        accounts=accounts,
         targets=AccountTargetService(
             storage.sessions,
             ingress_adapters,

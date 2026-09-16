@@ -23,7 +23,7 @@ from a13n_service.iam.runtime import build_identity_runtime, initialize_identity
 from a13n_service.interactions.queue import QueuedSubmissionStore
 from a13n_service.interactions.submissions import QueuedSubmissionService
 from a13n_service.memory.providers import MemoryProviderService
-from a13n_service.process.agents import AgentResources
+from a13n_service.process.agents import AgentResources, build_agent_resolver
 from a13n_service.process.background import BackgroundTask
 from a13n_service.process.components import Components
 from a13n_service.process.resources import ExecutionResources
@@ -37,6 +37,7 @@ from a13n_service.web.registry import WebProviderRegistry
 from a13n_service.web.service import WebProviderService
 
 from .agent import build_agent_management
+from .agent_configuration import build_configuration_service
 from .asset import build_asset_bundle
 from .collection import build_collection_tasks
 from .environment import build_environment_service
@@ -228,6 +229,15 @@ async def build_control_runtime(
         gateway=gateway,
         subagent_maintenance=subagents,
         identity=identity,
+        configuration=build_configuration_service(
+            settings,
+            shared,
+            agent_resources,
+            execution,
+            build_agent_resolver(components, shared, agent_resources),
+            assets.catalog,
+            hooks.inline_validator,
+        ),
     )
     background_tasks = [
         assets.cleanup_task,

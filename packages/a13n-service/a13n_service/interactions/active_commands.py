@@ -23,7 +23,6 @@ from a13n_service.iam import (
     AuthenticatedActor,
     AuthorizationError,
     WorkspaceAction,
-    authorize_agent,
 )
 from a13n_service.interactions.control_domain import (
     InterruptRequest,
@@ -45,6 +44,7 @@ from a13n_service.interactions.outcomes import RunOutcomeError, RunOutcomeServic
 from a13n_service.storage import ObjectStoreError, short_session, transaction
 from a13n_service.temporal import Clock, assume_utc, utc_now
 
+from .access import authorize_interaction
 from .command_evidence import (
     command_identity,
 )
@@ -97,10 +97,11 @@ class ActiveRunCommands:
 
         async def validate_final(database: AsyncSession) -> None:
             try:
-                await authorize_agent(
+                await authorize_interaction(
                     database,
                     actor=actor,
                     workspace_id=actor.workspace_id,
+                    session_id=source.session_id,
                     agent_id=source.agent_id,
                     action=WorkspaceAction.run_interrupt,
                 )
@@ -200,10 +201,11 @@ class ActiveRunCommands:
 
         async def validate_final(database: AsyncSession) -> None:
             try:
-                await authorize_agent(
+                await authorize_interaction(
                     database,
                     actor=actor,
                     workspace_id=actor.workspace_id,
+                    session_id=source.session_id,
                     agent_id=source.agent_id,
                     action=WorkspaceAction.run_steer,
                 )
@@ -298,10 +300,11 @@ class ActiveRunCommands:
                 raise command_not_found()
             run, _session = row
             try:
-                await authorize_agent(
+                await authorize_interaction(
                     database,
                     actor=actor,
                     workspace_id=actor.workspace_id,
+                    session_id=run.session_id,
                     agent_id=run.agent_id,
                     action=WorkspaceAction.run_steer,
                 )
@@ -372,10 +375,11 @@ class ActiveRunCommands:
                 raise command_not_found()
             source, thread = row
             try:
-                await authorize_agent(
+                await authorize_interaction(
                     database,
                     actor=actor,
                     workspace_id=actor.workspace_id,
+                    session_id=source.session_id,
                     agent_id=source.agent_id,
                     action=WorkspaceAction.run_read if read_only else WorkspaceAction.run_steer,
                 )
@@ -427,10 +431,11 @@ class ActiveRunCommands:
                 raise command_not_found()
             run, _session = row
             try:
-                await authorize_agent(
+                await authorize_interaction(
                     database,
                     actor=actor,
                     workspace_id=actor.workspace_id,
+                    session_id=run.session_id,
                     agent_id=run.agent_id,
                     action=WorkspaceAction.run_interrupt,
                 )
@@ -483,10 +488,11 @@ class ActiveRunCommands:
                 raise command_not_found()
             source, thread = row
             try:
-                await authorize_agent(
+                await authorize_interaction(
                     database,
                     actor=actor,
                     workspace_id=actor.workspace_id,
+                    session_id=source.session_id,
                     agent_id=source.agent_id,
                     action=WorkspaceAction.run_interrupt,
                 )
