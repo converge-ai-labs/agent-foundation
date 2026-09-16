@@ -715,6 +715,56 @@ it("merges same-version task batches, rejects stale projections and never mixes 
   expect(display.tasks).toBeUndefined();
 });
 
+it.each(["a13n.harness_ui.checkpoint", "plugin.test.fact"])(
+  "keeps %s out of conversation blocks in live delivery and replay",
+  (name) => {
+    const payload = {
+      name,
+      value: {
+        event: {
+          event_kind: "capability",
+          continuation_id: "checkpoint-one",
+          message: "internal fact",
+        },
+      },
+    };
+    for (const replay of [false, true]) {
+      const display = new FocusDisplay();
+      display.accept(snapshot(replay ? 1 : 0));
+      if (replay) {
+        display.accept(
+          focusFrame({
+            kind: "root_stream",
+            run_id: "run-one",
+            events: [
+              {
+                index: 0,
+                event_type: "CUSTOM",
+                payload,
+                payload_omitted: false,
+              },
+            ],
+          }),
+        );
+      }
+      display.accept(focusFrame({ kind: "ready", resume_cursor: "ready" }));
+      if (!replay) {
+        const frame = event(101);
+        if (frame.kind !== "event") throw new Error("Expected event");
+        frame.event.event_type = "CUSTOM";
+        frame.event.payload = payload;
+        display.accept(frame);
+      }
+      expect(display.blocks.size).toBe(0);
+      expect(display.blocksAfter(null)).toEqual([]);
+      expect(display.gap).toBe(false);
+      expect(display.checkpoints.has("checkpoint-one")).toBe(
+        name === "a13n.harness_ui.checkpoint",
+      );
+    }
+  },
+);
+
 it("cuts over only the saved checkpoint prefix and reconstructs boundaries on replay", () => {
   const events = [
     {
