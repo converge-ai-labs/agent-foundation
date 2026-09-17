@@ -20,6 +20,7 @@ from pydantic_ai.messages import (
     ModelResponse,
     RetryPromptPart,
     TextContent,
+    ToolAvailabilityDeltaPart,
     UserContent,
     UserPromptPart,
 )
@@ -304,7 +305,14 @@ def _commit_projection(
     epilogue = [block for block in projection.blocks if block.placement is ModelContextPlacement.REQUEST_EPILOGUE]
 
     if request.kind is ModelContextRequestKind.INPUT and preamble:
-        input_index = next(index for index, part in enumerate(original_parts) if isinstance(part, UserPromptPart))
+        # Native provider preparation can render typed parts as user input only
+        # in the outgoing request (for example ToolAvailabilityDeltaPart).
+        # Preserve the same preamble position before the canonical native part.
+        input_index = next(
+            index
+            for index, part in enumerate(original_parts)
+            if isinstance(part, (UserPromptPart, ToolAvailabilityDeltaPart))
+        )
     else:
         input_index = len(original_parts)
 

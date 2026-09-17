@@ -40,6 +40,7 @@ from pydantic_ai.messages import (
     RetryPromptPart,
     TextContent,
     TextPart,
+    ToolAvailabilityDeltaPart,
     ToolCallPart,
     ToolReturnPart,
     UserPromptPart,
@@ -380,7 +381,7 @@ async def test_host_can_short_circuit_default_projection_without_bypassing_commi
     assert calls == ["host:before", "host:after"]
 
 
-@pytest.mark.parametrize("placement", ["after", "between", "retry"])
+@pytest.mark.parametrize("placement", ["after", "between", "retry", "rendered_native"])
 async def test_enqueued_input_projection_preserves_contiguous_tool_results(monkeypatch, placement):
     from unittest.mock import AsyncMock
 
@@ -403,6 +404,9 @@ async def test_enqueued_input_projection_preserves_contiguous_tool_results(monke
     deps = _ProjectionDeps(projection=projection)
     model = FunctionModel(lambda messages, info: "unused")
     ctx = RunContext(deps=cast(AgentContext, deps), model=model, usage=RunUsage(), messages=[original], run_id="run-1")
+    native = ToolAvailabilityDeltaPart(tools_added=["new_tool"])
+    if placement == "rendered_native":
+        ctx.messages[:] = [ModelRequest(parts=results), ModelRequest(parts=(native,))]
     request = ModelRequestContext(
         model=model, messages=[original], model_settings=None, model_request_parameters=ModelRequestParameters()
     )
@@ -413,13 +417,20 @@ async def test_enqueued_input_projection_preserves_contiguous_tool_results(monke
         return ModelResponse(parts=(TextPart("done"),))
 
     await ModelContextCoordinatorCapability().wrap_model_request(ctx, request_context=request, handler=handler)
-    if placement == "after":
+    if placement in {"after", "rendered_native"}:
         final = handled[0]
         assert final.parts[:2] == results
         assert user_prompt_content(final.parts[2])[0].content == "fresh context"
         assert final.parts[3] is notice
         assert user_prompt_content(final.parts[4])[0].content == "epilogue"
-        assert ctx.messages[-1] is final
+        if placement == "rendered_native":
+            assert ctx.messages[0].parts == results
+            assert user_prompt_content(ctx.messages[-1].parts[0])[0].content == "fresh context"
+            assert ctx.messages[-1].parts[1] is native
+            assert user_prompt_content(ctx.messages[-1].parts[2])[0].content == "epilogue"
+            assert _remove_owned_overlays(ctx.messages)[-1].parts == (native,)
+        else:
+            assert ctx.messages[-1] is final
         assert deps.projection_calls == 1
     else:
         assert handled == [original]
